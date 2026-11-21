@@ -145,6 +145,7 @@
 		"attention_count": { "description": "Unresolved attention notes for this conversation. Zero is a successful empty reading; absent means the count or current unique session identity could not be established.", "type": "integer", "minimum": 0 },
 		"agents": { "description": "Provider-native background threads, newest running work first. Broker children stay in the task list and are joined with these in the console, so their durable state is not flattened into a file inference.", "type": "array", "items": { "$ref": "#/$defs/SessionAgent" } },
 		"agents_reading": { "$ref": "#/$defs/SessionAgentReading" },
+        "context_percent": { "type": "integer", "minimum": 0, "maximum": 100, "description": "How full the conversation's context window is, 0 to 100, read from a short tail of its record at most every sessions.live_context_refresh_seconds. Rounded up, so any usage reads at least 1. Absent when the record, its usage or the window cannot be stated, and for a conversation with no tokens yet: an unreadable conversation is not shown as empty." },
         "running_agent_count": { "type": "integer", "description": "Exact provider subagent count from the current Cloud status projection, including zero; absent on older machines or incomplete readings." },
         "agent_count_unknown": { "type": "boolean", "description": "The current Cloud status lists provider work whose running total cannot be confirmed." },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },

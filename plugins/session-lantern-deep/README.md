@@ -27,7 +27,18 @@ hit-stop, and breaks apart over three frames when defeated. A fight keeps two en
 Wild creatures also drift through the air, hang from the ceiling and cross the floor;
 they belong to no Session. A wanderer leaves the ground only to strike an enemy, to
 climb its shaft or to reach its slab. A fight draws the nearest one in as its next enemy before
-conjuring a new one, and a patroller swats a floor creature that walks past. Enemies, strikes and climbing are decoration. They do not measure progress, count
+conjuring a new one, and a patroller swats a floor creature that walks past. Each wanderer also carries its Session's load, when the machine states it:
+
+- a **life bar** above its head is the context window still free, draining green to amber
+  to red as the conversation fills (the host's `contextUsed`, renewed at most every 15 s);
+- a **spirit beast** trails behind it for each running provider subagent (`agents`);
+- a **spirit flame** circles it for each shell or daemon callback (`shells`).
+
+Beyond three beasts or four flames a small `+N` counts the rest. Missing values draw
+nothing rather than an empty bar. The selection card and readable list state the same
+numbers in words.
+
+Enemies, strikes and climbing are decoration. They do not measure progress, count
 anything or imply that work was accepted. Stale and disconnected readings never animate.
 
 Drag, scroll or use the arrow keys to wander. Selecting a wanderer shows its full

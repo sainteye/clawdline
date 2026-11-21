@@ -11,6 +11,7 @@ const WORDS = {
     fresh: "Fresh reading", stale: "May be stale", unknownFresh: "Freshness unknown", disconnected: "Disconnected. Readings may be stale.",
     empty: "The deep is quiet. No Sessions yet.", error: "The host is unavailable", cannotOpen: "This Session cannot be opened now",
     still: "Motion is paused", hint: "Drag or scroll to wander. Select a wanderer to open its Session.",
+    vitals: (c, a, s) => [c !== undefined ? "Context " + c + "% used" : "", a ? a + (a === 1 ? " subagent" : " subagents") : "", s ? s + (s === 1 ? " shell" : " shells") : ""].filter(Boolean).join(" · "),
     states: { ready: "Ready, on patrol", working: "Working, in a fight", holding: "Holding, drilling the blade", waiting_you: "Needs you, puzzled", waiting_session: "Waiting on another Session, climbing", unknown: "No state reported", milestone_complete: "Milestone complete, resting", work_complete: "Work complete, resting" },
   },
   zh: {
@@ -19,6 +20,7 @@ const WORDS = {
     fresh: "讀數新鮮", stale: "可能不是最新", unknownFresh: "無法確認新舊", disconnected: "連線中斷，讀數可能不是最新。",
     empty: "深處一片寂靜，目前沒有 Session。", error: "無法連上宿主", cannotOpen: "這個 Session 現在無法開啟",
     still: "動態已暫停", hint: "拖曳或捲動可四處走走，點選角色即可開啟它的 Session。",
+    vitals: (c, a, s) => [c !== undefined ? "context 已用 " + c + "%" : "", a ? a + " 個 sub-agent" : "", s ? s + " 個 shell" : ""].filter(Boolean).join(" · "),
     states: { ready: "待命，巡邏中", working: "工作中，正在戰鬥", holding: "暫停中，練劍", waiting_you: "在等你，一臉疑惑", waiting_session: "等其他 Session，攀牆中", unknown: "沒有回報狀態", milestone_complete: "階段完成，休息中", work_complete: "工作完成，休息中" },
   },
 };
@@ -660,8 +662,45 @@ function drawChar(c, ghost) {
   const ok = live(c.row), col = EYE[ok ? status(c.row) : "unknown"], x = X(c.x), y = Y(c.y - 24) + Math.sin(now * 3 + c.x * .1) * 3 * scale;
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 20 * scale, col, .55 * c.alpha); drawGlow(x, y, 6 * scale, [255, 255, 255], .7 * c.alpha); ctx.globalCompositeOperation = "source-over";
 }
+const count = v => Number.isSafeInteger(v) && v > 0 ? v : 0;
+function companionFrame(kind, variant, phase) { return images[kind + "-" + variant + "-" + (1 + Math.floor(phase) % 4)]; }
+function drawCompanions(c) {
+  if (!live(c.row)) return;
+  const agents = count(c.row.agents), shells = count(c.row.shells), h = CAST_SIZE[c.cast] * 1.42, x0 = c.sx, y0 = c.sy, seed = hash(c.ref);
+  // Spirit beasts trail behind the wanderer, one per running subagent.
+  for (let i = 0; i < Math.min(agents, 3); i++) {
+    const img = companionFrame("spirit", 1 + (seed + i) % 4, now * 6 + i * 1.3); if (!img) continue;
+    const side = -c.face, x = x0 + side * (30 + i * 24) * scale, y = y0 - (h * .62 + i * 12 + Math.sin(now * 2.4 + i * 2 + seed) * 5) * scale, sz = 40 * scale;
+    ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, sz * .8, [170, 225, 255], .28); ctx.globalCompositeOperation = "source-over";
+    ctx.save(); ctx.translate(x, y); ctx.scale(c.face, 1); ctx.globalAlpha = .92; ctx.drawImage(img, -sz / 2, -sz / 2, sz, sz); ctx.restore(); ctx.globalAlpha = 1;
+  }
+  if (agents > 3) tagCount(x0 - c.face * 92 * scale, y0 - (h * .62 + 30) * scale, "+" + (agents - 3), [170, 225, 255]);
+  // Spirit flames circle the wanderer's head, one per shell or callback.
+  const n = Math.min(shells, 4);
+  for (let i = 0; i < n; i++) {
+    const img = companionFrame("wisp", 1 + i % 2, now * 7 + i), a = now * 1.4 + i * TAU / n + seed, x = x0 + Math.cos(a) * 26 * scale, y = y0 - (h * .55 + Math.sin(a) * 8) * scale, sz = 21 * scale, front = Math.sin(a) > 0;
+    if (!img) continue;
+    ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, sz * 1.2, i % 2 ? [255, 180, 90] : [120, 240, 220], front ? .45 : .25); ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = front ? 1 : .7; ctx.drawImage(img, x - sz / 2, y - sz / 2, sz, sz); ctx.globalAlpha = 1;
+  }
+  if (shells > 4) tagCount(x0 + 38 * scale, y0 - (h * .55 + 16) * scale, "+" + (shells - 4), [255, 200, 120]);
+}
+function tagCount(x, y, text, color) {
+  ctx.font = "700 " + 10 * scale + "px ui-sans-serif,system-ui,sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.lineWidth = 3 * scale; ctx.strokeStyle = "rgba(5,8,14,.85)"; ctx.strokeText(text, x, y); ctx.fillStyle = rgba(color, 1); ctx.fillText(text, x, y);
+}
+// The life bar is the context window still free: it drains as the conversation fills.
+function drawLife(c) {
+  const used = c.row.contextUsed; if (!Number.isSafeInteger(used) || used < 0 || used > 100) return;
+  const left = (100 - used) / 100, w = 32 * scale, h = 4.5 * scale, x = c.sx - w / 2, y = c.sy - (CAST_SIZE[c.cast] * 1.42 + 12) * scale, ok = live(c.row);
+  const col = !ok ? [120, 130, 145] : left > .5 ? [120, 220, 140] : left > .2 ? [240, 190, 90] : [235, 90, 85];
+  ctx.fillStyle = "rgba(4,6,10,.82)"; ctx.beginPath(); ctx.roundRect(x - 1.5 * scale, y - 1.5 * scale, w + 3 * scale, h + 3 * scale, 3 * scale); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,.08)"; ctx.beginPath(); ctx.roundRect(x, y, w, h, 2 * scale); ctx.fill();
+  if (left > 0) { ctx.fillStyle = rgba(col, .95); ctx.beginPath(); ctx.roundRect(x, y, Math.max(h, w * left), h, 2 * scale); ctx.fill(); ctx.fillStyle = "rgba(255,255,255,.28)"; ctx.fillRect(x + 1 * scale, y + .6 * scale, Math.max(0, w * left - 2 * scale), 1.2 * scale); }
+  if (ok && left <= .2) { ctx.globalCompositeOperation = "lighter"; drawGlow(x + w * left, y + h / 2, 10 * scale, col, .35 + .25 * Math.sin(now * 5)); ctx.globalCompositeOperation = "source-over"; }
+}
 function drawQuestion(c) {
-  const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.42 - 28) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
+  const x = X(c.x), y = Y(c.y - CAST_SIZE[c.cast] * 1.42 - 36) + Math.sin(now * 2.6 + c.x) * 3 * scale, k = easeOut(clamp(c.q, 0, 1)), s = scale * (.5 + .5 * k);
   ctx.globalCompositeOperation = "lighter"; drawGlow(x, y, 26 * s, [255, 150, 120], .55); ctx.globalCompositeOperation = "source-over";
   ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(now * 1.7 + c.x) * .12); ctx.font = "700 " + 22 * s + "px Georgia,serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineWidth = 3 * s; ctx.strokeStyle = "#1a0b10"; ctx.strokeText("?", 0, 0); ctx.fillStyle = "#ffd9c4"; ctx.fillText("?", 0, 0); ctx.restore();
   // a warm pool of light on the ground draws the eye without a drawn ring
@@ -758,7 +797,7 @@ function drawTags(list) {
     const state = live(c.row) ? status(c.row) : "unknown", need = state === "waiting_you", sel = selected === c.ref;
     if (crowded && !need && !sel) continue;
     const text = clip(c.row.title, sel ? 30 : 16), size = sel ? 12.5 : 11; ctx.font = (sel || need ? "600 " : "500 ") + size + "px ui-sans-serif,system-ui,-apple-system,'PingFang TC',sans-serif";
-    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (CAST_SIZE[c.cast] * 1.42 + (need ? 48 : 22)) * scale - (sel ? 4 : 0), h = size + 9;
+    const tw = ctx.measureText(text).width + 14, x = clamp(c.sx, tw / 2 + 4, W - tw / 2 - 4), y = c.sy - (CAST_SIZE[c.cast] * 1.42 + (need ? 56 : 30)) * scale - (sel ? 4 : 0), h = size + 9;
     ctx.fillStyle = sel ? "rgba(236,244,250,.94)" : "rgba(5,8,14,.62)"; ctx.strokeStyle = need ? "rgba(255,160,130,.8)" : sel ? "rgba(255,255,255,.9)" : "rgba(170,200,220,.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.roundRect(x - tw / 2, y - h / 2, tw, h, h / 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = sel ? "#0a0f18" : need ? "#ffe2d6" : "rgba(226,236,244,.9)"; ctx.fillText(text, x, y + .5);
@@ -779,7 +818,8 @@ function draw() {
   if (selected) { const c = chars.get(selected); if (c && seen.includes(c)) { const p = .5 + .5 * Math.sin(now * 2.2); ctx.globalCompositeOperation = "lighter"; ctx.save(); ctx.translate(c.sx, c.sy - 2 * scale); ctx.scale(1, .28); drawGlow(0, 0, (46 + p * 6) * scale, [215, 235, 255], .34 + p * .1); ctx.restore(); ctx.globalCompositeOperation = "source-over"; } }
   for (const c of seen) for (const g of c.ghosts) drawChar(c, g);
   for (const e of enemies) if (e.x > left && e.x < right) drawEnemy(e);
-  for (const c of seen) { drawChar(c, null); if (c.mode === "ponder" && live(c.row)) drawQuestion(c); }
+  for (const c of seen) { drawChar(c, null); drawCompanions(c); if (c.mode === "ponder" && live(c.row)) drawQuestion(c); }
+  for (const c of seen) drawLife(c);
   drawFx(); drawFog(1.1, 6, .16); drawFireflies(); drawMotes(); drawForeground(); drawTags(seen);
 }
 
@@ -831,11 +871,11 @@ function render() {
   $("empty").textContent = t.empty; $("empty").hidden = rows.length > 0; $("hint").textContent = t.hint;
   const card = $("card"), r = rows.find(x => x.ref === selected);
   card.hidden = !r;
-  if (r) { $("card-title").textContent = r.title; $("card-meta").textContent = projectName(r) + " · " + t.states[status(r)] + " · " + freshLabel(r); const b = $("card-open"); b.textContent = t.open; b.disabled = busy || !live(r); $("card-error").textContent = openError; }
+  if (r) { $("card-title").textContent = r.title; $("card-meta").textContent = [projectName(r), t.states[status(r)], freshLabel(r), t.vitals(r.contextUsed, r.agents, r.shells)].filter(Boolean).join(" · "); const b = $("card-open"); b.textContent = t.open; b.disabled = busy || !live(r); $("card-error").textContent = openError; }
   const panel = $("roster"); panel.hidden = !listOpen;
   if (listOpen) {
     const keep = document.activeElement && document.activeElement.dataset ? document.activeElement.dataset.ref : null; panel.replaceChildren(el("h2", t.list));
-    for (const ch of chambers) { panel.append(el("h3", ch.label)); for (const row of rows.filter(x => (x.project ? x.project.ref : "￿") === ch.key)) { const b = el("button", undefined, "row"); b.type = "button"; b.dataset.ref = row.ref; b.setAttribute("aria-pressed", String(selected === row.ref)); const dot = el("span", undefined, "dot"); dot.style.background = rgba(EYE[live(row) ? status(row) : "unknown"], 1); const text = el("span", undefined, "row-text"); text.append(el("span", row.title, "row-title"), el("span", t.states[status(row)] + " · " + freshLabel(row), "row-meta")); b.append(dot, text); b.onclick = () => { select(row.ref); panTo(row.ref); }; panel.append(b); } }
+    for (const ch of chambers) { panel.append(el("h3", ch.label)); for (const row of rows.filter(x => (x.project ? x.project.ref : "￿") === ch.key)) { const b = el("button", undefined, "row"); b.type = "button"; b.dataset.ref = row.ref; b.setAttribute("aria-pressed", String(selected === row.ref)); const dot = el("span", undefined, "dot"); dot.style.background = rgba(EYE[live(row) ? status(row) : "unknown"], 1); const text = el("span", undefined, "row-text"); text.append(el("span", row.title, "row-title"), el("span", [t.states[status(row)], freshLabel(row), t.vitals(row.contextUsed, row.agents, row.shells)].filter(Boolean).join(" · "), "row-meta")); b.append(dot, text); b.onclick = () => { select(row.ref); panTo(row.ref); }; panel.append(b); } }
     if (keep) { const again = [...panel.querySelectorAll("button")].find(b => b.dataset.ref === keep); if (again) again.focus({ preventScroll: true }); }
   }
 }

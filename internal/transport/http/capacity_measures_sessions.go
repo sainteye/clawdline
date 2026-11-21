@@ -11,6 +11,15 @@ func (s *Server) sessionsCapacityMeasures() map[string]func() capacity.Reading {
 		"sessions.rc_permission_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "oversized native tool inputs are not offered for approval"}
 		},
+		"sessions.live_context_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(s.liveContext.count())}
+		},
+		"sessions.live_context_refresh_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Session interval; inside it the held reading is answered"}
+		},
+		"sessions.live_context_read_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-read window of one record's end; no retained buffer"}
+		},
 		"sessions.launch_hold_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(s.launchHolds().count())}
 		},

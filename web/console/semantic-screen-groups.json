@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 13968,
-  "riskKeys": 5951,
-  "nonRiskCount": 8017,
+  "englishContentKeys": 13974,
+  "riskKeys": 5952,
+  "nonRiskCount": 8022,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 718,
+      "count": 723,
       "sources": [
         null
       ],
@@ -1195,6 +1195,11 @@
         "capacityRow.sessions.archive_rows.what",
         "capacityRow.sessions.claude_remote_request_seconds.what",
         "capacityRow.sessions.launch_hold_rows.what",
+        "capacityRow.sessions.live_context_read_bytes.what",
+        "capacityRow.sessions.live_context_refresh_seconds.full",
+        "capacityRow.sessions.live_context_refresh_seconds.what",
+        "capacityRow.sessions.live_context_rows.full",
+        "capacityRow.sessions.live_context_rows.what",
         "capacityRow.sessions.rc_close_poll_ms.what",
         "capacityRow.sessions.restore_rows.full",
         "capacityRow.snippets.scope.what",

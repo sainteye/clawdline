@@ -146,6 +146,9 @@ type Server struct {
 	// file's size and time, so the status line's minute-by-minute read of an
 	// unchanged session opens nothing.
 	facts *transcript.RecordFacts
+	// liveContext is each Session's window reading for its list row, renewed
+	// from a short tail at most every LiveContextRefreshSecondsLimit.
+	liveContext *liveContext
 	// icons derives each project's mark by the same rules the Swift app uses,
 	// reading the same registry, so the two draw the same creature.
 	icons *icon.Registry
@@ -319,6 +322,7 @@ func New(cfg config.Config) (*Server, error) {
 		cfg:            cfg,
 		terminals:      hosts,
 		facts:          transcript.NewRecordFacts(),
+		liveContext:    newLiveContext(),
 		icons:          icons,
 		pictures:       newPictures(cfg.Dir),
 		thumbs:         artifacts.NewThumbnailCache(int(CapacityLimit(capacity.CacheImageThumbs))),

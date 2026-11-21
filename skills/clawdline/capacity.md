@@ -808,6 +808,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `sessions.claude_remote_response_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sessions.launch_hold_rows` | 64 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.launch_hold_seconds` | 20 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
+| `sessions.live_context_read_bytes` | 524288 | `bytes` | `refuse` | `diagnostics` | — |
+| `sessions.live_context_refresh_seconds` | 15 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `sessions.live_context_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `sessions.rc_close_poll_ms` | 100 | `milliseconds` | `evict_oldest` | `diagnostics` | — |
 | `sessions.rc_permission_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `sessions.restore_batch` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

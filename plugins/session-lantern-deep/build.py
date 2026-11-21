@@ -8,7 +8,7 @@ scene = (here / 'scene.js').read_text(encoding='utf-8')
 cast = []
 for art in sorted((here / 'art').glob('*.webp')):
     data = 'data:image/webp;base64,' + base64.b64encode(art.read_bytes()).decode()
-    if art.stem.startswith(('char-', 'enemy-')) or (art.stem[0] == 'f' and art.stem[1:3].isdigit()) or (art.stem[0] == 'g' and art.stem[1].isdigit()) or art.stem.startswith('camp-'):
+    if art.stem.startswith(('char-', 'enemy-')) or (art.stem[0] == 'f' and art.stem[1:3].isdigit()) or (art.stem[0] == 'g' and art.stem[1].isdigit()) or art.stem.startswith(('camp-', 'spirit-', 'wisp-')):
         cast.append(f'ART[{art.stem!r}] = {data!r};')
         continue
     marker = f'%%ART:{art.stem}%%'

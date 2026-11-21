@@ -19,6 +19,9 @@ struct ShellCopy {
 
     var islandDone: String { word("islandDone") }
     var islandAllSessions: String { word("islandAllSessions") }
+    var islandSettings: String { word("islandSettings") }
+    var islandHide: String { word("islandHide") }
+    var islandHideFailed: String { word("islandHideFailed") }
     var menuApplication: String { "Clawdline" }
     var menuWindow: String { word("menuWindow") }
     var menuHelp: String { word("menuHelp") }

@@ -113,6 +113,9 @@ export function statusProjection(client: StatusProjectionClient | null, machine:
       runningAgentCount: Number.isSafeInteger(data.running_agent_count) && Number(data.running_agent_count) >= 0
         ? Number(data.running_agent_count) : undefined,
       agentCountUnknown: data.agent_count_unknown === true,
+      contextPercent: Number.isSafeInteger(data.context_percent) && Number(data.context_percent) >= 0 && Number(data.context_percent) <= 100
+        ? Number(data.context_percent) : undefined,
+      shellCount: Number.isSafeInteger(data.shell_count) && Number(data.shell_count) >= 0 ? Number(data.shell_count) : undefined,
       failedAgentCount: Number.isSafeInteger(data.failed_agent_count) && Number(data.failed_agent_count) >= 0
         ? Number(data.failed_agent_count) : undefined,
     })

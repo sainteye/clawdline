@@ -3943,6 +3943,20 @@
     "Note": true
   },
   {
+    "Name": "sessions.live_context_read_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "sessions.live_context_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "sessions.live_context_rows",
+    "Known": true
+  },
+  {
     "Name": "sessions.rc_close_poll_ms",
     "Known": true,
     "Note": true

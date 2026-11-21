@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 13968,
+  "englishKeys": 13974,
   "counts": {
-    "negation": 3587,
+    "negation": 3588,
     "state": 2360,
     "permission": 841,
     "deletion": 320,
-    "uncertainty": 554
+    "uncertainty": 555
   },
-  "unionCount": 5951,
+  "unionCount": 5952,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -718,6 +718,7 @@
       "capacityRow.sessions.claude_remote_request_seconds.full",
       "capacityRow.sessions.claude_remote_response_bytes.full",
       "capacityRow.sessions.launch_hold_seconds.full",
+      "capacityRow.sessions.live_context_read_bytes.full",
       "capacityRow.sessions.rc_close_poll_ms.full",
       "capacityRow.sessions.rc_permission_bytes.full",
       "capacityRow.sessions.restore_batch.full",
@@ -7301,6 +7302,7 @@
       "capacityRow.release.state_file_bytes.full",
       "capacityRow.resources.scan_files.full",
       "capacityRow.sessions.claude_remote_request_seconds.full",
+      "capacityRow.sessions.live_context_read_bytes.full",
       "capacityRow.squad.place_lookup.full",
       "capacityRow.store.done_effect_retention_seconds.what",
       "capacityRow.usage.daily_days.full",
@@ -8941,6 +8943,7 @@
     "capacityRow.sessions.launch_hold_rows.full",
     "capacityRow.sessions.launch_hold_seconds.full",
     "capacityRow.sessions.launch_hold_seconds.what",
+    "capacityRow.sessions.live_context_read_bytes.full",
     "capacityRow.sessions.rc_close_poll_ms.full",
     "capacityRow.sessions.rc_permission_bytes.full",
     "capacityRow.sessions.rc_permission_bytes.what",

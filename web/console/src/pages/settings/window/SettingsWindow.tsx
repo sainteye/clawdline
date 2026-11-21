@@ -152,6 +152,8 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
   useEffect(() => {
     read()
     ask({ kind: "state" })
+    window.addEventListener("clawdline:config-reloaded", read)
+    return () => window.removeEventListener("clawdline:config-reloaded", read)
   }, [read])
 
   useEffect(() => {

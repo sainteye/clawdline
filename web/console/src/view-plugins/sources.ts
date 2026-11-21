@@ -16,15 +16,28 @@ const stateTime = (row: Partial<SessionRow> | undefined): StateTime | undefined 
   if (!basis || typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0 || !Number.isFinite(new Date(seconds * 1000).getTime())) return
   return { at: seconds * 1000, basis }
 }
+// Counts are stated only from complete readings: a partial list is not a total.
+const vitals = (row: Partial<SessionRow> | undefined): Pick<SourceSession, "contextUsed" | "agents" | "shells"> => {
+  if (!row) return {}
+  const out: Pick<SourceSession, "contextUsed" | "agents" | "shells"> = {}
+  if (typeof row.context_percent === "number") out.contextUsed = row.context_percent
+  if (typeof row.running_agent_count === "number") out.agents = row.running_agent_count
+  else if (row.agents_reading?.state === "complete" && !row.agents_reading.truncated && row.agents) out.agents = row.agents.filter(agent => agent.state === "running").length
+  if (row.shells && row.background_reading !== "unavailable") out.shells = row.shells.length + Math.max(0, row.background_omitted ?? 0)
+  return out
+}
 export function localPluginRows(rows: readonly SessionRow[], connected: boolean, focused?: string | null): SourceSession[] {
   return rows.map(row => ({ key: JSON.stringify([row.id, row.execution_generation ?? row.sessionId ?? ""]),
     title: row.label || "Session", project: project(row.project_key), workState: state(row.work_state),
-    stateTime: stateTime(row), ...callbackWait(row), ...(focused !== undefined ? { focused: row.id === focused } : {}),
+    stateTime: stateTime(row), ...callbackWait(row), ...vitals(row), ...(focused !== undefined ? { focused: row.id === focused } : {}),
     freshness: !connected ? "stale" : row.evidence === "none" ? "unknown" : "fresh" }))
 }
 export function cloudPluginRows(rows: readonly MachineListPresentation[], focused?: SessionDestination | null): SourceSession[] {
   return rows.map(p => ({ key: destinationKey(p.destination), title: p.title, project: project(p.projectKey),
-    workState: state(p.status?.work_state), stateTime: stateTime(p.status), ...callbackWait(p.status),
+    workState: state(p.status?.work_state), stateTime: stateTime(p.status), ...callbackWait(p.status), ...vitals(p.status),
+    ...(p.projection?.contextPercent !== undefined ? { contextUsed: p.projection.contextPercent } : {}),
+    ...(p.projection?.runningAgentCount !== undefined ? { agents: p.projection.runningAgentCount } : {}),
+    ...(p.projection?.shellCount !== undefined ? { shells: p.projection.shellCount } : {}),
     ...(focused !== undefined ? { focused: !!focused && destinationKey(p.destination) === destinationKey(focused) } : {}),
     freshness: p.projection?.freshness === "current" && p.observedAt !== undefined ? "fresh" :
       p.projection?.freshness === "stale" ? "stale" : "unknown" }))
