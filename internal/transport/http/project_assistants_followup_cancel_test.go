@@ -31,7 +31,7 @@ func TestProjectAssistantFutureFollowUpBrowser(t *testing.T) {
 			t.Fatal(err)
 		}
 		now := time.Now()
-		d := pa.Routine{ID: id, Key: f.key, Project: x.Bot.Project, ConversationID: x.Conversation.ID, Name: id, Instruction: "Synthetic pending reminder", TimeoutSeconds: 3600, Enabled: true, Version: 1, FollowUp: true, MemoryRevision: x.Memory.Revision}
+		d := pa.Routine{ID: id, Key: f.key, Project: x.Bot.Project, ConversationID: x.Conversation.ID, Name: id, Instruction: "Synthetic pending reminder " + id, TimeoutSeconds: 3600, Enabled: true, Version: 1, FollowUp: true, MemoryRevision: x.Memory.Revision}
 		d, err = pa.SetRoutineSchedule(d, pa.Routine{}, []pa.RoutineTrigger{{Type: "once", At: now.Add(time.Hour).UnixMilli()}}, now)
 		if err != nil {
 			t.Fatal(err)

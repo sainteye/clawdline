@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -298,6 +299,55 @@ func TestMemorySettingsBrowser(t *testing.T) {
 	_, err = store.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// TestMemoryWritesBrowser drives writable personal memory through real Chrome
+// input and production MemoryPanel/SourceClient, then reads SQLite: the edited
+// topic note keeps its id and is forgotten, and the typed short fact is stored.
+func TestMemoryWritesBrowser(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_MEMORY_WRITE_BROWSER_DIR")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_MEMORY_WRITE_BROWSER_DIR for real synthetic browser")
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := memorySettingsFixture(t)
+	server := httptest.NewServer(f.h)
+	defer server.Close()
+	cmd := exec.Command("node", "../../../web/console/tools/project-assistants-memory-settings.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_READ_TOKEN="+f.readonly, "BOTS_MACHINE="+f.key.MachineID, "BOTS_BOT="+f.key.BotID, "BOTS_ARTIFACTS="+dir, "BOTS_MEMORY_WRITE=1")
+	log, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(dir, "browser.log"), log, 0600)
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, log)
+	}
+	x, err := store.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Forgetting erases the note's title, summary and text and keeps a tombstone;
+	// the edit read-back after reload is asserted in the browser before that.
+	var notes []pa.MemoryEntry
+	var fact *pa.MemoryEntry
+	for i, e := range x.MemoryEntries {
+		if e.Kind == "note" {
+			notes = append(notes, e)
+		}
+		if e.Text == "Synthetic short fact typed on a phone." {
+			fact = &x.MemoryEntries[i]
+		}
+	}
+	if len(notes) != 1 || !notes[0].Forgotten || notes[0].Title != "" || notes[0].Summary != "" || notes[0].Text != "" ||
+		!slices.Contains(x.Memory.ForgottenSourceIDs, notes[0].ID) {
+		t.Fatalf("SQLite does not hold exactly one erased, forgotten topic note: %+v\n%+v", notes, x.Memory)
+	}
+	if fact == nil || fact.Forgotten || len(fact.Sources) != 1 || fact.Sources[0].Kind != "human" {
+		t.Fatalf("SQLite does not hold the typed short fact with its human source: %+v", fact)
+	}
+	if x.Memory.Revision < 4 {
+		t.Fatalf("four memory writes should advance the revision: %+v", x.Memory)
 	}
 }
 
