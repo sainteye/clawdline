@@ -160,7 +160,12 @@ on the red; and nobody was told. Each of those now answers differently:
   (`git commit --trailer "CI-Fix: <run id>"`); `CLAWDLINE_PUSH_ON_RED=1` overrides and is printed.
   When the hook cannot read CI (no `gh`, not logged in, offline) it refuses too.
 - The last CI job notifies once when main goes from green to red, through the repository secret
-  `CLAWDLINE_CI_NOTIFY_URL` (`tools/ci-notify-red.sh`); without it the job prints a notice.
+  `CLAWDLINE_CI_NOTIFY_URL` (`tools/ci-notify-red.sh`); without it the job prints a notice. With
+  the optional secret `CLAWDLINE_CI_NOTIFY_TOKEN` the URL is a Bot routine webhook: the token is
+  its bearer key and the body is the `ci.red` event a routine filters on (`source`, `event`,
+  `repo`, `branch`, `workflow`, `conclusion`, `runId`, plus `runUrl`). The predecessor is the
+  completed, not cancelled or skipped, run with the next lower run number, not the run that
+  finished last; once a later run on main has completed, an older run sends nothing.
 
 ## Quarantining a flaky Go test
 
