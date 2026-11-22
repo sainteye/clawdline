@@ -14024,5 +14024,10 @@
   "capacityRow.terminal.warm_shells.what": "限制最多幾個專案資料夾預先開好殼層。",
   "capacityRow.terminal.warm_shells.full": "最久沒開過 Session 的資料夾會先失去預備殼層；在那裡新開 Session 時會開新的殼層。",
   "capacityRow.terminal.warm_shell_seconds.what": "限制預備殼層最多保留多久就重開。",
-  "capacityRow.terminal.warm_shell_seconds.full": "殼層會關掉並重新開一個，讓殼層設定檔的修改生效。"
+  "capacityRow.terminal.warm_shell_seconds.full": "殼層會關掉並重新開一個，讓殼層設定檔的修改生效。",
+  "projectAssistants.botCreated": "已建立 {name}",
+  "projectAssistants.botCreatedIn": "已在 {project} 建立 {name}",
+  "projectAssistants.openBot": "開啟 Bot",
+  "projectAssistants.routineEnabling": "正在啟用…",
+  "projectAssistants.routinePausing": "正在暫停…"
 }

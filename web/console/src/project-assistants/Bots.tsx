@@ -46,7 +46,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const [rosterRetry,setRosterRetry]=useState(0)
   const [snapshotPending,setSnapshotPending]=useState<ReadonlySet<SourceClient>>(()=>new Set(sources))
   const [rosterPrompt,setRosterPrompt]=useState<RosterPrompt|null>(null)
-  const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean}|null>(null)
+  const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean;open?:W.ProjectAssistantBotKey}|null>(null)
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
   const [groupOpen,setGroupOpen]=useState(false)
   const [unreadOnly,setUnreadOnly]=useState(false)
@@ -238,6 +238,20 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     if(selected===id)back()
     setPages(old=>Object.fromEntries(Object.entries(old).map(([machine,p])=>[machine,{...p,items:p.items.filter(i=>botIdentity(i.bot.key)!==id)}])))
   }
+  // As in Codync the new Bot is confirmed by name and project, but the person
+  // stays where they are until they choose to open it.
+  const created=(bot:W.ProjectAssistantBot)=>{
+    setCreating(false)
+    const project=bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([bot.key.machine_id,bot.project.project_id]))??""
+    setRosterNotice({text:(project?w.botCreatedIn:w.botCreated).replace("{name}",bot.name).replace("{project}",project),open:bot.key})
+    void load()
+  }
+  const openCreated=(key:W.ProjectAssistantBotKey)=>{
+    setRosterNotice(null)
+    const row=allItems.find(item=>botIdentity(item.bot.key)===botIdentity(key))
+    if(row)select(row)
+    else setDestination({bot:key.bot_id,machine:key.machine_id,conversation:""})
+  }
   const updateBot=(bot:W.ProjectAssistantBot)=>setPages(old=>Object.fromEntries(Object.entries(old).map(([id,p])=>[id,{...p,items:p.items.map(i=>botIdentity(i.bot.key)===botIdentity(bot.key)?{...i,bot}:i)}])))
   const withBot=<T,>(item:W.ProjectAssistantBotSummary,action:(source:SourceClient,signal:AbortSignal)=>Promise<T>,signal?:AbortSignal)=>{
     const source=sources.find(client=>client.machineID===item.bot.key.machine_id)
@@ -397,12 +411,12 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const swipe=useSheetSwipe(towerSheet,sheetFull,release=>{if(release==="expand")setSheetFull(true);else if(release==="collapse")setSheetFull(false);else back()})
   return <div ref={host} className={`project-assistants pa-shell ${selectedItem?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}${towerSheet&&sheetFull?" pa-tower-sheet-full":""}`} lang={language}>
     {rosterNotice&&<div className="pa-roster-notice" role={rosterNotice.error?"alert":"status"}>
-      <span>{rosterNotice.text}</span><button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
+      <span>{rosterNotice.text}</span>{rosterNotice.open&&<button type="button" className="pa-roster-notice-open" onClick={()=>openCreated(rosterNotice.open!)}>{w.openBot}</button>}<button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}
     {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
     <BotRoster leadOptions={leadOptions} preferredLead={leadOptions?.some(option=>option.value===preferredLead)?preferredLead:""} onPreferLead={saveLead} unreadOnly={unreadOnly} hasUnread={hasUnread} onToggleUnread={toggleUnread} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={next=>{setUnreadOnly(false);changeView(next)}} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onRetry={sources.length?()=>setRosterRetry(n=>n+1):undefined} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main" {...(towerSheet?swipe:{})}>{towerSheet&&<div className="pa-sheet-grip" aria-hidden="true"/>}{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectNameOf={b=>projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} projectIconOf={b=>projectIcons.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} voiceShortcut={callTarget?.key===selected?callTarget?.request:undefined} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={selectedItem.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} onBotChanged={updateBot}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
-    {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={()=>{setCreating(false);void load()}}/>}
+    {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={created}/>}
   </div>
 }
 

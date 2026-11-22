@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14024,
-  "riskKeys": 5965,
-  "nonRiskCount": 8059,
+  "englishContentKeys": 14029,
+  "riskKeys": 5966,
+  "nonRiskCount": 8063,
   "groups": [
     {
       "name": "acp / other",
@@ -6191,7 +6191,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 558,
+      "count": 562,
       "sources": [
         null
       ],
@@ -6230,6 +6230,8 @@
         "projectAssistants.backgroundStopEffects",
         "projectAssistants.backgroundThreads",
         "projectAssistants.backgroundWorking",
+        "projectAssistants.botCreated",
+        "projectAssistants.botCreatedIn",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
         "projectAssistants.bots",
@@ -6546,6 +6548,7 @@
         "projectAssistants.routineEdit",
         "projectAssistants.routineEnable",
         "projectAssistants.routineEnabled",
+        "projectAssistants.routineEnabling",
         "projectAssistants.routineExpression",
         "projectAssistants.routineHistory",
         "projectAssistants.routineInstruction",
@@ -6556,6 +6559,7 @@
         "projectAssistants.routineOr",
         "projectAssistants.routinePause",
         "projectAssistants.routinePaused",
+        "projectAssistants.routinePausing",
         "projectAssistants.routineRefresh",
         "projectAssistants.routineReplay",
         "projectAssistants.routineSaving",

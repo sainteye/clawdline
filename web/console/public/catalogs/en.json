@@ -14024,5 +14024,10 @@
   "capacityRow.terminal.warm_shells.what": "Limits how many Project folders keep a shell ready for new Sessions.",
   "capacityRow.terminal.warm_shells.full": "The folder started in longest ago loses its ready shell; a new Session there opens a fresh shell.",
   "capacityRow.terminal.warm_shell_seconds.what": "Limits how long a ready shell is kept before it is restarted.",
-  "capacityRow.terminal.warm_shell_seconds.full": "The shell is closed and a new one started, so changes to shell startup files are picked up."
+  "capacityRow.terminal.warm_shell_seconds.full": "The shell is closed and a new one started, so changes to shell startup files are picked up.",
+  "projectAssistants.botCreated": "Created {name}",
+  "projectAssistants.botCreatedIn": "Created {name} in {project}",
+  "projectAssistants.openBot": "Open Bot",
+  "projectAssistants.routineEnabling": "Enabling…",
+  "projectAssistants.routinePausing": "Pausing…"
 }

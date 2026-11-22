@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14024,
+  "englishKeys": 14029,
   "counts": {
     "negation": 3594,
-    "state": 2365,
+    "state": 2366,
     "permission": 842,
     "deletion": 321,
     "uncertainty": 557
   },
-  "unionCount": 5965,
+  "unionCount": 5966,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5628,6 +5628,7 @@
       "projectAssistants.networkSaved",
       "projectAssistants.networkSavedInactive",
       "projectAssistants.observed",
+      "projectAssistants.openBot",
       "projectAssistants.openLead",
       "projectAssistants.openPDF",
       "projectAssistants.openWork",
@@ -12829,6 +12830,7 @@
     "projectAssistants.noCapabilities",
     "projectAssistants.noInstructions",
     "projectAssistants.observed",
+    "projectAssistants.openBot",
     "projectAssistants.openLead",
     "projectAssistants.openPDF",
     "projectAssistants.openWork",
