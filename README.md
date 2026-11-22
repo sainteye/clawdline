@@ -27,19 +27,19 @@ Call the voice copilot to hear what needs you, ask about a Session's progress or
 
 ### 🏙️ Your Bots live in a tower
 
-![The Bots tower: a pixel-art cyberpunk floor where working Bots sit at desks with name tags, a Bot waiting for permission stands in line, Bots with new replies carry a badge, and a counter bar shows Bots, waiting, working and new replies.](docs/assets/bots-tower-en.webp)
+![The Bots list beside the tower: the whole four-floor pixel-art building with Bots on two floors, then the view rides the elevator to 4F, where working Bots sit at desks with name tags, a Bot waiting for permission stands by its desk and Bots with new replies carry a badge.](docs/assets/bots-tower-en.gif)
 
-Switch Bots to the tower view and every Project gets a floor of a pixel-art building. Working Bots sit at desks, waiting ones queue, failing ones go to the repair corner, idle ones stroll the lounge, and Bots quiet for a day go to sleep. A New reply badge marks unread replies, and selecting a Bot opens its chat while the floor keeps running. [The Bots tower](docs/bots.md#the-bots-tower)
+Switch Bots to the tower view and every Project gets a floor of a pixel-art building, beside the same Bot list. The whole building shows every floor at once, and the elevator takes you to one. Working Bots sit at desks, waiting ones queue, failing ones go to the repair corner, idle ones stroll the lounge, and Bots quiet for a day go to sleep. A New reply badge marks unread replies, and selecting a Bot opens its chat while the floor keeps running. [The Bots tower](docs/bots.md#the-bots-tower)
 
-*Synthetic example Bots.*
+*Synthetic example Bots, recorded from the console.*
 
 ### 🏮 Lantern Deep: watch your Sessions as a game
 
-![Lantern Deep: a hand-painted cavern where Sessions are small wanderers; two stand puzzled under a lantern because they need you, others patrol and rest, and creatures drift through the air.](docs/assets/lantern-deep-en.webp)
+![Lantern Deep pinned beside the Session list: a hand-painted cavern where each Session is a small wanderer; the two waiting for you stand puzzled under a lantern, working ones fight, finished ones rest, and creatures drift through the air.](docs/assets/lantern-deep-en.gif)
 
-Install the Lantern Deep view and every Project becomes a hand-painted underground chamber, every Session one of twelve frame-by-frame animated wanderers. A working wanderer fights, one that needs you stands puzzled under a warm beacon, and finished work rests or sleeps by the campfire. A life bar shows how much context is still free. Select a wanderer to open its Session. Lantern Deep is an experimental View Plugin offered under Explore views. [Lantern Deep](plugins/session-lantern-deep/README.md) · [View Plugins](docs/plugins/view-plugin-v1.md)
+Install the Lantern Deep view and pin it beside the Session list: every Project becomes a hand-painted underground chamber, every Session one of twelve frame-by-frame animated wanderers. A working wanderer fights, one that needs you stands puzzled under a warm beacon, and finished work rests or sleeps by the campfire. A life bar shows how much context is still free. Select a wanderer to open its Session. Lantern Deep is an experimental View Plugin offered under Explore views. [Lantern Deep](plugins/session-lantern-deep/README.md) · [View Plugins](docs/plugins/view-plugin-v1.md)
 
-*Synthetic example Sessions; motion is paused in the still image.*
+*Synthetic example Sessions, recorded from the console.*
 
 ## How Clawdline differs from Herdr and T3 Code
 
