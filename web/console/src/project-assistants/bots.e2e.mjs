@@ -157,7 +157,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   const exactText=value=>new RegExp("^"+value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"$")
   // A Bot reply renders as Markdown in .pa-markdown; the person's own text stays a paragraph.
   const messageText=value=>chat.locator(".pa-message-bubble > p, .pa-message-bubble > .pa-markdown").filter({hasText:exactText(value)})
-  const workResult=value=>chat.locator(".pa-chat-content > article.pa-card code").filter({hasText:exactText(value)})
+  const workResult=value=>chat.locator(".pa-chat-content > article.pa-work-task code").filter({hasText:exactText(value)})
   const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.locator(`.pa-bot-row[data-bot-key^='["${machine}",']`).filter({hasText:name})
   const info=page.locator(".pa-info-panel")
   const openInfo=()=>chat.locator(".pa-chat-identity").click()
@@ -233,7 +233,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   const workOrder=async()=>{
     const order=()=>chat.locator('.pa-chat-content > article').evaluateAll(rows=>rows.map(row=>row.dataset.messageId??row.querySelector('small')?.textContent))
     await fresh();await open();await ready()
-    const card=chat.locator('.pa-chat-content > article.pa-card').filter({hasText:'PA-01'})
+    const card=chat.locator('.pa-chat-content > article.pa-work-task').filter({hasText:'PA-01'})
     await card.waitFor()
     await editor().fill('New instruction after the old work');await editor().press('Enter')
     const latest=messageText('New instruction after the old work');await latest.waitFor()
@@ -248,7 +248,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       const a=window.botsFixture.a,bot=a.bots[0],saved=await a.export(bot.key,new AbortController().signal),work=saved.work_links[0]
       a.push({id:crypto.randomUUID(),seq:0,at:'2026-11-13T00:00:00Z',version:'project-assistants.v1',kind:'work_updated',fence:work.fence,work:{...work,state:'landed',landing_commit:'updated-old-work'}})
     })
-    await refresh();await workResult('updated-old-work').waitFor();await assertOrder()
+    await refresh();await workResult('updated-old-work').waitFor({state:"attached"});await assertOrder()
     await latestRow.locator('.pa-message-more').click();await latestRow.getByRole('menuitem',{name:w.quote,exact:true}).click()
     await chat.getByRole('button',{name:w.clear,exact:true}).waitFor()
     await shot('work-order-after-update')
@@ -256,12 +256,70 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     await fresh(()=>{window.botsFixture.a.seedHistory(150);window.botsFixture.a.seedWork('accepted');window.botsFixture.a.configureViews({forbidLegacy:true})});await open();await ready()
     await page.evaluate(()=>window.botsFixture.a.holdHistory())
     await chat.getByRole('button',{name:w.earlier,exact:true}).click();await waitView('history',0)
-    await page.evaluate(()=>window.botsFixture.a.seedWork('landed'));await refresh();await workResult('newer-work-observation').waitFor()
+    await page.evaluate(()=>window.botsFixture.a.seedWork('landed'));await refresh();await workResult('newer-work-observation').waitFor({state:"attached"})
     await page.evaluate(()=>window.botsFixture.a.releaseHistory());await messageText('History message 1').waitFor()
     const ids=await order()
     assert.ok(ids.indexOf('history-1')<ids.indexOf('item')&&ids.indexOf('item')<ids.indexOf('history-2'),'a late history page restores the work admission position, retaining its new state')
     assert.equal(await workResult('newer-work-observation').count(),1)
     await noLegacy();await shot('work-order-after-history')
+  }
+  const sessionTask=async()=>{
+    const example=zh?{
+      request:"幫我用手機尺寸檢查 Bot 設定頁，看看模型選單和儲存按鈕。",
+      reply:"我已請 Session 檢查模型選單與儲存流程。",
+      raw:"390 px 手機版驗證\n\n• 模型可以切換，重新開啟後保留選擇。\n• 儲存後重新載入，偏好設定保持一致。\n• 320 px 時返回鍵與標題靠得太近。",
+      followUp:"手機版的模型選單和儲存都正常。我會另外追蹤窄畫面上返回鍵和標題的間距。",
+      task:"Session 任務",executing:"執行中",completed:"已完成",report:"Session 回報",
+    }:{
+      request:"Check the Bot settings on a phone, especially the model picker and Save button.",
+      reply:"I asked a Session to check the model picker and save flow.",
+      raw:"390 px mobile check\n\n• Model selection persists after reopening.\n• Saved preferences survive reload.\n• At 320 px the back button sits too close to the title.",
+      followUp:"The model picker and Save work on mobile. I’ll follow up on the back button spacing in narrow layouts.",
+      task:"Session task",executing:"Executing",completed:"Completed",report:"Session report",
+    }
+    await fresh(({request,reply})=>{
+      window.botsFixture.a.setTaskExampleMessages(request,reply)
+      window.botsFixture.a.setTaskExampleState("executing")
+      document.getElementById("voice-owner").hidden=true
+    },example)
+    await open();await ready()
+    const task=chat.locator("article").filter({has:page.locator("summary").getByText(example.task,{exact:true})})
+    const header=task.locator("summary")
+    await header.getByText(example.executing,{exact:true}).waitFor({timeout:5000})
+    assert.ok((await task.boundingBox()).width<=280)
+    assert.ok((await task.boundingBox()).height<=52)
+    const reference=task.getByText("synthetic-session-task-reference-123456",{exact:true})
+    assert.equal(await reference.isVisible(),false)
+    await shot("session-task-running",chat)
+    await header.press("Enter")
+    await reference.waitFor()
+    const anchored=await task.evaluate(el=>{
+      window.exampleTask=el
+      const before=document.querySelector('[data-message-id="bot-0-user"]')
+      const after=document.querySelector('[data-message-id="bot-0-reply"]')
+      return Boolean(before?.compareDocumentPosition(el)&Node.DOCUMENT_POSITION_FOLLOWING)
+        && Boolean(el.compareDocumentPosition(after)&Node.DOCUMENT_POSITION_FOLLOWING)
+    })
+    assert.equal(anchored,true)
+    await page.evaluate(()=>window.botsFixture.a.setTaskExampleState("completed"))
+    await header.getByText(example.completed,{exact:true}).waitFor()
+    assert.equal(await task.evaluate(el=>el===window.exampleTask),true,"completion updates the row at its admission position")
+    assert.equal(await reference.isVisible(),true)
+    await header.click()
+    await page.evaluate(({raw,followUp})=>{
+      const a=window.botsFixture.a
+      a.emitMessage(raw,"work")
+      a.emitMessage(followUp)
+    },example)
+    await messageText(example.followUp).waitFor()
+    const report=chat.locator("summary").filter({hasText:exactText(example.report)})
+    await report.click()
+    await chat.getByText(example.raw,{exact:true}).waitFor()
+    await shot("session-report-with-task",chat)
+    await noLegacy()
+  }
+  if(process.env.BOTS_READ_RACE==="task"){
+    await sessionTask();all.push(...await log());return ["compact task state, disclosed identity, in-place completion and original Session report"]
   }
   const sessionReports=async()=>{
     const label=zh?"Session 回報":"Session report"
@@ -345,7 +403,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await page.evaluate(()=>window.botsFixture.a.holdHistory())
   await chat.getByRole("button",{name:w.earlier,exact:true}).click();await waitView("history",0)
   await page.evaluate(()=>window.botsFixture.a.seedWork("landed"));await refresh()
-  await workResult("newer-work-observation").waitFor()
+  await workResult("newer-work-observation").waitFor({state:"attached"})
   await page.evaluate(()=>window.botsFixture.a.releaseHistory());await messageText("History message 1").waitFor()
   assert.equal(await workResult("newer-work-observation").count(),1,"late old-generation work page cannot overwrite the newer event")
   await noLegacy();await shot("live-history-work-race")
@@ -666,7 +724,10 @@ try {
     const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce",hasTouch:!!process.env.BOTS_WORK_PROGRESS_ONLY&&width<701})
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
-    const shot=async code=>page.screenshot({path:path.join(artifacts,`${code}-${name}.png`),fullPage:true})
+    const shot=async(code,scope)=>{
+      const file=path.join(artifacts,`${code}-${name}.png`)
+      return scope?scope.screenshot({path:file}):page.screenshot({path:file,fullPage:true})
+    }
     const log=()=>page.evaluate(()=>window.botsFixture.log)
     // A row reads its name, its Project, then its machine when there are several.
     const row=(bot="Project assistant",machine="studio")=>page.getByRole("button",{name:new RegExp(`^${bot}, [^,]+, ${machine}(,|$)`)})

@@ -41,6 +41,19 @@ func (s *Server) artifactsCapacityMeasures() map[string]func() capacity.Reading 
 			return capacity.Reading{Known: true, Used: 0, Note: "demand-only question analysis; source revision and conversation identity remain pinned"}
 		},
 
+		"voice.github_change_rows": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-report cap on commit rows; incomplete history is marked in the report"}
+		},
+		"voice.github_change_characters": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-commit cap on the characters of evidence handed to the call"}
+		},
+		"voice.github_response_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-GitHub response cap for release and commit history reads"}
+		},
+		"voice.github_read_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request deadline for reading GitHub history"}
+		},
+
 		"voice.work_auto_continue": func() capacity.Reading {
 			settings, err := s.readCopilot()
 			if err != nil {

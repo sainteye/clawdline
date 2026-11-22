@@ -228,6 +228,18 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       generation++
       push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"permission_offered",fence:fence(bot),permission:{id:"new-generation-offer",fence:fence(bot),turn_id:"new-turn",native_request_id:"new-request",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options}})
     },
+    setTaskExampleMessages(request:string,reply:string){
+      const rows=messages.get(bots[0].key.bot_id)!
+      rows[0]={...rows[0],text:request}
+      rows[1]={...rows[1],text:reply}
+    },
+    setTaskExampleState(state:W.ProjectAssistantWorkState){
+      const f=fence(bots[0])
+      push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"work_updated",fence:f,work:{
+        id:"work-1",fence:f,turn_id:"turn-1",board_item_id:"",
+        task_id:"synthetic-session-task-reference-123456",state,landing_commit:"",result_message_id:""
+      }})
+    },
     emitMessage(text:string,kind:W.ProjectAssistantMessage["kind"]="assistant"){const bot=bots[0],rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:crypto.randomUUID(),seq:rows.length+1,at,fence:fence(bot),kind,text,quote_message_id:"",turn_id:"after-snapshot"};messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})},
     completePreviousWork(){
       const bot=bots[0],oldFence=fence(bot),rows=messages.get(bot.key.bot_id)??[]

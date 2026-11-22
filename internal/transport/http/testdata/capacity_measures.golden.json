@@ -4446,6 +4446,26 @@
     "Note": true
   },
   {
+    "Name": "voice.github_change_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.github_change_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.github_read_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "voice.github_response_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "voice.model_download_bytes",
     "Known": true,
     "Note": true
