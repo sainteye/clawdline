@@ -11727,7 +11727,7 @@
   "projectAssistants.settingsDraftHint": "儲存後套用草稿；取消會捨棄變更。",
   "projectAssistants.settingsExtensionsSummary": "技能：{skills} · 連接器：{connectors}",
   "projectAssistants.settingsFrequent": "編輯對話設定",
-  "projectAssistants.settingsIdentity": "名稱與外觀",
+  "projectAssistants.settingsIdentity": "個人資料",
   "projectAssistants.settingsInstructionsHeading": "指令",
   "projectAssistants.settingsInstructionsHint": "一直生效的規則；單次任務要求請寫在對話裡。",
   "projectAssistants.settingsLoginManage": "管理登入設定",

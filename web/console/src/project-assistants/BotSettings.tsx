@@ -1,4 +1,4 @@
-import {useRef,useState,type ReactNode} from "react"
+import {useRef,useState,type ReactNode,type RefObject} from "react"
 import type * as W from "@clawdline/contract"
 import {AppearancePicker} from "./BotAvatar"
 import type {Words} from "./words"
@@ -64,7 +64,7 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
 export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"failed"|"superseded"
 
 /** One mounted editor owns the draft across the Details and Settings tabs. */
-export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean}) {
+export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck,nameInput}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean;nameInput?:RefObject<HTMLInputElement|null>}) {
   const [original,setOriginal]=useState(bot)
   // The exact values of the save whose outcome is unknown; reconciliation compares against these.
   const attempted=useRef<W.ProjectAssistantEditSettings|undefined>(undefined),[check,setCheck]=useState<SettingsCheck>("")
@@ -129,7 +129,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const dirty=backgroundThreads!==(original.background_threads??3)||name!==original.name||JSON.stringify(appearance)!==JSON.stringify(original.appearance)||instructions!==original.instructions.text||agent!==original.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(original.mode?{permission_policy:original.permission_policy,mode:original.mode}:{permission_policy:original.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(original.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(originalSteps)||notify!==(original.notify!=="off")||teamChanged||loginProfile!==(original.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(original.extensions??{skills:[],connectors:[]})
   const agentChoices:W.ProjectAssistantAgent[]=["claude","codex",...(agent==="grok"||source?.canGrok?.()?["grok" as const]:[]),...(agent==="antigravity"||source?.canGemini?.()?["antigravity" as const]:[])]
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
-  // Codync's Settings tab: titled groups, always open, one row per control.
+  // Titled groups with one row per control; long lists open on demand.
   const switchRow=(title:string,hint:string,on:boolean,disabled:boolean,change:(on:boolean)=>void)=><div className="pa-settings-row">
     <div><strong>{title}</strong><small>{hint}</small></div>
     <button type="button" role="switch" className="pa-switch" aria-checked={on} aria-label={title} disabled={disabled} onClick={()=>change(!on)}><span/></button>
@@ -156,7 +156,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
           </SettingsDisclosure>
         </SettingsGroup>
         <SettingsGroup title={w.settingsIdentity}>
-          <label className="pa-settings-field">{w.name}<input aria-label={w.name} value={name} onChange={e=>setName(e.target.value)}/></label>
+          <label className="pa-settings-field">{w.name}<input ref={nameInput} aria-label={w.name} value={name} onChange={e=>setName(e.target.value)}/></label>
           <AppearancePicker value={appearance} onChange={setAppearance} w={w}/>
         </SettingsGroup>
         {workspace&&<SettingsGroup title={w.workspace}>
@@ -169,10 +169,16 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
           {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
         </SettingsGroup>
-        <SettingsGroup title={w.extensions}><ExtensionSettings bare source={source} bot={{...bot,agent}} value={extensions} onChange={setExtensions} w={w}/></SettingsGroup>
+        <SettingsGroup>
+          <SettingsDisclosure title={w.extensions}>
+            <ExtensionSettings bare source={source} bot={{...bot,agent}} value={extensions} onChange={setExtensions} w={w}/>
+          </SettingsDisclosure>
+        </SettingsGroup>
       </fieldset>
       {source&&source.canNetworkSettings?.()===true&&<SettingsGroup title={w.settingsNetwork}><NetworkSettingsPanel bare source={source} bot={bot} enabled={enabled&&!busy&&!unknown} w={w}/></SettingsGroup>}
-      {rules&&<SettingsGroup title={w.settingsRules}>{rules}</SettingsGroup>}
+      {rules&&<SettingsGroup>
+        <SettingsDisclosure title={w.settingsRules}>{rules}</SettingsDisclosure>
+      </SettingsGroup>}
       {data&&<SettingsGroup>{data}</SettingsGroup>}
       {manage&&<SettingsGroup title={w.manageTitle}>{manage}</SettingsGroup>}
       {!enabled&&reason&&<p role="status" className="pa-warning">{w.cannotEdit}: {reason}</p>}

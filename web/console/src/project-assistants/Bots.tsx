@@ -48,6 +48,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const [rosterPrompt,setRosterPrompt]=useState<RosterPrompt|null>(null)
   const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean;open?:W.ProjectAssistantBotKey}|null>(null)
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
+  useEffect(()=>{setProfileRequest(request=>request?.id===selected?request:null)},[selected])
   const [groupOpen,setGroupOpen]=useState(false)
   const [savedView,setSavedView]=useState<BotsView|null>(savedBotsView)
   const changeView=(next:BotsView)=>{setSavedView(next);saveBotsView(next)}

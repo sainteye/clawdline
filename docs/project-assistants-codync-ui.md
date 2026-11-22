@@ -10,11 +10,17 @@ inspector occupies the conversation area and the underlying conversation is hidd
 
 Details holds the conversation's work: background threads, development servers, the quick
 actions and routines, as in Codync's `DetailsPanel`. Settings holds the whole Bot setup as
-Codync's `BotSettingsPanel` does: titled groups that are always open — Instructions, Agent
-(model, login profile and fallbacks), Name and appearance, Workspace, Permissions and
-notifications, Application skills and connectors, Network access, Saved permission rules, the
-template and export actions, and Remove from the list. On/off choices are switches. The
-Agent row and fallbacks still open in place because they hold sub-editors and model discovery.
+Codync's `BotSettingsPanel` does, with Instructions and Agent before Profile. The Profile card
+holds the Bot's name and appearance. The roster's Edit profile action opens Settings directly
+and focuses the name. Codync's iPhone also offers editing and deletion in the roster context
+menu. Clawdline keeps its Settings removal card and collapses Application skills and connectors
+and Saved permission rules until opened, so those lists do not add to the initial scroll.
+The Agent row and fallbacks open in place because they hold sub-editors and model discovery.
+On/off choices are switches.
+
+The profile and roster placement comparison used Codync
+[`BotEditorView.swift`](https://github.com/leepokai/Codync/blob/440242fbf64b1e36dd04948d2fba0780906851b5/apps/ios/Kit/Sources/CodyncUI/Bots/BotEditorView.swift#L160-L201)
+and [`BotListView.swift`](https://github.com/leepokai/Codync/blob/440242fbf64b1e36dd04948d2fba0780906851b5/apps/ios/Views/BotListView.swift#L415-L440).
 
 One mounted editor still owns the draft. It stays mounted, hidden, while Details is shown, so
 switching tabs keeps an unsaved change. Unlike Codync, which autosaves, changes are saved

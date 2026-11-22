@@ -11727,7 +11727,7 @@
   "projectAssistants.settingsDraftHint": "Save applies this draft. Cancel discards it.",
   "projectAssistants.settingsExtensionsSummary": "Skills: {skills} · Connectors: {connectors}",
   "projectAssistants.settingsFrequent": "Edit conversation setup",
-  "projectAssistants.settingsIdentity": "Name and appearance",
+  "projectAssistants.settingsIdentity": "Profile",
   "projectAssistants.settingsInstructionsHeading": "Instructions",
   "projectAssistants.settingsInstructionsHint": "Always applies. Put one-off task requests in the conversation.",
   "projectAssistants.settingsLoginManage": "Manage login profiles",

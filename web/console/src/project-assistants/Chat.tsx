@@ -115,8 +115,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [backgroundError,setBackgroundError]=useState("")
   const setSettings=(open:boolean)=>{if(open)setInfoTab("settings");setInfoOpen(open)}
   const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);setInfoOpen(true);if(tab==="details")servers.refresh();if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
+  const profileName=useRef<HTMLInputElement>(null),focusedProfile=useRef(0)
   useLayoutEffect(()=>{
-    if(editProfileRequest){setInfoTab("details");setInfoOpen(true)}
+    if(editProfileRequest){setInfoTab("settings");setInfoOpen(true)}
   },[editProfileRequest])
   const identityButton=useRef<HTMLButtonElement>(null)
   const focusedThread=useRef("")
@@ -210,6 +211,13 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const fence=useCallback((d:W.ProjectAssistantGetResponse):W.ProjectAssistantFence=>({key:d.bot.key,project:d.bot.project,conversation_id:d.conversation.id,binding_id:d.conversation.binding_id,generation:d.conversation.generation}),[])
   const valid=useCallback(()=>alive.current&&current().some(s=>s===source&&s.machineID===key.machine_id&&s.authorizationRevision===grant),[source,current,grant,key.machine_id])
   const enabled=!recoveryRequired&&!!data&&canWrite(data.source)
+  useLayoutEffect(()=>{
+    const field=profileName.current
+    if(!editProfileRequest||focusedProfile.current===editProfileRequest||!infoOpen||infoTab!=="settings"||!enabled||!field)return
+    focusedProfile.current=editProfileRequest
+    field.scrollIntoView({block:"center"})
+    field.focus({preventScroll:true})
+  },[editProfileRequest,infoOpen,infoTab,enabled])
   const leadSetupBot=data?.bot
   const leadSetupEligible=enabled&&!thread&&!!leadSetupBot?.lead&&key.bot_id==="default-lead"&&!leadSetupBot.login_profile
     &&(leadSetupBot.agent==="claude"||leadSetupBot.agent==="codex")&&data?.conversation.last_message_seq===0
@@ -1473,7 +1481,7 @@ ${currentDraft}`:submitted)
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
           <button type="button" className="pa-pill" disabled={checkingUpdates} aria-busy={checkingUpdates||undefined} onClick={()=>void checkForUpdates()}>{w.refresh}</button>
         </div></>
-      } editor={<BotSettings key={settingsRevision} embedded workspace={{project:projectName||bot.project.project_id,machine:machineName||source.machineName||key.machine_id}} data={<>
+      } editor={<BotSettings key={settingsRevision} embedded nameInput={profileName} workspace={{project:projectName||bot.project.project_id,machine:machineName||source.machineName||key.machine_id}} data={<>
           <button type="button" className="pa-settings-link" disabled={!canReadActions} onClick={event=>setTemplateOpener(event.currentTarget)}>{w.templateCreate}</button>
           <button type="button" className="pa-settings-link" disabled={!canReadActions||exporting} aria-busy={exporting||undefined} onClick={()=>void exportBot()}>{w.export}</button>
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}

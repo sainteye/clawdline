@@ -3,7 +3,7 @@ import type { Words } from "./words"
 import { errorCode } from "./client"
 import { botFailureText } from "./source-errors"
 
-/** Codync's Hide from list and Delete, at the end of a Bot's settings. */
+/** Hide from list and the Bot settings deletion confirmation. */
 export function BotManage({onHide,onDelete,enabled,hideDisabled,w,bare=false}:{bare?:boolean;onHide:()=>Promise<void>;onDelete:()=>Promise<void>;enabled:boolean;hideDisabled?:boolean;w:Words}) {
   const [confirming,setConfirming]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState("")
   const confirm=useRef<HTMLDivElement>(null),cancel=useRef<HTMLButtonElement>(null),start=useRef<HTMLButtonElement>(null),opened=useRef(false),textID=useId()
