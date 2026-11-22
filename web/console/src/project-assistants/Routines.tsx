@@ -259,6 +259,9 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
   const instructionEditor=useRef<HTMLTextAreaElement>(null),instructionMention=useBotMentions({text:instruction,onText:setInstruction,candidates:mentions,editor:instructionEditor,w})
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[history,setHistory]=useState<{id:string;page:W.ProjectAssistantRoutineListResponse}|null>(null),[confirm,setConfirm]=useState<string|null>(null),[held,setHeld]=useState<Intent|null>(null),[journalBlocked,setJournalBlocked]=useState(false)
   const [hookID,setHookID]=useState<string|null>(null)
+  // A switch pressed here shows what it is doing until the source answers and
+  // the list is read again; the row never keeps claiming the state it is leaving.
+  const [toggling,setToggling]=useState<{id:string;enabled:boolean}|null>(null)
   const [started,setStarted]=useState(false),[historyOpen,setHistoryOpen]=useState(false)
   const live=useRef(enabled);live.current=enabled
   const pending=useRef(false),control=useRef(new AbortController()),mounted=useRef(true)
@@ -297,6 +300,9 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
     return afterSurfaceExit(dialog.current,()=>{setEditing(undefined);setClosing(false)})
   },[closing])
   const edit=(d:W.ProjectAssistantRoutineDefinition|null, opener:HTMLButtonElement)=>{
+    // An editor opened while this panel's own mutation is in flight would
+    // capture the revision that mutation is about to replace.
+    if(pending.current)return
     const original=d?.triggers.map(routineTriggerDraft)??[newRoutineTriggerDraft()]
     const first=original[0]
     const single=original.length===1
@@ -355,12 +361,13 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
       const code=errorCode(e),unknown=!provablyNotSent(e)&&["pa_outcome_unknown","execution_effect_unknown","pa_revoked","unavailable"].includes(code)
       if(!unknown) { try {sessionStorage.removeItem(durableKey);setHeld(null)} catch { /* Keep the durable command held. */ } }
       setError(code)
-    } finally {pending.current=false;if(mounted.current)setBusy(false)}
+    } finally {pending.current=false;if(mounted.current){setBusy(false);setToggling(null)}}
     return null
   }
   const action=(d:W.ProjectAssistantRoutineDefinition,kind:"enable"|"delete"|"test")=>{
     if(!page)return
     const request={command:command(bot.key,"edit"),fence:page.fence,id:d.id,expected_revision:d.version,...(kind==="enable"?{enabled:!d.enabled}:{})}
+    if(kind==="enable"&&!pending.current&&writable)setToggling({id:d.id,enabled:!d.enabled})
     void run({action:kind,request})
   }
   const save=(event:FormEvent<HTMLFormElement>)=>{
@@ -380,6 +387,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
   const followUps=page?.definitions.filter(d=>d.follow_up&&d.enabled&&!!d.next_due)??[]
   // The row's second line, as in Codync: what is happening now, else when it runs.
   const summary=(d:W.ProjectAssistantRoutineDefinition):{text:string;tone?:"danger"|"active"}=>{
+    if(toggling?.id===d.id)return {text:toggling.enabled?w.routineEnabling:w.routinePausing,tone:"active"}
     const latest=page?.runs.filter(r=>r.routine_id===d.id).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0]
     if(latest&&["accepted","queued","running","waiting_permission"].includes(latest.state))return {text:w[latest.state as keyof Words]??latest.state,tone:"active"}
     if(latest?.state==="failed")return {text:tr("lastRunFailed"),tone:"danger"}
@@ -485,11 +493,12 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
       </dialog>}
       {page&&routines.length===0&&<p className="pa-routines-empty">{tr("emptyRoutines")}</p>}
       {routines.length>0&&<ul className="pa-routine-list">{routines.map((d,i)=>{const line=summary(d);return <li className="pa-routine-card" key={d.id}>
-        <button type="button" className="pa-routine-row" aria-label={`${w.routineEdit}: ${d.name}`} aria-describedby={`${editorID}-line-${i}`} onClick={event=>edit(d,event.currentTarget)}>
+        <button type="button" className="pa-routine-row" disabled={busy} aria-label={`${w.routineEdit}: ${d.name}`} aria-describedby={`${editorID}-line-${i}`} onClick={event=>edit(d,event.currentTarget)}>
           <strong>{d.name}</strong><small id={`${editorID}-line-${i}`} data-tone={line.tone}>{line.text}</small>
         </button>
-        <button type="button" role="switch" className="pa-routine-switch" aria-checked={d.enabled} aria-label={`${w.routineEnabled}: ${d.name}`} title={d.enabled?w.routinePause:w.routineEnable} disabled={!writable||busy} onClick={()=>action(d,"enable")}><span/></button>
+        <button type="button" role="switch" className="pa-routine-switch" aria-checked={d.enabled} aria-busy={toggling?.id===d.id||undefined} aria-label={`${w.routineEnabled}: ${d.name}`} title={d.enabled?w.routinePause:w.routineEnable} disabled={!writable||busy} onClick={()=>action(d,"enable")}><span/></button>
       </li>})}</ul>}
+      <p className="pa-visually-hidden" role="status" aria-live="polite">{toggling?`${toggling.enabled?w.routineEnabling:w.routinePausing}: ${routines.find(d=>d.id===toggling.id)?.name??""}`:""}</p>
       {editing===undefined&&hookPanel}
       {page?.next_cursor&&<button type="button" disabled={busy} onClick={()=>void load("",page.next_cursor).catch(e=>setError(errorCode(e)))}>{w.more}</button>}
       {journalBlocked&&<p role="alert">{w.routineJournalUnreadable}</p>}

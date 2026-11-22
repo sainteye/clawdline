@@ -42,10 +42,17 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
   const pdf=!artifact&&/\.pdf$/i.test(name)
   const markdownFile=!artifact&&item.kind!=="picture"&&/\.(?:md|markdown)$/i.test(name)
   const kind=item.kind,message=item.message,file=item.kind==="input"?item.file:null,attachment=item.kind==="picture"?item.attachment:null
+  // A resolved display title replaces the row objects without changing what is
+  // read, so the transfer follows the bytes' authority and revision, not object identity.
+  const o=message.output
+  const content=JSON.stringify([message.fence.key,message.fence.conversation_id,message.id,kind,
+    kind==="output"?[o!.id,o!.artifact_id,o!.sha256,o!.bytes]:file?[file.id,file.sha256,file.bytes]:attachment?[attachment.id,attachment.bytes,attachment.media_type]:null])
+  const latest=useRef({message,file,attachment,name,onResolved});latest.current={message,file,attachment,name,onResolved}
   useEffect(()=>{if(artifact)return;close.current?.focus();const escape=(e:KeyboardEvent)=>{if(e.key==="Escape"&&!e.defaultPrevented&&!(e.target instanceof HTMLElement&&e.target.closest("form"))){e.stopImmediatePropagation();onClose()}};document.addEventListener("keydown",escape);return()=>document.removeEventListener("keydown",escape)},[onClose,artifact])
   useEffect(()=>()=>{tabURLs.current.forEach(url=>URL.revokeObjectURL(url))},[])
   useEffect(()=>{
     const control=new AbortController();active.current=control;setValue(null);setError("");setProgress(0);setCancelled(false)
+    const {message,file,attachment,name,onResolved}=latest.current
     let previewURL=""
     const progress=(n:number,total:number)=>{if(!control.signal.aborted)setProgress(total?Math.floor(n*100/total):100)}
     void (async()=>{
@@ -75,7 +82,7 @@ export function OutputViewer({item,source,w,onClose,onRenamed,onResolved,artifac
     })().catch(e=>{if(!control.signal.aborted)setError(errorCode(e))})
     const timer=setInterval(()=>{if(source.current?.()===false){control.abort();if(previewURL)URL.revokeObjectURL(previewURL);tabURLs.current.forEach(url=>URL.revokeObjectURL(url));setValue(null);setError("pa_revoked")}},3000)
     return()=>{control.abort();clearInterval(timer);if(previewURL)URL.revokeObjectURL(previewURL)}
-  },[source,kind,message,file,attachment,pdf,markdownFile,attempt,onResolved])
+  },[source,kind,content,pdf,markdownFile,attempt])
   const save=()=>{if(!value||source.current?.()===false)return;const url=URL.createObjectURL(value.blob),a=document.createElement("a");a.href=url;a.download=value.name.replace(/[\/\\]/g,"_")+(artifact?".html":"");a.click();setTimeout(()=>URL.revokeObjectURL(url),0)}
   const openBrowser=()=>{
     if(!value||!artifact||source.current?.()===false)return

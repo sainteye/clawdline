@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14017,
-  "riskKeys": 5959,
-  "nonRiskCount": 8058,
+  "englishContentKeys": 14030,
+  "riskKeys": 5966,
+  "nonRiskCount": 8064,
   "groups": [
     {
       "name": "acp / other",
@@ -6191,7 +6191,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 557,
+      "count": 563,
       "sources": [
         null
       ],
@@ -6230,6 +6230,8 @@
         "projectAssistants.backgroundStopEffects",
         "projectAssistants.backgroundThreads",
         "projectAssistants.backgroundWorking",
+        "projectAssistants.botCreated",
+        "projectAssistants.botCreatedIn",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
         "projectAssistants.bots",
@@ -6546,6 +6548,7 @@
         "projectAssistants.routineEdit",
         "projectAssistants.routineEnable",
         "projectAssistants.routineEnabled",
+        "projectAssistants.routineEnabling",
         "projectAssistants.routineExpression",
         "projectAssistants.routineHistory",
         "projectAssistants.routineInstruction",
@@ -6556,6 +6559,7 @@
         "projectAssistants.routineOr",
         "projectAssistants.routinePause",
         "projectAssistants.routinePaused",
+        "projectAssistants.routinePausing",
         "projectAssistants.routineRefresh",
         "projectAssistants.routineReplay",
         "projectAssistants.routineSaving",
@@ -6595,6 +6599,8 @@
         "projectAssistants.settings",
         "projectAssistants.settingsAccess",
         "projectAssistants.settingsAgentHeading",
+        "projectAssistants.settingsCheckSuperseded",
+        "projectAssistants.settingsCheckUnchanged",
         "projectAssistants.settingsDraftHint",
         "projectAssistants.settingsExtensionsSummary",
         "projectAssistants.settingsFrequent",

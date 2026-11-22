@@ -52,12 +52,20 @@ async function connect(){
   send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>reject(Error(method+" timed out")),15000);pending.set(id,{resolve:value=>{clearTimeout(timer);resolve(value)},reject:error=>{clearTimeout(timer);reject(error)}});ws.send(JSON.stringify({id,method,params,sessionId}))})
 }
 async function evaluate(expression){const result=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},session);if(result.exceptionDetails)throw Error(result.exceptionDetails.exception?.description??result.exceptionDetails.text);return result.result.value}
+async function point(x,y){for(const type of ["mouseMoved","mousePressed","mouseReleased"])await send("Input.dispatchMouseEvent",{type,x,y,button:type==="mouseMoved"?"none":"left",buttons:type==="mousePressed"?1:0,clickCount:type==="mouseMoved"?0:1},session)}
+// Locate an element in the page, bring it to the viewport centre and press it with a trusted CDP pointer.
+async function pressAt(find){let hit;for(let n=0;n<40;n++){hit=await locate(find);if(!hit?.covered)break;await new Promise(r=>setTimeout(r,100))}if(hit?.covered)throw Error("Pointer target is covered by "+hit.covered+" at "+JSON.stringify(hit));if(hit&&!hit.disabled)await point(hit.x,hit.y);return hit}
+async function locate(find){return evaluate(`(()=>{const el=(${find})();if(!el)return null;el.scrollIntoView({block:"center",inline:"nearest"});const r=el.getBoundingClientRect(),x=r.left+r.width/2,y=r.top+r.height/2,top=document.elementFromPoint(x,y);return {x,y,disabled:!!el.disabled,covered:top&&!el.contains(top)?top.outerHTML.slice(0,200):"",target:el.outerHTML.slice(0,160)}})()`)}
+// Settings groups are always visible titled sections now; older secondary controls still use a disclosure.
+async function openSection(title){const t=JSON.stringify(title);for(let n=0;n<30;n++){const kind=await evaluate(`(()=>{const g=document.querySelector('.pa-settings-group[aria-label='+JSON.stringify(${t})+']');if(g){g.scrollIntoView({block:"start"});return "group"}const d=[...document.querySelectorAll(".pa-settings-disclosure")].find(el=>el.querySelector(":scope>summary>strong")?.textContent===${t});if(d)return d.open?"open":"closed";return ""})()`);if(kind==="group"||kind==="open")return kind;if(kind==="closed"){await pressAt(`()=>[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong")?.textContent===${t})`);continue}await new Promise(r=>setTimeout(r,100))}throw Error("Missing settings section: "+title)}
+// The reachability panel is titled by its accessible name inside the visible "Network access" group.
+async function waitLabel(label){for(let n=0;n<30;n++){if(await evaluate(`!!document.querySelector('[aria-label='+${JSON.stringify(JSON.stringify(label))}+']')`))return;await new Promise(r=>setTimeout(r,100))}throw Error("Missing labelled region: "+label)}
 async function browser(op,...args){
   let result
   if(op==="open"){const {targetId}=await send("Target.createTarget",{url:"about:blank"});tab=targetId;session=(await send("Target.attachToTarget",{targetId,flatten:true})).sessionId;await send("Page.enable",{},session);await send("Page.navigate",{url:args[0]},session);result={tab:targetId}}
   else if(op==="viewport")result=await send("Emulation.setDeviceMetricsOverride",{width:args[0]==="mobile"?390:1280,height:844,deviceScaleFactor:1,mobile:args[0]==="mobile"},session)
   else if(op==="read")result={text:await evaluate('document.body?.innerText??""')}
-  else if(op==="click")result=await evaluate(`(()=>{const label=${JSON.stringify(args[0])};const button=[...document.querySelectorAll("button")].find(b=>(b.getAttribute("aria-label")??b.textContent)===label);if(!button)throw Error("Missing button: "+label);const disabled=button.disabled;button.click();return {disabled}})()`)
+  else if(op==="click"){const hit=await pressAt(`()=>[...document.querySelectorAll("button")].find(b=>(b.getAttribute("aria-label")??b.textContent)===${JSON.stringify(args[0])})`);if(!hit)throw Error("Missing button: "+args[0]);result={disabled:hit.disabled,trusted:true}}
   else if(op==="screenshot"){const {data}=await send("Page.captureScreenshot",{format:"jpeg"},session);await writeFile(args[1],Buffer.from(data,"base64"));result={captured:true}}
   else if(op==="close"){result=await send("Target.closeTarget",{targetId:tab});assert.equal(result.success,true)}
   else throw Error("Unsupported test operation: "+op)
@@ -70,7 +78,7 @@ try{
  await connect()
  for(const language of ["en","zh-Hant"]){
   const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",title=zh?"Bot 連線對象":"Bot reachability",unavailable=zh?"這個來源尚未設定連線服務。":"This source has no configured reachability service.";
-  await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==='+JSON.stringify(zh?"網路存取":"Network access")+').click()');await waitText(title);await waitText(unavailable);
+  await browser("open",origin+"/?lang="+language);await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await openSection(zh?"網路存取":"Network access");await waitLabel(title);await waitText(unavailable);
   assert.equal(await evaluate('document.querySelectorAll(".pa-network-settings [role=switch]").length'),0,"unconfigured source offers no working switch");
   await evaluate('document.querySelector(".pa-network-settings").scrollIntoView({block:"center"})');
   await browser("screenshot","--out",path.join(artifacts,language+"-network-unavailable.jpg"));await writeFile(path.join(artifacts,language+"-network-unavailable.html"),await evaluate("document.documentElement.outerHTML"));
@@ -81,7 +89,7 @@ try{
   holdNext=true;held=false;await evaluate("window.pendingRead=fixtureRead();'started'");await waitHeld();await evaluate("fixtureRevoke()");releaseHeld();assert.equal(await evaluate("window.pendingRead"),"pa_revoked");
   await browser("close");tab=undefined;
  }
- await browser("open",origin+"/?lang=en&read=1");await browser("viewport","desktop");await waitText("Bot settings");await browser("click","Bot settings");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary")].find(el=>el.querySelector("strong").textContent==="Network access").click()');await waitText("Bot reachability");assert.equal(await evaluate("fixturePreference(false)"),"pa_read_only");await browser("close");tab=undefined;
+ await browser("open",origin+"/?lang=en&read=1");await browser("viewport","desktop");await waitText("Bot settings");await browser("click","Bot settings");await openSection("Network access");await waitLabel("Bot reachability");assert.equal(await evaluate("fixturePreference(false)"),"pa_read_only");await browser("close");tab=undefined;
  assert.ok(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/network-settings")).some(r=>r.status===200));
  console.log("Production English desktop and Taiwan Chinese narrow network settings, SourceClient, authenticated HTTP/Host/SQLite; no fake capability. Default unavailable, refused enable, actual false preference save, read-only, API downgrade and late-source refusal passed. External/model API requests=0.")
 }finally{

@@ -37,7 +37,8 @@ func TestProjectAssistantSettingsBrowser(t *testing.T) {
 		t.Fatalf("browser: %v\n%s", err, output)
 	}
 	got := f.get(t, f.local)
-	if got.Bot.Instructions.Text != "Synthetic saved instructions zh-Hant" {
+	// The last reconciliation leaves the other client's settings; the cut draft never overwrote them.
+	if got.Bot.Instructions.Text != "Synthetic other writer zh-Hant" {
 		t.Fatalf("saved instructions: %+v", got.Bot.Instructions)
 	}
 	data, err := os.ReadFile(record)
@@ -45,8 +46,11 @@ func TestProjectAssistantSettingsBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = os.WriteFile(filepath.Join(dir, "protocol.jsonl"), data, 0600)
-	if !strings.Contains(string(data), "Synthetic saved instructions zh-Hant") {
+	if !strings.Contains(string(data), "Synthetic other writer zh-Hant") {
 		t.Fatal("saved standing instructions did not reach the next ACP session")
+	}
+	if strings.Contains(string(data), "Synthetic diverged draft") {
+		t.Fatal("a reconciled draft reached the next ACP session")
 	}
 	if !strings.Contains(string(data), `"value":true`) {
 		t.Fatal("selected runtime did not reach native configuration")
