@@ -773,8 +773,8 @@ func TestProjectAssistantServerMissingProviderRefusesWithoutInventingReadiness(t
 	f.s.projectAssistants.provider = nil
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
-	// A Codex Bot stops at its CLI on macOS; elsewhere its platform is refused first.
-	if runtime.GOOS == "darwin" {
+	// On supported platforms a Codex Bot can reach native setup, even if its tools are absent.
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
 		paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 503, pa.CLINotInstalled)
 	} else {
 		paAssertHTTPFailure(t, f.send(t, f.local, "unconfigured-provider"), 501, pa.Unsupported)

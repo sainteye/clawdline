@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"sync/atomic"
 	"testing"
 
@@ -56,6 +57,16 @@ func TestProjectAssistantFirstRunChecksLocalLoginsOnly(t *testing.T) {
 	signedIn.Store(true)
 	if after := localBrowser(); after.Agents[1].State != contract.ProjectAssistantFirstRunStateReady {
 		t.Fatalf("updated readiness: %+v", after)
+	}
+	f.s.projectAssistants.firstRunStatus = nil
+	want := contract.ProjectAssistantFirstRunStateUnsupported
+	if runtime.GOOS == "darwin" || runtime.GOOS == "linux" {
+		want = contract.ProjectAssistantFirstRunStateNeedsNode
+	}
+	for _, agent := range localBrowser().Agents {
+		if agent.State != want {
+			t.Fatalf("%s first-run state = %s, want %s", agent.Agent, agent.State, want)
+		}
 	}
 	if f.providerCalls.Load() != 0 {
 		t.Fatal("checking sign-in initialized a model provider")

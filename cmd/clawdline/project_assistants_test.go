@@ -56,7 +56,7 @@ func TestClaudeSetupWithoutClaudeCodeChangesNothing(t *testing.T) {
 		t.Fatalf("paths are no longer accepted: code=%d", code)
 	}
 	want := "cli_not_installed"
-	if runtime.GOOS != "darwin" {
+	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		want = "pa_unsupported"
 	}
 	if code := projectAssistantsCommand(context.Background(), []string{"setup-claude"}, state, &out, &err); code != 1 || out.Len() != 0 || !strings.Contains(err.String(), want) {

@@ -89,8 +89,14 @@ func (i ClaudeInstallation) moduleRoot() (string, error) {
 	return filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(i.Adapter)))), nil
 }
 
+// SupportsInstalledAdapters reports where the installed Claude and Codex
+// adapters can use Clawdline's owned process supervisor.
+func SupportsInstalledAdapters() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+}
+
 func (i ClaudeInstallation) artifacts(ctx context.Context) (map[string]string, error) {
-	if runtime.GOOS != "darwin" {
+	if !SupportsInstalledAdapters() {
 		return nil, refusal(pa.Unsupported, "native_platform")
 	}
 	if e := ctx.Err(); e != nil {
@@ -150,7 +156,7 @@ func SetupCodex(ctx context.Context, state string) (ClaudeInstallation, error) {
 
 func setupAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeInstallation, error) {
 	i := ClaudeInstallation{spec: &spec}
-	if runtime.GOOS != "darwin" {
+	if !SupportsInstalledAdapters() {
 		return i, refusal(pa.Unsupported, "native_platform")
 	}
 	resolved, e := filepath.EvalSymlinks(state)

@@ -37,8 +37,7 @@ func TestInstalledClaudeWithoutClaudeCodeStartsNothing(t *testing.T) {
 	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
 		caps, e := provider.Capabilities(context.Background(), pa.Bot{Agent: agent})
 		want := pa.CLINotInstalled
-		if runtime.GOOS != "darwin" {
-			// Only macOS is supported; elsewhere the platform is refused first.
+		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 			want = pa.Unsupported
 		}
 		if agent == pa.Codex {

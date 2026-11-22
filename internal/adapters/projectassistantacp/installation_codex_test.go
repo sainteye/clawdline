@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -37,10 +38,13 @@ func TestTheInstalledProviderRoutesEachAgentToItsOwnSetup(t *testing.T) {
 	state := t.TempDir()
 	provider := InstalledProvider(state)
 	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex} {
-		// No tools are searchable in tests, so each agent stops at its own CLI.
 		_, e := provider.Capabilities(context.Background(), pa.Bot{Agent: agent})
-		if pa.Code(e) != pa.CLINotInstalled && pa.Code(e) != pa.Unsupported {
-			t.Fatalf("%s: %v", agent, e)
+		want := pa.CLINotInstalled
+		if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
+			want = pa.Unsupported
+		}
+		if pa.Code(e) != want {
+			t.Fatalf("%s: got %v, want %s", agent, e, want)
 		}
 	}
 	if _, e := provider.Capabilities(context.Background(), pa.Bot{Agent: "other"}); pa.Code(e) != pa.AdapterNotFound {

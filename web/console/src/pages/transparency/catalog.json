@@ -5245,7 +5245,7 @@
     "internal/adapters/projectassistantacp/client_context.go": "55965b3b04629025f9afc1f0f36f2b48a734a4da6943c4063a9f036e9b763eb5",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/fallback_error.go": "1eaf2cc231f8ff22dc8a14cfc850906ccf7ff9b9bf2908312bbb51ade1afad06",
-    "internal/adapters/projectassistantacp/installation.go": "f7b4c0c601e0328e9807417a560f6c7f8b58dc107eee157c0b3f404323db7da2",
+    "internal/adapters/projectassistantacp/installation.go": "f20a4d5ace8c630f85b219406b17a17f59a666dd6e024cfb065c7b0c8f924b5c",
     "internal/adapters/projectassistantacp/installation_codex.go": "9a37efdead9a72e75f1546806ced47570e2a9df570ea5d2f42e5cf184d3e1bef",
     "internal/adapters/projectassistantacp/installation_gemini.go": "f66fee8a4492fa20e69b7bde983573e35376ce9d15ea68566eb530bad4e1065e",
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",

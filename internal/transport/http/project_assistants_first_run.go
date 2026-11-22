@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"runtime"
 	"sync"
 
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
@@ -49,7 +48,7 @@ func (s *Server) projectAssistantFirstRun(w http.ResponseWriter, r *http.Request
 	for i, agent := range agents {
 		workers.Go(func() {
 			row := contract.ProjectAssistantFirstRunAgent{Agent: contract.ProjectAssistantAgent(agent)}
-			if runtime.GOOS != "darwin" && s.projectAssistants.firstRunStatus == nil {
+			if !projectassistantacp.SupportsInstalledAdapters() && s.projectAssistants.firstRunStatus == nil {
 				row.State = contract.ProjectAssistantFirstRunStateUnsupported
 			} else {
 				row.State = firstRunAgentState(r.Context(), agent, probe)
