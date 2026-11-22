@@ -67,3 +67,33 @@ func TestMCPRoutineHooksAndFollowUpsUseOwnedTool(t *testing.T) {
 		t.Fatal("native tool cannot describe hook schedules", string(raw))
 	}
 }
+
+func TestOwnedMCPWebhookGuideCanBeReadBeforeCreatingARoutine(t *testing.T) {
+	f := newMCPFixture(t, mcpTestTools{})
+	f.initialize(t)
+
+	status, raw := f.post(t, `{"jsonrpc":"2.0","id":1,"method":"tools/list"}`, nil)
+	if status != 200 || !strings.Contains(string(raw), `"name":"read_webhook_guide"`) {
+		t.Fatalf("Webhook guide cannot be discovered: %d %s", status, raw)
+	}
+
+	for _, tt := range []struct {
+		lang string
+		want []string
+	}{
+		{"en", []string{"Set up a Bot Webhook", "Public Cloud address", "Cloud confirms", "Retrieve key"}},
+		{"zh-Hant", []string{"設定 Bot Webhook", "公開 Cloud 位址", "Cloud 確認", "取得金鑰"}},
+	} {
+		t.Run(tt.lang, func(t *testing.T) {
+			status, raw := f.post(t, mcpCall("read_webhook_guide", map[string]any{"lang": tt.lang}), nil)
+			if status != 200 || !strings.Contains(string(raw), `"isError":false`) {
+				t.Fatalf("guide read failed: %d %s", status, raw)
+			}
+			for _, want := range tt.want {
+				if !strings.Contains(string(raw), want) {
+					t.Errorf("guide omits %q", want)
+				}
+			}
+		})
+	}
+}

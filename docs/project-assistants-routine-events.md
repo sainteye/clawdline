@@ -70,6 +70,8 @@ writable paired device can manage it. Rotation uses the original edit receipt
 and does not rotate again on replay. Publication revalidates human authority.
 The Cloud vocabulary operation is `project-assistants.routine-hook`.
 
+The Bot’s startup instructions point to the read-only `read_webhook_guide` tool. It serves the packaged [Bot Webhook guide](user/bot-webhooks.md) in English or [Traditional Chinese](user/bot-webhooks.zh-TW.md) without a routine ID. The tool reads the guide without accessing a routine, a key or Cloud registration state.
+
 Native execution-bound tools are `routine_hook` and `rotate_routine_hook`.
 They can only access their own Bot, exact Project and conversation. Keys are
 returned only by these explicit operations, never by `list_routines`, progress
