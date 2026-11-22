@@ -5357,7 +5357,7 @@
     "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "afc95c011aa34799c57742c572ac46276bac2e1d7012b961a05fa312798177ef",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
-    "internal/app/projectassistant/service_team.go": "af87b7793f5f3565dc5babe91b8dfd29c623a54cd9a2dd3ffdd6457fd7194fad",
+    "internal/app/projectassistant/service_team.go": "111f4ec1fb07a506445ec9e31e8292d8d8ae0b8e136fc932b062b949df3ec292",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",

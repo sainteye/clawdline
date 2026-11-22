@@ -403,10 +403,12 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	// UTF-16 units match CodyNC and JavaScript length, including astral text.
 	effect := map[string]any{"operation": operation, "project": next.Project, "botId": next.Key.BotID}
 	if operation == pa.CreateOperation {
+		settings := map[string]any{"name": next.Name, "instructions": next.Instructions.Text, "appearance": next.Appearance, "hidden": next.Hidden, "agent": next.Agent, "permission_policy": next.PermissionPolicy, "mode": next.Mode, "manageTeam": next.ManageTeam, "createdBy": next.CreatedBy}
 		if directory != "" {
-			effect["folder"] = directory
+			// Older consoles render settings as field rows. Keep the destination visible on those clients.
+			settings["folder"] = directory
 		}
-		effect["settings"] = map[string]any{"name": next.Name, "instructions": next.Instructions.Text, "appearance": next.Appearance, "hidden": next.Hidden, "agent": next.Agent, "permission_policy": next.PermissionPolicy, "mode": next.Mode, "manageTeam": next.ManageTeam, "createdBy": next.CreatedBy}
+		effect["settings"] = settings
 	} else {
 		effect["targetName"] = targetName
 		effect["changes"] = fields

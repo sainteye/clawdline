@@ -207,13 +207,17 @@ func TestGroupsRootWiringManagerCreatesInRegisteredProject(t *testing.T) {
 			if scenario != "unregistered" && scenario != "ambiguous name" {
 				plan := groupsManagerPlan(t, f)
 				var detail struct {
-					Project pa.ProjectScope
-					Folder  string
+					Project  pa.ProjectScope
+					Settings struct{ Folder string }
 				}
 				if err := json.Unmarshal([]byte(plan.Detail), &detail); err != nil {
 					t.Fatal(err)
 				}
-				if detail.Project.ProjectID != targetID || detail.Folder == "" || len(groupsManagerBots(t, f)) != 1 {
+				destination, err := filepath.EvalSymlinks(folder)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if detail.Project.ProjectID != targetID || detail.Settings.Folder != destination || len(groupsManagerBots(t, f)) != 1 {
 					t.Fatalf("wrong destination or premature creation: %+v", detail)
 				}
 				if scenario == "removed before approval" {

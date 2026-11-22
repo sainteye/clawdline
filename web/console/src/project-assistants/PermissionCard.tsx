@@ -103,7 +103,8 @@ export function teamProposal(detail?:string):TeamProposal|undefined {
     const look=changes.appearance
     const appearance=look&&typeof look.shape==="string"&&Object.hasOwn(avatarPaths,look.shape)&&typeof look.color==="string"?
       {shape:look.shape as W.ProjectAssistantAppearance["shape"],color:look.color}:undefined
-    return {changes,appearance,folder:typeof plan.folder==="string"?plan.folder:undefined,
+    const folder=typeof changes.folder==="string"?changes.folder:typeof plan.folder==="string"?plan.folder:undefined
+    return {changes,appearance,folder,
       targetName:typeof plan.targetName==="string"?plan.targetName:undefined}
   } catch {return undefined}
 }
@@ -137,7 +138,7 @@ export function TeamProposalDetails({detail,proposal,w}:{detail:string;proposal?
   if(!proposal)return <pre>{detail}</pre>
   const labels:Record<string,string>={name:w.name,instructions:w.instructions,agent:w.agent,permission_policy:w.teamApprovalPolicy,
     mode:w.teamMode,manageTeam:w.teamManageLabel,appearance:w.teamAppearance,hidden:w.teamHidden,avatarColor:w.teamColor,avatarShape:w.teamShape}
-  const entries=Object.entries(proposal.changes).filter(([key])=>key!=="botId"&&key!=="createdBy")
+  const entries=Object.entries(proposal.changes).filter(([key])=>key!=="botId"&&key!=="createdBy"&&key!=="folder")
   return <dl className="pa-team-details">
     {proposal.folder&&<div><dt>{w.project}</dt><dd>{proposal.folder}</dd></div>}
     {entries.filter(([key])=>key!=="instructions").map(([key,value])=><div key={key}><dt>{labels[key]??key}</dt><dd>{
