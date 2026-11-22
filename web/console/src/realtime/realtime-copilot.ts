@@ -2,7 +2,6 @@ import { GITHUB_CHANGES_TOOL, type GitHubPreset } from './copilot-github-changes
 import {CallHistory,type CallOperation,type OperationSpec} from './copilot-history.js'
 import { CopilotSessionBoards } from './copilot-session-boards.js'
 import type { SessionBoardTarget } from '../session/SessionBoards.js'
-import {CallEndIntent} from './copilot-call-control.js'
 import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from '../cloud/unopened-read.js'
 import { questionRequest, type CallQuestionID, type QuestionTarget } from './copilot-questions.js'
 import { SESSION_ADDRESS } from '../overlays/events.js'
@@ -312,7 +311,6 @@ export class RealtimeCopilotClient {
   /** When a Realtime call's voice was last playing (an audio delta, or its playback stopping). */
   private spokeAt = 0
   /** When the copilot was asked to hang up after its goodbye (`end_call`); 0 when it was not. */
-  private endIntent=new CallEndIntent()
   private endingAt = 0
   /** How long the goodbye may take before the call hangs up regardless. */
   endGoodbyeMaxMs = 15000
@@ -460,7 +458,6 @@ export class RealtimeCopilotClient {
         return { engine: this.live ? 'live' : 'realtime', model: this.model, seconds: this.connectedAt ? (Date.now() - this.connectedAt) / 1000 : 0,
           usd: cost?.usd ?? 0, priced: cost?.priced !== false }
       },
-      endRequested:()=>this.endIntent.requested,
       endCall: () => { void this.endAfterGoodbye() },
     }
   }
@@ -742,26 +739,14 @@ export class RealtimeCopilotClient {
     this.journal('notice', nextWord(done.key, done.params))
   }
 
-  private observeEndIntent(text:string,complete=true){
-    const ending=this.endIntent.user(text,complete)
-    if(!ending)this.endingAt=0
-    return ending
-  }
-  private executeEndIntent() {
-    if (!this.endIntent.requested || this.state.status !== 'connected') return
-    this.journal('notice', 'end_call: explicit transcript ended the call')
-    this.disconnect()
-  }
   private consumeLiveInput(){
     clearTimeout(this.liveContinueTimer);this.liveContinueTimer=undefined
     const heard=this.liveHeard.take()
-    if(heard){this.observeEndIntent(heard);this.journal('heard',heard);this.boardVoice.heard(heard,this.boardVoiceTurn);this.doneSinceHeard.clear();this.updateState({})}
+    if(heard){this.journal('heard',heard);this.boardVoice.heard(heard,this.boardVoiceTurn);this.doneSinceHeard.clear();this.updateState({})}
     return heard||this.heardNow
   }
   continueSessionReport(request?:string, skipInterrupted=false){
-    if(this.endIntent.requested){this.executeEndIntent();return false}
     const heard=this.live?this.consumeLiveInput():request??''
-    if (this.endIntent.requested) { this.executeEndIntent(); return false }
     const words=request??heard
     const item=this.liveReportItem
     const ref=this.live?item?.interrupted?item.ref:undefined:this.sessionReports.current()
@@ -883,7 +868,7 @@ export class RealtimeCopilotClient {
     this.boardVoice = new CopilotSessionBoards(); this.boardVoiceTurn = 0
     this.liveOutputAt=0;this.liveInputAt=0;this.executingEffects.clear();this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;
     this.personSpoke = false
-    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.endIntent.reset();this.screenLooked=false;this.screenSessionID=undefined
+    clearInterval(this.liveTicker);this.liveTicker=undefined;this.liveStarted=0;this.connectedAt=0;this.spokeAt=0;this.endingAt=0;this.screenLooked=false;this.screenSessionID=undefined
     this.live = false;this.liveHeard.take();this.liveSaid.take();this.liveSaidAt=0;this.liveSaidAll='';this.livePending.clear();this.liveSeconds=0;this.liveFinalized=false;this.liveBackendUsd=0
     this.journalCall = crypto.randomUUID()
     this.historyCall=this.journalCall;this.operations.reset(this.journalCall);this.callObserving=true;this.updateState({logs:[]})
@@ -1330,7 +1315,6 @@ export class RealtimeCopilotClient {
       case 'response.audio_transcript.delta':
         if (event.delta) {
           const cur = this.state.lastAssistantSpeech || ''
-          this.endIntent.assistant(cur+event.delta)
           this.updateState({ lastAssistantSpeech: cur + event.delta })
         }
         break
@@ -1340,10 +1324,6 @@ export class RealtimeCopilotClient {
           this.heardNow = event.transcript
           this.boardVoiceTurn++
           this.boardVoice.heard(this.heardNow, this.boardVoiceTurn)
-          if (this.observeEndIntent(event.transcript) && this.state.status === 'connected') {
-            this.executeEndIntent()
-            return
-          }
           this.updateState({ lastTranscript: event.transcript })
           if(this.call.options.workEnabled) {
             const attempt=this.attempt,dc=this.dc,call=this.journalCall
@@ -1614,7 +1594,7 @@ export class RealtimeCopilotClient {
     const reported:(()=>void)[]=[]
     let output:string,logs:{level:'info'|'tool'|'error';text:string}[]=[],reportResumed=false
     const steps:string[]=[]
-    if (this.githubReportTurn === questionTurn && !githubReport) {
+    if (this.githubReportTurn === questionTurn && !githubReport && event.name !== 'end_call') {
       output = JSON.stringify({ error: 'copilot_github_report_read_only', meaning: 'Only the GitHub report may run on this turn.' })
     } else if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
       reportResumed=this.continueSessionReport(utterance, args.next_report === true);output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
@@ -1828,15 +1808,12 @@ export class RealtimeCopilotClient {
           }
           this.liveQuestionText = this.heardNow
         }
-        this.observeEndIntent(this.heardNow,false)
         clearTimeout(this.liveContinueTimer)
-        if(this.sessionReports.hasPending()||this.endIntent.requested){
-          const attempt=this.attempt,dc=this.dc
-          this.liveContinueTimer=setTimeout(()=>{if(this.attempt!==attempt||this.dc!==dc)return;if (this.endIntent.requested) {
-            const farewell = this.liveHeard.take()
-            if (farewell) this.journal('heard', farewell)
-            this.executeEndIntent()
-          } else if(continueReport(this.liveHeard.peek()))this.continueSessionReport()},this.liveQuietMs)
+        if (this.sessionReports.hasPending()) {
+          const attempt = this.attempt, dc = this.dc
+          this.liveContinueTimer = setTimeout(() => {
+            if (this.attempt === attempt && this.dc === dc && continueReport(this.liveHeard.peek())) this.continueSessionReport()
+          }, this.liveQuietMs)
         }
         this.updateState({ speakingState: 'listening', lastTranscript: this.heardNow })
         return
@@ -1845,16 +1822,11 @@ export class RealtimeCopilotClient {
         const heard = this.liveHeard.take()
         if (heard) {
           this.journal('heard', heard)
-          if (this.observeEndIntent(heard) && this.state.status === 'connected') {
-            this.executeEndIntent()
-            return
-          }
           this.boardVoice.heard(heard, this.boardVoiceTurn)
           this.doneSinceHeard.clear()
           this.updateState({})
         }
         this.liveSaid.add(event.delta)
-        this.endIntent.assistant(this.liveSaid.peek())
         if(this.liveReportItem&&!this.liveReportItem.interrupted&&typeof event.delta==='string')this.liveReportItem.text+=event.delta
         this.liveSaidAt = Date.now()
         if (typeof event.delta === 'string') this.liveSaidAll += event.delta
@@ -1928,7 +1900,7 @@ export class RealtimeCopilotClient {
         const quiet = Date.now() - this.liveInputAt >= this.liveQuietMs
         if(!quiet)throw new Error('session_board_confirmation_required')
       }
-      if (this.githubReportTurn === turn && !githubReport) {
+      if (this.githubReportTurn === turn && !githubReport && name !== 'end_call') {
         output = JSON.stringify({ error: 'copilot_github_report_read_only', meaning: 'Only the GitHub report may run on this turn.' })
       } else if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(undefined, requested.next_report === true),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
       else if (name === 'prepare_session_board' || name === 'confirm_session_board') output = JSON.stringify(await this.boardTool(name, requested))

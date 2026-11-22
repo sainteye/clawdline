@@ -520,13 +520,13 @@ The call requests a duplex audio route when the browser supports it. A ring star
 Web Audio context runs, restarts on recovery during setup, and stops when the call becomes ready,
 fails or closes. The local journal records the graph state separately from connection phases.
 
-The client recognizes a direct hangup request
-or conversational goodbye in the person's transcript and disconnects with a local tone without
-waiting for the model. Realtime uses the completed transcription. GPT-Live uses a quiet window
-for streaming input or the start of the next response. Closing a terminal Session, quoted words
-and messages for someone else do not count. If the `end_call` tool receives the request first,
-it uses the same intent check and waits briefly for a spoken goodbye, with a local deadline. In a
-managed call both tools are immediate and do not change anything on the machine.
+The model decides whether the person wants to end the voice call from the whole
+conversation, including natural goodbyes and short replies to its last question.
+GPT-Live delegates that decision to its backend. Realtime and the GPT-Live backend
+both call `end_call` with no arguments. The client gives the model time to say
+goodbye, then disconnects and plays the local ending tone. A deadline ends the
+call even if no goodbye arrives. In a managed call both call tools remain
+immediate and operate only on the current call.
 
 **Cost.** OpenAI bills a Live session per second ($0.05 a minute on 2026-11-15) and the backend
 per token ($0.10 in, $0.01 cached, $0.50 out per 1M for `gpt-6-luna`). The call's cost line adds
@@ -665,11 +665,9 @@ Partial narration is supplied as untrusted already-said context on resume.
 Preparing, speaking, paused, failed and unconfirmed-speech states are visible.
 Chinese and English presentation instructions and continuation phrases are paired.
 
-Call-ending instructions and local recognition cover English and Chinese direct
-requests and stand-alone goodbyes. A yes answers only the current explicit hangup
-question; unrelated input consumes that pending question, while a negative request
-cancels ending. Local hangup does not depend on the backend repeating an end_call
-tool. Existing goodbye and hard-stop deadlines remain unchanged. Capture and
+On 2026-11-22, call-ending intent moved to the model. The browser no longer
+matches transcript text to accept or initiate a hangup. An `end_call` request
+starts the existing goodbye and hard-stop timers. Capture and
 playback stop before a descending local two-note cue; the context closes after
 that cue without affecting a new call. Live's final-usage receiver still closes
 its separate old transport on its existing deadline. No provider request produces

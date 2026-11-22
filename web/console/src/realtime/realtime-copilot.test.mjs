@@ -609,7 +609,7 @@ test('a cleared Session introduction exposes resume and reuses prepared content 
  })
 })
 
-test('in a call the copilot reads its own length and cost, and hangs up after its goodbye when asked', async (t) => {
+test('in a call the copilot reads its own length and cost', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
   globalThis.location = { hash: '' }
   const oldWindow = globalThis.window
@@ -622,7 +622,6 @@ test('in a call the copilot reads its own length and cost, and hangs up after it
     dc: { readyState: 'open', send: text => sent.push(JSON.parse(text)), close() {} } })
   c.state = { ...c.state, status: 'connected', cost: { model: 'gpt-live-1', responses: 0, inputTokens: 0, outputTokens: 0, audioOutTokens: 0, usd: 0.0731, priced: true } }
   c.connectedAt = Date.now() - 95_000
-  c.endQuietMs = { realtime: 20, live: 20 }
   c.toolDeps = () => ({ ...c.constructor.prototype.toolDeps.call(c), fetch: async () => Response.json({}) })
   const replyOf = (callID) => JSON.parse(sent.find(e => e.type === 'response.item.create' && e.item?.call_id === callID).item.output)
 
@@ -631,25 +630,48 @@ test('in a call the copilot reads its own length and cost, and hangs up after it
   assert.equal(status.engine, 'GPT-Live')
   assert.ok(status.duration_seconds >= 95 && status.duration_seconds < 100, String(status.duration_seconds))
   assert.equal(status.cost_usd, 0.0731)
-
-  // Asked about closing a Session, the call stays up.
-  c.heardNow = '把結帳改版那個 Session 關閉'
-  await c.runLiveTool('call_end_1', 'end_call', JSON.stringify({ said: '結束通話' }))
-  assert.equal(replyOf('call_end_1').error, 'voice_end_not_asked')
-  await new Promise(r => setTimeout(r, 300))
-  assert.equal(c.state.status, 'connected')
-
-  // Asked to end the call, it says goodbye first and then hangs up.
-  c.heardNow = '我們這一次的對話已經結束了，可以關閉'
-  await c.runLiveTool('call_end_2', 'end_call', JSON.stringify({ said: c.heardNow }))
-  assert.equal(replyOf('call_end_2').ending, true)
-  await new Promise(r => setTimeout(r, 700))
-  assert.equal(c.state.status, 'connected', 'it does not hang up before the goodbye')
-  c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: '好，那我們下次再聊，掰掰！' })
-  for (let i = 0; i < 40 && c.state.status === 'connected'; i++) await new Promise(r => setTimeout(r, 100))
-  assert.notEqual(c.state.status, 'connected', 'the call ends once the goodbye has been said')
-  assert.ok(sent.some(e => e.type === 'session.close'), 'GPT-Live is told the session is over')
 })
+
+for (const live of [true, false]) {
+  test(`${live ? 'GPT-Live' : 'Realtime'} accepts an Agent hangup after a short confirmation and waits for its goodbye`, async (t) => {
+    const f = fixture(false, null)
+    const { c, sent } = f
+    const oldWindow = globalThis.window
+    globalThis.window = { addEventListener() {}, removeEventListener() {} }
+    t.after(() => { globalThis.window = oldWindow })
+    c.live = live
+    c.state.status = 'connected'
+    c.endQuietMs = { realtime: 20, live: 20 }
+    c.toolDeps = () => ({ ...RealtimeCopilotClient.prototype.toolDeps.call(c), fetch: async () => Response.json({}) })
+    if (live) {
+      c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: '那今天就先到這裡嗎？' })
+      c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: '對' })
+      c.handleLiveEvent({
+        type: 'response.event',
+        event: { type: 'response.output_item.done', item: { type: 'function_call', call_id: 'hangup', name: 'end_call', arguments: '{}' } },
+      })
+      await tick()
+    } else {
+      await c.handleRealtimeEvent({ type: 'response.output_audio_transcript.delta', delta: '那今天就先到這裡嗎？' })
+      await c.handleRealtimeEvent({ type: 'conversation.item.input_audio_transcription.completed', transcript: '對' })
+      await c.handleRealtimeEvent({ type: 'response.function_call_arguments.done', call_id: 'hangup', name: 'end_call', arguments: '{}' })
+    }
+
+    const reply = sent.find(e => e.item?.type === 'function_call_output' && e.item.call_id === 'hangup')
+    assert.equal(JSON.parse(reply.item.output).ending, true)
+    await new Promise(resolve => setTimeout(resolve, 210))
+    assert.equal(c.state.status, 'connected', 'the Agent has time to say goodbye')
+    if (live) {
+      c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: '好，晚點聊。' })
+    } else {
+      await c.handleRealtimeEvent({ type: 'response.output_audio.delta' })
+      await c.handleRealtimeEvent({ type: 'output_audio_buffer.stopped' })
+    }
+    for (let i = 0; i < 40 && c.state.status === 'connected'; i++) await new Promise(resolve => setTimeout(resolve, 100))
+    assert.equal(c.state.status, 'disconnected')
+    if (live) assert.ok(sent.some(e => e.type === 'session.close'))
+  })
+}
 
 test('a GPT-Live call configures its backend after start, starts its report, and answers the backend with the same tools', async (t) => {
   globalThis.document = { documentElement: { lang: 'zh-Hant' } }
@@ -1313,12 +1335,25 @@ test('Live reports bind one narration item at a time and advance without verbati
  assert.deepEqual(f.c.spokenSessions.heardIDs(),[],'presentation progress never fabricates exact spoken identity evidence')
 })
 
-for(const words of ['拜拜','Goodbye'])test(`a direct goodbye ends the call without a backend end_call: ${words}`,async()=>{
- const f=fixture(false,null);f.c.live=true;f.c.liveQuietMs=1;f.c.endGoodbyeMaxMs=1;f.c.state.status='connected'
- let ends=0;f.c.disconnect=()=>{ends++;f.c.state.status='disconnected';f.c.resetSessionReports()}
- f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:words})
- for(let i=0;i<100&&!ends;i++)await new Promise(r=>setTimeout(r,5))
- assert.equal(ends,1);assert.equal(f.sent.some(e=>e.item?.name==='end_call'),false)
+test('transcribed goodbyes leave hangup to the Agent in both engines', async () => {
+  for (const live of [true, false]) {
+    const { c } = fixture(false, null)
+    c.live = live
+    c.liveQuietMs = 5
+    c.state.status = 'connected'
+    c.disconnect = () => { c.state.status = 'disconnected' }
+    const farewell = live ? '謝謝，今天就先到這裡，掰掰' : 'Goodbye'
+    if (live) {
+      c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: farewell.slice(0, -1) })
+      c.handleLiveEvent({ type: 'session.input_transcript.delta', delta: farewell.at(-1) })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      c.handleLiveEvent({ type: 'session.output_transcript.delta', delta: '好。' })
+    } else {
+      await c.handleRealtimeEvent({ type: 'conversation.item.input_audio_transcription.completed', transcript: farewell })
+    }
+    assert.equal(c.state.lastTranscript, farewell)
+    assert.equal(c.state.status, 'connected')
+  }
 })
 
 test('continuing a completed report does not reread or restart the directory',async()=>{
@@ -1605,26 +1640,6 @@ for(const live of [false,true])for(const managed of [false,true])test(`Session-b
  const output=live?await f.c.runLiveTool('board-query','get_session_board',args):await f.c.handleToolCall({call_id:'board-query',name:'get_session_board',arguments:args})
  const answer=JSON.parse(output);assert.equal(answer.board.lead.session_id,row.id);assert.equal(answer.board.lead.label,row.label)
  assert.equal(voiceWork.state?.tasks?.some(task=>task.tool==='get_session_board')??false,false)
-})
-
-for (const live of [false, true]) test(`a natural farewell closes the call without a model response (live=${live})`, async () => {
-  const f = fixture(false, null)
-  f.c.live = live
-  f.c.liveQuietMs = 10
-  f.c.state.status = 'connected'
-  let closes = 0
-  f.c.disconnect = () => { closes++; f.c.state.status = 'disconnected' }
-  const farewell = '謝謝，今天的安排都確認好了，就這樣囉，掰掰'
-  if (live) {
-    f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:farewell.slice(0, -1)})
-    assert.equal(closes, 0)
-    f.c.handleLiveEvent({type:'session.input_transcript.delta',delta:farewell.at(-1)})
-    for (let i = 0; i < 30 && closes === 0; i++) await new Promise(resolve => setTimeout(resolve, 5))
-  } else {
-    await f.c.handleRealtimeEvent({type:'conversation.item.input_audio_transcription.completed',transcript:farewell})
-  }
-  assert.equal(closes, 1)
-  assert.equal(f.responses().length, 0)
 })
 
 test('a screen navigation cues the Session switch once after its identity resolves', async () => {

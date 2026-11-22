@@ -4861,20 +4861,23 @@
       "sources": [
         {
           "path": "web/console/src/realtime/copilot-call-control.ts",
-          "line": 34
+          "line": 1
         },
         {
           "path": "web/console/src/realtime/realtime-copilot.ts",
-          "line": 702
+          "line": 489
         },
         {
           "path": "web/console/src/realtime/copilot-meter.ts",
-          "line": 224
+          "line": 237
         }
       ],
       "original": [
-        "export function callControlGuidance(language='') {\n",
-        " return (!language||/^zh(?:-|$)/i.test(language))?'通話控制：使用者直接對你說「結束通話」「掛斷電話」「結束我們現在的通話」「拜拜／掰掰」表示結束這通電話，不是關閉 Session；請呼叫 end_call，不再反覆確認。若你剛明確問要不要掛斷，接著的「對／好／是」就是該次確認。程式會在辨識到明確要求後直接掛斷並播放結束提示音。如果工具先接受了要求，就簡短道別。按使用者的意思判斷，前面的句子只是例子。引用別人的道別、傳話或明確說不要掛斷都不算。':\"Call control: direct requests such as 'end this call', 'hang up', 'end my conversation with you', 'bye' or 'goodbye' end this voice call, never a terminal Session. Call end_call without repeated confirmation. If you just explicitly asked whether to hang up, the person's next 'yes', 'correct' or 'okay' confirms that question. The application disconnects with an ending tone when it recognizes a direct request. If the tool accepted it first, say one short goodbye. Interpret the person’s meaning across natural phrasings. Quoted goodbyes, messages for others and explicit requests not to hang up do not count.\"\n",
+        "export function callControlGuidance(language = '') {\n",
+        "  if (!language || /^zh(?:-|$)/i.test(language)) {\n",
+        "    return '通話控制：根據整段對話判斷使用者是否要結束這通語音電話。自然的道別或接續上一句的簡短確認都可以表達這個意思。意圖清楚時就結束通話並簡短道別，無須再確認。若是在談論掛斷功能、引用別人的道別、替人傳話或要求關閉終端 Session，請繼續處理原本的話題。'\n",
+        "  }\n",
+        "  return 'Call control: Use the whole conversation to decide whether the person wants to end this voice call. A natural goodbye or a short reply to your last question can convey that intent. When it is clear, end the call and say a short goodbye without asking again. When the person is discussing the hangup feature, quoting a farewell, relaying a message, or asking to close a terminal Session, continue with that topic.'\n",
         "}\n"
       ],
       "locations": [
@@ -5481,7 +5484,7 @@
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
-    "web/console/src/realtime/copilot-call-control.ts": "f917de1b8f1237dfe28a4e381a632f690b4702f31c6b5b771614bf3994bcdae5",
+    "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
     "web/console/src/realtime/copilot-cost.ts": "209be807ed21d5873b167920a6228f6008cafffe2d19a23187b7247e9e85cd97",
     "web/console/src/realtime/copilot-feedback.ts": "af6f7146ebe90f9502d7483873e2c5210ffd03873a8ba54c7b9aa3873a1fc54d",
     "web/console/src/realtime/copilot-github-changes.ts": "e64746bf9e02abb73e2e65e2d61de4cb7a827c6b8aaf4e4cb357d3b7b378dd8f",
@@ -5493,8 +5496,8 @@
     "web/console/src/realtime/copilot-reports.ts": "fab8d50097148fca089bd64286e8e3d7b162ad1cd9ed7e3f7147043c073af598",
     "web/console/src/realtime/copilot-session-boards.ts": "160620f182f4024e6a5a7b5e2efbf08797b1dcfb1863eefc7db1354d3bcdebc2",
     "web/console/src/realtime/copilot-speech.ts": "8b8eb91730f934c0081bbce5dc176f400cd279653b1a18e543ac71e6688fa502",
-    "web/console/src/realtime/copilot-tools.ts": "cc4630f929ff2814ce83a4807f2b275ccbbd05d6818a0cc3659fa07341dbf6a0",
-    "web/console/src/realtime/realtime-copilot.ts": "4815548d6e227751c8a3533c345e74fa525399837a56bb74f510b1f62ee4a8c4",
+    "web/console/src/realtime/copilot-tools.ts": "7676a026b82ba31d3aa74f6d3d4a62414123b4b6265d146c51bfbf830b6a899f",
+    "web/console/src/realtime/realtime-copilot.ts": "b42e4e033cf43898b76dca2c5d765fc068853282063555148474810580b73c35",
     "web/console/src/session/Composer.tsx": "71334656025bc65a305c4c4f59d9e8a0af651618133205aa5a577c9b6eeb3128",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
     "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
@@ -5511,7 +5514,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "6a95ac53cee910abfd72fa5efd9896504aabad4a8556c1b3e50607065a1e1c3c",
-    "zh-Hant": "5e3ac0e7554af430b49eaf06e63f298131bf9cabdb69ba1e2e46e782a1b5890e"
+    "en": "5ab856ae085098914a74ff52fb40e06cb663639425af103087765853e5444194",
+    "zh-Hant": "d7c945296f83302ed29ed5dff66f5fbad3d415c4c340ea889df7a938682b107d"
   }
 }

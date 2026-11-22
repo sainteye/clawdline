@@ -13249,7 +13249,7 @@
   "transparency.card.turn-todos.title": "Turn-boundary Board and todo checks",
   "transparency.card.voice-call-ending.condition": "During a connected Realtime or GPT-Live voice call, when the person requests hangup or directly says goodbye.",
   "transparency.card.voice-call-ending.effect": "Local capture and playback stop before a descending two-note cue. The old audio context closes after its cue; it cannot close a new call. Missing Web Audio can make the cue silent. Live final-usage collection is separate from local hangup. Sent instructions, transcript timing and synthetic tests do not prove real audio comprehension or phone playback. No extra model request generates the tone.",
-  "transparency.card.voice-call-ending.how": "The client recognizes English and Chinese hangup requests, including conversational goodbyes, and disconnects on confirmed transcript intent without waiting for the backend. A short yes confirms only the immediately preceding explicit hangup question. If end_call runs first, the same intent check applies and the client gives the model a bounded time to say goodbye.",
+  "transparency.card.voice-call-ending.how": "The model uses the whole conversation to decide when to call end_call. The browser gives the model a short window to say goodbye before disconnecting the call.",
   "transparency.card.voice-call-ending.summary": "Bilingual call-control instructions distinguish ending this voice call from closing a terminal Session or relaying a message.",
   "transparency.card.voice-call-ending.title": "Ending a voice call",
   "transparency.card.voice-github-reports.condition": "A connected call receives a GitHub changes question from speech or Quick commands.",

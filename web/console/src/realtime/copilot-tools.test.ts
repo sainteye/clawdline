@@ -1,12 +1,10 @@
-// @ts-expect-error -- Node's type-stripping tests resolve the source module.
-import {CallEndIntent,callControlGuidance} from './copilot-call-control.ts'
 import { test } from "node:test"
 import assert from "node:assert/strict"
 
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { withMark, UPDATE_MARKS } from "./copilot-marks.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, asksToEndCall, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
+import { CHILDREN_NOTE, ACTIVITY_TOTAL_CHARS, UPDATE_PAGES, rowOnScreen, screenFocusEvent, type UpdateMark, ASKS_A_RENAME, SMART_RENAME_SESSIONS, actionNotice as noticeOf, unbackedClaims as claimsOf, countSummary, durationPhrase, whenPhrase, BRIEF_RULE, LONG_RULE, adjustEvent, nextSpeed, choiceOf, progressOf, COPILOT_INSTRUCTIONS, REPLY_CHARS, COPILOT_TOOLS, readRecap, readCallHandover, sessionsSnapshot, SCREEN_READ_ATTEMPTS, activityOf, plainScreenText, runCopilotTool, sessionUpdateEvent, toolReplyEvents, type ToolDeps, instructionsFor, copilotRefusal, resolveSession, CONTENT_NOT_READ, actionNotice, unbackedClaims, toolTrace, microphoneProblem, fleetRowsOf } from "./copilot-tools.ts"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
 import { SpokenSessions } from "./copilot-reports.ts"
 
@@ -570,19 +568,14 @@ test("get_call_status answers how long the call has lasted and what it has cost"
   assert.ok(none.error, "a screen without the call's state says so instead of inventing figures")
 })
 
-test("end_call hangs up only when the person asked to end the call", async () => {
-  for (const words of ["我們這一次的對話已經結束了，可以關閉", "好，掛掉吧", "先這樣，結束通話", "OK, you can hang up now", "Let's end the call."])
-    assert.equal(asksToEndCall(words), true, words)
-  for (const words of ["把結帳改版那個 Session 關閉", "Close the Release 2.4 session", "它的工作結束了嗎", "幫我看一下最新狀況"])
-    assert.equal(asksToEndCall(words), false, words)
+test("end_call delegates to the active call without reading the transcript", async () => {
   let ended = 0
   const { deps } = fakeMachine({})
-  Object.assign(deps, { endCall: () => { ended++ }, heard: () => "把結帳改版那個 Session 關閉" })
-  const refused = JSON.parse((await runCopilotTool("end_call", '{"said":"結束通話"}', deps)).output)
-  assert.equal(refused.error, "voice_end_not_asked", "the person's own words decide, not the copilot's paraphrase")
-  assert.equal(ended, 0)
-  Object.assign(deps, { heard: () => "我們這一次的對話已經結束了，可以關閉" })
-  const ending = JSON.parse((await runCopilotTool("end_call", '{"said":"我們這一次的對話已經結束了，可以關閉"}', deps)).output)
+  const unavailable = JSON.parse((await runCopilotTool("end_call", "{}", deps)).output)
+  assert.ok(unavailable.error)
+  deps.endCall = () => { ended++ }
+  deps.heard = () => assert.fail("hangup should not read the transcript")
+  const ending = JSON.parse((await runCopilotTool("end_call", "{}", deps)).output)
   assert.equal(ending.ending, true)
   assert.equal(ended, 1)
 })
@@ -2275,30 +2268,6 @@ test("a Cloud carried question is answered from its returned row without polling
  assert.equal(out.answered,true)
  assert.equal(calls.length,2)
  assert.deepEqual(sleeps,[])
-})
-
-test('ending this conversation and standalone goodbyes end the call in either language',()=>{
- for(const text of ['請把我和你的聊天結束','結束通話','掛斷電話','拜拜','好，掰掰','Bye','Thanks, goodbye.','Please end our conversation now.','這樣就足夠了，那就這樣吧，拜拜','I have what I need, talk to you later, goodbye.','其他 Session 等下次再聊，掰掰','Let’s wrap up this call now.'])assert.equal(asksToEndCall(text),true,text)
- for(const text of ['不要掛斷電話','先不要拜拜','Tell that Session goodbye','請你跟那個 Session 說拜拜','How do I hang up?','我們先不要結束通話','Please fix the end call button','請修正掛斷電話的問題','她說「那就這樣，掰掰」','The test Session said, that’s all, goodbye.'])assert.equal(asksToEndCall(text),false,text)
-})
-
-test('a current hangup question accepts yes in both languages and loses stale confirmation',()=>{
- for(const [question,yes] of [['你是要我現在掛斷這通電話嗎？','對'],['Would you like me to hang up now?','Yes']]){
-  const intent=new CallEndIntent();intent.assistant(question);assert.equal(intent.user(yes),true)
-  intent.reset();assert.equal(intent.user(yes),false,'an unprompted yes is not hangup consent')
-  intent.assistant(question);intent.user('Report another Session');assert.equal(intent.user(yes),false,'another request consumes the pending question')
- }
- assert.match(callControlGuidance('en'),/goodbye/);assert.match(callControlGuidance('zh-Hant'),/拜拜/)
-})
-
-
-test('a streamed confirmation survives partial words but unrelated completed input consumes it',()=>{
- const intent=new CallEndIntent();intent.assistant('Would you like me to hang up?')
- assert.equal(intent.user('y',false),false)
- assert.equal(intent.user('yes',false),true)
- intent.reset();intent.assistant('Would you like me to hang up?')
- intent.user('Report',false);intent.user('Report the next Session',true)
- assert.equal(intent.user('yes'),false)
 })
 
 test('voice boards preview exact membership and wait for a fresh explicit confirmation', async () => {

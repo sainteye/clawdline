@@ -2,13 +2,13 @@
   "version": 1,
   "englishKeys": 14055,
   "counts": {
-    "negation": 3595,
-    "state": 2367,
+    "negation": 3594,
+    "state": 2366,
     "permission": 843,
     "deletion": 321,
     "uncertainty": 557
   },
-  "unionCount": 5969,
+  "unionCount": 5968,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3465,7 +3465,6 @@
       "transparency.card.tool-library.summary",
       "transparency.card.turn-todos.summary",
       "transparency.card.voice-call-ending.effect",
-      "transparency.card.voice-call-ending.how",
       "transparency.card.voice-github-reports.effect",
       "transparency.card.voice-list-briefing.condition",
       "transparency.card.voice-list-briefing.effect",
@@ -5867,7 +5866,6 @@
       "transparency.card.turn-todos.condition",
       "transparency.card.turn-todos.how",
       "transparency.card.voice-call-ending.effect",
-      "transparency.card.voice-call-ending.how",
       "transparency.card.voice-list-briefing.effect",
       "transparency.card.voice-list-briefing.summary",
       "transparency.card.voice-live-pacing.condition",
@@ -13415,7 +13413,6 @@
     "transparency.card.turn-todos.how",
     "transparency.card.turn-todos.summary",
     "transparency.card.voice-call-ending.effect",
-    "transparency.card.voice-call-ending.how",
     "transparency.card.voice-github-reports.effect",
     "transparency.card.voice-list-briefing.condition",
     "transparency.card.voice-list-briefing.effect",

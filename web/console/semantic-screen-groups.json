@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 14055,
-  "riskKeys": 5969,
-  "nonRiskCount": 8086,
+  "riskKeys": 5968,
+  "nonRiskCount": 8087,
   "groups": [
     {
       "name": "acp / other",
@@ -8105,7 +8105,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 224,
+      "count": 225,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8274,6 +8274,7 @@
         "transparency.card.turn-todos.effect",
         "transparency.card.turn-todos.title",
         "transparency.card.voice-call-ending.condition",
+        "transparency.card.voice-call-ending.how",
         "transparency.card.voice-call-ending.summary",
         "transparency.card.voice-call-ending.title",
         "transparency.card.voice-github-reports.condition",
