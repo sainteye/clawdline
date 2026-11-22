@@ -49,13 +49,18 @@ test("same Project on another source, removed rooms and hidden saved identities 
   assert.deepEqual(state.pinnedBotKeys,["hidden"])
 })
 
-test("unread first is global and stable, and machine grouping keeps every conversation",()=>{
+test("unread first prepends unread Bots and preserves every default section",()=>{
   const lead={...bot("Lead"),bot:{...bot("Lead").bot,lead:true}}
   const unread={...bot("Unread"),unread_count:2}
   const remote={...unread,bot:{...unread.bot,key:key("remote","other"),name:"Remote"}}
   const sections=conversationSections(conversations([lead,unread,remote],[room("Group")]),emptyRosterState())
   const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
-  assert.deepEqual(orderedConversationSections(sections,"unread")[0].items.map(name),["Unread","Remote","Lead","Group"])
+  const [unreadSection,...remaining]=orderedConversationSections(sections,"unread")
+  assert.equal(unreadSection.kind,"unread")
+  assert.deepEqual(unreadSection.items.map(name),["Unread","Remote"])
+  assert.deepEqual(remaining,sections)
+  const allRead=conversationSections(conversations([lead],[room("Group")]),emptyRosterState())
+  assert.deepEqual(orderedConversationSections(allRead,"unread"),allRead)
   assert.deepEqual(orderedConversationSections(sections,"machine").map(section=>[section.machineID,section.items.map(name)]),
     [["m",["Lead","Unread","Group"]],["other",["Remote"]]])
   assert.equal(orderedConversationSections(sections,"default"),sections)

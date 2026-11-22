@@ -11,7 +11,7 @@ import {projectKey,pinnedGroupKey} from "./roster-groups.ts"
 export type RosterRoom = W.ProjectAssistantGroup & {last_entry?:W.ProjectAssistantRoomEntry & {at?:string};room?:W.ProjectAssistantRoomState}
 export type GroupRosterEntry = {source:SourceClient;group:RosterRoom;status:W.ProjectAssistantSourceStatus}
 export type RosterConversation = {kind:"bot";key:string;machineID:string;projectID:string;item:W.ProjectAssistantBotSummary}|{kind:"group";key:string;machineID:string;projectID:string;entry:GroupRosterEntry}
-export type ConversationSection = {key:string;kind:"lead"|"pinned"|"project"|"custom"|"flat"|"machine";name?:string;machineID:string;items:RosterConversation[]}
+export type ConversationSection = {key:string;kind:"lead"|"pinned"|"project"|"custom"|"unread"|"machine";name?:string;machineID:string;items:RosterConversation[]}
 // A group and a Bot may have the same source-qualified ID without sharing preferences.
 export const groupConversationKey=(key:W.ProjectAssistantBotKey)=>JSON.stringify(["group",key.machine_id,key.bot_id])
 export const personalRosterProject = "personal"
@@ -61,9 +61,8 @@ export function orderedConversationSections(sections:ConversationSection[],order
   if(order==="default"||!sections.length)return sections
   const rows=sections.flatMap(section=>section.items)
   if(order==="unread"){
-    const unread=(row:RosterConversation)=>row.kind==="bot"&&row.item.unread_count>0
-    rows.sort((a,b)=>Number(unread(b))-Number(unread(a)))
-    return [{key:"all-conversations",kind:"flat",machineID:"",items:rows}]
+    const unread=rows.filter(row=>row.kind==="bot"&&row.item.unread_count>0)
+    return unread.length?[{key:"unread-section",kind:"unread",machineID:"",items:unread},...sections]:sections
   }
   const machines=new Map<string,ConversationSection>()
   for(const row of rows){

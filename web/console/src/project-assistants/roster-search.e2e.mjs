@@ -57,6 +57,7 @@ try{
       const orderLabel=lang==="en"?"Sort Bots":"Bot 排序"
       const defaultOrder=lang==="en"?"Default order":"預設順序"
       const unreadOrder=lang==="en"?"Unread first":"未讀優先"
+      const unreadLabel=lang==="en"?"Unread":"未讀"
       const machineOrder=lang==="en"?"Group by machine":"依機器分群"
       const orderButton=`.pa-roster-filter button[aria-label="${orderLabel}"]`
       const chooseOrder=async label=>{
@@ -65,12 +66,14 @@ try{
         await evaluate(sessionId,`[...document.querySelectorAll('.pa-select-list [role=option]')].find(n=>n.textContent.trim()===${JSON.stringify(label)}).click()`)
       }
       const names=()=>evaluate(sessionId,"[...document.querySelectorAll('.pa-roster [data-bot-key] strong')].map(n=>n.textContent)")
+      const sections=()=>evaluate(sessionId,"[...document.querySelectorAll('.pa-roster-scroll > section')].map(section=>[section.getAttribute('aria-label'),[...section.querySelectorAll('[data-bot-key] strong')].map(n=>n.textContent)])")
       assert.equal(await evaluate(sessionId,"!!document.querySelector('.pa-toolbar .pa-roster-unread')"),false)
       const before=await names()
+      const defaultSections=await sections()
       assert.equal(before[0],"Code review","the unread Bot starts below newer activity")
       await chooseOrder(unreadOrder)
-      assert.deepEqual(await names(),["Project assistant",...before.filter(name=>name!=="Project assistant")])
-      assert.equal(await count(),3,"read Bots stay in the list")
+      assert.deepEqual(await sections(),[[unreadLabel,["Project assistant"]],...defaultSections])
+      assert.equal(await count(),4,"the unread shortcut leaves its original row in place")
       await capture("unread")
       await chooseOrder(machineOrder)
       assert.deepEqual(await names(),before)
@@ -94,6 +97,7 @@ try{
       assert.equal(await evaluate(sessionId,"document.querySelector('.pa-roster [data-bot-key] strong').textContent"),"Testing","Bot name searches still reach a later store page")
       await chooseOrder(unreadOrder)
       assert.equal(await evaluate(sessionId,"document.querySelector('.pa-search input').value"),"Testing")
+      assert.equal((await sections()).some(([label])=>label===unreadLabel),false,"search filters the unread section too")
       const chooseMachine=async label=>{
         await evaluate(sessionId,"document.querySelector('.pa-roster-filter > .pa-select .pa-select-button').click()")
         await until(sessionId,"!!document.querySelector('.pa-select-list')")
@@ -117,11 +121,12 @@ try{
       await capture("all-failed")
       await evaluate(sessionId,"window.rosterSearch.fail(null)")
       await search("")
-      await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
+      await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===4")
       await until(sessionId,"!!document.querySelector('.pa-roster-read:not(:disabled)')")
-      await evaluate(sessionId,"document.querySelector('.pa-roster-read:not(:disabled)').click()")
+      await evaluate(sessionId,"(()=>{const button=document.querySelector('.pa-roster-read:not(:disabled)');button.focus();button.click()})()")
       await until(sessionId,"!document.querySelector('.pa-roster-read')&&document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
-      assert.deepEqual(await names(),before,"marking read restores the original position")
+      assert.deepEqual(await sections(),defaultSections,"marking read removes only the shortcut")
+      assert.equal(await evaluate(sessionId,"document.activeElement.querySelector('strong')?.textContent"),"Project assistant","focus follows the Bot after its unread shortcut disappears")
       await chooseOrder(defaultOrder)
       results.push({lang,width,unreadFirst:true,machineGrouping:true,projectRows:6,nameRows:1,partialFailurePreserved:true,selectedFailedMachineVisible:true,allFailedVisible:true})
     }catch(error){await capture("FAIL");throw error}

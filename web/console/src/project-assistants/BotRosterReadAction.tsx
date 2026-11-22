@@ -4,9 +4,10 @@ import {errorCode,type SourceClient} from "./client"
 import {canMarkConversationRead,markConversationRead} from "./conversation-read"
 import type {Words} from "./words"
 
-export function BotRosterReadAction({item,source,current,readerID,onRead,w}:{
+export function BotRosterReadAction({item,source,current,readerID,onRead,w,focusRow}:{
   item:W.ProjectAssistantBotSummary;source:SourceClient;current:()=>readonly SourceClient[];
   readerID:string;onRead:(source:SourceClient)=>Promise<void>;w:Words;
+  focusRow?:()=>HTMLButtonElement|null|undefined;
 }) {
   const [pending,setPending]=useState(false)
   const [result,setResult]=useState("")
@@ -24,7 +25,7 @@ export function BotRosterReadAction({item,source,current,readerID,onRead,w}:{
     try {
       await markConversationRead(source,current,bot,readerID,control.signal)
       if(control.signal.aborted)return
-      if(document.activeElement===button)button.parentElement?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true})
+      if(document.activeElement===button)(focusRow?.()??button.parentElement?.querySelector<HTMLButtonElement>(".pa-bot-row"))?.focus({preventScroll:true})
       setResult("marked")
       await onRead(source)
     }catch(error){if(!control.signal.aborted)setResult(errorCode(error))}

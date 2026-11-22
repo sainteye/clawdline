@@ -77,7 +77,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   const sortFocus=useRef<string|undefined>(undefined),restoreOptions=useRef(false)
   const [active, setActive] = useState<RosterDrag | null>(null), [over, setOver] = useState<RosterDrag | null>(null)
   const order=rosterState.order??"default"
-  const defaultLayout=sorting||order==="default"
+  const defaultLayout=sorting||order!=="machine"
   const shown = items.filter(i => !machine || i.bot.key.machine_id === machine)
   const [,tickClock]=useState(Date.now)
   const showingBots=!tower&&shown.length>0
@@ -119,7 +119,8 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     const allRows=conversations(items,roomEntries)
     const override=preview&&pinAtStart.current?botIdentity(pinAtStart.current.item.bot.key):null
     const previewItems=override?shown.map(item=>botIdentity(item.bot.key)===override?{...item,bot:{...item.bot,sidebar_pinned:undefined}}:item):shown
-    const groups=orderedConversationSections(conversationSections(conversations(previewItems,roomEntries),state),defaultLayout?"default":order)
+    const sections=conversationSections(conversations(previewItems,roomEntries),state)
+    const groups=orderedConversationSections(sections,sorting?"default":order)
     const drop = (target: RosterDrag, source: RosterDrag, currentState=rosterState, save=true) => {
       const apply=(next:RosterState)=>{if(save)update(next);else {draft.current=next;setPreview(next)}}
       if (!source || source.key === target.key) return
@@ -130,7 +131,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       } else if (source.kind === "bot") {
         const item = allRows.find(row => row.key === source.key)
         if (!item) return
-        const group = target.kind === "bot" ? groups.find(g => g.items.some(i => i.key === target.key)) : groups.find(g => g.key === target.key)
+        const group = target.kind === "bot" ? sections.find(g => g.items.some(i => i.key === target.key)) : sections.find(g => g.key === target.key)
         const pinned = target.key === pinnedGroupKey || group?.kind === "pinned"
         // Moving a row changes its presentation, never the Project it belongs to.
         const section=item.kind==="bot"?item.item.bot.sidebar_section:undefined
@@ -145,7 +146,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     moves.current=target=>{
       if(!active||!draft.current||active.key===target.key)return
       if(direct.current&&active.kind==="bot"){
-        const from=groups.find(g=>g.items.some(i=>i.key===active.key)),to=groups.find(g=>g.items.some(i=>i.key===target.key))
+        const from=sections.find(g=>g.items.some(i=>i.key===active.key)),to=sections.find(g=>g.items.some(i=>i.key===target.key))
         if(target.kind!=="bot"||!from||from!==to)return
       }
       setOver(target);drop(target,active,draft.current,false)
@@ -188,20 +189,21 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       })()}
       {groups.map(group => {
         // The lead section reads like the pinned one: no Project mark, each row its own Project.
-        const lead=group.kind==="lead", pinned=group.kind==="pinned", byMachine=group.kind==="machine"
-        const flat=pinned||lead||byMachine||group.kind==="flat", name=byMachine?named(group.machineID):lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
+        const lead=group.kind==="lead", pinned=group.kind==="pinned", byMachine=group.kind==="machine", unread=group.kind==="unread"
+        const flat=pinned||lead||byMachine||unread, name=unread?w.unread:byMachine?named(group.machineID):lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
         const keys = group.items.map(item => item.key)
-        return <section className="pa-project-group" key={group.key} aria-label={group.kind==="flat"?undefined:name} data-roster-project={group.kind==="project"||undefined} {...targetProps({kind:"project", key:group.key})}>
-          {group.kind!=="flat"&&<h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,groups.filter(g=>g.kind==="project").map(g=>g.key))}</h2>}
+        return <section className="pa-project-group" key={group.key} aria-label={name} data-roster-project={group.kind==="project"||undefined} {...(!unread&&targetProps({kind:"project",key:group.key}))}>
+          <h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,sections.filter(g=>g.kind==="project").map(g=>g.key))}</h2>
           {group.items.map(item => {
             const key = item.key, project = projectKey(item.machineID,item.projectID), name=item.kind==="bot"?item.item.bot.name:item.entry.group.name
             const pinLabel=item.kind==="bot"?(pinned?w.rosterUnpin:w.rosterPin):(pinned?w.rosterUnpinGroup:w.rosterPinGroup)
             const source=item.kind==="bot"&&sources.find(source=>source.machineID===item.machineID)
-            return <div className="pa-roster-entry" key={key} {...targetProps({kind:"bot",key})}
-              onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(defaultLayout&&event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){if(item.kind==="bot")openContext(event,key);else{event.preventDefault();beginSorting(key)}}}}}
+            return <div className="pa-roster-entry" key={key} {...(!unread&&targetProps({kind:"bot",key}))}
+              onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(defaultLayout&&!unread&&event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){if(item.kind==="bot")openContext(event,key);else{event.preventDefault();beginSorting(key)}}}}}
               onContextMenu={event=>{if(item.kind==="bot")openContext(event,key);else{event.preventDefault();if(!active)beginSorting(key)}}}>
               {item.kind==="bot"?<BotRow item={item.item} grouped={!flat} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} now={now} projectName={item.item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&flat&&!byMachine?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!flat} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&flat&&!byMachine?named(item.machineID):undefined}/>}
-              {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}/>}
+              {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}
+                focusRow={unread?()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row"):undefined}/>}
               {sorting&&<div className="pa-roster-actions">{!lead&&<button type="button" className="pa-roster-pin" aria-label={`${pinLabel}: ${name}`} aria-pressed={pinned} title={pinLabel} disabled={item.kind==="bot"&&sharedRoster(item.item)&&!canWrite(item.item.source)} onClick={()=>item.kind==="bot"?setPinned(item.item,!pinned):pin(key,!pinned)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill={pinned?"currentColor":"none"} stroke="currentColor" strokeWidth="1.3"><path d="m8 1.7 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2.1.7-4.3-3.1-3 4.3-.6Z"/></svg></button>}{handle({kind:"bot",key},name,keys)}</div>}
             </div>
           })}
