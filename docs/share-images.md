@@ -23,10 +23,14 @@ with headless Chromium because Resvg was not installed locally.
 The README highlight GIFs are recorded from the built console with synthetic data only, through
 the Chrome DevTools protocol at 10 frames a second and encoded with an ffmpeg palette.
 `bots-tower-{en,zh-Hant}.gif` is the Bots fixture (`web/console/tools/fixtures/project-assistants.html`)
-at 1440 × 820: the Bot list beside the whole building, the elevator to 4F, and back.
+at 1440 × 820, cropped to 740 high: the Bot list beside the whole building, then the elevator to 4F.
+A recording-only script replaces the fixture's list results on a 12-second timeline, so Bots
+pick up tool work, walk to desks, finish with an unread reply and walk back to the lounge.
 `lantern-deep-{en,zh-Hant}.gif` is the console served by the voice demo's stand-in daemon
-(`tools/copilot-demo/story.mjs`, six fictional Sessions plus example quota readings) with the
-curated Lantern Deep package pinned beside the Session list, at 1440 × 900 scaled to 1080 wide.
+(`tools/copilot-demo/story.mjs`) with the curated Lantern Deep package pinned beside the Session
+list, at 1440 × 900 scaled to 1000 wide. For the recording, five more fictional working Sessions
+join one Project, Search rebuild is shown working, and the view is scrolled to that Project's
+chamber so most wanderers on screen are fighting. Example quota readings fill the status bar.
 
 The macOS notch draws the same rounded orange mascot natively through
 `shell/darwin/RoundedBrandMascot.swift`. Its coordinates and warm-light gradient

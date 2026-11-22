@@ -27,7 +27,7 @@
 
 ### 🏙️ Bot 住在一棟大樓裡
 
-![左側是 Bot 清單，右側是 Bots 大樓：先看到四層樓的像素風大樓、兩層樓有 Bot，接著搭電梯到 4F，工作中的 Bot 坐在辦公桌前並掛著名牌，等待允許的 Bot 站在桌邊，有新回覆的 Bot 帶著標記。](docs/assets/bots-tower-zh-Hant.gif)
+![左側是 Bot 清單，右側是 Bots 大樓：先看整棟四層樓，再搭電梯到 4F；Bot 接到工作就走到辦公桌前，名牌上顯示正在執行的工具，做完的 Bot 帶著「有新回覆」走回休息區，左側清單也同步更新。](docs/assets/bots-tower-zh-Hant.gif)
 
 把 Bots 切換到大樓檢視，每個 Project 會分到像素風大樓裡的一層樓，左側仍是同一份 Bot 清單。「整棟大樓」一次看到所有樓層，搭電梯就能到其中一層。工作中的 Bot 坐在辦公桌前，等你的排隊，出錯的到維修角落，閒置的在休息區散步，一天沒動靜的就去睡覺。有未讀回覆的 Bot 會帶著「有新回覆」標記；點一下 Bot 就能打開它的聊天室，樓層畫面照常運作。[Bots 大樓](docs/bots.md#the-bots-tower)
 
@@ -35,7 +35,7 @@
 
 ### 🏮 燈淵：把 Session 變成一場遊戲
 
-![燈淵固定在 Session 清單旁：手繪的地底洞窟，每個 Session 都是一位小旅人；兩位在等你的旅人站在燈下一臉疑惑，工作中的在戰鬥，完成的在休息，空中有生物飄過。](docs/assets/lantern-deep-zh-Hant.gif)
+![燈淵固定在 Session 清單旁：手繪的地底洞窟，每個 Session 都是一位小旅人；六位工作中的旅人在地面和浮台上揮砍、跳躍、攻擊怪物，在等你的那位站在燈下一臉疑惑。](docs/assets/lantern-deep-zh-Hant.gif)
 
 安裝燈淵視圖並固定在 Session 清單旁，每個 Project 都是一座手繪的地底洞室，每個 Session 則是十二位逐格動畫小旅人之一。工作中的旅人在戰鬥，需要你的站在暖光燈下一臉疑惑，工作完成的在營火旁休息或睡覺；頭上的生命條代表剩下多少 context。點選旅人就能打開它的 Session。燈淵是實驗中的 View Plugin，可在「探索視圖」安裝。[燈淵](plugins/session-lantern-deep/README.md)・[View Plugin](docs/plugins/view-plugin-v1.md)
 
