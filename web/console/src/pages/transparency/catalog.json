@@ -4488,6 +4488,7 @@
         "task"
       ],
       "locations": [
+        "Team scope in new and resumed Bot launch instructions",
         "Host-bound owned MCP team tools",
         "Complete person-owned approval cards",
         "Dedicated SQLite manager mutation"
@@ -4508,13 +4509,18 @@
         {
           "path": "internal/transport/http/project_assistants_host.go",
           "line": 379
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/session_configuration.go",
+          "line": 170
         }
       ],
       "original": [
-        "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。",
-        "Propose a Bot in your Project or another registered Project on this machine. It inherits your agent, approval policy, mode and any explicit team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 或同一台機器已登錄的其他 Project 建立 Bot，繼承你的代理、允許方式、模式及明確授予的管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。",
-        "An existing registered Project on this machine: its exact, unique folder name or absolute path. Omit to use your own Project. 同一台機器已登錄的 Project 資料夾名稱須完全相符且唯一，也可以填絕對路徑。省略時使用你所在的 Project。",
-        "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。"
+        "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. The current Project is the scope of list_team and update_bot. The create proposal waits for the user's approval. If the tool refuses, report the actual error code and field.",
+        "List settings for existing Bots in your current Project, including hidden Bots. To propose a new Bot for a named Project, use create_bot with folder. 列出目前 Project 的既有 Bot 設定，包含隱藏的 Bot。要在指定 Project 提議建立 Bot，請呼叫 create_bot 並填入 folder。",
+        "Propose a new Bot. Set folder to the destination when the person specifies a Project, including another registered Project on this computer. Omit folder to use your current Project. The new Bot inherits your agent, approval policy, mode and explicit team management grant. The person has 270 seconds to approve the complete card, which must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議建立新 Bot。使用者有指定 Project 時，把目的地填入 folder，可以選這台電腦上已登錄的其他 Project。省略時使用目前的 Project。新 Bot 會繼承你的代理、核准方式、模式及明確授予的管理團隊權限。完整卡片上限為 2,000 個 UTF-16 單位，須由本人在 270 秒內核准。結果不明時沿用原冪等鍵。",
+        "Destination Project for the new Bot. Use an exact, unique registered folder name or absolute path on this computer. Omit to use the current Project. 新 Bot 的目的 Project。填入這台電腦上已登錄且唯一的資料夾名稱或絕對路徑。省略時使用目前的 Project。",
+        "Propose changes to an existing Bot's name, instructions, appearance or visibility in your current Project. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更目前 Project 內既有 Bot 的名稱、指令、外觀或顯示狀態。須由本人核准。結果不明時沿用原冪等鍵。"
       ]
     },
     {
@@ -5251,7 +5257,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "a35463505b4bb551066d551a64bd8af7f94ceb2ef110e52c2b2a8f971af542d4",
+    "internal/adapters/projectassistantacp/mcp.go": "0773118ea227087be3da967d0425ee0ea0ce46108215d76fccaeb762bf80d33c",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5260,7 +5266,7 @@
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "3b802530d9d5032276e4c561d0a3e1c9d96d5d98c0148cb169ae449ed3f9d145",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "b80213ded37914ca27d8aadf849c36bcabe7a446042a208158e83220a66fc937",
+    "internal/adapters/projectassistantacp/session_configuration.go": "0f93b7664c15615d794cd2dba34faf7c476348dc7f9d65baa9d771d30477788c",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
     "internal/adapters/projectassistantacp/tcp_darwin.go": "a2bce0740704ba649ce41fcd7198d3e956273fb0725c52cf837eebb09fb05616",
     "internal/adapters/projectassistantacp/tcp_linux.go": "9848170c19f9cae199b6bf234ba47bfdd69020b6c46beb555aa23570a0f1990b",

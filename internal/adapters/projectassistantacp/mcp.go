@@ -798,12 +798,12 @@ func mcpTeamTools() []any {
 		return map[string]any{"idempotency_key": map[string]any{"type": "string", "minLength": 1}, "name": text(), "instructions": text(), "avatarColor": text(), "avatarShape": text(), "hidden": map[string]any{"type": "boolean"}}
 	}
 	create, update := fields(), fields()
-	create["folder"] = map[string]any{"type": "string", "description": "An existing registered Project on this machine: its exact, unique folder name or absolute path. Omit to use your own Project. 同一台機器已登錄的 Project 資料夾名稱須完全相符且唯一，也可以填絕對路徑。省略時使用你所在的 Project。"}
+	create["folder"] = map[string]any{"type": "string", "description": "Destination Project for the new Bot. Use an exact, unique registered folder name or absolute path on this computer. Omit to use the current Project. 新 Bot 的目的 Project。填入這台電腦上已登錄且唯一的資料夾名稱或絕對路徑。省略時使用目前的 Project。"}
 	update["botId"] = map[string]any{"type": "string", "minLength": 1}
 	return []any{
-		tool("list_team", "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。", map[string]any{}, []string{}),
-		tool("create_bot", "Propose a Bot in your Project or another registered Project on this machine. It inherits your agent, approval policy, mode and any explicit team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 或同一台機器已登錄的其他 Project 建立 Bot，繼承你的代理、允許方式、模式及明確授予的管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
-		tool("update_bot", "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。", update, []string{"idempotency_key", "botId"}),
+		tool("list_team", "List settings for existing Bots in your current Project, including hidden Bots. To propose a new Bot for a named Project, use create_bot with folder. 列出目前 Project 的既有 Bot 設定，包含隱藏的 Bot。要在指定 Project 提議建立 Bot，請呼叫 create_bot 並填入 folder。", map[string]any{}, []string{}),
+		tool("create_bot", "Propose a new Bot. Set folder to the destination when the person specifies a Project, including another registered Project on this computer. Omit folder to use your current Project. The new Bot inherits your agent, approval policy, mode and explicit team management grant. The person has 270 seconds to approve the complete card, which must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議建立新 Bot。使用者有指定 Project 時，把目的地填入 folder，可以選這台電腦上已登錄的其他 Project。省略時使用目前的 Project。新 Bot 會繼承你的代理、核准方式、模式及明確授予的管理團隊權限。完整卡片上限為 2,000 個 UTF-16 單位，須由本人在 270 秒內核准。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
+		tool("update_bot", "Propose changes to an existing Bot's name, instructions, appearance or visibility in your current Project. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更目前 Project 內既有 Bot 的名稱、指令、外觀或顯示狀態。須由本人核准。結果不明時沿用原冪等鍵。", update, []string{"idempotency_key", "botId"}),
 	}
 }
 

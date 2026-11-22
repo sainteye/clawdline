@@ -48,6 +48,11 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 				}
 				p, q, path := configuredProvider(t, agent, mode)
 				q.Resume = resume
+				if agent == pa.ClaudeCode && resume {
+					tools := &mcpTeamFixtureTools{}
+					tools.enabled.Store(true)
+					q.Bot.Lead, q.Tools = true, tools
+				}
 				if resume {
 					q.Binding.NativeSessionID = "scripted-session"
 				}
@@ -117,6 +122,11 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 					}
 					if err = json.Unmarshal(wire.Params["_meta"], &meta); err != nil {
 						t.Fatal(err)
+					}
+					teamHint := strings.Contains(meta.SystemPrompt.Append, "create_bot") && strings.Contains(meta.SystemPrompt.Append, "folder") &&
+						strings.Contains(meta.SystemPrompt.Append, "registered Project")
+					if teamHint != q.Bot.Lead {
+						t.Fatal("Claude session did not receive the expected team tool scope")
 					}
 					o := meta.ClaudeCode.Options
 					for _, value := range []*bool{o.PersistSession, o.PromptSuggestions, o.AgentProgressSummaries} {

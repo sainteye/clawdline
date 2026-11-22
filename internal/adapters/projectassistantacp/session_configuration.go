@@ -132,8 +132,8 @@ func hasCapability(raw []byte) bool {
 // systemPrompt is the fixed frame Codync gives every Bot (host/src/chat/
 // context.rs render): who it is, where the person talks to it, how replies
 // and work reach them, and that its Project is not a sandbox or a grant;
-// then the person's standing instructions. The tools' own descriptions
-// explain each tool, so they are not repeated here.
+// then the person's standing instructions. The team scope is included when
+// the workspace guidance and the tools' destinations differ.
 func systemPrompt(q app.OpenRequest) string {
 	name := strings.TrimSpace(q.Bot.Name)
 	engine := "Claude Code"
@@ -165,6 +165,9 @@ func systemPrompt(q app.OpenRequest) string {
 	)
 	if q.Bot.Lead {
 		lines = append(lines, "", pa.LeadBrief)
+	}
+	if _, ok := q.Tools.(app.TeamTools); ok && q.Bot.CanManageTeam() {
+		lines = append(lines, "", "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. The current Project is the scope of list_team and update_bot. The create proposal waits for the user's approval. If the tool refuses, report the actual error code and field.")
 	}
 	if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
 		lines = append(lines, "", "Background work: When add_work is available in your own chat, use it for research or analysis that will take time. Give the worker a short title and a self-contained brief, confirm the handoff in chat, then finish this turn so it can start. Answer quick questions in chat. A background worker reports by replying in its own thread.")
