@@ -1,5 +1,5 @@
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
-import { RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
+import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
 import type { MemoryReadDetail, ProjectMemoryPage, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -73,6 +73,14 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
+type RosterFailure = {
+  machine: string
+  code: string
+  stage: "admission" | "request" | "answer"
+  transport_code: string | null
+  status: number | null
+  has_ref: boolean
+}
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
   accountKey: string
@@ -142,6 +150,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   answerTeamPlan(r:W.ProjectAssistantTeamAnswerRequest,s:AbortSignal) { return this.request<W.ProjectAssistantTeamAnswerResponse>(endpoint(r.command.key,"/team-answer"),s,r,"POST",true,PROJECT_ASSISTANTS_GROUPS_API_LEVEL) }
   private readonly transport: AssistantFetch
   private readonly currentGrant: () => AssistantGrant | null
+  private readonly reportRosterFailure?: (failure: RosterFailure) => void
   private readonly lifetime = new AbortController()
   private access: W.ProjectAssistantAccess = "hidden"
   private lastStatus: W.ProjectAssistantSourceStatus | null = null
@@ -150,9 +159,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.access=source.access;this.lastStatus=source
     if(source.fresh&&source.state==="online")this.observedWriteAccess=source.readable&&source.writable&&source.access==="interactive"
   }
-  constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null) {
+  constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null,
+    reportRosterFailure?: (failure: RosterFailure) => void) {
     this.grant = { ...grant }; this.machineID = grant.machineID; this.machineName = grant.name; this.authorizationRevision = grant.authorizationRevision
     this.transport = transport; this.currentGrant = currentGrant
+    this.reportRosterFailure = reportRosterFailure
   }
   revoke() { this.lifetime.abort() }
   get browserRemote() { return this.grant.accountKey !== "local" }
@@ -293,9 +304,31 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   async list(r: W.ProjectAssistantListRequest,s: AbortSignal) {
     this.key({machine_id:r.machine_id,bot_id:""})
-    const answer=await this.request<W.ProjectAssistantListResponse>(base+query({...r}),s)
-    const source=this.observeRosterSource(answer.contract_version,answer.sources?.find(item=>item.machine_id===this.machineID))
-    return {...answer,sources:[source]}
+    let answered = false
+    try {
+      const answer=await this.request<W.ProjectAssistantListResponse>(base+query({...r}),s)
+      answered = true
+      const source=this.observeRosterSource(answer.contract_version,answer.sources?.find(item=>item.machine_id===this.machineID))
+      return {...answer,sources:[source]}
+    } catch (error) {
+      if (this.reportRosterFailure && !s.aborted && !this.lifetime.signal.aborted) {
+        const transport = error instanceof AssistantTransportFailure
+          ? error.response as {code?: unknown; status?: unknown; ref?: {seq?: unknown}} | null : null
+        const sourceCode = sourceFailure(error) ? error.error.code : null
+        const transportCode = transport?.code
+        try {
+          this.reportRosterFailure({
+            machine: this.machineID,
+            code: typeof sourceCode === "string" && isFailureCode(sourceCode) ? sourceCode : "unavailable",
+            stage: answered ? "answer" : provablyNotSent(error) ? "admission" : "request",
+            transport_code: typeof transportCode === "string" && isFailureCode(transportCode) ? transportCode : null,
+            status: typeof transport?.status === "number" && Number.isInteger(transport.status) ? transport.status : null,
+            has_ref: Number.isSafeInteger(transport?.ref?.seq),
+          })
+        } catch { /* Diagnostics cannot change the roster result. */ }
+      }
+      throw error
+    }
   }
   private observeRosterSource(version: string,source: W.ProjectAssistantSourceStatus|undefined) {
     if(version!=="project-assistants.v1"||!source||source.machine_id!==this.machineID)throw failure("pa_invalid")
@@ -839,7 +872,8 @@ export class ProjectAssistantRegistry {
     const item = await source.workItem(work,signal)
     return {item,machineID:source.machineID,current:() => this.clients.get(source.machineID) === source && source.current()}
   }
-  sync(grants: readonly AssistantGrant[], transport: (grant: AssistantGrant) => AssistantFetch) {
+  sync(grants: readonly AssistantGrant[], transport: (grant: AssistantGrant) => AssistantFetch,
+    reportRosterFailure?: (failure: RosterFailure) => void) {
     if (grants.some(grant => grant.accountKey !== this.accountKey || grant.readerID !== this.readerID)) throw failure("pa_revoked")
     const next = new Map(grants.map(grant => [grant.machineID,grant]))
     let changed = this.grants.size !== next.size || grants.some(grant => {
@@ -857,7 +891,7 @@ export class ProjectAssistantRegistry {
       const held = {...grant,authorizationRevision:revision}
       effective.set(grant.machineID,held)
       if (!this.clients.has(grant.machineID)) {
-        this.clients.set(grant.machineID,new ProjectAssistantSourceClient(held,transport(held),() => this.grants.get(grant.machineID) ?? null))
+        this.clients.set(grant.machineID,new ProjectAssistantSourceClient(held,transport(held),() => this.grants.get(grant.machineID) ?? null,reportRosterFailure))
         this.revisions.set(grant.machineID,grant.authorizationRevision);changed = true
       }
     }

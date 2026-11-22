@@ -612,8 +612,11 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       id => client.current ? machineApp(client.current,id).api_level : undefined,
       id => JSON.stringify([account,who?.device,id,machines.find(machine => machine.id === id)?.pairing,
         machines.find(machine => machine.id === id)?.operationAllowed]))
-    assistantRegistry.sync(grants,grant => capturedAssistantRelayFetch(grant.machineID,() =>
-      client.current?.account === account ? client.current : null,CARRY_TABLE.carried))
+    const current = () => client.current?.account === account ? client.current : null
+    assistantRegistry.sync(grants,grant => capturedAssistantRelayFetch(grant.machineID,current,CARRY_TABLE.carried),failure => {
+      current()?.viewerEvents?.record?.("cloud.bots.roster.failed", failure,
+        [failure.machine,failure.stage,failure.code,failure.transport_code].join("|"))
+    })
   },[assistantRegistry,machines,clientEpoch,who?.device,forgotten,assistantRefresh])
   const currentActionClient = useCallback(() => client.current, [])
   // A renewal replaces the client; the source moves its listeners to the new one.
