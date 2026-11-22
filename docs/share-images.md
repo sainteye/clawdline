@@ -16,6 +16,14 @@ green underline. Regenerate the cross-machine diagrams with
 `python3 tools/render-cross-machine-diagram.py`; render each editable overview SVG
 with the pinned Resvg version above after changing its artwork. The diagrams retain
 their existing text, dimensions and workflow layout.
+On 2026-11-22 the overview's first column and corner label changed to name
+Sessions, Bots and the voice copilot; that revision was rasterized from the SVG
+with headless Chromium because Resvg was not installed locally.
+
+The README highlight screenshots use synthetic data only: `bots-tower-{en,zh-Hant}.webp`
+is the Bots tower fixture (`web/console/tools/fixtures/project-assistants.html`)
+captured at 1440 × 900, 2×, and cropped to the scene; `lantern-deep-{en,zh-Hant}.webp`
+is cropped from the curated Lantern Deep preview in `web/console/public/view-plugins/previews/`.
 
 The macOS notch draws the same rounded orange mascot natively through
 `shell/darwin/RoundedBrandMascot.swift`. Its coordinates and warm-light gradient

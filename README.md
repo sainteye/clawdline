@@ -7,15 +7,45 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-**With Clawdline Cloud, see Claude Code and Codex Sessions across your machines in one phone list, then open one to reply or leave a to-do.**
+**Clawdline brings your Claude Code and Codex Sessions and your long-lived Bots onto one platform, and gives you a voice copilot you can call to hear what needs you.**
 
-![Clawdline brings Claude Code and Codex Sessions into one view so you can follow progress, reply and leave to-dos. Local browser use runs on your machine; optional Cloud adds phones and multiple machines.](docs/assets/readme-overview-en.png)
+![Clawdline brings Sessions and Bots into one view so you can follow progress, reply and leave to-dos. Local browser use runs on your machine; optional Cloud adds phones and multiple machines.](docs/assets/readme-overview-en.png)
+
+### 🧩 Sessions and Bots on one platform
+
+**Sessions** are the Claude Code and Codex conversations you already run. **Bots** are long-lived assistants bound to a Project: they remember what you tell them, work with their agent's own tools, and hand larger changes to an isolated worker through Clawdline's Broker, the same path Sessions use to dispatch work, with the result returning to the same chat. Both live in one console, beside the terminal, the optional Board and notifications. Bots currently run on macOS. [Sessions](docs/user/sessions.md) · [Bots](docs/bots.md)
+
+### 🎙️ A voice copilot for your Sessions
+
+Call the voice copilot to hear what needs you, ask about a Session's progress or a message board's current Lead, and open the relevant conversation. It reads the full recipient and message back for your agreement before sending. Green capsules keep the call's tool activity, with quick commands beside them and duration and amount below.
+
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-en.png" width="390" alt="Voice copilot reporting on sample Sessions, with green tool-history capsules, Quick commands, call duration and amount." /></a>
+
+*Current Cloud/dev interface with synthetic example data. Voice calls use your own OpenAI API key.*
+
+[Voice copilot guide and demo](https://clawdline.com/docs/voice-copilot/) · [Desktop video (1:51)](https://media.clawdline.com/voice-copilot/demo-en-d2857cd36962.mp4) · [Phone video (1:55)](https://media.clawdline.com/voice-copilot/demo-en-phone-21cfaf2e686a.mp4). Recorded GPT-Live calls with fictional Sessions and prerecorded AI user speech; on-screen amounts are examples. The call sheet stays open for 30 seconds before shrinking to a floating bubble.
+
+### 🏙️ Your Bots live in a tower
+
+![The Bots tower: a pixel-art cyberpunk floor where working Bots sit at desks with name tags, a Bot waiting for permission stands in line, Bots with new replies carry a badge, and a counter bar shows Bots, waiting, working and new replies.](docs/assets/bots-tower-en.webp)
+
+Switch Bots to the tower view and every Project gets a floor of a pixel-art building. Working Bots sit at desks, waiting ones queue, failing ones go to the repair corner, idle ones stroll the lounge, and Bots quiet for a day go to sleep. A New reply badge marks unread replies, and selecting a Bot opens its chat while the floor keeps running. [The Bots tower](docs/bots.md#the-bots-tower)
+
+*Synthetic example Bots.*
+
+### 🏮 Lantern Deep: watch your Sessions as a game
+
+![Lantern Deep: a hand-painted cavern where Sessions are small wanderers; two stand puzzled under a lantern because they need you, others patrol and rest, and creatures drift through the air.](docs/assets/lantern-deep-en.webp)
+
+Install the Lantern Deep view and every Project becomes a hand-painted underground chamber, every Session one of twelve frame-by-frame animated wanderers. A working wanderer fights, one that needs you stands puzzled under a warm beacon, and finished work rests or sleeps by the campfire. A life bar shows how much context is still free. Select a wanderer to open its Session. Lantern Deep is an experimental View Plugin offered under Explore views. [Lantern Deep](plugins/session-lantern-deep/README.md) · [View Plugins](docs/plugins/view-plugin-v1.md)
+
+*Synthetic example Sessions; motion is paused in the still image.*
 
 ## How Clawdline differs from Herdr and T3 Code
 
-- 🖥️ **Herdr — desktop and phone apps for Agents in persistent terminals.** Run Agents in terminals that keep going on local and SSH machines, see which ones need you first, and let an Agent start helper Agents and hear back. Native apps for macOS, Windows and Linux, a phone app for iPhone, iPad and Android, and the original TUI. [Herdr](https://herdr.dev/) · [Desktop app](https://github.com/herdrdev/herdr-app#readme) · [herdr-core](https://github.com/herdrdev/herdr-core#readme)
-- 💬 **T3 Code — an app for working with coding Agents.** Control Agents through desktop, web and mobile apps, including local and remote environments. [T3 Code overview](https://github.com/pingdotgg/t3code#readme) · [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
-- 🔁 **Clawdline — coordinate Sessions and track delivery.** Bring your existing Claude Code and Codex Sessions into a browser console. Leave to-dos, answer Agent notes, dispatch work, and track verification, merge and deployment on the optional Board. A delivery report and a verified Git landing stay distinct. Cloud adds one phone list across machines. [Sessions](docs/user/sessions.md) · [Dispatch](docs/user/clawdfather-and-dispatch.md) · [Board](docs/user/board.md)
+- 🖥️ **Herdr — a desktop app for terminals and coding agents.** Keep work in spaces, see which agents need you, and leave terminals running on local and SSH machines through herdr-core. An agent can start helpers and hear back. Native apps for macOS, Windows and Linux, phone apps for iPhone, iPad and Android, a separate TUI, and a community gallery of layouts and mods. [Herdr](https://herdr.dev/) · [Desktop app](https://github.com/herdrdev/herdr-app#readme) · [herdr-core](https://github.com/herdrdev/herdr-core#readme)
+- 💬 **T3 Code — an open-source control plane for coding agents.** Drive Claude Code, Codex, Cursor, OpenCode and other ACP agents through desktop, web and mobile apps, connect other machines over T3 Connect, LAN, Tailscale or SSH, and let one agent delegate a task to another. [T3 Code overview](https://github.com/pingdotgg/t3code#readme) · [Remote access](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
+- 🔁 **Clawdline — Sessions and Bots in one place, with a voice copilot.** Bring your existing Claude Code and Codex Sessions and long-lived Project Bots into one browser console. Call the voice copilot to hear what needs you, and follow the work as a Bots tower or in a game view such as Lantern Deep. Leave to-dos, answer Agent notes, dispatch work, and track verification, merge and deployment on the optional Board; a delivery report and a verified Git landing stay distinct. Cloud adds one phone list across machines. [Sessions](docs/user/sessions.md) · [Bots](docs/bots.md) · [Voice copilot](docs/user/voice-copilot.md) · [Board](docs/user/board.md)
 
 ## What you can do
 
@@ -49,16 +79,6 @@
 Clawdline runs the daemon and console on your machine and works with Claude Code and Codex Sessions you already use. Cloud is optional; its relay carries encrypted data. [How it works](docs/architecture.md)
 
 Official [Grok Build coding Sessions](docs/grok-cli.md) also support native file edits, tool approvals and worktree dispatch after CLI sign-in.
-
-## Talk to your Sessions by voice
-
-Call the voice copilot to hear what needs you, ask about a Session's progress or a message board's current Lead, and open the relevant conversation. It reads the full recipient and message back for your agreement before sending. Green capsules keep the call's tool activity, with quick commands beside them and duration and amount below.
-
-<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-en.png" width="390" alt="Voice copilot reporting on sample Sessions, with green tool-history capsules, Quick commands, call duration and amount." /></a>
-
-*Current Cloud/dev interface with synthetic example data. Voice calls use your own OpenAI API key.*
-
-[Voice copilot guide and demo](https://clawdline.com/docs/voice-copilot/) · [Desktop video (1:51)](https://media.clawdline.com/voice-copilot/demo-en-d2857cd36962.mp4) · [Phone video (1:55)](https://media.clawdline.com/voice-copilot/demo-en-phone-21cfaf2e686a.mp4). Recorded GPT-Live calls with fictional Sessions and prerecorded AI user speech; on-screen amounts are examples. The call sheet stays open for 30 seconds before shrinking to a floating bubble.
 
 ## Sessions that work across machines (Cloud)
 

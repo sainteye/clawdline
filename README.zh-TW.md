@@ -7,15 +7,45 @@
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25-00ADD8.svg)](go.mod)
 
-**透過 Clawdline Cloud，在手機同一份清單查看多台機器的 Claude Code 和 Codex Session，點開就能回覆或留待辦。**
+**Clawdline 把你的 Claude Code、Codex Session 與長期陪你工作的 Bot 整合在同一個平台，還有一位能直接打電話詢問的語音助理，告訴你哪裡需要你。**
 
-![Clawdline 將 Claude Code 與 Codex Session 集中在同一處，讓你掌握進度、回覆並留待辦；本機瀏覽器在你的機器上使用，選用 Cloud 可從手機及多台機器接續工作。](docs/assets/readme-overview-zh-Hant.png)
+![Clawdline 將 Session 與 Bot 集中在同一處，讓你掌握進度、回覆並留待辦；本機瀏覽器在你的機器上使用，選用 Cloud 可從手機及多台機器接續工作。](docs/assets/readme-overview-zh-Hant.png)
+
+### 🧩 Session 與 Bot 整合在同一個平台
+
+**Session** 是你原本就在用的 Claude Code、Codex 對話；**Bot** 是綁定在某個 Project 的長期助理：記得你交代過的事，用它所屬 Agent 的工具在專案裡工作，較大的修改則透過 Clawdline 的 Broker 交給隔離的 worker（與 Session 派工走同一條路），結果再回到同一個聊天室。兩者都在同一個主控台，旁邊就是終端機、選用的看板與通知。Bot 目前在 macOS 上執行。[Session](docs/user/sessions.md)・[Bot](docs/bots.md)
+
+### 🎙️ 用語音掌握你的 Session
+
+打給語音助理，聽它回報哪裡需要你、查詢 Session 進度或留言板目前的 Lead，並開啟相關對話。送訊息前，它會先念出收件 Session 與完整內容，等你同意才送出。綠色膠囊保留當通工具紀錄，常用指令在同區右側，下方顯示時間與金額。
+
+<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-zh-tw.png" width="390" alt="語音助理回報示範 Session，顯示綠色工具膠囊、右側常用指令、通話時間與金額。" /></a>
+
+*目前 Cloud／dev 介面，使用合成示範資料。語音通話使用你自己的 OpenAI API key。*
+
+[語音助理使用指南與示範](https://clawdline.com/docs/voice-copilot/?lang=zh-TW) · [桌機影片（2:43）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-f3a541a44435.mp4) · [手機影片（2:35）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-phone-c85af090b6cb.mp4)。實際 GPT-Live 通話使用虛構 Session 與預錄的 AI 使用者語音，畫面金額為示例。先保留 30 秒通話畫面，再縮小圓球、收成浮球後操作。
+
+### 🏙️ Bot 住在一棟大樓裡
+
+![Bots 大樓：像素風的賽博龐克樓層，工作中的 Bot 坐在辦公桌前並掛著名牌，等待允許的 Bot 排隊，有新回覆的 Bot 帶著標記，上方計數列顯示 Bot、等你、工作中與新回覆的數量。](docs/assets/bots-tower-zh-Hant.webp)
+
+把 Bots 切換到大樓檢視，每個 Project 會分到像素風大樓裡的一層樓。工作中的 Bot 坐在辦公桌前，等你的排隊，出錯的到維修角落，閒置的在休息區散步，一天沒動靜的就去睡覺。有未讀回覆的 Bot 會帶著「有新回覆」標記；點一下 Bot 就能打開它的聊天室，樓層畫面照常運作。[Bots 大樓](docs/bots.md#the-bots-tower)
+
+*畫面為合成的示範 Bot。*
+
+### 🏮 燈淵：把 Session 變成一場遊戲
+
+![燈淵：手繪的地底洞窟，每個 Session 都是一位小旅人；兩位需要你的旅人站在燈下一臉疑惑，其他旅人巡邏或休息，空中有生物飄過。](docs/assets/lantern-deep-zh-Hant.webp)
+
+安裝燈淵視圖後，每個 Project 都是一座手繪的地底洞室，每個 Session 則是十二位逐格動畫小旅人之一。工作中的旅人在戰鬥，需要你的站在暖光燈下一臉疑惑，工作完成的在營火旁休息或睡覺；頭上的生命條代表剩下多少 context。點選旅人就能打開它的 Session。燈淵是實驗中的 View Plugin，可在「探索視圖」安裝。[燈淵](plugins/session-lantern-deep/README.md)・[View Plugin](docs/plugins/view-plugin-v1.md)
+
+*畫面為合成的示範 Session；靜態圖暫停了動畫。*
 
 ## 與 Herdr、T3 Code 的差異
 
-- 🖥️ **Herdr：在持續運行的終端執行 Agent 的桌面與手機 App。** Agent 在本機與 SSH 機器的終端持續運行，先列出需要你處理的 Agent，Agent 也能派出幫手並收到回報。提供 macOS、Windows、Linux 原生 App，iPhone、iPad、Android 手機 App，以及原本的 TUI。[Herdr 官網](https://herdr.dev/)・[桌面 App](https://github.com/herdrdev/herdr-app#readme)・[herdr-core](https://github.com/herdrdev/herdr-core#readme)
-- 💬 **T3 Code：操作程式開發 Agent 的 App。** 透過桌機、網頁與手機 App 操作 Agent，支援本機與遠端環境。[T3 Code 介紹](https://github.com/pingdotgg/t3code#readme)・[遠端存取](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
-- 🔁 **Clawdline：協調 Session，追蹤工作交付。** 在瀏覽器集中管理已使用的 Claude Code 和 Codex Session；留下待辦、回答 Agent 便條並派工，選用看板追蹤驗證、合併與部署；清楚區分「Agent 回報完成」與「已驗證合併」。選用 Cloud 後，也能從手機同一份清單掌握多台機器。[Session](docs/user/sessions.md)・[派工](docs/user/clawdfather-and-dispatch.md)・[看板](docs/user/board.md)
+- 🖥️ **Herdr：管理終端機與程式開發 Agent 的桌面 App。** 用 space 整理工作、先看到哪些 Agent 需要你，並透過 herdr-core 讓本機與 SSH 機器上的終端機持續運行；Agent 也能派出幫手並收到回報。提供 macOS、Windows、Linux 原生 App，iPhone、iPad、Android 手機 App，另有獨立的 TUI，以及社群製作的版面與 mod 圖庫。[Herdr 官網](https://herdr.dev/)・[桌面 App](https://github.com/herdrdev/herdr-app#readme)・[herdr-core](https://github.com/herdrdev/herdr-core#readme)
+- 💬 **T3 Code：開源的程式開發 Agent 控制台。** 透過桌機、網頁與手機 App 操作 Claude Code、Codex、Cursor、OpenCode 及其他 ACP Agent；可經 T3 Connect、區域網路、Tailscale 或 SSH 連接其他機器，也能讓一個 Agent 把任務交給另一個。[T3 Code 介紹](https://github.com/pingdotgg/t3code#readme)・[遠端存取](https://github.com/pingdotgg/t3code/blob/main/docs/user/remote-access.md)
+- 🔁 **Clawdline：Session 與 Bot 集中在一處，再加上語音助理。** 在瀏覽器主控台集中你已在用的 Claude Code、Codex Session 與綁定 Project 的長期 Bot；打給語音助理聽它回報哪裡需要你，也能用 Bots 大樓或燈淵這類遊戲視圖看工作進展。留下待辦、回答 Agent 便條並派工，選用看板追蹤驗證、合併與部署；清楚區分「Agent 回報完成」與「已驗證合併」。選用 Cloud 後，也能從手機同一份清單掌握多台機器。[Session](docs/user/sessions.md)・[Bot](docs/bots.md)・[語音助理](docs/user/voice-copilot.md)・[看板](docs/user/board.md)
 
 ## 你可以做什麼
 
@@ -47,16 +77,6 @@
 - 💡 **問答、Issues 與 Ideas 社群（Cloud）** — 閱讀討論、詢問使用方式、回報問題與提出功能建議。任何人都能閱讀，登入後可參與；回覆與實際交付進度分開追蹤。[社群指南](docs/user/help-center.zh-TW.md)・[公開邊界](docs/cloud-support.md)
 
 Clawdline 的常駐服務與主控台在你的機器上執行，管理你已使用的 Claude Code 和 Codex Session。Cloud 是選用功能；中繼只傳送密文。[運作方式](docs/architecture.md)
-
-## 用語音掌握你的 Session
-
-打給語音助理，聽它回報哪裡需要你、查詢 Session 進度或留言板目前的 Lead，並開啟相關對話。送訊息前，它會先念出收件 Session 與完整內容，等你同意才送出。綠色膠囊保留當通工具紀錄，常用指令在同區右側，下方顯示時間與金額。
-
-<a href="https://clawdline.com/docs/voice-copilot/"><img src="docs/assets/voice-copilot-call-zh-tw.png" width="390" alt="語音助理回報示範 Session，顯示綠色工具膠囊、右側常用指令、通話時間與金額。" /></a>
-
-*目前 Cloud／dev 介面，使用合成示範資料。語音通話使用你自己的 OpenAI API key。*
-
-[語音助理使用指南與示範](https://clawdline.com/docs/voice-copilot/?lang=zh-TW) · [桌機影片（2:43）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-f3a541a44435.mp4) · [手機影片（2:35）](https://media.clawdline.com/voice-copilot/demo-zh-Hant-phone-c85af090b6cb.mp4)。實際 GPT-Live 通話使用虛構 Session 與預錄的 AI 使用者語音，畫面金額為示例。先保留 30 秒通話畫面，再縮小圓球、收成浮球後操作。
 
 ## 跨機器 Session 協作（Cloud）
 
