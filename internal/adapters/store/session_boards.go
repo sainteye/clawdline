@@ -621,7 +621,7 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 			return result, sb.ErrPostExpired
 		}
 	}
-	if c.Action == "archive" && lead && b.ArchivedAt != 0 {
+	if b.ArchivedAt != 0 && ((c.Action == "archive" && lead) || (c.Action == "leave" && member)) {
 		return result, nil
 	}
 	if b.ArchivedAt != 0 {
@@ -646,7 +646,15 @@ func changeSessionBoard(ctx context.Context, tx *sql.Tx, project string, actor, 
 		}
 		err = insertSessionBoardMembers(ctx, tx, b.ID, members, []sb.Actor{actor})
 	case "leave":
-		if person || lead {
+		if person {
+			return result, sb.ErrDenied
+		}
+		if member && len(members) == 1 {
+			// The last member leaving archives the board; its history stays readable.
+			_, err = tx.ExecContext(ctx, "UPDATE session_boards SET archived_at=? WHERE id=?", now.Unix(), b.ID)
+			break
+		}
+		if lead {
 			return result, sb.ErrDenied
 		}
 		_, err = tx.ExecContext(ctx, "DELETE FROM session_board_members WHERE board=? AND actor=?", b.ID, actor.ID)
