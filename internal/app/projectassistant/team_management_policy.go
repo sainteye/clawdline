@@ -176,8 +176,15 @@ type ManagedEdit struct {
 	Hidden       *bool
 }
 
-// CheckManagedEdit allows editing a nondeleted Bot of the manager's own full
-// Project. Deleting Bots, and changing who may manage, stay the person's.
+// CanManageBotSetup checks roster visibility and edit scope. Only the Lead
+// can reach other Projects, and the machine boundary applies to every manager.
+func (m ManagerContext) CanManageBotSetup(target pa.Bot) bool {
+	return target.Key.MachineID == m.Caller.Key.MachineID &&
+		target.Project.MachineID == m.Caller.Key.MachineID &&
+		(target.Project == m.Project || m.Caller.Lead)
+}
+
+// CheckManagedEdit validates a proposal for the target Bot's editable setup.
 func CheckManagedEdit(m ManagerContext, target pa.Bot, e ManagedEdit) error {
 	if err := m.check(); err != nil {
 		return err
@@ -185,7 +192,7 @@ func CheckManagedEdit(m ManagerContext, target pa.Bot, e ManagedEdit) error {
 	if target.Key != e.Target || target.Key.BotID == "" {
 		return serviceFailure(pa.NotFound, "bot")
 	}
-	if target.Project != m.Project {
+	if !m.CanManageBotSetup(target) {
 		return serviceFailure(pa.ScopeDenied, "manager_target_project")
 	}
 	if e.Name == nil && e.Instructions == nil && e.Appearance == nil && e.Hidden == nil {

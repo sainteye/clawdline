@@ -13184,7 +13184,7 @@
   "transparency.card.persistent-bot-selected-extensions.title": "Bot 已選取的技能資料夾與連接器憑證",
   "transparency.card.persistent-bot-team.condition": "須啟用開發版的 Bots，且這個 Bot 是主助理，或本人已為它開啟「管理團隊」。目前執行中的回合、Project 與執行綁定仍須獲授權。",
   "transparency.card.persistent-bot-team.effect": "接受會建立或變更已儲存的 Bot 設定。新 Bot 會在核准的目的地建立，並繼承管理者的代理、允許方式、模式及明確授予的管理團隊權限。預設權限只適用於主助理。Host 會記錄新 Bot 的建立者。在進入變更寫入前拒絕、逾期或撤權，都不會進行變更；進入寫入後等待端失聯，則會回報結果不明，不會自動改用新代理、Session 或操作鍵重做。建立設定本身不會啟動模型回合；之後使用 Bot 可能消耗所選帳號的額度。公開 Release 仍隱藏 Bots。",
-  "transparency.card.persistent-bot-team.how": "工具身分取自 Host 擁有的目前回合。主管可以提議在自己的 Project 或同一台電腦已登錄的其他 Project 建立 Bot。卡片會顯示目的地，展開明細可看到完整路徑。現有 Bot 的變更限於主管所在 Project 內的名稱、指令、外觀與顯示狀態。核准卡必須完整顯示在 2,000 個 UTF-16 單位內，270 秒後失效。每次核准嘗試都有新的卡片 ID，持久操作鍵保持不變。核准後，Host 與 SQLite 交易仍會重新檢查管理權限、執行狀態、Project、繼承權限與建立數量。沒有刪除工具，模型參數也不能授予管理團隊權限或指定 CreatedBy。",
+  "transparency.card.persistent-bot-team.how": "工具身分取自 Host 擁有的目前回合。主管可以提議在自己的 Project 或同一台電腦已登錄的其他 Project 建立 Bot。卡片會顯示目的地，展開明細可看到完整路徑。大主管可查看這台電腦所有 Project 的 Bot 並提議修改。其他主管可查看及修改目前 Project 的 Bot。清單包含隱藏的 Bot，並可依名稱搜尋。修改時以 Bot ID 指定目標，可變更名稱、指令、外觀與顯示狀態。核准卡必須完整顯示在 2,000 個 UTF-16 單位內，270 秒後失效。每次核准嘗試都有新的卡片 ID，持久操作鍵保持不變。核准後，Host 與 SQLite 交易仍會重新檢查管理權限、執行狀態、Project、繼承權限與建立數量。沒有刪除工具，模型參數也不能授予管理團隊權限或指定 CreatedBy。",
   "transparency.card.persistent-bot-team.summary": "管理權限開啟時，專屬 MCP 端點會提供 list_team、create_bot 與 update_bot。每次提議變更都須等待本人明確決定。明確指定的目的地會在核准時重新確認。",
   "transparency.card.persistent-bot-team.title": "Bot 管理團隊提案",
   "transparency.card.persistent-bots.condition": "只有明確啟用持續 Bots，且所選原生助理通過就緒檢查時才適用。功能預設關閉。聊天暫時無法讀取時，仍可用上次驗證的對話身分傳送一般文字，由來源查核目前授權與對話。Gemini Bot 透過 Antigravity 使用個人 Google 登入。原生紀錄依 Bot 隔離。忘記記憶或變更指示時會另開原生紀錄。設定檔會關閉 AI Credits。",

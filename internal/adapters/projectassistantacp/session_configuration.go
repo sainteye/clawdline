@@ -167,7 +167,12 @@ func systemPrompt(q app.OpenRequest) string {
 		lines = append(lines, "", pa.LeadBrief)
 	}
 	if _, ok := q.Tools.(app.TeamTools); ok && q.Bot.CanManageTeam() {
-		lines = append(lines, "", "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. The current Project is the scope of list_team and update_bot. The create proposal waits for the user's approval. If the tool refuses, report the actual error code and field.")
+		lines = append(lines, "", "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. Use list_team to find the Bot's id and pass it as botId to update_bot. Match its Project and existing settings when names repeat. Creation and updates wait for the user's approval. If the tool refuses, report the actual error code and field.")
+		if q.Bot.Lead {
+			lines = append(lines, "As the designated Lead, you can use list_team and update_bot in any Project on this computer.")
+		} else {
+			lines = append(lines, "Your current Project is the scope of list_team and update_bot.")
+		}
 	}
 	if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
 		lines = append(lines, "", "Background work: When add_work is available in your own chat, use it for research or analysis that will take time. Give the worker a short title and a self-contained brief, confirm the handoff in chat, then finish this turn so it can start. Answer quick questions in chat. A background worker reports by replying in its own thread.")

@@ -34,12 +34,14 @@ func (r *teamTestRepository) Bot(_ context.Context, k pa.BotKey) (pa.Bot, error)
 	}
 	return b, nil
 }
-func (r *teamTestRepository) List(context.Context, pa.ListBots) (pa.BotPage, error) {
+func (r *teamTestRepository) List(_ context.Context, q pa.ListBots) (pa.BotPage, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	p := pa.BotPage{}
 	for _, b := range r.bots {
-		p.Items = append(p.Items, pa.BotSummary{Bot: b})
+		if b.Key.MachineID == q.MachineID && strings.Contains(strings.ToLower(b.Name), strings.ToLower(q.Query)) {
+			p.Items = append(p.Items, pa.BotSummary{Bot: b})
+		}
 	}
 	return p, nil
 }
@@ -288,6 +290,35 @@ func TestTeamListIncludesHiddenPeersInTheExactProject(t *testing.T) {
 		if b.ID == "foreign" {
 			t.Fatal("another Project was listed")
 		}
+	}
+}
+
+func TestTeamLeadFindsSameNamedBotsAcrossProjects(t *testing.T) {
+	f := newTeamFixture(t)
+	f.mutateManager(func(b *pa.Bot) { b.Lead = true })
+	b := f.repo.bots[f.repo.manager]
+	b.Lead, b.Name = false, "Same Name"
+	b.Key.BotID = "local"
+	b.Instructions.Text = "Local instructions"
+	f.repo.bots[b.Key] = b
+	b.Key.BotID = "other"
+	b.Project.ProjectID = "other-project"
+	b.Instructions.Text = "Identifies the older Bot"
+	b.Hidden = true
+	f.repo.bots[b.Key] = b
+
+	answer, err := f.team.Call(t.Context(), f.fence, "turn", "list_team", json.RawMessage(`{"query":"same name"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bots := answer.(map[string]any)["bots"].([]TeamMember)
+	got := make(map[string]TeamMember)
+	for _, member := range bots {
+		got[member.ID] = member
+	}
+	if len(bots) != 2 || got["local"].Project != f.fence.Project || got["other"].Project != b.Project ||
+		!got["other"].Hidden || got["other"].Instructions != b.Instructions.Text {
+		t.Fatalf("team lookup could not distinguish the targets: %+v", bots)
 	}
 }
 

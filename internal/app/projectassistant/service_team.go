@@ -140,37 +140,59 @@ func (t *TeamCoordinator) Available(ctx context.Context, fence pa.Fence, turn st
 	return err
 }
 
-// TeamMember is setup data from the same full Project, hidden Bots included.
-// It intentionally carries no memory, messages, native identity or path.
+// TeamMember describes a Bot's authorized setup, including hidden entries.
+// A Lead also sees the registered folder when it can be resolved.
 type TeamMember struct {
-	ID           string        `json:"id"`
-	Name         string        `json:"name"`
-	Instructions string        `json:"instructions"`
-	Agent        pa.Agent      `json:"agent"`
-	Appearance   pa.Appearance `json:"appearance"`
-	Hidden       bool          `json:"hidden"`
-	ManageTeam   bool          `json:"manageTeam"`
-	CreatedBy    *pa.BotKey    `json:"createdBy,omitempty"`
+	ID           string          `json:"id"`
+	Name         string          `json:"name"`
+	Project      pa.ProjectScope `json:"project"`
+	Folder       string          `json:"folder,omitempty"`
+	Instructions string          `json:"instructions"`
+	Agent        pa.Agent        `json:"agent"`
+	Appearance   pa.Appearance   `json:"appearance"`
+	Hidden       bool            `json:"hidden"`
+	ManageTeam   bool            `json:"manageTeam"`
+	CreatedBy    *pa.BotKey      `json:"createdBy,omitempty"`
 }
 
-func (t *TeamCoordinator) members(ctx context.Context, scope pa.ProjectScope) ([]pa.Bot, error) {
-	all, err := t.machineBots(ctx, scope.MachineID)
-	if err != nil {
-		return nil, err
+// Only resolve a registered folder for display if it still denotes this
+// exact Project. Editing saved setup does not need a working directory.
+func (t *TeamCoordinator) projectFolder(ctx context.Context, scope pa.ProjectScope) string {
+	if t.o.Projects == nil || scope.Kind == pa.PersonalWorkspace {
+		return ""
 	}
-	out := []pa.Bot{}
-	for _, b := range all {
-		if b.Project == scope {
-			out = append(out, b)
+	resolved, err := t.o.Projects.Resolve(ctx, pa.ProjectSelection{MachineID: scope.MachineID, ProjectID: scope.ProjectID})
+	if err != nil || resolved.Scope != scope {
+		return ""
+	}
+	return resolved.Directory
+}
+
+func (t *TeamCoordinator) managedTarget(ctx context.Context, m ManagerContext, key pa.BotKey) (pa.Bot, error) {
+	if repo, ok := t.o.Repository.(backgroundOwnership); ok {
+		owner, err := repo.BackgroundOwner(ctx, key)
+		if err != nil {
+			return pa.Bot{}, err
+		}
+		if owner.BotID != "" {
+			return pa.Bot{}, serviceFailure(pa.NotFound, "bot")
 		}
 	}
-	return out, nil
+	target, err := t.o.Repository.Bot(ctx, key)
+	if err != nil {
+		return pa.Bot{}, err
+	}
+	if !m.CanManageBotSetup(target) {
+		return pa.Bot{}, serviceFailure(pa.ScopeDenied, "manager_target_project")
+	}
+	return target, nil
 }
-func (t *TeamCoordinator) machineBots(ctx context.Context, machine string) ([]pa.Bot, error) {
+
+func (t *TeamCoordinator) machineBots(ctx context.Context, machine, query string) ([]pa.Bot, error) {
 	all := []pa.Bot{}
 	cursor := ""
 	for {
-		page, err := t.o.Repository.List(ctx, pa.ListBots{MachineID: machine, Cursor: cursor, PageSize: pa.MaxPageRows})
+		page, err := t.o.Repository.List(ctx, pa.ListBots{MachineID: machine, Query: query, Cursor: cursor, PageSize: pa.MaxPageRows})
 		if err != nil {
 			return nil, err
 		}
@@ -199,18 +221,36 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		return nil, serviceFailure(pa.Invalid, "manager_arguments")
 	}
 	if action == "list_team" {
+		var query string
+		if raw, ok := fields["query"]; ok {
+			if string(raw) == "null" || json.Unmarshal(raw, &query) != nil {
+				return nil, serviceFailure(pa.Invalid, "manager_arguments")
+			}
+			delete(fields, "query")
+		}
 		if len(fields) != 0 {
 			return nil, serviceFailure(pa.Invalid, "manager_arguments")
 		}
-		bots, err := t.members(ctx, m.Project)
+		bots, err := t.machineBots(ctx, m.Project.MachineID, strings.TrimSpace(query))
 		if err != nil {
 			return nil, err
 		}
+		folders := make(map[pa.ProjectScope]string)
 		out := []TeamMember{}
 		for _, b := range bots {
-			out = append(out, TeamMember{ID: b.Key.BotID, Name: b.Name, Instructions: b.Instructions.Text, Agent: b.Agent, Appearance: b.Appearance, Hidden: b.Hidden, ManageTeam: b.CanManageTeam(), CreatedBy: b.CreatedBy})
+			if !m.CanManageBotSetup(b) {
+				continue
+			}
+			if _, lookedUp := folders[b.Project]; m.Caller.Lead && !lookedUp {
+				folders[b.Project] = t.projectFolder(ctx, b.Project)
+			}
+			out = append(out, TeamMember{ID: b.Key.BotID, Name: b.Name, Project: b.Project, Folder: folders[b.Project], Instructions: b.Instructions.Text, Agent: b.Agent, Appearance: b.Appearance, Hidden: b.Hidden, ManageTeam: b.CanManageTeam(), CreatedBy: b.CreatedBy})
 		}
-		if _, err = t.o.Check(ctx, fence, turn); err != nil {
+		current, err := t.o.Check(ctx, fence, turn)
+		if err != nil {
+			return nil, err
+		}
+		if err := ConfirmManagerPlan(m.Grant, current); err != nil {
 			return nil, err
 		}
 		return map[string]any{"bots": out}, nil
@@ -305,6 +345,9 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		if _, err = pa.DecideReplay(cmd, prior); err != nil {
 			return nil, err
 		}
+		if operation == pa.EditOperation {
+			return t.managedTarget(ctx, m, key)
+		}
 		return t.o.Repository.Bot(ctx, key)
 	}
 	now := t.o.Clock().UTC()
@@ -335,7 +378,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		if instructions != nil {
 			instruction = *instructions
 		}
-		bots, err := t.machineBots(ctx, m.Project.MachineID)
+		bots, err := t.machineBots(ctx, m.Project.MachineID, "")
 		if err != nil {
 			return nil, err
 		}
@@ -360,7 +403,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 			return nil, err
 		}
 	} else {
-		target, err := t.o.Repository.Bot(ctx, key)
+		target, err := t.managedTarget(ctx, m, key)
 		if err != nil {
 			return nil, err
 		}
@@ -411,6 +454,14 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		effect["settings"] = settings
 	} else {
 		effect["targetName"] = targetName
+		if next.Project != m.Project {
+			destination := t.projectFolder(ctx, next.Project)
+			if destination == "" {
+				destination = next.Project.ProjectID
+			}
+			// The destination describes the target; it is not an editable field.
+			fields["folder"], _ = json.Marshal(destination)
+		}
 		effect["changes"] = fields
 	}
 	detail, err := json.MarshalIndent(effect, "", "  ")

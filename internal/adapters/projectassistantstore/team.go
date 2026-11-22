@@ -131,7 +131,10 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 				return failure(pa.CapacityFull, "manager_created")
 			}
 		} else {
-			if before.Bot.Project != manager.Bot.Project || target.Bot.Project != manager.Bot.Project {
+			if before.BackgroundOwner != nil {
+				return failure(pa.NotFound, "bot")
+			}
+			if !current.CanManageBotSetup(before.Bot) || target.Bot.Project != before.Bot.Project {
 				return failure(pa.ScopeDenied, "manager_target_project")
 			}
 			allowed, err := pa.ApplyEdit(before.Bot, pa.EditBot{ExpectedVersion: m.ExpectedVersion, Name: target.Bot.Name, Instructions: target.Bot.Instructions.Text, Appearance: target.Bot.Appearance})

@@ -268,22 +268,111 @@ func TestGroupsRootWiringManagerCreatesInRegisteredProject(t *testing.T) {
 	}
 }
 
+func groupsManagerDesignateLead(t *testing.T, f *paServerFixture, bot contract.ProjectAssistantBot) {
+	t.Helper()
+	command := f.command(pa.EditOperation, "lead-"+bot.Key.BotID)
+	command.Key = bot.Key
+	settings := contract.ProjectAssistantEditSettings{
+		ExpectedVersion: bot.Version, Name: bot.Name, Appearance: bot.Appearance,
+		Instructions: bot.Instructions.Text, Roster: &contract.ProjectAssistantRosterEdit{DesignateLead: true},
+	}
+	paServerOK(t, f.request(t, "PATCH", "/v1/project-assistants/"+bot.Key.BotID, f.local,
+		contract.ProjectAssistantEditRequest{Command: command, Settings: settings}))
+}
+
+func TestGroupsRootWiringLeadEditsBotInAnotherProject(t *testing.T) {
+	for _, scenario := range []string{"accept", "decline", "transfer"} {
+		t.Run(scenario, func(t *testing.T) {
+			// The former Lead keeps an explicit Manage Team grant after transfer.
+			f, provider := groupsManagerFixture(t, true)
+			groupsManagerDesignateLead(t, f, f.get(t, f.local).Bot)
+			rows, err := projects.OpenPlaceRegistry(f.s.cfg.Dir).Add([]string{t.TempDir()}, time.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			destination := rows[len(rows)-1].Path
+			project := projects.PlaceID(destination)
+			for _, id := range []string{"older", "newer"} {
+				q := f.create()
+				q.Command.Key.BotID = id
+				q.Command.IdempotencyKey = id
+				q.Settings.Target.ProjectID = project
+				q.Settings.Name = "Same name"
+				q.Settings.Instructions = id + " instructions"
+				paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, q))
+			}
+			lookup := func(id string) contract.ProjectAssistantBot {
+				t.Helper()
+				for _, bot := range groupsManagerBots(t, f) {
+					if bot.Key.BotID == id {
+						return bot
+					}
+				}
+				t.Fatalf("missing Bot %s", id)
+				return contract.ProjectAssistantBot{}
+			}
+			provider.action = "update_bot"
+			provider.args = json.RawMessage(`{"idempotency_key":"edit-other","botId":"older","instructions":"Revised instructions","hidden":true}`)
+			paServerOK(t, f.send(t, f.local, "Edit the older Bot in the other Project"))
+			plan := groupsManagerPlan(t, f)
+			var detail struct {
+				Project pa.ProjectScope
+				BotID   string
+				Changes struct{ Folder, Instructions string }
+			}
+			if err := json.Unmarshal([]byte(plan.Detail), &detail); err != nil {
+				t.Fatal(err)
+			}
+			if detail.Project.ProjectID != project || detail.BotID != "older" || detail.Changes.Folder != destination || detail.Changes.Instructions != "Revised instructions" {
+				t.Fatalf("wrong target or effect in approval: %+v", detail)
+			}
+			before, twin := lookup("older"), lookup("newer")
+			if before.Instructions.Text != "older instructions" || before.Hidden {
+				t.Fatal("the target was edited before approval")
+			}
+			if scenario == "transfer" {
+				groupsManagerDesignateLead(t, f, twin)
+				if bot := f.get(t, f.local).Bot; bot.Lead || !bot.ManageTeam {
+					t.Fatal("transfer must leave the former Lead with its explicit grant only")
+				}
+			}
+			answer := contract.ProjectAssistantTeamAnswerRequest{
+				Command: f.command(pa.AnswerOperation, "decide-edit"), PlanID: plan.ID, Allow: scenario != "decline",
+			}
+			result := f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/team-answer", f.local, answer)
+			if scenario == "transfer" {
+				if result.Code < 400 {
+					t.Fatal("former Lead approved a cross-Project edit", result.Body.String())
+				}
+			} else {
+				paServerOK(t, result)
+			}
+			select {
+			case err := <-provider.outcome:
+				if (err == nil) != (scenario == "accept") {
+					t.Fatalf("update_bot returned %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("manager tool never settled")
+			}
+			after := lookup("older")
+			instructions := before.Instructions.Text
+			if scenario == "accept" {
+				instructions = "Revised instructions"
+			}
+			if after.Project != before.Project || after.Instructions.Text != instructions || after.Hidden != (scenario == "accept") || lookup("newer").Instructions.Text != twin.Instructions.Text {
+				t.Fatalf("unexpected settings after %s: %+v", scenario, after)
+			}
+			routineHumanIdle(t, f)
+		})
+	}
+}
+
 func TestGroupsRootWiringLeadManagesTeamByRole(t *testing.T) {
 	for _, transfer := range []bool{false, true} {
 		t.Run(fmt.Sprintf("transfer=%v", transfer), func(t *testing.T) {
 			f, p := groupsManagerFixture(t, false)
-			designate := func(bot contract.ProjectAssistantBot) {
-				t.Helper()
-				command := f.command(pa.EditOperation, "lead-"+bot.Key.BotID)
-				command.Key = bot.Key
-				settings := contract.ProjectAssistantEditSettings{
-					ExpectedVersion: bot.Version, Name: bot.Name, Appearance: bot.Appearance,
-					Instructions: bot.Instructions.Text, Roster: &contract.ProjectAssistantRosterEdit{DesignateLead: true},
-				}
-				paServerOK(t, f.request(t, "PATCH", "/v1/project-assistants/"+bot.Key.BotID, f.local,
-					contract.ProjectAssistantEditRequest{Command: command, Settings: settings}))
-			}
-			designate(f.get(t, f.local).Bot)
+			groupsManagerDesignateLead(t, f, f.get(t, f.local).Bot)
 			if bot := f.get(t, f.local).Bot; !bot.Lead || !bot.ManageTeam {
 				t.Fatal("the lead's default grant was not visible to the approval UI")
 			}
@@ -300,7 +389,7 @@ func TestGroupsRootWiringLeadManagesTeamByRole(t *testing.T) {
 				paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, q))
 				for _, bot := range groupsManagerBots(t, f) {
 					if bot.Key == q.Command.Key {
-						designate(bot)
+						groupsManagerDesignateLead(t, f, bot)
 					}
 				}
 				if bot := f.get(t, f.local).Bot; bot.Lead || bot.ManageTeam {

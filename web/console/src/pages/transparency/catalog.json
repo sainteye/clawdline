@@ -4500,7 +4500,7 @@
         },
         {
           "path": "internal/app/projectassistant/service_team.go",
-          "line": 192
+          "line": 214
         },
         {
           "path": "internal/adapters/projectassistantstore/team.go",
@@ -4516,11 +4516,13 @@
         }
       ],
       "original": [
-        "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. The current Project is the scope of list_team and update_bot. The create proposal waits for the user's approval. If the tool refuses, report the actual error code and field.",
-        "List settings for existing Bots in your current Project, including hidden Bots. To propose a new Bot for a named Project, use create_bot with folder. 列出目前 Project 的既有 Bot 設定，包含隱藏的 Bot。要在指定 Project 提議建立 Bot，請呼叫 create_bot 並填入 folder。",
+        "Team management: when the team tools are available, use create_bot to propose the Bot the user requested. If the user names a destination Project, set folder to that registered Project's exact, unique folder name or absolute path on this computer. Omitting folder uses your current Project. Use list_team to find the Bot's id and pass it as botId to update_bot. Match its Project and existing settings when names repeat. Creation and updates wait for the user's approval. If the tool refuses, report the actual error code and field.",
+        "As the designated Lead, you can use list_team and update_bot in any Project on this computer.",
+        "Your current Project is the scope of list_team and update_bot.",
+        "List existing Bot settings, including hidden Bots, with optional case-insensitive query by name. The designated Lead can see all Projects on this computer. Other managers can see their current Project. Match the Project and instructions when names repeat, then use the returned id as botId in update_bot. 列出既有 Bot 設定，包含隱藏的 Bot。可用 query 按名稱搜尋，不區分大小寫。大主管可查看這台電腦上的所有 Project，其他主管可查看目前的 Project。遇到同名 Bot 時，請核對 Project 和指令，再把回傳的 id 填入 update_bot 的 botId。",
         "Propose a new Bot. Set folder to the destination when the person specifies a Project, including another registered Project on this computer. Omit folder to use your current Project. The new Bot inherits your agent, approval policy, mode and explicit team management grant. The person has 270 seconds to approve the complete card, which must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議建立新 Bot。使用者有指定 Project 時，把目的地填入 folder，可以選這台電腦上已登錄的其他 Project。省略時使用目前的 Project。新 Bot 會繼承你的代理、核准方式、模式及明確授予的管理團隊權限。完整卡片上限為 2,000 個 UTF-16 單位，須由本人在 270 秒內核准。結果不明時沿用原冪等鍵。",
         "Destination Project for the new Bot. Use an exact, unique registered folder name or absolute path on this computer. Omit to use the current Project. 新 Bot 的目的 Project。填入這台電腦上已登錄且唯一的資料夾名稱或絕對路徑。省略時使用目前的 Project。",
-        "Propose changes to an existing Bot's name, instructions, appearance or visibility in your current Project. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更目前 Project 內既有 Bot 的名稱、指令、外觀或顯示狀態。須由本人核准。結果不明時沿用原冪等鍵。"
+        "Use botId from list_team to propose changes to a Bot's name, instructions, appearance or visibility. The designated Lead can update Bots in any Project on this computer. Other managers can update Bots in their current Project. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 使用 list_team 回傳的 ID，提議變更 Bot 的名稱、指令、外觀或顯示狀態。大主管可修改這台電腦上任何 Project 的 Bot，其他主管可修改目前 Project 的 Bot。須由本人核准。結果不明時沿用原冪等鍵。"
       ]
     },
     {
@@ -5260,7 +5262,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "307392d31baa6691334735cca4391594ad9aaf528a13a234c7d8173113ec7d88",
+    "internal/adapters/projectassistantacp/mcp.go": "21a37307f4c67be374e5dc505a19b0a541d80479242f683036040c479fcfa6be",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5269,7 +5271,7 @@
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "3b802530d9d5032276e4c561d0a3e1c9d96d5d98c0148cb169ae449ed3f9d145",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "0f93b7664c15615d794cd2dba34faf7c476348dc7f9d65baa9d771d30477788c",
+    "internal/adapters/projectassistantacp/session_configuration.go": "e78e2efce6722b268ebafa9748e11f18b93448716810d1776e438752d7d9d932",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
     "internal/adapters/projectassistantacp/tcp_darwin.go": "a2bce0740704ba649ce41fcd7198d3e956273fb0725c52cf837eebb09fb05616",
     "internal/adapters/projectassistantacp/tcp_linux.go": "9848170c19f9cae199b6bf234ba47bfdd69020b6c46beb555aa23570a0f1990b",
@@ -5304,7 +5306,7 @@
     "internal/adapters/projectassistantstore/roster.go": "42cb0fbd6603064028935bc2689866813a0400d9dfc9d4287c2a48792fb1b2fe",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
     "internal/adapters/projectassistantstore/schema.go": "f920454f4be989bdfdf6aaee2c0efeaee347267624dc780496d8761ca230272e",
-    "internal/adapters/projectassistantstore/team.go": "0510986e9bea5a76054896ed9879524afb4f279be28675ef70eb9a5927b30fa9",
+    "internal/adapters/projectassistantstore/team.go": "a3309630b8a2e4087c8c2bc7e3e243a281d1d71fa122ba2eda18d04177deadbc",
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
     "internal/adapters/projects/claude_language.go": "7dde4197d65e2d6844acafbbf2397406b1868c6b9375b7bd69965e635a377b7d",
@@ -5366,7 +5368,7 @@
     "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "afc95c011aa34799c57742c572ac46276bac2e1d7012b961a05fa312798177ef",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
-    "internal/app/projectassistant/service_team.go": "111f4ec1fb07a506445ec9e31e8292d8d8ae0b8e136fc932b062b949df3ec292",
+    "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
@@ -5514,7 +5516,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "5ab856ae085098914a74ff52fb40e06cb663639425af103087765853e5444194",
-    "zh-Hant": "d7c945296f83302ed29ed5dff66f5fbad3d415c4c340ea889df7a938682b107d"
+    "en": "fffc4370bd2f2ef3c7fb17fe0b53a6f112fb6aeaf99d87b89c75a7e66359ffe5",
+    "zh-Hant": "cf1a5613d4eda09dc8cb0c068b146f9143c439c76f5d496082ec5eeb3b04ee3c"
   }
 }
