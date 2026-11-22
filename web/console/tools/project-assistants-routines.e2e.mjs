@@ -158,9 +158,21 @@ try {
     await browser("click",`${copy.routineEnabled}: ${edited}`)
     for(let i=0;i<40&&enableArrived===arrived;i++)await pause(25)
     assert.equal(enableArrived,arrived+1,"Re-enable reached the fixture")
+    // While the source holds the commit the row says what is happening, not the
+    // state it is leaving, and a polite live region announces it.
+    const pendingRow=await evaluate(`(()=>{const li=[...document.querySelectorAll(".pa-routine-card")].find(e=>e.querySelector("strong")?.textContent===${JSON.stringify(edited)});const sw=li?.querySelector(".pa-routine-switch");return {line:li?.querySelector(".pa-routine-row small")?.textContent??"",checked:sw?.getAttribute("aria-checked"),busy:sw?.getAttribute("aria-busy"),status:document.querySelector(".pa-routines [role=status][aria-live=polite], [role=status][aria-live=polite]")?.textContent??""}})()`)
+    operations.push({op:"pending-enable-row",...pendingRow})
+    assert.equal(pendingRow.line,copy.routineEnabling,"Pending row shows Enabling, not the paused draft")
+    assert.equal(pendingRow.checked,"false","Switch keeps the confirmed state until the source answers")
+    assert.equal(pendingRow.busy,"true")
+    assert.equal(pendingRow.status,`${copy.routineEnabling}: ${edited}`)
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-enable-pending.jpg`))
     const clickedAt=Date.now(),row=await browser("click",`${copy.routineEdit}: ${edited}`);await waitText(w.instructions)
     const answeredBeforeEditor=requests.filter(r=>r.path.endsWith("/enabled")).length===toggles+1
+    const settledRow=await evaluate(`(()=>{const li=[...document.querySelectorAll(".pa-routine-card")].find(e=>e.querySelector("strong")?.textContent===${JSON.stringify(edited)});return {line:li?.querySelector(".pa-routine-row small")?.textContent??"",checked:li?.querySelector(".pa-routine-switch")?.getAttribute("aria-checked"),busy:li?.querySelector(".pa-routine-switch")?.getAttribute("aria-busy")}})()`)
+    operations.push({op:"settled-enable-row",...settledRow})
+    assert.equal(settledRow.checked,"true","After the answer the switch shows the actual enabled state");assert.equal(settledRow.busy,null)
+    assert.ok(settledRow.line&&settledRow.line!==copy.routineEnabling&&!settledRow.line.startsWith(copy.routinePaused),"Settled row shows the source outcome: "+settledRow.line)
     operations.push({op:"edit-during-pending-enable",waited_ms:Date.now()-clickedAt,row,answeredBeforeEditor})
     // A second, stale client still loses compare-and-swap against the newer revision.
     const latest=[...requests].reverse().find(r=>r.path.endsWith("/enabled")&&r.body),staleKey=crypto.randomUUID()
