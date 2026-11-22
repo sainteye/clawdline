@@ -39,13 +39,14 @@ try{
   chrome=spawn(await executable(),["--headless=new","--remote-debugging-port=0","--use-mock-keychain","--user-data-dir="+profile,"--no-first-run","--no-default-browser-check","--disable-features=OmniboxEverywhere","about:blank"],{stdio:["ignore","ignore","pipe"]})
   const endpoint=await new Promise((resolve,reject)=>{let output="";const timer=setTimeout(()=>reject(Error("Chrome startup: "+output)),20000);chrome.once("error",reject);chrome.once("exit",()=>{clearTimeout(timer);reject(Error("Chrome exited: "+output))});chrome.stderr.on("data",data=>{output+=data;const match=/DevTools listening on (ws:\/\/\S+)/.exec(output);if(match){clearTimeout(timer);resolve(match[1])}})})
   ws=new WebSocket(endpoint);await new Promise((resolve,reject)=>{ws.addEventListener("open",resolve);ws.addEventListener("error",reject)})
-  let serial=0;const pending=new Map()
-  ws.addEventListener("message",event=>{const value=JSON.parse(String(event.data)),job=pending.get(value.id);if(!job)return;pending.delete(value.id);value.error?job.reject(Error(value.error.message)):job.resolve(value.result)})
+  let serial=0;const pending=new Map(),exceptions=new Map()
+  ws.addEventListener("message",event=>{const value=JSON.parse(String(event.data));if(value.method==="Runtime.exceptionThrown")exceptions.set(value.sessionId,value.params.exceptionDetails.exception?.description??value.params.exceptionDetails.text);const job=pending.get(value.id);if(!job)return;pending.delete(value.id);value.error?job.reject(Error(value.error.message)):job.resolve(value.result)})
   const send=(method,params={},sessionId)=>new Promise((resolve,reject)=>{const id=++serial,timer=setTimeout(()=>reject(Error(method+" timed out")),15000);pending.set(id,{resolve:value=>{clearTimeout(timer);resolve(value)},reject:error=>{clearTimeout(timer);reject(error)}});ws.send(JSON.stringify({id,method,params,sessionId}))})
   const evaluate=async(sessionId,expression)=>{const answer=await send("Runtime.evaluate",{expression,awaitPromise:true,returnByValue:true},sessionId);if(answer.exceptionDetails)throw Error(answer.exceptionDetails.exception?.description??answer.exceptionDetails.text);return answer.result.value}
-  const until=async(sessionId,expression)=>{const end=Date.now()+8000;while(Date.now()<end){if(await evaluate(sessionId,"Boolean("+expression+")"))return;await new Promise(resolve=>setTimeout(resolve,50))}throw Error("UI wait: "+expression+"\n"+await evaluate(sessionId,"document.body.innerText"))}
+  const until=async(sessionId,expression)=>{const end=Date.now()+8000;while(Date.now()<end){if(exceptions.has(sessionId))throw Error(exceptions.get(sessionId));if(await evaluate(sessionId,"Boolean("+expression+")"))return;await new Promise(resolve=>setTimeout(resolve,50))}throw Error("UI wait: "+expression+"\n"+await evaluate(sessionId,"document.body.innerText"))}
   for(const [lang,width] of [["en",1280],["zh-Hant",390]]){
     const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
+    await send("Runtime.enable",{},sessionId)
     await send("Emulation.setDeviceMetricsOverride",{width,height:720,deviceScaleFactor:1,mobile:width===390},sessionId)
     await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
     const search=async query=>{await evaluate(sessionId,`(()=>{const input=document.querySelector('.pa-search input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,${JSON.stringify(query)});input.dispatchEvent(new Event('input',{bubbles:true}));})()`)}
@@ -53,16 +54,32 @@ try{
     const capture=async name=>{await writeFile(path.join(artifacts,`${lang}-${name}.json`),JSON.stringify(await evaluate(sessionId,"({text:document.body.innerText,requests:window.rosterSearch.requests})"),null,2));const image=await send("Page.captureScreenshot",{format:"png"},sessionId);await writeFile(path.join(artifacts,`${lang}-${name}.png`),Buffer.from(image.data,"base64"))}
     try{
       await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
-      const unreadButton=".pa-roster-unread"
-      await until(sessionId,"!!document.querySelector('.pa-roster-unread-dot')")
-      assert.equal(await evaluate(sessionId,`document.querySelector('${unreadButton}').getAttribute('aria-label')`),lang==="en"?"Unread messages":"未讀訊息")
-      await evaluate(sessionId,`document.querySelector('${unreadButton}').click()`)
-      await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===1")
-      assert.equal(await evaluate(sessionId,"document.querySelector('.pa-roster [data-bot-key] strong').textContent"),"Project assistant")
-      assert.equal(await evaluate(sessionId,`document.querySelector('${unreadButton}').getAttribute('aria-pressed')`),"true")
+      const orderLabel=lang==="en"?"Sort Bots":"Bot 排序"
+      const defaultOrder=lang==="en"?"Default order":"預設順序"
+      const unreadOrder=lang==="en"?"Unread first":"未讀優先"
+      const machineOrder=lang==="en"?"Group by machine":"依機器分群"
+      const orderButton=`.pa-roster-filter button[aria-label="${orderLabel}"]`
+      const chooseOrder=async label=>{
+        await evaluate(sessionId,`document.querySelector(${JSON.stringify(orderButton)}).click()`)
+        await until(sessionId,`!!document.querySelector('.pa-select-list[aria-label="${orderLabel}"]')`)
+        await evaluate(sessionId,`[...document.querySelectorAll('.pa-select-list [role=option]')].find(n=>n.textContent.trim()===${JSON.stringify(label)}).click()`)
+      }
+      const names=()=>evaluate(sessionId,"[...document.querySelectorAll('.pa-roster [data-bot-key] strong')].map(n=>n.textContent)")
+      assert.equal(await evaluate(sessionId,"!!document.querySelector('.pa-toolbar .pa-roster-unread')"),false)
+      const before=await names()
+      assert.equal(before[0],"Code review","the unread Bot starts below newer activity")
+      await chooseOrder(unreadOrder)
+      assert.deepEqual(await names(),["Project assistant",...before.filter(name=>name!=="Project assistant")])
+      assert.equal(await count(),3,"read Bots stay in the list")
       await capture("unread")
-      await evaluate(sessionId,`document.querySelector('${unreadButton}').click()`)
-      await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
+      await chooseOrder(machineOrder)
+      assert.deepEqual(await names(),before)
+      assert.equal(await evaluate(sessionId,"document.querySelector('.pa-roster-scroll section').getAttribute('aria-label')"),"studio")
+      await capture("machine")
+      await send("Page.reload",{},sessionId)
+      await until(sessionId,"document.querySelector('.pa-roster-scroll section')?.getAttribute('aria-label')==='studio'")
+      await chooseOrder(defaultOrder)
+      assert.deepEqual(await names(),before)
       await evaluate(sessionId,"document.querySelector('.pa-view-toggle[aria-pressed=true]')?.click()")
       await until(sessionId,"!!document.querySelector('.pa-search input')")
       await search("cLaWdLiNe")
@@ -75,13 +92,15 @@ try{
       await search("Testing")
       await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===1")
       assert.equal(await evaluate(sessionId,"document.querySelector('.pa-roster [data-bot-key] strong').textContent"),"Testing","Bot name searches still reach a later store page")
+      await chooseOrder(unreadOrder)
+      assert.equal(await evaluate(sessionId,"document.querySelector('.pa-search input').value"),"Testing")
       const chooseMachine=async label=>{
-        await evaluate(sessionId,"document.querySelector('.pa-roster-filter .pa-select-button').click()")
+        await evaluate(sessionId,"document.querySelector('.pa-roster-filter > .pa-select .pa-select-button').click()")
         await until(sessionId,"!!document.querySelector('.pa-select-list')")
         await evaluate(sessionId,`[...document.querySelectorAll('.pa-select-list [role=option]')].find(n=>n.textContent.trim()===${JSON.stringify(label)}).click()`)
       }
       await chooseMachine("unpaired")
-      await until(sessionId,"!!document.querySelector('.pa-empty[role=status]')")
+      await until(sessionId,"!!document.querySelector('.pa-roster-unavailable [role=status]')")
       assert.equal(await count(),0,"selecting a failed machine does not display healthy peer rows")
       await chooseMachine("studio")
       await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===1")
@@ -94,16 +113,17 @@ try{
       await capture("empty-with-failed-peer")
       await evaluate(sessionId,"window.rosterSearch.fail('pa_offline')")
       await search("another-empty-query")
-      await until(sessionId,"!!document.querySelector('.pa-empty[role=status]')")
+      await until(sessionId,"!!document.querySelector('.pa-roster-unavailable [role=status]')")
       await capture("all-failed")
       await evaluate(sessionId,"window.rosterSearch.fail(null)")
       await search("")
-      await until(sessionId,"!!document.querySelector('.pa-roster-unread-dot')")
-      await evaluate(sessionId,`document.querySelector('${unreadButton}').click()`)
+      await until(sessionId,"document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
       await until(sessionId,"!!document.querySelector('.pa-roster-read:not(:disabled)')")
       await evaluate(sessionId,"document.querySelector('.pa-roster-read:not(:disabled)').click()")
-      await until(sessionId,"!document.querySelector('.pa-roster-unread-dot')&&!document.querySelector('.pa-roster [data-bot-key]')")
-      results.push({lang,width,unreadFilter:true,projectRows:6,nameRows:1,partialFailurePreserved:true,selectedFailedMachineVisible:true,allFailedVisible:true})
+      await until(sessionId,"!document.querySelector('.pa-roster-read')&&document.querySelectorAll('.pa-roster [data-bot-key]').length===3")
+      assert.deepEqual(await names(),before,"marking read restores the original position")
+      await chooseOrder(defaultOrder)
+      results.push({lang,width,unreadFirst:true,machineGrouping:true,projectRows:6,nameRows:1,partialFailurePreserved:true,selectedFailedMachineVisible:true,allFailedVisible:true})
     }catch(error){await capture("FAIL");throw error}
     finally{await send("Target.closeTarget",{targetId})}
   }

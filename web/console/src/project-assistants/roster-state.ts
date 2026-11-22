@@ -1,7 +1,10 @@
+export type RosterOrder = "default" | "unread" | "machine"
+
 export interface RosterState {
   pinnedBotKeys: string[]
   projectSortOrder: string[]
   botSortOrder: string[]
+  order?: RosterOrder
 }
 export type RosterStorage = Pick<Storage, "getItem" | "setItem">
 export const rosterStorageKey = (scope: string) => JSON.stringify(["project-assistants", "roster", scope])
@@ -20,7 +23,8 @@ export function getRosterState(scope: string, storage?: RosterStorage): RosterSt
     if (!Array.isArray(list) || !list.every(id => typeof id === "string")) throw new Error("Invalid roster order")
     return [...new Set(list)]
   }
-  return {pinnedBotKeys: strings("pinnedBotKeys"), projectSortOrder: strings("projectSortOrder"), botSortOrder: strings("botSortOrder")}
+  const order = record.order === "unread" || record.order === "machine" ? record.order : undefined
+  return {pinnedBotKeys: strings("pinnedBotKeys"), projectSortOrder: strings("projectSortOrder"), botSortOrder: strings("botSortOrder"), ...(order && {order})}
 }
 
 export function saveRosterState(scope: string, state: RosterState, storage?: RosterStorage): boolean {

@@ -21,7 +21,8 @@ const source:SourceClient={...base,canRoster:()=>false,canGroups:()=>false,
     const all=await base.list({machine_id:"studio",query:"",cursor:"",page_size:100},signal)
     const summaries=await Promise.all(selected.map(async bot=>{
       const page=await base.list({machine_id:"studio",query:bot.name,cursor:"",page_size:100},signal)
-      return page.items.find(item=>item.bot.key.bot_id===bot.key.bot_id)!
+      const summary=page.items.find(item=>item.bot.key.bot_id===bot.key.bot_id)!
+      return bot.key.bot_id==="bot-1"?{...summary,activity_at:"2026-11-12T06:21:00Z"}:summary
     }))
     return {...all,items:summaries,next_cursor:offset+3<matches.length?String(offset+3):""}
   },

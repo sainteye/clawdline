@@ -49,7 +49,6 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const [rosterNotice,setRosterNotice]=useState<{text:string;error?:boolean;open?:W.ProjectAssistantBotKey}|null>(null)
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
   const [groupOpen,setGroupOpen]=useState(false)
-  const [unreadOnly,setUnreadOnly]=useState(false)
   const [savedView,setSavedView]=useState<BotsView|null>(savedBotsView)
   const changeView=(next:BotsView)=>{setSavedView(next);saveBotsView(next)}
   const narrow=useNarrow()
@@ -81,7 +80,6 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[pages,authorization,onRosterObserved])
   const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
-  const hasUnread=allItems.some(i=>!i.bot.hidden&&i.unread_count>0)
   const rosterLoading=sources.some(s=>(!machine||s.machineID===machine)&&(snapshotPending.has(s)||livePending[s.machineID]))
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   // The tower shows every visible Bot of the chosen machine; search narrows only the list.
@@ -100,11 +98,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const rosterUnavailable=!rosterLoading&&!statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))
   const towerItems=allItems.filter(i=>!i.bot.hidden&&(!machine||i.bot.key.machine_id===machine))
   // Until the person chooses, a desktop with Bots opens on the tower; a phone opens on the list.
-  const botsView:BotsView=unreadOnly?"list":savedView??(!narrow&&towerItems.length>0?"tower":"list")
-  const toggleUnread=()=>{
-    if(!unreadOnly){setQuery("");setMachine("")}
-    setUnreadOnly(!unreadOnly)
-  }
+  const botsView:BotsView=savedView??(!narrow&&towerItems.length>0?"tower":"list")
   const tower=botsView==="tower"&&(!rosterUnavailable||towerItems.length>0)?<TowerSlot items={towerItems} highlight={narrow?null:rosterHover} w={w} language={language} paused={groupOpen} onList={()=>changeView("list")} onSelect={item=>select(item)} loading={rosterLoading} sources={sources} current={current} projectName={item=>item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))} projectIcon={item=>projectIcons.get(JSON.stringify([item.bot.key.machine_id,item.bot.project.project_id]))}/>:undefined
   const selectedItem=allItems.find(i=>botIdentity(i.bot.key)===selected)
   const selectedSource=selectedItem?sources.find(s=>s.machineID===selectedItem.bot.key.machine_id):undefined
@@ -173,7 +167,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     if(selected)void load()
     return()=>control.abort()
   },[authorization,query,current,searchProjectNames,load,rosterRetry])
-  useEffect(()=>{setSelected(null);setPages({});setMachine("");setUnreadOnly(false)},[authorization])
+  useEffect(()=>{setSelected(null);setPages({});setMachine("")},[authorization])
   useEffect(()=>{
     if(selected)return
     const observers:AbortController[]=[]
@@ -416,7 +410,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
       <span>{rosterNotice.text}</span>{rosterNotice.open&&<button type="button" className="pa-roster-notice-open" onClick={()=>openCreated(rosterNotice.open!)}>{w.openBot}</button>}<button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}
     {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
-    <BotRoster leadOptions={leadOptions} preferredLead={leadOptions?.some(option=>option.value===preferredLead)?preferredLead:""} onPreferLead={saveLead} unreadOnly={unreadOnly} hasUnread={hasUnread} onToggleUnread={toggleUnread} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={next=>{setUnreadOnly(false);changeView(next)}} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onRetry={sources.length?()=>setRosterRetry(n=>n+1):undefined} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <BotRoster leadOptions={leadOptions} preferredLead={leadOptions?.some(option=>option.value===preferredLead)?preferredLead:""} onPreferLead={saveLead} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onRetry={sources.length?()=>setRosterRetry(n=>n+1):undefined} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main" {...(towerSheet?swipe:{})}>{towerSheet&&<div className="pa-sheet-grip" aria-hidden="true"/>}{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} projectNameOf={b=>projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} projectIconOf={b=>projectIcons.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} voiceShortcut={callTarget?.key===selected?callTarget?.request:undefined} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={selectedItem.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} onBotChanged={updateBot}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={created}/>}
   </div>

@@ -2,7 +2,6 @@ const paths = {
   pin:"M6 2h8l-2 3v4l3 3H5l3-3V5L6 2Zm4 10v6",
   section:"M2 8l3-4h10l3 4v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V8Zm0 1h5l1 3h4l1-3h5",
   read:"m3 10 4 4 9-9",
-  unread:"M3 4h14v10H8l-5 3V4Zm4 4h6m-6 3h4",
   edit:"M10 4H4v12h12v-6M8 12l1-4 7-6 2 2-7 7-3 1Z",
   copy:"M7 7h10v10H7V7ZM3 13V3h10",
   renew:"M5 8a6 6 0 1 1-1 5M5 2v6h6",

@@ -2,7 +2,7 @@ import {test} from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
-import {conversations,conversationSections,firstCallableBot,groupConversationKey,groupLastSpeaker,groupPreviewMembers,type GroupRosterEntry,type RosterRoom} from "./roster-conversations.ts"
+import {conversations,conversationSections,orderedConversationSections,firstCallableBot,groupConversationKey,groupLastSpeaker,groupPreviewMembers,type GroupRosterEntry,type RosterRoom} from "./roster-conversations.ts"
 // @ts-expect-error Node executes source extensions.
 import {emptyRosterState,pinRosterBot,moveRosterBot} from "./roster-state.ts"
 const key=(bot_id:string,machine_id="m")=>({machine_id,bot_id})
@@ -47,6 +47,18 @@ test("same Project on another source, removed rooms and hidden saved identities 
   assert.deepEqual(sections.map(group=>group.machineID),["m","other"])
   assert.equal(sections.flatMap(group=>group.items).length,3)
   assert.deepEqual(state.pinnedBotKeys,["hidden"])
+})
+
+test("unread first is global and stable, and machine grouping keeps every conversation",()=>{
+  const lead={...bot("Lead"),bot:{...bot("Lead").bot,lead:true}}
+  const unread={...bot("Unread"),unread_count:2}
+  const remote={...unread,bot:{...unread.bot,key:key("remote","other"),name:"Remote"}}
+  const sections=conversationSections(conversations([lead,unread,remote],[room("Group")]),emptyRosterState())
+  const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
+  assert.deepEqual(orderedConversationSections(sections,"unread")[0].items.map(name),["Unread","Remote","Lead","Group"])
+  assert.deepEqual(orderedConversationSections(sections,"machine").map(section=>[section.machineID,section.items.map(name)]),
+    [["m",["Lead","Unread","Group"]],["other",["Remote"]]])
+  assert.equal(orderedConversationSections(sections,"default"),sections)
 })
 
 test("the desktop call fallback follows sidebar order and skips hidden or read-only Bots",()=>{

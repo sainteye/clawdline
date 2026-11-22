@@ -7,7 +7,7 @@ test("pinning and custom order survive reload, separated by authenticated accoun
   const storage=store(), a=JSON.stringify(["one","same"]), b=JSON.stringify(["two","same"])
   let state=pinRosterBot(emptyRosterState(),a,true)
   state=moveRosterBot(state,b,a,true,[a,b])
-  state={...state,projectSortOrder:[JSON.stringify(["two","p"]),JSON.stringify(["one","p"])]}
+  state={...state,order:"unread",projectSortOrder:[JSON.stringify(["two","p"]),JSON.stringify(["one","p"])]}
   assert.equal(saveRosterState("account-a",state,storage),true)
   assert.deepEqual(getRosterState("account-a",storage),state)
   assert.deepEqual(getRosterState("account-b",storage),emptyRosterState())

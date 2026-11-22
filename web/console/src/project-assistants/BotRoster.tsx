@@ -16,16 +16,15 @@ import type { SourceClient } from "./client"
 import { Groups, groupWord } from "./Groups"
 import {GroupRosterRow} from "./GroupRosterRow"
 import {GroupActionIcon} from "./GroupAvatar"
-import {conversations,conversationSections,personalRosterProject,type GroupRosterEntry} from "./roster-conversations"
+import {conversations,conversationSections,orderedConversationSections,personalRosterProject,type GroupRosterEntry} from "./roster-conversations"
 import { useRosterDrag } from "./useRosterDrag"
 import { moveRosterBot, pinRosterBot, reorderKeys, type RosterState } from "./roster-state"
 import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead,unreadOnly,hasUnread,onToggleUnread}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead}: {
   leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;
-  unreadOnly?:boolean;hasUnread?:boolean;onToggleUnread?:()=>void;
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
@@ -77,7 +76,9 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   const [sorting,setSorting]=useState(false)
   const sortFocus=useRef<string|undefined>(undefined),restoreOptions=useRef(false)
   const [active, setActive] = useState<RosterDrag | null>(null), [over, setOver] = useState<RosterDrag | null>(null)
-  const shown = items.filter(i => (!machine || i.bot.key.machine_id === machine)&&(!unreadOnly||i.unread_count>0))
+  const order=rosterState.order??"default"
+  const defaultLayout=sorting||order==="default"
+  const shown = items.filter(i => !machine || i.bot.key.machine_id === machine)
   const [,tickClock]=useState(Date.now)
   const showingBots=!tower&&shown.length>0
   useEffect(()=>{
@@ -118,7 +119,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     const allRows=conversations(items,roomEntries)
     const override=preview&&pinAtStart.current?botIdentity(pinAtStart.current.item.bot.key):null
     const previewItems=override?shown.map(item=>botIdentity(item.bot.key)===override?{...item,bot:{...item.bot,sidebar_pinned:undefined}}:item):shown
-    const groups=conversationSections(conversations(previewItems,roomEntries),state)
+    const groups=orderedConversationSections(conversationSections(conversations(previewItems,roomEntries),state),defaultLayout?"default":order)
     const drop = (target: RosterDrag, source: RosterDrag, currentState=rosterState, save=true) => {
       const apply=(next:RosterState)=>{if(save)update(next);else {draft.current=next;setPreview(next)}}
       if (!source || source.key === target.key) return
@@ -157,13 +158,13 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       event.preventDefault(); drop({kind: source.kind, key: keys[next]}, source)
     }
     const targetProps = (target: RosterDrag) => ({
-      "data-roster-drop-kind": target.kind, "data-roster-drop-key": target.key,
+      "data-roster-drop-kind": defaultLayout?target.kind:undefined, "data-roster-drop-key": target.key,
       "data-dragging": active?.kind === target.kind && active.key === target.key || undefined,
       "data-drop": over?.kind === target.kind && over.key === target.key || undefined
     })
     const handle = (source: RosterDrag, name: string, keys: string[]) => <RosterHandle label={`${w.rosterReorder}: ${name}`} hint={w.rosterReorderHint} onKey={keyboard(source, keys)}/>
     return <>
-      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<div className="pa-roster-unavailable"><p role="status">{w.rosterUnavailable}</p>{onRetry&&<button type="button" className="pa-pill" onClick={onRetry}>{w.retry}</button>}</div>:!(unreadOnly&&onMore)&&<p className="pa-empty">{query?w.searchEmpty:unreadOnly?w.unreadBotsEmpty:w.empty}</p>)}
+      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<div className="pa-roster-unavailable"><p role="status">{w.rosterUnavailable}</p>{onRetry&&<button type="button" className="pa-pill" onClick={onRetry}>{w.retry}</button>}</div>:<p className="pa-empty">{query?w.searchEmpty:w.empty}</p>)}
       {problem&&<p role="status" className="pa-roster-save-error">{w.rosterUnsaved}</p>}
       {context&&(()=>{
         const row=allRows.find(row=>row.kind==="bot"&&row.key===context.key)
@@ -187,18 +188,19 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       })()}
       {groups.map(group => {
         // The lead section reads like the pinned one: no Project mark, each row its own Project.
-        const lead=group.kind==="lead", pinned=group.kind==="pinned", flat=pinned||lead, name=lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
+        const lead=group.kind==="lead", pinned=group.kind==="pinned", byMachine=group.kind==="machine"
+        const flat=pinned||lead||byMachine||group.kind==="flat", name=byMachine?named(group.machineID):lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
         const keys = group.items.map(item => item.key)
-        return <section className="pa-project-group" key={group.key} aria-label={name} data-roster-project={group.kind==="project"||undefined} {...targetProps({kind:"project", key:group.key})}>
-          <h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,groups.filter(g=>g.kind==="project").map(g=>g.key))}</h2>
+        return <section className="pa-project-group" key={group.key} aria-label={group.kind==="flat"?undefined:name} data-roster-project={group.kind==="project"||undefined} {...targetProps({kind:"project", key:group.key})}>
+          {group.kind!=="flat"&&<h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,groups.filter(g=>g.kind==="project").map(g=>g.key))}</h2>}
           {group.items.map(item => {
             const key = item.key, project = projectKey(item.machineID,item.projectID), name=item.kind==="bot"?item.item.bot.name:item.entry.group.name
             const pinLabel=item.kind==="bot"?(pinned?w.rosterUnpin:w.rosterPin):(pinned?w.rosterUnpinGroup:w.rosterPinGroup)
             const source=item.kind==="bot"&&sources.find(source=>source.machineID===item.machineID)
             return <div className="pa-roster-entry" key={key} {...targetProps({kind:"bot",key})}
-              onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){if(item.kind==="bot")openContext(event,key);else{event.preventDefault();beginSorting(key)}}}}}
+              onKeyDown={event=>{if(event.target instanceof HTMLElement&&event.target.matches(".pa-bot-row")){if(defaultLayout&&event.altKey&&["ArrowUp","ArrowDown","Home","End"].includes(event.key)){keyboard({kind:"bot",key},keys)(event);requestAnimationFrame(()=>entryFor(key)?.querySelector<HTMLButtonElement>(".pa-bot-row")?.focus({preventScroll:true}))}else if(event.key==="F10"&&event.shiftKey){if(item.kind==="bot")openContext(event,key);else{event.preventDefault();beginSorting(key)}}}}}
               onContextMenu={event=>{if(item.kind==="bot")openContext(event,key);else{event.preventDefault();if(!active)beginSorting(key)}}}>
-              {item.kind==="bot"?<BotRow item={item.item} grouped={!flat} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} now={now} projectName={item.item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!flat} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&flat?named(item.machineID):undefined}/>}
+              {item.kind==="bot"?<BotRow item={item.item} grouped={!flat} selected={selected===key} onSelect={()=>{dismissGroup();onSelect(item.item)}} w={w} language={language} now={now} projectName={item.item.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(project)} projectIcon={projectIcons?.get(project)} machineName={several&&flat&&!byMachine?named(item.machineID):undefined}/>:<GroupRosterRow grouped={!flat} entry={item.entry} bots={(groupsItems??items).map(i=>i.bot)} selected={selectedGroup===botIdentity(item.entry.group.key)} onSelect={target=>openGroup(item.entry,target)} projectName={projectNames.get(project)} machineName={several&&flat&&!byMachine?named(item.machineID):undefined}/>}
               {item.kind==="bot"&&source&&current&&readerID&&onRead&&<BotRosterReadAction key={JSON.stringify([source.authorizationRevision,readerID,item.item.bot.conversation_id])} item={item.item} source={source} current={current} readerID={readerID} onRead={onRead} w={w}/>}
               {sorting&&<div className="pa-roster-actions">{!lead&&<button type="button" className="pa-roster-pin" aria-label={`${pinLabel}: ${name}`} aria-pressed={pinned} title={pinLabel} disabled={item.kind==="bot"&&sharedRoster(item.item)&&!canWrite(item.item.source)} onClick={()=>item.kind==="bot"?setPinned(item.item,!pinned):pin(key,!pinned)}><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" fill={pinned?"currentColor":"none"} stroke="currentColor" strokeWidth="1.3"><path d="m8 1.7 1.9 3.9 4.3.6-3.1 3 .7 4.3L8 11.4l-3.8 2.1.7-4.3-3.1-3 4.3-.6Z"/></svg></button>}{handle({kind:"bot",key},name,keys)}</div>}
             </div>
@@ -217,19 +219,26 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
           <header className="pa-toolbar">
             <button className="pa-circle pa-collapse" onClick={onClose} aria-label={w.collapse} title={w.collapse}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3.5 6 8 10.5 12.5 6"/></svg></button>
             {onView&&!sorting&&<button type="button" className="pa-circle pa-view-toggle" aria-pressed={view==="tower"} aria-label={w.towerView} title={w.towerView} onClick={()=>onView(view==="tower"?"list":"tower")}><svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d="M3 14.5V3.5l5-2 5 2v11M1.5 14.5h13M6 5.5h1M9 5.5h1M6 8.5h1M9 8.5h1M7 14.5v-3h2v3"/></svg></button>}
-            {onToggleUnread&&!sorting&&<button type="button" className="pa-circle pa-roster-unread" aria-pressed={!!unreadOnly} aria-label={w.unreadMessages} aria-description={hasUnread?w.unreadBotsPresent:undefined} title={w.unreadMessages} onClick={onToggleUnread}>{rosterIcon("unread")}{hasUnread&&<span className="pa-roster-unread-dot" aria-hidden="true"/>}</button>}
             {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
             {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
           </header>
           {leadOptions&&onPreferLead&&<PaSelect compact label={w.defaultLead} value={preferredLead??""} options={leadOptions} onChange={onPreferLead}/>}
           {view!=="tower"&&<label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>}
-          {several&&<div className="pa-roster-filter"><span>{(!loading&&!unavailable||shown.length>0)&&`${w.total} ${shown.length}`}</span><PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/></div>}
+          {(!tower||several)&&<div className="pa-roster-filter">
+            <span>{(!loading&&!unavailable||shown.length>0)&&`${w.total} ${shown.length}`}</span>
+            {!tower&&!sorting&&<div className="pa-roster-order">
+              <PaSelect compact ariaLabel={w.rosterOrder} value={order}
+                options={[{value:"default",label:w.rosterOrderDefault},{value:"unread",label:w.rosterOrderUnread},{value:"machine",label:w.rosterOrderMachine}]}
+                onChange={next=>{endDrag();update({...rosterState,order:next==="unread"||next==="machine"?next:undefined})}}/>
+            </div>}
+            {several&&<PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/>}
+          </div>}
           <div className="pa-roster-scroll">
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
             {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
-            {tower??renderRows(unreadOnly?[]:group.rows,group.open,group.selected,group.dismiss)}
+            {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
             {group.content}
-            {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{!unreadOnly&&hidden}
+            {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
           </div>
         </>
       }}

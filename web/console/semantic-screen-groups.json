@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14051,
+  "englishContentKeys": 14055,
   "riskKeys": 5969,
-  "nonRiskCount": 8082,
+  "nonRiskCount": 8086,
   "groups": [
     {
       "name": "acp / other",
@@ -6204,7 +6204,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 564,
+      "count": 568,
       "sources": [
         null
       ],
@@ -6545,6 +6545,10 @@
         "projectAssistants.rosterNewSession",
         "projectAssistants.rosterNewSessionConfirm",
         "projectAssistants.rosterOptions",
+        "projectAssistants.rosterOrder",
+        "projectAssistants.rosterOrderDefault",
+        "projectAssistants.rosterOrderMachine",
+        "projectAssistants.rosterOrderUnread",
         "projectAssistants.rosterPin",
         "projectAssistants.rosterPinGroup",
         "projectAssistants.rosterReorder",
