@@ -26,6 +26,7 @@ func TestMCPRoutineHooksAndFollowUpsUseOwnedTool(t *testing.T) {
 	for _, tc := range []struct{ name, action, arguments string }{
 		{"save_routine", "save", `{"idempotency_key":"save","name":"Synthetic","instruction":"Check synthetic state","triggers":[{"type":"event","source":"github","event":"issues.opened","filters":{"repo":"synthetic/repo"}},{"type":"webhook"}]}`},
 		{"routine_hook", "hook", `{"id":"synthetic"}`},
+		{"routine_webhook_status", "webhook_status", `{"id":"synthetic"}`},
 		{"rotate_routine_hook", "rotate_hook", `{"id":"synthetic","idempotency_key":"rotate"}`},
 		{"follow_up", "follow_up", `{"minutes":20,"content":"Synthetic build is pending","idempotency_key":"follow"}`},
 		{"cancel_follow_up", "cancel_follow_up", `{"id":"synthetic","idempotency_key":"cancel"}`},

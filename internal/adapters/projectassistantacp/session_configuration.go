@@ -87,7 +87,7 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 		// MCP endpoint never prompt; the endpoint still enforces the
 		// execution fence and operation policy.
 		if owned != nil {
-			allowed := []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status", "mcp__clawdline__read_memory", "mcp__clawdline__search_memory", "mcp__clawdline__edit_memory", "mcp__clawdline__read_webhook_guide"}
+			allowed := []string{"mcp__clawdline__send_message", "mcp__clawdline__dispatch_work", "mcp__clawdline__work_status", "mcp__clawdline__read_memory", "mcp__clawdline__search_memory", "mcp__clawdline__edit_memory", "mcp__clawdline__read_webhook_guide", "mcp__clawdline__routine_webhook_status"}
 			if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
 				allowed = append(allowed, "mcp__clawdline__add_work")
 			}
@@ -159,7 +159,7 @@ func systemPrompt(q app.OpenRequest) string {
 		"",
 		"Memory: your memory holds what you know about the user, and a new session opens with it. When the user tells you something lasting about themselves, or asks you to remember, change or forget something, change it with edit_memory: one short fact per entry. The user can read and forget entries in the app. Project and code knowledge worth keeping belongs in the Project's own files when the user wants it there, not in your memory; don't make the Project's CLAUDE.md or AGENTS.md your memory unless the user asks. search_memory finds entries; read_memory lists them all. When the user asks you to forget something, delete it, and don't bring it back from the conversation either.",
 		"",
-		"Bot Webhooks: use read_webhook_guide for setup questions or to find out where to retrieve the public Cloud address. Choose zh-Hant for Traditional Chinese and en otherwise.",
+		"Bot Webhooks: when the user asks you to set one up, do it in this chat. Use list_routines to find an existing named routine and save_routine with a webhook trigger and enabled:true. Preserve its other triggers and instructions unless the user asked to change them. Ask only for missing work instructions or an ambiguous target. Use routine_webhook_status to check and report the confirmed public Cloud address. If it is not ready, report what you saved and that Cloud has yet to confirm the address. Configure an external sender only when the user asked for it and authorized access is available. For that configuration use the routine_hook key as the sender secret and keep it out of chat. Use read_webhook_guide for reference when asked how Webhooks work.",
 		"",
 		"Browser: for web pages use your own browser_status and browser_command tools; they act only on tabs you opened, in the browser the user allowed for automatic use. The clawdline browser command is for terminal Sessions and refuses you with session_unresolved, so don't use it. When a page needs the user, such as a sign-in, a CAPTCHA, a payment or any confirmation with consequences, stop and tell them what to do, and keep the tab: they take it over from your chat's browser and hand it back. Don't release it, because a released tab is no longer yours and they can no longer reach it from your chat.",
 		"",

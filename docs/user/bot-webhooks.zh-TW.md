@@ -2,7 +2,11 @@
 
 GitHub、CI 或其他服務送出事件時，可以用 Bot Webhook 觸發指定 Bot 的例行任務。若要從工作階段清單啟動排程任務，請使用[一般排程的 Webhook](schedules.md#schedule-webhooks-cloud)。
 
-## 設定 Bot Webhook
+## 請 Bot 設定
+
+在 Bot 對話中說明收到 Webhook 時要做什麼。例如「幫我設定一個 Webhook，每次收到我送來的 CI 失敗事件，就整理失敗原因」。Bot 會儲存並啟用例行任務，等 Cloud 確認登錄後回報公開位址。如果登錄還沒完成，可以請 Bot 再查一次已儲存的任務。
+
+## 在介面中設定 Bot Webhook
 
 1. 開啟 Bot 對話，點上方的 Bot 名稱。在「詳情」找到「例行任務」，點「＋」。
 2. 輸入名稱與要交給 Bot 的工作，在「何時執行」選「Webhook」。若要搭配其他觸發條件，開啟「執行設定 → 進階觸發條件」，將「Webhook」加入其中。

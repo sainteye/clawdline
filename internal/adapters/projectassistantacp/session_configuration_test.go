@@ -134,7 +134,7 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 							t.Fatal("native persistence or background models enabled")
 						}
 					}
-					if !framed(meta.SystemPrompt.Append, q.Bot.Instructions.Text) || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || strings.Join(o.AllowedTools, ",") != "mcp__clawdline__send_message,mcp__clawdline__dispatch_work,mcp__clawdline__work_status,mcp__clawdline__read_memory,mcp__clawdline__search_memory,mcp__clawdline__edit_memory,mcp__clawdline__read_webhook_guide" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
+					if !framed(meta.SystemPrompt.Append, q.Bot.Instructions.Text) || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || strings.Join(o.AllowedTools, ",") != "mcp__clawdline__send_message,mcp__clawdline__dispatch_work,mcp__clawdline__work_status,mcp__clawdline__read_memory,mcp__clawdline__search_memory,mcp__clawdline__edit_memory,mcp__clawdline__read_webhook_guide,mcp__clawdline__routine_webhook_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
 						t.Fatal("Claude owned preset", string(request))
 					}
 				}
@@ -193,7 +193,7 @@ func TestProviderRefusesUnownedOrRevokedToolsBeforeLaunching(t *testing.T) {
 // that its browser is its own tools, not the Session-only clawdline browser.
 func framed(prompt, instructions string) bool {
 	return strings.HasPrefix(prompt, "Agent profile:") && strings.HasSuffix(prompt, "\n"+instructions) &&
-		strings.Contains(prompt, "read_webhook_guide") && strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access") &&
+		strings.Contains(prompt, "save_routine with a webhook trigger and enabled:true") && strings.Contains(prompt, "routine_webhook_status") && strings.Contains(prompt, "send_message") && strings.Contains(prompt, "dispatch_work") && strings.Contains(prompt, "not a sandbox or a grant of access") &&
 		strings.Contains(prompt, "browser_command") && strings.Contains(prompt, "session_unresolved") && strings.Contains(prompt, "Don't release it")
 }
 

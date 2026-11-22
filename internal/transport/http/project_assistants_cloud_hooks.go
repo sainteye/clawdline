@@ -29,6 +29,7 @@ type botRoutineHookWorker struct {
 	mu          sync.RWMutex
 	fingerprint string
 	revision    int64
+	enrolled    chan struct{}
 }
 
 // StartBotRoutineHooks has a separate sequential lane and no provider calls.
@@ -157,6 +158,10 @@ func (w *botRoutineHookWorker) cycle(ctx context.Context) (err error) {
 		w.mu.Lock()
 		w.fingerprint = fingerprint
 		w.revision = set.Revision
+		if w.enrolled != nil {
+			close(w.enrolled)
+			w.enrolled = nil
+		}
 		w.mu.Unlock()
 	}
 	if pending, e := w.store.CloudHookPending(ctx, w.identity); e != nil {
@@ -295,26 +300,66 @@ func (r *botHookResponse) Write(raw []byte) (int, error) {
 var _ io.Writer = (*botHookResponse)(nil)
 
 func (s *Server) botRoutineHookPublicURL(ctx context.Context, routineID, key string) string {
+	return s.findBotRoutineHookPublicURL(ctx, routineID, key, false)
+}
+
+func (s *Server) findBotRoutineHookPublicURL(ctx context.Context, routineID, key string, wait bool) string {
+	if wait {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(bh.MaxHTTPSeconds)*time.Second)
+		defer cancel()
+	}
 	s.projectAssistants.cloudHooks.mu.RLock()
 	w := s.projectAssistants.cloudHooks.worker
 	s.projectAssistants.cloudHooks.mu.RUnlock()
-	if w == nil || w.ctx.Err() != nil {
+	if w == nil {
 		return ""
+	}
+	for {
+		var enrolled <-chan struct{}
+		if wait {
+			w.mu.Lock()
+			if w.enrolled == nil {
+				w.enrolled = make(chan struct{})
+			}
+			enrolled = w.enrolled
+			w.mu.Unlock()
+		}
+		url, eligible := w.publicURL(ctx, routineID, key)
+		if url != "" || !eligible || !wait {
+			return url
+		}
+		select {
+		case <-ctx.Done():
+			return ""
+		case <-w.ctx.Done():
+			return ""
+		case <-enrolled:
+		}
+	}
+}
+
+// publicURL uses only the current enrollment acknowledgement. The worker is
+// the sole owner of Cloud IO, including when a Bot is waiting for that acknowledgement.
+func (w *botRoutineHookWorker) publicURL(ctx context.Context, routineID, key string) (url string, eligible bool) {
+	if ctx.Err() != nil || w.ctx.Err() != nil {
+		return "", false
 	}
 	set, digest, err := w.snapshot(ctx)
 	if err != nil {
-		return ""
-	}
-	w.mu.RLock()
-	ready := digest != "" && w.fingerprint == digest && w.revision == set.Revision
-	w.mu.RUnlock()
-	if !ready {
-		return ""
+		return "", false
 	}
 	for _, h := range set.Hooks {
-		if h.ID == routineID && h.Key == key && h.Enabled {
-			return w.cloud.PublicURL(w.identity.MachineID, routineID)
+		if h.ID != routineID || h.Key != key || !h.Enabled {
+			continue
 		}
+		w.mu.RLock()
+		ready := digest != "" && w.fingerprint == digest && w.revision == set.Revision
+		w.mu.RUnlock()
+		if ready && ctx.Err() == nil && w.ctx.Err() == nil {
+			return w.cloud.PublicURL(w.identity.MachineID, routineID), true
+		}
+		return "", true
 	}
-	return ""
+	return "", false
 }

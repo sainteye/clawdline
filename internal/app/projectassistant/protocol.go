@@ -271,14 +271,20 @@ type RoutineRequest struct {
 	TimeoutSeconds  int64               `json:"timeout_seconds,omitempty"`
 	Enabled         *bool               `json:"enabled,omitempty"`
 }
+type RoutineWebhookStatus struct {
+	PublicStatus string `json:"public_status"`
+	PublicURL    string `json:"public_url,omitempty"`
+}
+
 type RoutineResult struct {
-	FollowUps   []pa.Routine       `json:"follow_ups,omitempty"`
-	Hook        *RoutineHookResult `json:"hook,omitempty"`
-	Progress    *string            `json:"progress,omitempty"`
-	Tokens      int                `json:"tokens,omitempty"`
-	MaxTokens   int                `json:"max_tokens,omitempty"`
-	Definitions []pa.Routine       `json:"definitions,omitempty"`
-	ID          string             `json:"id,omitempty"`
+	Webhook     *RoutineWebhookStatus `json:"webhook,omitempty"`
+	FollowUps   []pa.Routine          `json:"follow_ups,omitempty"`
+	Hook        *RoutineHookResult    `json:"hook,omitempty"`
+	Progress    *string               `json:"progress,omitempty"`
+	Tokens      int                   `json:"tokens,omitempty"`
+	MaxTokens   int                   `json:"max_tokens,omitempty"`
+	Definitions []pa.Routine          `json:"definitions,omitempty"`
+	ID          string                `json:"id,omitempty"`
 }
 
 // NetworkTools is optional and bound to the owning native execution.

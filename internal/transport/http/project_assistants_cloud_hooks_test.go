@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -200,6 +201,89 @@ func botHookAwaitRun(t *testing.T, f *paServerFixture, id, original string) pa.R
 			t.Fatal("scripted provider did not complete actual source admission", states)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestBotSetsUpAWebhookFromChatAndReportsItsConfirmedAddress(t *testing.T) {
+	f, p, source := newRoutineHumanFixture(t)
+	fake := &botHookFakeCloud{credential: f.identity.MachineCredential}
+	cloud := httptest.NewTLSServer(fake)
+	defer cloud.Close()
+	client := adaptercloud.NewBotRoutineHookClient(cloud.URL, f.identity.MachineCredential)
+	client.HTTP = cloud.Client()
+
+	saved := make(chan string, 1)
+	enrollmentAvailable := make(chan struct{})
+	p.main = func(ctx context.Context, native app.NativeTools) (string, error) {
+		tools := native.(app.RoutineTools)
+		enabled := true
+		setup := app.RoutineRequest{Action: "save", IdempotencyKey: "same-setup", Name: "CI failures",
+			Instruction: "Summarize the failure from each CI event.", Enabled: &enabled,
+			Triggers: []pa.RoutineTrigger{{Type: "webhook"}}}
+		first, err := tools.Routines(ctx, setup)
+		if err != nil || first.ID == "" {
+			return "", fmt.Errorf("save webhook: %s, %v", first.ID, err)
+		}
+		replay, err := tools.Routines(ctx, setup)
+		if err != nil || replay.ID != first.ID {
+			return "", fmt.Errorf("save replay changed the routine: %s, %v", replay.ID, err)
+		}
+		status := app.RoutineRequest{Action: "webhook_status", ID: first.ID}
+		pending, err := tools.Routines(ctx, status)
+		if err != nil || pending.ID != first.ID || pending.Hook != nil || pending.Webhook == nil ||
+			pending.Webhook.PublicStatus != "not_ready" || pending.Webhook.PublicURL != "" {
+			return "", fmt.Errorf("reported a public address before confirmation: %v", err)
+		}
+		saved <- first.ID
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-enrollmentAvailable:
+		}
+		ready, err := tools.Routines(ctx, status)
+		want := cloud.URL + "/v1/hooks/" + f.identity.MachineID + "/" + first.ID
+		if err != nil || ready.ID != first.ID || ready.Hook != nil || ready.Webhook == nil ||
+			ready.Webhook.PublicStatus != "ready" || ready.Webhook.PublicURL != want {
+			return "", fmt.Errorf("confirmed address missing or included credentials: %v", err)
+		}
+		return "Configured CI failures at " + ready.Webhook.PublicURL, nil
+	}
+	got := f.get(t, f.local)
+	fence := pa.Fence{Key: f.key, Project: paDomainProjectScope(got.Bot.Project), ConversationID: got.Conversation.ID,
+		BindingID: got.Conversation.BindingID, Generation: got.Conversation.Generation}
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/messages", f.local,
+		contract.ProjectAssistantSendRequest{Command: f.command(pa.SendOperation, "configure-webhook-in-chat"),
+			Fence: paWireFence(fence), Text: "Set up a webhook that summarizes each CI failure I send you."}))
+	var id string
+	select {
+	case id = <-saved:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the Bot did not save a webhook and report pending enrollment")
+	}
+	w := botHookTestWorker(t, f, client)
+	close(enrollmentAvailable)
+	if err := w.cycle(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	routineHumanIdle(t, f)
+
+	page := routineHumanPage(t, f, source, "", "", 100)
+	if len(page.Definitions) != 1 || page.Definitions[0].ID != id || !page.Definitions[0].Enabled ||
+		len(page.Definitions[0].Triggers) != 1 || page.Definitions[0].Triggers[0].Type != "webhook" {
+		t.Fatal("chat did not set up exactly one enabled webhook routine")
+	}
+	_, key, err := w.store.RoutineHook(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := w.store.Export(t.Context(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantReply := "Configured CI failures at " + cloud.URL + "/v1/hooks/" + f.identity.MachineID + "/" + id
+	conversation, err := json.Marshal(x.Messages)
+	if err != nil || !bytes.Contains(conversation, []byte(wantReply)) || bytes.Contains(conversation, []byte(key)) {
+		t.Fatal("the Bot did not return the confirmed address safely")
 	}
 }
 

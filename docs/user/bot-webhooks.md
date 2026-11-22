@@ -2,7 +2,11 @@
 
 A Bot Webhook runs a saved routine for a specific Bot when GitHub, CI or another service sends an event. To start a scheduled task from the Session list, use [Schedule webhooks](schedules.md#schedule-webhooks-cloud).
 
-## Set up a Bot Webhook
+## Ask the Bot to set it up
+
+In the Bot’s chat, tell it what to do when a webhook arrives. For example, “Set up a webhook that asks you to summarize each CI failure I send you.” The Bot saves and enables the routine and reports the public Cloud address when Cloud confirms registration. If registration is still pending, the Bot can check the saved routine again.
+
+## Set up a Bot Webhook in the console
 
 1. Open the Bot’s chat and click its name at the top. In **Details**, find **Routines** and click **+**.
 2. Enter a name and what the Bot should do. Under **When to run**, choose **Webhook**. To combine it with other triggers, open **Run settings** → **Advanced triggers** and choose **Webhook** as one of the trigger types.

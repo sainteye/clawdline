@@ -687,7 +687,31 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if e = journal(ctx, "routines"); e != nil {
 			return app.RoutineResult{}, e
 		}
-		return r.Routine(ctx, q.Binding.Fence, turnID, request)
+		if request.Action != "webhook_status" {
+			return r.Routine(ctx, q.Binding.Fence, turnID, request)
+		}
+		// Reuse the owning execution's hook read and keep credentials inside
+		// the Host while waiting for the source worker outside the actor lock.
+		request.Action = "hook"
+		hook, e := r.Routine(ctx, q.Binding.Fence, turnID, request)
+		if e != nil {
+			return app.RoutineResult{}, e
+		}
+		result := app.RoutineResult{ID: hook.ID, Webhook: &app.RoutineWebhookStatus{PublicStatus: "not_ready"}}
+		if h.o.RoutineWebhookURL == nil {
+			return result, nil
+		}
+		publicURL := h.o.RoutineWebhookURL(ctx, hook.ID, hook.Hook.Key, true)
+		current, e := r.Routine(ctx, q.Binding.Fence, turnID, request)
+		if e != nil {
+			return app.RoutineResult{}, e
+		}
+		if publicURL != "" && current.Hook.Key == hook.Hook.Key &&
+			h.o.RoutineWebhookURL(ctx, hook.ID, hook.Hook.Key, false) == publicURL {
+			result.Webhook.PublicURL = publicURL
+			result.Webhook.PublicStatus = "ready"
+		}
+		return result, nil
 	}
 	tools.output = func(ctx context.Context, id string, request app.OutputRequest) (pa.Output, error) {
 		if pa.IsPeerRequest(turn.Origin) {

@@ -30,6 +30,7 @@ type routineHumanProvider struct {
 	sends []string
 	opens []app.OpenRequest
 	caps  func()
+	main  func(context.Context, app.NativeTools) (string, error)
 }
 
 func (p *routineHumanProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -69,7 +70,11 @@ func (s *routineHumanSession) Send(_ context.Context, q app.PromptRequest) (app.
 	}
 	return s, nil
 }
-func (s *routineHumanSession) Wait(context.Context) (app.PromptResult, error) {
+func (s *routineHumanSession) Wait(ctx context.Context) (app.PromptResult, error) {
+	if s.p.main != nil && s.q.Binding.SessionSlot == "" {
+		result, err := s.p.main(ctx, s.q.Tools)
+		return app.PromptResult{FinalText: result}, err
+	}
 	return app.PromptResult{FinalText: s.result}, nil
 }
 func (*routineHumanSession) Answer(context.Context, string, string) error { return nil }

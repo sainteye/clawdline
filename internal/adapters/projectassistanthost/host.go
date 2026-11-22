@@ -37,6 +37,7 @@ type Options struct {
 	ServerLaunch func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
 	// ServerBootID is a trusted composition seam; production reads the OS boot identity.
 	ServerBootID        func(context.Context) (string, error)
+	RoutineWebhookURL   func(ctx context.Context, id, key string, wait bool) string
 	NativeHistory       app.NativeMaintenanceHistory
 	Assistants          *network.AssistantService
 	Network             *network.Service

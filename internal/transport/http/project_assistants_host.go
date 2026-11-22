@@ -160,7 +160,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		NetworkTransport: s.botNetworkTransport,
 		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
 		ReadViewByteLimit: cloudops.ReadPlaintextBytesLimit, ProjectMemory: s.projectAssistantProjectMemory,
-		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: clock,
+		Projects: projectAssistantProjects{s}, Broker: s.broker, Clock: clock, RoutineWebhookURL: s.findBotRoutineHookPublicURL,
 		DefaultLeadAgent: defaultLeadAgent, LeadTimeZone: projectAssistantHostTimeZone(), LeadQuotaNear: projectAssistantLeadQuotaNear,
 		ID: projectAssistantID, Limits: limits, Authority: s.projectAssistantAuthority,
 		Source: s.projectAssistantSource, Provider: provider, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, Rules: projectassistantacp.ClaudeLocalRules{},
