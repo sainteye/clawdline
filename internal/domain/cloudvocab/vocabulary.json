@@ -313,6 +313,31 @@
       "decode": {"reply": "action", "fields": {"decision": {"type": "object", "max_bytes": 65536, "copies": {"max_bytes": "defaultModelsCloudBodyLimit"}}}, "route": {"path": "/v1/voice/copilot-decide", "body": {"object": "decision"}}}
     },
     {
+      "op": "copilot-github-changes",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/voice/copilot-github-changes",
+      "console_seam": "reader",
+      "console_note": "Read GitHub change evidence for a specific Session and conversation on its own machine.",
+      "local": {"method": "GET", "device": true},
+      "example": {"session": "__clawdline_machine__", "request": "req-github-changes", "target": "%1", "conversation": "c1", "range": "dates", "since": "2026-01-01T00:00:00Z", "until": "2026-01-02T23:59:59Z"},
+      "shapes": [
+        {"body": ["conversation", "range", "request", "session", "target"], "path": "/v1/voice/copilot-github-changes", "query": ["conversation", "range", "session"]},
+        {"body": ["conversation", "range", "request", "session", "since", "target", "until"], "path": "/v1/voice/copilot-github-changes", "query": ["conversation", "range", "session", "since", "until"]}
+      ],
+      "decode": {"reply": "machine", "fields": {
+        "target": {"type": "string", "non_empty": true, "max_bytes": 256},
+        "conversation": {"type": "string", "non_empty": true, "max_bytes": 256},
+        "range": {"type": "string", "non_empty": true, "enum": ["release", "dates"]},
+        "since": {"type": "string", "max_bytes": 35},
+        "until": {"type": "string", "max_bytes": 35}
+      }, "route": {"path": "/v1/voice/copilot-github-changes", "query": {
+        "session": {"from": "target"}, "conversation": {"from": "conversation"}, "range": {"from": "range"},
+        "since": {"from": "since", "omit_empty": true}, "until": {"from": "until", "omit_empty": true}
+      }}}
+    },
+    {
       "op": "copilot-journal",
       "kind": "command",
       "write_gate": true,

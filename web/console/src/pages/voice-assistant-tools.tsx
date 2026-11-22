@@ -114,6 +114,15 @@ const TOOL_METAS: Record<string, ToolMeta> = {
     triggersZh: ['它剛剛之後有沒有新進展', '這段時間有什麼更新', '之後有動靜嗎'],
     triggersEn: ['Any updates since you last checked?', 'What happened since then?'],
   },
+  get_session_github_changes: {
+    titleZh: 'GitHub 修正與新功能報告',
+    titleEn: 'GitHub Fixes and Features',
+    category: 'session',
+    summaryZh: '查詢目前 Session 的 GitHub 預設分支，按發版或日期範圍報告修正和新功能。',
+    summaryEn: 'Report fixes and features on this Session’s GitHub default branch since a release or within a date range.',
+    triggersZh: ['報告自從上次發版到現在的修正、新功能', '報告今天和昨天的修正、新功能', '改成上週'],
+    triggersEn: ['Report fixes and features since the last release', 'Report fixes and features from today and yesterday', 'Change the report to last week'],
+  },
   get_session_notes: {
     titleZh: '讀取工作筆記',
     titleEn: 'Read Session Notes',

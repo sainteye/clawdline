@@ -17686,6 +17686,86 @@
   },
   {
     "Register": "daemon",
+    "Name": "voice.github_change_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 240,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.ChangeEvidenceRunesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.github_change_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.ChangeRowsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.github_read_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 12,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxCopilotGitHubChangesDuration"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "voice.github_response_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4194304,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/githubissues.ChangeResponseBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "voice.model_download_bytes",
     "Class": "buffer",
     "Unit": "bytes",

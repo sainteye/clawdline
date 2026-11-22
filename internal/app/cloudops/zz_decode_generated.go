@@ -39,6 +39,7 @@ var generatedDecoders = map[string]genDecoder{
 	"coordination.waits":                 genDecodeCoordinationWaits,
 	"copilot-briefing":                   genDecodeCopilotBriefing,
 	"copilot-decide":                     genDecodeCopilotDecide,
+	"copilot-github-changes":             genDecodeCopilotGithubChanges,
 	"copilot-journal":                    genDecodeCopilotJournal,
 	"copilot-live":                       genDecodeCopilotLive,
 	"copilot-question":                   genDecodeCopilotQuestion,
@@ -1231,6 +1232,40 @@ func genDecodeCopilotDecide(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("decision")
+	return p, req, true
+}
+
+// genDecodeCopilotGithubChanges is the `copilot-github-changes` row's decode.
+func genDecodeCopilotGithubChanges(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "conversation", "range", "request", "session", "target"},
+		[]string{"type", "conversation", "range", "request", "session", "since", "target", "until"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conversation", genRule{kind: "string", nonEmpty: true, maxBytes: 256}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("range", genRule{kind: "string", nonEmpty: true, enum: []string{"release", "dates"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("since", genRule{kind: "string", maxBytes: 35}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("target", genRule{kind: "string", nonEmpty: true, maxBytes: 256}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("until", genRule{kind: "string", maxBytes: 35}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/voice/copilot-github-changes"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"conversation": genValue{from: "conversation"}, "range": genValue{from: "range"}, "session": genValue{from: "target"}, "since": genValue{from: "since", omitEmpty: true}, "until": genValue{from: "until", omitEmpty: true}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

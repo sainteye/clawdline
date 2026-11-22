@@ -912,6 +912,10 @@
 | `voice.copilot_recap_line_characters` | 1200 | `characters` | `coalesce` | `diagnostics` | — |
 | `voice.copilot_recap_pages` | 40 | `rows` | `coalesce` | `sender, diagnostics` | — |
 | `voice.copilot_recap_timeout_milliseconds` | 25000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.github_change_characters` | 240 | `characters` | `coalesce` | `sender, diagnostics` | — |
+| `voice.github_change_rows` | 50 | `rows` | `coalesce` | `sender, diagnostics` | — |
+| `voice.github_read_seconds` | 12 | `seconds` | `refuse` | `sender, diagnostics` | — |
+| `voice.github_response_bytes` | 4194304 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `voice.model_download_bytes` | 574041195 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `voice.polish_characters` | 4000 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `voice.polish_terms` | 240 | `rows` | `refuse` | `diagnostics` | — |

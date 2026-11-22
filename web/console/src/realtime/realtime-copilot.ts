@@ -1,3 +1,4 @@
+import { GITHUB_CHANGES_TOOL, type GitHubPreset } from './copilot-github-changes.js'
 import {CallHistory,type CallOperation,type OperationSpec} from './copilot-history.js'
 import { CopilotSessionBoards } from './copilot-session-boards.js'
 import type { SessionBoardTarget } from '../session/SessionBoards.js'
@@ -417,7 +418,7 @@ export class RealtimeCopilotClient {
   }
 
   private toolDeps(): ToolDeps {
-    const call=this.journalCall, turn=this.questionSerial
+    const call=this.journalCall, turn=this.questionSerial, attempt=this.attempt
     return {
       boardTargets:()=>this.boardTargets(),
       observe:spec=>this.callObserving&&call===this.journalCall?this.observeOperation(spec):{id:'stale-call',end:()=>{}},
@@ -439,6 +440,11 @@ export class RealtimeCopilotClient {
       help: loadCopilotHelp,
       heard: () => this.heardNow,
       selectedReadTarget: this.questionTarget,
+      githubReport: {
+        origin: this.call.options.origin,
+        previous: this.githubReportTarget,
+        remember: ref => { if (attempt === this.attempt && turn === this.questionSerial) this.githubReportTarget = ref },
+      },
       analyzeQuestion: (row, question, replies) => this.analyzeQuestion(row, question, replies, turn),
       spokenReference:text=>this.spokenSessions.resolve(text),
       onRead:ref=>this.spokenSessions.observe(ref),
@@ -604,7 +610,9 @@ export class RealtimeCopilotClient {
 
   private questionSending = false
   private questionSerial = 0
-  private questionTarget?: QuestionTarget & { analyze?: boolean }
+  private questionTarget?: QuestionTarget & { analyze?: boolean; githubPeriod?: GitHubPreset }
+  private githubReportTarget?: SessionReference
+  private githubReportTurn?: number
   private questionUSD = 0
   private questionCostKnown = true
   private questionContext?: { target: QuestionTarget; key: string }
@@ -644,7 +652,8 @@ export class RealtimeCopilotClient {
         this.liveQuestionText = request.text
       }
       this.heardNow = request.text
-      this.questionTarget = { ...selected, analyze: request.analyze }
+      this.questionTarget = { ...selected, analyze: request.analyze, githubPeriod: request.githubPeriod }
+      if (request.githubPeriod) this.githubReportTurn = serial
       this.focus = selected.id
       this.doneSinceHeard.clear()
       this.journal('heard', request.text, { source: 'question_menu', question: id })
@@ -869,7 +878,7 @@ export class RealtimeCopilotClient {
     this.call = { snapshot: '', options: { origin } }
     this.focus = origin?.id
     this.heardNow = ''; this.liveQuestionText = ''
-    this.questionTarget=undefined;this.questionContext=undefined;this.pendingQuestion=undefined;this.livePresentedRead=undefined;this.questionUSD=0;this.questionCostKnown=true
+    this.questionTarget=undefined;this.githubReportTarget=undefined;this.githubReportTurn=undefined;this.questionContext=undefined;this.pendingQuestion=undefined;this.livePresentedRead=undefined;this.questionUSD=0;this.questionCostKnown=true
     this.activeConversationInput='';this.responseInputs.clear();this.speechContexts.clear();this.retriedUtterances.clear();this.lastRead=undefined;this.resetSessionReports()
     this.boardVoice = new CopilotSessionBoards(); this.boardVoiceTurn = 0
     this.liveOutputAt=0;this.liveInputAt=0;this.executingEffects.clear();this.deliveredSeen.clear();this.sendCuePending=false;this.pendingTools.clear();this.receivingInputs.clear();this.answeredReads.clear();this.batchAtSpeech.clear();this.batchProposal=undefined;this.batchCandidate=undefined;this.offeredBatchKey='';this.awaitingResponse=false;this.hearing=false;this.playing=false;
@@ -1593,6 +1602,9 @@ export class RealtimeCopilotClient {
     try {
     const input=this.responseInputs.get(event.response_id??'')??this.activeConversationInput
     const dc=this.dc,attempt=this.attempt
+    const githubReport = event.name === GITHUB_CHANGES_TOOL.name
+    const questionTurn = this.questionSerial
+    if (githubReport) this.githubReportTurn = questionTurn
     const utterance=voiceWork.state?.inputs.find(i=>i.id===input&&i.call===this.journalCall)?.text??this.heardNow
     const spokenReference=this.spokenSessions.resolve(utterance)
     let args:Record<string,unknown>={}
@@ -1602,7 +1614,9 @@ export class RealtimeCopilotClient {
     const reported:(()=>void)[]=[]
     let output:string,logs:{level:'info'|'tool'|'error';text:string}[]=[],reportResumed=false
     const steps:string[]=[]
-    if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
+    if (this.githubReportTurn === questionTurn && !githubReport) {
+      output = JSON.stringify({ error: 'copilot_github_report_read_only', meaning: 'Only the GitHub report may run on this turn.' })
+    } else if(event.name==='get_sessions_summary'&&args.continue_report===true&&this.sessionReports.hasReport()){
       reportResumed=this.continueSessionReport(utterance, args.next_report === true);output=JSON.stringify({resuming_session_report:reportResumed,session_report_status:this.sessionReports.status()??'complete',meaning:'The application will speak the retained batch. Do not create a duplicate reply.'})
     } else if (event.name === 'prepare_session_board' || event.name === 'confirm_session_board') {
       output = JSON.stringify(await this.boardTool(event.name, args))
@@ -1624,13 +1638,15 @@ export class RealtimeCopilotClient {
         }
       }
       const focus=voiceWork.state?.inputs.find(i=>i.id===input)?.focus
-      try {const body=JSON.parse(output);if(focus && body.session_id===focus.id && !body.error)this.lastRead={focus,output:shortResult(output),at:Date.now(),input}}catch { /* refusal-ok: unreadable output cannot become context for another request. */ }
+      try {const body=JSON.parse(output);if(!githubReport && focus && body.session_id===focus.id && !body.error)this.lastRead={focus,output:shortResult(output),at:Date.now(),input}}catch { /* refusal-ok: unreadable output cannot become context for another request. */ }
     }
     if(this.dc!==dc||attempt!==this.attempt)return
+    const superseded = githubReport && questionTurn !== this.questionSerial
+    if (superseded) output = JSON.stringify({ error: 'copilot_question_superseded' })
     const trace = toolTrace(event.name, output, performance.now() - startedAt)
     if(trace.ok&&immediateVoiceRead(event.name,args))this.answeredReads.add(input)
 
-    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
+    this.journal('tool', event.name, { args: event.arguments.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: githubReport ? '' : output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.updateState({ toolCallLog: undefined })
     this.confirmedAction(event.name, output)
@@ -1638,7 +1654,7 @@ export class RealtimeCopilotClient {
     if (this.dc && this.dc.readyState === 'open') {
       this.dc.send(JSON.stringify({type:'conversation.item.create',item:{type:'message',role:'system',content:[{type:'input_text',text:this.spokenSessions.context()}]}}))
       const messages=toolReplyEvents(event.call_id,output)
-      if(reportResumed){this.dc.send(JSON.stringify(messages[0]))}
+      if(reportResumed || superseded){this.dc.send(JSON.stringify(messages[0]))}
       else if(managed) {
         this.dc.send(JSON.stringify(messages[0]))
         this.requestConversation(input,`tool:${input}`,()=>{for(const report of reported)report()})
@@ -1888,7 +1904,9 @@ export class RealtimeCopilotClient {
   }
   private async runLiveToolBody(callID: string, name: string, args: string,parent:string) {
     const dc = this.dc, attempt = this.attempt, turn = this.questionSerial
-    const explicit = name === 'explain_session_reply' || name === 'get_session_recap'
+    const githubReport = name === GITHUB_CHANGES_TOOL.name
+    if (githubReport) this.githubReportTurn = turn
+    const explicit = name === 'explain_session_reply' || name === 'get_session_recap' || githubReport
     const focus = this.focus, utterance = this.liveQuestionText
     const currentQuestion = () => this.dc === dc && this.attempt === attempt && this.questionSerial === turn
     if (explicit) this.consumeLiveInput()
@@ -1901,7 +1919,7 @@ export class RealtimeCopilotClient {
     let logs: { level: 'info' | 'tool' | 'error'; text: string }[] = []
     try {
       const requested=JSON.parse(args||'{}') as Record<string,unknown>
-      if(name==='confirm_session_board'){
+      if(this.githubReportTurn !== turn && name==='confirm_session_board'){
         const since=Date.now()
         while(Date.now()-this.liveInputAt<this.liveQuietMs&&Date.now()-since<WORK_REQUEST_MS){
           await new Promise(resolve=>setTimeout(resolve,this.livePollMs))
@@ -1910,7 +1928,9 @@ export class RealtimeCopilotClient {
         const quiet = Date.now() - this.liveInputAt >= this.liveQuietMs
         if(!quiet)throw new Error('session_board_confirmation_required')
       }
-      if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(undefined, requested.next_report === true),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
+      if (this.githubReportTurn === turn && !githubReport) {
+        output = JSON.stringify({ error: 'copilot_github_report_read_only', meaning: 'Only the GitHub report may run on this turn.' })
+      } else if(name==='get_sessions_summary'&&requested.continue_report===true&&this.sessionReports.hasReport())output=JSON.stringify({resuming_session_report:this.continueSessionReport(undefined, requested.next_report === true),session_report_status:this.sessionReports.status()??'complete',meaning:'The application resumes only the retained unread report items. Do not repeat the report or create another spoken reply.'})
       else if (name === 'prepare_session_board' || name === 'confirm_session_board') output = JSON.stringify(await this.boardTool(name, requested))
       else {
         const deps = this.toolDeps()
@@ -1936,7 +1956,7 @@ export class RealtimeCopilotClient {
     }
     const trace = toolTrace(name, output, performance.now() - started)
     this.updateState({toolCallLog:undefined})
-    this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
+    this.journal('tool', name, { args: args.slice(0, 1000), outcome: trace.outcome, ms: trace.ms, target: trace.target ?? '', answer: githubReport ? '' : output.slice(0, 1500), steps: steps.join(' · ').slice(0, 800) })
     for (const log of logs) this.addLog(log.level, log.text)
     this.confirmedAction(name, output)
     // Each Session read is spoken at once while the backend goes on (`LIVE_BACKEND_FLOW`).

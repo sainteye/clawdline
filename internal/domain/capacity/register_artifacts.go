@@ -12,6 +12,11 @@ func artifactsBounds() []Entry {
 		{Name: "voice.question_concurrent", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionConcurrent"}},
 		{Name: "voice.question_output_tokens", Class: Buffer, Unit: Tokens, Limit: 1400, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotQuestionOutputTokens"}},
 
+		{Name: "voice.github_change_rows", Class: Buffer, Unit: Rows, Limit: 50, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/githubissues.ChangeRowsLimit"}},
+		{Name: "voice.github_change_characters", Class: Buffer, Unit: Characters, Limit: 240, AtLimit: Coalesce, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/githubissues.ChangeEvidenceRunesLimit"}},
+		{Name: "voice.github_response_bytes", Class: Buffer, Unit: Bytes, Limit: 4 << 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/adapters/githubissues.ChangeResponseBytesLimit"}},
+		{Name: "voice.github_read_seconds", Class: Buffer, Unit: Seconds, Limit: 12, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.maxCopilotGitHubChangesDuration"}},
+
 		{Name: "voice.work_auto_continue", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxAutoContinue"}},
 		{Name: "voice.work_plan_rounds", Class: Buffer, Unit: Rows, Limit: 4, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person, Sources: []string{"internal/domain/voicework.MaxPlanRounds"}},
 		{Name: "voice.work_progress", Class: Buffer, Unit: Rows, Limit: 8, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/voicework.MaxProgress"}},

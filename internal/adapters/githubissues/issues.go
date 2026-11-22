@@ -96,6 +96,10 @@ func (c *Client) Comment(ctx context.Context, token, repo string, number int, te
 // api is one REST call. Statuses become the typed failures above; a body is
 // never repeated in an error.
 func (c *Client) api(ctx context.Context, token, method, path string, in, out any) error {
+	return c.apiWithLimit(ctx, token, method, path, in, out, MaxResponseBytes)
+}
+
+func (c *Client) apiWithLimit(ctx context.Context, token, method, path string, in, out any, maxBytes int64) error {
 	var body io.Reader
 	if in != nil {
 		raw, err := json.Marshal(in)
@@ -108,7 +112,9 @@ func (c *Client) api(ctx context.Context, token, method, path string, in, out an
 	if err != nil {
 		return err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	if in != nil {
@@ -123,11 +129,11 @@ func (c *Client) api(ctx context.Context, token, method, path string, in, out an
 		return fmt.Errorf("GitHub could not be reached: %w", err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, MaxResponseBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return fmt.Errorf("GitHub's answer could not be read: %w", err)
 	}
-	if len(raw) > MaxResponseBytes {
+	if int64(len(raw)) > maxBytes {
 		return errors.New("GitHub's answer is larger than expected")
 	}
 	switch {

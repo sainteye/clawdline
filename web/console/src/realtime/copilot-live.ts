@@ -18,7 +18,7 @@ import {callControlGuidance} from './copilot-call-control.ts'
  * live-conversations). Nothing here was checked against a live session yet.
  */
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
-import { COPILOT_TOOLS, DEFAULT_SPEED, REPLY_CHARS, SPEEDS, briefingSection, extraSection, instructionsFor, languageRule, originSection, type CallOptions } from './copilot-tools.ts'
+import { COPILOT_TOOLS, DEFAULT_SPEED, REPLY_CHARS, SPEEDS, briefingSection, extraSection, githubReportInstructions, instructionsFor, languageRule, originSection, type CallOptions } from './copilot-tools.ts'
 
 /** The backend model the machine opens a session with (copilot.LiveBackendModel). */
 export const LIVE_BACKEND_MODEL = 'gpt-6-luna'
@@ -72,7 +72,7 @@ Personality: 你跟了他很久、很熟他的工作。親切、放鬆、反應�
 Message review: Before calling a message send tool, say the entire recipient and message verbatim, then ask whether to send and wait. Full read-back overrides short-answer and no-reading rules. You judge agreement from the complete conversation, including natural confirmation. Once the same recipient and message are approved, call the send tool once without asking again. Tools do not apply another transcript or playback gate. Never say sent before a typed receipt.\nSpeaking style: 這是對話，不是報告。${brief ? '一般回答一到三句，' : ''}講完重點就停，讓他接話；他想知道更多自然會問。說法自己決定、每次換著說，不要念稿。技術用語改說它對他的影響，不念 Session ID、路徑、指令或網址。
 Backchannel policy: Use moderate, brief and varied backchannels while the person is speaking.
 Interruption policy: Stop speaking when the person interrupts, and listen. Answer what they just said; do not go back to finish the old explanation.
-Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話、調整並保存語速，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
+Delegation policy: 你自己不知道任何 Session 的狀況，也不能自己做任何事。凡是問到 Session（包含 GitHub 修正和新功能、調整剛才的報告日期）、Clawdline 怎麼用、整體狀況、這通電話打了多久或花了多少錢，或要你送訊息、回答、打開、關閉、改名、開新 Session、執行 Snippet、結束或掛斷這通電話、調整並保存語速，一律先產生 <|SpawnThinking|>，等結果回來再講。Generate <|SpawnThinking|> before giving an answer that depends on backend work. 結果回來前不要說已經做好、已經送出或任何 Session 的內容；結果說要使用者確認時，照它的意思問他一句再等他回答。`,
     SESSION_STATUS_SPEECH,
     languageRule(options.language ?? ''),
     callControlGuidance(options.language),
@@ -100,11 +100,12 @@ export const LIVE_BACKEND_FLOW = `# GPT-Live 的做法（優先於上面的規�
 - 通話開始時的 Session 快照已經帶了每個 Session 背景寫好的 recap 和寫好多久（recap_written）。使用者問整體狀況或「各個 Session 在做什麼」時，直接用快照的 recap 回答，說明是多久前的狀況，不必呼叫工具；他要某一個的細節、最新狀況，或快照沒有它的 recap 時，才呼叫工具。
 - 明確問最近幾則回覆、表格、原因、取捨或洞見時，直接 explain_session_reply（依指定則數），不要先讀摘要或 updates。預設直接讀原文；只有需要綜合多則回覆、核對表格、或追查審查者原始回饋時用 analyze=true。詳解可分段完整說明，不受一般簡短回覆的句數限制。
 - 使用者要某個 Session 的「最新狀況」「最新摘要」「再看一次」時，直接呼叫一次 get_session_summary 並帶 fresh: true。他問的是「後來做了什麼、有什麼新進展」時才用 get_session_updates。
+- GitHub 變更工具回傳後，依提交證據整理成修正與新功能，寫成兩段給語音模型轉述。一般一兩句的限制不適用。結果為 superseded 時不播報舊結果。
 - explain_session_reply 或 get_session_recap 回傳 voice_presentation 為 app 時，應用程式已把本輪回答交給語音。結束查詢，不重複說、不再呼叫工具。為 superseded 時，使用者已進入下一輪，不播報舊結果。
 - 每查完一個 Session，系統會立刻把它的摘要交給語音模型先講給使用者聽，你同時繼續查下一個。所以你的最後回覆不要把查過的 Session 再逐一重講：只補還沒講到的、要使用者決定的事，或一句整體結論；都講過了就只寫一句簡短收尾。`
 
 export function liveBackendUpdate(snapshot = '', options: CallOptions = {}, backendModel = LIVE_BACKEND_MODEL): Record<string, unknown> {
-  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), LIVE_BACKEND_FLOW, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
+  const instructions = [LIVE_BACKEND_PREAMBLE, instructionsFor(options.brief !== false, options.language ?? ''), githubReportInstructions(), LIVE_BACKEND_FLOW, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
     .filter(Boolean).join('\n\n')
   return {
     type: 'session.update',

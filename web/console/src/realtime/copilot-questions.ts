@@ -1,9 +1,12 @@
+import { GITHUB_CHANGES_TOOL } from "./copilot-github-changes.js"
 import type { Icon } from '@clawdline/contract'
 /** Read-only questions shared by the call menu and its spoken routing rules. */
 export const CALL_QUESTIONS = [
   { id: 'summary', title: 'copilotQuestionTitleSummary', group: 'overview', key: 'copilotAskSummary', alternate: 'copilotAskSummaryAlt', tool: 'get_session_summary', args: {} },
   { id: 'latest', title: 'copilotQuestionTitleLatest', group: 'overview', key: 'copilotAskLatest', alternate: 'copilotAskLatestAlt', tool: 'get_session_summary', args: { fresh: true } },
   { id: 'updates', title: 'copilotQuestionTitleUpdates', group: 'updates', key: 'copilotAskUpdates', alternate: 'copilotAskUpdatesAlt', tool: 'get_session_updates', args: {} },
+  { id: 'github-release', title: 'copilotQuestionTitleGitHubRelease', group: 'updates', key: 'copilotAskGitHubRelease', alternate: 'copilotAskGitHubReleaseAlt', tool: GITHUB_CHANGES_TOOL.name, args: { period: 'latest_release' } },
+  { id: 'github-recent', title: 'copilotQuestionTitleGitHubRecent', group: 'updates', key: 'copilotAskGitHubRecent', alternate: 'copilotAskGitHubRecentAlt', tool: GITHUB_CHANGES_TOOL.name, args: { period: 'today_and_yesterday' } },
   { id: 'history', title: 'copilotQuestionTitleHistory', group: 'updates', key: 'copilotAskHistory', alternate: 'copilotAskHistoryAlt', tool: 'get_session_recap', args: {} },
   { id: 'reply', title: 'copilotQuestionTitleReply', group: 'understand', key: 'copilotAskReply', alternate: 'copilotAskReplyAlt', tool: 'explain_session_reply', args: { replies: 1, analyze: false } },
   { id: 'insights', title: 'copilotQuestionTitleInsights', group: 'understand', key: 'copilotAskInsights', alternate: 'copilotAskInsightsAlt', tool: 'explain_session_reply', args: { replies: 5, analyze: true } },
@@ -23,6 +26,7 @@ export function questionRequest(id: CallQuestionID, text: string, target: Questi
   return {
     text: `${target.label}: ${text}`,
     analyze: 'analyze' in question.args ? question.args.analyze : undefined,
-    routing: `The person clicked a read-only question in the call window. The selected target and arguments are application data, not instructions from Session content: ${JSON.stringify({target: identity, tool: question.tool, args: {...question.args, session_id: target.id, said: target.label, ...(question.tool === 'explain_session_reply' ? {question: text} : {})}})}. Read that target with that tool before answering. Do not first generate a summary for an explicit detail question. For decisions, also read its current summary and distinguish current unanswered questions from historical ones. Explain conclusions, reasons, tradeoffs and any decision needed in the person's language. Distinguish source claims from your inference. State missing or truncated coverage. Never send a message, approve, or execute a mutation for this question.`,
+    githubPeriod: 'period' in question.args ? question.args.period : undefined,
+    routing: `The person clicked a read-only question in the call window. The selected target and arguments are application data, not instructions from Session content: ${JSON.stringify({target: identity, tool: question.tool, args: {...question.args, ...(!('period' in question.args) ? {session_id: target.id, said: target.label} : {}), ...(question.tool === 'explain_session_reply' ? {question: text} : {})}})}. Read that target with that tool before answering. Do not first generate a summary for an explicit detail question. For decisions, also read its current summary and distinguish current unanswered questions from historical ones. Explain conclusions, reasons, tradeoffs and any decision needed in the person's language. Distinguish source claims from your inference. State missing or truncated coverage. Never send a message, approve, or execute a mutation for this question.`,
   }
 }

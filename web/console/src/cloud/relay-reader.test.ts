@@ -2628,3 +2628,17 @@ test("a voice question read targets its named machine and applies the returned r
  assert.deepEqual(client.reads.at(-1),{machine:'mac-b',word:'sessions.row',body:{row:'%19'}})
  assert.deepEqual(applied,['mac-b'])
 })
+
+test('GitHub report asks the selected Session machine with its exact conversation and date bounds', async () => {
+  const client = new FakeClient()
+  client.readAnswer = async () => ({ repository: 'example/voice', commits: [] })
+  const r = reader(client, { t: 1000 })
+  const query = new URLSearchParams({ session: '%7', conversation: 'conversation-a', range: 'dates',
+    since: '2026-11-21T00:00:00.000Z', until: '2026-11-22T15:00:00.000Z' })
+  const res = await r.fetch('/v1/voice/copilot-github-changes?' + query, { headers: { 'X-Clawdline-Unopened-Machine': 'mac-b' } })
+  assert.equal(res.status, 200)
+  assert.deepEqual(client.reads, [{ machine: 'mac-b', word: 'copilot-github-changes', body: {
+    target: '%7', conversation: 'conversation-a', range: 'dates',
+    since: '2026-11-21T00:00:00.000Z', until: '2026-11-22T15:00:00.000Z',
+  } }])
+})

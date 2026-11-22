@@ -770,6 +770,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/voice/copilot-github-changes",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/voice/copilot-question",
       "guide": "connect"
     },

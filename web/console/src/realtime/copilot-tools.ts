@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node's type-stripping tests resolve the source module.
+import { GITHUB_CHANGES_PATH, GITHUB_CHANGES_TOOL, GITHUB_REPORT_GUIDANCE, githubReportRange, localGitHubDate, type GitHubPreset } from './copilot-github-changes.ts'
 // @ts-expect-error -- Node tests load this TypeScript module directly.
 import {readBoardDirectory,boardMembership,querySessionBoards} from './copilot-board-queries.ts'
 import type {SessionBoardTarget} from '../session/SessionBoards.js'
@@ -81,7 +83,9 @@ export interface ToolDeps {
   /** Demand-only question analysis on the Session machine; undefined on older daemons. */
   analyzeQuestion?: (row: CopilotSessionRow, question: string, replies: number) => Promise<Record<string, unknown> | undefined>
   /** Exact identity selected in the call menu; a reused terminal must not redirect a read. */
-  selectedReadTarget?:SessionReference & { analyze?: boolean }
+  selectedReadTarget?:SessionReference & { analyze?: boolean; githubPeriod?: GitHubPreset }
+  /** Only the application establishes the current and previous GitHub report targets. */
+  githubReport?: { origin?: CallOrigin; previous?: SessionReference; remember: (ref: SessionReference) => void }
   summaryAttentionFirst?:boolean
   summaryLimit?:number
   summaryTargets?:readonly SessionReference[]
@@ -353,6 +357,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 
 export const COPILOT_TOOLS = [
   ...SESSION_BOARD_TOOLS,
+  GITHUB_CHANGES_TOOL,
   {
     type: 'function',
     name: 'get_status_briefing',
@@ -707,7 +712,7 @@ export const COPILOT_TOOLS = [
 ] as const
 
 /** Closed immediate read path. Changes stay owned by the durable executor. */
-const IMMEDIATE_READS = new Set(['list_session_boards','get_session_board','get_call_status','get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
+const IMMEDIATE_READS = new Set([GITHUB_CHANGES_TOOL.name,'list_session_boards','get_session_board','get_call_status','get_status_briefing','list_sessions','get_sessions_summary','get_session_recap','get_session_summary','get_session_activity','explain_session_reply','get_session_screen','get_session_updates','get_session_notes','list_snippets','clawdline_help','get_devstack_links','list_machines','list_projects'])
 export function immediateVoiceRead(name:string,args:Record<string,unknown>):boolean {
   return IMMEDIATE_READS.has(name) && !(name==='get_devstack_links' && args.open===true)
 }
@@ -729,7 +734,7 @@ When send_message_to_session returns session_asking, nothing was typed. Follow n
 If the person already named the exact recipient or confirmed it, switch_confirmed can acknowledge that decision; a background read of another Session does not undo the person's choice.`
 
 export const MANAGED_CALL_GUIDANCE = `# Background work and immediate conversation
-Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, or identity. Do not send these ordinary questions to another planning model.
+Use immediate read tools to answer questions about the focused Session, its summary, updates, notes, identity, or GitHub changes. Do not send these ordinary questions to another planning model.
 Each utterance is saved as conversational input, with an input ID and its own Session focus. Saving is not task submission, planning or completion. Never say an action is queued until queue_voice_work confirms it.
 For an action, multi-step request or explicit request to track ongoing work, call queue_voice_work with the exact saved input IDs. The original words and captured focus are authoritative; never rewrite them from names or guesses. Use send_message_to_session for messages or plain-text replies, instead of queue_voice_work. For multiple recipients, confirm their recipients and messages first, then invoke the send tool once for each; do not queue a message just to repeat confirmation. Before calling it, read the complete recipient and message, ask whether to send, then wait for the person's reply. You determine whether that reply confirms this draft, including natural confirmations. If confirmed, call the tool once; do not ask again for unchanged content. If the content or recipient changes, read the revised draft and ask again. The tool does not apply a second transcript, silence-duration or confirmation-phrase gate. Opening a Session or its snippets runs at once. Other mutations still need exact-spec confirmation in the work list. Never supply confirmed or infer consent from an earlier call.
 For Session message boards, use prepare_session_board and confirm_session_board directly. They keep a call-local plan and the application verifies the exact spoken confirmation. Ask for missing details one at a time.
@@ -839,7 +844,7 @@ export function sessionUpdateEvent(snapshot = '', options: CallOptions = {}): Re
     session: {
       type: 'realtime',
       output_modalities: ['audio'],
-      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
+      instructions: [instructionsFor(options.brief !== false, options.language ?? ''), githubReportInstructions(), SESSION_DECISION_GUIDANCE, options.workEnabled ? MANAGED_CALL_GUIDANCE : '', COPILOT_SPEECH_GUIDANCE, options.workEnabled ? '' : COPILOT_WORK_DISABLED_GUIDANCE, extraSection(options.extra ?? ''), originSection(options.origin), briefingSection(options.briefing ?? ''), snapshot]
         .filter(Boolean).join('\n\n'),
       audio: {
         input: {
@@ -1782,6 +1787,53 @@ function isMarked(e: Record<string, unknown>, mark: UpdateMark): boolean {
 /** Records that the copilot reported `row` up to its newest entry. */
 function markReported(deps: ToolDeps, row: CopilotSessionRow, newest: Record<string, unknown> | undefined) {
   if (newest) deps.marks?.set(markKey(row), markOf(newest))
+}
+
+export function githubReportInstructions(now = new Date()): string {
+  return `${GITHUB_REPORT_GUIDANCE} The caller’s local calendar date is ${localGitHubDate(now)}.`
+}
+
+async function githubChanges(deps: ToolDeps, args: Record<string, unknown>): Promise<unknown> {
+  const selected = deps.selectedReadTarget
+  const previous = !selected && args.adjust_previous === true ? deps.githubReport?.previous : undefined
+  const exact = selected ?? previous
+  if (args.adjust_previous === true && !exact) return { error: 'copilot_github_no_previous_report', meaning: 'There is no previous GitHub report in this call. Ask for a GitHub report with the desired dates.' }
+  const origin = deps.githubReport?.origin
+  const current = deps.screen?.() ?? (origin ? { ids: [origin.id], machine: origin.machine } : undefined)
+  if (!exact && !current) return { error: 'copilot_github_session_required', meaning: 'Open or choose the Session whose GitHub repository you want.' }
+  const dates = githubReportRange(selected?.githubPeriod ? { period: selected.githubPeriod } : args, new Date((deps.now?.() ?? Date.now() / 1000) * 1000))
+  if (!dates) return { error: 'copilot_github_invalid_dates', meaning: 'Ask for a clear, valid date range.' }
+  const inventory = await readRows(deps)
+  if ('error' in inventory) return inventory
+  const currentRows = current?.machine ? inventory.rows.filter(row => !row.machine || row.machine === current.machine) : inventory.rows
+  const row = exact
+    ? uniqueSessionID(inventory.rows, exact.id)
+    : rowOnScreen(currentRows, current?.ids ?? null)
+  const ambiguous = row && !exact && !current?.ids.includes(row.id) && currentRows.filter(other => sid(other) === sid(row)).length !== 1
+  if (!row || !row.conversation || ambiguous || !uniqueSessionID(inventory.rows, row.id) || (exact && !sameReference(exact, row))) {
+    return { error: 'copilot_github_session_changed', meaning: 'The current Session could not be verified. Open or choose it again.' }
+  }
+  deps.githubReport?.remember({ id: row.id, label: row.label, machine: row.machine, conversation: row.conversation })
+  const query = new URLSearchParams({ session: sid(row), conversation: row.conversation, range: dates.range })
+  if (dates.range === 'dates') {
+    query.set('since', dates.since)
+    query.set('until', dates.until)
+  }
+  return observedRead(deps, 'read_github_changes', row, async nested => {
+    const response = await rowFetch(nested, row)(`${GITHUB_CHANGES_PATH}?${query}`, { signal: nested.operationSignal })
+    const body: Record<string, unknown> = await response.json().catch(() => ({}))
+    if (!response.ok) {
+      const refusal = copilotRefusal(body, response.status)
+      return { error: refusal.code, meaning: refusal.message || (response.status === 501 || COPILOT_MACHINE_LACKS.has(refusal.code) ? 'Update Clawdline on the Session machine to use GitHub reports.' : 'GitHub history could not be read.'), label: row.label }
+    }
+    if (typeof body.repository !== 'string' || !Array.isArray(body.commits)) {
+      return { error: 'copilot_github_unavailable', label: row.label }
+    }
+    return {
+      ...body, session_id: row.id, label: row.label,
+      ...(dates.range === 'dates' ? { local_dates: { from: dates.from, through: dates.through } } : {}),
+    }
+  })
 }
 
 async function sessionUpdates(deps: ToolDeps, logs: ToolLog[], wanted: string): Promise<unknown> {
@@ -3206,6 +3258,7 @@ async function executeCopilotTool(name: string, argsJson: string, deps: ToolDeps
     else if (name === 'get_session_screen') result = await sessionScreen(deps, logs, str(args.session_id))
     else if (name === 'open_session') result = await openSessionTool(deps, logs, str(args.session_id))
     else if (name === 'answer_session_question') result = await answerQuestion(deps, logs, str(args.session_id), str(args.choice), str(args.session_label), args.switch_confirmed === true, str(args.expected_question))
+    else if (name === GITHUB_CHANGES_TOOL.name) result = await githubChanges(deps, args)
     else if (name === 'get_session_updates') result = await sessionUpdates(deps, logs, str(args.session_id))
     else if (name === 'get_session_notes') result = await sessionNotes(deps, logs, str(args.session_id))
     else if (name === 'list_snippets') result = await listSnippets(deps, logs, str(args.session_id))

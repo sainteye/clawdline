@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14030,
-  "riskKeys": 5966,
-  "nonRiskCount": 8064,
+  "englishContentKeys": 14050,
+  "riskKeys": 5969,
+  "nonRiskCount": 8081,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 723,
+      "count": 729,
       "sources": [
         null
       ],
@@ -1265,6 +1265,12 @@
         "capacityRow.voice.copilot_recap_line_characters.what",
         "capacityRow.voice.copilot_recap_pages.what",
         "capacityRow.voice.copilot_recap_timeout_milliseconds.full",
+        "capacityRow.voice.github_change_characters.full",
+        "capacityRow.voice.github_change_characters.what",
+        "capacityRow.voice.github_change_rows.full",
+        "capacityRow.voice.github_change_rows.what",
+        "capacityRow.voice.github_read_seconds.full",
+        "capacityRow.voice.github_response_bytes.what",
         "capacityRow.voice.polish_characters.what",
         "capacityRow.voice.polish_terms.what",
         "capacityRow.voice.polish_timeout_milliseconds.full",
@@ -4260,7 +4266,7 @@
     },
     {
       "name": "next / other",
-      "count": 1343,
+      "count": 1350,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -4504,6 +4510,10 @@
         "next.compressedReadUnsupported",
         "next.copilotAnswering",
         "next.copilotAskDecisions",
+        "next.copilotAskGitHubRecent",
+        "next.copilotAskGitHubRecentAlt",
+        "next.copilotAskGitHubRelease",
+        "next.copilotAskGitHubReleaseAlt",
         "next.copilotAskHistoryAlt",
         "next.copilotAskInsights",
         "next.copilotAskInsightsAlt",
@@ -4584,6 +4594,7 @@
         "next.copilotHistoryDirectory",
         "next.copilotHistoryElapsed",
         "next.copilotHistoryEntries",
+        "next.copilotHistoryGitHubChanges",
         "next.copilotHistoryGroup",
         "next.copilotHistoryNotes",
         "next.copilotHistoryPast",
@@ -4643,6 +4654,8 @@
         "next.copilotQuestionSending",
         "next.copilotQuestionTarget",
         "next.copilotQuestionTitleDecisions",
+        "next.copilotQuestionTitleGitHubRecent",
+        "next.copilotQuestionTitleGitHubRelease",
         "next.copilotQuestionTitleHistory",
         "next.copilotQuestionTitleInsights",
         "next.copilotQuestionTitleLatest",
@@ -8087,7 +8100,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 220,
+      "count": 224,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8258,6 +8271,10 @@
         "transparency.card.voice-call-ending.condition",
         "transparency.card.voice-call-ending.summary",
         "transparency.card.voice-call-ending.title",
+        "transparency.card.voice-github-reports.condition",
+        "transparency.card.voice-github-reports.how",
+        "transparency.card.voice-github-reports.summary",
+        "transparency.card.voice-github-reports.title",
         "transparency.card.voice-list-briefing.title",
         "transparency.card.voice-live-pacing.title",
         "transparency.card.voice-polish.condition",

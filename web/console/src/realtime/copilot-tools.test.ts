@@ -191,7 +191,7 @@ test("the session configuration is in the Realtime GA shape and carries every to
     "it waits for the end of what the person means, not the first pause")
   for (const beta of ["modalities", "voice", "input_audio_transcription"]) assert.equal(beta in ev.session, false, beta)
   assert.deepEqual(ev.session.tools.map((t: { name: string }) => t.name), COPILOT_TOOLS.map((t) => t.name))
-  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_session_boards", "get_session_board", "prepare_session_board", "confirm_session_board", "get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
+  assert.deepEqual(COPILOT_TOOLS.map((t) => t.name), ["list_session_boards", "get_session_board", "prepare_session_board", "confirm_session_board", "get_session_github_changes", "get_status_briefing", "list_sessions", "get_sessions_summary", "get_session_recap", "get_session_summary", "get_session_activity", "explain_session_reply", "get_session_screen", "open_session", "answer_session_question", "get_session_updates", "get_session_notes", "list_snippets", "open_snippets", "run_snippet", "clawdline_help", "get_devstack_links", "set_speaking_speed", "set_answer_length", "get_call_status", "end_call", "smart_rename_sessions", "close_session", "list_machines", "list_projects", "start_session", "send_message_to_session"])
 })
 
 test("a tool's answer goes back as its call's output and asks for the spoken reply", () => {
@@ -2425,4 +2425,49 @@ test('a malformed transcript stays a failed history entry even when the group re
  assert.ok(!report.error,'the existing group fallback remains usable')
  assert.equal(report.sessions[0].transcript_status, 'unavailable')
  assert.ok(observations.some(row=>row.name==='read_session_transcript'&&row.outcome==='failed'))
+})
+
+test('GitHub report stays tied to the on-screen Session and an adjusted report keeps the previous target', async () => {
+  const now = new Date(2026, 10, 22, 18, 30)
+  const requests: URL[] = []
+  let screen = { ids: ['%7'], machine: 'machine-b' }
+  const session = { id: '%7', label: 'Voice scope', state: 'idle', sessionId: 'conversation-b' }
+  const deps: ToolDeps = {
+    now: () => now.valueOf() / 1000,
+    screen: () => screen,
+    fleet: async () => [
+      { machine: 'machine-a', machineName: 'A', row: { ...session, sessionId: 'conversation-a' } },
+      { machine: 'machine-b', machineName: 'B', row: session },
+    ],
+    githubReport: { remember(ref) { deps.githubReport!.previous = ref } },
+    async sleep() {},
+    async fetch(path, init) {
+      requests.push(new URL(path, 'http://fixture.test'))
+      assert.equal(new Headers(init?.headers).get('X-Clawdline-Unopened-Machine'), 'machine-b')
+      assert.equal(requests.at(-1)!.searchParams.get('session'), '%7')
+      assert.equal(requests.at(-1)!.searchParams.get('conversation'), 'conversation-b')
+      return Response.json({ repository: 'example/voice', branch: 'trunk', commits: [], complete: true })
+    },
+  }
+  const run = async (args: Record<string, unknown>) =>
+    JSON.parse((await runCopilotTool('get_session_github_changes', JSON.stringify(args), deps)).output)
+  assert.equal((await run({ period: 'latest_release', session_id: 'fleet:machine-a:%257' })).repository, 'example/voice')
+  assert.equal(requests[0].searchParams.get('range'), 'release')
+
+  screen = { ids: ['%7'], machine: 'machine-a' }
+  const adjusted = await run({ period: 'last_week', adjust_previous: true })
+  assert.deepEqual(adjusted.local_dates, { from: '2026-11-09', through: '2026-11-15' })
+  assert.equal(requests[1].searchParams.get('since'), new Date(2026, 10, 9).toISOString())
+  assert.equal(requests[1].searchParams.get('until'), new Date(2026, 10, 15, 23, 59, 59).toISOString())
+
+  deps.selectedReadTarget = { ...deps.githubReport!.previous!, githubPeriod: 'today_and_yesterday' }
+  const menu = await run({ period: 'latest_release' })
+  assert.deepEqual(menu.local_dates, { from: '2026-11-21', through: '2026-11-22' })
+  assert.equal(requests[2].searchParams.get('until'), now.toISOString())
+
+  deps.selectedReadTarget = undefined
+  assert.equal((await run({ period: 'dates', from: '2026-11-31', through: '2026-12-01', adjust_previous: true })).error, 'copilot_github_invalid_dates')
+  const dates = await run({ period: 'dates', from: '2026-11-14', through: '2026-11-16', adjust_previous: true })
+  assert.deepEqual(dates.local_dates, { from: '2026-11-14', through: '2026-11-16' })
+  assert.equal(requests.length, 4)
 })

@@ -1133,6 +1133,14 @@ export class RelayReader {
         return await this.machineRead(init?.signal, method, path, "work.v2.item", { id: workItem })
       }
       switch (path) {
+        case "/v1/voice/copilot-github-changes": {
+          const q = this.only(url, path, "session", "conversation", "range", "since", "until")
+          return await this.machineRead(init?.signal, method, path, "copilot-github-changes", {
+            target: q.session ?? "", conversation: q.conversation ?? "", range: q.range ?? "",
+            ...(q.since === undefined ? {} : { since: q.since }),
+            ...(q.until === undefined ? {} : { until: q.until }),
+          }, unopenedMachine(init) ?? undefined)
+        }
         case "/v1/usage/overview": {
           const body = usageOverviewQuery(url.searchParams)
           if (!body) return this.refuse(method, path, 400, "invalid_query", "Usage overview accepts days=7 or days=28 and one project.")

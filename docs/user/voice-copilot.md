@@ -92,6 +92,27 @@ text message and its existing narrator; GPT-Live receives the selected question 
 commentary and delegation. Local transport tests establish neither live model tool selection nor
 spoken/audio acceptance or measured startup latency.
 
+### GitHub fixes and features
+
+Under **Quick commands → Progress**, choose a Session and ask for fixes and
+features since the last GitHub release or from today and yesterday. You can also
+ask aloud from a Session, or follow up with “Change it to last week” or “Use
+November 15 through November 18.” Calendar days follow the caller’s device
+timezone, and the end date is inclusive. Adjusting a report keeps its Session.
+
+The Session’s machine reads that working directory’s GitHub origin and its
+default branch. For the release report it compares the latest published stable
+release tag with that branch. Calendar reports read the branch history for the
+requested dates. The machine supplies up to 50 commit messages and their dates,
+identifiers and links. Each message is clipped to 240 characters, and the
+assistant states when the returned history covers only part of the range.
+
+The active call uses its existing OpenAI model path to group fixes and features.
+Realtime generates the spoken report itself. GPT-Live’s existing Responses
+delegate organizes the evidence and passes the report to its speaking model.
+GitHub is queried only on request. The tool makes no additional model request
+from the daemon and does not send a message or start a local agent.
+
 ### Question-focused analysis
 
 Both voice engines read the original replies by default. They request focused analysis

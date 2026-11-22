@@ -4,7 +4,7 @@ import {nextWord} from '../next-strings.js'
 import {historySummary,type CallOperation,type OperationOutcome} from './copilot-history.js'
 
 const OUTCOMES:Record<OperationOutcome,Parameters<typeof nextWord>[0]>={running:'copilotHistoryRunning',done:'copilotToolDone',queued:'copilotToolQueued',asked:'copilotToolAsked',many:'copilotToolMany',failed:'copilotToolFailed',cancelled:'copilotHistoryCancelled',cached:'copilotHistoryCached',fallback:'copilotHistorySourceFallback',unavailable:'copilotHistoryUnavailable',unknown:'copilotHistoryUnknown'}
-const READ_NAMES:Record<string,Parameters<typeof nextWord>[0]>={read_session_boards:'copilotHistoryBoards',read_session_directory:'copilotHistoryDirectory',read_session_transcript:'copilotHistoryTranscript',read_session_summary:'copilotHistorySummary',read_session_history:'copilotHistoryPast',read_session_progress:'copilotHistoryProgress',read_session_question:'copilotHistoryQuestion',read_session_notes:'copilotHistoryNotes'}
+const READ_NAMES:Record<string,Parameters<typeof nextWord>[0]>={read_github_changes:'copilotHistoryGitHubChanges',read_session_boards:'copilotHistoryBoards',read_session_directory:'copilotHistoryDirectory',read_session_transcript:'copilotHistoryTranscript',read_session_summary:'copilotHistorySummary',read_session_history:'copilotHistoryPast',read_session_progress:'copilotHistoryProgress',read_session_question:'copilotHistoryQuestion',read_session_notes:'copilotHistoryNotes'}
 const seconds=(ms:number)=>(ms/1000).toFixed(1)
 
 /** Both the persistent trail and expanded diagnostics read these same operation IDs. */

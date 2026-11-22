@@ -1021,6 +1021,13 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		method: "POST", path: "/v1/voice/copilot-briefing",
 		body2: `{}`,
 	}, {
+		word: "copilot-github-changes",
+		body: map[string]any{"type": "copilot-github-changes", "session": machine, "request": "req-github-changes",
+			"target": pane, "conversation": "conversation-a", "range": "dates", "since": "2026-11-17T16:00:00Z", "until": "2026-11-19T15:59:59Z"},
+		session: machine, name: "read:req-github-changes", method: "GET", path: "/v1/voice/copilot-github-changes",
+		query: map[string]string{"session": pane, "conversation": "conversation-a", "range": "dates",
+			"since": "2026-11-17T16:00:00Z", "until": "2026-11-19T15:59:59Z"},
+	}, {
 		word:    "copilot-work",
 		body:    map[string]any{"type": "copilot-work", "session": machine, "request": "req-work"},
 		session: machine, name: "read:req-work", method: "GET", path: "/v1/voice/copilot-work",

@@ -390,6 +390,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["copilot-briefing"], "POST /v1/voice/copilot-briefing")
   assert.equal(CARRIED["copilot-decide"], "POST /v1/voice/copilot-decide")
   assert.equal(CARRIED["copilot-journal"], "POST /v1/voice/copilot-journal")
+  assert.equal(CARRIED["copilot-github-changes"], "GET /v1/voice/copilot-github-changes")
   assert.equal(CARRIED["copilot-question"], "POST /v1/voice/copilot-question")
   assert.equal(CARRIED["copilot-recap"], "POST /v1/voice/copilot-recap")
   assert.equal(CARRIED["copilot-work"], "GET /v1/voice/copilot-work")
@@ -449,7 +450,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.threads"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 324)
+  assert.equal(Object.keys(CARRIED).length, 325)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
