@@ -80,6 +80,8 @@ that you asked, and the repeating schedule is refused.
 
 ## Schedule webhooks (Cloud)
 
+To have GitHub or another service trigger a **Bot routine**, use [Bot Webhooks](bot-webhooks.md) · [繁體中文](bot-webhooks.zh-TW.md). The steps below start a scheduled task from the Session list.
+
 A webhook starts a saved schedule's task from outside — a CI job, a form, another service — so an
 event can open a full agent session on your machine instead of running a fixed shell command.
 

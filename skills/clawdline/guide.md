@@ -1214,6 +1214,8 @@ feature owner.
 
 ### Schedule future work
 
+**Bot Webhooks.** To run a routine in an existing Bot, open the Bot chat, click its name, then choose **Details** → **Routines** → **+** → **Webhook**. After saving and enabling the routine, reopen it and choose **Manage webhook key** → **Retrieve key**. Use the **Public Cloud address** for GitHub and other external senders. Cloud must confirm the current registration before that address appears. The Bot’s `routine_hook` tool returns a local path and key only. The schedule commands below start tasks from the Session list.
+
 Clawdline Next owns scheduled work itself. Do not use the retired app, `cron`, or a chain of
 detached tasks. Read `GET /v1/orchestrator/schedules`; read one in full at
 `GET /v1/orchestrator/schedules/<id>`. `GET /v1/places` supplies the `place_id` a write names.

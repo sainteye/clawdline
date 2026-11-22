@@ -616,7 +616,7 @@
   "botRoutineControls.nextPreview": "Next {time}",
   "botRoutineControls.runSettings": "Run settings",
   "botRoutineControls.timeoutSummary": "Timeout {time}",
-  "botRoutineControls.webhookSave": "Runs when a request reaches its Webhook. Save to get its address and key.",
+  "botRoutineControls.webhookSave": "Save and reopen the routine, then choose Manage webhook key → Retrieve key. External services need the Public Cloud address, which appears after Cloud confirms registration.",
   "botRoutineControls.invalidCron": "Enter a valid Cron expression.",
   "botRoutineControls.invalidTimeZone": "Enter a valid time zone.",
   "botRoutineControls.cronNoNext": "This Cron expression has no upcoming run.",

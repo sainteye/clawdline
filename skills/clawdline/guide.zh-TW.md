@@ -1047,6 +1047,8 @@ child、detached task 或 handoff 假裝成 Root 指派。
 
 ### 安排未來工作
 
+**Bot Webhook。** 要觸發既有 Bot 的例行任務，請開啟 Bot 對話，點上方名稱，再依序選「詳情 → 例行任務 → ＋ → Webhook」。儲存並啟用後，重新開啟該例行任務，選「管理 Webhook 金鑰 → 取得金鑰」。GitHub 等外部服務請使用「公開 Cloud 位址」，Cloud 確認目前的登錄後才會顯示。Bot 的 `routine_hook` 工具只會回傳本機路徑與金鑰。下方的排程指令適用於工作階段清單的排程任務。
+
 排程工作由 Clawdline Next 自己負責。不要使用退役 app、`cron` 或一串 detached task 代替。
 用 `GET /v1/orchestrator/schedules` 讀清單；用 `GET /v1/orchestrator/schedules/<id>` 讀完整內容。
 寫入需要的 `place_id` 由 `GET /v1/places` 取得。

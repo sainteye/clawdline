@@ -440,7 +440,6 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
             </div></div>
             {mode==="schedule"&&schedule.calendar&&<RoutineScheduleFields previewScope={{source,bot}} trigger={schedule.trigger} calendar={schedule.calendar} w={w}
               onCalendar={change=>setSchedule(old=>updateRoutineCalendar(old,change))} onZone={timeZone=>setSchedule(old=>({...old,trigger:{...old.trigger,timeZone}}))}/>}
-            {mode==="webhook"&&<p className="pa-routine-webhook-note">{tr("webhookSave")}</p>}
             {mode==="advanced"&&<>
               {triggers.length>1&&<p className="pa-routine-or">{w.routineOr}</p>}
               {triggers.map((draft,i)=><RoutineTriggerEditor key={i} previewScope={{source,bot}} draft={draft} index={i} count={triggers.length} events={events} w={w}
@@ -449,6 +448,8 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
               <button type="button" className="pa-routine-add" disabled={triggers.length>=20}
                 onClick={()=>setTriggers(old=>[...old,newRoutineTriggerDraft()])}>{w.routineAddTrigger}</button>
             </>}
+            {events && (mode === "webhook" || (mode === "advanced" && triggers.some(draft => draft.trigger.type === "webhook"))) &&
+              <p className="pa-routine-webhook-note">{tr("webhookSave")}</p>}
             {!events&&<p className="pa-routine-caption" role="status">{tr("eventUnsupported")}</p>}
             <details className="pa-routine-run-settings">
               <summary><span>{tr("runSettings")}</span><small>{tr("timeoutSummary").replace("{time}",new Intl.NumberFormat(currentCatalogTag(),{style:"unit",unit:timeout===3600?"hour":"second",unitDisplay:"long"}).format(timeout===3600?1:timeout))}</small></summary>

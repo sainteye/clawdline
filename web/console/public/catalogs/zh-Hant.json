@@ -616,7 +616,7 @@
   "botRoutineControls.nextPreview": "下次 {time}",
   "botRoutineControls.runSettings": "執行設定",
   "botRoutineControls.timeoutSummary": "逾時 {time}",
-  "botRoutineControls.webhookSave": "收到 Webhook 請求時執行。儲存後可取得網址和金鑰。",
+  "botRoutineControls.webhookSave": "儲存後重新開啟例行任務，選「管理 Webhook 金鑰 → 取得金鑰」。外部服務需要「公開 Cloud 位址」，Cloud 確認登錄後才會顯示。",
   "botRoutineControls.invalidCron": "請輸入有效的 Cron 運算式。",
   "botRoutineControls.invalidTimeZone": "請輸入有效的時區。",
   "botRoutineControls.cronNoNext": "這個 Cron 運算式沒有下一次執行時間。",

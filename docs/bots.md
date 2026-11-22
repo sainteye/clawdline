@@ -52,6 +52,8 @@ first-use setup ahead of time and prints which Claude Code version it found;
 
 ## Use a Bot
 
+To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user/bot-webhooks.md) · [繁體中文](user/bot-webhooks.zh-TW.md).
+
 1. Click Bots in the bottom status bar, then **+**. The shortcut rings
    and counts new replies.
 2. Give it a name, choose the Project and write its standing instructions.

@@ -128,7 +128,14 @@ try {
     const opened=await browser("open",origin+"/?lang="+language);tab=opened.tab
     await browser("viewport",zh?"mobile":"desktop")
     await waitText("Synthetic Bot");await browser("click",w.identity);await waitText(w.empty)
-    await browser("click",w.create);await browser("click",control("webhook"));await waitText(control("webhookSave"));await browser("click",control("schedule"));await browser("click",w.name);await browser("type","Browser interval "+language);await browser("click",w.instructions);await browser("type","Synthetic browser routine task "+language);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-editor.jpg`));await browser("click",control("createRoutine"))
+    await browser("click",w.create)
+    await browser("click",control("webhook"))
+    await waitText(control("webhookSave"))
+    await browser("click",control("runSettings"))
+    await browser("click",control("advancedTriggers"))
+    await waitText(control("webhookSave"))
+    await browser("screenshot","--out",path.join(artifacts,`${language}-advanced-webhook.jpg`))
+    await browser("click",control("schedule"));await browser("click",w.name);await browser("type","Browser interval "+language);await browser("click",w.instructions);await browser("type","Synthetic browser routine task "+language);await browser("screenshot","--out",path.join(artifacts,`${language}-routine-editor.jpg`));await browser("click",control("createRoutine"))
     if(!zh) {
       await waitText(copy.routineHeld)
       assert.equal(requests.filter(r=>r.method==="POST"&&r.path.endsWith("/routines")).length,1,"Unknown outcome never automatically sends a replacement")
