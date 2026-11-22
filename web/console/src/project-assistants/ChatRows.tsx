@@ -3,6 +3,7 @@
 import {MessageReactions} from "./MessageReactions"
 import { botReplyHasBrowser } from "./bot-browser-entry"
 import { catalogWord } from "../catalog"
+import { ChevronIcon } from "../ui/ChevronIcon.js"
 import {InputCard} from "./InputCard"
 import {ArtifactIcon,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {OutputCard} from "./OutputCard"
@@ -89,8 +90,16 @@ export function ChatRows({timeline,onQuote,onOpenWork,w,language,attachmentURL,s
         {bot&&<BotAvatar appearance={bot.appearance} size={17}/>}<strong>{name}</strong><span aria-hidden="true">›</span>
       </button>
     </div>
-  })():<Fragment key={JSON.stringify([item.kind,item.id])}><article data-arrival={arrivals?.has(item.id)||undefined} onAnimationEnd={e=>{if(e.animationName==="pa-bubble-enter")onArrivalEnd?.(item.id)}} data-message-id={item.id} data-message-seq={item.message.seq} onClick={(e:React.MouseEvent)=>onArticleClick(e)} tabIndex={0} onKeyDown={(e:React.KeyboardEvent)=>{if((e.key==="Enter"||e.key===" ")&&e.target===e.currentTarget){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}}} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}} className={`pa-message ${item.message.kind==="user"?"pa-mine":""} ${item.message.kind==="notice"?"pa-notice":""} ${item.groupStart?"pa-group-start":""}`}>
-    <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}{item.message.text&&!item.message.output&&(item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:<p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:<BotMentionText text={item.message.text} candidates={mentions}/>}</p>)}{onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}
+  })():<Fragment key={JSON.stringify([item.kind,item.id])}><article data-arrival={arrivals?.has(item.id)||undefined} onAnimationEnd={e=>{if(e.animationName==="pa-bubble-enter")onArrivalEnd?.(item.id)}} data-message-id={item.id} data-message-seq={item.message.seq} onClick={(e:React.MouseEvent)=>onArticleClick(e)} tabIndex={0} onKeyDown={(e:React.KeyboardEvent)=>{if((e.key==="Enter"||e.key===" ")&&e.target===e.currentTarget){e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}}} onContextMenu={e=>{e.preventDefault();e.currentTarget.querySelector<HTMLButtonElement>(".pa-message-more")?.click()}} className={`pa-message ${item.message.kind==="user"?"pa-mine":""} ${item.message.kind==="notice"?"pa-notice":""} ${item.message.kind==="work"?"pa-session-report":""} ${item.groupStart?"pa-group-start":""}`}>
+    <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}
+      {item.message.text&&!item.message.output&&(
+        item.message.kind==="work"?<details>
+          <summary>{w.sessionReport}<ChevronIcon direction="right"/></summary>
+          <p>{item.message.text}</p>
+        </details>:item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:
+          <p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
+      )}
+      {onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}
     {source&&artifactsByReply.has(item.id)&&<div className="pa-reply-artifacts">
       {Array.from(artifactsByReply.get(item.id)!,([id,publication])=><button type="button" key={id} aria-haspopup="dialog" disabled={!canOpenArtifact}
         onClick={()=>setOpenArtifact({source,revision:source.authorizationRevision,id})}>

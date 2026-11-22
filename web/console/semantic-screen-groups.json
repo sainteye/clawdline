@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14016,
+  "englishContentKeys": 14017,
   "riskKeys": 5959,
-  "nonRiskCount": 8057,
+  "nonRiskCount": 8058,
   "groups": [
     {
       "name": "acp / other",
@@ -6191,7 +6191,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 556,
+      "count": 557,
       "sources": [
         null
       ],
@@ -6590,6 +6590,7 @@
         "projectAssistants.serverStop",
         "projectAssistants.serverStopping",
         "projectAssistants.serversTitle",
+        "projectAssistants.sessionReport",
         "projectAssistants.sessions",
         "projectAssistants.settings",
         "projectAssistants.settingsAccess",

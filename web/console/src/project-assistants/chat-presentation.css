@@ -102,6 +102,21 @@
 .project-assistants .pa-chat-surface .pa-mine .pa-message-bubble { margin-left:auto;background:#343436; }
 .project-assistants .pa-chat-surface .pa-notice .pa-message-bubble { background:transparent; }
 .project-assistants .pa-chat-surface .pa-message p { font-size:15px;line-height:1.5;font-weight:400; }
+.project-assistants .pa-chat-surface .pa-session-report>.pa-message-bubble {
+  padding:0;border:1px solid var(--pa-line);border-radius:12px;background:transparent;
+}
+.project-assistants .pa-chat-surface .pa-session-report summary {
+  display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;
+  padding:0 12px;list-style:none;white-space:normal;font-size:13px;font-weight:600;color:var(--pa-dim);
+  cursor:pointer;border-radius:11px;
+}
+.project-assistants .pa-chat-surface .pa-session-report summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-chat-surface .pa-session-report summary:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
+.project-assistants .pa-chat-surface .pa-session-report summary .control-chevron { flex:none; }
+.project-assistants .pa-chat-surface .pa-session-report details[open] summary .control-chevron { transform:rotate(90deg); }
+.project-assistants .pa-chat-surface .pa-session-report details>p {
+  margin:0;padding:10px 12px 12px;border-top:1px solid var(--pa-line);white-space:pre-wrap;
+}
 /* The bubble owns the anchor and the controls stay outside its flow. */
 .project-assistants .pa-chat-surface .pa-chat-content { container-type:inline-size; }
 .project-assistants .pa-chat-surface .pa-message { display:grid;grid-template-columns:minmax(0,1fr);position:relative; }

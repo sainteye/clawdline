@@ -171,10 +171,10 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   }
   const alert=code=>chat.getByRole("alert").filter({hasText:code}).waitFor()
   const all=[];page.boundedRequests=all
-  const fresh=async setup=>{
+  const fresh=async(setup,args)=>{
     if(page.url().startsWith(origin))all.push(...await log())
     await page.goto(origin+"/?lang="+language)
-    if(setup)await page.evaluate(setup)
+    if(setup)await page.evaluate(setup,args)
     await page.getByRole("button",{name:new RegExp(w.all)}).click();await row().waitFor()
   }
   const open=async()=>{await row().click();await editor().waitFor()}
@@ -263,6 +263,37 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     assert.equal(await workResult('newer-work-observation').count(),1)
     await noLegacy();await shot('work-order-after-history')
   }
+  const sessionReports=async()=>{
+    const label=zh?"Session 回報":"Session report"
+    const raw="Browser check complete.\n\n- Settings saved\n- Mobile follow-up: "+"a".repeat(160)+"\n<script>ignored</script>"
+    await fresh(({raw,label})=>{
+      window.botsFixture.a.emitMessage(label)
+      window.botsFixture.a.emitMessage(raw,"work")
+    },{raw,label})
+    await open();await ready()
+    const report=chat.locator("details").filter({hasText:raw})
+    const header=report.locator("summary").filter({hasText:exactText(label)})
+    await header.waitFor({timeout:5000})
+    await messageText(label).waitFor()
+    const body=report.locator("p")
+    assert.equal(await body.isVisible(),false)
+    if(width<701)await header.click()
+    else {await header.focus();await page.keyboard.press("Enter")}
+    await body.waitFor()
+    assert.equal(await body.textContent(),raw)
+    assert.equal(await body.locator("script").count(),0)
+    assert.equal(await body.evaluate(el=>el.scrollWidth<=el.clientWidth),true)
+    await shot("session-report-open")
+    await header.click()
+    assert.equal(await body.isVisible(),false)
+    const live="Second Session report received"
+    await page.evaluate(text=>window.botsFixture.a.emitMessage(text,"work"),live)
+    await chat.locator("details").filter({hasText:live}).locator("summary").waitFor()
+    await noLegacy()
+  }
+  if(process.env.BOTS_READ_RACE==="report"){
+    await sessionReports();all.push(...await log());return ["saved and live Session reports, source label, disclosure and literal content"]
+  }
   if(process.env.BOTS_BACKGROUND_THREADS_ONLY){
     await fresh(()=>{window.botsFixture.a.bots[0].background_threads=3})
     await open();await ready();await openInfo()
@@ -288,6 +319,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   }
 
   await workOrder()
+  await sessionReports()
 
   await fresh(()=>window.botsFixture.a.seedHistory(600));await open()
   await messageText("History message 600").waitFor()

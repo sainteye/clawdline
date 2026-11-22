@@ -228,7 +228,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       generation++
       push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"permission_offered",fence:fence(bot),permission:{id:"new-generation-offer",fence:fence(bot),turn_id:"new-turn",native_request_id:"new-request",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",options}})
     },
-    emitMessage(text:string){const bot=bots[0],rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:crypto.randomUUID(),seq:rows.length+1,at,fence:fence(bot),kind:"assistant",text,quote_message_id:"",turn_id:"after-snapshot"};messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})},
+    emitMessage(text:string,kind:W.ProjectAssistantMessage["kind"]="assistant"){const bot=bots[0],rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:crypto.randomUUID(),seq:rows.length+1,at,fence:fence(bot),kind,text,quote_message_id:"",turn_id:"after-snapshot"};messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})},
     completePreviousWork(){
       const bot=bots[0],oldFence=fence(bot),rows=messages.get(bot.key.bot_id)??[]
       generation++
