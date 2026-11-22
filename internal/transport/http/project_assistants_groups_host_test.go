@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -171,6 +173,97 @@ func TestGroupsRootWiringManagerApprovalRechecksTheRealGrant(t *testing.T) {
 		})
 	}
 }
+func TestGroupsRootWiringManagerCreatesInRegisteredProject(t *testing.T) {
+	for _, scenario := range []string{"accept", "unique name", "decline", "unregistered", "ambiguous name", "removed before approval"} {
+		t.Run(scenario, func(t *testing.T) {
+			f, provider := groupsManagerFixture(t, true)
+			folder := t.TempDir()
+			registry := projects.OpenPlaceRegistry(f.s.cfg.Dir)
+			var targetID string
+			if scenario != "unregistered" {
+				rows, err := registry.Add([]string{folder}, time.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+				targetID = projects.PlaceID(rows[len(rows)-1].Path)
+			}
+			choice := folder
+			if scenario == "unique name" || scenario == "ambiguous name" {
+				choice = filepath.Base(folder)
+			}
+			if scenario == "ambiguous name" {
+				twin := filepath.Join(t.TempDir(), choice)
+				if err := os.Mkdir(twin, 0o700); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := registry.Add([]string{twin}, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			provider.args, _ = json.Marshal(map[string]string{
+				"idempotency_key": "cross-project", "name": "Project helper", "folder": choice,
+			})
+			paServerOK(t, f.send(t, f.local, "Create a Bot in the destination Project"))
+			if scenario != "unregistered" && scenario != "ambiguous name" {
+				plan := groupsManagerPlan(t, f)
+				var detail struct {
+					Project pa.ProjectScope
+					Folder  string
+				}
+				if err := json.Unmarshal([]byte(plan.Detail), &detail); err != nil {
+					t.Fatal(err)
+				}
+				if detail.Project.ProjectID != targetID || detail.Folder == "" || len(groupsManagerBots(t, f)) != 1 {
+					t.Fatalf("wrong destination or premature creation: %+v", detail)
+				}
+				if scenario == "removed before approval" {
+					if _, err := registry.Remove([]string{folder}); err != nil {
+						t.Fatal(err)
+					}
+				}
+				answer := contract.ProjectAssistantTeamAnswerRequest{
+					Command: f.command(pa.AnswerOperation, "cross-project-answer"), PlanID: plan.ID, Allow: scenario != "decline",
+				}
+				result := f.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/team-answer", f.local, answer)
+				if scenario == "removed before approval" {
+					if result.Code < 400 {
+						t.Fatal("approved a removed Project", result.Body.String())
+					}
+				} else {
+					paServerOK(t, result)
+				}
+			}
+			accepted := scenario == "accept" || scenario == "unique name"
+			select {
+			case err := <-provider.outcome:
+				if (err == nil) != accepted {
+					t.Fatalf("manager outcome: %v", err)
+				}
+				if scenario == "ambiguous name" && pa.Code(err) != pa.Invalid {
+					t.Fatalf("ambiguity should require an exact path: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("manager tool never settled")
+			}
+			bots := groupsManagerBots(t, f)
+			if !accepted {
+				if len(bots) != 1 {
+					t.Fatalf("refused plan changed the team: %+v", bots)
+				}
+				return
+			}
+			if len(bots) != 2 {
+				t.Fatalf("approved Bot missing: %+v", bots)
+			}
+			for _, b := range bots {
+				if b.Key != paWireBotKey(f.key) && (b.Project.ProjectID != targetID || b.CreatedBy == nil || *b.CreatedBy != paWireBotKey(f.key)) {
+					t.Fatalf("new Bot has the wrong destination or creator: %+v", b)
+				}
+			}
+		})
+	}
+}
+
 func TestGroupsRootWiringLeadManagesTeamByRole(t *testing.T) {
 	for _, transfer := range []bool{false, true} {
 		t.Run(fmt.Sprintf("transfer=%v", transfer), func(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -374,6 +375,38 @@ func (s *Server) projectAssistantAuthority(ctx context.Context, key pa.BotKey, w
 }
 
 type projectAssistantProjects struct{ server *Server }
+
+func (p projectAssistantProjects) ResolveTeamFolder(ctx context.Context, machine, folder string) (pa.ProjectResolution, error) {
+	target := pa.ProjectSelection{MachineID: machine}
+	if filepath.IsAbs(folder) {
+		canonical, err := filepath.EvalSymlinks(folder)
+		if err != nil {
+			return pa.ProjectResolution{}, paHTTPFailure(pa.NotFound, "manager_folder")
+		}
+		target.ProjectID = projects.PlaceID(canonical)
+		return p.Resolve(ctx, target)
+	}
+	if filepath.Base(folder) != folder || folder == "." || folder == ".." || strings.Contains(folder, ":") {
+		return pa.ProjectResolution{}, paHTTPFailure(pa.Invalid, "manager_folder")
+	}
+	rows, err := projects.OpenPlaceRegistry(p.server.cfg.Dir, swiftDirs()...).List()
+	if err != nil {
+		return pa.ProjectResolution{}, paHTTPFailure(pa.StaleVersion, "project_registry")
+	}
+	for _, row := range rows {
+		if filepath.Base(row.Path) != folder {
+			continue
+		}
+		if target.ProjectID != "" {
+			return pa.ProjectResolution{}, paHTTPFailure(pa.Invalid, "ambiguous_project_use_absolute_folder")
+		}
+		target.ProjectID = projects.PlaceID(row.Path)
+	}
+	if target.ProjectID == "" {
+		return pa.ProjectResolution{}, paHTTPFailure(pa.NotFound, "manager_folder")
+	}
+	return p.Resolve(ctx, target)
+}
 
 func (p projectAssistantProjects) Resolve(ctx context.Context, target pa.ProjectSelection) (pa.ProjectResolution, error) {
 	if err := ctx.Err(); err != nil {

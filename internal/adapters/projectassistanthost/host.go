@@ -196,7 +196,7 @@ func (h *Host) makeService() error {
 		return err
 	}
 	rooms.Attach(runtimeFacade{h})
-	team, err := app.NewTeamCoordinator(app.TeamCoordinatorOptions{Repository: h.store, Clock: h.o.Clock, ID: h.o.ID, Check: func(ctx context.Context, fence pa.Fence, turn string) (app.ManagerContext, error) {
+	team, err := app.NewTeamCoordinator(app.TeamCoordinatorOptions{Repository: h.store, Projects: h.o.Projects, Clock: h.o.Clock, ID: h.o.ID, Check: func(ctx context.Context, fence pa.Fence, turn string) (app.ManagerContext, error) {
 		h.mu.Lock()
 		r := h.engine
 		h.mu.Unlock()

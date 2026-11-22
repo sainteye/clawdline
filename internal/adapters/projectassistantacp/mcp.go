@@ -493,7 +493,14 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		value, err := s.tool(ctx, q.Name, q.Arguments)
 		if err != nil {
-			return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true), nil
+			result := map[string]string{"code": string(pa.Code(err))}
+			if q.Name == "create_bot" || q.Name == "update_bot" {
+				var failure *pa.Failure
+				if errors.As(err, &failure) {
+					result["field"] = failure.Field
+				}
+			}
+			return mcpToolResult(result, true), nil
 		}
 		result := mcpToolResult(value, false)
 		switch q.Name {
@@ -791,10 +798,11 @@ func mcpTeamTools() []any {
 		return map[string]any{"idempotency_key": map[string]any{"type": "string", "minLength": 1}, "name": text(), "instructions": text(), "avatarColor": text(), "avatarShape": text(), "hidden": map[string]any{"type": "boolean"}}
 	}
 	create, update := fields(), fields()
+	create["folder"] = map[string]any{"type": "string", "description": "An existing registered Project on this machine: its exact, unique folder name or absolute path. Omit to use your own Project. 同一台機器已登錄的 Project 資料夾名稱須完全相符且唯一，也可以填絕對路徑。省略時使用你所在的 Project。"}
 	update["botId"] = map[string]any{"type": "string", "minLength": 1}
 	return []any{
 		tool("list_team", "Read Bot setup in your exact Project, hidden Bots included. This grants no authority to change them. 讀取同一個完整 Project 的 Bot 設定，包含隱藏的 Bot；不授予變更權限。", map[string]any{}, []string{}),
-		tool("create_bot", "Propose a Bot in your Project. It inherits your agent, approval policy, mode and any explicit team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 建立 Bot，繼承你的代理、允許方式、模式及明確授予的管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
+		tool("create_bot", "Propose a Bot in your Project or another registered Project on this machine. It inherits your agent, approval policy, mode and any explicit team management grant. Every change waits up to 270 seconds for the person's explicit approval card; the full card must fit 2000 UTF-16 units. Reuse idempotency_key after an uncertain response. 提議在你的 Project 或同一台機器已登錄的其他 Project 建立 Bot，繼承你的代理、允許方式、模式及明確授予的管理團隊權限；每次都須在 270 秒內由本人核准完整卡片。結果不明時沿用原冪等鍵。", create, []string{"idempotency_key", "name"}),
 		tool("update_bot", "Propose name, instructions, appearance or visibility changes to a Bot in your exact Project. No deletion or authority changes. Waits for the person's approval. Reuse idempotency_key after an uncertain response. 提議變更同一個完整 Project 中 Bot 的名稱、指令、外觀或顯示狀態；須由本人核准，不能刪除或擴充權限。結果不明時沿用原冪等鍵。", update, []string{"idempotency_key", "botId"}),
 	}
 }

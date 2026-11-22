@@ -89,10 +89,16 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 				return failure(pa.ScopeDenied, "group_member_project")
 			}
 		}
-		if target.Bot.Project != manager.Bot.Project {
-			return failure(pa.ScopeDenied, "manager_target_project")
-		}
 		if m.ExpectedVersion == 0 {
+			project := execution.CreationProject
+			if project == (pa.ProjectScope{}) {
+				project = manager.Bot.Project
+			} else if project.MachineID != manager.Bot.Key.MachineID || project.Kind == pa.PersonalWorkspace {
+				return failure(pa.ScopeDenied, "manager_target_project")
+			}
+			if target.Bot.Project != project {
+				return failure(pa.ScopeDenied, "manager_target_project")
+			}
 			if target.Bot.CreatedBy == nil || *target.Bot.CreatedBy != manager.Bot.Key || target.Bot.Lead || target.Bot.ManageTeam != manager.Bot.ManageTeam || target.Bot.Agent != manager.Bot.Agent || target.Bot.PermissionPolicy != manager.Bot.PermissionPolicy || target.Bot.Mode != manager.Bot.Mode || target.Bot.FallbackAgents != (pa.FallbackConfig{}) || target.Bot.FallbackSteps != (pa.FallbackStepConfig{}) {
 				return failure(pa.ScopeDenied, "manager_inheritance")
 			}
@@ -125,7 +131,7 @@ func (s *Store) CommitManaged(ctx context.Context, execution app.ManagerExecutio
 				return failure(pa.CapacityFull, "manager_created")
 			}
 		} else {
-			if before.Bot.Project != manager.Bot.Project {
+			if before.Bot.Project != manager.Bot.Project || target.Bot.Project != manager.Bot.Project {
 				return failure(pa.ScopeDenied, "manager_target_project")
 			}
 			allowed, err := pa.ApplyEdit(before.Bot, pa.EditBot{ExpectedVersion: m.ExpectedVersion, Name: target.Bot.Name, Instructions: target.Bot.Instructions.Text, Appearance: target.Bot.Appearance})

@@ -31,6 +31,7 @@ type ManagerExecution struct {
 	TurnID                string
 	Under                 TeamManagerGrant
 	TargetSettingsVersion int64
+	CreationProject       pa.ProjectScope
 }
 
 // ManagedRepository validates the manager's current grant, live execution,
@@ -46,6 +47,7 @@ type TeamRuntime interface{ TeamCoordinator() *TeamCoordinator }
 
 type TeamCoordinatorOptions struct {
 	Repository ManagedRepository
+	Projects   ProjectResolver
 	Check      func(context.Context, pa.Fence, string) (ManagerContext, error)
 	Clock      func() time.Time
 	ID         func() string
@@ -70,6 +72,8 @@ type teamPending struct {
 	plan      TeamPlan
 	execution ManagerExecution
 	mutation  Mutation
+	folder    string
+	directory string
 	context   context.Context
 	done      chan teamOutcome
 	deciding  bool
@@ -219,6 +223,9 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		return nil, serviceFailure(pa.Invalid, "idempotency_key")
 	}
 	delete(fields, "idempotency_key")
+	if _, ok := fields["folder"]; ok && action != "create_bot" {
+		return nil, serviceFailure(pa.ScopeDenied, "manager_field_folder")
+	}
 	keys := make([]string, 0, len(fields))
 	for key := range fields {
 		keys = append(keys, key)
@@ -250,6 +257,10 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		return nil, err
 	}
 	shape, err := text("avatarShape")
+	if err != nil {
+		return nil, err
+	}
+	folder, err := text("folder")
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +311,15 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	var next pa.Bot
 	var conversation *pa.Conversation
 	var expected, targetSettingsVersion int64
-	var targetName string
+	var targetName, directory string
+	var creationProject pa.ProjectScope
+	if folder != nil {
+		resolved, err := t.resolveFolder(ctx, m.Project.MachineID, *folder)
+		if err != nil {
+			return nil, err
+		}
+		directory, creationProject = resolved.Directory, resolved.Scope
+	}
 	if action == "create_bot" {
 		if name == nil {
 			return nil, serviceFailure(pa.Invalid, "name")
@@ -326,7 +345,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 				created++
 			}
 		}
-		plan, err := PlanManagedCreate(m, ManagedCreate{Name: *name, Instructions: instruction, Appearance: look}, created, DefaultManagerLimits())
+		plan, err := PlanManagedCreate(m, ManagedCreate{Project: creationProject, Name: *name, Instructions: instruction, Appearance: look}, created, DefaultManagerLimits())
 		if err != nil {
 			return nil, err
 		}
@@ -384,8 +403,12 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	// UTF-16 units match CodyNC and JavaScript length, including astral text.
 	effect := map[string]any{"operation": operation, "project": next.Project, "botId": next.Key.BotID}
 	if operation == pa.CreateOperation {
+		if directory != "" {
+			effect["folder"] = directory
+		}
 		effect["settings"] = map[string]any{"name": next.Name, "instructions": next.Instructions.Text, "appearance": next.Appearance, "hidden": next.Hidden, "agent": next.Agent, "permission_policy": next.PermissionPolicy, "mode": next.Mode, "manageTeam": next.ManageTeam, "createdBy": next.CreatedBy}
 	} else {
+		effect["targetName"] = targetName
 		effect["changes"] = fields
 	}
 	detail, err := json.MarshalIndent(effect, "", "  ")
@@ -416,6 +439,10 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 	planContext, cancelPlan := context.WithTimeout(ctx, limit)
 	defer cancelPlan()
 	pending := &teamPending{plan: TeamPlan{ID: planID, Manager: fence.Key, ManagerName: m.Caller.Name, TargetName: targetName, Target: key, Operation: operation, Detail: string(detail), ExpiresAt: now.Add(limit)}, execution: ManagerExecution{Fence: fence, TurnID: turn, Under: m.Grant, TargetSettingsVersion: targetSettingsVersion}, mutation: mutation, context: planContext, done: make(chan teamOutcome, 1)}
+	if folder != nil {
+		pending.folder, pending.directory = *folder, directory
+		pending.execution.CreationProject = creationProject
+	}
 	t.mu.Lock()
 	if planID == "" || t.pending[planID] != nil {
 		t.mu.Unlock()
@@ -474,6 +501,26 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		}
 		return nil, abandon(pa.Revoked)
 	}
+}
+
+// Resolve an explicit destination through the source machine's registered
+// Projects. A model cannot mint a scope or borrow another Bot's workspace.
+func (t *TeamCoordinator) resolveFolder(ctx context.Context, machine, folder string) (pa.ProjectResolution, error) {
+	if strings.TrimSpace(folder) == "" {
+		return pa.ProjectResolution{}, serviceFailure(pa.Invalid, "manager_folder")
+	}
+	projects, ok := t.o.Projects.(TeamProjectResolver)
+	if !ok {
+		return pa.ProjectResolution{}, serviceFailure(pa.Unsupported, "manager_folder")
+	}
+	resolved, err := projects.ResolveTeamFolder(ctx, machine, folder)
+	if err != nil {
+		return pa.ProjectResolution{}, err
+	}
+	if resolved.Scope.Kind == pa.PersonalWorkspace {
+		return pa.ProjectResolution{}, serviceFailure(pa.ScopeDenied, "manager_folder")
+	}
+	return resolved, pa.ValidateTarget(pa.ProjectSelection{MachineID: machine, ProjectID: resolved.Scope.ProjectID}, resolved)
 }
 
 func (t *TeamCoordinator) Plans(ctx context.Context, key pa.BotKey) ([]TeamPlan, error) {
@@ -540,6 +587,16 @@ func (t *TeamCoordinator) Decide(ctx context.Context, key pa.BotKey, id string, 
 	if !allow {
 		finish(teamOutcome{err: serviceFailure(pa.ScopeDenied, "manager_declined")})
 		return "declined", nil
+	}
+	if p.folder != "" {
+		resolved, err := t.resolveFolder(ctx, key.MachineID, p.folder)
+		if err == nil && (resolved.Scope != p.execution.CreationProject || resolved.Directory != p.directory) {
+			err = serviceFailure(pa.StaleVersion, "manager_folder")
+		}
+		if err != nil {
+			finish(teamOutcome{err: err})
+			return "", err
+		}
 	}
 	t.mu.Lock()
 	if p.context.Err() != nil || !t.o.Clock().Before(p.plan.ExpiresAt) {

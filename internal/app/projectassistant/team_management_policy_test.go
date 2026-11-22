@@ -28,7 +28,7 @@ func TestTeamManagementRequiresThePersonsOptIn(t *testing.T) {
 	if err := CheckManagedEdit(stolen, target, ManagedEdit{Target: target.Key, Hidden: new(bool)}); pa.Code(err) != pa.ScopeDenied {
 		t.Fatalf("borrowed grant: %v", err)
 	}
-	for _, field := range []string{"manageTeam", "createdBy", "permission", "mode", "folder", "delete"} {
+	for _, field := range []string{"manageTeam", "createdBy", "permission", "mode", "cwd", "delete"} {
 		if err := CheckManagerFields([]string{"botId", field}); pa.Code(err) != pa.ScopeDenied {
 			t.Fatalf("%s accepted: %v", field, err)
 		}

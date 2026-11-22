@@ -13,6 +13,8 @@ import { BotAvatar } from "./BotAvatar"
 import { GroupAvatar } from "./GroupAvatar"
 import { ProjectMark } from "./ProjectMark"
 import { PaSelect } from "./PaSelect"
+import {TeamProposalDetails,TeamProposalSummary,teamProposal} from "./PermissionCard"
+import {words} from "./words"
 import "./group-editor.css"
 import {orderedGroupMembers} from "./group-editor-order"
 import {afterSurfaceExit} from "./surface-motion"
@@ -243,7 +245,7 @@ export function TeamApprovals({sources,bots}:{sources:readonly SourceClient[];bo
   const [cards,setCards]=useState<{source:SourceClient;plan:W.ProjectAssistantTeamPlan;writable:boolean}[]>([]),[busy,setBusy]=useState<string[]>([]),[errors,setErrors]=useState<Record<string,string>>({}),[unknown,setUnknown]=useState<string[]>([])
   const live=useRef(sources);live.current=sources
   const current=()=>live.current
-  const managers=bots.filter(b=>b.manage_team&&sources.some(s=>s.machineID===b.key.machine_id&&s.canGroups?.()&&s.teamPlans))
+  const managers=bots.filter(b=>(b.lead||b.manage_team)&&sources.some(s=>s.machineID===b.key.machine_id&&s.canGroups?.()&&s.teamPlans))
   const ids=managers.map(b=>JSON.stringify([b.key,b.version])).join("|")
   useEffect(()=>{
     if(!managers.length){setCards([]);return}
@@ -265,5 +267,20 @@ export function TeamApprovals({sources,bots}:{sources:readonly SourceClient[];bo
     catch(e){const code=errorCode(e);setErrors(old=>({...old,[plan.id]:code}));if(code==="pa_outcome_unknown")setUnknown(old=>[...old,plan.id])}
     finally{setBusy(old=>old.filter(id=>id!==plan.id))}
   }
-  return <>{cards.filter(c=>sources.includes(c.source)&&c.source.current?.()!==false).map(({source,plan,writable})=><article className="pa-permission" key={plan.id} aria-label={groupWord("teamApproval")}><h3>{plan.manager_name} · {groupWord(plan.operation==="create"?"teamCreateProposal":"teamEditProposal")}</h3><p>{groupWord("teamApprovalHint")}</p><pre style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere",fontSize:12}}>{plan.detail}</pre><small>{groupWord("teamExpires")} {new Date(plan.expires_at).toLocaleTimeString()}</small><div className="pa-chat-tools"><button type="button" disabled={!writable||busy.includes(plan.id)||unknown.includes(plan.id)} onClick={()=>void answer(source,plan,false)}>{groupWord("teamDecline")}</button><button type="button" disabled={!writable||busy.includes(plan.id)||unknown.includes(plan.id)} onClick={()=>void answer(source,plan,true)}>{groupWord(busy.includes(plan.id)?"teamApplying":"teamAccept")}</button></div>{errors[plan.id]&&<p role="alert">{groupWord(unknown.includes(plan.id)?"groupUnknown":"groupUnavailable")} ({errors[plan.id]})</p>}</article>)}</>
+  const w=words(currentCatalogTag())
+  return <>{cards.filter(c=>sources.includes(c.source)&&c.source.current?.()!==false).map(({source,plan,writable})=>{
+    const proposal=teamProposal(plan.detail),create=plan.operation==="create"
+    const heading=create?w.teamCreateTitle:w.teamUpdateTitle
+    const title=proposal?.targetName??(create&&typeof proposal?.changes.name==="string"?proposal.changes.name:plan.manager_name)
+    const waiting=busy.includes(plan.id),disabled=!writable||waiting||unknown.includes(plan.id)
+    return <article className="pa-permission pa-team-proposal" key={plan.id} aria-label={heading} aria-busy={waiting||undefined}>
+      <TeamProposalSummary heading={heading} title={title} proposal={proposal} context={source.machineName||source.machineID} machine={source.machineName||source.machineID} status={w.pending} pending w={w}/>
+      <details className="pa-permission-detail"><summary>{w.details}</summary><div className="pa-permission-content"><TeamProposalDetails detail={plan.detail} proposal={proposal} w={w}/></div></details>
+      <div className="pa-permission-options">
+        <button type="button" data-option-kind="allow_once" disabled={disabled} onClick={()=>void answer(source,plan,true)}>{waiting?groupWord("teamApplying"):create?w.teamApproveCreate:w.teamApproveUpdate}</button>
+        <button type="button" data-option-kind="reject_once" disabled={disabled} onClick={()=>void answer(source,plan,false)}>{w.reject_once}</button>
+      </div>
+      {errors[plan.id]&&<p role="alert">{groupWord(unknown.includes(plan.id)?"groupUnknown":"groupUnavailable")} ({errors[plan.id]})</p>}
+    </article>
+  })}</>
 }

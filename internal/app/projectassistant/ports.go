@@ -281,6 +281,12 @@ type PersonalWorkspaceProvisioner interface {
 	ProvisionPersonalWorkspace(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }
 
+// TeamProjectResolver resolves a manager's folder choice against the same
+// registry as the human Bot editor.
+type TeamProjectResolver interface {
+	ResolveTeamFolder(context.Context, string, string) (pa.ProjectResolution, error)
+}
+
 type ProjectResolver interface {
 	Resolve(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }

@@ -257,10 +257,12 @@ mirroring Codync's `manage_team`:
   approval cards using the effective grant in the Bot response. Every call
   checks the grant and the current full Project. Only the host sets
   `Bot.CreatedBy`;
-- argument names are allowlisted (name, instructions, color, shape, hidden);
-  authority fields — manage switch, creator, approval policy, mode, agent,
-  folder, model, fallbacks, routines, deletion — are refused before a card;
-- a created Bot inherits the manager's Project, approval policy, mode and
+- `create_bot` defaults to the manager's Project. An optional `folder` names
+  another registered Project on the same machine by its absolute path or
+  unique folder name. The host resolves the destination through the Project
+  registry and rechecks it when the person approves. `update_bot` can edit
+  setup within the manager's Project and does not support moves;
+- a created Bot inherits the manager's agent, approval policy, mode and
   explicit team grant. The lead's role grant applies only to the lead. The
   new Bot records the manager as its creator. A different
   policy or mode is refused, not ordered: no ordering of policies across
@@ -296,13 +298,16 @@ transaction. The person's `AnswerTeamPlan` checks the human write authority;
 acceptance repeats the execution, grant and deadline checks before calling
 the dedicated `ManagedRepository.CommitManaged`. The SQLite implementation
 must check the manager grant, active turn and binding, room ticket when
-present, full Project, inherited authority and machine-wide creation count
+present, the approved destination for creation or the manager's full Project
+for edits, inherited authority and machine-wide creation count
 in the **same transaction** as the Bot mutation. A separate check followed by
 ordinary `Repository.Commit` leaves a revocation race and does not implement
 this port. Host-side `CreatedBy` survives edits. An invalid plan rolls back
 its Bot, receipt, events and roster projection together.
 
-The card shows the whole proposed change and inherited authority. Oversized
+The card puts the target Bot, destination and decision controls in the compact
+view. Opening its details shows the full proposed change and inherited
+authority, including the resolved path for an explicit destination. Oversized
 detail is refused before a card appears. Declining, expiration, a cancelled
 owned execution, a revoked grant or changing the grant off and on again
 changes nothing. Pending cards are memory-only: a daemon restart cannot
@@ -320,7 +325,7 @@ Deliberate differences from CodyNC 9f67eb09:
 - Every managed mutation requires the person's explicit approval, including
   managers configured to approve ordinary agent tools automatically.
 - Manager fields are limited to name, instructions, appearance and visibility.
-  Routines, agent/model selection, fallbacks, Project changes and authority
+  Routines, agent/model selection, fallbacks, moving existing Bots and authority
   settings remain outside these tools. `list_team` returns same-Project setup,
   including hidden Bots, without messages, memory, paths or native identities.
 - The person's Manage the team switch uses its own complete request shape,

@@ -67,10 +67,6 @@
 .project-assistants .pa-chat-scroll { flex:1;min-height:0;overflow:auto;overscroll-behavior:contain;padding:24px 24px 30px; }
 .project-assistants .pa-chat-content { max-width:800px;margin:auto; }
 .project-assistants .pa-team-jump { align-self:center;margin:4px 12px; }
-.project-assistants .pa-team-details { margin:0; }
-.project-assistants .pa-team-details>div { display:grid;gap:4px;padding:6px 0; }
-.project-assistants .pa-team-details dt { font-weight:600; }
-.project-assistants .pa-team-details dd { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
 
 .project-assistants .pa-separator { text-align:center;font-size:11px;color:var(--pa-dim);margin:15px 0 26px; }
 .project-assistants .pa-message { width:fit-content;max-width:90%;margin:4px 0 6px;position:relative;white-space:pre-wrap;overflow-wrap:anywhere; }
@@ -685,6 +681,47 @@
 .project-assistants .pa-permission-options button+button { border-top:1px solid var(--pa-line); }
 .project-assistants .pa-permission-options [data-option-kind^="reject"] { color:#f0a7a7; }
 .project-assistants .pa-permission-options [data-option-kind="allow_once"] { font-weight:600; }
+/* Team proposals keep the decision visible with the complete settings one disclosure away. */
+.project-assistants .pa-team-proposal {
+  box-sizing:border-box;width:min(390px,100%);padding:16px;border:1px solid var(--pa-line);
+  border-radius:20px;background:var(--pa-card);scroll-margin-top:12px;
+}
+.project-assistants .pa-team-heading { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 12px; }
+.project-assistants .pa-team-heading h3 { margin:0;font-size:13px;font-weight:600;color:var(--pa-dim); }
+.project-assistants .pa-team-status { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim);font-size:11px; }
+.project-assistants .pa-team-status:has(.pa-permission-dot) { color:#e3bc6b; }
+.project-assistants .pa-team-status .pa-permission-dot { width:5px;height:5px;flex:none; }
+.project-assistants .pa-team-identity { display:flex;align-items:center;gap:10px;margin:12px 0;min-width:0; }
+.project-assistants .pa-team-identity>svg { flex:none; }
+.project-assistants .pa-team-identity>div { min-width:0;overflow-wrap:anywhere; }
+.project-assistants .pa-team-identity strong { display:block;font-size:19px;line-height:1.2;font-weight:650; }
+.project-assistants .pa-team-identity small { display:block;margin-top:3px;font-size:12px;color:var(--pa-dim); }
+.project-assistants .pa-team-destination {
+  display:flex;align-items:center;gap:8px;margin:0;padding:8px 10px;
+  border-radius:10px;background:color-mix(in srgb,var(--pa-bg) 60%,transparent);color:var(--pa-dim);font-size:12px;
+}
+.project-assistants .pa-team-destination>svg { flex:none; }
+.project-assistants .pa-team-destination span { min-width:0;overflow-wrap:anywhere; }
+.project-assistants .pa-team-destination strong { display:block;font-weight:600;color:var(--pa-ink); }
+.project-assistants .pa-team-destination small { display:block;font-size:11px; }
+.project-assistants .pa-team-destination-label { margin-inline-start:auto;font-size:11px; }
+.project-assistants .pa-team-proposal .pa-permission-detail { margin:4px 0 0; }
+.project-assistants .pa-team-proposal .pa-permission-detail summary { min-height:40px;align-content:center;padding:0 2px;font-weight:550; }
+.project-assistants .pa-team-details {
+  margin:0 0 10px;padding:2px 10px;border:1px solid var(--pa-line);border-radius:10px;
+  background:color-mix(in srgb,var(--pa-bg) 60%,transparent);
+}
+.project-assistants .pa-team-details>div { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,2fr);gap:6px 10px;padding:7px 0; }
+.project-assistants .pa-team-details>div+div { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-team-details dt { font-weight:550;color:var(--pa-dim); }
+.project-assistants .pa-team-details dd { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
+.project-assistants .pa-team-details .pa-team-instructions { grid-template-columns:minmax(0,1fr); }
+.project-assistants .pa-team-instructions dd { line-height:1.6; }
+.project-assistants .pa-team-loading { color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-team-proposal .pa-permission-options { margin-top:2px;border:1px solid var(--pa-line);border-radius:12px; }
+.project-assistants .pa-team-proposal .pa-permission-options button { padding:10px 12px;min-height:44px;justify-content:center; }
+.project-assistants .pa-team-proposal .pa-permission-options button:focus-visible { outline-offset:-3px; }
+.project-assistants .pa-team-proposal .pa-permission-options button:hover:not(:disabled) { background:var(--pa-card); }
 @media(max-width:1000px) {
   .project-assistants .pa-chat-layout.pa-info-open,.project-assistants .pa-room-layout.pa-members-open { grid-template-columns:minmax(0,1fr); }
   .project-assistants .pa-side-inspector { width:min(420px,100%); }

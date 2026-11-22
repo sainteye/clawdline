@@ -53,11 +53,11 @@ func (m ManagerContext) check() error {
 
 // Manager tool arguments a model may set. Anything else, and in particular
 // the authority fields below, is refused before a card is shown.
-var managerFields = []string{"name", "instructions", "avatarColor", "avatarShape", "hidden"}
+var managerFields = []string{"name", "instructions", "avatarColor", "avatarShape", "hidden", "folder"}
 
 // Fields that would let a model widen its own or a teammate's authority, or
 // that this increment cannot carry safely.
-var managerRefused = []string{"manageTeam", "createdBy", "permission", "approvals", "mode", "agent", "backend", "folder", "cwd", "project", "model", "fallbacks", "routines", "connectors", "skills", "computer", "delete"}
+var managerRefused = []string{"manageTeam", "createdBy", "permission", "approvals", "mode", "agent", "backend", "cwd", "project", "model", "fallbacks", "routines", "connectors", "skills", "computer", "delete"}
 
 // CheckManagerFields refuses unknown and authority-bearing argument names.
 func CheckManagerFields(keys []string) error {
@@ -75,6 +75,7 @@ func CheckManagerFields(keys []string) error {
 // ManagedCreate is what a manager asked to create. Agent, PermissionPolicy and
 // Mode are optional: empty inherits the manager's own.
 type ManagedCreate struct {
+	Project          pa.ProjectScope
 	Name             string
 	Instructions     string
 	Appearance       pa.Appearance
@@ -107,9 +108,9 @@ type ManagerLimits struct {
 	MaxCreated int
 }
 
-// PlanManagedCreate mirrors Codync's create_bot: the new Bot works in the
-// manager's Project, approves the way the manager does and works in the
-// manager's mode. Only the explicit team grant is inherited. A policy or mode other
+// PlanManagedCreate uses the resolved destination when supplied and defaults
+// to the manager's Project. The new Bot inherits the manager's approval policy
+// and mode. Only the explicit team grant is inherited. A policy or mode other
 // than the manager's own is refused rather than ordered, since no ordering of
 // policies across agents is proved. Another agent is refused unless the
 // manager asks first and works in Auto mode: a native mode is its agent's,
@@ -152,7 +153,18 @@ func PlanManagedCreate(m ManagerContext, req ManagedCreate, createdLive int, l M
 	if err := pa.ValidateAppearance(req.Appearance); err != nil {
 		return ManagedBotPlan{}, err
 	}
-	return ManagedBotPlan{Project: m.Project, Name: req.Name, Instructions: req.Instructions, Appearance: req.Appearance, Agent: agent, PermissionPolicy: src.PermissionPolicy, Mode: src.Mode, ManageTeam: src.ManageTeam, CreatedBy: src.Key, Under: m.Grant}, nil
+	project := req.Project
+	if project == (pa.ProjectScope{}) {
+		project = m.Project
+	} else {
+		if err := pa.ValidateScope(project); err != nil {
+			return ManagedBotPlan{}, err
+		}
+		if project.MachineID != src.Key.MachineID || project.Kind == pa.PersonalWorkspace {
+			return ManagedBotPlan{}, serviceFailure(pa.ScopeDenied, "manager_folder")
+		}
+	}
+	return ManagedBotPlan{Project: project, Name: req.Name, Instructions: req.Instructions, Appearance: req.Appearance, Agent: agent, PermissionPolicy: src.PermissionPolicy, Mode: src.Mode, ManageTeam: src.ManageTeam, CreatedBy: src.Key, Under: m.Grant}, nil
 }
 
 // ManagedEdit is what a manager may change on a Bot, itself included.
