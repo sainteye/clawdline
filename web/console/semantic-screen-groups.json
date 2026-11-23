@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14083,
-  "riskKeys": 5976,
-  "nonRiskCount": 8107,
+  "englishContentKeys": 14094,
+  "riskKeys": 5983,
+  "nonRiskCount": 8111,
   "groups": [
     {
       "name": "acp / other",
@@ -6206,7 +6206,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 574,
+      "count": 578,
       "sources": [
         null
       ],
@@ -6528,6 +6528,10 @@
         "projectAssistants.renamingArtifact",
         "projectAssistants.resumePreviousDraft",
         "projectAssistants.retry",
+        "projectAssistants.retryNextEdit",
+        "projectAssistants.retryNextLater",
+        "projectAssistants.retryNextReload",
+        "projectAssistants.retryNextSettings",
         "projectAssistants.retryReaction",
         "projectAssistants.retryUnsentSend",
         "projectAssistants.roomEveryone",
