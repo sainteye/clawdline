@@ -15,15 +15,16 @@ cleanup scope. Every linked checkout receives exactly one of these answers:
 
 | Classification | Required evidence | Action |
 |---|---|---|
-| `landed_clean` | The broker inventory names the exact path and branch as `droppable`, which already requires a settled landing and an absent owner; Git also reports no tracked or untracked changes. | Dry run reports it. `--apply` checks Git again, then asks `git worktree remove` without `--force`. The branch remains. |
-| `unlanded` | The broker inventory associates the branch with a task whose landing is unsettled, and Git reports a clean checkout. | Keep it. Land or abandon the task first. |
+| `landed_clean` | The broker inventory names the exact path and branch as `droppable`, which already requires a settled landing and an absent owner; or the checkout is a Root checkout (below) whose owner record names it, whose `HEAD` is on the target and inside which `lsof` lists no working process. Git also reports no tracked or untracked changes. | Dry run reports it. `--apply` checks Git again, then asks `git worktree remove` without `--force`. The branch remains. |
+| `unlanded` | The broker inventory associates the branch with a task whose landing is unsettled, or a Root checkout's `HEAD` is not on the target; Git reports a clean checkout. | Keep it. Land or abandon the task first. |
 | `uncommitted` | Git reports tracked or untracked content different from `HEAD`. | Keep it. Preserve the content as a verifiable patch or branch before any later cleanup. |
-| `active_task` | The broker inventory associates the branch with a non-terminal task. | Keep it, whether or not it currently looks clean. |
+| `active_task` | The broker inventory associates the branch with a non-terminal task, or a process works inside a Root checkout. | Keep it, whether or not it currently looks clean. |
 | `unknown` | Ownership, status, or broker evidence is absent or unreadable; the checkout is not an exact path-and-branch match; or a nested repository/content filter makes Git status incomplete. | Keep it. Restore the missing evidence or have its owner dispose of it. |
 
-The exact broker task record is ownership evidence. A location under a worktree root is not. This
-is why a checkout made by another session, including one under a familiar temporary directory,
-stays `unknown` unless the broker actually associates it with this task.
+The exact broker task record is ownership evidence, and so is the owner record that
+`--root-checkout` writes when it creates a checkout. A location under a worktree root alone is not.
+This is why a checkout made by another session, including one under a familiar temporary directory,
+stays `unknown` unless the broker associates it with a task or its creation record names it.
 
 The Projects worktree page offers **Delete worktree** on every checkout except the repository's main
 one. A person who presses it means it: the machine does not veto an unlanded, dirty, locked or
@@ -86,6 +87,27 @@ in `main`. It does not use `--force`. If the command writes uncommitted content,
 unlanded commit, or Git refuses removal, the wrapper prints the retained path. The command's exit
 status is preserved. This creation-time pairing is preferred to asking a later sweep to guess who
 owned an anonymous scratch checkout.
+
+A Root that needs a checkout for longer than one command — a comparison, a test copy, a branch it
+will merge later — creates it with an owner record instead of under `/tmp`:
+
+```sh
+tools/check-worktrees.sh --root-checkout compare-bots          # detached at HEAD
+tools/check-worktrees.sh --root-checkout before-fix --rev HEAD~3
+```
+
+The checkout is `$CLAWDLINE_NEXT_DIR/root-worktrees/<name>` (override the directory with
+`CLAWDLINE_ROOT_WORKTREES`), and `<name>.owner.json` beside it records the repository, real path,
+base commit, creation time and `CLAWDLINE_SESSION_ID` or `TMUX_PANE`. The name is letters, digits,
+`.`, `_` and `-`; an existing name is refused. Switch to a branch inside it if the work will be
+merged. The audit then reports it with owner `root:<session>` and never as `unknown`: dirty is
+`uncommitted`, a commit not on the target is `unlanded`, a working process inside is `active_task`,
+and only a clean, landed, idle checkout is `landed_clean`. `--apply` checks the record, target and
+process list again, runs `git worktree remove` without `--force` and then removes the record. A
+missing or mismatched record makes the checkout `unknown` again; it is never adopted by location.
+
+Copies made with `cp -R` or `rsync` are not Git worktrees and no audit can prove them; make the
+checkout this way instead. Existing directories in `/tmp` are not adopted or removed by this tool.
 
 ## Web dependencies in a linked worktree
 

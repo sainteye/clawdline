@@ -29,7 +29,9 @@ git worktree add -f <scratch>/<name> HEAD
   checkout is clean, and no owner is using it. Never use age or ancestry alone to delete an
   unknown, active, dirty, or unlanded checkout. In every delivery, tell the person how many
   worktrees were removed and which candidates were kept, with their reasons. For a read-only
-  throwaway checkout use `tools/check-worktrees.sh --ephemeral -- <command>`. `docs/worktrees.md`.
+  throwaway checkout use `tools/check-worktrees.sh --ephemeral -- <command>`; for a Root checkout
+  that outlives one command use `tools/check-worktrees.sh --root-checkout <name>`, never a copy
+  under `/tmp`, so its owner record lets the audit prove and remove it. `docs/worktrees.md`.
 - A dispatched child's worktree path comes from the task record
   (`GET /v1/orchestrator/tasks/<id>` → `.task.worktree.path`), never composed.
   `cd "$W" || exit 1` — a failed `cd` runs everything else somewhere else.

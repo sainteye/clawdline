@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
@@ -91,7 +93,7 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 				stored := *r.Result
 				disk.Secret = ""
 				stored.Secret = ""
-				out.OutputsSaved = e == nil && reflect.DeepEqual(disk, stored)
+				out.OutputsSaved = e == nil && sameSavedResult(disk, stored)
 				out.EvidenceDigest = evidenceDigest(struct {
 					Accepted any
 					Raw      string
@@ -387,4 +389,13 @@ func (b *Broker) savedGateOutput(r Record) (string, string, bool) {
 		Accepted any
 		Raw      string
 	}{r.Result, digestGate(body)}), true
+}
+
+// sameSavedResult compares a result as the store would encode it. A child's
+// `"symbols": []` decodes as an empty slice while the stored copy, written
+// with omitempty, decodes as nil; both are the same accepted result.
+func sameSavedResult(disk, stored taskdir.Result) bool {
+	a, ea := json.Marshal(disk)
+	b, eb := json.Marshal(stored)
+	return ea == nil && eb == nil && bytes.Equal(a, b)
 }
