@@ -32,9 +32,15 @@ import (
 )
 
 func TestProductionBotDispatchSelectsClaudeAutoMode(t *testing.T) {
-	policy, err := projectAssistantDispatchPolicy(t.Context(), pa.BotKey{})
+	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
+	policy, err := s.projectAssistantDispatchPolicy(t.Context(), pa.BotKey{})
 	if err != nil || !policy.Allowed || policy.Assistant != projects.AssistantClaude || policy.PermissionMode != "auto" {
 		t.Fatalf("unexpected Bot dispatch policy: %+v, %v", policy, err)
+	}
+	// With no saved rules every dispatch still resolves to Claude Code.
+	resolved, err := pa.ResolveDispatch(policy.Shared, policy.Agents, "any", policy.Assistant, pa.DispatchChoice{Kind: "coding"})
+	if err != nil || resolved.Assistant != projects.AssistantClaude {
+		t.Fatalf("an empty rule table changed the dispatch: %+v, %v", resolved, err)
 	}
 }
 

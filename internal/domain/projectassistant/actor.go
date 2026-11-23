@@ -69,6 +69,9 @@ type WorkRequest struct {
 	// Persona is an optional Session persona id. The broker admits it with
 	// the same rule as every other dispatch; empty keeps the default Session.
 	Persona string
+	// Choice holds the optional kind, agent, model and effort arguments.
+	// The broker resolves them against the machine's dispatch rules.
+	Choice DispatchChoice
 }
 
 // ValidateWorkTitle applies the broker's task title rules before an effect

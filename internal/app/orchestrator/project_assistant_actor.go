@@ -52,6 +52,11 @@ type AssistantCurrent struct {
 	Assistant      string
 	PermissionMode string
 	TimeoutMinutes int
+	// SharedSettings and DispatchAgents come from the source machine; the
+	// request's Choice is resolved against them (explicit > rule > Assistant).
+	SharedSettings pa.SharedSettings
+	DispatchAgents []pa.DispatchAgentOption
+	Resolved       pa.ResolvedDispatch
 	// WorkOwner is the Bot conversation whose dispatched work this execution
 	// may also read and message. The host sets it only for a Bot's private
 	// thread worker answering another Bot's request, to the durable owner of
@@ -283,6 +288,12 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	} else if !c.DispatchAllowed || c.Fence.Project.Kind != pa.RepositoryProject {
 		return c, assistantFailure(pa.ScopeDenied, "dispatch_policy")
 	}
+	resolved, err := pa.ResolveDispatch(c.SharedSettings, c.DispatchAgents, c.Project.Scope.ProjectID, c.Assistant, q.Choice)
+	if err != nil {
+		return c, err
+	}
+	c.Resolved = resolved
+	c.Assistant = resolved.Assistant
 	if q.BoardItemID != "" {
 		if !IsTaskID(q.BoardItemID) {
 			return c, assistantFailure(pa.Invalid, "board_item_id")
@@ -366,7 +377,10 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	id := AssistantTaskID(q.Command)
 	protocol := Protocol
 	d := draft{Protocol: &protocol, TaskID: id, Kind: "implementation", Assistant: c.Assistant, PermissionMode: c.PermissionMode, ProjectDir: c.Project.Directory,
-		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes, Persona: assistantPersona(q)}
+		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes, Persona: assistantPersona(q), Model: c.Resolved.Model}
+	if c.Resolved.Effort != "" {
+		d.ReasoningEffort, _ = json.Marshal(c.Resolved.Effort)
+	}
 	if c.PermissionMode == "" {
 		return Dispatched{}, assistantFailure(pa.ScopeDenied, "worker_permission")
 	}

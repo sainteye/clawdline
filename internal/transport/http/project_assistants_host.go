@@ -169,7 +169,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
 		// of its own repository Project to a Claude worker in Auto mode.
 		// The Broker still owns claims, worktrees, quota and landing.
-		DispatchPolicy: projectAssistantDispatchPolicy, ManageBots: s.manageBots,
+		DispatchPolicy: s.projectAssistantDispatchPolicy, ManageBots: s.manageBots,
 		// Browser tools use the same Profiles and Bridge as the CLI, under an
 		// owner Host derives from the Bot conversation; see project_assistants_browser.go.
 		Browser: s.projectAssistantBrowser(),
@@ -623,9 +623,15 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 
 // projectAssistantDispatchPolicy is fixed source policy, never model input.
 // Broker admission rejects a non-repository Project and every unsafe path.
-func projectAssistantDispatchPolicy(context.Context, pa.BotKey) (projectassistanthost.DispatchPolicy, error) {
+// The rules and the agent list are the machine's own; the model only names a
+// kind or an agent, which ResolveDispatch checks against them.
+func (s *Server) projectAssistantDispatchPolicy(context.Context, pa.BotKey) (projectassistanthost.DispatchPolicy, error) {
+	shared, err := s.projectAssistantSharedSettings().Load()
+	if err != nil {
+		return projectassistanthost.DispatchPolicy{}, err
+	}
 	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "auto",
-		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60}, nil
+		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60, Shared: shared, Agents: projectAssistantDispatchAgents(time.Now())}, nil
 }
 
 // projectAssistantAttachments is where pictures sent to Bots are kept.

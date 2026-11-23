@@ -771,6 +771,13 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			Persona              string   `json:"persona"`
 			BoardItemID          string   `json:"board_item_id"`
 			ContinueOnCompletion bool     `json:"continue_on_completion"`
+			Kind                 string   `json:"kind"`
+			Agent                string   `json:"agent"`
+			Model                string   `json:"model"`
+			Effort               string   `json:"effort"`
+		}
+		if mcpDecode(arguments, &q) == nil {
+			ctx = pa.WithDispatchChoice(ctx, pa.DispatchChoice{Kind: q.Kind, Agent: q.Agent, Model: q.Model, Effort: q.Effort})
 		}
 		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion {
 			return nil, refusal(pa.Invalid, "mcp_dispatch")
@@ -999,6 +1006,10 @@ func mcpTools() []any {
 			"project":                map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
+			"kind":   map[string]any{"type": "string", "minLength": 1, "maxLength": 64, "description": "Optional work kind from the person's dispatch rules (Bots settings), e.g. coding, design or image. The program picks the agent, model and effort from the matching rule. Precedence: explicit agent/model/effort > rule for kind > default Claude Code. An unknown kind keeps the default. 選填，工作類型，對應使用者在 Bots 設定的派工規則（例如寫程式、設計、生圖），程式依規則選 agent、模型與強度。優先順序：明確指定的 agent／model／effort ＞ 規則 ＞ 預設 Claude Code。不符合任何規則時維持預設。"},
+			"agent":  map[string]any{"type": "string", "enum": []string{string(pa.ClaudeCode), string(pa.Codex), string(pa.Gemini)}, "description": "Optional. Only when the user explicitly asks for an agent (for example 'dispatch with Codex'): claude, codex or antigravity (Gemini). Overrides the rule. An agent this computer cannot run is refused with pa_invalid field dispatch_agent and the allowed values. 選填，只有使用者明確要求用某個 agent 派工時才填（例如「用 Codex 派」），優先於規則；這台電腦沒有的 agent 會被拒絕並列出可用值。"},
+			"model":  map[string]any{"type": "string", "minLength": 1, "maxLength": 64, "description": "Optional model name for the chosen agent, only when the user asks for one. Overrides the rule's model. 選填，使用者指定模型時才填，優先於規則。"},
+			"effort": map[string]any{"type": "string", "minLength": 1, "maxLength": 16, "description": "Optional model strength (reasoning effort) when the user asks for a stronger or lighter model. Codex accepts high or xhigh; Gemini (antigravity) low, medium, high, xhigh or max; Claude Code takes none. An unsupported value is refused with field dispatch_effort and the allowed values. 選填，使用者要求更強或更輕的模型時填入強度。Codex 可用 high、xhigh；Gemini 可用 low～max；Claude Code 不支援。不支援的值會被拒絕並列出可用值。"},
 		}, "idempotency_key", "title", "brief", "claims"),
 		mcpWorkStatusTool(tool),
 		mcpMessageWorkTool(),

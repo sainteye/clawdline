@@ -28,6 +28,10 @@ type DispatchPolicy struct {
 	Assistant      string
 	PermissionMode string
 	TimeoutMinutes int
+	// Shared and Agents feed dispatch rule resolution. Empty rules keep
+	// Assistant for every dispatch.
+	Shared pa.SharedSettings
+	Agents []pa.DispatchAgentOption
 }
 
 type Options struct {
@@ -399,6 +403,8 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			out.Assistant = p.Assistant
 			out.PermissionMode = p.PermissionMode
 			out.TimeoutMinutes = p.TimeoutMinutes
+			out.SharedSettings = p.Shared
+			out.DispatchAgents = p.Agents
 		}
 	}
 	return out, nil

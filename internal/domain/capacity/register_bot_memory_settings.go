@@ -30,3 +30,18 @@ func memorySettingsBounds() []Entry {
 		{Name: "bots.memory_preview", Class: Buffer, Unit: Characters, Limit: pa.MaxMemoryPreviewRunes, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxMemoryPreviewRunes"}},
 	}
 }
+
+func sharedSettingsBounds() []Entry {
+	return []Entry{
+		{Name: "bots.shared_memory_entries", Class: Evidence, Unit: Rows, Limit: pa.MaxSharedMemoryEntries, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxSharedMemoryEntries"}},
+		{Name: "bots.shared_memory_entry_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxSharedMemoryEntryBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxSharedMemoryEntryBytes"}},
+		{Name: "bots.shared_memory_total_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxSharedMemoryTotalBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxSharedMemoryTotalBytes"}},
+		{Name: "bots.dispatch_kind_rules", Class: Evidence, Unit: Rows, Limit: pa.MaxDispatchRules, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxDispatchRules"}},
+		{Name: "bots.dispatch_rule_agents", Class: Buffer, Unit: Rows, Limit: pa.MaxDispatchRuleAgents, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxDispatchRuleAgents"}},
+		{Name: "bots.shared_scope_projects", Class: Buffer, Unit: Rows, Limit: pa.MaxProjectsPerScope, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxProjectsPerScope"}},
+		{Name: "bots.dispatch_kind_bytes", Class: Buffer, Unit: Bytes, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchKindBytes"}},
+		{Name: "bots.dispatch_hint_bytes", Class: Buffer, Unit: Bytes, Limit: 300, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchHintBytes"}},
+		{Name: "bots.dispatch_model_bytes", Class: Buffer, Unit: Bytes, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchModel"}},
+		{Name: "bots.shared_settings_body_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxSharedSettingsBodyBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSharedSettingsBodyBytes"}},
+	}
+}

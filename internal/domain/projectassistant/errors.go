@@ -51,6 +51,10 @@ type Failure struct {
 	// TaskID names a broker task already accepted when the rest of the
 	// outcome is unknown, so the caller can follow it with work_status.
 	TaskID string `json:"task_id,omitempty"`
+	// Allowed lists, comma-separated, the values this machine accepts when
+	// Field names an argument with a closed set, such as a dispatch agent or
+	// effort. A string keeps Failure comparable.
+	Allowed string `json:"allowed,omitempty"`
 }
 
 func (f *Failure) Error() string              { return string(f.Code) + ": " + f.Field }

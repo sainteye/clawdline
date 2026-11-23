@@ -1116,6 +1116,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 				}
 			}
 		}
+		choice := pa.DispatchChoiceFrom(ctx)
 		if e = journal(ctx, "dispatch"); e != nil {
 			return pa.WorkLink{}, e
 		}
@@ -1123,15 +1124,16 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			Fence                pa.Fence
 			Turn, Brief          string
 			Claims               []string
-			Title                string          `json:",omitempty"`
-			TargetProject        pa.ProjectScope `json:"target_project,omitzero"`
-			Persona              string          `json:",omitempty"`
-			BoardItemID          string          `json:"board_item_id,omitempty"`
-			ContinueOnCompletion bool            `json:"continue_on_completion,omitempty"`
-		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion})
+			Title                string            `json:",omitempty"`
+			TargetProject        pa.ProjectScope   `json:"target_project,omitzero"`
+			Persona              string            `json:",omitempty"`
+			BoardItemID          string            `json:"board_item_id,omitempty"`
+			ContinueOnCompletion bool              `json:"continue_on_completion,omitempty"`
+			Choice               pa.DispatchChoice `json:"choice,omitzero"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion, choice})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion, Choice: choice})
 	}
 	// One turn gets one observation of a running task. Further observations
 	// belong to the completion callback or a later status question.

@@ -1834,6 +1834,107 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.dispatch_hint_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.maxDispatchHintBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.dispatch_kind_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.maxDispatchKindBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.dispatch_kind_rules",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 12,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDispatchRules"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.dispatch_model_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.maxDispatchModel"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.dispatch_rule_agents",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDispatchRuleAgents"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.dispatch_rules",
     "Class": "buffer",
     "Unit": "rows",
@@ -3914,6 +4015,107 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotServerSpecBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.shared_memory_entries",
+    "Class": "evidence",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender",
+      "health"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSharedMemoryEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.shared_memory_entry_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1024,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSharedMemoryEntryBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.shared_memory_total_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSharedMemoryTotalBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.shared_scope_projects",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxProjectsPerScope"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.shared_settings_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 65536,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSharedSettingsBodyBytes"
     ]
   },
   {
