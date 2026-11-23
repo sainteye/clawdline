@@ -410,6 +410,16 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     destination: SessionDestination; projection?: ProjectedSession }>())
   const fleetPresentationReceivedAt = useRef(new Map<string, number>())
   const fleetProjections = useRef(new Map<string, { reading: MachineSessionProjection; receivedAt: number }>())
+  const [fleetWakeMachines, setFleetWakeMachines] = useState<ReadonlySet<string>>(() => new Set())
+  const noteFleetWakeAvailability = useCallback((machineID: string, ready: boolean) => {
+    setFleetWakeMachines((before) => {
+      if (before.has(machineID) === ready) return before
+      const next = new Set(before)
+      if (ready) next.add(machineID)
+      else next.delete(machineID)
+      return next
+    })
+  }, [])
   const [fleetProjectionRevision, refreshFleetProjection] = useState(0)
   const noteFleetProjection = useCallback((machineID: string, reading: MachineSessionProjection) => {
     if (fleetProjections.current.get(machineID)?.reading === reading) return
@@ -2360,6 +2370,8 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         return <CloudReadProblem key={problem.machine + ":" + problem.code}
           message={nextWord(pair ? "cloudReadNeedsPairing" : "cloudReadUnknownFailure", { machine: name })}
           code={problem.code} trace={problem.trace} retryLabel={nextWord("cloudRetry")}
+          fleetWakeAvailable={screen.at === "console" && fleetScope &&
+            fleetTarget?.machineID !== problem.machine && fleetWakeMachines.has(problem.machine)}
           dismissLabel={nextWord("updateBannerDismiss")}
           pair={pair ? { label: nextWord("cloudReadPairAgain"), run: () => openPairing({ id: problem.machine, name }) } : undefined}
           onRetry={() => { line.current?.retry(); listMachines() }} />
@@ -2468,6 +2480,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
             onConnection={setConnectionMachineID}
             onPresentations={noteFleetPresentations}
             onProjection={noteFleetProjection}
+            onWakeAvailability={noteFleetWakeAvailability}
             onCloseRequest={(target, title) => { openFleetSession(target); setFleetCloseIntent({ target, title }) }}
             onArchiveRequest={(target, title) => { openFleetSession(target); setFleetCloseIntent({ target, title, kind: "archive" }) }}
             onMachineAction={runMachineTool}

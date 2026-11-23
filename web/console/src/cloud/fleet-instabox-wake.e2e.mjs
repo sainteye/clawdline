@@ -17,9 +17,10 @@ test("owners can wake an eligible offline or incompletely reported machine from 
   const browsers = []
   try {
     writeFileSync(join(fixture, "index.html"), '<meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="./entry.tsx"></script>')
-    writeFileSync(join(fixture, "entry.tsx"), `import React from "react";
+    writeFileSync(join(fixture, "entry.tsx"), `import React, {useCallback, useState} from "react";
 import {createRoot} from "react-dom/client";
 import {FleetSessionList} from "../src/cloud/FleetSessionList";
+import {CloudReadProblem} from "../src/cloud/CloudReadProblem";
 import {bootCatalog} from "../src/catalog";
 import {loadStrings} from "../src/legacy/bridge";
 import "../src/legacy/tokens.css";
@@ -40,18 +41,35 @@ const source = {
     return new Promise(() => {});
   },
 };
-function render(online = false) {
-  reconnected = online;
-  root.render(<FleetSessionList machines={[
-    { ...owner("eligible"), freshness: online ? "current" : "unknown" },
-    { ...owner("relay-offline"), freshness: "current" },
-    { ...owner("incomplete"), freshness: "current" },
-    owner("unbound"), owner("no-key"), owner("denied"),
-    { ...owner("online"), freshness: "current" },
-    { ...owner("guest"), instaBoxWakeOrigin: undefined },
-  ]} source={source} target={null} filter="" onFilter={noop} onOpen={noop}
-    onConnection={noop} onCloseRequest={noop} onArchiveRequest={noop} />);
+function FleetFixture({online, problem}) {
+  const [wakeMachines, setWakeMachines] = useState(new Set());
+  const onWakeAvailability = useCallback((id, ready) => setWakeMachines(before => {
+    const next = new Set(before);
+    if (ready) next.add(id);
+    else next.delete(id);
+    return next;
+  }), []);
+  return <>
+    <CloudReadProblem message={problem.machine + " read failed"} code={problem.code}
+      retryLabel="Retry" dismissLabel="Dismiss" onRetry={noop}
+      fleetWakeAvailable={wakeMachines.has(problem.machine)} />
+    <FleetSessionList onWakeAvailability={onWakeAvailability} machines={[
+      { ...owner("eligible"), freshness: online ? "current" : "unknown" },
+      { ...owner("relay-offline"), freshness: "current" },
+      { ...owner("incomplete"), freshness: "current" },
+      owner("unbound"), owner("no-key"), owner("denied"),
+      { ...owner("online"), freshness: "current" },
+      { ...owner("guest"), instaBoxWakeOrigin: undefined },
+    ]} source={source} target={null} filter="" onFilter={noop} onOpen={noop}
+      onConnection={noop} onCloseRequest={noop} onArchiveRequest={noop} />
+  </>;
 }
+let problem = {machine: "eligible", code: "cloud_read_timeout"};
+function render(online = reconnected) {
+  reconnected = online;
+  root.render(<FleetFixture online={online} problem={problem} />);
+}
+window.failRead = (machine, code) => { problem = { machine, code }; render(); };
 window.reconnect = () => render(true);
 render();`)
     vite = spawn(process.execPath, [resolve(web, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "0"],
@@ -112,6 +130,17 @@ render();`)
       await eligible.getByRole("status").filter({ hasText: unconfirmed }).waitFor()
       await disconnected.getByRole("status").filter({ hasText: offline }).waitFor()
       await wakeIncomplete.waitFor({ timeout: 5000 })
+      const topWarning = page.locator(".cloud-read-problem")
+      await topWarning.waitFor({ state: "hidden", timeout: 3000 })
+      for (const [id, code] of [
+        ["unbound", "cloud_read_timeout"], ["no-key", "cloud_read_timeout"],
+        ["online", "cloud_read_timeout"], ["eligible", "machine_pairing_required"],
+      ]) {
+        await page.evaluate(([machine, code]) => window.failRead(machine, code), [id, code])
+        await topWarning.getByText(id + " read failed", { exact: true }).waitFor()
+      }
+      await page.evaluate(() => window.failRead("eligible", "cloud_read_timeout"))
+      await topWarning.waitFor({ state: "hidden" })
       assert.equal(await incomplete.getByRole("status").filter({ hasText: offline }).count(), 0)
       for (const group of [eligible, disconnected]) {
         assert.equal(await group.locator('[data-loading-id="SK-02"]').count(), 0)
@@ -138,6 +167,7 @@ render();`)
       assert.deepEqual(posts, ["incomplete", "incomplete"])
       await page.evaluate(() => window.reconnect())
       await wake.waitFor({ state: "detached" })
+      await topWarning.getByText("eligible read failed", { exact: true }).waitFor()
       await wakeIncomplete.waitFor({ state: "detached" })
       await page.getByText(accepted, { exact: false }).waitFor({ state: "detached" })
       await page.close()

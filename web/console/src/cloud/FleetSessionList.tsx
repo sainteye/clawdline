@@ -38,7 +38,7 @@ type Reading = { phase: "loading" } | { phase: "settled"; value: MachineSessionP
 
 /** Only the fleet list is new; the conversation and composer belong to SessionsPage. */
 export function FleetSessionList({ machines, source, target, filter, onFilter, onOpen,
-  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, titleRevision, confirmedTitles, sessionBoardTargets }: {
+  carrierOf, onConnection, onMachineAction, onCloseRequest, onArchiveRequest, onPresentations, onProjection, onWakeAvailability, titleRevision, confirmedTitles, sessionBoardTargets }: {
   machines: readonly FleetMachine[]
   source: SessionProjectionSource | null
   sessionBoardTargets?: readonly SessionBoardTarget[]
@@ -53,6 +53,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
   onPresentations?: (machineID: string, rows: readonly (SessionListPresentation & {
     destination: SessionDestination; projection?: ProjectedSession })[]) => void
   onProjection?: (machineID: string, reading: MachineSessionProjection) => void
+  onWakeAvailability?: (machineID: string, ready: boolean) => void
   onConnection: (machineID: string) => void
   onMachineAction?: (machineID: string, action: MachineToolbarAction) => void
   onCloseRequest: (target: SessionDestination, title: string) => void
@@ -478,7 +479,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
             ? [nextWord("msOffline"), machine.seenAt ? machineSeenWord(machine.seenAt) : null].filter(Boolean).join(" · ")
             : nextWord("msNotReported")}</p>}
           {(unavailable || emptyPartialScan) && machine.instaBoxWakeOrigin && <FleetInstaBoxWake key={machine.instaBoxWakeOrigin}
-            machine={machine.id} origin={machine.instaBoxWakeOrigin} />}
+            machine={machine.id} origin={machine.instaBoxWakeOrigin} onWakeAvailability={onWakeAvailability} />}
           <div className="cloud-all-group-body" data-open={!isCollapsed}
             inert={isCollapsed} aria-hidden={isCollapsed}>
           <div className="cloud-all-group-content">

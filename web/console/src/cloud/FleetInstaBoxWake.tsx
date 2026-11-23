@@ -4,7 +4,11 @@ import { instaBoxWakeReason, readInstaBoxBinding, wakeInstaBox } from "./instabo
 
 type WakeState = { kind: "idle" | "waking" | "accepted" } | { kind: "failed"; message: string }
 
-export function FleetInstaBoxWake({ machine, origin }: { machine: string; origin: string }) {
+export function FleetInstaBoxWake({ machine, origin, onWakeAvailability }: {
+  machine: string
+  origin: string
+  onWakeAvailability?: (machine: string, ready: boolean) => void
+}) {
   const [bindingReady, setBindingReady] = useState(false)
   const [wake, setWake] = useState<WakeState>({ kind: "idle" })
   const pending = useRef<AbortController | null>(null)
@@ -20,6 +24,12 @@ export function FleetInstaBoxWake({ machine, origin }: { machine: string; origin
       pending.current = null
     }
   }, [machine, origin])
+
+  useEffect(() => {
+    if (!bindingReady || !onWakeAvailability) return
+    onWakeAvailability(machine, true)
+    return () => onWakeAvailability(machine, false)
+  }, [bindingReady, machine, onWakeAvailability])
 
   async function requestWake() {
     if (!bindingReady || pending.current) return
