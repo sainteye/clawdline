@@ -168,8 +168,14 @@ type Result struct {
 	// a child that writes none has delivered, and the field is absent rather
 	// than empty so that "nothing was left over" and "this child never said"
 	// stay the same silence they are on the wire.
-	Leftovers  []work.Leftover `json:"leftovers,omitempty"`
-	FinishedAt string          `json:"finished_at,omitempty"`
+	Leftovers []work.Leftover `json:"leftovers,omitempty"`
+	// Carries names other tasks whose work this delivery brought along, for
+	// example by cherry-picking it. When this task's own landing is proved,
+	// the broker records each one incorporated if git shows every one of its
+	// commits patch-equivalent in the landing commit, and leaves it pending
+	// with the reason otherwise.
+	Carries    []string `json:"carries,omitempty"`
+	FinishedAt string   `json:"finished_at,omitempty"`
 }
 
 // Verification is the child's own account of what it ran.

@@ -654,6 +654,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `orchestrator.delivery_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.delivery_commits` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.opening_stuck_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `orchestrator.result_carries` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `personas.text_bytes` | 8192 | `bytes` | `refuse` | `diagnostics` | — |

@@ -12679,6 +12679,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "orchestrator.result_carries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 16,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/work.CarriesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "personas.catalog",
     "Class": "buffer",
     "Unit": "rows",

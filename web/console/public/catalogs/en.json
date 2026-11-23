@@ -2153,6 +2153,8 @@
   "capacityRow.notification.rules_rows.what": "How many custom notification rules you can keep, such as 'notify me when a Session named deploy needs my answer for 10 minutes'. Every waiting Session is checked against every rule, so the list stays short.",
   "capacityRow.orchestrator.delivery_bytes.full": "A larger document is rejected in full; no completion receipt is created.",
   "capacityRow.orchestrator.delivery_bytes.what": "The full Git delivery evidence document is limited to 256 KiB so it can be stored and retried with a short summary.",
+  "capacityRow.orchestrator.result_carries.full": "A longer list is rejected whole; the child corrects its result and finishes again.",
+  "capacityRow.orchestrator.result_carries.what": "Other tasks one delivery result can declare it carried, up to 16.",
   "capacityRow.orchestrator.delivery_commits.full": "Larger commit lists are rejected; commits are never removed to fit.",
   "capacityRow.orchestrator.delivery_commits.what": "A delivery evidence document can contain up to 4,096 complete commit IDs.",
   "capacityRow.orchestrator.opening_stuck_seconds.full": "When time is up that opening is marked failed with a timeout reason, so the item no longer looks busy. Assign or hand off the work again.",

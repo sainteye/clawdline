@@ -3,6 +3,7 @@ package taskdir
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/sainteye/clawdline/internal/domain/schedulewebhook"
 	"os"
 	"path/filepath"
@@ -429,6 +430,34 @@ func TestReviewSeveritiesAndTheProceedVerdict(t *testing.T) {
 		dir := finishDir(t, plainTask("review"), resultWith(review))
 		if _, err := Finish(dir); err != nil {
 			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}
+
+func TestCarriesAreTaskIDsOtherThanThisOne(t *testing.T) {
+	other := `"d3000021-0000-4000-8000-000000000021"`
+	many := ""
+	for i := 0; i < 17; i++ {
+		if i > 0 {
+			many += ","
+		}
+		many += fmt.Sprintf(`"d3000021-0000-4000-8000-%012d"`, i)
+	}
+	for _, c := range []struct{ why, extra, reason string }{
+		{"one other task", `, "carries": [` + other + `]`, ""},
+		{"not a list", `, "carries": ` + other, "carries must be a list"},
+		{"past the bound", `, "carries": [` + many + `]`, "carries must be a list"},
+		{"not a task id", `, "carries": ["main"]`, "distinct lowercase task UUIDs"},
+		{"this task", `, "carries": ["` + finishID + `"]`, "other than this task"},
+		{"twice", `, "carries": [` + other + `,` + other + `]`, "distinct"},
+	} {
+		_, err := Finish(finishDir(t, plainTask("custom"), resultWith(c.extra)))
+		var bad InvalidResult
+		switch {
+		case c.reason == "" && err != nil:
+			t.Errorf("%s: %v", c.why, err)
+		case c.reason != "" && (!errors.As(err, &bad) || !strings.Contains(bad.Reason, c.reason)):
+			t.Errorf("%s: %v does not say %q", c.why, err, c.reason)
 		}
 	}
 }

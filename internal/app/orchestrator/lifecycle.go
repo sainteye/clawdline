@@ -479,6 +479,9 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 		}
 		return nil, nil
 	})
+	if err == nil && next.State == LandingLanded {
+		b.incorporateCarried(ctx, record)
+	}
 	return record, err
 }
 

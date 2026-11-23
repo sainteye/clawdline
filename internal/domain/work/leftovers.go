@@ -51,6 +51,12 @@ type Leftover struct {
 // own: a child with more than eight things it did not do has a boundary
 // problem that another list will not fix. The title's bound is a work item's
 // own (app.workTitleLimit), because that is what the row becomes.
+// CarriesLimit bounds the other tasks one result.json may declare it carried
+// (`carries`). It is an admission bound like the leftovers': a longer list is
+// refused whole by taskdir.ValidateResult. Registered as
+// orchestrator.result_carries.
+const CarriesLimit = 16
+
 const (
 	LeftoversLimit          = 8
 	LeftoverTitleLimit      = OutcomeTitleLimit

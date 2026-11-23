@@ -2153,6 +2153,8 @@
   "capacityRow.notification.rules_rows.what": "你最多能設幾條自訂通知規則，例如「名稱含 deploy 的對話等我回答超過 10 分鐘就通知我」。每個在等待的對話都要比對每條規則，所以清單要短。",
   "capacityRow.orchestrator.delivery_bytes.full": "超限時整份拒絕，不建立完成收據。",
   "capacityRow.orchestrator.delivery_bytes.what": "完整 Git 交付證據檔上限為 256 KiB，讓短摘要能搭配可保存及重送的完整證據。",
+  "capacityRow.orchestrator.result_carries.full": "超過時整份結果會被退回，由分身修正後重新交付。",
+  "capacityRow.orchestrator.result_carries.what": "一份交付結果最多可以宣告帶上的其他工作數，上限 16 件。",
   "capacityRow.orchestrator.delivery_commits.full": "超限時拒絕整份清單，不會刪減提交來符合上限。",
   "capacityRow.orchestrator.delivery_commits.what": "每份交付證據最多容納 4,096 筆完整提交識別碼。",
   "capacityRow.orchestrator.opening_stuck_seconds.full": "時間到，這次開啟會被標成逾時失敗，項目不再看起來像有人在處理。請重新指派或交接這份工作。",
