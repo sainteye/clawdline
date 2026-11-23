@@ -510,11 +510,11 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                   const actions = sessionSwipeActions(unavailable ? "stale" : row.freshness,
                     status?.sessionId, row.backend)
                   return {
-                    id: row.destination.sessionID, parent,
+                    id: row.destination.sessionID, parent, dispatch: presentation?.botDispatch,
                     actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
                       status?.sessionId, title, status?.persona, presentation?.icon),
                     render: (board) => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} key={destinationKey(row.destination)}
-                    title={title} icon={presentation?.icon} cwd={presentation?.cwd} botDispatch={presentation?.botDispatch}
+                    title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={status}
                     runningAgents={row.freshness === "current" ? row.agentCountUnknown ? null : row.runningAgentCount : undefined}

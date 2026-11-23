@@ -1,5 +1,4 @@
 import { SessionBoardLead } from "./SessionBoards.js"
-import { BotAvatar } from "../project-assistants/BotAvatar.js"
 import { TerminalGlyph } from "./TerminalGlyph.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -24,24 +23,8 @@ import "./list-tree.css"
 import "./swipe-archive.css"
 
 /** The same selectable list-row frame serves a local row and a light Cloud status row. */
-function SessionRowLayout({ children, className, botDispatch, ...props }: ComponentPropsWithRef<"li"> & {
-  botDispatch?: SessionRow["bot_dispatch"]
-}) {
-  const row = <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
-  if (!botDispatch) return row
-
-  const { name, appearance, task_title: task } = botDispatch
-  const attribution = name ? nextWord("sessionBotDispatchBy", { bot: name }) : nextWord("sessionBotDispatch")
-  return <li className="session-list-group session-bot-dispatch-group" role="presentation">
-    <div className="session-list-group-heading">
-      <BotAvatar appearance={appearance ?? { shape: "blob", color: "#9ca6b3" }} size={24} />
-      <div className="session-bot-dispatch-heading">
-        <strong>{name || attribution}</strong>
-        {task && <span>{task}</span>}
-      </div>
-    </div>
-    <ul className="rows" role="group" aria-label={[attribution, task].filter(Boolean).join(" · ")}>{row}</ul>
-  </li>
+function SessionRowLayout({ children, className, ...props }: ComponentPropsWithRef<"li">) {
+  return <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
 }
 
 /** Identity and activity are the same cells in a local or a fleet list. */
@@ -83,11 +66,11 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar, botDispatch,
+  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
-  icon?: SessionRow["icon"]; cwd?: string; botDispatch?: SessionRow["bot_dispatch"]
+  icon?: SessionRow["icon"]; cwd?: string
   machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
@@ -105,7 +88,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   const width = onArchive ? actionWidth(status?.sessionId) : ACTION_WIDTH
   useLayoutEffect(() => { if (ref.current) paintSwipe(ref.current, swiped ? "open" : "", swiped ? width : 0) }, [swiped, selectionKey, width])
   const activate = () => { if (!consumePress?.() && ref.current) onOpen(ref.current) }
-  return <SessionRowLayout ref={ref} botDispatch={botDispatch} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
+  return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
     data-board-lead={boardLead || undefined} data-state={state} data-attention={attention ? "open" : undefined}
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
@@ -478,7 +461,6 @@ export function Row({
   return (
     <SessionRowLayout
       ref={ref}
-      botDispatch={row.bot_dispatch}
       role="option"
       tabIndex={-1}
       data-id={row.id}

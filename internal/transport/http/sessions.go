@@ -403,7 +403,8 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 		if dispatch := titles.BotDispatch; dispatch != nil {
 			name := strings.TrimSpace(dispatch.Name)
 			appearance := dispatch.Appearance
-			if (name == "" || appearance == (pa.Appearance{})) && dispatch.Key.BotID != "" && dispatch.Key.MachineID != "" {
+			hasDispatcher := dispatch.Key.BotID != "" && dispatch.Key.MachineID != ""
+			if hasDispatcher && (name == "" || appearance == (pa.Appearance{})) {
 				// Older tasks may only have the source key. Resolve each
 				// visible dispatcher at most once per list build.
 				bot, known := legacyBots[dispatch.Key]
@@ -419,6 +420,10 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 				}
 			}
 			projected := &contract.SessionBotDispatch{Name: name, TaskTitle: dispatch.TaskTitle}
+			if hasDispatcher {
+				key := paWireBotKey(dispatch.Key)
+				projected.Dispatcher = &key
+			}
 			if pa.ValidateAppearance(appearance) == nil {
 				wire := paWireAppearance(appearance)
 				projected.Appearance = &wire

@@ -338,13 +338,17 @@ function rows(): Row[] {
       work_state: "working",
       line: "1m",
       bot_dispatch: botDispatchFixture ? {
-        name: "Atlas", appearance: { shape: "hex", color: "#75c6a5" },
-        task_title: "Reconnect the draft editor and restore all unsaved changes across windows",
+        name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "atlas" },
+        appearance: { shape: "hex", color: "#75c6a5" }, task_title: "Reconnect the draft editor and restore all unsaved changes across windows",
       } : undefined,
     }),
     row(NEEDS_ATTESTATION, "Echo has not checked in", needsAttestationCloseability(), MOVED.needsAttestation),
-    row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown),
-    row(SPARE, "Delta is finished too", safeCloseability(), spareMoved),
+    row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown, {
+      bot_dispatch: botDispatchFixture ? { name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "other-atlas" }, task_title: "Inspect synchronization" } : undefined,
+    }),
+    row(SPARE, "Delta is finished too", safeCloseability(), spareMoved, {
+      bot_dispatch: botDispatchFixture ? { name: "Atlas renamed", dispatcher: { machine_id: "fixture", bot_id: "atlas" }, task_title: "Compare saved revisions" } : undefined,
+    }),
   ]
   if (readingScenario !== "refresh") return current
   return current.map((session) => ({
@@ -1566,42 +1570,43 @@ test("keyboard moves through focused options and Enter opens the highlighted Ses
     }
   }))
 
-test("a Bot dispatch wraps the regular Session card in a message-board-style group", async () => {
+test("a Bot's tasks share a message-board-style frame around regular Session cards", async () => {
   botDispatchFixture = boardFixture = true
   try {
     await inTab(async (tab) => {
-      const group = "#rows .session-bot-dispatch-group"
-      const option = `${group} li.row[role="option"]`
+      const groups = "#rows .session-bot-dispatch-group"
+      const option = `${groups} li.row[data-id="${BLOCKED}"]`
       for (const size of ["phone", "desktop"] as const) {
         if (size === "desktop") await tab.desktop()
         await tab.go("/")
         await shortcutUntil(tab, `!!document.querySelector('${option}') && !!document.querySelector(".session-board-group")`)
         assert.deepEqual(await tab.run(`(() => {
-          const group = document.querySelector('${group}')
+          const groups = [...document.querySelectorAll('${groups}')]
+          const group = document.querySelector('${option}').closest('.session-bot-dispatch-group')
           const header = group.firstElementChild
-          const option = group.querySelector('li.row')
+          const row = group.querySelector('li.row')
           const board = document.querySelector('.session-board-group')
           const style = getComputedStyle(group)
           const boardStyle = getComputedStyle(board)
-          const rowTitle = option.querySelector('.title .label')
+          const rowTitle = row.querySelector('.title .label')
           return {
-            name: header.querySelector('strong').textContent,
-            task: header.querySelector('.session-bot-dispatch-heading span').textContent,
+            names: groups.map(group => group.firstElementChild.querySelector('strong').textContent),
+            tasks: [...group.querySelectorAll('.session-bot-task-title')].map(title => title.textContent),
+            titles: [...group.querySelectorAll('.row .title .label')].map(label => label.textContent),
             avatar: header.querySelectorAll('.pa-avatar stop')[1].getAttribute('stop-color'),
-            title: rowTitle.textContent,
-            attributionInRow: option.textContent.includes('Atlas'),
+            attributionInRow: row.textContent.includes('Atlas'),
             ordinaryTitleStyle: getComputedStyle(rowTitle).whiteSpace === getComputedStyle(board.querySelector('.row .title .label')).whiteSpace,
             sameFrame: style.border === boardStyle.border && style.borderRadius === boardStyle.borderRadius,
             fits: group.scrollWidth === group.clientWidth,
           }
         })()`), {
-          name: "Atlas", task: "Reconnect the draft editor and restore all unsaved changes across windows",
-          avatar: "#75c6a5", title: "Bravo is still working", attributionInRow: false,
-          ordinaryTitleStyle: true, sameFrame: true, fits: true,
+          names: ["Atlas", "Atlas"], tasks: ["Reconnect the draft editor and restore all unsaved changes across windows", "Compare saved revisions"],
+          titles: ["Bravo is still working", "Delta is finished too"], avatar: "#75c6a5",
+          attributionInRow: false, ordinaryTitleStyle: true, sameFrame: true, fits: true,
         })
         await tab.press(`#rows li.row[data-id="${SAFE}"]`)
         await shortcutUntil(tab, `document.querySelector('#rows li.row.open')?.dataset.id === '${SAFE}'`)
-        await tab.press(`${group} .session-list-group-heading`)
+        await tab.press(`${groups} .session-list-group-heading`)
         assert.equal(await tab.run(`document.querySelector('${option}').classList.contains('open')`), false)
         await tab.press(option)
         await shortcutUntil(tab, `document.querySelector('${option}').classList.contains('open')`)

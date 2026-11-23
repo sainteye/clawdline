@@ -36,8 +36,9 @@
 .session-board-group > button svg { width: 19px; height: 19px; color: var(--session-board-accent); flex: none; }
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
 .session-bot-dispatch-group .pa-avatar { flex: none; }
-.session-bot-dispatch-heading { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-.session-bot-dispatch-heading span { color: var(--dim); }
+.session-bot-task-title {
+  padding: 4px 8px; color: var(--dim); font-size: .85em; overflow-wrap: anywhere;
+}
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {

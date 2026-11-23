@@ -12,6 +12,7 @@ import type { Icon } from "@clawdline/contract"
 import { sessionBoardAvatar, SessionBoardMark } from "./board-avatars.js"
 import { usePersonas } from "./PersonaBot.js"
 import { visualBranches } from "./order.js"
+import { renderBotDispatchGroups, type DispatchEntry, type RowTree } from "./bot-dispatch-groups.js"
 import "./session-boards.css"
 
 const path = "/v1/orchestrator/session-boards"
@@ -33,8 +34,8 @@ type Cursor = { board?: string; before?: number; after?: number }
 export type SessionBoardCommand = { action: string; board?: string; name?: string; text?: string; target?: string; members?: string[]; reply_to?: number }
 type Command = SessionBoardCommand
 type Receipt = { id: string; seq?: number }
-type BoardRow = { lead: boolean; avatar: Icon | null; depth: number; branchThrough: boolean; ancestorThrough: boolean }
-type Entry = { id: string; parent?: string; actor?: Actor; render: (board?: BoardRow) => ReactNode }
+type BoardRow = RowTree & { lead?: boolean; avatar?: Icon | null }
+type Entry = Omit<DispatchEntry, "render"> & { actor?: Actor; render: (board?: BoardRow) => ReactNode }
 export type SessionBoardSource = {
   key: string
   machine?: string
@@ -176,7 +177,7 @@ function currentCursor(source: SessionBoardSource, id: string) {
 export function SessionBoardRows({ source, rows, candidates }: {
   source?: SessionBoardSource; rows: Entry[]; candidates?: Actor[]
 }) {
-  if (!source) return rows.map(row => row.render())
+  if (!source) return renderBotDispatchGroups(rows)
   return <BoardRows key={source.key} source={source} rows={rows} candidates={candidates} />
 }
 
@@ -298,40 +299,45 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
     grouped.set(board.id, group)
   }
   const shown = new Set<string>()
+  const visible: DispatchEntry[] = rows.flatMap((row): DispatchEntry[] => {
+    const b = placement.get(row.id)?.board
+    if (!b) return [row]
+    if (shown.has(b.id)) return []
+    shown.add(b.id)
+    const unread = unreadFor(source, b)
+    const members = grouped.get(b.id) ?? []
+    const leadAt = members.findIndex(({ entry }) => entry.actor?.id === b.lead)
+    // Keep the Lead's child Sessions directly underneath it when moving it.
+    const nextRoot = members.findIndex(({ depth }, index) => index > leadAt && depth === 0)
+    const ordered = leadAt > 0
+      ? [...members.slice(leadAt, nextRoot < 0 ? undefined : nextRoot),
+        ...members.slice(0, leadAt), ...(nextRoot < 0 ? [] : members.slice(nextRoot))]
+      : members
+    const depths = new Map(ordered.map(({ entry, depth }) => [entry.id, depth]))
+    const branches = visualBranches(ordered.map(({ entry }) => entry), depths)
+    const enrolled = new Map(b.members?.map(member => [member.id, member]))
+    const icon = boardProjectIcon(b, candidateMap)
+    const boardEntries: DispatchEntry[] = ordered.map(({ entry, depth }) => {
+      const actor = entry.actor
+      const lead = actor?.id === b.lead
+      return {
+        id: entry.id, parent: depth ? entry.parent : undefined, dispatch: entry.dispatch,
+        render: (tree = { depth, branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) }) =>
+          entry.render({ ...tree, lead,
+            avatar: sessionBoardAvatar(actor?.id ?? entry.id, actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas) }),
+      }
+    })
+    return [{ id: row.id, render: () => <li key={b.id} className="session-list-group session-board-group" role="presentation">
+      <button className="session-list-group-heading" type="button" onClick={() => { setShow(b.id); void refresh() }}>
+        {icon ? <SessionBoardMark icon={icon} project /> : <BoardGlyph />}
+        <strong>{b.name}</strong>
+        {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
+      </button>
+      <ul className="rows" role="group" aria-label={b.name}>{renderBotDispatchGroups(boardEntries)}</ul>
+    </li> }]
+  })
   return <>
-    {rows.map(row => {
-      const b = placement.get(row.id)?.board
-      if (!b) return row.render()
-      if (shown.has(b.id)) return null
-      shown.add(b.id)
-      const unread = unreadFor(source, b)
-      const members = grouped.get(b.id) ?? []
-      const leadAt = members.findIndex(({ entry }) => entry.actor?.id === b.lead)
-      // Keep the Lead's child Sessions directly underneath it when moving it.
-      const nextRoot = members.findIndex(({ depth }, index) => index > leadAt && depth === 0)
-      const ordered = leadAt > 0
-        ? [...members.slice(leadAt, nextRoot < 0 ? undefined : nextRoot),
-          ...members.slice(0, leadAt), ...(nextRoot < 0 ? [] : members.slice(nextRoot))]
-        : members
-      const depths = new Map(ordered.map(({ entry, depth }) => [entry.id, depth]))
-      const branches = visualBranches(ordered.map(({ entry }) => entry), depths)
-      const enrolled = new Map(b.members?.map(member => [member.id, member]))
-      const icon = boardProjectIcon(b, candidateMap)
-      return <li key={b.id} className="session-list-group session-board-group" role="presentation">
-        <button className="session-list-group-heading" type="button" onClick={() => { setShow(b.id); void refresh() }}>
-          {icon ? <SessionBoardMark icon={icon} project /> : <BoardGlyph />}
-          <strong>{b.name}</strong>
-          {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}
-        </button>
-        <ul className="rows" role="group" aria-label={b.name}>{ordered.map(({ entry, depth }) => {
-          const actor = entry.actor
-          const lead = actor?.id === b.lead
-          return entry.render({ lead, depth,
-            avatar: sessionBoardAvatar(actor?.id ?? entry.id, actor?.persona || (actor && enrolled.get(actor.id)?.persona), lead, personas),
-            branchThrough: branches.through.has(entry.id), ancestorThrough: branches.ancestorThrough.has(entry.id) })
-        })}</ul>
-      </li>
-    })}
+    {renderBotDispatchGroups(visible)}
     {show !== undefined && createPortal(<BoardDialog source={source} initial={show} {...list}
       candidates={leadOptions} close={() => { setShow(undefined); void refresh() }} />, document.body)}
   </>

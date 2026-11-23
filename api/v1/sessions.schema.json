@@ -138,6 +138,7 @@
       "properties": {
         "name": { "type": "string", "description": "The dispatcher's display name, absent if the name was not recorded and can no longer be resolved." },
         "appearance": { "$ref": "project-assistants.schema.json#/$defs/ProjectAssistantAppearance" },
+        "dispatcher": { "$ref": "project-assistants.schema.json#/$defs/ProjectAssistantBotKey", "description": "Stable source identity, independent of the dispatcher’s display name." },
         "task_title": { "type": "string", "description": "The broker task title, independent of the Session's own title." }
       }
     },

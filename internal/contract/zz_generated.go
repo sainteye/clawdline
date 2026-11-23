@@ -8541,6 +8541,9 @@ var SessionAgentUnknownReasonValues = []SessionAgentUnknownReason{SessionAgentUn
 type SessionBotDispatch struct {
 	Appearance *ProjectAssistantAppearance `json:"appearance,omitempty"`
 
+	// Stable source identity, independent of the dispatcher’s display name.
+	Dispatcher *ProjectAssistantBotKey `json:"dispatcher,omitempty"`
+
 	// The dispatcher's display name, absent if the name was not recorded and can no
 	// longer be resolved.
 	Name string `json:"name,omitempty"`

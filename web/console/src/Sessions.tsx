@@ -382,7 +382,7 @@ export function SessionsPage({
                   const actor = sessionBoardActor(r.assistant, r.sessionId, detailSessionName(r), r.persona, r.icon)
                   return actor ? [actor] : []
                 })}
-                rows={drawn.map(r => ({ id: r.id, parent: parents.get(r.id),
+                rows={drawn.map(r => ({ id: r.id, parent: parents.get(r.id), dispatch: r.bot_dispatch,
                   actor: sessionBoardActor(r.assistant, r.sessionId, detailSessionName(r), r.persona, r.icon),
                   render: (board) => <Row boardLead={board?.lead} boardAvatar={board?.avatar}
                   key={L.selectionKey(r)}

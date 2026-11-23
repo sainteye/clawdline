@@ -18,10 +18,15 @@ function listBotDispatch(value: unknown): SessionRow["bot_dispatch"] {
   if (!dispatch) return undefined
   const { name, task_title } = dispatch
   const appearance = record(dispatch.appearance)
+  const dispatcher = record(dispatch.dispatcher)
   const shape = ProjectAssistantShapeValues.find((value) => value === appearance?.shape)
   return {
     name: typeof name === "string" ? name : undefined,
     ...(typeof task_title === "string" && { task_title }),
+    ...(typeof dispatcher?.machine_id === "string" && dispatcher.machine_id &&
+      typeof dispatcher.bot_id === "string" && dispatcher.bot_id && {
+      dispatcher: { machine_id: dispatcher.machine_id, bot_id: dispatcher.bot_id },
+    }),
     ...(shape && typeof appearance?.color === "string" && {
       appearance: { shape, color: appearance.color },
     }),

@@ -254,7 +254,10 @@ test("opening a Session requests only its fresh machine status", async () => {
 test("a cold status gap uses one complete pinned machine list for rows and titles", async () => {
   const { client, calls } = clientFixture()
   const list = client.listPresentationsForMachine
-  const dispatch = { name: "Dispatcher fixture", task_title: "Restore drafts", appearance: { shape: "hex", color: "#75c6a5" } }
+  const dispatch = {
+    name: "Dispatcher fixture", task_title: "Restore drafts", appearance: { shape: "hex", color: "#75c6a5" },
+    dispatcher: { machine_id: machineID, bot_id: "source-bot" },
+  }
   client.listPresentationsForMachine = async (machine) => {
     const reply = await list(machine)
     return { ...reply, sessions: reply.sessions.map((row) => ({ ...row,

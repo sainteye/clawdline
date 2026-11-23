@@ -9865,6 +9865,11 @@ export interface SessionBotDispatch {
   appearance?: ProjectAssistantAppearance
 
   /**
+   * Stable source identity, independent of the dispatcher’s display name.
+   */
+  dispatcher?: ProjectAssistantBotKey
+
+  /**
    * The dispatcher's display name, absent if the name was not recorded and can no
    * longer be resolved.
    */

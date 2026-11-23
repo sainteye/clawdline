@@ -116,6 +116,10 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 				if row[tcRead.labelKey] != sessionTitle || !present || dispatch["task_title"] != title || name != tc.wantName {
 					t.Fatalf("%s: want Session %q, task %q, Bot %q: %s", tcRead.path, sessionTitle, title, tc.wantName, rec.Body)
 				}
+				dispatcher, _ := dispatch["dispatcher"].(map[string]any)
+				if dispatcher["machine_id"] != key.MachineID || dispatcher["bot_id"] != key.BotID {
+					t.Fatalf("dispatcher identity = %v, want %v", dispatcher, key)
+				}
 				appearance, hasAppearance := dispatch["appearance"].(map[string]any)
 				if hasAppearance != (tc.wantLook != nil) || hasAppearance &&
 					(appearance["shape"] != string(tc.wantLook.Shape) || appearance["color"] != tc.wantLook.Color) {
