@@ -17,6 +17,7 @@ import { words } from "../project-assistants/words.js"
 import { errorCode, botFromFragment } from "../project-assistants/client.js"
 import {createCompletionTracker,startBotCompletionSound} from "../project-assistants/completion-sound.js"
 import { followLiveRoster } from "../project-assistants/live-roster.js"
+import { OPEN_BOT, openableBot, publishBotDirectory, type OpenBotRequest } from "../project-assistants/open-bot.js"
 
 const BADGE_REFRESH_MS = 15_000
 
@@ -35,6 +36,8 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const sources = useSyncExternalStore(registry.subscribe,registry.getSnapshot,registry.getSnapshot)
   const [opened,setOpened] = useState(false), [entry,setEntry] = useState(0),[voiceShortcut,setVoiceShortcut]=useState(0)
   const openedRef = useRef(false), opener = useRef<HTMLElement | null>(null)
+  // The Bot another surface asked for by key; the orb opens without one.
+  const [target,setTarget] = useState<W.ProjectAssistantBotKey | null>(null)
   const pendingWork = useRef<{ work: W.ProjectAssistantWorkLink; view?: "session" } | null>(null)
   const ownedHistory = useRef("")
   const workHandler = useRef(onOpenWork)
@@ -141,6 +144,10 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   },[sources,opened,observeSource])
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const hasReadableSource = current.some(([,data]) => data.readable)
+  const readableItems = current.flatMap(([,data]) => data.readable ? data.items : [])
+  const readableRef = useRef(readableItems)
+  readableRef.current = readableItems
+  useEffect(() => publishBotDirectory(readableItems))
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.
@@ -183,8 +190,9 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     animating.current = true; setClosing(true)
     window.setTimeout(() => { animating.current = false; folded.current = true; setClosing(false); finish() }, 200)
   },[finish])
-  const open = (element?: HTMLElement) => {
+  const open = (element?: HTMLElement | null, key?: W.ProjectAssistantBotKey) => {
     opener.current = element ?? null
+    setTarget(key ?? null)
     // Capture the real opener and scroll before hidden blurs the origin.
     origin.current = {hash:location.hash,href:location.href,state:history.state,x:window.scrollX,y:window.scrollY,scrolls:
       [...document.querySelectorAll<HTMLElement>('#app .scroller, #app .cloud-fleet-scroll')].map(node => [node,node.scrollTop,node.scrollLeft])}
@@ -194,6 +202,19 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     folded.current = false
     openedRef.current = true; setEntry(value => value+1); setOpened(true)
   }
+  const openRef = useRef(open)
+  openRef.current = open
+  useEffect(() => {
+    const follow = (event: Event) => {
+      const {key,opener:element} = (event as CustomEvent<OpenBotRequest>).detail
+      if (openedRef.current) return
+      // A Bot deleted, hidden or unreadable since the press was offered never opens another one.
+      if (!openableBot(readableRef.current,key)) { toast(words(language).botUnavailable); return }
+      openRef.current(element,key)
+    }
+    window.addEventListener(OPEN_BOT,follow)
+    return () => window.removeEventListener(OPEN_BOT,follow)
+  },[language])
   // A notice may arrive before source metadata, or focus an already open app.
   const noticeOpened=useRef("")
   useEffect(()=>{
@@ -222,7 +243,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
     <Bots key={entry} onRosterObserved={observeCompletions} onRosterUnavailable={registry.reportRosterScreen} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
-      viewState={registry.viewState} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
+      viewState={registry.viewState} openBot={target ?? undefined} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={(work, view) => {
         const target = assistantWorkTarget(work)
         if (!target || (view !== "session" && target.kind !== "board")) return
@@ -230,5 +251,5 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
         close()
       }}/>
   </section> : null
-  return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} onOpen={open}/>}
+  return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} onOpen={element => open(element)}/>}
 }

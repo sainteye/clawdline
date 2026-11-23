@@ -114,6 +114,13 @@ const at = Math.floor(Date.now()/1000)
 const row = index => ({id:"%fixture-"+index,sessionId:index === 4 && params.has("replacement") ? "different-conversation" : "fixture-"+index,label:index ? "Synthetic Session "+index : "Original Session",assistant:"claude",backend:"tmux",state:"idle",work_state:"idle",cwd:"/synthetic/project",isClaude:true,lastActivityAt:at,evidence:{},agents:[],shells:[],
   closeability:{state:"unknown",reasons:[],activity_generation:0,session_generation:0,obligation_generation:0,observed_at:at,provenance:[],source:{freshness:"unknown",provenance:"fixture",observed_at:at,max_age_seconds:0}}})
 const rows = Array.from({length:40},(_,index) => row(index))
+// ?dispatch frames three Sessions by their dispatching Bot: one on each machine and one whose Bot is gone.
+if (params.has("dispatch")) {
+  const dispatched = (bot,project) => ({name:bot.name,dispatcher:bot.key,appearance:bot.appearance,project:{key:project,name:project}})
+  rows[1] = {...rows[1],label:"Restore the daily feed",bot_dispatch:dispatched(a.bots[0],"Synthetic Project")}
+  rows[2] = {...rows[2],label:"Compare saved revisions",bot_dispatch:dispatched(b.bots[1],"Notebook Project")}
+  rows[3] = {...rows[3],label:"Left by a removed Bot",bot_dispatch:dispatched({...a.bots[2],name:"Removed Bot",key:{machine_id:"studio",bot_id:"removed"}},"Synthetic Project")}
+}
 window.fetch = async (input,init) => {
   const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url,location.href)
   if (!url.pathname.startsWith("/v1/")) return originalFetch(input,init)

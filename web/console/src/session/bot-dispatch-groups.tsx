@@ -3,6 +3,7 @@ import type { SessionBotDispatch } from "@clawdline/contract"
 import { nextWord } from "../next-strings.js"
 import { BotAvatar } from "../project-assistants/BotAvatar.js"
 import { ProjectMark } from "../project-assistants/ProjectMark.js"
+import { requestOpenBot, useBotOpenable } from "../project-assistants/open-bot.js"
 import { visualBranches } from "./order.js"
 
 export type RowTree = { depth: number; branchThrough: boolean; ancestorThrough: boolean }
@@ -49,7 +50,7 @@ export function renderBotDispatchGroups(rows: DispatchEntry[]) {
     if (!group) return render(row, branches)
     if (group.entries[0] !== row) return null
 
-    const { name, appearance } = group.dispatch
+    const { name } = group.dispatch
     const projects = new Map<string, NonNullable<SessionBotDispatch["project"]>>()
     for (const entry of group.entries) {
       const project = entry.dispatch?.project
@@ -58,21 +59,38 @@ export function renderBotDispatchGroups(rows: DispatchEntry[]) {
     const attribution = name ? nextWord("sessionBotDispatchBy", { bot: name }) : nextWord("sessionBotDispatch")
     const groupBranches = visualBranches(group.entries, depths)
     return <li className="session-list-group session-bot-dispatch-group" key={group.key} role="presentation">
-      <div className="session-list-group-heading">
-        <BotAvatar appearance={appearance ?? { shape: "blob", color: "#9ca6b3" }} size={24} />
-        <div className="session-bot-dispatch-heading">
-          <strong>{name || attribution}</strong>
-          {projects.size > 0 && <div className="session-bot-dispatch-projects">
-            {[...projects.values()].map(project => <span className="session-bot-dispatch-project" key={project.key}>
-              <ProjectMark icon={project.icon} size={14} />
-              <span>{project.name}</span>
-            </span>)}
-          </div>}
-        </div>
-      </div>
+      <DispatchHeading dispatch={group.dispatch} projects={[...projects.values()]} label={name || attribution} />
       <ul className="rows" role="group" aria-label={attribution}>{group.entries.map(entry =>
         <Fragment key={entry.id}>{render(entry, groupBranches)}</Fragment>
       )}</ul>
     </li>
   })
+}
+
+function DispatchHeading({ dispatch, projects, label }: {
+  dispatch: SessionBotDispatch; projects: NonNullable<SessionBotDispatch["project"]>[]; label: string
+}) {
+  const key = dispatch.dispatcher
+  // Only a Bot this client reads by its machine and Bot ID opens; a deleted,
+  // hidden or unreadable one, or an old record without an ID, stays a label.
+  const openable = useBotOpenable(key)
+  const content = <>
+    <BotAvatar appearance={dispatch.appearance ?? { shape: "blob", color: "#9ca6b3" }} size={24} />
+    <div className="session-bot-dispatch-heading">
+      <strong>{label}</strong>
+      {projects.length > 0 && <div className="session-bot-dispatch-projects">
+        {projects.map(project => <span className="session-bot-dispatch-project" key={project.key}>
+          <ProjectMark icon={project.icon} size={14} />
+          <span>{project.name}</span>
+        </span>)}
+      </div>}
+    </div>
+  </>
+  if (!key || !openable) return <div className="session-list-group-heading">{content}</div>
+  return <button type="button" className="session-list-group-heading session-bot-dispatch-open"
+    aria-label={nextWord("sessionBotDispatchOpen", { bot: label })}
+    onClick={event => requestOpenBot({ key, opener: event.currentTarget })}>
+    {content}
+    <span className="session-bot-dispatch-chevron" aria-hidden="true">›</span>
+  </button>
 }
