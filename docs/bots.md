@@ -50,6 +50,37 @@ and conversations. `clawdline project-assistants setup-claude` runs the
 first-use setup ahead of time and prints which Claude Code version it found;
 `setup-codex` does the same for Codex.
 
+## Bots settings: dispatch rules and memory for every Bot
+
+The gear above the Bots list opens **Bots settings** as a modal (full screen at phone width). It
+holds two machine-wide lists, stored together in `project-assistants/shared-settings.json` and
+served at `/v1/project-assistants/shared-settings` (GET; PUT with `expected_version`, whole document).
+Both start empty, and empty keeps the earlier behavior.
+
+- **Dispatch rules.** Each rule has a work kind (for example 寫程式, 設計, 生圖), a description that
+  helps the Bot recognize it, an ordered agent list and a Project scope. Each agent can carry a model
+  and a model strength (effort). Only agents this computer can dispatch are offered (Claude Code,
+  Codex, Gemini); strength lists only the values the agent's launcher accepts (Codex `high`/`xhigh`,
+  Gemini `low`–`max`; Claude Code none). Grok is not a dispatch assistant and is shown as unavailable.
+  **Selection is ordered fallback**: the first listed agent available here runs the work. The person
+  can predict the result from the table, and the Bot can still be told a specific agent. When none
+  of a rule's agents is available, dispatch fails with `pa_unsupported` `dispatch_rule_agents`
+  instead of silently running Claude Code.
+- **Precedence in `dispatch_work`**: explicit `agent`/`model`/`effort` > the rule for `kind` >
+  Claude Code. With no rule, or a kind that matches none, dispatch is exactly as before.
+- **Memory for every Bot.** Rows of text, each with a Project scope: *All Projects (including future
+  ones)* by default, or chosen Projects. A row whose Projects were all removed applies nowhere. The
+  rows that apply enter a Bot's memory opening as `<shared_memory>` before its own memory; its
+  instructions and own memory take precedence. Each Bot's settings page has **Use memory shared by
+  every Bot** (on by default), stored in the same document (`memory_opt_out`).
+- **Limits** (`internal/domain/capacity`): 20 shared rows, 1 KiB each, 4 KiB total; 12 rules,
+  4 agents per rule; 64 Projects per scope.
+- **Project overrides** are reserved in the stored shape (`project_overrides`) and already win in
+  rule resolution, but the console edits only the machine-wide lists in this version.
+- **Known limits of this version.** A Bot whose native session is resumed reads changed shared
+  memory at its next fresh session, compaction or own memory change, not immediately. Cloud and the
+  phone do not carry this route yet; the modal reports that settings cannot be read there.
+
 ## Use a Bot
 
 To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user/bot-webhooks.md) · [繁體中文](user/bot-webhooks.zh-TW.md).

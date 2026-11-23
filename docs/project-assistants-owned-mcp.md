@@ -52,6 +52,14 @@ field `dispatch_project_direct`, telling the Bot to ask the person to talk to
 it directly. Saved rules deliberately do not apply to those turns either.
 The lead keeps its direct route and is never asked.
 
+`dispatch_work` also takes optional `kind`, `agent`, `model` and `effort`. The broker resolves
+them against the machine's Bots settings: explicit `agent`/`model`/`effort`, then the first
+available agent of the rule whose kind matches, then Claude Code. A wrong value is refused with
+`pa_invalid` and field `dispatch_agent`, `dispatch_effort` or `dispatch_model`; the failure's
+`allowed` lists the accepted values. These are still checked against source-owned facts (installed
+agents and their launcher vocabularies), so a model argument cannot name an agent this machine
+cannot run. See `docs/bots.md`, Bots settings.
+
 Any Bot that may dispatch can also set `persona` on `dispatch_work`, with or
 without `project`, to start the work Session with a Session persona
 (`docs/personas.md`). The MCP layer only carries the id: the Broker admits it

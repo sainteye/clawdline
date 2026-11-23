@@ -1,6 +1,6 @@
 # Bots settings: memory shared by every Bot, and what else belongs there (2026-11-23)
 
-Status: design proposal, nothing implemented. Base revision `f210e0c65`. Codync compared at
+Status: implemented on 2026-11-24 as direction A in a modal, with C's rule rows (see `docs/bots.md`). The implementation differs where §4 says so. Base revision `f210e0c65`. Codync compared at
 `9dae3e2bec9b91a4a42f85a943eb3983f95d0503` (2026-11-23, release 2.53.0).
 
 ## The request
@@ -330,3 +330,25 @@ rules exist.
 - A hidden-Bots list could live under "List" here, but whether unhide already exists somewhere was
   not proven. Check before drawing it.
 - Copying settings between machines is a Cloud feature.
+
+## 4. What was built (2026-11-24) and how a Project override should look
+
+The person chose A with C's rule rows, as a **modal** rather than the chat pane, and asked for
+room to tell a Bot which agent to use and how strong a model.
+
+- `dispatch_work` takes `kind`, and also `agent`, `model` and `effort` for an explicit request.
+  This replaces §3.3 item 4: the Bot may name an agent, but only when the person asks, and only
+  from the agents this machine can dispatch. Precedence is explicit > rule > Claude Code.
+- Storage is one versioned JSON document beside the Bot store, not SQLite tables: the whole list is
+  written at once with `expected_version`, so a table per list would add no concurrency benefit.
+- The per-Bot switch lives in the same document (`memory_opt_out`) instead of a `Bot` field, so the
+  Bot PATCH contract and its Cloud decoder did not change.
+- List, notifications and "this machine" groups from §3 were left out of this version.
+
+**Project overrides (next version).** The stored shape already has
+`project_overrides[<project id>].rules`, and resolution checks them first. Recommended UI: a
+"This Project" segment at the top of the modal, shown when the modal is opened from a Bot's chat.
+It lists the machine rules read-only, each with **Override for this Project**; an overridden rule
+shows a small "Project" badge and a **Use default** action. The roster gear keeps opening the
+machine-wide view. This keeps "one default set, each Project may override" visible without
+duplicating every rule per Project.

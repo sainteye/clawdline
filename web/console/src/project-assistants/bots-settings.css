@@ -43,3 +43,7 @@
   .project-assistants .pa-bs-scope { max-width:55%; }
 }
 @media (prefers-reduced-motion: reduce) { .project-assistants .pa-bs-chevron { transition:none; } }
+.project-assistants .pa-bs-icon svg { width:14px;height:14px;flex:none; }
+.project-assistants .pa-bs-scope-pop label { min-height:36px;margin:0;line-height:1.4;font-weight:400; }
+.project-assistants .pa-bs-scope-pop input[type="checkbox"] { flex:none;width:16px;height:16px;margin:0; }
+.project-assistants .pa-bs-agent .pa-bs-icon { margin-inline-start:auto; }

@@ -145,6 +145,17 @@ export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { proj
     return () => { live = false }
   }, [fetcher])
   useEffect(() => { panel.current?.querySelector<HTMLElement>(".pa-bs-close")?.focus() }, [])
+  const closeRef = useRef(close); closeRef.current = close
+  useEffect(() => {
+    // On the document: a control that becomes disabled (Save after saving)
+    // drops focus to the body, and Esc and Tab must still work.
+    const keys = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
+      if (e.key === "Escape") { e.preventDefault(); closeRef.current() } else trapFocus(e, panel.current)
+    }
+    document.addEventListener("keydown", keys)
+    return () => document.removeEventListener("keydown", keys)
+  }, [])
   const save = async () => {
     if (!draft) return
     setSaving(true); setError("")
@@ -160,7 +171,7 @@ export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { proj
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(reply?.settings)
   return <div className="pa-form-scrim pa-bs-scrim" {...backdrop}>
     <section ref={panel} className="pa-bs-panel" role="dialog" aria-modal="true" aria-labelledby="pa-bs-title"
-      onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close() } else trapFocus(e, panel.current) }}>
+>
       <header className="pa-bs-header">
         <h2 id="pa-bs-title">{word("title")}</h2>
         <button type="button" className="pa-bs-icon pa-bs-close" aria-label={word("close")} title={word("close")} onClick={close}><CloseIcon/></button>
