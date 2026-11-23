@@ -11,7 +11,7 @@ export function ContextUsage({usage, w, language}: {
   const fraction = remaining / usage.window_tokens
   const level = fraction <= 0.15 ? "low" : fraction <= 0.35 ? "medium" : "high"
 
-  return <small className="pa-context-usage">
+  return <small className="pa-context-usage" title={usage.live ? w.contextUsageTitle : w.contextUsageLastTitle}>
     <span>{usage.live ? w.contextUsage : w.contextUsageLast}</span>
     <bdi>{format.format(usage.used_tokens)} / {format.format(usage.window_tokens)}</bdi>
     <span className="pa-context-meter" data-level={level} role="meter"

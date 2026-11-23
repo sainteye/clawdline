@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
+const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -353,5 +353,16 @@ test("the title counts running servers and prefers a confirmed port over a watch
     assert.equal(title({...state,rows:[{state:"stopped"}]},w),"")
     for(const mask of [{fresh:false},{inspect:true},{error:"pa_offline"}])assert.equal(title({...state,...mask},w),"")
     assert.equal(title({...state,pending:true},w),":43123 +2","a pending read does not flicker a previously fresh title")
+  }
+})
+test("context usage label is short and keeps the full meaning in its title",()=>{
+  const usage={used_tokens:70618,window_tokens:1000000,live:true}
+  const cases=[["en","CTX","Context usage","Last CTX","Context usage from the last turn"],["zh-Hant","CTX","上下文用量","上回 CTX","上回的上下文用量"]]
+  for(const [language,live,liveTitle,last,lastTitle] of cases){
+    const now=render(ContextUsage,{usage,w:words(language),language:"en"})
+    assert.match(now,new RegExp(`title="${liveTitle}"`));assert.match(now,new RegExp(`<span>${live}</span>`))
+    assert.match(now,/70,618 \/ 1,000,000/);assert.match(now,/role="meter"/);assert.match(now,/aria-valuenow="929382"/)
+    const earlier=render(ContextUsage,{usage:{...usage,live:false},w:words(language),language:"en"})
+    assert.match(earlier,new RegExp(`title="${lastTitle}"`));assert.match(earlier,new RegExp(`<span>${last}</span>`))
   }
 })
