@@ -330,3 +330,25 @@ func TestLegacyScratchKeepsMissingOrChangedSavedResults(t *testing.T) {
 		})
 	}
 }
+
+// A child writes `"symbols": []`; the store keeps the accepted result with
+// omitempty, so it decodes as nil. The same saved result must still count as
+// saved, or every such task keeps its scratch forever (2026-11-23: 38 tasks).
+func TestLegacyScratchTreatsEmptyListsInSavedResultAsTheAcceptedResult(t *testing.T) {
+	b, ctx, r, cache := cacheTask(t, "%child", true)
+	raw := `{"clawdline_protocol":1,"task_id":"` + r.ID + `","status":"success",` +
+		`"summary":"Saved fixture completion","symbols":[],"artifacts":[]}`
+	if err := os.WriteFile(filepath.Join(r.Dir, "result.json"), []byte(raw), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	decision := b.reclaimTaskDir(ctx, b.read(ctx), r, time.Now(), false)
+	if decision.Outcome != ReclaimRemoved || decision.Reason != WhyWorkScratch {
+		t.Fatal(decision)
+	}
+	if _, err := os.Stat(cache); !os.IsNotExist(err) {
+		t.Fatal("scratch with a saved result survived", err)
+	}
+	if _, err := os.Stat(filepath.Join(r.Dir, "result.json")); err != nil {
+		t.Fatal("saved result was removed", err)
+	}
+}
