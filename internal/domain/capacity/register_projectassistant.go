@@ -17,15 +17,19 @@ const (
 	MaximumBotRPCPending       = 32
 	MaximumBotFrameBytes       = 1048576
 	// Existing process-identity inventory budget; never limits native ACP text.
-	MaximumBotProcessCensusBytes        = 1048576
-	MaximumBotStderrBytes               = 65536
-	MaximumBotWriteMilliseconds         = 2000
-	MaximumBotCleanupMilliseconds       = 5000
-	MaximumBotRPCMilliseconds           = 120000
-	MaximumBotControlWindowMilliseconds = 600000
-	MaximumBotSurveyMilliseconds        = 50
-	MaximumBotChatGapMilliseconds       = 3600000
-	MaximumBotRefreshMilliseconds       = 3000
+	MaximumBotProcessCensusBytes  = 1048576
+	MaximumBotStderrBytes         = 65536
+	MaximumBotWriteMilliseconds   = 2000
+	MaximumBotCleanupMilliseconds = 5000
+	// A retained Bot re-attempts an unconfirmed Agent cleanup this many times,
+	// first after MaximumBotCleanupFirstRetryMilliseconds and doubling: 1+2+4+8+16 s.
+	MaximumBotCleanupRetries                = 5
+	MaximumBotCleanupFirstRetryMilliseconds = 1000
+	MaximumBotRPCMilliseconds               = 120000
+	MaximumBotControlWindowMilliseconds     = 600000
+	MaximumBotSurveyMilliseconds            = 50
+	MaximumBotChatGapMilliseconds           = 3600000
+	MaximumBotRefreshMilliseconds           = 3000
 	// Live rows and removal revisions retained by one browser source.
 	MaximumBotRosterClientRows = 1000
 	// The longest isolated work one Bot dispatch may start.
@@ -215,6 +219,12 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsCleanup, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotCleanupMilliseconds"}},
+		{Name: BotsCleanupRetries, Class: Buffer, Unit: Rows, Limit: MaximumBotCleanupRetries, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotCleanupRetries"}},
+		{Name: BotsCleanupRetryDelay, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupFirstRetryMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotCleanupFirstRetryMilliseconds"}},
 		{Name: BotsRPCDeadline, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotRPCMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCMilliseconds"}},
