@@ -517,7 +517,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     render: (board) => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} key={destinationKey(row.destination)}
                     title={title} icon={presentation?.icon} cwd={presentation?.cwd}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
-                    status={status}
+                    status={status} botDispatch={presentation?.botDispatch}
                     runningAgents={row.freshness === "current" ? row.agentCountUnknown ? null : row.runningAgentCount : undefined}
                     sessionID={row.destination.sessionID} machineID={machine.id} machineName={machine.name}
                     assistant={row.assistant ?? presentation?.assistant} state={row.state} stateLabel={row.providerBlock === "model_capacity" ? nextWord("sessionModelCapacity") : stateWord(row.state)}

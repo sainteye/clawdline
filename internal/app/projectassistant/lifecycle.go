@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -23,6 +24,9 @@ func (r *Engine) setProject(a *runtimeActor, project pa.ProjectScope) {
 }
 
 func (r *Engine) retain(a *runtimeActor, err error) {
+	// The cause was previously kept only in memory, so a Bot refusing every
+	// message left no record of which cleanup step failed (2026-11-23).
+	log.Printf("project assistant: Agent process cleanup unconfirmed; bot=%s keeps its owner until Clawdline restarts: %v", a.key.BotID, err)
 	r.mu.Lock()
 	a.retained, a.cleanupErr = true, err
 	r.notifyLocked()

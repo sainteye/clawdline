@@ -1175,3 +1175,10 @@ attachments for an explicit retry or draft restoration. An edited recovery
 and the original compete for the same source admission. Review of the
 English and Taiwan Traditional Chinese Bot context and routine explanations
 found the same instruction inputs, provider scopes, and execution rules.
+
+A Bot whose previous Agent process could not be confirmed stopped refuses a
+new message as not sent (`pa_capacity_full` / `owned_cleanup`) instead of as
+an unknown effect, logs the cleanup cause, and the chat says resending is
+safe. Review of the English and Taiwan Traditional Chinese Bot context
+explanations found the same instruction inputs, provider scopes and execution
+rules; only the source receipts change.

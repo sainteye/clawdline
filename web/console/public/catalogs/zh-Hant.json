@@ -11300,6 +11300,7 @@
   "projectAssistants.failAcknowledged": "已收到接續指示；這個先前回合的結果仍未確認。",
   "projectAssistants.failBotsOff": "那台機器沒有開啟 Bots。",
   "projectAssistants.failCleanup": "尚無法確認 Agent 程序已停止。",
+  "projectAssistants.sendCleanupPending": "這則訊息沒有送出。上一輪的 Agent 程序還沒確認已停止，所以 Bot 暫時不會開始新工作。重新送出是安全的；如果一直出現，請在那台機器上重新啟動 Clawdline。",
   "projectAssistants.failCloudOff": "那台機器關閉了從 Clawdline Cloud 操作。",
   "projectAssistants.failConnection": "尚未收到結果，與 Agent 的連線就已結束。",
   "projectAssistants.failCredits": "Agent 回報餘額不足。",

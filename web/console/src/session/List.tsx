@@ -75,7 +75,7 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar,
+  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar, botDispatch,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
@@ -85,6 +85,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   depth: number; branchThrough: boolean; ancestorThrough: boolean
   runningAgents?: number | null
   status?: Partial<SessionRow>
+  botDispatch?: SessionRow["bot_dispatch"]
   selectionKey: string; onOpen: (element: HTMLLIElement) => void
   swiped?: boolean; onClose?: (element: HTMLButtonElement) => void; onArchive?: (element: HTMLButtonElement) => void; consumePress?: () => boolean
 }) {
