@@ -30,6 +30,6 @@ const order=params.get("order"),scope="meta-fixture-"+(order??"default")
 if(order==="unread"||order==="machine")saveRosterState(scope,{...getRosterState(scope,localStorage),order},localStorage)
 const names=new Map([[JSON.stringify(["fixture-machine","fixture-project"]),"Fixture Project"]])
 function App(){
- return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope={scope} items={bots} machines={[source.machineID]} selected="" query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} projectNames={names} sources={[source]} current={()=>[source]} readerID="fixture-reader" onRead={async()=>{}}/><section className="pa-main"/></main>
+ return <main className="project-assistants pa-shell" style={{height:"100vh"}}><BotRoster rosterScope={scope} items={bots} machines={[source.machineID]} selected="" query="" onQuery={()=>{}} machine="" onMachine={()=>{}} onSelect={()=>{}} onClose={()=>{}} w={words(language)} language={language} loading={false} projectNames={names} sources={[source]} current={()=>[source]} readerID="fixture-reader" onRead={async()=>{}}/><section className="pa-main"/></main>
 }
 createRoot(document.getElementById("app")!).render(<App/>)
