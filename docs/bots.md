@@ -314,16 +314,31 @@ chat footer look exactly as they did before.
   K awaiting integration" shares the footer line with the background capsule.
   Opening it lists at most `bots.dispatched_strip_rows` (5) Sessions with their
   task title, state, elapsed time and destination Project (tagged when it is
-  not the Bot's own); a row opens the Session by its terminal address. A
-  delivered Session stays listed for `bots.dispatched_delivered_seconds`
-  (one day) after it finished.
+  not the Bot's own); a row opens the Session by its terminal address. Each
+  row says in plain words what it waits for, read only from the task record
+  and its landing state: waiting for you to answer the worker, running,
+  starting, delivered and waiting for the Bot to merge it (landing
+  `pending`), delivered with no landing recorded (an older source, or a task
+  the broker opened no landing for), or failed with changes nobody has dealt
+  with (failed and landing `pending`). The broker's landing note is the row's
+  tooltip. A finished Session stays listed, with no time limit, until its
+  landing becomes `landed`, `incorporated`, `abandoned` or
+  `nothing_to_land`, and leaves the moment it does; past
+  `bots.dispatched_strip_rows` the rest are counted as "N more". The former
+  one-day window `bots.dispatched_delivered_seconds` is retired: it hid
+  unfinished work. Its constant survives only as the completion wake retry
+  deadline, registered as `bots.completion_wake_retry_seconds`. A delivery
+  that another task cherry-picked closes when that carrier declares it in
+  `carries` and lands (`docs/broker.md`).
 
 The facts come only from broker task records projected into the Bot's work
 links (`AssistantWorkSnapshotOf`), never from what the model says. The roster
 summary carries them as the optional `dispatched_work {running, needs_you,
-delivered}`; `status` keeps its four values because the console rejects a
+delivered}`, where `delivered` counts every finished link whose landing is
+still owed; `status` keeps its four values because the console rejects a
 whole roster frame with an unknown status. Work links carry `title`,
-`project`, `terminal`, `started_at` and `finished_at`. Older sources omit
+`project`, `terminal`, `started_at`, `finished_at`, `landing` and
+`landing_note`. Older sources omit
 these fields and the console shows what it showed before. The chat strip reads
 the work links in the loaded timeline, so a link older than the loaded pages
 is counted on the roster but not listed until earlier messages load.
