@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14112,
-  "riskKeys": 5995,
-  "nonRiskCount": 8117,
+  "englishContentKeys": 14120,
+  "riskKeys": 5999,
+  "nonRiskCount": 8121,
   "groups": [
     {
       "name": "acp / other",
@@ -6209,7 +6209,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 579,
+      "count": 583,
       "sources": [
         null
       ],
@@ -6782,6 +6782,10 @@
         "projectAssistants.unreadBotsPresent",
         "projectAssistants.unreadCount",
         "projectAssistants.unreadMessages",
+        "projectAssistants.unsentClear",
+        "projectAssistants.unsentDiscardFailed",
+        "projectAssistants.unsentStatusLabel",
+        "projectAssistants.unsentStatusNext",
         "projectAssistants.unsupported",
         "projectAssistants.unverifiedEdit",
         "projectAssistants.unverifiedSave",
