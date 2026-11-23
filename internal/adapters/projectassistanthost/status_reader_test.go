@@ -1,0 +1,42 @@
+package projectassistanthost
+
+import (
+	"context"
+	"testing"
+	"time"
+)
+
+// A write transaction held elsewhere in the daemon (a Bot turn, the broker's
+// landing, workflow reconciliation) must not stall the feature inspection that
+// every Bot read performs. Before 2026-11-23 the inspection queued for the
+// single writer connection, so the roster read failed on the phone.
+func TestStatusAnswersWhileTheWriterIsHeld(t *testing.T) {
+	f := newHostFixture(t)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.start(t)
+	f.enable(t)
+
+	tx, err := f.o.Database.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err = tx.Exec(`UPDATE project_assistant_schema SET version=version WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	started := time.Now()
+	state, err := f.h.Status(ctx)
+	elapsed := time.Since(started)
+	if err != nil {
+		t.Fatalf("Status with the writer held: %v after %v", err, elapsed)
+	}
+	if !state.Enabled {
+		t.Fatalf("Status with the writer held reported disabled: %+v", state)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("Status waited %v for the writer connection", elapsed)
+	}
+}

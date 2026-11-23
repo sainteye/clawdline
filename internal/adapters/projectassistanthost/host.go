@@ -144,23 +144,41 @@ func New(ctx context.Context, o Options) (*Host, error) {
 	return h, nil
 }
 
+// statusReader answers the per-request feature inspection. Every Bot read
+// (roster, view, groups, attachment, handoff card, dev servers) runs it two to
+// four times; on the single writer connection those SELECTs queued behind any
+// write transaction in the daemon, so a 1 ms attachment read took 12 s while a
+// Bot turn or the broker held the writer (measured 2026-11-23). The query-only
+// pool reads the same WAL file and sees every committed schema change.
+func (h *Host) statusReader() *sql.DB {
+	if h.o.Reader != nil {
+		return h.o.Reader
+	}
+	return h.o.Database
+}
+
 func (h *Host) installedSchema(ctx context.Context) (bool, int, error) {
+	return installedSchemaOn(ctx, h.o.Database)
+}
+
+func installedSchemaOn(ctx context.Context, db *sql.DB) (bool, int, error) {
 	var exists int
-	if err := h.o.Database.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
 		return false, 0, err
 	}
 	if exists == 0 {
 		return false, 0, nil
 	}
 	var version int
-	if err := h.o.Database.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 		return true, 0, failure(pa.Unsupported, "schema_version")
 	}
 	return true, version, nil
 }
 
 func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
-	exists, version, err := h.installedSchema(ctx)
+	db := h.statusReader()
+	exists, version, err := installedSchemaOn(ctx, db)
 	if err != nil || !exists {
 		return exists, false, err
 	}
@@ -168,7 +186,7 @@ func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
 		return true, false, failure(pa.Unsupported, "schema_version")
 	}
 	var has bool
-	err = h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?) OR EXISTS(SELECT 1 FROM project_assistant_groups WHERE machine=?)`, h.o.MachineID, h.o.MachineID).Scan(&has)
+	err = db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?) OR EXISTS(SELECT 1 FROM project_assistant_groups WHERE machine=?)`, h.o.MachineID, h.o.MachineID).Scan(&has)
 	return true, has, err
 }
 
