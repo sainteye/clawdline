@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14223,
-  "riskKeys": 6044,
-  "nonRiskCount": 8179,
+  "englishContentKeys": 14286,
+  "riskKeys": 6066,
+  "nonRiskCount": 8220,
   "groups": [
     {
       "name": "acp / other",
@@ -527,6 +527,44 @@
       ]
     },
     {
+      "name": "botsSettings / other",
+      "count": 29,
+      "sources": [
+        null
+      ],
+      "keys": [
+        "botsSettings.addFallback",
+        "botsSettings.addMemory",
+        "botsSettings.addRule",
+        "botsSettings.agent",
+        "botsSettings.agentsInOrder",
+        "botsSettings.allProjects",
+        "botsSettings.allProjectsFuture",
+        "botsSettings.appliesTo",
+        "botsSettings.cancel",
+        "botsSettings.close",
+        "botsSettings.effort",
+        "botsSettings.effortDefault",
+        "botsSettings.hint",
+        "botsSettings.hintPlaceholder",
+        "botsSettings.kind",
+        "botsSettings.kindPlaceholder",
+        "botsSettings.loading",
+        "botsSettings.memoryNote",
+        "botsSettings.memoryText",
+        "botsSettings.memoryTitle",
+        "botsSettings.model",
+        "botsSettings.modelDefault",
+        "botsSettings.open",
+        "botsSettings.rulesTitle",
+        "botsSettings.save",
+        "botsSettings.saving",
+        "botsSettings.title",
+        "botsSettings.useShared",
+        "botsSettings.useSharedHint"
+      ]
+    },
+    {
       "name": "browserPairing / other",
       "count": 14,
       "sources": [
@@ -577,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 745,
+      "count": 757,
       "sources": [
         null
       ],
@@ -651,6 +689,11 @@
         "capacityRow.bots.decision_request_quote_bytes.full",
         "capacityRow.bots.decision_request_quote_bytes.what",
         "capacityRow.bots.decision_suggested_replies.what",
+        "capacityRow.bots.dispatch_hint_bytes.what",
+        "capacityRow.bots.dispatch_kind_bytes.what",
+        "capacityRow.bots.dispatch_kind_rules.what",
+        "capacityRow.bots.dispatch_model_bytes.what",
+        "capacityRow.bots.dispatch_rule_agents.what",
         "capacityRow.bots.dispatch_seconds.what",
         "capacityRow.bots.dispatched_strip_rows.full",
         "capacityRow.bots.dispatched_strip_rows.what",
@@ -748,6 +791,13 @@
         "capacityRow.bots.server_log_bytes.what",
         "capacityRow.bots.server_probe_readers.what",
         "capacityRow.bots.server_processes.what",
+        "capacityRow.bots.shared_memory_entries.what",
+        "capacityRow.bots.shared_memory_entry_bytes.what",
+        "capacityRow.bots.shared_memory_opt_outs.what",
+        "capacityRow.bots.shared_memory_total_bytes.what",
+        "capacityRow.bots.shared_scope_projects.full",
+        "capacityRow.bots.shared_scope_projects.what",
+        "capacityRow.bots.shared_settings_body_bytes.what",
         "capacityRow.bots.skill_asset_files.what",
         "capacityRow.bots.stderr_bytes.full",
         "capacityRow.bots.stderr_bytes.what",

@@ -440,6 +440,31 @@
     "Note": true
   },
   {
+    "Name": "bots.dispatch_hint_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatch_kind_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatch_kind_rules",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatch_model_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatch_rule_agents",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.dispatch_rules",
     "Known": true,
     "Note": true
@@ -953,6 +978,36 @@
   },
   {
     "Name": "bots.server_spec_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_memory_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_memory_entry_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_memory_opt_outs",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_memory_total_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_scope_projects",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.shared_settings_body_bytes",
     "Known": true,
     "Note": true
   },

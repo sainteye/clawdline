@@ -61,7 +61,7 @@ function CloseIcon() {
 export function scopeLabel(scope: SharedScope, projects: readonly ProjectChoice[]): string {
   if (scope.all) return word("allProjects")
   const names = (scope.projects ?? []).map(id => projects.find(p => p.id === id)?.name ?? id)
-  return names.length ? names.join("、") : word("noProjects")
+  return names.length ? names.join(", ") : word("noProjects")
 }
 
 /** A checkbox popover: All Projects (including future ones) or chosen Projects. */
