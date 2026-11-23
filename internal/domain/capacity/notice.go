@@ -2,7 +2,9 @@ package capacity
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/productcopy"
@@ -84,6 +86,50 @@ func NoticeTextLanguage(language string, e Entry, state State, used, limit int64
 		body += productcopy.Format(language, "capacity.daemon", nil)
 	}
 	return title, body
+}
+
+// DiskSource is one measured user of disk space for a low free-space notice.
+// Known false is unmeasured; Complete false means Bytes is a lower bound.
+type DiskSource struct {
+	What     string // "gocache", "tasks" or "tmp"
+	Bytes    int64
+	Known    bool
+	Complete bool
+}
+
+// LowDiskNoticeText is the notice of MachineDiskLow: the free space, the alert
+// value and the measured sources, largest first.
+func LowDiskNoticeText(language string, free, limit int64, sources []DiskSource) (title, body string) {
+	sorted := append([]DiskSource(nil), sources...)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		if sorted[i].Known != sorted[j].Known {
+			return sorted[i].Known
+		}
+		return sorted[i].Bytes > sorted[j].Bytes
+	})
+	var parts []string
+	for _, src := range sorted {
+		what := productcopy.Format(language, "capacity.lowdisk."+src.What, nil)
+		key := "capacity.lowdisk.source"
+		switch {
+		case !src.Known:
+			key = "capacity.lowdisk.unknown"
+		case !src.Complete:
+			key = "capacity.lowdisk.atleast"
+		}
+		parts = append(parts, productcopy.Format(language, key, map[string]string{"what": what, "amount": amountOfLanguage(language, Bytes, src.Bytes)}))
+	}
+	list := productcopy.Format(language, "capacity.lowdisk.none", nil)
+	if len(parts) > 0 {
+		sep := ", "
+		if language == "zh-Hant" {
+			sep = "、"
+		}
+		list = strings.Join(parts, sep)
+	}
+	freeText := amountOfLanguage(language, Bytes, max(free, 0))
+	return productcopy.Format(language, "capacity.lowdisk.title", map[string]string{"free": freeText}),
+		productcopy.Format(language, "capacity.lowdisk.body", map[string]string{"free": freeText, "limit": amountOfLanguage(language, Bytes, limit), "sources": list})
 }
 
 // youngDrops is the notice of artifacts.drops_young, the one row whose

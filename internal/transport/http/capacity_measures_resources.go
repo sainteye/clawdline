@@ -1,6 +1,13 @@
 package http
 
 import (
+	"context"
+	"os"
+	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/gocache"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
@@ -25,6 +32,16 @@ func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading 
 		"resources.cache_bytes":         func() capacity.Reading { return s.resourceUsageReading("cache") },
 		"resources.cache_total_bytes":   func() capacity.Reading { return s.resourceUsageReading("cache_total") },
 		"resources.scratch_total_bytes": func() capacity.Reading { return s.resourceUsageReading("scratch") },
+		capacity.MachineDiskLow: func() capacity.Reading {
+			r := s.store.Reading(s.cfg.Dir)
+			if !r.HasDiskFree {
+				return capacity.Unmeasured("filesystem free space is unavailable")
+			}
+			return lowDiskReading(r.DiskFree)
+		},
+		"resources.disk_source_scan_files": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-source file bound for a low free-space notice; a larger source is unmeasured"}
+		},
 		"resources.disk_reserve_bytes": func() capacity.Reading {
 			r := s.store.Reading(s.cfg.Dir)
 			if !r.HasDiskFree {
@@ -56,4 +73,57 @@ func (s *Server) resourceUsageReading(kind string) capacity.Reading {
 		used = u.ScratchTotal
 	}
 	return capacity.Reading{Known: true, Used: used, Note: "last explicit or background resource measurement; admission rechecks before new work"}
+}
+
+// lowDiskReading counts the shortfall below the alert value, so the row is ok
+// with room to spare and full (one notice per cooldown) below it.
+func lowDiskReading(free int64) capacity.Reading {
+	short := max(taskresource.LowDiskAlertBytesLimit-free, 0)
+	return capacity.Reading{Known: true, Used: short, DiskFree: free, HasDiskFree: true,
+		Failing: free < taskresource.LowDiskAlertBytesLimit,
+		Note:    "used is the shortfall below the alert value; nothing is removed by this row"}
+}
+
+// lowDiskSourceTimeout bounds the whole largest-source measurement.
+const lowDiskSourceTimeout = 20 * time.Second
+
+// lowDiskSources measures the usual large users: the default Go build cache,
+// this daemon's task data and the shared temporary directory. Each is bounded
+// by file count; a source that cannot be read is reported unmeasured.
+func (s *Server) lowDiskSources(ctx context.Context) []capacity.DiskSource {
+	ctx, cancel := context.WithTimeout(ctx, lowDiskSourceTimeout)
+	defer cancel()
+	tmp := "/tmp"
+	if runtime.GOOS == "windows" {
+		tmp = os.TempDir()
+	}
+	paths := []struct{ what, dir string }{
+		{"gocache", defaultGoCache()},
+		{"tasks", filepath.Join(s.cfg.Dir, "tasks")},
+		{"tmp", tmp},
+	}
+	out := make([]capacity.DiskSource, 0, len(paths))
+	for _, p := range paths {
+		src := capacity.DiskSource{What: p.what}
+		if p.dir != "" {
+			if n, complete, err := gocache.TreeBytes(ctx, p.dir, taskresource.DiskSourceScanFilesLimit); err == nil {
+				src.Bytes, src.Known, src.Complete = n, true, complete
+			}
+		}
+		out = append(out, src)
+	}
+	return out
+}
+
+// defaultGoCache is the cache Go uses without GOCACHE: the user cache
+// directory's go-build. A daemon need not have `go` on its PATH.
+func defaultGoCache() string {
+	if v := os.Getenv("GOCACHE"); v != "" && v != "off" && filepath.IsAbs(v) {
+		return v
+	}
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "go-build")
 }
