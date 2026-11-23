@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14121,
-  "riskKeys": 6000,
-  "nonRiskCount": 8121,
+  "englishContentKeys": 14125,
+  "riskKeys": 6003,
+  "nonRiskCount": 8122,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 732,
+      "count": 733,
       "sources": [
         null
       ],
@@ -948,6 +948,7 @@
         "capacityRow.console.public_analytics_hours.what",
         "capacityRow.console.public_analytics_path.what",
         "capacityRow.console.public_analytics_rows.what",
+        "capacityRow.console.quota_last_reading_machines.what",
         "capacityRow.console.relay_transcript_expect_reask_seconds.what",
         "capacityRow.console.service_performance_alerts.what",
         "capacityRow.console.service_performance_body_bytes.what",

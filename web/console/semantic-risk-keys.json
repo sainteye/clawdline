@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14121,
+  "englishKeys": 14125,
   "counts": {
-    "negation": 3605,
-    "state": 2382,
+    "negation": 3607,
+    "state": 2383,
     "permission": 851,
     "deletion": 328,
     "uncertainty": 561
   },
-  "unionCount": 6000,
+  "unionCount": 6003,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -497,6 +497,8 @@
       "capacityRow.console.ops_resolving_poll_seconds.what",
       "capacityRow.console.owner_retention_poll_seconds.full",
       "capacityRow.console.pinned_list_read_timeout_seconds.what",
+      "capacityRow.console.quota_last_reading_age_seconds.full",
+      "capacityRow.console.quota_last_reading_age_seconds.what",
       "capacityRow.console.relay_feature_wait_seconds.full",
       "capacityRow.console.relay_feature_wait_seconds.what",
       "capacityRow.console.relay_transcript_expect_reask_seconds.full",
@@ -4068,6 +4070,7 @@
       "capacityRow.console.public_analytics_path.full",
       "capacityRow.console.public_analytics_readms.full",
       "capacityRow.console.public_analytics_rows.full",
+      "capacityRow.console.quota_last_reading_machines.full",
       "capacityRow.console.relay_feature_wait_seconds.full",
       "capacityRow.console.relay_feature_wait_seconds.what",
       "capacityRow.console.service_performance_alerts.full",
@@ -8629,6 +8632,9 @@
     "capacityRow.console.public_analytics_readms.full",
     "capacityRow.console.public_analytics_readms.what",
     "capacityRow.console.public_analytics_rows.full",
+    "capacityRow.console.quota_last_reading_age_seconds.full",
+    "capacityRow.console.quota_last_reading_age_seconds.what",
+    "capacityRow.console.quota_last_reading_machines.full",
     "capacityRow.console.relay_feature_wait_seconds.full",
     "capacityRow.console.relay_feature_wait_seconds.what",
     "capacityRow.console.relay_transcript_expect_reask_seconds.full",
