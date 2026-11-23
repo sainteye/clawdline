@@ -5,9 +5,11 @@ package projectassistantacp
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -97,32 +99,113 @@ func TestProcessCloseReverifiesDeniedGroupSignal(t *testing.T) {
 	}
 }
 
-// An inventory gap means ownership itself is incomplete. A later complete
-// census cannot prove that an uncaptured descendant stopped, so it stays.
-func TestProcessCloseKeepsInventoryGapsUnknown(t *testing.T) {
-	cause := errors.New("inventory denied")
-	p := reapedCloseFixture(t, func(context.Context) ([]processIdentity, error) { return []processIdentity{}, nil })
-	p.cleanupErr = signalFailure("descendant_inventory", cause)
-	p.cleanupFinal = true
-	if err := p.Close(context.Background()); !errors.Is(err, cause) {
-		t.Fatalf("first close lost the inventory gap: %v", err)
-	}
-	if err := p.Close(context.Background()); !errors.Is(err, cause) {
-		t.Fatalf("a re-verification erased an inventory gap: %v", err)
+// A census that fails for a passing reason (the 2026-11-24 ENOMEM race, a
+// denied read, a timeout) leaves a gap in what was seen. That gap used to be
+// stored as final, so every later Close returned the first error and the Bot
+// kept its owner until Clawdline restarted. A later Close now takes a complete
+// census again and releases once nothing from the gap can still be ours.
+func TestProcessCloseReinventoriesAfterATransientCensusFailure(t *testing.T) {
+	for _, cause := range []error{syscall.ENOMEM, syscall.EPERM, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			calls := 0
+			p := reapedCloseFixture(t, func(context.Context) ([]processIdentity, error) {
+				calls++
+				if calls == 1 {
+					return nil, cause
+				}
+				return []processIdentity{}, nil
+			})
+			err := p.Close(context.Background())
+			var detail *ProcessSignalFailure
+			if !errors.As(err, &detail) || detail.Phase != "descendant_inventory" || !errors.Is(err, cause) {
+				t.Fatalf("the injected census failure was not reported first: %v", err)
+			}
+			if err := p.Close(context.Background()); err != nil {
+				t.Fatalf("a later complete census did not release cleanup: %v", err)
+			}
+			if err := p.Close(context.Background()); err != nil {
+				t.Fatalf("a settled receipt changed: %v", err)
+			}
+		})
 	}
 }
 
-func TestReverifiablePhases(t *testing.T) {
+// What a gap can hide is a descendant that left our process group and whose
+// parent exited unseen: it is reparented to the reaper and can no longer be
+// attributed. A live orphan that started during the gap therefore keeps
+// cleanup unknown until it is gone.
+func TestProcessCloseKeepsAnOrphanFromTheGapUnknown(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	orphan := true
+	p := reapedCloseFixture(t, func(context.Context) ([]processIdentity, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls == 1 {
+			return nil, syscall.ENOMEM
+		}
+		if !orphan {
+			return []processIdentity{}, nil
+		}
+		born := time.Now().UTC().Format(time.RFC3339Nano)
+		return []processIdentity{{pid: 4242, ppid: 1, pgid: 4242, state: "Ss", stamp: born}}, nil
+	})
+	if err := p.Close(context.Background()); !errors.Is(err, syscall.ENOMEM) {
+		t.Fatalf("first close lost the census failure: %v", err)
+	}
+	if err := p.Close(context.Background()); !errors.Is(err, syscall.ENOMEM) {
+		t.Fatalf("an orphan born during the gap was released: %v", err)
+	}
+	mu.Lock()
+	orphan = false
+	mu.Unlock()
+	if err := p.Close(context.Background()); err != nil {
+		t.Fatalf("cleanup stayed unknown after the orphan was gone: %v", err)
+	}
+}
+
+// Phases whose evidence can never become complete stay locked however many
+// later censuses succeed.
+func TestProcessCloseKeepsFinalPhasesLocked(t *testing.T) {
+	for _, phase := range []string{"root_identity", "owned_descendants"} {
+		t.Run(phase, func(t *testing.T) {
+			p := reapedCloseFixture(t, func(context.Context) ([]processIdentity, error) { return []processIdentity{}, nil })
+			p.setCleanupError(refusal(pa.ExecutionEffectUnknown, phase))
+			for range 2 {
+				if err := p.Close(context.Background()); pa.Code(err) != pa.ExecutionEffectUnknown {
+					t.Fatalf("a final phase was released: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// Whether a failure can be re-verified follows from its phase: every phase is
+// re-verifiable unless finalCleanupPhases names it with a reason, so a phase
+// added later does not silently lock a Bot.
+func TestCleanupPhasesAreReverifiableUnlessMarkedFinal(t *testing.T) {
+	for phase, why := range finalCleanupPhases {
+		if strings.TrimSpace(why) == "" {
+			t.Errorf("final phase %s has no reason", phase)
+		}
+		if reverifiable(refusal(pa.ExecutionEffectUnknown, phase)) || reverifiable(signalFailure(phase, syscall.EPERM)) {
+			t.Errorf("final phase %s was re-verifiable", phase)
+		}
+	}
 	for _, tc := range []struct {
 		err  error
 		want bool
 	}{
 		{signalFailure("signal_group_live", syscall.EPERM), true},
-		{signalFailure("signal_pid_live", syscall.EPERM), true},
-		{errors.Join(signalFailure("signal_pid_live", syscall.EPERM), signalFailure("signal_group_live", syscall.EPERM)), true},
-		{signalFailure("descendant_inventory", errors.New("x")), false},
-		{errors.Join(signalFailure("signal_group_live", syscall.EPERM), signalFailure("cleanup_survey", context.DeadlineExceeded)), false},
-		{refusal(pa.ExecutionEffectUnknown, "root_identity"), false},
+		{signalFailure("descendant_inventory", syscall.ENOMEM), true},
+		{signalFailure("cleanup_survey", context.DeadlineExceeded), true},
+		{signalFailure("a_phase_added_later", errors.New("x")), true},
+		{refusal(pa.ExecutionEffectUnknown, "another_phase_added_later"), true},
+		{errors.New("an error with no phase"), true},
+		{errors.Join(signalFailure("signal_pid_live", syscall.EPERM), signalFailure("descendant_inventory", syscall.ENOMEM)), true},
+		{errors.Join(signalFailure("signal_group_live", syscall.EPERM), refusal(pa.CapacityFull, "owned_descendants")), false},
+		{nil, false},
 	} {
 		if got := reverifiable(tc.err); got != tc.want {
 			t.Errorf("reverifiable(%v)=%v, want %v", tc.err, got, tc.want)

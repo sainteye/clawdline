@@ -62,8 +62,8 @@ type Process struct {
 	stderr       []byte
 	waitErr      error
 	cleanupErr   error
-	// cleanupFinal marks a cleanup error that a later census cannot settle,
-	// such as an inventory gap in which a descendant may never have been seen.
+	// cleanupFinal marks a cleanup error that a later census cannot settle
+	// (a phase in finalCleanupPhases).
 	cleanupFinal bool
 	reverifyMu   sync.Mutex
 	// signal is a package-private failure-injection seam; nil sends real signals.
@@ -73,6 +73,10 @@ type Process struct {
 	rootStamp      string
 	censusOverride func(context.Context) ([]processIdentity, error)
 	tcp            *tcpObserver
+	// lastCensus is when the last successful census started; gap is the
+	// widest period since then without one (nil when there was none).
+	lastCensus time.Time
+	gap        *censusGap
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -163,31 +167,151 @@ func confirmStoppedGroup(rows []processIdentity, group int, rootStamp string, si
 	return nil
 }
 
-// reverifiablePhases are cleanup failures taken while ownership itself was
-// complete: only whether a signal took effect was unconfirmed, so a later
-// complete census can settle them. Inventory gaps are not in this set.
-var reverifiablePhases = map[string]bool{
-	"signal_group_live": true, "signal_pid_live": true, "signal_group_inventory": true,
-	"signal_pid_inventory": true, "signal_inventory": true, "process_cleanup": true,
+// finalCleanupPhases are the only cleanup failures a later census can never
+// settle, each with the reason. Every other phase, including one added later,
+// is re-verifiable: a later Close re-runs the complete evidence check in
+// reverify, which releases nothing without a complete fresh census.
+var finalCleanupPhases = map[string]string{
+	// The root was never seen in a census taken while it was still unreaped.
+	// After Wait reaps it, its start time, and so our group's identity and
+	// every attribution through it, can no longer be learned.
+	"root_identity": "the root's identity can no longer be observed once it is reaped",
+	// The Agent created more descendants than the bound records; the
+	// unrecorded ones were dropped by the bound itself, not by a passing
+	// failure, and a repeated census does not bring them back.
+	"owned_descendants": "descendants beyond the ownership bound were never recorded",
 }
 
+// reverifiable reports whether no part of err names a final phase. A phase is
+// the Field of each pa.Failure in the error tree (ProcessSignalFailure carries
+// its phase there too).
 func reverifiable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if f, ok := err.(*ProcessSignalFailure); ok {
-		return reverifiablePhases[f.Phase]
-	}
-	if joined, ok := err.(interface{ Unwrap() []error }); ok {
-		errs := joined.Unwrap()
-		for _, e := range errs {
-			if !reverifiable(e) {
-				return false
+	return !hasFinalPhase(err)
+}
+
+func hasFinalPhase(err error) bool {
+	switch e := err.(type) {
+	case *pa.Failure:
+		_, final := finalCleanupPhases[e.Field]
+		return final
+	case interface{ Unwrap() []error }:
+		for _, inner := range e.Unwrap() {
+			if inner != nil && hasFinalPhase(inner) {
+				return true
 			}
 		}
-		return len(errs) > 0
+	case interface{ Unwrap() error }:
+		if inner := e.Unwrap(); inner != nil {
+			return hasFinalPhase(inner)
+		}
 	}
 	return false
+}
+
+// censusGap is a period without a complete census: from the start of the
+// last successful census until the end of the next one. A descendant that
+// left our group and lost its parent inside it may never have been seen.
+// Repeated failures widen one window, so it never grows a list.
+type censusGap struct {
+	from, to time.Time // zero from: since before the first census; zero to: still open
+	open     bool
+}
+
+// gapSlack covers the census's own start-time resolution (one second for ps
+// lstart) and the distance between our clock reading and the kernel's.
+const gapSlack = 2 * time.Second
+
+func (p *Process) noteCensus(started time.Time, ctx context.Context, err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if err == nil {
+		if p.gap != nil && p.gap.open {
+			p.gap.to, p.gap.open = time.Now(), false
+		}
+		p.lastCensus = started
+		return
+	}
+	// The caller abandoning a census (Close stopping the survey) leaves no
+	// longer interval than the poll itself; a real failure does.
+	if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+		return
+	}
+	if p.gap == nil {
+		p.gap = &censusGap{from: p.lastCensus}
+	}
+	p.gap.open = true
+}
+
+// gapSettled reports, under p.mu, whether a complete census taken after the
+// gap closed shows nothing that might be an unseen descendant from it: a live
+// process outside our ownership record that started within the gap and whose
+// oldest such ancestor hangs from the orphan reaper or from one of ours.
+func (p *Process) gapSettled(rows []processIdentity) bool {
+	g := p.gap
+	if g == nil {
+		return true
+	}
+	if g.open {
+		return false
+	}
+	live := make(map[int]processIdentity, len(rows))
+	for _, row := range rows {
+		live[row.pid] = row
+	}
+	inGap := func(row processIdentity) bool {
+		if stamp, ours := p.owned[row.pid]; ours && stamp == row.stamp {
+			return false
+		}
+		born, ok := censusStampTime(row.stamp)
+		if !ok {
+			return true
+		}
+		return (g.from.IsZero() || !born.Before(g.from.Add(-gapSlack))) && !born.After(g.to.Add(gapSlack))
+	}
+	for _, row := range rows {
+		if stoppedProcess(row) || !inGap(row) {
+			continue
+		}
+		top := row
+		for seen := 0; seen < len(rows); seen++ {
+			parent, ok := live[top.ppid]
+			if !ok || !inGap(parent) {
+				break
+			}
+			top = parent
+		}
+		if _, ours := p.owned[top.ppid]; ours || orphanReaper(top.ppid) {
+			return false
+		}
+		if _, ok := live[top.ppid]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// orphanReaper reports whether a parent may be the process that adopts
+// orphans. XNU always reparents to launchd (pid 1) and has no subreapers.
+// Elsewhere a subreaper such as systemd --user can adopt them, so any parent
+// may be one.
+func orphanReaper(ppid int) bool { return ppid == 1 || !orphansGoToInit }
+
+// censusStampTime reads a start time in either census format: RFC 3339 from
+// the macOS sysctl census, ps lstart elsewhere.
+func censusStampTime(stamp string) (time.Time, bool) {
+	if t, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation("Mon Jan _2 15:04:05 2006", strings.Join(strings.Fields(stamp), " "), time.Local); err == nil {
+		return t, true
+	}
+	if t, err := time.ParseInLocation("Mon Jan 2 15:04:05 2006", strings.Join(strings.Fields(stamp), " "), time.Local); err == nil {
+		return t, true
+	}
+	return time.Time{}, false
 }
 
 type censusCapture struct {
@@ -463,10 +587,12 @@ func (p *Process) Close(ctx context.Context) error {
 	return p.cleanupErr
 }
 
-// reverify retries an unconfirmed signal outcome on a later Close: it takes a
-// complete fresh census, signals any still-live owned identity again, and
-// clears the error only when the direct child has been reaped and no owned
-// identity or member of our group is live. Any failure keeps the old error.
+// reverify retries any cleanup failure not in finalCleanupPhases on a later
+// Close: it takes a complete fresh census, signals any still-live owned
+// identity again, and clears the error only when the direct child has been
+// reaped, no owned identity or member of our group is live, and no process
+// from a census gap might be an unseen descendant. Any failure keeps the old
+// error; nothing is released or resent without that complete evidence.
 func (p *Process) reverify(ctx context.Context) {
 	p.reverifyMu.Lock()
 	defer p.reverifyMu.Unlock()
@@ -474,6 +600,10 @@ func (p *Process) reverify(ctx context.Context) {
 	err, final := p.cleanupErr, p.cleanupFinal
 	p.mu.Unlock()
 	if err == nil || final || !reverifiable(err) {
+		return
+	}
+	// A survey that has not returned may still be inside a census.
+	if !waitOwnedDone(ctx, p.surveyDone) {
 		return
 	}
 	cleanup, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)
@@ -513,7 +643,10 @@ func (p *Process) reverify(ctx context.Context) {
 	if liveOwnedGroup(fresh, p.cmd.Process.Pid, p.rootStamp) {
 		return
 	}
-	p.cleanupErr = nil
+	if !p.gapSettled(fresh) {
+		return
+	}
+	p.cleanupErr, p.gap = nil, nil
 }
 
 // pruneOwned forgets identities that a complete census shows absent or

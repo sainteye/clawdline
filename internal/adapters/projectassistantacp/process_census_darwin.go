@@ -117,3 +117,6 @@ func readDarwinProcesses(out *unix.KinfoProc, size *uintptr) error {
 	}
 	return nil
 }
+
+// XNU reparents every orphan to launchd; Darwin has no subreapers.
+const orphansGoToInit = true

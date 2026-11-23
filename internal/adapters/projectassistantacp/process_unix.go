@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
 
 func absoluteExecutable(path string) bool { return filepath.IsAbs(path) }
@@ -28,10 +29,16 @@ func (p *Process) identities(ctx context.Context) ([]processIdentity, error) {
 	p.mu.Lock()
 	override := p.censusOverride
 	p.mu.Unlock()
+	started := time.Now()
+	var rows []processIdentity
+	var err error
 	if override != nil {
-		return override(ctx)
+		rows, err = override(ctx)
+	} else {
+		rows, err = processIdentities(ctx, p.limits.CaptureBytes)
 	}
-	return processIdentities(ctx, p.limits.CaptureBytes)
+	p.noteCensus(started, ctx, err)
+	return rows, err
 }
 
 func psIdentities(ctx context.Context, budget int) ([]processIdentity, error) {
