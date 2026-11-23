@@ -21,19 +21,23 @@
   border: 1px solid var(--bg); border-radius: 50%; background: var(--accent);
 }
 
-.session-board-group {
-  border: 1px solid color-mix(in srgb, var(--session-board-accent) 18%, var(--line));
+.session-list-group {
+  border: 1px solid color-mix(in srgb, var(--term-14) 18%, var(--line));
   border-radius: 12px; margin: 6px 0; overflow: hidden;
 }
-.session-board-group > button {
+.session-list-group-heading {
   display: flex; align-items: center; gap: 8px; width: 100%;
   padding: 10px 12px; border: 0; text-align: start;
-  color: var(--ink); background: var(--card); cursor: pointer;
+  color: var(--ink); background: var(--card);
 }
+.session-list-group-heading strong { min-width: 0; overflow-wrap: anywhere; }
+.session-list-group > .rows { padding: 6px 5px 5px; }
+.session-board-group > button { cursor: pointer; }
 .session-board-group > button svg { width: 19px; height: 19px; color: var(--session-board-accent); flex: none; }
-.session-board-group > button strong { min-width: 0; overflow-wrap: anywhere; }
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
-.session-board-group > .rows { padding: 6px 5px 5px; }
+.session-bot-dispatch-group .pa-avatar { flex: none; }
+.session-bot-dispatch-heading { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.session-bot-dispatch-heading span { color: var(--dim); }
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {

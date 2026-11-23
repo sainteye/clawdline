@@ -222,17 +222,21 @@ func TestAssistantBrokerIdempotencyCapacityAndHistoricalRead(t *testing.T) {
 	b, ctx, c, q, calls := assistantBrokerFixture(t)
 	b.MaxChildren = 1
 	c.BotName = "Original dispatcher"
+	appearance := pa.Appearance{Shape: pa.Hex, Color: "#75c6a5"}
+	c.BotAppearance = appearance
 	one, err := b.DispatchAssistant(ctx, q)
 	if err != nil {
 		t.Fatal(err)
 	}
 	c.BotName = "Renamed dispatcher"
+	c.BotAppearance = pa.Appearance{Shape: pa.Wedge, Color: "#7eafff"}
 	replay, err := b.DispatchAssistant(ctx, q)
 	if err != nil || !replay.Replayed || replay.Record.ID != one.Record.ID || calls.Load() != 1 {
 		t.Fatalf("replay %+v %v calls=%d", replay, err, calls.Load())
 	}
-	if replay.Record.AssistantOwner == nil || replay.Record.AssistantOwner.BotName != "Original dispatcher" {
-		t.Fatalf("dispatch lost its recorded name: %+v", replay.Record.AssistantOwner)
+	if owner := replay.Record.AssistantOwner; owner == nil || owner.BotName != "Original dispatcher" ||
+		owner.BotAppearance != appearance {
+		t.Fatalf("dispatch lost its recorded Bot identity: %+v", owner)
 	}
 	changed := q
 	changed.Brief += " Different payload."

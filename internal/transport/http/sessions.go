@@ -388,7 +388,7 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
 	botDispatches := make(map[string]*contract.SessionBotDispatch)
-	legacyBotNames := make(map[pa.BotKey]string)
+	legacyBots := make(map[pa.BotKey]pa.Bot)
 	bots := projectassistantstore.New(s.store.ProjectAssistantReader())
 	for i, item := range items {
 		project := ""
@@ -401,19 +401,29 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 		titles := swift.TitleOf(lives[i], item.CustomTitle, lives)
 		labels[item.ID] = rowLabel(item, titles, project)
 		if dispatch := titles.BotDispatch; dispatch != nil {
-			name := dispatch.Name
-			if name == "" && dispatch.Key.BotID != "" && dispatch.Key.MachineID != "" {
-				// Earlier task records kept the source key but not its name.
-				// Resolve only dispatchers of visible rows, once per list build.
-				var known bool
-				if name, known = legacyBotNames[dispatch.Key]; !known {
-					if bot, err := bots.MemoryBot(records, dispatch.Key); err == nil {
-						name = bot.Name
-					}
-					legacyBotNames[dispatch.Key] = name
+			name := strings.TrimSpace(dispatch.Name)
+			appearance := dispatch.Appearance
+			if (name == "" || appearance == (pa.Appearance{})) && dispatch.Key.BotID != "" && dispatch.Key.MachineID != "" {
+				// Older tasks may only have the source key. Resolve each
+				// visible dispatcher at most once per list build.
+				bot, known := legacyBots[dispatch.Key]
+				if !known {
+					bot, _ = bots.MemoryBot(records, dispatch.Key)
+					legacyBots[dispatch.Key] = bot
+				}
+				if name == "" {
+					name = strings.TrimSpace(bot.Name)
+				}
+				if appearance == (pa.Appearance{}) {
+					appearance = bot.Appearance
 				}
 			}
-			botDispatches[item.ID] = &contract.SessionBotDispatch{Name: strings.TrimSpace(name)}
+			projected := &contract.SessionBotDispatch{Name: name, TaskTitle: dispatch.TaskTitle}
+			if pa.ValidateAppearance(appearance) == nil {
+				wire := paWireAppearance(appearance)
+				projected.Appearance = &wire
+			}
+			botDispatches[item.ID] = projected
 		}
 	}
 	labelOf := func(id string) string { return labels[id] }

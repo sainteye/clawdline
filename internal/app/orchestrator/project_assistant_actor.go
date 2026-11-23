@@ -28,6 +28,7 @@ type AssistantCurrent struct {
 	Source                 pa.SourceStatus
 	Feature                pa.FeatureState
 	BotName                string
+	BotAppearance          pa.Appearance
 	ActiveTurnID           string
 	BindingRevoked         bool
 	Project                pa.ProjectResolution
@@ -168,6 +169,7 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 type AssistantOwner struct {
 	Fence         pa.Fence        `json:"fence"`
 	BotName       string          `json:"bot_name,omitempty"`
+	BotAppearance pa.Appearance   `json:"bot_appearance,omitzero"`
 	TurnID        string          `json:"turn_id"`
 	Command       pa.Command      `json:"command"`
 	RequestHash   string          `json:"request_hash"`
@@ -312,6 +314,9 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 		return Dispatched{}, err
 	}
 	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject}
+	if pa.ValidateAppearance(c.BotAppearance) == nil {
+		r.AssistantOwner.BotAppearance = c.BotAppearance
+	}
 	secret := make([]byte, 32)
 	if _, err = rand.Read(secret); err != nil {
 		return Dispatched{}, err
@@ -334,8 +339,8 @@ func (b *Broker) ValidateAssistantWork(ctx context.Context, q pa.WorkRequest) er
 }
 
 func sameAssistantOwner(a, b *AssistantOwner) bool {
-	// The display name is recorded at first admission. A rename or a retry
-	// of a task created before names were recorded cannot change ownership.
+	// The display name and appearance are recorded at first admission and
+	// play no part in deciding whether a retry belongs to the same owner.
 	return a != nil && b != nil && a.Fence == b.Fence && a.TurnID == b.TurnID &&
 		a.Command == b.Command && a.RequestHash == b.RequestHash && a.TargetProject == b.TargetProject
 }

@@ -182,8 +182,8 @@ func TestSessionLabelsIdentifyBotDispatchedTasks(t *testing.T) {
 		owner                              *orchestrator.AssistantOwner
 		wantDispatch                       bool
 	}{
-		{"Bot dispatch", title, "current", "", title, &orchestrator.AssistantOwner{BotName: "Test dispatcher"}, true},
-		{"older Bot dispatch", "[Bot Task] " + title, "", "", title, &orchestrator.AssistantOwner{}, true},
+		{"Bot dispatch", title, "current", "", "", &orchestrator.AssistantOwner{BotName: "Test dispatcher"}, true},
+		{"older Bot dispatch", "[Bot Task] " + title, "", "", "", &orchestrator.AssistantOwner{}, true},
 		{"reused pane", title, "previous", "", "", &orchestrator.AssistantOwner{}, false},
 		{"schedule", title, "current", "schedule", "[Task] " + title, nil, false},
 		{"ordinary dispatch", title, "current", "", title, nil, false},
@@ -199,8 +199,8 @@ func TestSessionLabelsIdentifyBotDispatchedTasks(t *testing.T) {
 			if (titles.BotDispatch != nil) != tc.wantDispatch {
 				t.Fatalf("Bot dispatch = %+v, want presence %t", titles.BotDispatch, tc.wantDispatch)
 			}
-			if titles.BotDispatch != nil && titles.BotDispatch.Name != tc.owner.BotName {
-				t.Fatalf("Bot dispatch = %+v, want recorded name %q", titles.BotDispatch, tc.owner.BotName)
+			if dispatch := titles.BotDispatch; dispatch != nil && (dispatch.Name != tc.owner.BotName || dispatch.TaskTitle != title) {
+				t.Fatalf("Bot dispatch = %+v, want recorded name %q and task %q", dispatch, tc.owner.BotName, title)
 			}
 		})
 	}

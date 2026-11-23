@@ -254,10 +254,11 @@ test("opening a Session requests only its fresh machine status", async () => {
 test("a cold status gap uses one complete pinned machine list for rows and titles", async () => {
   const { client, calls } = clientFixture()
   const list = client.listPresentationsForMachine
+  const dispatch = { name: "Dispatcher fixture", task_title: "Restore drafts", appearance: { shape: "hex", color: "#75c6a5" } }
   client.listPresentationsForMachine = async (machine) => {
     const reply = await list(machine)
     return { ...reply, sessions: reply.sessions.map((row) => ({ ...row,
-      bot_dispatch: { name: "Dispatcher fixture" },
+      bot_dispatch: dispatch,
       status: { ...row.status, sessionId: "conversation-41" } })) }
   }
   client.statusSnapshots.delete(JSON.stringify([machineID, sessionID]))
@@ -269,7 +270,7 @@ test("a cold status gap uses one complete pinned machine list for rows and title
     "a direct row carries the generation the single-machine reader verifies")
   const titles = await source.readMachinePresentations?.(machineID, new AbortController().signal)
   assert.deepEqual(titles?.map((row) => row.title), ["The real title"])
-  assert.deepEqual(titles?.[0]?.botDispatch, { name: "Dispatcher fixture" })
+  assert.deepEqual(titles?.[0]?.botDispatch, dispatch)
   assert.equal(titles?.[0]?.status?.sessionId, "conversation-41",
     "the pinned Cloud row retains the conversation that owns its attention notes")
   assert.deepEqual(calls, ["sessions.list:" + machineID])

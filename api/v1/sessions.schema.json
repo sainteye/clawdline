@@ -136,7 +136,9 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "name": { "type": "string", "description": "The dispatcher's display name, absent if the name was not recorded and can no longer be resolved." }
+        "name": { "type": "string", "description": "The dispatcher's display name, absent if the name was not recorded and can no longer be resolved." },
+        "appearance": { "$ref": "project-assistants.schema.json#/$defs/ProjectAssistantAppearance" },
+        "task_title": { "type": "string", "description": "The broker task title, independent of the Session's own title." }
       }
     },
     "SessionRow": {

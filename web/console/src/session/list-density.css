@@ -65,28 +65,6 @@
   overflow: hidden;
 }
 
-.row[data-bot-dispatch]:not(.open):not(.selected) {
-  border-color: var(--peer-ed);
-}
-
-.row[data-bot-dispatch] .title .label {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.row .meta .session-bot-dispatch {
-  flex: 0 1 auto;
-  min-width: 0;
-  color: var(--dim);
-  font-family: var(--ui);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .row .meta .tty,
 .row .meta .session-activity,
 .row .meta .task-chip {

@@ -58,25 +58,32 @@ func TestMachineListUsesTheSingleMachineSnapshotAndItsRowStatus(t *testing.T) {
 }
 
 func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
-	for _, tc := range []struct{ name, recorded, current, want string }{
-		{"recorded", "Dispatcher at admission", "", "Dispatcher at admission"},
-		{"legacy", "", "Dispatcher in roster", "Dispatcher in roster"},
-		{"no longer resolvable", "", "", ""},
+	recorded := pa.Appearance{Shape: pa.Hex, Color: "#75c6a5"}
+	current := pa.Appearance{Shape: pa.Wedge, Color: "#7eafff"}
+	for _, tc := range []struct {
+		name, recordedName, currentName, wantName string
+		recordedLook                              pa.Appearance
+		wantLook                                  *pa.Appearance
+	}{
+		{"recorded at admission", "Dispatcher at admission", "Renamed dispatcher", "Dispatcher at admission", recorded, &recorded},
+		{"legacy with recorded name", "Dispatcher at admission", "Renamed dispatcher", "Dispatcher at admission", pa.Appearance{}, &current},
+		{"legacy with key only", "", "Dispatcher in roster", "Dispatcher in roster", pa.Appearance{}, &current},
+		{"no longer resolvable", "", "", "", pa.Appearance{}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
-			const child, title = "conversation-41", "Restore drafts after reconnecting"
+			const child, title, sessionTitle = "conversation-41", "Restore drafts after reconnecting", "Draft recovery workspace"
 			item := session.Session{ID: "%41", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
-				State: session.StateWorking, ConversationID: child}
+				State: session.StateWorking, ConversationID: child, Rungs: session.LabelRungs{Conversation: sessionTitle}}
 			s := paneServer(t, &pane{s: item})
 			s.cfg = config.Config{Dir: t.TempDir()}
 			key := pa.BotKey{MachineID: "fixture-machine", BotID: "fixture-bot"}
-			if tc.current != "" {
+			if tc.currentName != "" {
 				db := s.store.ProjectAssistantDatabase()
 				if err := (projectassistantstore.Installer{}).Install(ctx, db); err != nil {
 					t.Fatal(err)
 				}
-				body, err := json.Marshal(struct{ Bot pa.Bot }{Bot: pa.Bot{Key: key, Name: tc.current}})
+				body, err := json.Marshal(struct{ Bot pa.Bot }{Bot: pa.Bot{Key: key, Name: tc.currentName, Appearance: current}})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -89,7 +96,7 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 			task := orchestrator.Record{Protocol: orchestrator.Protocol, ID: "e1111111-1111-4111-8111-000000000041",
 				Title: title, Assistant: "codex", State: orchestrator.StateBriefed, ProjectDir: "/project",
 				CreatedAt: now, ChildTerminalID: item.ID, ChildConversationID: child, ChildBackend: "tmux",
-				AssistantOwner: &orchestrator.AssistantOwner{Fence: pa.Fence{Key: key}, BotName: tc.recorded}}
+				AssistantOwner: &orchestrator.AssistantOwner{Fence: pa.Fence{Key: key}, BotName: tc.recordedName, BotAppearance: tc.recordedLook}}
 			if err := s.store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{ID: task.ID, Project: task.ProjectDir,
 				Assistant: task.Assistant, State: string(task.State), CreatedAt: now, UpdatedAt: now, Record: task.Encode()}, nil, nil); err != nil {
 				t.Fatal(err)
@@ -106,8 +113,13 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 				row := payload.Sessions[0]
 				dispatch, present := row["bot_dispatch"].(map[string]any)
 				name, _ := dispatch["name"].(string)
-				if row[tcRead.labelKey] != title || !present || name != tc.want {
-					t.Fatalf("%s: wrong task title or Bot, want %q / %q: %s", tcRead.path, title, tc.want, rec.Body)
+				if row[tcRead.labelKey] != sessionTitle || !present || dispatch["task_title"] != title || name != tc.wantName {
+					t.Fatalf("%s: want Session %q, task %q, Bot %q: %s", tcRead.path, sessionTitle, title, tc.wantName, rec.Body)
+				}
+				appearance, hasAppearance := dispatch["appearance"].(map[string]any)
+				if hasAppearance != (tc.wantLook != nil) || hasAppearance &&
+					(appearance["shape"] != string(tc.wantLook.Shape) || appearance["color"] != tc.wantLook.Color) {
+					t.Fatalf("%s: Bot appearance = %v, want %+v", tcRead.path, appearance, tc.wantLook)
 				}
 			}
 		})

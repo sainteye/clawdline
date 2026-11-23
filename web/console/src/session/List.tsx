@@ -1,4 +1,5 @@
 import { SessionBoardLead } from "./SessionBoards.js"
+import { BotAvatar } from "../project-assistants/BotAvatar.js"
 import { TerminalGlyph } from "./TerminalGlyph.js"
 import { catalogFormat } from "../catalog.js"
 import { catalogWord } from "../catalog.js"
@@ -23,8 +24,24 @@ import "./list-tree.css"
 import "./swipe-archive.css"
 
 /** The same selectable list-row frame serves a local row and a light Cloud status row. */
-export function SessionRowLayout({ children, className, ...props }: ComponentPropsWithRef<"li">) {
-  return <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
+function SessionRowLayout({ children, className, botDispatch, ...props }: ComponentPropsWithRef<"li"> & {
+  botDispatch?: SessionRow["bot_dispatch"]
+}) {
+  const row = <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
+  if (!botDispatch) return row
+
+  const { name, appearance, task_title: task } = botDispatch
+  const attribution = name ? nextWord("sessionBotDispatchBy", { bot: name }) : nextWord("sessionBotDispatch")
+  return <li className="session-list-group session-bot-dispatch-group" role="presentation">
+    <div className="session-list-group-heading">
+      <BotAvatar appearance={appearance ?? { shape: "blob", color: "#9ca6b3" }} size={24} />
+      <div className="session-bot-dispatch-heading">
+        <strong>{name || attribution}</strong>
+        {task && <span>{task}</span>}
+      </div>
+    </div>
+    <ul className="rows" role="group" aria-label={[attribution, task].filter(Boolean).join(" · ")}>{row}</ul>
+  </li>
 }
 
 /** Identity and activity are the same cells in a local or a fleet list. */
@@ -45,13 +62,6 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false, boa
       <span className="who" hidden={!who} dangerouslySetInnerHTML={{ __html: who }} />
     </div>
   </>
-}
-
-function dispatchWord(dispatch: SessionRow["bot_dispatch"]): string {
-  if (!dispatch) return ""
-  return dispatch.name
-    ? nextWord("sessionBotDispatchBy", { bot: dispatch.name })
-    : nextWord("sessionBotDispatch")
 }
 
 function RowActivity({ at }: { at?: number }) {
@@ -90,18 +100,17 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   const identity = projectedSessionIdentity(title, icon, machineScope, coordinatorBound)
   const mark = identity.icon
   const shownTitle = identity.title
-  const dispatch = dispatchWord(botDispatch)
   const role = rowPersonaLine(usePersonas(machineID), status?.persona)
   useLayoutEffect(() => { if (state === "working") L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null) }, [state])
   const width = onArchive ? actionWidth(status?.sessionId) : ACTION_WIDTH
   useLayoutEffect(() => { if (ref.current) paintSwipe(ref.current, swiped ? "open" : "", swiped ? width : 0) }, [swiped, selectionKey, width])
   const activate = () => { if (!consumePress?.() && ref.current) onOpen(ref.current) }
-  return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
-    data-board-lead={boardLead || undefined} data-bot-dispatch={!!botDispatch || undefined} data-state={state} data-attention={attention ? "open" : undefined}
+  return <SessionRowLayout ref={ref} botDispatch={botDispatch} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
+    data-board-lead={boardLead || undefined} data-state={state} data-attention={attention ? "open" : undefined}
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, dispatch, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
+    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
@@ -110,7 +119,6 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
     {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
     <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} boardAvatar={boardAvatar} />
     <div className="meta">
-      {dispatch && <span className="session-bot-dispatch" title={dispatch}>{dispatch}</span>}
       {cwd && <span className="path">{L.path(cwd)}</span>}
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
@@ -452,7 +460,6 @@ export function Row({
   }, [swiped, row.sessionId])
   const reveal = swipeReveal(row)
   const name = detailSessionName(row)
-  const dispatch = dispatchWord(row.bot_dispatch)
   // 封存 only where there is a conversation to bring back (`swipe.ts`).
   const actions = richSessionSwipeActions(row)
   const canArchive = archivable(row.sessionId)
@@ -471,12 +478,12 @@ export function Row({
   return (
     <SessionRowLayout
       ref={ref}
+      botDispatch={row.bot_dispatch}
       role="option"
       tabIndex={-1}
       data-id={row.id}
       data-selection-key={L.selectionKey(row)}
       data-board-lead={boardLead || undefined}
-      data-bot-dispatch={!!row.bot_dispatch || undefined}
       data-state={row.state}
       data-attention={row.attention_count && row.attention_count > 0 ? "open" : undefined}
       data-coordination={waiting ? "waiting" : owed ? "owed" : undefined}
@@ -495,7 +502,6 @@ export function Row({
       {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
       <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} boardAvatar={boardAvatar} />
       <div className="meta">
-        {dispatch && <span className="session-bot-dispatch" title={dispatch}>{dispatch}</span>}
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>
         <RowActivity at={row.activity?.known ? row.activity.at : undefined} />

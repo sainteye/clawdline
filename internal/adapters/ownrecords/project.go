@@ -614,21 +614,23 @@ func (s Snapshot) orchestratorTitle(row Live, live []Live) (string, *BotDispatch
 			(t.ChildProcStart == nil || sameStart(t.ChildProcStart, row.ProcessStart)) &&
 			(t.ChildSession == nil || *t.ChildSession == row.ConversationID)
 	}
+	assignmentTitle := found
 	var botDispatch *BotDispatch
 	for _, t := range tasksOldestFirst(s.Tasks) {
 		if deref(t.ChildTerminal) != terminalID || t.AttachSession != nil || !taskAlive(t) {
 			continue
 		}
 		title := t.Title
-		switch {
-		case t.BotDispatch != nil:
-			if legacy, ok := strings.CutPrefix(title, "[Bot Task] "); ok && strings.TrimSpace(legacy) != "" {
-				title = legacy
-			}
-		case t.ScheduleID != nil && !strings.HasPrefix(title, "[Task]"):
+		if t.BotDispatch != nil {
+			dispatch := *t.BotDispatch
+			dispatch.TaskTitle = strings.TrimSpace(strings.TrimPrefix(title, "[Bot Task] "))
+			found, botDispatch = assignmentTitle, &dispatch
+			continue
+		}
+		if t.ScheduleID != nil && !strings.HasPrefix(title, "[Task]") {
 			title = "[Task] " + title
 		}
-		found, botDispatch = title, t.BotDispatch
+		found, botDispatch = title, nil
 	}
 	return found, botDispatch
 }
