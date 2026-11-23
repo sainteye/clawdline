@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14195,
+  "englishKeys": 14197,
   "counts": {
-    "negation": 3612,
-    "state": 2402,
+    "negation": 3613,
+    "state": 2403,
     "permission": 852,
     "deletion": 326,
     "uncertainty": 565
   },
-  "unionCount": 6031,
+  "unionCount": 6033,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -670,6 +670,7 @@
       "capacityRow.release.supervisor_runs.full",
       "capacityRow.release.supervisor_runs.what",
       "capacityRow.release.unpacked_bytes.full",
+      "capacityRow.resources.artifact_seconds.full",
       "capacityRow.resources.cache_bytes.full",
       "capacityRow.resources.disk_low_free_bytes.full",
       "capacityRow.resources.disk_reserve_bytes.what",
@@ -4265,6 +4266,7 @@
       "capacityRow.release.smoke_timeout_seconds.full",
       "capacityRow.release.state_file_bytes.what",
       "capacityRow.release.unpacked_bytes.full",
+      "capacityRow.resources.artifact_seconds.what",
       "capacityRow.resources.cache_bytes.full",
       "capacityRow.resources.cache_bytes.what",
       "capacityRow.resources.disk_low_free_bytes.what",
@@ -8966,6 +8968,8 @@
     "capacityRow.release.supervisor_runs.full",
     "capacityRow.release.supervisor_runs.what",
     "capacityRow.release.unpacked_bytes.full",
+    "capacityRow.resources.artifact_seconds.full",
+    "capacityRow.resources.artifact_seconds.what",
     "capacityRow.resources.cache_bytes.full",
     "capacityRow.resources.cache_bytes.what",
     "capacityRow.resources.disk_low_free_bytes.full",
