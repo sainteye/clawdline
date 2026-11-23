@@ -1,6 +1,6 @@
 import { RETIRED_DOWNLOADS } from "../src/view-plugins/retired.ts"
 import { execFileSync } from "node:child_process"
-import { readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { cpSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { build } from "vite"
@@ -19,6 +19,8 @@ const declared = JSON.stringify({ ...productionCloud, build: stamp })
 validateHostedDeclaration(declared)
 process.env.VITE_HOSTED_CONSOLE = declared
 await build({ root, configFile: join(root, "vite.config.ts"), build: { rollupOptions: { output: { assetFileNames: hostedAssetPattern(stamp) } } } })
+// CloudGate reads these exact files through the build ID in its declaration.
+cpSync(join(root, "dist", "catalogs"), join(root, "dist", "app", stamp, "catalogs"), { recursive: true })
 // Only the hosted build contains an edge worker; daemon releases stay static.
 await build({ root, configFile: false, build: { outDir: "dist", emptyOutDir: false, minify: true,
   lib: { entry: join(root, "edge/worker.mjs"), formats: ["es"], fileName: () => "_worker.js" },

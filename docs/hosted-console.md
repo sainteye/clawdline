@@ -160,9 +160,10 @@ exact target. A failed ancestry check stops the callback before deployment.
 
 `tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
-bundle has `CloudGate` and its compiled declaration names the exact production app, API and
-relay endpoints. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language's
-hosted JSON through `tools/check-hosted-catalogs.py`, which runs the same catalog
+bundle has `CloudGate` and its compiled declaration names the served build and the exact production app, API and
+relay endpoints. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language
+through `/app/<build>/catalogs/<language>.json`, the same URL the browser uses at startup. The Cloud build copies the catalogs to that
+versioned path, and `tools/check-hosted-catalogs.py` runs the same catalog
 validator used during Console development. The first multilingual release
 requires all nine catalogs to cover the frozen initial baseline and English
 and Taiwan Traditional Chinese to cover every current key. The ordinary
