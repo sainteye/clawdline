@@ -79,6 +79,7 @@ type NativeWork struct {
 	send          func(context.Context, string, string) error
 	dispatch      func(context.Context, string, string, string, []string, string, string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
+	workReceipt   func(context.Context, string) (app.WorkReceipt, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
 	memoryIndex   func(context.Context) (app.MemoryIndex, error)
 	memoryDetail  func(context.Context, string) (pa.MemoryDetail, error)
@@ -176,6 +177,12 @@ func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, err
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
 	return w.status(ctx, taskID)
+}
+func (w NativeWork) WorkReceipt(ctx context.Context, idempotencyKey string) (app.WorkReceipt, error) {
+	if w.workReceipt == nil {
+		return app.WorkReceipt{}, failure(pa.Disabled, "native_work")
+	}
+	return w.workReceipt(ctx, idempotencyKey)
 }
 func (w NativeWork) Memory(ctx context.Context) ([]pa.MemoryEntry, error) {
 	if w.memory == nil {
@@ -1094,6 +1101,20 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return b.Status(ctx, actor, taskID)
 	}
 	tools.messageWork = messageWorkTool(turn, actor, b, bound, journal)
+	tools.workReceipt = func(ctx context.Context, idempotencyKey string) (app.WorkReceipt, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return app.WorkReceipt{}, e
+		}
+		defer cancel()
+		if actor.CapabilityID == "" {
+			return app.WorkReceipt{}, failure(pa.ScopeDenied, "dispatch_policy")
+		}
+		if e = journal(ctx, "status"); e != nil {
+			return app.WorkReceipt{}, e
+		}
+		return b.Receipt(ctx, actor, idempotencyKey)
+	}
 	if taskOwner.BotID != "" {
 		tools.routines = nil
 		tools.dispatch = nil

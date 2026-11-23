@@ -213,8 +213,10 @@ func TestRuntimeSQLiteReopenRetainsUnknownTurnAndWorkReceipt(t *testing.T) {
 		Command: command(b.Key, pa.DispatchOperation, "work"), TurnID: prompt.Turn.ID, Brief: "Synthetic isolated work", Claims: []string{"owned.go"}}
 	_, err = r.DispatchWork(testContext, work)
 	requireCode(t, err, pa.ExecutionEffectUnknown)
+	// The same key and content goes back to the work bridge, which alone
+	// decides from broker facts; the Engine keeps its one durable receipt.
 	_, err = r.DispatchWork(testContext, work)
-	requireCode(t, err, pa.OutcomeUnknown)
+	requireCode(t, err, pa.ExecutionEffectUnknown)
 	conflicting := work
 	conflicting.Command.ContentHash = command(b.Key, pa.DispatchOperation, "different").ContentHash
 	_, err = r.DispatchWork(testContext, conflicting)
@@ -266,7 +268,7 @@ func TestRuntimeSQLiteReopenRetainsUnknownTurnAndWorkReceipt(t *testing.T) {
 		t.Fatalf("recovery/replay changed durable facts: %v", err)
 	}
 	turn, err := s.Turn(testContext, b.Key, accepted.ResourceID)
-	if err != nil || turn.State != pa.TurnUnknown || p.opens.Load() != 1 || p.sends.Load() != 1 || p.dispatches.Load() != 1 {
+	if err != nil || turn.State != pa.TurnUnknown || p.opens.Load() != 1 || p.sends.Load() != 1 || p.dispatches.Load() != 2 { // the original and one same-key bridge inspection
 		t.Fatalf("unknown replay: turn=%+v error=%v opens=%d sends=%d dispatches=%d", turn, err, p.opens.Load(), p.sends.Load(), p.dispatches.Load())
 	}
 	if pending, err := s.PendingTurns(testContext, b.Key); err != nil || len(pending) != 2 || pending[0].State != pa.TurnUnknown || pending[1].ID != queued.ID || pending[1].State != pa.TurnQueued {

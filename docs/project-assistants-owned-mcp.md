@@ -155,6 +155,39 @@ Use `dispatch_work` for an isolated repository Session. Peer, routine, room,
 voice-greeting and background work do not get direct Lead controls. Credential
 entry and native permission answers stay on the person's own surface.
 
+## When a dispatch's outcome is unknown
+
+The broker derives a work task's ID from the Bot identity and the
+`dispatch_work` idempotency key, so the key alone can find the task again.
+After `pa_outcome_unknown` the Bot never invents a new key:
+
+- When the reply carries `task_id` (the broker accepted the task but the link
+  was not persisted), it follows that task with `work_status(task_id)`.
+- Otherwise it calls `work_status(idempotency_key)`. The Host takes the Bot
+  identity and conversation from its authenticated fence, never from the
+  model, and answers one of three states from the same receipt rows and broker
+  record that dispatch itself uses:
+  - `accepted`: `task_id` and the same `work` fields `work_status` returns.
+  - `not_accepted` with `safe_to_resend_same_key: true`: the Engine receipt
+    exists but the bridge never prepared a broker call. Resending the same key
+    and content creates the task once.
+  - `undetermined` with a `reason`: `broker_admission_unknown` (the broker was
+    asked and holds no task; it refused or the call was cut off, and the
+    bridge never replays that), `dispatch_in_progress`, `broker_unreadable` or
+    `receipt_unreadable`. A resend is not known to be safe.
+- A key this Bot never dispatched, and a task of this Bot owned by another
+  conversation or Project, both answer the same `pa_not_found`
+  (`work_receipt`). Another Bot's key lives in another Bot's namespace and can
+  never address that Bot's work. A cross-Project dispatch whose permission
+  card is unanswered or declined never wrote a receipt, so it also answers
+  `pa_not_found`.
+
+A resend with the same key and content in the same turn is handed back to the
+work bridge instead of being refused outright: the bridge returns the accepted
+task from broker facts, refuses an unknown admission, and only runs a dispatch
+that never reached the broker. A different turn changes the content hash and
+still answers `pa_idempotency_conflict`; use the lookup instead.
+
 ## Native session settings
 
 Before creating/loading a session, the client checks ACP protocol 1, the exact

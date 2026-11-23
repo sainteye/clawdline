@@ -499,10 +499,13 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		value, err := s.tool(ctx, q.Name, q.Arguments)
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
+					if failure.TaskID != "" && q.Name == "dispatch_work" {
+						result["task_id"] = failure.TaskID
+					}
 				}
 			}
 			if q.Name == "dispatch_work" && result["field"] == "persona" && result["code"] == string(pa.Invalid) {
@@ -785,13 +788,7 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 	case "message_work":
 		return s.messageWork(ctx, arguments)
 	case "work_status":
-		var q struct {
-			TaskID string `json:"task_id"`
-		}
-		if mcpDecode(arguments, &q) != nil || q.TaskID == "" {
-			return nil, refusal(pa.Invalid, "mcp_work")
-		}
-		return s.tools.Status(ctx, q.TaskID)
+		return s.workStatus(ctx, arguments)
 	case "read_memory":
 		var q struct {
 			EntryID string `json:"entry_id"`
@@ -945,7 +942,7 @@ func mcpTools() []any {
 		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
 			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": map[string]any{"type": "object"}, "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
 		tool("send_message", "Send the user one Markdown chat message immediately as its own bubble. Send several for several thoughts in the same turn; use a different idempotency key for each distinct message. After sending any message, final reply text stays in the trace: send all user-facing results here. Reuse the same key and text after an uncertain response; do not invent a replacement key. 立即傳送一則獨立的 Markdown 訊息；同一回合可傳多則，不同訊息各用自己的冪等鍵。傳送後最後文字只留在處理過程，所有要讓使用者看到的結果都要在此傳送。結果不確定時沿用相同鍵與文字。", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
-		tool("dispatch_work", "Open a new isolated work Session and return its receipt. Set project when the user explicitly names another destination: the lead Bot dispatches directly; any other Bot first shows the user a permission card and waits for the answer, unless they saved an always-allow rule. pa_declined means the user refused; do not retry. Only a turn the user started by talking to you can ask; field dispatch_project_direct means ask the user to tell you directly. Unknown effects require receipt inspection, never automatic replay with a new key. 開啟新的隔離工作階段並回傳收據。使用者明確指定其他目的 Project 時填入 project：大總管直接派工；其他 Bot 會先在聊天跳出權限卡等使用者回答（已存「一律允許」則不問）。pa_declined 代表使用者拒絕，不要重試；dispatch_project_direct 代表請使用者直接跟你說。", map[string]any{
+		tool("dispatch_work", "Open a new isolated work Session and return its receipt. Set project when the user explicitly names another destination: the lead Bot dispatches directly; any other Bot first shows the user a permission card and waits for the answer, unless they saved an always-allow rule. pa_declined means the user refused; do not retry. Only a turn the user started by talking to you can ask; field dispatch_project_direct means ask the user to tell you directly. After pa_outcome_unknown, never switch to a new key: follow task_id with work_status when the reply has one; otherwise call work_status with the same idempotency_key. Resend the same key and content only when it answers safe_to_resend_same_key. 開啟新的隔離工作階段並回傳收據。使用者明確指定其他目的 Project 時填入 project：大總管直接派工；其他 Bot 會先在聊天跳出權限卡等使用者回答（已存「一律允許」則不問）。pa_declined 代表使用者拒絕，不要重試；dispatch_project_direct 代表請使用者直接跟你說。結果不明時不要換新鍵：回覆有 task_id 就用 work_status 追蹤，沒有就用同一個 idempotency_key 呼叫 work_status 查收據，只有回答可安全重送時才用同一個鍵與內容重送。", map[string]any{
 			"idempotency_key": text(),
 			"title": map[string]any{"type": "string", "minLength": 1, "maxLength": work.OutcomeTitleLimit,
 				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
@@ -955,7 +952,7 @@ func mcpTools() []any {
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
 		}, "idempotency_key", "title", "brief", "claims"),
-		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval. To correct or add to a running task, use message_work. 讀取這次執行擁有的工作收據，不能代替使用者核准；要補充或修正執行中的工作，用 message_work。", map[string]any{"task_id": text()}, "task_id"),
+		mcpWorkStatusTool(tool),
 		mcpMessageWorkTool(),
 		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),

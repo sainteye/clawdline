@@ -127,7 +127,7 @@ func (b *BrokerWorkBridge) Dispatch(ctx context.Context, q pa.WorkRequest) (pa.W
 		return pa.WorkLink{}, bridgeBrokerFailure(err)
 	}
 	if accepted.Record.AssistantOwner == nil || accepted.Record.Worktree == nil || accepted.Record.Worktree.Path == "" {
-		return pa.WorkLink{}, bridgeFailure(pa.OutcomeUnknown, "work_acceptance")
+		return pa.WorkLink{}, &pa.Failure{Code: pa.OutcomeUnknown, Field: "work_acceptance", TaskID: id}
 	}
 	// Status rereads the durable row rather than turning a launch response
 	// into completion evidence. Sync must commit before the link is returned.
