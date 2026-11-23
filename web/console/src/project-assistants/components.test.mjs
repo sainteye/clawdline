@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentDiscardConfirm,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentDiscardConfirm,UnsentStatusNote,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {UnsentActions,UnsentDiscardConfirm,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
+const {UnsentActions,UnsentDiscardConfirm,UnsentStatusNote,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -403,7 +403,7 @@ test("each kind of retry failure points to a different next step",async()=>{
   assert.match(offline,new RegExp(w.retryNextLater))
 })
 
-test("an unsent message offers delete only when the source certainly has none, and removal with a warning when it may have arrived",()=>{
+test("an unsent message can always be cleared: deleted when the source certainly has none, removed with a warning when it may have arrived",()=>{
   const row=extra=>({intent:{command:{idempotency_key:"k"}},receipt:null,...extra})
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:false}),"delete")
   assert.equal(unsentDiscardKind(row({}),{accepted:false,transporting:false}),"remove")
@@ -412,14 +412,26 @@ test("an unsent message offers delete only when the source certainly has none, a
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:true}),null,"nothing is removed while its request is open")
   for(const language of ["en","zh-Hant"]){
     const w=words(language),base={retrying:false,accepted:false,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language}
-    assert.match(render(UnsentActions,{...base,discard:"delete",onDiscard(){}}),new RegExp(">"+w.unsentDelete+"<"))
-    assert.match(render(UnsentActions,{...base,discard:"remove",onDiscard(){}}),new RegExp(">"+w.unsentRemove+"<"))
-    assert.doesNotMatch(render(UnsentActions,base),new RegExp(">("+w.unsentDelete+"|"+w.unsentRemove+")<"))
+    for(const discard of ["delete","remove"])assert.match(render(UnsentActions,{...base,discard,onDiscard(){}}),new RegExp(">"+w.unsentClear+"<"))
+    assert.doesNotMatch(render(UnsentActions,base),new RegExp(">"+w.unsentClear+"<"))
     const removing=render(UnsentDiscardConfirm,{kind:"remove",onConfirm(){},onCancel(){},w})
     assert.match(removing,language==="en"?/may already have arrived/:/可能已經送達/)
     assert.match(removing,new RegExp(">"+w.unsentRemoveConfirm+"<"));assert.match(removing,new RegExp(">"+w.cancel+"<"))
     const deleting=render(UnsentDiscardConfirm,{kind:"delete",onConfirm(){},onCancel(){},w})
     assert.match(deleting,language==="en"?/was not delivered/:/沒有送達/)
     assert.doesNotMatch(deleting,language==="en"?/may already have arrived/:/可能已經送達/)
+  }
+})
+test("an unconfirmed message shows a small status icon instead of standing text, and the icon opens the explanation",()=>{
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language)
+    const html=render(UnsentActions,{retrying:false,accepted:false,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},discard:"remove",onDiscard(){},w,language})
+    assert.doesNotMatch(html,new RegExp(">"+w.sendUnconfirmed+"<"),"no standing delivery text")
+    const icon=/<button[^>]*class="pa-unsent-info"[^>]*>/.exec(html)?.[0]
+    assert.ok(icon,"a status icon button")
+    assert.match(icon,new RegExp('aria-label="'+w.sendUnconfirmed));assert.match(icon,/aria-expanded="false"/);assert.doesNotMatch(icon,/ title=/)
+    const note=render(UnsentStatusNote,{id:"n",w})
+    assert.match(note,new RegExp(w.sendUnconfirmed));assert.match(note,new RegExp(w.unsentStatusNext))
+    assert.match(render(UnsentActions,{retrying:false,accepted:true,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language}),new RegExp(">"+w.sendAccepted+"<"),"an accepted send still says so")
   }
 })

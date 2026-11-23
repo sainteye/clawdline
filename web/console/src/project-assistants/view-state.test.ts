@@ -129,6 +129,13 @@ test("deleting an unsent message removes it from this device's journal, so a rel
   assert.deepEqual(createViewState(store).heldOutcomes.aside(own).map(o=>o.intent.command.idempotency_key),["kept"],"the deleted message stays gone after a reload")
   assert.equal(createViewState(store).heldOutcomes.discard(own,"missing"),false)
 })
+test("a message whose delivery is unknown can be cleared too, and a reload does not bring it back",()=>{
+  const {store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  view.heldOutcomes.set(own,{intent:journalSend("unknown","maybe arrived"),receipt:{id:"r",command:journalSend("unknown").command,state:"unknown",resource_id:"",event_seq:0}});view.heldOutcomes.setAside(own)
+  assert.equal(createViewState(store).heldOutcomes.aside(own).length,1)
+  assert.equal(view.heldOutcomes.discard(own,"unknown"),true)
+  assert.deepEqual(createViewState(store).heldOutcomes.aside(own),[],"the cleared message stays gone after a reload")
+})
 test("a delete this device cannot save keeps the message, on screen and after a reload",()=>{
   const {disk,store}=memoryStore(),own=draftIdentity("account",key)
   const view=createViewState(store)

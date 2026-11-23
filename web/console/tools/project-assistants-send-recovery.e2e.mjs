@@ -106,6 +106,8 @@ export function mountFixture() {
         state.sends++; state.transported.push(request.command.idempotency_key)
         const mode = state.mode; state.mode = "normal"; persist()
         if (mode === "missing") { state.pending = request; persist(); lose() }
+        // The source's typed answer for a send it certainly did not admit: no receipt, no message.
+        if (mode === "refuse") return refusal({contract_version:"project-assistants.v1",error:{code:"pa_capacity_full",field:"owned_cleanup",retry_after_seconds:0}})
         if (mode === "original-wins" || mode === "original-wins-lost") {
           if (!state.pending || state.pending.command.idempotency_key !== request.command.idempotency_key || !request.command.client_attempt_id) throw new Error("recovery lost its command identity")
           await admit(state.pending, signal); state.admitted.push(state.pending); persist()
@@ -153,6 +155,7 @@ export function mountFixture() {
       !legacy && button("Test: interrupt reads after an accepted send", mode("recover-read")),
       !legacy && button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       !legacy && button("Test: next send leaves no receipt", mode("missing")),
+      !legacy && button("Test: refuse next send without admitting it", mode("refuse")),
       !legacy && button("Test: original wins during recovery", mode("original-wins")),
       !legacy && button("Test: original wins and loses its response", mode("original-wins-lost")),
       !legacy && button("Test: attach picture", () => {
