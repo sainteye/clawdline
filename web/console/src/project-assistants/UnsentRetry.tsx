@@ -54,9 +54,9 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
   return <div className="pa-unsent-actions">
     {notice
       ? <p className="pa-unsent-failure" role="alert">{notice.title} {notice.next} <small>({failure!.code})</small></p>
-      : <span role="status">{retrying ? w.sending : accepted ? w.sendAccepted : w.sendUnconfirmed}</span>}
+      : !retrying && <span role="status">{accepted ? w.sendAccepted : w.sendUnconfirmed}</span>}
     {!accepted && (retrying
-      ? <button type="button" disabled aria-busy="true"><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</button>
+      ? <button type="button" disabled aria-busy="true" aria-live="polite"><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</button>
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
         : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
