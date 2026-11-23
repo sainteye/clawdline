@@ -4,7 +4,7 @@ import {build} from 'esbuild'
 import {createRequire} from 'node:module'
 import {fileURLToPath} from 'node:url'
 
-// The Bot's browser call rings, as a telephone does, only while it opens.
+// The Bot's browser call rings, as a telephone does, while it opens, and at least one whole ring.
 const {outputFiles}=await build({stdin:{contents:'export {BotCall,CallAudioError} from "./bot-call.ts"; export {callRingback} from "../realtime/copilot-meter.ts"',resolveDir:fileURLToPath(new URL('.',import.meta.url)),loader:'ts'},bundle:true,platform:'node',format:'cjs',write:false})
 const module={exports:{}};new Function('require','module','exports',outputFiles[0].text)(createRequire(import.meta.url),module,module.exports)
 const {BotCall,CallAudioError,callRingback}=module.exports
@@ -43,8 +43,8 @@ function call({open}){
 
 const audio={listen(){},play:()=>Promise.resolve(),close(){}}
 
-test('placing a Bot call rings at once and stops the moment it is listening', async t=>{
-  t.mock.timers.enable({apis:['setInterval']})
+test('placing a Bot call rings at once and finishes that ring after it is listening', async t=>{
+  t.mock.timers.enable({apis:['setInterval','setTimeout']})
   const out=speakers()
   try{
     let answer
@@ -57,13 +57,37 @@ test('placing a Bot call rings at once and stops the moment it is listening', as
     assert.ok(out.sounding(),'muting does not end the opening ring')
     answer(audio);await started
     assert.equal(c.call.state.phase,'listening')
-    assert.equal(out.sounding(),false,'listening leaves no ring behind')
+    assert.ok(out.sounding(),'an answer inside the first ring lets that ring finish')
+    t.mock.timers.tick(1100)
+    assert.equal(out.sounding(),false,'listening leaves no ring behind once the ring ends')
+    t.mock.timers.tick(10000)
     assert.equal(out.made.every(ctx=>ctx.closed===1),true,'the ring context is closed once')
   }finally{out.restore()}
 })
 
-test('a greeting call stops ringing when it sends the greeting', async t=>{
-  t.mock.timers.enable({apis:['setInterval']})
+test('a call answered at once still rings one whole ring, and a hangup cuts it short', async t=>{
+  t.mock.timers.enable({apis:['setInterval','setTimeout']})
+  const out=speakers()
+  try{
+    const quick=call({open:async()=>audio})
+    await quick.call.start(quick.source)
+    assert.equal(quick.call.state.phase,'listening')
+    t.mock.timers.tick(500)
+    assert.ok(out.sounding(),'half a second after answering the first ring still sounds')
+    t.mock.timers.tick(600)
+    assert.equal(out.sounding(),false)
+
+    const hung=call({open:async()=>audio})
+    await hung.call.start(hung.source)
+    assert.ok(out.sounding())
+    hung.call.end()
+    assert.equal(out.sounding(),false,'hanging up silences the ring at once')
+    assert.equal(out.made.every(ctx=>ctx.closed===1),true)
+  }finally{out.restore()}
+})
+
+test('a greeting call stops ringing after the ring it sends the greeting in', async t=>{
+  t.mock.timers.enable({apis:['setInterval','setTimeout']})
   const out=speakers()
   try{
     const c=call({open:async()=>audio})
@@ -71,6 +95,7 @@ test('a greeting call stops ringing when it sends the greeting', async t=>{
     assert.ok(out.sounding())
     await started
     assert.notEqual(c.call.state.phase,'opening')
+    t.mock.timers.tick(1100)
     assert.equal(out.sounding(),false)
   }finally{out.restore()}
 })

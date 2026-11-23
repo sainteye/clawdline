@@ -35,12 +35,24 @@ export function releaseCallPlayback(audio: HTMLMediaElement): void {
  * session so the microphone route is kept. Stopping it silences the ring and
  * closes that context without a hangup cue.
  */
-export function callRingback(observe?: (state: AudioContextState | 'unavailable') => void): () => void {
+export function callRingback(observe?: (state: AudioContextState | 'unavailable') => void): RingbackStop {
   const meter = new CallMeter()
   if (meter.open() !== null) { observe?.('unavailable'); return () => {} }
   const stop = meter.ring(observe)
-  return () => { stop(); meter.close() }
+  let closed = false
+  return now => stop(now, () => {
+    if (closed) return
+    closed = true
+    meter.close()
+  })
 }
+
+/**
+ * Silences a ringback. `now` (a hangup or a failure) stops it at once; an
+ * answered call lets a ring that has begun sound its whole tone first, so a
+ * call that opens in a fraction of a second is still heard ringing.
+ */
+export type RingbackStop = (now?: boolean) => void
 
 export class CallMeter {
   private context: AudioContext | null = null
@@ -113,26 +125,42 @@ export class CallMeter {
    * called. It plays on the context `open` made in the tap, so iOS lets it
    * sound; with no context it is silent.
    */
-  ring(observe: (state: AudioContextState | 'unavailable') => void = () => {}): () => void {
+  ring(observe: (state: AudioContextState | 'unavailable') => void = () => {}): (now?: boolean, done?: () => void) => void {
     const context = this.context
-    if (!context) { observe('unavailable'); return () => {} }
+    if (!context) { observe('unavailable'); return (_now, done) => done?.() }
     let timer: ReturnType<typeof setInterval> | undefined
+    let finishing: ReturnType<typeof setTimeout> | undefined
     let gain: GainNode | undefined
+    let firstTone: number | undefined
+    const finished: (() => void)[] = []
     const tones: OscillatorNode[] = []
     let stopped = false
-    const stop = () => {
+    const silence = () => {
       if (stopped) return
       stopped = true
       clearInterval(timer)
+      clearTimeout(finishing)
       context.removeEventListener('statechange', sync)
       for (const tone of tones) {
         try { tone.stop(); tone.disconnect() } catch { /* refusal-ok: a stopped tone is already silent. */ }
       }
       gain?.disconnect()
+      for (const done of finished.splice(0)) done()
+    }
+    const stop = (now = true, done?: () => void) => {
+      if (stopped) return done?.()
+      if (done) finished.push(done)
+      const left = firstTone === undefined || context.state !== 'running' ? 0 : firstTone + RING_ON_S - context.currentTime
+      if (now || left <= 0) return silence()
+      // The first ring sounds to its end; no further ring is scheduled.
+      clearInterval(timer)
+      context.removeEventListener('statechange', sync)
+      finishing ??= setTimeout(silence, left * 1000)
     }
     const cycle = () => {
       if (!gain || context.state !== 'running') return
       const at = context.currentTime + 0.02
+      firstTone ??= at
       gain.gain.cancelScheduledValues(at)
       gain.gain.setValueAtTime(0, at)
       gain.gain.linearRampToValueAtTime(RING_LEVEL, at + 0.02)
@@ -163,7 +191,7 @@ export class CallMeter {
         }
         observe(prior)
       } catch {
-        stop()
+        silence()
         observe('unavailable')
       }
     }
