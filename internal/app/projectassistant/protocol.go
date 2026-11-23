@@ -164,8 +164,12 @@ type PromptRequest struct {
 	// MemoryChanged tells a resumed session that memory changed since it last
 	// heard it; as in Codync, the prompt then carries all of Context's memory.
 	MemoryChanged bool
-	Images        []PromptImage
-	Files         []PromptFile
+	// Compacted tells a resumed session that the agent compacted its own
+	// context during the previous turn; the prompt repeats Context's memory
+	// once (it also covers MemoryChanged).
+	Compacted bool
+	Images    []PromptImage
+	Files     []PromptFile
 }
 
 // PromptImage is one picture sent with the person's message.
@@ -202,6 +206,13 @@ type NativeContextState struct {
 	UsageKnown        bool
 	UsedTokens        int64
 	WindowTokens      int64
+	// The agent's own compactions during CompactedTurnID, as reported by the
+	// agent: Compactions counts them; Before/After are used tokens around them
+	// (zero when the agent did not report a reading).
+	CompactedTurnID string
+	Compactions     int
+	CompactedBefore int64
+	CompactedAfter  int64
 }
 
 // NativeContextReader is optional so providers without native context reports

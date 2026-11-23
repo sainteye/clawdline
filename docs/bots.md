@@ -298,6 +298,27 @@ the console still consumes snapshots. Automatic console updates and encrypted
 Cloud subscriptions remain pending; the local feed below does not establish
 either destination's acceptance.
 
+
+#### When the agent compacts its own context
+
+Claude Code and Codex summarize a full context by themselves. Clawdline records it from what the agent
+actually reports: a `compaction_update` with status `completed`, or, only for an agent that never sends
+one, a usage reading below half of a previous reading of at least 20K tokens (the rule Codync uses). One
+compaction counts once even when both signals arrive. Nothing is guessed from time or message counts.
+
+- The turn in which it happened gets one persistent chat notice, `compacted-<turn id>`: "Earlier context
+  was summarized to make room / 已摘要較早的內容，騰出空間：345K → 41K" (the numbers appear only when the
+  agent reported readings on both sides). Only a successful turn writes it.
+- The next turn on the same native binding repeats the Bot's memory once, through the same
+  `<memory_update>` renderer and filtered snapshot a resumed session uses when memory changed, so there
+  is one source. Instructions are not repeated: Claude Code and Codex keep them in the system prompt,
+  which survives compaction, and Gemini hears them on every open. The guard is the persisted notice
+  itself: only the most recently started earlier turn on that binding counts, so a later turn disarms
+  it, and it survives restarts.
+- A manual **Compact now** is not available yet; the native `/compact` path stays limited to isolated
+  qualification (`docs/project-assistants-runtime.md`). See
+  `docs/research/codync-context-recovery-2026-11-23.md` for the comparison with Codync.
+
 ### Local roster event feed
 
 API 71 adds local `GET /v1/project-assistants/roster-events?machine_id=…`.

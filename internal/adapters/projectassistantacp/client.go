@@ -94,6 +94,8 @@ type Client struct {
 	adapterVersion      string
 	geminiSettings      string
 	openingInstructions string
+	// observed: compactions the agent performed by itself.
+	observed observedCompactions
 	// remindFiles: a resumed native session may hold a system prompt frozen
 	// before send_file was described, so each person's turn names it (Codync
 	// host/src/agent/bot/turn.rs). Gemini hears the whole frame every open.
@@ -602,6 +604,9 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 			return nil, err
 		}
 		text = opening + "\n" + text
+	} else if q.Compacted {
+		// The agent compacted its context last turn: repeat memory once.
+		text = compactionRedelivery(q.Context.Text) + "\n" + text
 	} else if q.MemoryChanged {
 		text = memoryUpdate(q.Context.Text) + "\n" + text
 	}

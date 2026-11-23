@@ -74,6 +74,7 @@ type runtimeActor struct {
 	cleanupErr error              // Engine.mu
 	completion *routineCompletion // actor.mu; persisted before releasing a retained owner
 	opening    bool               // actor.mu
+	compacted  *pa.Message        // actor.mu: the agent's own compaction during the finishing turn
 	closing    bool               // actor.mu: seals live readings before native cleanup
 	working    bool
 	cancel     context.CancelFunc
@@ -1188,6 +1189,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// A resumed session last heard memory at its binding's revision.
 	memoryChanged := binding.MemoryRevision != current.Revision
+	compacted := compactedBeforeTurn(export, t, binding.Fence.BindingID)
 	binding.MemoryRevision = current.Revision
 	binding.ForgottenThrough = current.ForgottenThrough
 	leadRole := "member"
@@ -1443,7 +1445,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 			}
 			handoff.editedSummary = &text
 		}
-		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged})
+		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged, Compacted: resume && compacted})
 		return e
 	})
 	if err != nil {
@@ -1479,6 +1481,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		return err
 	}
 	usage := completedContextSample(session, t)
+	compactedNotice := compactionNotice(session, t, r.o.Clock())
 	err = r.closeSession(a, session)
 	cleaned = true
 	cleanupConfirmed = err == nil
@@ -1496,7 +1499,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
 	}
+	a.compacted = compactedNotice
 	err = r.finishWithContextLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil, usage)
+	a.compacted = nil
 	if err != nil && (t.RoutineRunID != "" || t.ExchangeID != "") {
 		a.completion = &routineCompletion{turn: t, text: result.FinalText}
 		r.retain(a, err)
@@ -1695,6 +1700,9 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 	if state == pa.TurnSucceeded {
 		if notice := attemptSwitchNotice(export, t, bot.Agent, bot.LoginProfile); notice != "" {
 			messages = append(messages, pa.Message{ID: "switch-" + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.NoticeMessage, Text: notice, At: r.o.Clock()})
+		}
+		if a.compacted != nil && a.compacted.TurnID == t.ID {
+			messages = append(messages, *a.compacted)
 		}
 	}
 	events := []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}
