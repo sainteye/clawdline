@@ -57,7 +57,7 @@ import { decodeBotMentions, encodeBotMentions } from "./bot-mentions"
 import { canMarkConversationRead, markConversationRead } from "./conversation-read"
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
-import { UnsentActions, retryOnce, type RetryFailure } from "./UnsentRetry"
+import { UnsentActions, retryOnce, unsentDiscardKind, type RetryFailure } from "./UnsentRetry"
 import { memoryOpener } from "./loading"
 import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, backgroundTaskLabel, liveBackgroundTask, type BackgroundStopOutcome, type BackgroundTask } from "./BackgroundTasks"
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
@@ -188,6 +188,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [pendingAttachments,setPendingAttachments]=useState<Record<string,SendAttachments|null>>({})
   const [retrying,setRetrying]=useState("")
   const [retryFailures,setRetryFailures]=useState<Record<string,RetryFailure>>({})
+  const [discardFailed,setDiscardFailed]=useState("")
   const [receiptCheckRevision,requestReceiptCheck]=useState(0)
   const retryInFlight=useRef(false)
   const assetKey=(id:string,attempt?:string)=>sendAttachmentKey(draftKey,scope.conversation_id,id,attempt)
@@ -907,6 +908,15 @@ ${currentDraft}`:submitted)
       }
     }
   }
+  /** Deletes one held send from this device's journal, its only record here; see unsentDiscardKind. */
+  const discardSend=(held:HeldOutcome)=>{
+    const id=held.intent.command.idempotency_key
+    if(retrying===id||view.heldOutcomes.transporting(draftKey,id)||view.heldOutcomes.find(draftKey,id)!==held)return
+    if(!view.heldOutcomes.discard(draftKey,id)){setDiscardFailed(id);repaintJournal();return}
+    setDiscardFailed("");clearPendingAttachments(held)
+    setRetryFailures(rows=>{if(!(id in rows))return rows;const next={...rows};delete next[id];return next})
+    repaintJournal()
+  }
   const leaveUnreadable=()=>{
     if(view.heldOutcomes.setAside(draftKey)){setUnknown(false);repaintJournal()}
   }
@@ -1497,7 +1507,9 @@ ${currentDraft}`:submitted)
           {!!row.pictures&&<small>{w.outgoingPictureCount.replace("{count}",String(row.pictures))}</small>}
           <UnsentActions retrying={retrying===id} accepted={admittedReceipt(row.receipt)} failure={retryFailures[id]} restore={restore}
             canRestore={!recoveringID&&!paused} canRetry={enabled&&loaded} disabled={busy||(!restore&&!!retrying)}
-            onRestore={()=>restoreSend(row)} onRetry={()=>void retrySend(row)} w={w} language={language}/>
+            onRestore={()=>restoreSend(row)} onRetry={()=>void retrySend(row)}
+            discard={unsentDiscardKind(row,{accepted:admittedReceipt(row.receipt),transporting:retrying===id||view.heldOutcomes.transporting(draftKey,id)})}
+            discardFailed={discardFailed===id} onDiscard={()=>discardSend(row)} w={w} language={language}/>
         </article>
       })}
 

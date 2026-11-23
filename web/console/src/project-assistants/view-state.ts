@@ -184,6 +184,20 @@ export class HeldOutcomes {
     j.aside = j.aside.filter(o => o.intent.command.idempotency_key !== idempotencyKey)
     if (j.aside.length !== before) this.save(key, j)
   }
+  /**
+   * The person deletes one held send. This journal is the only record of a
+   * send the source never admitted, so the removal is committed only when it
+   * is saved; an unsaved delete keeps the send rather than let a reload bring
+   * it back. Returns whether the send is gone.
+   */
+  discard(key: string, idempotencyKey: string): boolean {
+    const j = this.load(key)
+    const owns = (o: HeldOutcome | null) => o?.intent.command.idempotency_key === idempotencyKey
+    if (!owns(j.active) && !j.aside.some(owns)) return false
+    const next: Journal = { ...j, active: owns(j.active) ? null : j.active, aside: j.aside.filter(o => !owns(o)) }
+    if (this.storage && !this.save(key, next)) { j.problem = next.problem; return false }
+    this.journals.set(key, next); return true
+  }
   dismissUnreadable(key: string) { const j = this.load(key); if (j.unreadable) { j.unreadable = false; this.save(key, j) } }
   /**
    * Records one send's own answer by its command identity. A newer held send

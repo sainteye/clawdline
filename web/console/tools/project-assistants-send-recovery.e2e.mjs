@@ -106,6 +106,8 @@ export function mountFixture() {
         state.sends++; state.transported.push(request.command.idempotency_key)
         const mode = state.mode; state.mode = "normal"; persist()
         if (mode === "missing") { state.pending = request; persist(); lose() }
+        // The source's typed answer for a send it certainly did not admit: no receipt, no message.
+        if (mode === "refuse") return refusal({contract_version:"project-assistants.v1",error:{code:"pa_capacity_full",field:"owned_cleanup",retry_after_seconds:0}})
         if (mode === "original-wins" || mode === "original-wins-lost") {
           if (!state.pending || state.pending.command.idempotency_key !== request.command.idempotency_key || !request.command.client_attempt_id) throw new Error("recovery lost its command identity")
           await admit(state.pending, signal); state.admitted.push(state.pending); persist()
@@ -144,7 +146,10 @@ export function mountFixture() {
   const w = words(language)
   const button = (label, onClick) => React.createElement("button", { type: "button", onClick }, label)
   const mode = next => () => { state.mode = next; paint() }
+  const compact = new URLSearchParams(location.search).has("compact")
   const paint = () => root.render(React.createElement("div", { className: "project-assistants pa-selected", style: { display: "grid", gridTemplateRows: "auto minmax(0,1fr)", height: "100dvh" } },
+    // ?compact=1 folds the controls away so a phone-sized screenshot shows the chat.
+    React.createElement(compact ? "details" : "div", compact ? { style: { padding: "0 8px", fontSize: 12 } } : { style: { display: "contents" } }, compact && React.createElement("summary", null, "Test controls"),
     React.createElement("nav", { "aria-label": "Synthetic test controls", style: { display: "flex", flexWrap: "wrap", gap: 6, padding: 8, fontSize: 12 } },
       injectStorageRefusal && button("Test: allow storage", () => {
         sessionStorage.setItem("send-recovery.storage-allowed", "yes"); refuseStorage = false; paint()
@@ -153,6 +158,7 @@ export function mountFixture() {
       !legacy && button("Test: interrupt reads after an accepted send", mode("recover-read")),
       !legacy && button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       !legacy && button("Test: next send leaves no receipt", mode("missing")),
+      !legacy && button("Test: refuse next send without admitting it", mode("refuse")),
       !legacy && button("Test: original wins during recovery", mode("original-wins")),
       !legacy && button("Test: original wins and loses its response", mode("original-wins-lost")),
       !legacy && button("Test: attach picture", () => {
@@ -177,7 +183,7 @@ export function mountFixture() {
       !legacy && button("Test: revoke grant", () => { sources = []; paint() }),
       React.createElement("output", { "aria-label": "Transport log" }, "account=" + account + " grants=" + sources.length + " mode=" + (state.revokeSend ? "revoke-before" : state.mode) + " sends=" + state.sends + " exports=" + state.exports + " keys=" + state.transported.join(",")),
       // The composer's value is not page text; report it for the reader.
-      React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })())),
+      React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })()))),
     React.createElement("main", { className: "pa-main" }, shown && summary ? React.createElement(Chat, { key: account + generation, summary, source, current, accountKey: account, readerID: "fixture-reader", view, w, language, onBack: () => {}, onBotChanged: () => {} }) : React.createElement("p", null, "Chat closed"))))
   // Observe every DOM publication, including the first validated snapshot.
   const observation = document.createElement("output"); observation.id = "legacy-observation"; document.body.append(observation)
