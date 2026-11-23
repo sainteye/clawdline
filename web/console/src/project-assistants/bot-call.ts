@@ -45,6 +45,8 @@ export interface CallPorts {
   current(): CallObservation | null
   submit(input: CallInput): Promise<Submission>
   changed(state: CallState): void
+  /** Starts the ringback while the call opens; the returned function silences it. */
+  ringback?(): () => void
 }
 
 interface LiveCall {
@@ -61,6 +63,7 @@ interface LiveCall {
 export class BotCall {
   state: CallState = { phase: "idle", muted: false }
   private call?: LiveCall
+  private stopRingback?: () => void
 
   private ports: CallPorts
 
@@ -159,6 +162,14 @@ export class BotCall {
     const changed = this.state.phase !== phase || this.state.muted !== muted
     if (!changed) return
     this.state = { phase, muted }
+    // The ringback lasts exactly as long as the opening phase, started inside
+    // the tap that placed the call so the browser lets it sound.
+    if (phase === "opening") this.stopRingback ??= this.ports.ringback?.()
+    else {
+      const stop = this.stopRingback
+      this.stopRingback = undefined
+      stop?.()
+    }
     this.ports.changed(this.state)
     this.call?.audio?.listen(phase === "listening" && !muted)
   }

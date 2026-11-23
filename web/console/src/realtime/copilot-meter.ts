@@ -29,6 +29,19 @@ export function releaseCallPlayback(audio: HTMLMediaElement): void {
   }
 }
 
+/**
+ * A ringback for a call that measures nothing, such as a Bot's browser call:
+ * its own context, opened now, inside the tap, under the call's duplex audio
+ * session so the microphone route is kept. Stopping it silences the ring and
+ * closes that context without a hangup cue.
+ */
+export function callRingback(observe?: (state: AudioContextState | 'unavailable') => void): () => void {
+  const meter = new CallMeter()
+  if (meter.open() !== null) { observe?.('unavailable'); return () => {} }
+  const stop = meter.ring(observe)
+  return () => { stop(); meter.close() }
+}
+
 export class CallMeter {
   private context: AudioContext | null = null
   private releaseAudio?: () => void

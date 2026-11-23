@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { busy as dictating } from "../legacy/voice-bridge"
+import { callRingback } from "../realtime/copilot-meter"
 import { BotCall, type CallPorts, type CallState } from "./bot-call"
 import { botCallAudioAvailable, browserCallAudio, browserCallAudioReady } from "./bot-call-audio"
 import type { useBotVoice } from "./BotVoicePanel"
@@ -13,6 +14,7 @@ export function useBotCall(ports: Pick<CallPorts, "current" | "submit">) {
     current: () => latest.current.current(),
     submit: input => latest.current.submit(input),
     changed: setState,
+    ringback: () => callRingback(),
   }))
   useLayoutEffect(() => {
     latest.current = ports
