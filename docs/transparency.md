@@ -1184,3 +1184,8 @@ an unknown effect, logs the cleanup cause, and the chat says resending is
 safe. Review of the English and Taiwan Traditional Chinese Bot context
 explanations found the same instruction inputs, provider scopes and execution
 rules; only the source receipts change.
+
+The Cloud Bot roster can ask its paired source for the existing list before
+the API version and command inventory arrive. The English and Taiwan
+Traditional Chinese Bot explanations still describe the same send authority
+and instruction inputs. The source receipt follows the read path.

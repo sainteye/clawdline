@@ -295,9 +295,9 @@ test("view rejects raw truthy Source flags before a captured writable grant can 
     await assert.rejects(client.view(viewRequest,signal()),e=>errorCode(e)==="pa_invalid")
   }
 })
-test("old, unknown, unpaired and offline sources issue no nonexistent API requests",async () => {
+test("old, unpaired and offline sources issue no nonexistent API requests",async () => {
   let calls = 0
-  for (const changed of [{apiLevel:57},{apiLevel:undefined},{paired:false},{online:false}]) {
+  for (const changed of [{apiLevel:57},{paired:false},{online:false}]) {
     const {source} = make(async () => {calls++; return Response.json({})},{...grant(),...changed})
     const answer = await source.status(signal())
     assert.equal(answer.sources[0].readable,false)
@@ -777,7 +777,7 @@ const rosterFrame = (): W.ProjectAssistantRosterFrame => ({type:"snapshot-comple
 const rosterWire = (f: W.ProjectAssistantRosterFrame) => `${f.cursor?`id: ${f.cursor}\n`:""}event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`
 const rosterResponse = (input: string, cancel: ()=>void = ()=>{}) => new Response(new ReadableStream<Uint8Array>({start(c){c.enqueue(new TextEncoder().encode(input))},cancel}),{headers:{"Content-Type":"text/event-stream; charset=utf-8"}})
 
-test("Cloud Bots wait for the complete command list and use it for roster, chat and pictures", async()=>{
+test("Cloud can ask for the roster using an incomplete cache while mutations wait for capabilities", async()=>{
   const words=Object.keys(CARRIED).sort()
   const supported=["project-assistants.list","project-assistants.view","project-assistants.send-pictures"]
   const remembered=words.slice(0,64)
@@ -791,25 +791,27 @@ test("Cloud Bots wait for the complete command list and use it for roster, chat 
   }
   const relay=capturedAssistantRelayFetch("one",()=>connection,words)
   const roster="/v1/project-assistants?machine_id=one&cursor=&query=&page_size=100"
-  await assert.rejects(relay(roster),e=>errorCode(e)==="pa_offline"&&notSentEvidence(e))
-  assert.deepEqual(sent,[])
-  snapshots.set("one",{machine:{commands:supported}})
-  assert.equal((await relay(roster)).ok,true)
   const picture={...sendRequest("after-descriptor"),images:["data:image/png;base64,AA=="]}
-  assert.equal((await relay("/v1/project-assistants/same%2Fid/messages",{
+  const sendPicture=()=>relay("/v1/project-assistants/same%2Fid/messages",{
     method:"POST",body:JSON.stringify(picture),headers:{"Idempotency-Key":"after-descriptor"},
-  })).ok,true)
+  })
+  assert.equal((await relay(roster)).ok,true)
+  await assert.rejects(sendPicture(),e=>errorCode(e)==="pa_offline"&&notSentEvidence(e))
+  assert.deepEqual(sent,["project-assistants.list"])
+  snapshots.set("one",{machine:{commands:supported}})
+  assert.equal((await sendPicture()).ok,true)
   snapshots.set("one",{machine:{commands:[]}})
   await assert.rejects(relay(roster),e=>errorCode(e)==="pa_unsupported")
   assert.deepEqual(sent,["project-assistants.list","project-assistants.send-pictures"])
 })
 
-test("a paired Cloud Bot roster recovers when its machine descriptor arrives after the list opens", async()=>{
+test("a paired Cloud Bot roster recovers from a lost response before the machine descriptor arrives", async()=>{
   const word = "project-assistants.list"
   const request: W.ProjectAssistantListRequest = { machine_id: "one", query: "", cursor: "", page_size: 100 }
   const snapshots = new Map<string, unknown>()
   let cachedCommands: string[] | undefined
   let reads = 0
+  let refusal = "cloud_read_timeout"
   const connection = {
     orchestratorSnapshots: snapshots,
     machineDescriptor: () => ({ machine: { commands: cachedCommands } }),
@@ -817,23 +819,62 @@ test("a paired Cloud Bot roster recovers when its machine descriptor arrives aft
       assert.equal(machine, "one")
       assert.equal(command, word)
       reads++
+      if (refusal) throw Object.assign(new Error(refusal), {code:refusal,ref:{seq:reads}})
       return { ...sourceStatus(), items: [rosterFrame().changes![0].summary], next_cursor: "" }
     },
   }
   const relay = capturedAssistantRelayFetch("one", () => connection, [word])
   const source = make(relay, { ...grant(), apiLevel: 111 }).source
-  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
+  const failures: unknown[] = []
+  await assert.rejects(source.list(request, signal(), failure=>failures.push(failure)), e => errorCode(e) === "pa_offline")
   cachedCommands = ["transcript"]
-  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
-  snapshots.set("one", { machine: { platform: "darwin" } })
-  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
-  assert.equal(reads, 0)
-  snapshots.set("one", { machine: { commands: [word] } })
+  refusal = ""
   assert.equal((await source.list(request, signal())).items.length, 1)
-  assert.equal(reads, 1)
+  assert.equal(reads, 2)
+  snapshots.set("one", { machine: { platform: "darwin" } })
+  refusal = "unknown_command"
+  await assert.rejects(source.list(request, signal(), failure=>failures.push(failure)), e => errorCode(e) === "pa_unsupported")
+  assert.equal(reads, 3)
+  assert.deepEqual(failures,[
+    {machine:"one",code:"pa_offline",stage:"request",transport_code:"cloud_read_timeout",status:null,has_ref:true,request_seq:1,api_level:111},
+    {machine:"one",code:"pa_unsupported",stage:"request",transport_code:"unknown_command",status:null,has_ref:true,request_seq:3,api_level:111},
+  ])
   snapshots.set("one", { machine: { commands: ["transcript"] } })
-  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_unsupported")
-  assert.equal(reads, 1)
+  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_unsupported" && notSentEvidence(e))
+  assert.equal(reads, 3)
+})
+
+test("Cloud roster can read before its API version arrives without enabling writes", async()=>{
+  const word = "project-assistants.list"
+  const request: W.ProjectAssistantListRequest = { machine_id: "one", query: "", cursor: "", page_size: 100 }
+  const calls: string[] = []
+  const snapshots = new Map([["one", {machine:{commands:[word]}}]])
+  const connection = {
+    orchestratorSnapshots: snapshots,
+    async _machineRequest(machine: string, command: string) {
+      assert.equal(machine, "one")
+      calls.push(command)
+      return { ...sourceStatus(), items: [rosterFrame().changes![0].summary], next_cursor: "" }
+    },
+  }
+  const relay = capturedAssistantRelayFetch("one", () => connection, [word])
+  const first = {...grant(), apiLevel:undefined}
+  const {source,setGrant} = make(relay, first)
+  const answer = await source.list(request, signal())
+  assert.equal(answer.items.length, 1)
+  assert.equal(answer.sources[0].writable, false)
+  await assert.rejects(source.send(sendRequest("missing-api"),signal()), e => errorCode(e) === "pa_unsupported" && notSentEvidence(e))
+  for(const denied of [
+    {grant:{...first,apiLevel:59},code:"pa_unsupported"},
+    {grant:{...first,paired:false},code:"pa_unpaired"},
+    {grant:{...first,online:false},code:"pa_offline"},
+  ]) {
+    setGrant(denied.grant)
+    await assert.rejects(source.list(request, signal()), e => errorCode(e) === denied.code && notSentEvidence(e))
+  }
+  const local = make(relay, {...first,accountKey:"local"}).source
+  await assert.rejects(local.list(request, signal()), e => errorCode(e) === "pa_unsupported")
+  assert.deepEqual(calls,[word])
 })
 
 test("roster is local API71 only and cannot enter the Cloud recorder",async()=>{

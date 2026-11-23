@@ -510,6 +510,8 @@ export class StatusCloudClient extends CatalogCloudClient {
     const live = this.orchestratorSnapshots?.get(machine)?.machine
     const remembered = this.machineDescriptors?.get(machine)?.machine?.commands
     const lacks = this.machineLacks?.get(machine)
+    // A paired roster read can start before the current descriptor is replayed.
+    if (type === "project-assistants.list" && !Array.isArray(live?.commands) && !lacks?.has(type)) return "unknown"
     if ((!live || typeof live !== "object" || Array.isArray(live)) &&
       Array.isArray(remembered) && remembered.length === 64 && !remembered.includes(type) &&
       !lacks?.has(type)) return "unknown"

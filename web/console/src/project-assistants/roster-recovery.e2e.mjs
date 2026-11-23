@@ -58,6 +58,20 @@ async function checkIndependentSnapshots(page, language) {
   assert.equal(proof.notebook.maxActive,1)
   return proof
 }
+async function checkCloudRosterBeforeVersionReplay(page) {
+  await page.goto(origin+"/?cloud&lang=zh-Hant")
+  const error=page.getByText("暫時無法載入 Bot 清單。",{exact:true})
+  await error.waitFor()
+  assert.deepEqual(await page.evaluate(()=>["studio","notebook"].map(id=>window.cloudRoster.reads(id))),[1,1])
+  const rows=page.locator(".pa-bot-row[data-bot-key]")
+  await page.evaluate(()=>window.cloudRoster.restore("studio"))
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===3,undefined,{timeout:7000})
+  await error.waitFor({state:"hidden"})
+  await page.evaluate(()=>window.cloudRoster.restore("notebook"))
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:7000})
+  assert.equal(await rows.count(),6)
+}
+
 async function checkMobileToolbarAndRetry(page,language,width) {
   await page.goto(origin+"/?snapshots&retry&hold&lang="+language)
   const zh=language!=="en"
@@ -159,6 +173,7 @@ try {
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
       const snapshots=await checkIndependentSnapshots(page,language)
       await checkMobileToolbarAndRetry(page,language,width)
+      if(width<701)await checkCloudRosterBeforeVersionReplay(page)
       assert.deepEqual(errors,[])
       results.push({name,...proof,snapshots})
     }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)});throw error}

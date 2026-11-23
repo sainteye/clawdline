@@ -282,6 +282,40 @@ test("a cut remembered Linux command list cannot refuse a named transcript read"
   assert.equal(client._machineImplements("m", "transcript"), "no")
 })
 
+test("a named Bot roster can publish before capability replay and stops on an explicit refusal", async () => {
+  const word = "project-assistants.list"
+  const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, false, ["sign","verify"])
+  const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, false, ["encrypt","decrypt"])
+  const client = new StatusCloudClient({ relayURL:"wss://relay.example.test", deviceToken:"fixture", deviceID:"viewer",
+    devicePrivateKey:keys.privateKey, nextSequence:async()=>1 })
+  client.ready = true
+  client.allowWrites = true
+  client.machineDescriptors.set("m", {machine:{platform:"linux",commands:["transcript"]}})
+  client._outboundMachinePairing = async()=>({keyID:"key",masterKey})
+  client._subscriptionRoom = ()=>null
+  client.subscribe = ()=>{}
+  client._releaseSubscription = ()=>{}
+  let published
+  const publication = new Promise(resolve=>{published=resolve})
+  client._send = frame=>published(frame.envelope)
+  const control = new AbortController()
+  const request = ()=>client._machineRequestAs("fixture-read","m",word,{machine_id:"m",page_size:100},"read",undefined,{signal:control.signal})
+  const result = request()
+  try {
+    const envelope = await Promise.race([publication,result.then(()=>assert.fail("read settled before publication"))])
+    assert.match(envelope.ch,/^ctl\/m/)
+    const fields = JSON.parse(new TextDecoder().decode(await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv:base64Bytes(envelope.nonce,"nonce")},masterKey,base64Bytes(envelope.ct,"ct"))))
+    assert.equal(fields.type,word)
+    assert.equal(fields.machine_id,"m")
+    client._settleRead("m\u0000__clawdline_machine__\u0000read:fixture-read",null,Object.assign(new Error("unknown command"),{code:"unknown_command"}))
+    await assert.rejects(result,{code:"unknown_command"})
+    await assert.rejects(request(),{code:"cloud_machine_unsupported"})
+  } finally {
+    control.abort()
+  }
+})
+
 test("a paired Mac remains the voice host while its cached command list is incomplete", async () => {
   const client = Object.create(StatusCloudClient.prototype)
   const cached = Array.from({ length: 64 }, (_, i) => `word-${i}`)

@@ -73,6 +73,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
+type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
@@ -196,14 +197,14 @@ export class ProjectAssistantSourceClient implements SourceClient {
     } finally { signal.removeEventListener("abort",abort);this.lifetime.signal.removeEventListener("abort",abort) }
   }
   current(): boolean { try {this.check(new AbortController().signal,false,false);return true} catch {return false} }
-  private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL, plainSend = false) {
+  private check(signal: AbortSignal, write: boolean, content: boolean, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard") {
     const live = this.currentGrant()
     if (!live || this.lifetime.signal.aborted || live.accountKey !== this.grant.accountKey ||
       live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
-    if (live.apiLevel === undefined || live.apiLevel < minimum) throw failure("pa_unsupported")
-    if (plainSend) {
+    if (live.apiLevel === undefined ? mode !== "cloud-roster" : live.apiLevel < minimum) throw failure("pa_unsupported")
+    if (mode === "plain-send") {
       if (!live.writable || this.observedWriteAccess === false) throw failure("pa_read_only")
       return
     }
@@ -220,19 +221,19 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, plainSend = false): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard"): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
-    try { this.check(signal,write,content,minimum,plainSend); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
+    try { this.check(signal,write,content,minimum,mode); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
     let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
         ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":"command" in body ? body.command.idempotency_key : body.idempotency_key}} : {})})
-      this.recheck(signal,write,content,minimum,response,plainSend)
+      this.recheck(signal,write,content,minimum,response,mode)
       const answer: unknown = await response.json()
-      this.recheck(signal,write,content,minimum,answer,plainSend)
+      this.recheck(signal,write,content,minimum,answer,mode)
       answered = true
       if (sourceFailure(answer)) throw answer
       if (!response.ok) throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
@@ -241,12 +242,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
       if (answered || error instanceof AssistantTransportFailure) throw error
       // A transport that refused before sending says so; nothing crossed.
       if (provablyNotSent(error)) {
-        try { this.check(signal,write,content,minimum,plainSend) } catch (current) { throw notSent(current) }
+        try { this.check(signal,write,content,minimum,mode) } catch (current) { throw notSent(current) }
         throw sourceFailure(error) ? error : notSent(new AssistantTransportFailure("pa_offline",error))
       }
-      this.recheck(signal,write,content,minimum,error,plainSend)
+      this.recheck(signal,write,content,minimum,error,mode)
       if (sourceFailure(error)) throw error
-      throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : "pa_offline",error)
+      const unsupportedRoster = mode === "cloud-roster" && (error as {code?: unknown} | null)?.code === "unknown_command"
+      throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : unsupportedRoster ? "pa_unsupported" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
   }
   /**
@@ -254,8 +256,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
    * prove that nothing happened. Reads keep their typed refusal; writes become
    * outcome unknown and retain what the transport returned as evidence.
    */
-  private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown, plainSend = false) {
-    try { this.check(signal,write,content,minimum,plainSend) }
+  private recheck(signal: AbortSignal, write: boolean, content: boolean, minimum: number, evidence: unknown, mode: AssistantRequestMode = "standard") {
+    try { this.check(signal,write,content,minimum,mode) }
     catch (error) { if (!write) throw error; throw new AssistantTransportFailure("pa_outcome_unknown",{evidence,authority:error}) }
   }
   canFirstRun() {
@@ -300,7 +302,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.key({machine_id:r.machine_id,bot_id:""})
     let answered = false
     try {
-      const answer=await this.request<W.ProjectAssistantListResponse>(base+query({...r}),s)
+      const mode = this.grant.accountKey === "local" ? "standard" : "cloud-roster"
+      const answer=await this.request<W.ProjectAssistantListResponse>(base+query({...r}),s,undefined,"GET",true,PROJECT_ASSISTANTS_API_LEVEL,mode)
       answered = true
       const source=this.observeRosterSource(answer.contract_version,answer.sources?.find(item=>item.machine_id===this.machineID))
       return {...answer,sources:[source]}
@@ -329,7 +332,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   private observeRosterSource(version: string,source: W.ProjectAssistantSourceStatus|undefined) {
     if(version!=="project-assistants.v1"||!source||source.machine_id!==this.machineID)throw failure("pa_invalid")
-    const effective={...source,writable:source.writable&&this.currentGrant()?.writable===true}
+    const grant = this.currentGrant()
+    const effective={...source,writable:source.writable&&grant?.writable===true&&grant.apiLevel!==undefined}
     this.rememberSource(effective)
     return effective
   }
@@ -471,7 +475,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   send(r: W.ProjectAssistantSendRequest,s: AbortSignal) {
     const minimum=r.handoff?PROJECT_ASSISTANTS_HANDOFF_API_LEVEL:r.upload_ids?.length?PROJECT_ASSISTANTS_INPUTS_API_LEVEL:r.images?.length?(this.grant.accountKey==="local"?PROJECT_ASSISTANTS_PICTURES_API_LEVEL:PROJECT_ASSISTANTS_CLOUD_PICTURES_API_LEVEL):PROJECT_ASSISTANTS_API_LEVEL
     const plain=typeof r.text==="string"&&!!r.text.trim()&&!r.call_started&&!r.handoff&&!r.images?.length&&!r.upload_ids?.length
-    return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,minimum,plain)
+    return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/messages"),s,r,"POST",true,minimum,plain ? "plain-send" : "standard")
   }
   canInputs() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_INPUTS_API_LEVEL }
   upload(r:W.ProjectAssistantUploadRequest,s:AbortSignal) { return this.request<W.ProjectAssistantUploadResponse>(endpoint(r.command.key,"/upload"),s,r,"POST",true,PROJECT_ASSISTANTS_INPUTS_API_LEVEL) }
@@ -842,11 +846,13 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
       if (!client) throw failure("pa_offline")
       if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
       const advertised=machineCommands(client,machineID)
-      // A saved descriptor can be stale or incomplete. Keep the roster retryable
-      // until this connection has opened the machine's command advertisement.
-      if (advertised.incomplete) throw failure("pa_offline")
-      if (!advertised.commands?.includes(request.word)) {
-        throw failure(request.word === "project-assistants.list" && !advertised.fromSnapshot ? "pa_offline" : "pa_unsupported")
+      if (request.word === "project-assistants.list") {
+        // During reconnect the retained descriptor can lag behind the machine.
+        // This named read can use the machine's authenticated reply in its place.
+        if (advertised.fromSnapshot && !advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
+      } else {
+        if (advertised.incomplete) throw failure("pa_offline")
+        if (!advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
       }
       if(request.word==="project-assistants.send-pictures"){
         // AES-GCM adds its 16-byte authentication tag to the complete plaintext.
