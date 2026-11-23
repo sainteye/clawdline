@@ -12134,6 +12134,8 @@
   "projectAssistants.dispatchedOtherProject": "Other Project",
   "projectAssistants.dispatchedShowSetting": "Show dispatched Sessions",
   "projectAssistants.towerMoodOversee": "Waiting on Sessions",
+  "projectAssistants.compactedNotice": "Earlier context was summarized to make room",
+  "projectAssistants.compactedNoticeSizes": "Earlier context was summarized to make room: {before} → {after}",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14185,
+  "englishContentKeys": 14187,
   "riskKeys": 6025,
-  "nonRiskCount": 8160,
+  "nonRiskCount": 8162,
   "groups": [
     {
       "name": "acp / other",
@@ -6219,7 +6219,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 612,
+      "count": 614,
       "sources": [
         null
       ],
@@ -6276,6 +6276,8 @@
         "projectAssistants.closeArtifact",
         "projectAssistants.closeInformation",
         "projectAssistants.collapse",
+        "projectAssistants.compactedNotice",
+        "projectAssistants.compactedNoticeSizes",
         "projectAssistants.compose",
         "projectAssistants.connectorSubmit",
         "projectAssistants.connectorValue",
