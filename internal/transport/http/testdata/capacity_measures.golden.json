@@ -3680,8 +3680,19 @@
     "Note": true
   },
   {
+    "Name": "resources.disk_low_free_bytes",
+    "Known": true,
+    "Note": true,
+    "HasDiskFree": true
+  },
+  {
     "Name": "resources.disk_reserve_bytes",
     "HostDependent": true
+  },
+  {
+    "Name": "resources.disk_source_scan_files",
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "resources.log_seconds",
