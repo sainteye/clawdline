@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14121,
-  "riskKeys": 6000,
-  "nonRiskCount": 8121,
+  "englishContentKeys": 14141,
+  "riskKeys": 6008,
+  "nonRiskCount": 8133,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 732,
+      "count": 734,
       "sources": [
         null
       ],
@@ -644,6 +644,8 @@
         "capacityRow.bots.config_choices.what",
         "capacityRow.bots.config_probes.what",
         "capacityRow.bots.dispatch_seconds.what",
+        "capacityRow.bots.dispatched_strip_rows.full",
+        "capacityRow.bots.dispatched_strip_rows.what",
         "capacityRow.bots.event_rows.what",
         "capacityRow.bots.extensions.what",
         "capacityRow.bots.fallback_agents.what",
@@ -6209,7 +6211,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 583,
+      "count": 593,
       "sources": [
         null
       ],
@@ -6291,6 +6293,14 @@
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",
         "projectAssistants.dispatchDecline",
+        "projectAssistants.dispatchedOtherProject",
+        "projectAssistants.dispatchedShowSetting",
+        "projectAssistants.dispatchedStateNeedsYou",
+        "projectAssistants.dispatchedStateQueued",
+        "projectAssistants.dispatchedStripDelivered",
+        "projectAssistants.dispatchedStripLabel",
+        "projectAssistants.dispatchedStripMore",
+        "projectAssistants.dispatchedStripNeedsYou",
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
@@ -6550,6 +6560,8 @@
         "projectAssistants.rosterCopyID",
         "projectAssistants.rosterCreate",
         "projectAssistants.rosterDefaultSection",
+        "projectAssistants.rosterDispatchedDelivered",
+        "projectAssistants.rosterDispatchedNeedsYou",
         "projectAssistants.rosterDropPin",
         "projectAssistants.rosterEditProfile",
         "projectAssistants.rosterHide",

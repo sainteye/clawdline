@@ -14,6 +14,8 @@ import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
+import { DispatchedWorkStrip } from "./DispatchedWorkStrip"
+import { useDispatchedWorkShown } from "./dispatched-work-preference"
 import { AgentBadge } from "./AgentMark"
 import "./chat-presentation.css"
 import { LeadStarter } from "./LeadStarter"
@@ -1320,7 +1322,9 @@ ${currentDraft}`:submitted)
     available:!thread&&!leadSetup.blocked&&botVoice.configured!==null,
     ready:realtimeCall?canVoiceCall:canCall})
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
-  const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
+  const showDispatched=useDispatchedWorkShown()
+  const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
+  const mood=ownMood==="idle"&&live&&showDispatched&&rosterMood(summary,true)==="waitingOnWork"?"waitingOnWork":ownMood
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
   const pendingSend=view.heldOutcomes.get(draftKey)
   const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
@@ -1559,7 +1563,8 @@ ${currentDraft}`:submitted)
         const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
         card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
       }}>{w.teamReviewJump}</button>}
-    <div className="pa-chat-footer">{!thread&&<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
+    <div className="pa-chat-footer">{!thread&&(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
+      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} ownProject={summary.bot.project.kind==="personal"?undefined:projectName} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
       {parts.queued.length>0&&<div className="pa-queue">{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null

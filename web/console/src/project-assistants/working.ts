@@ -2,12 +2,18 @@ import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import { botFailureText } from "./source-errors.ts"
 
-export type BotMood = "idle" | "working" | "needsInput"
+export type BotMood = "idle" | "working" | "needsInput" | "waitingOnWork"
 export function liveActivity(source:W.ProjectAssistantSourceStatus):boolean {
   return source.fresh && source.state === "online" && source.readable && source.access !== "hidden"
 }
-export function rosterMood(item:W.ProjectAssistantBotSummary):BotMood {
+/** Captions are not needed to decide a mood. */
+const silentWords:Record<string,string>=new Proxy({},{get:()=>""})
+export function rosterMood(item:W.ProjectAssistantBotSummary,showDispatched=false):BotMood {
   if(!liveActivity(item.source))return "idle"
+  if(showDispatched){
+    const state=rosterShownState(item,true)
+    return state==="needsInput"||state==="working"||state==="waitingOnWork"?state:"idle"
+  }
   const state=item.status||(item.pending_permissions>0||item.activity==="waiting_permission"?"needsInput":["running","accepted","queued"].includes(item.activity)?"working":"idle")
   return state==="needsInput"?"needsInput":state==="working"?"working":"idle"
 }
@@ -67,9 +73,29 @@ export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<str
   return {state:shown,caption,live}
 }
 
-export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<string, string>) {
+/** Dispatched Sessions still running or waiting for the person: the roster's
+ * clone count. Absent or garbled counts (older sources) are zero. */
+export function dispatchedCount(item: W.ProjectAssistantBotSummary): number {
+  const work = item.dispatched_work
+  const n = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : 0
+  return work ? n(work.running) + n(work.needs_you) : 0
+}
+
+/** The roster state a person sees. With dispatched work shown, precedence is
+ * needsInput > error > working > waitingOnWork > idle; with it hidden (or on
+ * an older source without the field) this is today's presentation. */
+export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<string, string>, showDispatched = true) {
   const chat = rosterActivity(item, w)
   const work = item.background_work
+  const dispatched = showDispatched && chat.live && item.dispatched_work ? item.dispatched_work : undefined
+  if (dispatched && chat.state !== "needsInput") {
+    const asking = dispatched.needs_you > 0
+    if (asking && !(work && work.needs_input > 0)) {
+      return {state:"needsInput", caption:w.rosterDispatchedNeedsYou, live:true, queuedOnly:false}
+    }
+    // An own failure is not hidden by work running elsewhere.
+    if (chat.state === "error") return {...chat, queuedOnly:false}
+  }
   if (chat.live && work && chat.state !== "needsInput") {
     if (work.needs_input > 0) {
       return {state:"needsInput", caption:w.rosterBackgroundNeedsYou, live:true, queuedOnly:false}
@@ -82,5 +108,15 @@ export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<
       return {state:"working", caption:counts.join(" · "), live:true, queuedOnly:work.working === 0}
     }
   }
+  if (dispatched && chat.state === "idle" && dispatched.running > 0) {
+    const caption = [w.rosterWaitingOnWork.replace("{count}", String(dispatched.running)),
+      dispatched.delivered > 0 ? w.rosterDispatchedDelivered.replace("{count}", String(dispatched.delivered)) : ""].filter(Boolean).join(" · ")
+    return {state:"waitingOnWork", caption, live:true, queuedOnly:false}
+  }
   return {...chat, queuedOnly:false}
+}
+
+/** The state botRosterActivity shows, without composing its caption. */
+export function rosterShownState(item: W.ProjectAssistantBotSummary, showDispatched = true): string {
+  return botRosterActivity(item, silentWords, showDispatched).state
 }
