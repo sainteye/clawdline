@@ -242,9 +242,6 @@
 .project-assistants .pa-unsent-failure small { display:inline;margin:0; }
 /* Deleting is the quiet second choice: dim until asked, then an inline confirmation in the row. */
 .project-assistants .pa-unsent-actions .pa-unsent-discard { min-width:44px;padding:0 6px;color:var(--pa-dim);text-decoration:underline;text-underline-offset:3px; }
-.project-assistants .pa-unsent-confirm { flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:0 12px;color:var(--pa-ink); }
-.project-assistants .pa-unsent-confirm p { flex:1 1 100%;margin:4px 0 0;font-size:12px; }
-.project-assistants .pa-unsent-actions .pa-unsent-confirm-action { color:var(--pa-bad,#f39b9c); }
 /* Delivery status is a quiet circled "!" in the secondary text colour; its 44px target is invisible. */
 .project-assistants .pa-unsent-info-wrap { display:inline-flex; }
 .project-assistants .pa-unsent-actions .pa-unsent-info { display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;min-height:44px;margin:0 -12px 0 -14px;padding:0;background:none;border:0;color:var(--pa-dim);cursor:pointer; }

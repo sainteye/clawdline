@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentDiscardConfirm,UnsentStatusNote,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {UnsentActions,UnsentDiscardConfirm,UnsentStatusNote,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
+const {UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -403,23 +403,41 @@ test("each kind of retry failure points to a different next step",async()=>{
   assert.match(offline,new RegExp(w.retryNextLater))
 })
 
-test("an unsent message can always be cleared: deleted when the source certainly has none, removed with a warning when it may have arrived",()=>{
+// Calls a component inside a real render so its hooks run, and keeps the element
+// tree it returned; a test can then press a button by calling its onClick.
+const renderTree=(component,props)=>{let tree=null;renderToStaticMarkup(React.createElement(function Probe(){tree=component(props);return tree}));return tree}
+const findButton=(node,text)=>{
+  if(node==null||typeof node!=="object")return null
+  if(Array.isArray(node)){for(const child of node){const hit=findButton(child,text);if(hit)return hit}return null}
+  const children=node.props?.children
+  if(node.type==="button"&&[children].flat().includes(text))return node
+  return findButton(children,text)
+}
+test("an unsent message can always be cleared: deleted when the source certainly has none, removed from this device when it may have arrived",()=>{
   const row=extra=>({intent:{command:{idempotency_key:"k"}},receipt:null,...extra})
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:false}),"delete")
   assert.equal(unsentDiscardKind(row({}),{accepted:false,transporting:false}),"remove")
   assert.equal(unsentDiscardKind(row({receipt:{state:"unknown"}}),{accepted:false,transporting:false}),"remove")
   assert.equal(unsentDiscardKind(row({}),{accepted:true,transporting:false}),null,"an accepted message clears itself when it appears")
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:true}),null,"nothing is removed while its request is open")
+})
+test("pressing Clear clears an unsent message at once, with no confirmation or explanation, whether or not it may have arrived",()=>{
   for(const language of ["en","zh-Hant"]){
     const w=words(language),base={retrying:false,accepted:false,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language}
-    for(const discard of ["delete","remove"])assert.match(render(UnsentActions,{...base,discard,onDiscard(){}}),new RegExp(">"+w.unsentClear+"<"))
-    assert.doesNotMatch(render(UnsentActions,base),new RegExp(">"+w.unsentClear+"<"))
-    const removing=render(UnsentDiscardConfirm,{kind:"remove",onConfirm(){},onCancel(){},w})
-    assert.match(removing,language==="en"?/may already have arrived/:/可能已經送達/)
-    assert.match(removing,new RegExp(">"+w.unsentRemoveConfirm+"<"));assert.match(removing,new RegExp(">"+w.cancel+"<"))
-    const deleting=render(UnsentDiscardConfirm,{kind:"delete",onConfirm(){},onCancel(){},w})
-    assert.match(deleting,language==="en"?/was not delivered/:/沒有送達/)
-    assert.doesNotMatch(deleting,language==="en"?/may already have arrived/:/可能已經送達/)
+    assert.doesNotMatch(render(UnsentActions,base),new RegExp(">"+w.unsentClear+"<"),"nothing to clear without a discard")
+    for(const discard of ["delete","remove"]){
+      let cleared=0
+      const props={...base,discard,onDiscard(){cleared++}}
+      const html=render(UnsentActions,props)
+      assert.match(html,new RegExp(">"+w.unsentClear+"<"),"the button is called Clear in every state")
+      const clear=findButton(renderTree(UnsentActions,props),w.unsentClear)
+      assert.ok(clear,"a Clear button")
+      clear.props.onClick()
+      assert.equal(cleared,1,discard+": one press clears the message")
+      assert.doesNotMatch(html,/pa-unsent-confirm|may already have arrived|可能已經送達|Remove from this device|從這台裝置移除/,"no confirmation step or warning")
+    }
+    const failed=render(UnsentActions,{...base,discard:"remove",discardFailed:true,onDiscard(){}})
+    assert.ok(failed.includes(w.unsentDiscardFailed.replaceAll("'","&#x27;")),"a clear this device cannot save keeps the row and says so")
   }
 })
 test("an unconfirmed message shows a small status icon instead of standing text, and the icon opens the explanation",()=>{
