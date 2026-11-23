@@ -408,6 +408,7 @@ export const en = {
 
   "allBots": "All Bots",
   "unread": "Unread",
+  "rosterWorkingSection": "Working",
   "rosterOrder": "Sort Bots",
   "rosterOrderDefault": "Default order",
   "rosterOrderUnread": "Unread first",
@@ -1224,6 +1225,7 @@ export const zhHant: Record<WordKey, string> = {
 
   "allBots": "所有 Bots",
   "unread": "未讀",
+  "rosterWorkingSection": "工作中",
   "rosterOrder": "Bot 排序",
   "rosterOrderDefault": "預設順序",
   "rosterOrderUnread": "未讀優先",

@@ -66,6 +66,26 @@ test("unread first prepends unread Bots and preserves every default section",()=
   assert.equal(orderedConversationSections(sections,"default"),sections)
 })
 
+test("unread first lists unread Bots, then working Bots, then every default section",()=>{
+  const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
+  const working={...bot("Working"),status:"working"} as W.ProjectAssistantBotSummary
+  const both={...bot("Both"),status:"working",unread_count:1} as W.ProjectAssistantBotSummary
+  const unread={...bot("Unread"),unread_count:3}
+  const idle={...bot("Idle"),status:"idle"} as W.ProjectAssistantBotSummary
+  const sections=conversationSections(conversations([idle,working,both,unread],[room("Group")]),emptyRosterState())
+  const ordered=orderedConversationSections(sections,"unread")
+  assert.deepEqual(ordered.slice(0,2).map(section=>[section.kind,section.items.map(name)]),[["unread",["Both","Unread"]],["working",["Working"]]])
+  assert.deepEqual(ordered.slice(2),sections)
+  // Without unread Bots the working section still comes first.
+  const noUnread=conversationSections(conversations([idle,working],[room("Group")]),emptyRosterState())
+  assert.deepEqual(orderedConversationSections(noUnread,"unread").map(section=>[section.kind,section.items.map(name)])[0],["working",["Working"]])
+  // A Bot that stops working returns to its default place only.
+  const stopped=conversationSections(conversations([idle,{...working,status:"idle"} as W.ProjectAssistantBotSummary,unread],[room("Group")]),emptyRosterState())
+  assert.deepEqual(orderedConversationSections(stopped,"unread").map(section=>section.kind),["unread","project"])
+  assert.equal(orderedConversationSections(sections,"default"),sections)
+  assert.deepEqual(orderedConversationSections(sections,"machine").map(section=>[section.kind,section.items.map(name)]),[["machine",sections[0].items.map(name)]])
+})
+
 test("the desktop call fallback follows sidebar order and skips hidden or read-only Bots",()=>{
   const source={state:"online",access:"interactive",fresh:true,readable:true,writable:true} as W.ProjectAssistantSourceStatus
   const recent={...bot("recent","2026-11-18T03:00:00Z"),source}
