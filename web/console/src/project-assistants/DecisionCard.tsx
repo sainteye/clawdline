@@ -66,3 +66,17 @@ export function DecisionPointer({name,onOpen,w}:{name:string;onOpen?:()=>void;w:
     {onOpen&&<button type="button" onClick={onOpen}>{w.decisionGo.replace("{name}",name)} ›</button>}
   </div>
 }
+
+// A decision raised for a Bot-to-Bot exchange sits under that exchange's
+// capsule in the asked Bot's chat (approved spec item 4). One whose capsule is
+// not in the loaded timeline, or whose detail has not been read yet, stays in
+// the permission section so it is never hidden.
+export function decisionsUnderCapsules<T extends {summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}>(
+  cards:readonly T[],messages:readonly W.ProjectAssistantMessage[],inline:ReadonlySet<string>,
+):Map<string,T> {
+  const capsules=new Set(messages.flatMap(m=>m.exchange?[m.exchange.id]:[]))
+  return new Map(cards.flatMap(card=>{
+    const id=card.summary.tool_kind==="decision"?card.offer?.decision?.exchange_id:undefined
+    return id&&capsules.has(id)&&!inline.has(card.summary.id)?[[id,card] as const]:[]
+  }))
+}
