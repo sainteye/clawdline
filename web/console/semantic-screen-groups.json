@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "englishContentKeys": 14068,
-  "riskKeys": 5974,
+  "englishContentKeys": 14074,
+  "riskKeys": 5980,
   "nonRiskCount": 8094,
   "groups": [
     {
@@ -6204,7 +6204,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 571,
+      "count": 572,
       "sources": [
         null
       ],
@@ -6283,6 +6283,7 @@
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",
+        "projectAssistants.dispatchDecline",
         "projectAssistants.downloadFile",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
@@ -8108,7 +8109,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 229,
+      "count": 228,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8231,7 +8232,6 @@
         "transparency.card.persistent-bot-outputs.title",
         "transparency.card.persistent-bot-project-dispatch.condition",
         "transparency.card.persistent-bot-project-dispatch.effect",
-        "transparency.card.persistent-bot-project-dispatch.how",
         "transparency.card.persistent-bot-project-dispatch.title",
         "transparency.card.persistent-bot-review.summary",
         "transparency.card.persistent-bot-review.title",

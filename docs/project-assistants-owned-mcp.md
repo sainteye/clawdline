@@ -26,6 +26,32 @@ scope in the brief. The work receipt and result belong to the source Bot
 conversation. The destination is included in the durable task provenance
 and idempotency hash.
 
+Any other Bot with a dispatch policy (allowed, timeout above zero) may set
+`project` too, but it first asks the person. The Host shows a
+`dispatch_project` permission card in that Bot's chat naming the Bot, the
+destination folder, the Session title and the claims, with three choices:
+allow this time, always allow this Bot → Project, or decline. No Bot
+permission mode answers this card automatically. The turn waits on the card;
+an expired or abandoned card never dispatches. The card ID is derived from
+the turn and the model's idempotency key, so a resent call reads the same
+card's stored answer instead of asking again: allowed reaches the normal
+receipt replay, declined stays `pa_declined`, expired stays `pa_expired`.
+
+Always allow saves one exact Bot-to-Project rule in
+`project_assistant_dispatch_rules` before the dispatch it allows. The rule is
+listed and removed on the existing saved-permission-rules settings surface
+(`GET`/`DELETE` of the Bot's rules), as
+`clawdline-dispatch-project:<project id> <folder>`; at most
+`capacity.MaximumBotDispatchRules` are kept. Only the person's answer or a
+saved rule puts a destination in `AssistantCurrent.ApprovedProjects`; the
+Broker still rechecks the destination and claims before recording the task.
+
+A card can be raised only on a turn the person started by talking to the Bot.
+Turns from another Bot, a room, the Network or a routine are refused with
+field `dispatch_project_direct`, telling the Bot to ask the person to talk to
+it directly. Saved rules deliberately do not apply to those turns either.
+The lead keeps its direct route and is never asked.
+
 The ACP provider creates an HTTP MCP capability only after native capability
 admission. Its random bearer is independent of the daemon's credential. It is
 restricted to a literal loopback address with an explicit port, one execution
