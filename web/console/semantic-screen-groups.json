@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14219,
-  "riskKeys": 6042,
-  "nonRiskCount": 8177,
+  "englishContentKeys": 14221,
+  "riskKeys": 6043,
+  "nonRiskCount": 8178,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 744,
+      "count": 745,
       "sources": [
         null
       ],
@@ -707,6 +707,7 @@
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
+        "capacityRow.bots.process_census_attempts.what",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.reaction_emoji_bytes.what",
         "capacityRow.bots.refresh_ms.what",
