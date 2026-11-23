@@ -1371,7 +1371,8 @@ ${currentDraft}`:submitted)
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
   const canReadActions=!!data&&!recoveryRequired&&source.current?.()!==false&&canMarkConversationRead(data.source)
-  const servers=useDevServerObservation({source,bot,enabled,active:!thread&&canReadActions&&!browserOpener&&!templateOpener,pulse:head})
+  // Closed details read only when the conversation actually moves; the open panel follows every chat read.
+  const servers=useDevServerObservation({source,bot,enabled,active:!thread&&canReadActions&&!browserOpener&&!templateOpener,pulse:infoOpen&&infoTab==="details"?head:head?.event_frontier})
   const serverLabel=serverTitle(servers.state,w)
   const legacyLocked=legacyBlocked()
   const legacyProblem=view.unverifiedDrafts.problem(draftKey)

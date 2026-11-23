@@ -6,7 +6,7 @@ import { catalogWord, currentCatalogTag } from "../catalog"
 import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canRead, canWrite } from "./view-state"
 import { GroupRoom } from "./GroupRoom"
-import { EventRefreshMs } from "./Chat"
+import { followQuietRefresh } from "./quiet-refresh"
 import { retryableSourceError, shownSourceError } from "./source-errors"
 import { rosterMood } from "./working"
 import { BotAvatar } from "./BotAvatar"
@@ -25,6 +25,18 @@ const identity=(key:W.ProjectAssistantBotKey)=>JSON.stringify([key.machine_id,ke
 type GroupSource={source:SourceClient;groups:W.ProjectAssistantGroup[];status:W.ProjectAssistantSourceStatus}
 function canStartGroup(bot:W.ProjectAssistantBot,sources:readonly GroupSource[]) {
   return !bot.hidden&&sources.some(({source,status})=>source.machineID===bot.key.machine_id&&canWrite(status)&&(bot.project.kind!=="personal"||source.canPersonalGroups?.()))
+}
+/** Live roster changes (a Bot starting, waiting or finishing work) and this
+ * tab's own edits trigger a read at once; the timer only catches edits made on
+ * another device, so it is a slow fallback rather than the 3 s chat cadence. */
+export const GroupFallbackRefreshMs=15_000
+/** What in the live roster can mean a group or team proposal changed. */
+const rosterNotice=(items:readonly W.ProjectAssistantBotSummary[])=>items.map(i=>JSON.stringify([i.bot.key.machine_id,i.bot.key.bot_id,i.bot.version,rosterMood(i)])).join("|")
+/** Forward a roster change to a quiet follower, skipping the entry value the follower already read. */
+function useRosterNotice(signature:string){
+  const notice=useRef<()=>void>(()=>{}),seen=useRef(signature)
+  useEffect(()=>{if(seen.current===signature)return;seen.current=signature;notice.current()},[signature])
+  return notice
 }
 const groupProjectKey=(project:W.ProjectAssistantProjectScope)=>JSON.stringify(project.kind==="personal"?[project.machine_id,project.kind]:[project.machine_id,project.kind,project.project_id,project.canonical_id])
 type GroupRosterView={
@@ -73,6 +85,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
   const current=()=>live.current
   const [revision,refresh]=useState(0)
   const supported=sources.filter(s=>s.canGroups?.()&&s.groups)
+  const roster=rosterNotice(items),notice=useRosterNotice(roster)
   useEffect(()=>{
     const control=new AbortController()
     const load=async()=>{
@@ -84,8 +97,8 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
         }catch(e){if(!control.signal.aborted){setPages(old=>old.filter(p=>p.source!==source));setError(errorCode(e))}}
       }))
     }
-    void load();const timer=setInterval(()=>void load(),EventRefreshMs)
-    return()=>{control.abort();clearInterval(timer)}
+    notice.current=followQuietRefresh(load,control.signal,GroupFallbackRefreshMs,document,window)
+    return()=>{control.abort();notice.current=()=>{}}
   },[sources,revision])
   const active=pages.filter(p=>sources.includes(p.source)&&p.source.current?.()!==false)
   useLayoutEffect(()=>{
@@ -116,7 +129,7 @@ export function Groups({sources,items,projectNames,projectIcons,query="",machine
       const item=items.find(item=>identity(item.bot.key)===identity(key)&&canRead(item.source))
       if(item)onSelectMember(item)
     }:undefined} onClose={close} onChanged={group=>{if(group.deleted)close();else setSelected({...selected,group});refresh(n=>n+1)}}/>}
-    <TeamApprovals sources={sources.filter(source=>!source.canTeamCards?.())} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
+    <TeamApprovals roster={roster} sources={sources.filter(source=>!source.canTeamCards?.())} bots={items.filter(i=>rosterMood(i)!=="idle").map(i=>i.bot).filter(bot=>identity(bot.key)!==selectedBot)}/>
   </>
   return children({rows,open,selected:selectedLive&&!selectedBot?identity(selected.group.key):null,dismiss,create:canCreate?()=>setCreating(true):undefined,content})
 }
@@ -241,12 +254,12 @@ export function GroupEditor({sources,bots,projectNames,projectIcons,current,grou
 
 /** Pending proposals remain visible on read-only devices; only a live human
  * write grant can answer them. No UI answer becomes a native approval option. */
-export function TeamApprovals({sources,bots}:{sources:readonly SourceClient[];bots:readonly W.ProjectAssistantBot[]}) {
+export function TeamApprovals({sources,bots,roster=""}:{sources:readonly SourceClient[];bots:readonly W.ProjectAssistantBot[];roster?:string}) {
   const [cards,setCards]=useState<{source:SourceClient;plan:W.ProjectAssistantTeamPlan;writable:boolean}[]>([]),[busy,setBusy]=useState<string[]>([]),[errors,setErrors]=useState<Record<string,string>>({}),[unknown,setUnknown]=useState<string[]>([])
   const live=useRef(sources);live.current=sources
   const current=()=>live.current
   const managers=bots.filter(b=>(b.lead||b.manage_team)&&sources.some(s=>s.machineID===b.key.machine_id&&s.canGroups?.()&&s.teamPlans))
-  const ids=managers.map(b=>JSON.stringify([b.key,b.version])).join("|")
+  const ids=managers.map(b=>JSON.stringify([b.key,b.version])).join("|"),notice=useRosterNotice(roster)
   useEffect(()=>{
     if(!managers.length){setCards([]);return}
     const control=new AbortController()
@@ -258,8 +271,8 @@ export function TeamApprovals({sources,bots}:{sources:readonly SourceClient[];bo
       }))).flat()
       if(!control.signal.aborted)setCards(out)
     }
-    void load();const timer=setInterval(()=>void load(),EventRefreshMs)
-    return()=>{control.abort();clearInterval(timer)}
+    notice.current=followQuietRefresh(load,control.signal,GroupFallbackRefreshMs,document,window)
+    return()=>{control.abort();notice.current=()=>{}}
   },[sources,ids])
   async function answer(source:SourceClient,plan:W.ProjectAssistantTeamPlan,allow:boolean){
     setBusy(old=>[...old,plan.id])
