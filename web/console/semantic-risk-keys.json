@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14189,
+  "englishKeys": 14191,
   "counts": {
-    "negation": 3612,
-    "state": 2401,
+    "negation": 3613,
+    "state": 2402,
     "permission": 852,
     "deletion": 326,
     "uncertainty": 565
   },
-  "unionCount": 6028,
+  "unionCount": 6030,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3077,6 +3077,7 @@
       "projectAssistants.agentUnavailable",
       "projectAssistants.artifactReplyFailed",
       "projectAssistants.artifactSendFailed",
+      "projectAssistants.botUnavailable",
       "projectAssistants.cannotEdit",
       "projectAssistants.checkDelivered",
       "projectAssistants.checkEarlierDelivered",
@@ -5432,6 +5433,7 @@
       "next.sendQueuedHeld",
       "next.sendQueuedHere",
       "next.sessionBoardOpenSessionFirst",
+      "next.sessionBotDispatchOpen",
       "next.sessionNotStartedShort",
       "next.sessionStateFilterAttentionHint",
       "next.sessionStateFilterIdleHint",
@@ -12304,6 +12306,7 @@
     "next.sessionBoardWriteError",
     "next.sessionBoardsEmpty",
     "next.sessionBoardsNoActive",
+    "next.sessionBotDispatchOpen",
     "next.sessionCountNotStarted",
     "next.sessionGone",
     "next.sessionNotStarted",
@@ -12779,6 +12782,7 @@
     "projectAssistants.backgroundRunningCommand",
     "projectAssistants.backgroundStopped",
     "projectAssistants.botNotifyHint",
+    "projectAssistants.botUnavailable",
     "projectAssistants.cancelled",
     "projectAssistants.cannotEdit",
     "projectAssistants.chatModelSaved",
