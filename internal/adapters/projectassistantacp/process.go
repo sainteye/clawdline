@@ -8,7 +8,9 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -46,20 +48,26 @@ type ProcessOptions struct {
 	beforeInitialCapture func(*Process)
 }
 type Process struct {
-	cmd            *exec.Cmd
-	stdin          *os.File
-	stdout         io.ReadCloser
-	stderrReader   io.ReadCloser
-	limits         Limits
-	write          chan struct{}
-	done           chan struct{}
-	stopSurvey     context.CancelFunc
-	surveyDone     chan struct{}
-	closeOnce      sync.Once
-	mu             sync.Mutex
-	stderr         []byte
-	waitErr        error
-	cleanupErr     error
+	cmd          *exec.Cmd
+	stdin        *os.File
+	stdout       io.ReadCloser
+	stderrReader io.ReadCloser
+	limits       Limits
+	write        chan struct{}
+	done         chan struct{}
+	stopSurvey   context.CancelFunc
+	surveyDone   chan struct{}
+	closeOnce    sync.Once
+	mu           sync.Mutex
+	stderr       []byte
+	waitErr      error
+	cleanupErr   error
+	// cleanupFinal marks a cleanup error that a later census cannot settle,
+	// such as an inventory gap in which a descendant may never have been seen.
+	cleanupFinal bool
+	reverifyMu   sync.Mutex
+	// signal is a package-private failure-injection seam; nil sends real signals.
+	signal         func(pid int, sig syscall.Signal) error
 	owned          map[int]string
 	rootObserved   bool
 	rootStamp      string
@@ -112,19 +120,74 @@ func signalFailure(phase string, err error) error {
 func deadProcess(row processIdentity) bool {
 	return len(row.state) > 0 && (row.state[0] == 'Z' || row.state[0] == 'X')
 }
+
+// exitingProcess is a BSD/macOS ps "E" flag: the kernel has begun exit for
+// this process (for example while it tears down a large heap after SIGKILL).
+// It can no longer run its own code, and kill(-pgid) skips it, so a group of
+// only such members answers EPERM. Linux ps does not use this letter.
+func exitingProcess(row processIdentity) bool {
+	return len(row.state) > 1 && strings.ContainsRune(row.state[1:], 'E')
+}
+
+// stoppedProcess means the process can take no further action of its own.
+func stoppedProcess(row processIdentity) bool { return deadProcess(row) || exitingProcess(row) }
+
 func liveGroup(rows []processIdentity, group int) bool {
 	for _, row := range rows {
-		if row.pgid == group && !deadProcess(row) {
+		if row.pgid == group && !stoppedProcess(row) {
 			return true
 		}
 	}
 	return false
 }
-func confirmStoppedGroup(rows []processIdentity, group int, signalErr error) error {
-	if liveGroup(rows, group) {
+
+// liveOwnedGroup reports a live member of the group our root created. A
+// process group id cannot be allocated again while that group still exists,
+// so a leader with our group id and a different start time proves our group
+// is gone; its members are a stranger's, not ours.
+func liveOwnedGroup(rows []processIdentity, group int, rootStamp string) bool {
+	for _, row := range rows {
+		if row.pid == group && rootStamp != "" && row.stamp != "" && row.stamp != rootStamp {
+			return false
+		}
+	}
+	return liveGroup(rows, group)
+}
+
+// A denied group signal is only harmless when a complete fresh census shows
+// no live member of our own group. Never blanket-ignore EPERM.
+func confirmStoppedGroup(rows []processIdentity, group int, rootStamp string, signalErr error) error {
+	if liveOwnedGroup(rows, group, rootStamp) {
 		return signalFailure("signal_group_live", signalErr)
 	}
 	return nil
+}
+
+// reverifiablePhases are cleanup failures taken while ownership itself was
+// complete: only whether a signal took effect was unconfirmed, so a later
+// complete census can settle them. Inventory gaps are not in this set.
+var reverifiablePhases = map[string]bool{
+	"signal_group_live": true, "signal_pid_live": true, "signal_group_inventory": true,
+	"signal_pid_inventory": true, "signal_inventory": true, "process_cleanup": true,
+}
+
+func reverifiable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if f, ok := err.(*ProcessSignalFailure); ok {
+		return reverifiablePhases[f.Phase]
+	}
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		errs := joined.Unwrap()
+		for _, e := range errs {
+			if !reverifiable(e) {
+				return false
+			}
+		}
+		return len(errs) > 0
+	}
+	return false
 }
 
 type censusCapture struct {
@@ -164,6 +227,7 @@ func (p *Process) captureRows(rows []processIdentity) error {
 	}
 	if !p.rootObserved {
 		p.cleanupErr = refusal(pa.ExecutionEffectUnknown, "root_identity")
+		p.cleanupFinal = true
 		return p.cleanupErr
 	}
 	for changed := true; changed; {
@@ -178,6 +242,7 @@ func (p *Process) captureRows(rows []processIdentity) error {
 			}
 			if len(p.owned) >= p.limits.OwnedDescendants {
 				p.cleanupErr = refusal(pa.CapacityFull, "owned_descendants")
+				p.cleanupFinal = true
 				return p.cleanupErr
 			}
 			p.owned[row.pid] = row.stamp
@@ -338,7 +403,9 @@ func (p *Process) Stderr() string {
 	return string(append([]byte(nil), p.stderr...))
 }
 func (p *Process) Close(ctx context.Context) error {
+	first := false
 	p.closeOnce.Do(func() {
+		first = true
 		if p.tcp != nil && p.tcp.root != nil {
 			defer p.tcp.root.close()
 		}
@@ -388,15 +455,96 @@ func (p *Process) Close(ctx context.Context) error {
 			}
 		}
 	})
+	if !first {
+		p.reverify(ctx)
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.cleanupErr
+}
+
+// reverify retries an unconfirmed signal outcome on a later Close: it takes a
+// complete fresh census, signals any still-live owned identity again, and
+// clears the error only when the direct child has been reaped and no owned
+// identity or member of our group is live. Any failure keeps the old error.
+func (p *Process) reverify(ctx context.Context) {
+	p.reverifyMu.Lock()
+	defer p.reverifyMu.Unlock()
+	p.mu.Lock()
+	err, final := p.cleanupErr, p.cleanupFinal
+	p.mu.Unlock()
+	if err == nil || final || !reverifiable(err) {
+		return
+	}
+	cleanup, cancel := context.WithTimeout(ctx, p.limits.CleanupTimeout)
+	defer cancel()
+	rows, censusErr := p.identities(cleanup)
+	if censusErr != nil {
+		return
+	}
+	p.pruneOwned(rows)
+	if p.ownedCount() > 0 {
+		if p.signalOwned(cleanup, rows, false) != nil || p.signalOwned(cleanup, nil, true) != nil {
+			return
+		}
+	}
+	if !waitOwnedDone(cleanup, p.done) {
+		_ = p.cmd.Process.Kill()
+		if !waitOwnedDone(cleanup, p.done) {
+			return
+		}
+	}
+	fresh, censusErr := p.identities(cleanup)
+	if censusErr != nil {
+		return
+	}
+	p.pruneOwned(fresh)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	live := make(map[int]processIdentity, len(fresh))
+	for _, row := range fresh {
+		live[row.pid] = row
+	}
+	for pid, stamp := range p.owned {
+		if row, ok := live[pid]; ok && row.stamp == stamp && !stoppedProcess(row) {
+			return
+		}
+	}
+	if liveOwnedGroup(fresh, p.cmd.Process.Pid, p.rootStamp) {
+		return
+	}
+	p.cleanupErr = nil
+}
+
+// pruneOwned forgets identities that a complete census shows absent or
+// replaced. It never adopts a new process.
+func (p *Process) pruneOwned(rows []processIdentity) {
+	live := make(map[int]string, len(rows))
+	for _, row := range rows {
+		live[row.pid] = row.stamp
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for pid, stamp := range p.owned {
+		if current, ok := live[pid]; !ok || current != stamp {
+			delete(p.owned, pid)
+		}
+	}
+}
+
+func (p *Process) ownedCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.owned)
 }
 
 func (p *Process) setCleanupError(err error) {
 	p.mu.Lock()
 	if p.cleanupErr == nil {
 		p.cleanupErr = err
+	}
+	if err != nil && !reverifiable(err) {
+		p.cleanupFinal = true
 	}
 	p.mu.Unlock()
 }

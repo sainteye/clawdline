@@ -364,7 +364,7 @@ func TestProcessRootPIDReuseNeverAdoptsForeignRootOrChildren(t *testing.T) {
 func TestProcessLiveGroupPermissionFailureNeverLooksStopped(t *testing.T) {
 	permissionErr := &os.SyscallError{Syscall: "kill", Err: os.ErrPermission}
 	live := []processIdentity{{pid: 10, pgid: 10, state: "Z", stamp: "root"}, {pid: 11, pgid: 10, state: "S", stamp: "child"}}
-	err := confirmStoppedGroup(live, 10, permissionErr)
+	err := confirmStoppedGroup(live, 10, "root", permissionErr)
 	if pa.Code(err) != pa.ExecutionEffectUnknown || !errors.Is(err, os.ErrPermission) {
 		t.Fatalf("live group signal failure hidden: %v", err)
 	}
@@ -373,11 +373,11 @@ func TestProcessLiveGroupPermissionFailureNeverLooksStopped(t *testing.T) {
 		t.Fatalf("missing phase: %v", err)
 	}
 	zombies := []processIdentity{{pid: 10, pgid: 10, state: "Z", stamp: "root"}, {pid: 11, pgid: 10, state: "Z+", stamp: "child"}}
-	if err := confirmStoppedGroup(zombies, 10, permissionErr); err != nil {
+	if err := confirmStoppedGroup(zombies, 10, "root", permissionErr); err != nil {
 		t.Fatalf("proven stopped group rejected: %v", err)
 	}
-	unknown := []processIdentity{{pid: 10, pgid: 10, state: "", stamp: "unknown"}}
-	if err := confirmStoppedGroup(unknown, 10, permissionErr); pa.Code(err) != pa.ExecutionEffectUnknown {
+	unknown := []processIdentity{{pid: 10, pgid: 10, state: "", stamp: "root"}}
+	if err := confirmStoppedGroup(unknown, 10, "root", permissionErr); pa.Code(err) != pa.ExecutionEffectUnknown {
 		t.Fatal("unknown state treated as stopped")
 	}
 }

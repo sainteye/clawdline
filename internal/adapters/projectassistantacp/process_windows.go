@@ -23,3 +23,6 @@ func (p *Process) captureOwned(context.Context) ([]processIdentity, error) {
 func (p *Process) signalOwned(context.Context, []processIdentity, bool) error {
 	return refusal(pa.SandboxUnavailable, "windows_job_supervisor")
 }
+func (p *Process) identities(context.Context) ([]processIdentity, error) {
+	return nil, refusal(pa.SandboxUnavailable, "windows_job_supervisor")
+}
