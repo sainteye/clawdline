@@ -1091,13 +1091,20 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if e = journal(ctx, "status"); e != nil {
 			return pa.WorkLink{}, e
 		}
-		return b.Status(ctx, actor, taskID)
+		link, e := b.Status(ctx, actor, taskID)
+		return link, peerWorkRefusal(turn, e)
 	}
-	tools.messageWork = messageWorkTool(turn, actor, b, bound, journal)
+	tools.messageWork = messageWorkTool(turn, actor, b, bound, journal, func(ctx context.Context) string {
+		return h.peerRequester(ctx, q.Bot.Key, turn)
+	})
 	if taskOwner.BotID != "" {
 		tools.routines = nil
 		tools.dispatch = nil
-		tools.messageWork = nil
+		if !pa.IsPeerRequest(turn.Origin) {
+			// A thread answering another Bot reaches its owner's work through
+			// the broker's resolved owner; other background threads do not.
+			tools.messageWork = mainChatOnlyMessageWork
+		}
 		tools.teamAvailable = nil
 		tools.team = nil
 		tools.listBots = nil

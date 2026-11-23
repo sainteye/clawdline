@@ -350,6 +350,9 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			break
 		}
 	}
+	if out.ActiveTurnID != "" && pa.IsPeerRequest(active.Origin) {
+		out.WorkOwner = peerWorkOwner(ctx, st, b)
+	}
 	if h.o.DispatchPolicy != nil {
 		p, e := h.o.DispatchPolicy(ctx, key)
 		if e == nil {
