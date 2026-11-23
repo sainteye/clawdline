@@ -111,6 +111,13 @@ cause does not prove an action was not applied. The existing bilingual
 explanations remain accurate, and only the three changed implementation source
 receipts are refreshed.
 
+The Bot exchange restart fix implements the existing English and Taiwan
+Traditional Chinese review card's promise to preserve replies through a
+restart. During a planned shutdown the source keeps unstarted reply turns
+and replies waiting for queue space. Startup uses the normal worker to deliver
+the saved outcome under the existing queue and execution rules. The quoted
+prompts and the original request's replay policy are unchanged.
+
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant
 principal boundary. Its English and Taiwan Chinese copies distinguish source

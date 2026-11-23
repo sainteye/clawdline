@@ -669,7 +669,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				}
 			}
 		}
-		if t.Origin == pa.BotReplyOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
+		if unstartedExchangeReply(t) {
 			continue
 		}
 		if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) {
@@ -690,7 +690,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if !pa.IsPeerRequest(t.Origin) && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
+				if !pa.IsPeerRequest(t.Origin) && t.Origin != pa.BotReplyOrigin && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
 					resumable = append(resumable, t)
 				}
 			}
@@ -815,6 +815,8 @@ func (r *Engine) work(a *runtimeActor) {
 		// that success in memory. Unknown Open/Close still persists TurnUnknown.
 		if err != nil && a.completion == nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
+			// Shutdown can cancel the worker while it waits for a process slot.
+			preserveReply := e == nil && unstartedExchangeReply(latest) && a.lifetime.Err() != nil && r.unknownField() == RestartField
 			if e == nil {
 				retried, retryErr := r.retryRoutineNotStartedLocked(context.Background(), a, latest, err)
 				if retried || retryErr != nil {
@@ -823,7 +825,7 @@ func (r *Engine) work(a *runtimeActor) {
 					return
 				}
 			}
-			if e == nil && (latest.State == pa.TurnRunning || latest.State == pa.TurnWaitingPermission || latest.State == pa.TurnQueued) {
+			if e == nil && !preserveReply && (latest.State == pa.TurnRunning || latest.State == pa.TurnWaitingPermission || latest.State == pa.TurnQueued) {
 				state := pa.TurnUnknown
 				if latest.State == pa.TurnQueued {
 					state = pa.TurnFailed
@@ -2258,7 +2260,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)

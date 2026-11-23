@@ -495,9 +495,8 @@ func (h *Host) Enable(ctx context.Context) error {
 	return nil
 }
 
-// resumeInterrupted lets each Bot carry on with the turn the previous daemon
-// process cut off, as Codync's bot actor does on spawn. It runs after Enable
-// returns and changes nothing for a Bot without such a turn.
+// resumeInterrupted recovers eligible turns and wakes senders with durable
+// Bot replies once the host is enabled.
 func (h *Host) resumeInterrupted() {
 	h.mu.Lock()
 	st := h.store
@@ -507,7 +506,7 @@ func (h *Host) resumeInterrupted() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
 	defer cancel()
-	var keys, expiredCalls []pa.BotKey
+	var keys, expiredCalls, replySenders []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 	for {
 		page, err := st.List(ctx, query)
@@ -515,6 +514,10 @@ func (h *Host) resumeInterrupted() {
 			return
 		}
 		for _, bot := range page.Items {
+			hasReply, err := st.HasPendingExchangeReply(ctx, bot.Bot.Key)
+			if err == nil && hasReply {
+				replySenders = append(replySenders, bot.Bot.Key)
+			}
 			pending, err := st.PendingTurns(ctx, bot.Bot.Key)
 			if err == nil && len(pending) == 1 {
 				turn := pending[0]
@@ -530,7 +533,7 @@ func (h *Host) resumeInterrupted() {
 		}
 		query.Cursor = page.NextCursor
 	}
-	if len(keys) == 0 && len(expiredCalls) == 0 {
+	if len(keys) == 0 && len(expiredCalls) == 0 && len(replySenders) == 0 {
 		return
 	}
 	// The runtime is otherwise built on first use; resuming is a use, so it
@@ -549,6 +552,9 @@ func (h *Host) resumeInterrupted() {
 		if err := r.ResumeInterrupted(ctx, key); err != nil {
 			log.Printf("bots: an interrupted turn was not resumed: %v", err)
 		}
+	}
+	for _, key := range replySenders {
+		r.ResumeExchangeReplies(key)
 	}
 }
 

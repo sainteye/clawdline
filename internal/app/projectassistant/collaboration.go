@@ -219,6 +219,17 @@ func (r *Engine) wakeExchangeReply(t pa.Turn) {
 	}
 }
 
+func unstartedExchangeReply(t pa.Turn) bool {
+	return t.Origin == pa.BotReplyOrigin && t.StartedAt == nil &&
+		(t.State == pa.TurnQueued || t.State == pa.TurnAccepted)
+}
+
+// ResumeExchangeReplies wakes the normal worker for a sender with a durable
+// reply after startup. It uses the same actor and queue limits as a live reply.
+func (r *Engine) ResumeExchangeReplies(key pa.BotKey) {
+	r.wakeBot(key)
+}
+
 func collaborationPrompt(t pa.Turn, input *pa.Message) error {
 	if t.Origin == pa.NetworkRequestOrigin {
 		if t.Network == nil || input.Kind != pa.NoticeMessage {

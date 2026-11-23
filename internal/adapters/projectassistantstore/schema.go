@@ -70,6 +70,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_cloud_hook_pending (account TEXT NOT NULL, machine TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(account,machine))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_exchanges (machine TEXT NOT NULL, id TEXT NOT NULL, source TEXT NOT NULL, target TEXT NOT NULL, outstanding INTEGER NOT NULL, revision INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,id))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_exchange_pending ON project_assistant_exchanges(machine,outstanding,source)`,
+		`CREATE INDEX IF NOT EXISTS project_assistant_exchange_reply_pending ON project_assistant_exchanges(machine,source) WHERE json_extract(CAST(data AS TEXT),'$.delivery') IN ('waiting','queued')`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_lead_setup (machine TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_agent_rests (machine TEXT NOT NULL, agent TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,agent))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_bots (machine TEXT NOT NULL, bot TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0), data BLOB NOT NULL, PRIMARY KEY(machine,bot))`,

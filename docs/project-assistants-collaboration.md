@@ -124,8 +124,10 @@ recipient's completed result. Completion now commits its payload and a waiting
 delivery atomically; the source worker promotes one typed reply when existing
 queue space is available. It neither reserves a process slot for a completed
 result nor exceeds the registered chat queue. Promotion is idempotent. Explicit
-Stop drops unstarted waiting replies while retaining completed text; a restart
-keeps them waiting.
+Stop drops unstarted waiting replies while retaining completed text. A planned
+shutdown preserves queued and waiting replies. Startup wakes their senders
+through the normal queue so even a status created during shutdown can be
+delivered without repeating the recipient's request.
 
 SQLite controls cover admission/completion rollback, same-key replay/conflict,
 hidden recipients, stale fences, Stop, request restart without replay, surviving
