@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,retryOnce} from "./UnsentRetry";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
+const {UnsentActions,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -354,4 +354,40 @@ test("the title counts running servers and prefers a confirmed port over a watch
     for(const mask of [{fresh:false},{inspect:true},{error:"pa_offline"}])assert.equal(title({...state,...mask},w),"")
     assert.equal(title({...state,pending:true},w),":43123 +2","a pending read does not flicker a previously fresh title")
   }
+})
+
+test("a retry that the daemon answers with execution_effect_unknown shows this attempt's failure, time and next step",async()=>{
+  const at=new Date(2026,10,23,15,21).getTime()
+  const outcome=await retryOnce(async()=>{throw {contract_version:"project-assistants.v1",error:{code:"execution_effect_unknown",field:"",retry_after_seconds:0}}},()=>null,()=>at)
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language)
+    const before=render(UnsentActions,{retrying:false,accepted:false,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language})
+    const after=render(UnsentActions,{retrying:false,accepted:false,failure:outcome.kind==="failed"?outcome.failure:undefined,restore:outcome.kind==="failed"&&outcome.editable,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language})
+    assert.notEqual(after,before,"the row after a failed retry must differ from the row before it")
+    assert.match(after,/15:21/)
+    assert.match(after,language==="en"?/Retry failed/:/重試失敗/)
+    assert.match(after,language==="en"?/try again/i:/再試/)
+    assert.match(after,/role="alert"/)
+    assert.match(after,new RegExp(w.retryUnsentSend),"the message can be retried again")
+  }
+})
+
+test("a retry in flight shows a disabled sending button in place of the retry button",()=>{
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language)
+    const html=render(UnsentActions,{retrying:true,accepted:false,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language})
+    assert.match(html,/<button[^>]*disabled=""[^>]*aria-busy="true"[^>]*>/)
+    assert.doesNotMatch(html,new RegExp(">"+w.retryUnsentSend+"<"))
+  }
+})
+
+test("each kind of retry failure points to a different next step",async()=>{
+  const w=words("en"),step=async code=>{
+    const outcome=await retryOnce(async()=>{throw {contract_version:"project-assistants.v1",error:{code,field:"",retry_after_seconds:0}}},()=>null,()=>0)
+    return render(UnsentActions,{retrying:false,accepted:false,failure:outcome.failure,restore:outcome.editable,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language:"en"})
+  }
+  const unknown=await step("execution_effect_unknown"),offline=await step("pa_offline"),disabled=await step("pa_disabled")
+  assert.notEqual(unknown,offline);assert.notEqual(offline,disabled);assert.notEqual(unknown,disabled)
+  assert.match(disabled,/settings/i)
+  assert.match(offline,new RegExp(w.retryNextLater))
 })

@@ -57,6 +57,7 @@ import { decodeBotMentions, encodeBotMentions } from "./bot-mentions"
 import { canMarkConversationRead, markConversationRead } from "./conversation-read"
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
+import { UnsentActions, retryOnce, type RetryFailure } from "./UnsentRetry"
 import { memoryOpener } from "./loading"
 import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, backgroundTaskLabel, liveBackgroundTask, type BackgroundStopOutcome, type BackgroundTask } from "./BackgroundTasks"
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
@@ -186,6 +187,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [paused,setPaused]=useState(()=>!!view.draft(pausedKey))
   const [pendingAttachments,setPendingAttachments]=useState<Record<string,SendAttachments|null>>({})
   const [retrying,setRetrying]=useState("")
+  const [retryFailures,setRetryFailures]=useState<Record<string,RetryFailure>>({})
   const [receiptCheckRevision,requestReceiptCheck]=useState(0)
   const retryInFlight=useRef(false)
   const assetKey=(id:string,attempt?:string)=>sendAttachmentKey(draftKey,scope.conversation_id,id,attempt)
@@ -886,20 +888,23 @@ ${currentDraft}`:submitted)
     const pictures=intent.images??pendingAttachments[attachmentsFor(held)]?.images.map(picture=>picture.url)??[]
     if(pictures.length!==(held.pictures??0))return
     retryInFlight.current=true;setRetrying(id);view.heldOutcomes.beginTransport(draftKey,id)
+    setRetryFailures(rows=>{const next={...rows};delete next[id];return next})
+    let outcome:Awaited<ReturnType<typeof retryOnce>>|null=null
     try{
       const q={...intent,...(pictures.length?{images:pictures}:{})}
-      const answer=await authorized(source,current,s=>source.send(q,s),new AbortController().signal)
-      if(!sendAcknowledgement(answer,q))throw failure("pa_outcome_unknown")
-      if(admittedReceipt(answer.receipt))view.heldOutcomes.settle(draftKey,id,{...held,receipt:answer.receipt})
-      else if(answer.receipt.state==="failed")view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true,superseded:true})
-    }catch(e){
-      const code=errorCode(e)
-      if(!["pa_outcome_unknown","execution_effect_unknown","unavailable","pa_offline","pa_revoked"].includes(code)){
-        view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true})
-      }
+      outcome=await retryOnce(()=>authorized(source,current,s=>source.send(q,s),new AbortController().signal),
+        answer=>!sendAcknowledgement(answer,q)?null:admittedReceipt(answer.receipt)?answer.receipt:answer.receipt.state==="failed"?"rejected":null)
+      if(outcome.kind==="admitted")view.heldOutcomes.settle(draftKey,id,{...held,receipt:outcome.receipt})
+      else if(outcome.kind==="rejected")view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true,superseded:true})
+      else if(outcome.editable)view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true})
     }finally{
       retryInFlight.current=false;view.heldOutcomes.endTransport(draftKey,id,null)
-      if(valid()){setRetrying("");repaintJournal();void refresh(true)}
+      if(valid()){
+        setRetrying("")
+        const failed=outcome?.kind==="failed"?outcome.failure:null
+        if(failed)setRetryFailures(rows=>({...rows,[id]:failed}))
+        repaintJournal();void refresh(true)
+      }
     }
   }
   const leaveUnreadable=()=>{
@@ -1482,12 +1487,9 @@ ${currentDraft}`:submitted)
           {!!intent.quote_message_id&&<small>{w.heldQuoted}</small>}
           {!!row.files?.length&&<small>{row.files.join(" · ")}</small>}
           {!!row.pictures&&<small>{w.outgoingPictureCount.replace("{count}",String(row.pictures))}</small>}
-          <div className="pa-unsent-actions">
-            <span role="status">{retrying===id?w.sending:admittedReceipt(row.receipt)?w.sendAccepted:w.sendUnconfirmed}</span>
-            {!admittedReceipt(row.receipt)&&retrying!==id&&(restore
-              ?!recoveringID&&!paused&&<button type="button" disabled={busy} onClick={()=>restoreSend(row)}>{w.restoreUnsentDraft}</button>
-              :enabled&&loaded&&<button type="button" disabled={busy||!!retrying} onClick={()=>void retrySend(row)}>{w.retryUnsentSend}</button>)}
-          </div>
+          <UnsentActions retrying={retrying===id} accepted={admittedReceipt(row.receipt)} failure={retryFailures[id]} restore={restore}
+            canRestore={!recoveringID&&!paused} canRetry={enabled&&loaded} disabled={busy||(!restore&&!!retrying)}
+            onRestore={()=>restoreSend(row)} onRetry={()=>void retrySend(row)} w={w} language={language}/>
         </article>
       })}
 
