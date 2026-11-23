@@ -628,7 +628,7 @@
 | `log.daemon` | 10485760 | `bytes` | `rotate` | `diagnostics, notice` | — |
 | `memory.archive_entries` | 512 | `rows` | `refuse` | `diagnostics, health` | — |
 | `memory.description_bytes` | 512 | `bytes` | `refuse` | `diagnostics, sender` | — |
-| `memory.entries` | 1152 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `memory.entries` | 1152 | `rows` | `refuse` | `diagnostics, sender, health, notice` | — |
 | `memory.entry_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.group_description_bytes` | 256 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `memory.groups` | 16 | `rows` | `refuse` | `diagnostics, sender, health` | — |
