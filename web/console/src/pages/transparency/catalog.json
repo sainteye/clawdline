@@ -5535,7 +5535,7 @@
     "internal/adapters/projectassistantacp/mcp_work_receipt.go": "48c01a3b1225b0860cffd6be5fd70b2b82a7625b60dde3f390202a3f4d37b176",
     "internal/adapters/projectassistantacp/model_configuration.go": "4c8888e4689e9504e441e91152edf40277e38c09740fbc6b354678c93681dd0f",
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
-    "internal/adapters/projectassistantacp/process.go": "5271bba89af640fdb9785fe5dbc4ffde7206a5536501e33060eddb6302b1a152",
+    "internal/adapters/projectassistantacp/process.go": "879e64110bc94739c4c7c980742dc1c63ce39f1f3b49b35aceca56b93e4657be",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
     "internal/adapters/projectassistantacp/session_configuration.go": "065eb7b5049f74bae1e1ae8df76fdf52ecb2a31f833819ffe309095f3d905ff7",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
