@@ -1187,6 +1187,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if c.MainBindingID == "" {
 		c.MainBindingID = c.BindingID
 	}
+	// Every start mints a new binding ID; the previous turn of the resumed
+	// session ran under the one being replaced here.
+	resumedBindingID := c.BindingID
 	c.Generation++
 	c.BindingID = r.o.ID()
 	if isolatedRoutine {
@@ -1204,7 +1207,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// A resumed session last heard memory at its binding's revision.
 	memoryChanged := binding.MemoryRevision != current.Revision
-	compacted := compactedBeforeTurn(export, t, binding.Fence.BindingID)
+	compacted := compactedBeforeTurn(export, t, resumedBindingID)
 	// A /compact prompt delivers no memory, so the session's memory revision
 	// stays where it was and the next prompt still carries any change.
 	if t.Origin != pa.CompactOrigin {

@@ -21,7 +21,8 @@ func executionFailureField(cause error) string {
 	if errors.As(cause, &native) {
 		switch native.Field {
 		case "grok_cli", "grok_login", "grok_auth_mode_unsupported", "grok_account_restricted",
-			"gemini_cli", "gemini_login", "gemini_settings":
+			"gemini_cli", "gemini_login", "gemini_settings",
+			compactNotReported, compactNoSession, "native_compaction":
 			return native.Field
 		}
 	}
