@@ -56,6 +56,9 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
     const bot=participant(party)
     return <span className="pa-exchange-party">{bot&&<BotAvatar appearance={bot.appearance} size={22}/>}<strong>{bot?.name||words.unknownBot}</strong></span>
   }
+  // Sides follow the heading "scope ⇆ peer": the peer Bot speaks from the right, whoever started an exchange.
+  const message=(party:ExchangeScope,text:string)=><div className="pa-exchange-bubble-wrap" data-side={sameConversation(party,peer)?"right":"left"}>
+    {badge(party)}<div className="pa-exchange-bubble"><BotMessageMarkdown text={text} w={w}/></div></div>
   const signature=JSON.stringify(rows.map(row=>[row.exchange.id,row.exchange.revision]))
   useLayoutEffect(()=>{
     if(follows.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight
@@ -80,8 +83,8 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
           {Number.isFinite(time)&&(!Number.isFinite(then)||time-then>ChatSeparatorGapMs)&&<time dateTime={at}>
             {new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(time)}
           </time>}
-          <div className="pa-exchange-bubble-wrap">{badge(exchangeParticipant(x,"source"))}<div className="pa-exchange-bubble"><BotMessageMarkdown text={x.request} w={w}/></div></div>
-          {x.reply&&<div className="pa-exchange-bubble-wrap">{badge(exchangeParticipant(x,"target"))}<div className="pa-exchange-bubble"><BotMessageMarkdown text={x.reply} w={w}/></div></div>}
+          {message(exchangeParticipant(x,"source"),x.request)}
+          {x.reply&&message(exchangeParticipant(x,"target"),x.reply)}
           {pending?<p className="pa-exchange-note" role="status">{words.waiting.replace("{name}",nameOf(exchangeParticipant(x,"target")))}</p>:
             outcome!=="completed"?<p className="pa-exchange-note pa-exchange-error">{words[outcome]}{x.detail&&` · ${x.detail}`}</p>:null}
           {delivery==="waiting"||delivery==="dropped"?<p className="pa-exchange-note">{words[`delivery_${delivery}`]}</p>:null}

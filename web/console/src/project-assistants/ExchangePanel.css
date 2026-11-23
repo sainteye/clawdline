@@ -20,7 +20,9 @@
 .pa-exchange-record > time { display:block; color:var(--pa-dim,#999); text-align:center; font-size:12px; margin:6px 0; }
 .pa-exchange-bubble-wrap { display:flex; flex-direction:column; align-items:flex-start; gap:5px; }
 .pa-exchange-bubble-wrap > .pa-exchange-party { font-size:12px; color:var(--pa-dim,#aaa); }
-.pa-exchange-bubble { width:fit-content; max-width:92%; padding:10px 13px; border-radius:15px; overflow-wrap:anywhere; background:var(--pa-line,#282828); }
+.pa-exchange-bubble-wrap[data-side="right"] { align-items:flex-end; }
+.pa-exchange-bubble-wrap[data-side="right"] > .pa-exchange-party { flex-direction:row-reverse; }
+.pa-exchange-bubble { width:fit-content; max-width:85%; padding:10px 13px; border-radius:15px; overflow-wrap:anywhere; background:var(--pa-line,#282828); }
 .pa-exchange-bubble .pa-markdown > :last-child { margin-bottom:0; }
 .pa-exchange-note { margin:0 0 0 12px; color:var(--pa-dim,#aaa); font-size:13px; overflow-wrap:anywhere; }
 .pa-exchange-error, .pa-exchange-entry[data-failed] strong { color:var(--bad,#ef9b9c); }
