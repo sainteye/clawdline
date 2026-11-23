@@ -75,6 +75,7 @@ type NativeWork struct {
 	team          func(context.Context, string, json.RawMessage) (any, error)
 	listBots      func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
 	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	askPerson     func(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
 	dispatch      func(context.Context, string, string, string, []string, string, string) (pa.WorkLink, error)
@@ -738,6 +739,19 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.Exchange{}, e
 		}
 		return r.MessageBot(ctx, q.Binding.Fence, turnID, request)
+	}
+	// ask_person stays available in a peer request and in a background
+	// worker: the question lands in the visible owner's main chat.
+	tools.askPerson = func(ctx context.Context, request pa.AskPersonRequest) (pa.PermissionOffer, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.PermissionOffer{}, e
+		}
+		defer cancel()
+		if e = journal(ctx, "askPerson"); e != nil {
+			return pa.PermissionOffer{}, e
+		}
+		return r.AskPerson(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
 		if pa.IsPeerRequest(turn.Origin) && request.Action != "list" {

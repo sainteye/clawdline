@@ -835,6 +835,14 @@ func validateAggregate(a aggregate) error {
 		if err := check(p.Fence); err != nil {
 			return err
 		}
+		// A decision offer belongs to the chat, not to a turn: a peer
+		// request's question is raised by a hidden worker's turn.
+		if p.Kind == pa.DecisionOfferKind {
+			if p.TurnID != "" || p.Decision == nil {
+				return failure(pa.Invalid, "decision_offer")
+			}
+			continue
+		}
 		t, ok := a.Turns[p.TurnID]
 		if !ok || t.Fence != p.Fence {
 			return failure(pa.ScopeDenied, "permission_turn")

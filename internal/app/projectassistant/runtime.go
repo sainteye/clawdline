@@ -550,8 +550,21 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		ticket := *s.Room
 		turn.Room = &ticket
 	}
+	var decisions []pa.PermissionOffer
+	var decisionEvents []pa.Event
+	if s.Decision != nil {
+		if s.Notice || s.Network != nil || s.Room != nil || s.LeadCall || s.AuthorityCheck == nil || s.Decision.Fence.Key != s.Command.Key || s.Decision.State != pa.PermissionResolved {
+			return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "decision_input")
+		}
+		if s.Decision.Decision != nil {
+			turn.DecisionExchangeID = s.Decision.Decision.ExchangeID
+		}
+		answered := *s.Decision
+		decisions = []pa.PermissionOffer{answered}
+		decisionEvents = []pa.Event{{Fence: answered.Fence, Kind: pa.PermissionAnswered, Permission: &answered}}
+	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
-	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}})
+	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Permissions: decisions, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: append([]pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}, decisionEvents...)})
 	if err != nil {
 		return pa.Receipt{}, err
 	}
@@ -1793,6 +1806,9 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		err = r.finishRoomTurn(ctx, bot, m, text)
 	} else {
 		_, err = r.mutate(ctx, bot, m)
+	}
+	if err == nil && t.DecisionExchangeID != "" {
+		err = r.forwardDecision(ctx, bot.Key, t, text)
 	}
 	return err
 }

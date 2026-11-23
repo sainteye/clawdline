@@ -675,6 +675,11 @@ func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.Permission
 	if err != nil {
 		return pa.Receipt{}, err
 	}
+	if offer, e := s.opts.Repository.Permission(ctx, c.Key, answer.OfferID); e == nil && offer.Kind == pa.DecisionOfferKind {
+		return s.answerDecision(ctx, c, answer, offer, a)
+	} else if answer.Text != "" {
+		return pa.Receipt{}, serviceFailure(pa.Invalid, "permission_text")
+	}
 	return s.opts.Runtime.Answer(ctx, AnswerRequest{Command: c, Answer: answer, Feature: a.Feature, Source: a.Source})
 }
 

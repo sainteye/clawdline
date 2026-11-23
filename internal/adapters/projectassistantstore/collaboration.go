@@ -454,6 +454,23 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			x.Detail = string(t.Failure.Code) + ":" + t.Failure.Field
 		}
 		at := m.Bot.UpdatedAt
+		// A question the recipient asked the person keeps the exchange open
+		// for the person instead of replying to the requester; any other
+		// ending withdraws it.
+		decisionOwner := a
+		if x.RequestWorkerID != "" {
+			if decisionOwner, err = load(ctx, tx, x.Target.Key); err != nil && pa.Code(err) != pa.NotFound {
+				return x, err
+			}
+		}
+		decision, asked := pendingDecision(decisionOwner, x.ID)
+		if asked && x.Outcome == pa.ExchangeCompleted {
+			x.Outcome = pa.ExchangeNeedsPerson
+			asked = false
+		} else if asked && x.RequestWorkerID == "" {
+			withdrawDecision(&m, decision, pa.PermissionCancelled, at)
+			asked = false
+		}
 		b, e := load(ctx, tx, x.Source.Key)
 		if e != nil && pa.Code(e) != pa.NotFound {
 			return x, e
@@ -462,6 +479,9 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			return x, failure(pa.ScopeDenied, "reply_source")
 		}
 		x.Delivery = "dropped"
+		if x.Outcome == pa.ExchangeNeedsPerson {
+			x.Delivery = ""
+		}
 		var reply *pa.Turn
 		if e == nil && repliesToSource(x.Outcome) {
 			x.Delivery = "queued"
@@ -527,7 +547,11 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 				return x, failure(pa.ScopeDenied, "exchange_recipient")
 			}
 			msg := exchangeNotice(owner, x, x.ID+"-result-target", x.Request, "", at)
-			if err = exchangeApply(ctx, tx, &owner, exchangeMutation(owner, x.ID+"-finish-target", at, nil, []pa.Message{msg})); err != nil {
+			mo := exchangeMutation(owner, x.ID+"-finish-target", at, nil, []pa.Message{msg})
+			if asked {
+				withdrawDecision(&mo, decision, pa.PermissionCancelled, at)
+			}
+			if err = exchangeApply(ctx, tx, &owner, mo); err != nil {
 				return x, err
 			}
 			if err = projectBackgroundTurn(ctx, tx, a, m, previousBackgroundTurn); err != nil {
