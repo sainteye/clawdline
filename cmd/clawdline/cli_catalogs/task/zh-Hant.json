@@ -88,6 +88,7 @@
   "usage.wait_exit_2": "  4：有任務無法讀取；優先順序為 4 > 3 > 1 > 5",
   "usage.wait_explain_1": "  等待每項任務完成（--any：任一項），最多等候 --timeout（預設 9m，低於 10m 工具呼叫上限；",
   "usage.wait_explain_2": "  最多 2h），再如 task show 顯示每項已完成任務並關閉其通知；",
+  "view.artifacts_expired": "成果：        已於 %s 回收（超過 %d 天保留期限）；結果與摘要仍保留\n",
   "view.branch_commits": "分支：        %d 個交付 commit\n",
   "view.callback_heavy": "執行重工作業",
   "view.callback_intent": "意圖：       %s\n",

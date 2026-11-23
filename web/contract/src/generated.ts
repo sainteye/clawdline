@@ -500,6 +500,26 @@ export interface BrokerAddressRow {
 }
 
 /**
+ * A finished task's artifacts/ was removed because its retention elapsed: 30 days
+ * after the task ended with its landing settled. result.json, task.json and the
+ * landing are kept, so `result` and `summary` still read. Present only on a single
+ * task's detail, and only when the reclamation sweep recorded that removal.
+ */
+export interface BrokerArtifactsExpired {
+  /**
+   * When the files were removed, in Unix seconds.
+   */
+  at: number
+
+  /**
+   * What the directory held when it was removed, as measured before removal.
+   */
+  bytes?: number
+  reason: string
+  retention_seconds: number
+}
+
+/**
  * The five things a Feature Root is briefed with, and nothing else: each 1–8192
  * bytes, not blank, no NUL; 32768 bytes together.
  */
@@ -1411,8 +1431,9 @@ export interface BrokerReclaimDecision {
   path: string
 
   /**
-   * removed: landed, empty, committed_on_branch, preserved, work_scratch. kept:
-   * task_live, within_grace, owner_present, owner_unknown, path_not_owned,
+   * removed: landed, empty, committed_on_branch, preserved, work_scratch,
+   * artifact_retention_expired. kept: task_live, within_grace, landing_unsettled,
+   * pinned, ended_at_unknown, owner_present, owner_unknown, path_not_owned,
    * unreadable, nested_repository, filters_present, preserve_failed,
    * changed_during_sweep, intent_not_recorded, remove_failed.
    */
@@ -1536,8 +1557,9 @@ export interface BrokerReclaimState {
 export type BrokerReclaimSubject =
     "worktree"
   | "task_dir"
+  | "task_artifacts"
 
-export const BrokerReclaimSubjectValues: readonly BrokerReclaimSubject[] = ["worktree", "task_dir"] as const
+export const BrokerReclaimSubjectValues: readonly BrokerReclaimSubject[] = ["worktree", "task_dir", "task_artifacts"] as const
 
 /**
  * POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json copied
@@ -1868,6 +1890,7 @@ export interface BrokerTask {
    * that starts a turn proves only that something is running.
    */
   accepted_at?: number
+  artifacts_expired?: BrokerArtifactsExpired
   assistant: Assistant
   assistant_quota?: BrokerAssistantQuotaDecision
 

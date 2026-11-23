@@ -16,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/auth"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 	"github.com/sainteye/clawdline/internal/domain/work"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
@@ -222,7 +223,14 @@ func (s *Server) brokerTaskDetail(w http.ResponseWriter, r *http.Request, id str
 		writeBrokerError(w, err)
 		return
 	}
-	writeJSON(w, contract.BrokerTaskEnvelope{Task: s.brokerTaskRow(r.Context(), record)})
+	row := s.brokerTaskRow(r.Context(), record)
+	// Only the one task's detail asks the reclaim ledger: a list of every
+	// task must not cost one lookup per row.
+	if expired, ok := s.broker.ArtifactsExpired(r.Context(), id); ok {
+		row.ArtifactsExpired = &contract.BrokerArtifactsExpired{At: expired.FirstAt.Unix(), Bytes: expired.Bytes,
+			Reason: orchestrator.WhyArtifactRetention, RetentionSeconds: taskresource.ArtifactRetentionSecondsLimit}
+	}
+	writeJSON(w, contract.BrokerTaskEnvelope{Task: row})
 }
 
 func (s *Server) brokerProgress(w http.ResponseWriter, r *http.Request, id string) {
