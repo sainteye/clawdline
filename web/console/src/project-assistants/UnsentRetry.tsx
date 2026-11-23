@@ -1,5 +1,7 @@
 import type * as W from "@clawdline/contract"
+import { useEffect, useId, useRef, useState } from "react"
 import { errorCode } from "./client"
+import type { HeldOutcome } from "./view-state"
 import type { Words } from "./words"
 
 export type RetryFailure = { code: string, at: number }
@@ -46,19 +48,71 @@ export function retryFailureText(failure: RetryFailure, w: Words, language: stri
   return { title: w.retryFailedAt.replace("{time}", time).replace("{reason}", reason), next }
 }
 
-export function UnsentActions({ retrying, accepted, failure, restore, canRestore = true, canRetry, disabled, onRetry, onRestore, w, language }: {
-  retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
-  disabled: boolean, onRetry: () => void, onRestore: () => void, w: Words, language: string
+/**
+ * How a held send may leave this device. The device's journal is its only
+ * record; the source keeps a message only after admitting it. `delete`: the
+ * source refused it or answered for another attempt (`needsEdit`), so this
+ * text was never delivered. `remove`: the outcome is unknown; removing it stops
+ * this device from tracking or retrying it, and a message the source did admit
+ * still appears in the transcript from the source's own history. Nothing is
+ * offered for an accepted send, which clears itself when it appears, or while
+ * its request is open.
+ */
+export type UnsentDiscard = "delete" | "remove"
+export function unsentDiscardKind(row: Pick<HeldOutcome, "needsEdit">, state: { accepted: boolean, transporting: boolean }): UnsentDiscard | null {
+  if (state.accepted || state.transporting) return null
+  return row.needsEdit ? "delete" : "remove"
+}
+
+export function UnsentDiscardConfirm({ kind, disabled, onConfirm, onCancel, w }: {
+  kind: UnsentDiscard, disabled?: boolean, onConfirm: () => void, onCancel: () => void, w: Words
 }) {
+  return <div className="pa-unsent-confirm" role="group" aria-label={w.unsentClear}>
+    <p>{kind === "delete" ? w.unsentDeleteQuestion : w.unsentRemoveQuestion}</p>
+    <button type="button" className="pa-unsent-confirm-action" disabled={disabled} onClick={onConfirm}>{kind === "delete" ? w.unsentDeleteConfirm : w.unsentRemoveConfirm}</button>
+    <button type="button" onClick={onCancel}>{w.cancel}</button>
+  </div>
+}
+
+/** What the status icon opens: the delivery fact, then the plain next step. */
+export function UnsentStatusNote({ id, w }: { id: string, w: Words }) {
+  return <p id={id} className="pa-unsent-note" role="note"><strong>{w.sendUnconfirmed}</strong>{w.unsentStatusNext}</p>
+}
+
+export function UnsentActions({ retrying, accepted, failure, restore, canRestore = true, canRetry, disabled, onRetry, onRestore, discard = null, discardFailed = false, onDiscard, w, language }: {
+  retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
+  disabled: boolean, onRetry: () => void, onRestore: () => void, discard?: UnsentDiscard | null, discardFailed?: boolean, onDiscard?: () => void, w: Words, language: string
+}) {
+  const [confirming, setConfirming] = useState(false)
+  const [explained, setExplained] = useState(false)
+  const row = useRef<HTMLDivElement>(null), noteID = useId()
+  // The explanation closes on a second tap of the icon, a tap elsewhere, or Escape.
+  useEffect(() => {
+    if (!explained) return
+    const outside = (e: PointerEvent) => { if (!row.current?.querySelector(".pa-unsent-info-wrap")?.contains(e.target as Node)) setExplained(false) }
+    const escape = (e: KeyboardEvent) => { if (e.key === "Escape") setExplained(false) }
+    document.addEventListener("pointerdown", outside); document.addEventListener("keydown", escape)
+    return () => { document.removeEventListener("pointerdown", outside); document.removeEventListener("keydown", escape) }
+  }, [explained])
   const notice = !retrying && !accepted && failure ? retryFailureText(failure, w, language) : null
-  return <div className="pa-unsent-actions">
+  const offer = !retrying && !!discard && !!onDiscard
+  const unconfirmed = !notice && !retrying && !accepted
+  return <div className="pa-unsent-actions" ref={row}>
     {notice
       ? <p className="pa-unsent-failure" role="alert">{notice.title} {notice.next} <small>({failure!.code})</small></p>
-      : !retrying && <span role="status">{accepted ? w.sendAccepted : w.sendUnconfirmed}</span>}
+      : accepted && <span role="status">{w.sendAccepted}</span>}
+    {unconfirmed && <span className="pa-unsent-info-wrap">
+      <button type="button" className="pa-unsent-info" aria-label={w.unsentStatusLabel.replace("{status}", w.sendUnconfirmed).replace("{next}", w.unsentStatusNext)} aria-expanded={explained}
+        aria-controls={explained ? noteID : undefined} onClick={() => setExplained(open => !open)}><span aria-hidden="true">!</span></button>
+    </span>}
     {!accepted && (retrying
       ? <button type="button" disabled aria-busy="true" aria-live="polite"><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</button>
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
         : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
+    {offer && !confirming && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={() => setConfirming(true)}>{w.unsentClear}</button>}
+    {unconfirmed && explained && <UnsentStatusNote id={noteID} w={w}/>}
+    {offer && confirming && <UnsentDiscardConfirm kind={discard!} disabled={disabled} onConfirm={() => { setConfirming(false); onDiscard!() }} onCancel={() => setConfirming(false)} w={w}/>}
+    {discardFailed && <p className="pa-unsent-failure" role="alert">{w.unsentDiscardFailed}</p>}
   </div>
 }
