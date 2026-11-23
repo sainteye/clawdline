@@ -31,7 +31,7 @@ export function sameEditableSettings(a:W.ProjectAssistantBot,b:W.ProjectAssistan
   const fields=(bot:W.ProjectAssistantBot)=>[
     bot.name,bot.appearance,bot.instructions.text,bot.agent,bot.permission_policy,bot.mode,
     bot.runtime_settings,bot.login_profile,bot.extensions,bot.fallback_agents,bot.fallback_steps,
-    bot.notify,bot.background_threads,bot.manage_team,
+    bot.notify,bot.work_review,bot.background_threads,bot.manage_team,
   ]
   return JSON.stringify(fields(a))===JSON.stringify(fields(b))
 }
@@ -51,6 +51,7 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
   if(attempted.agent!==undefined&&attempted.agent!==bot.agent)return false
   if(attempted.runtime_settings!==undefined&&!same(attempted.runtime_settings,bot.runtime_settings??{model:"",options:{}}))return false
   if(attempted.notify!==undefined&&(attempted.notify==="off")!==(bot.notify==="off"))return false
+  if(attempted.work_review!==undefined&&(attempted.work_review==="off")!==(bot.work_review==="off"))return false
   if(attempted.login_profile!==undefined&&(attempted.login_profile.id||"")!==(bot.login_profile??""))return false
   if(attempted.extensions!==undefined&&!same(attempted.extensions,bot.extensions??{skills:[],connectors:[]}))return false
   if(attempted.background_threads!==undefined&&attempted.background_threads!==(bot.background_threads??3))return false
@@ -76,6 +77,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [fallbacks,setFallbacks]=useState(bot.fallback_agents??[]),[fallbackSteps,setFallbackSteps]=useState<W.ProjectAssistantFallbackStep[]>(originalSteps)
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
   const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
+  const [workReview,setWorkReview]=useState(bot.work_review!=="off")
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
   const showTeamSetting=!(bot.lead&&source?.canLeadTeamDefault?.())
   const teamChanged=showTeamSetting&&manageTeam!==(original.manage_team??false)
@@ -99,6 +101,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
+        ...(workReview!==(original.work_review!=="off")?{work_review:workReview?"on" as const:"off" as const}:{}),
         ...(backgroundThreads!==(original.background_threads??3)?{background_threads:backgroundThreads}:{}),
         ...(teamChanged?{manage_team:manageTeam}:{})}
     try{await onSave(settings,original)}catch(e){
@@ -126,7 +129,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     setRuntime({model:"",options:{}})
     setApproval({permission_policy:approval.permission_policy})
   }
-  const dirty=backgroundThreads!==(original.background_threads??3)||name!==original.name||JSON.stringify(appearance)!==JSON.stringify(original.appearance)||instructions!==original.instructions.text||agent!==original.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(original.mode?{permission_policy:original.permission_policy,mode:original.mode}:{permission_policy:original.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(original.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(originalSteps)||notify!==(original.notify!=="off")||teamChanged||loginProfile!==(original.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(original.extensions??{skills:[],connectors:[]})
+  const dirty=workReview!==(original.work_review!=="off")||backgroundThreads!==(original.background_threads??3)||name!==original.name||JSON.stringify(appearance)!==JSON.stringify(original.appearance)||instructions!==original.instructions.text||agent!==original.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(original.mode?{permission_policy:original.permission_policy,mode:original.mode}:{permission_policy:original.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(original.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(originalSteps)||notify!==(original.notify!=="off")||teamChanged||loginProfile!==(original.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(original.extensions??{skills:[],connectors:[]})
   const agentChoices:W.ProjectAssistantAgent[]=["claude","codex",...(agent==="grok"||source?.canGrok?.()?["grok" as const]:[]),...(agent==="antigravity"||source?.canGemini?.()?["antigravity" as const]:[])]
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
   // Titled groups with one row per control; long lists open on demand.
@@ -165,6 +168,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
         </SettingsGroup>}
         <SettingsGroup title={w.settingsAccess}>
           {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
+          {switchRow(w.botWorkReview,w.botWorkReviewHint,workReview,false,setWorkReview)}
           {bot.background_threads!==undefined&&<label className="pa-settings-field">{w.backgroundConcurrency}<select value={backgroundThreads} onChange={e=>setBackgroundThreads(Number(e.target.value))}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}</select></label>}
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
           {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}

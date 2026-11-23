@@ -140,14 +140,19 @@ incrementing unread. Work state changes are not trace messages.
 
 Completed does not imply landed. A failed source transaction leaves the broker
 facts intact, logs that projection is pending without private error contents,
-and can be repaired by `Status`. The host reconciles the result before delivering a requested completion
-callback. Without a callback, the terminal result is published to the chat
-and the Bot stays idle.
+and can be repaired by `Status`. The host reconciles the result before delivering a completion callback. A Bot
+whose work review setting is off only gets the terminal result published to
+its chat and stays idle, unless the dispatch requested the callback.
 
 ### Waiting for dispatched work
 
-Use `dispatch_work` with `continue_on_completion: true` when answering the
-current request depends on the worker's result. For a long build, test or
+Since 2026-11-23 every dispatched task is reviewed by default: the Bot's
+`work_review` setting (Bot settings, "Take over dispatched work"; omitted means
+on, readable and writable through the local API, Cloud and the phone) queues
+one review turn for each task. Turned off, the result is only published.
+`dispatch_work` with `continue_on_completion: true` still requests the turn
+explicitly, whatever the setting, when answering the current request depends on
+the worker's result. For a long build, test or
 external wait, the brief gives the isolated work Session the command and
 asks it to use the existing [command callback](broker.md#callbacks-waiting-without-a-turn-2026-10-06).
 Once the dispatch is accepted, the Bot ends its turn. The same native turn
@@ -156,9 +161,24 @@ may read a running task's status once. A repeat returns
 key and later human status questions remain available.
 
 Worker settlement records a `bot.work.completed` outbox effect in the same
-transaction. Whether the worker succeeded, failed, or timed out, the effect
-reconciles the result. When continuation was requested, it also queues at
-most one follow-up with a reference to the existing result message. The Bot reply uses the ordinary conversation
+transaction. Every terminal state — success, failure, timeout, cancellation and
+`spawn_failed` — takes this one path: the effect reconciles the result and,
+when the Bot reviews work or the dispatch requested it, queues at most one
+review turn with a reference to the existing result message. The first moment
+a Bot-owned task waits for a person (`waiting_for_person`, its briefing held at
+a dialog) records `bot.work.waiting`, run right after the commit; it queues the
+same single review turn without a quote, telling the Bot to tell the user what
+the worker needs. There is no second wake path: both effects go through
+`WakeWorkCompletion`, and its `runtime-work-completion-<taskID>` send receipt
+is checked for existence, not content, so a task reviewed while waiting is not
+reviewed again when it settles, and replay or restart queues nothing.
+
+The review prompt says it is a report on dispatched work, not a new
+instruction from the user, and names the task ID, title and state; the result
+summary is the quoted message. The turn is a host notice and carries no user
+authorization. A review turn that dispatches again extends a chain; at the
+routine follow-up limit (`bots.follow_up_chain`, 24) the host writes one notice
+in the chat instead of a turn, under the same receipt. The Bot reply uses the ordinary conversation
 queue. The task ID keys its send receipt, so a retry of callback delivery
 does not launch the worker or queue another Bot turn. The broker's existing
 outbox recovery handles interrupted delivery. An unstarted follow-up survives a

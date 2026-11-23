@@ -295,6 +295,13 @@ by one switch, **Show dispatched Sessions** in the roster's options menu (on by
 default; stored per browser). With it off, rows, avatars, the tower and the
 chat footer look exactly as they did before.
 
+- **Take over dispatched work.** On by default in Bot settings (「接手派出的工作」).
+  When a dispatched Session finishes, fails, times out, is cancelled, cannot
+  start or first waits for you, the Bot gets one review turn, marked as a
+  report rather than your instruction, and tells you what happened. Off: the
+  result is only posted in the chat. The Bot can still ask for the review of
+  one task explicitly. See
+  [Waiting for dispatched work](project-assistants-broker.md#waiting-for-dispatched-work).
 - **Roster count.** A two-outline mark and a number under the row's time:
   dispatched Sessions accepted, executing or waiting for the person. Delivered
   (awaiting integration), failed, landed and background threads are not

@@ -280,6 +280,8 @@ export const en = {
   "nativeNoModels": "This Agent does not expose a model selector.",
   "botNotify": "Completion notifications",
   "botNotifyHint": "Controls completion push notifications and the chat completion sound for this Bot. Permission requests remain visible.",
+  "botWorkReview": "Take over dispatched work",
+  "botWorkReviewHint": "When work this Bot dispatched finishes, fails or waits for you, the Bot reviews it once and reports here. Off: the result is only posted in the chat.",
   "primaryAgent": "Primary Agent",
   "memorySettingsUnsupported": "Update this source to read layered memory and edit Agent settings.",
 
@@ -1184,6 +1186,8 @@ export const zhHant: Record<WordKey, string> = {
   "nativeNoModels": "這個 Agent 未提供模型選單。",
   "botNotify": "完成通知",
   "botNotifyHint": "控制這個 Bot 的完成推播與聊天完成提示音，權限請求仍會顯示。",
+  "botWorkReview": "接手派出的工作",
+  "botWorkReviewHint": "這個 Bot 派出的工作完成、失敗或等你決定時，Bot 會接手審查一次並在這裡回報。關閉後只把結果貼到聊天。",
   "primaryAgent": "主要 Agent",
   "memorySettingsUnsupported": "請更新來源，才能讀取分層記憶及編輯 Agent 設定。",
 

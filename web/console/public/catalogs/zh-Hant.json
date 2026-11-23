@@ -11250,6 +11250,8 @@
   "projectAssistants.botInformation": "Bot 資訊",
   "projectAssistants.botNotify": "完成通知",
   "projectAssistants.botNotifyHint": "控制這個 Bot 的完成推播與聊天完成提示音，權限請求仍會顯示。",
+  "projectAssistants.botWorkReview": "接手派出的工作",
+  "projectAssistants.botWorkReviewHint": "這個 Bot 派出的工作完成、失敗或等你決定時，Bot 會接手審查一次並在這裡回報。關閉後只把結果貼到聊天。",
   "projectAssistants.bots": "Bots",
   "projectAssistants.cancel": "取消",
   "projectAssistants.cancelled": "已取消",

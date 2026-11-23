@@ -11250,6 +11250,8 @@
   "projectAssistants.botInformation": "Bot information",
   "projectAssistants.botNotify": "Completion notifications",
   "projectAssistants.botNotifyHint": "Controls completion push notifications and the chat completion sound for this Bot. Permission requests remain visible.",
+  "projectAssistants.botWorkReview": "Take over dispatched work",
+  "projectAssistants.botWorkReviewHint": "When work this Bot dispatched finishes, fails or waits for you, the Bot reviews it once and reports here. Off: the result is only posted in the chat.",
   "projectAssistants.bots": "Bots",
   "projectAssistants.cancel": "Cancel",
   "projectAssistants.cancelled": "Cancelled",
