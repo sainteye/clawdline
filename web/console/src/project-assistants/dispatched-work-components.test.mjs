@@ -44,8 +44,8 @@ test("the chat strip takes no space without work, keeps the background capsule, 
   assert.match(html,/aria-expanded="false"/)
   assert.match(html,/2 個工作在跑/)
   globalThis.location.hash=""
-  openDispatchedSession({id:"a",task_id:"a",state:"executing",terminal:"%1103"})
-  assert.equal(globalThis.location.hash,"#session=%251103")
+  openDispatchedSession({id:"a",task_id:"a",state:"executing",terminal:"trm_a&b"})
+  assert.equal(globalThis.location.hash,"#session=trm_a%26b")
   let fallback=null
   openDispatchedSession({id:"b",task_id:"b",state:"executing"},link=>{fallback=link.id})
   assert.equal(fallback,"b")
