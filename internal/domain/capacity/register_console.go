@@ -328,6 +328,21 @@ func baseConsoleBounds() []Entry {
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
 		{
+			// Machines one browser keeps a last quota reading for
+			// (LAST_READING_MACHINES, web/console/src/provider-quota/last-reading.ts).
+			// Past it, the reading saved longest ago goes.
+			Name: ConsoleQuotaLastReadingMachines, Class: Cache, Unit: Rows,
+			Limit: 8, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// How long a kept quota reading may be shown (LAST_READING_HOURS,
+			// 24 hours). Older, its windows have reset, and it is not shown.
+			Name: ConsoleQuotaLastReadingAge, Class: Cache, Unit: Seconds,
+			Limit: 86400, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// The open machine list re-reads the account's machines at this
 			// pace (MACHINE_LIST_POLL_MS, pages/devices/AccountMachines.tsx),
 			// because which road a machine's reads take changes with no event.

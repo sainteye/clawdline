@@ -9,6 +9,7 @@ import * as L from "../legacy/bridge.js"
 import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
 import { requestStatusRefresh } from "../status-refresh.js"
+import { lastQuotaReading, rememberQuotaReading } from "./last-reading.js"
 import "./quota.css"
 
 function Icon({ id }: { id: string }) {
@@ -80,18 +81,22 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   if (!shown) return null
   return <footer ref={footer} className="provider-quota-bar" inert={inert}>
     {accessory}
-    <QuotaReading key={JSON.stringify([quotaScope, revision])} machineName={machineName} offline={offline} mobile={mobile} />
+    <QuotaReading key={JSON.stringify([quotaScope, revision])} scope={quotaScope ?? ""} machineName={machineName} offline={offline} mobile={mobile} />
   </footer>
 }
 
-function QuotaReading({ machineName, offline, mobile }: { machineName?: string; offline: boolean; mobile: boolean }) {
+function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; machineName?: string; offline: boolean; mobile: boolean }) {
   const offlineRef = useRef(offline); offlineRef.current = offline
   const read = useMemo(() => async () => {
     if (offlineRef.current) throw new Error("offline")
     return client.providerQuotas()
   }, [])
   const polling = usePoll<ProviderQuotaSnapshot>(read, 30_000)
-  const rows = visibleQuotaRows(polling.data?.providers ?? [])
+  // A remount starts its poller empty; until it reads, the footer shows the
+  // last reading this browser kept for the machine, marked outdated.
+  if (polling.data) rememberQuotaReading(scope, polling.data)
+  const saved = polling.data ? null : lastQuotaReading(scope)
+  const rows = visibleQuotaRows((polling.data ?? saved)?.providers ?? [])
   const shown = rows
   const more = rows.length - shown.length
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
@@ -108,7 +113,7 @@ function QuotaReading({ machineName, offline, mobile }: { machineName?: string; 
     // A slow quota read must not block entry recovery or start another read.
     if (!polling.pending && !offline) polling.poke()
   }
-  const stale = (row: ProviderQuotaRow) => offline || !!polling.error || quotaStale(row, now)
+  const stale = (row: ProviderQuotaRow) => offline || !!polling.error || !!saved || quotaStale(row, now)
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
   const readingState = offline ? "offline" : polling.error ? "failed" : polling.pending ? "loading" : rows.length ? "ready" : "empty"
   return <>
