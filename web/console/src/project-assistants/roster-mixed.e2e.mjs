@@ -110,7 +110,7 @@ try{
     assert.equal(await page.evaluate(()=>window.fixture.writes),1)
     result.rosterActions={rightClick:true,keyboardMenu:true,promoted:true,deleteConfirmed:true}
     const openAssistant=()=>page.locator(".pa-bot-row").filter({has:page.getByText("Project assistant",{exact:true})}).click()
-    const startCall=page.locator(".pa-bot-call-start button")
+    const startCall=page.locator(".pa-composer .pa-send[data-call]")
     await page.evaluate(()=>{
      for(const name of ["SpeechRecognition","webkitSpeechRecognition"])Object.defineProperty(window,name,{configurable:true,value:undefined})
     })

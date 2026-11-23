@@ -1,22 +1,23 @@
+/* The browser call's bar and any call notice sit under the chat header, with
+   the same side margins as the realtime call's .pa-bot-voice-panel. */
 .pa-bot-call,
-.pa-bot-call-start {
+.pa-bot-call-notice {
+  flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 0.4rem;
-}
-.pa-bot-call-start {
-  justify-content: flex-end;
-}
-.pa-bot-call-start button {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
+  margin: 0.35rem 0.75rem;
 }
 .pa-bot-call {
   padding: 0.35rem 0.45rem;
-  border: 1px solid var(--border, #333);
+  border: 1px solid var(--pa-line, var(--border, #333));
   border-radius: 12px;
+  background: var(--pa-card, transparent);
+}
+.pa-bot-call-notice {
+  font-size: 0.9em;
+  color: var(--pa-dim, inherit);
 }
 .pa-bot-call-status {
   flex: 1 1 10rem;

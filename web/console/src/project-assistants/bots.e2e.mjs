@@ -770,6 +770,103 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   assert.equal(await editor.inputValue(),"A new draft")
   return ["Enter inserts a newline without sending","zoom, circle, cancel, undo, and send marked pixels","drop attaches a picture without sending","uncertain send stays in the transcript","retry keeps the picture and command ID","a separate draft survives retry"]
 }
+
+// The composer's trailing button places the call while the box is empty; the live call's
+// controls sit under the header. Browser speech is stubbed; no audio or model runs.
+async function callPlacementChecks(page,origin,language,width,shot,log) {
+  const zh=language!=="en",w=zh?{all:"所有 Bots",message:"訊息",call:"語音通話 · Project assistant",send:"傳送訊息",stop:"停止目前與待送工作",end:"掛斷",listening:"正在聆聽"}:{all:"All Bots",message:"Message",call:"Voice call · Project assistant",send:"Send message",stop:"Stop active and queued work",end:"Hang up",listening:"Listening"}
+  await page.addInitScript(()=>{
+    const voice={opened:0,closed:0,settings:null}
+    window.fixtureVoice=voice
+    const real=window.fetch.bind(window)
+    // The copilot key check answers "no key" only when the test releases it.
+    window.fetch=(input,init)=>String(input?.url??input).includes("/v1/settings/copilot")
+      ?new Promise(resolve=>{voice.settings=()=>resolve(new Response(JSON.stringify({key_set:false}),{status:200,headers:{"Content-Type":"application/json"}}));if(sessionStorage.getItem("fixtureSettingsNow"))voice.settings()})
+      :real(input,init)
+    const synth=new EventTarget();synth.getVoices=()=>[{lang:"en-US",localService:true},{lang:"zh-TW",localService:true}]
+    synth.speak=()=>{};synth.cancel=()=>{}
+    class Recognition {static async available(){return "available"};start(){};stop(){};abort(){}}
+    Object.defineProperty(Recognition.prototype,"processLocally",{value:false,writable:true})
+    const track=Object.assign(new EventTarget(),{readyState:"live",enabled:false,stop:()=>voice.closed++})
+    Object.defineProperty(window,"SpeechRecognition",{configurable:true,value:Recognition})
+    Object.defineProperty(window,"speechSynthesis",{configurable:true,value:synth})
+    Object.defineProperty(window,"SpeechSynthesisUtterance",{configurable:true,value:class {}})
+    Object.defineProperty(navigator,"mediaDevices",{configurable:true,value:{getUserMedia:async()=>{voice.opened++;return {getAudioTracks:()=>[track],getTracks:()=>[track]}}}})
+    // Every state the trailing button passes through, in order.
+    window.trail=[]
+    const note=()=>{
+      const b=document.querySelector(".pa-composer .pa-send")
+      const now=!b?"none":b.hasAttribute("data-call")?"call":b.hasAttribute("data-stop")?"stop":"send"
+      if(window.trail.at(-1)!==now)window.trail.push(now)
+    }
+    new MutationObserver(note).observe(document,{subtree:true,childList:true,attributes:true})
+  })
+  await page.goto(origin+"/?lang="+language)
+  await page.getByRole("button",{name:new RegExp(w.all)}).click()
+  await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
+  const chat=page.locator(".pa-chat"),editor=chat.getByRole("textbox",{name:w.message,exact:true}),trailing=chat.locator(".pa-composer .pa-send")
+  await editor.waitFor()
+  await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===false)
+  assert.equal(await chat.locator(".pa-bot-call-start").count(),0,"no call row of its own")
+  // While the key check reads, the trailing button stays send: nothing to hide later.
+  await page.waitForTimeout(300)
+  assert.equal(await trailing.getAttribute("aria-label"),w.send)
+  assert.equal(await page.evaluate(()=>window.trail.includes("call")),false)
+  await page.evaluate(()=>window.fixtureVoice.settings())
+  const call=chat.getByRole("button",{name:w.call,exact:true})
+  await call.waitFor()
+  assert.equal(await call.evaluate(el=>el.closest(".pa-composer")!==null&&el.classList.contains("pa-send")),true,"the call is the composer's trailing button")
+  const box=await call.boundingBox()
+  assert.ok(box.width>40&&box.width<50&&Math.round(box.height)===34,"a wider capsule than send: "+JSON.stringify(box))
+  await shot("call-empty")
+  await editor.fill("Hello")
+  assert.equal(await trailing.getAttribute("aria-label"),w.send)
+  assert.equal(await call.count(),0)
+  await shot("call-typed")
+  // Sending: the call never blinks out to send and back while the box is empty.
+  const before=await page.evaluate(()=>window.trail.length)
+  await trailing.click()
+  await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.value==="")
+  await page.waitForTimeout(1500)
+  const during=await page.evaluate(n=>window.trail.slice(n),before)
+  assert.equal(during.includes("none"),false,"the trailing button never vanishes: "+during)
+  const firstCall=during.indexOf("call")
+  assert.ok(firstCall<0||!during.slice(firstCall).includes("send"),"no call → send → call flicker after sending: "+during)
+  assert.equal(await call.isVisible(),true,"the call stays in place while the send is in flight")
+  assert.equal(await call.isDisabled(),true,"and cannot be placed until the send settles")
+  await shot("call-sending")
+  // A fresh chat with nothing in flight places the call.
+  const reopen=async setup=>{
+    await page.evaluate(()=>{localStorage.clear();sessionStorage.clear();sessionStorage.setItem("fixtureSettingsNow","1")})
+    await page.goto(origin+"/?lang="+language)
+    if(setup)await page.evaluate(setup)
+    await page.getByRole("button",{name:new RegExp(w.all)}).click()
+    await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
+    await editor.waitFor()
+  }
+  await reopen()
+  await page.waitForFunction(label=>document.querySelector(`.pa-composer .pa-send[aria-label="${label}"]`)?.disabled===false,w.call)
+  // A live call's controls sit under the header, not above the composer.
+  await call.click()
+  const bar=chat.locator("section.pa-bot-call")
+  await bar.getByText(w.listening).waitFor()
+  const [barBox,scrollBox,composerBox]=await Promise.all([bar.boundingBox(),chat.locator(".pa-chat-scroll").boundingBox(),chat.locator(".pa-composer").boundingBox()])
+  assert.ok(barBox.y+barBox.height<=scrollBox.y+1,"call bar sits above the transcript")
+  assert.ok(barBox.y+barBox.height<composerBox.y-100,"call bar is not stacked on the composer")
+  assert.equal(await chat.getByRole("button",{name:w.call,exact:true}).count(),0,"no call button during a call")
+  await shot("call-live")
+  await bar.getByRole("button",{name:w.end,exact:true}).click()
+  await bar.waitFor({state:"detached"})
+  assert.deepEqual(await page.evaluate(()=>[window.fixtureVoice.opened,window.fixtureVoice.closed]),[1,1])
+  await call.waitFor()
+  // A running Bot turns the empty box's trailing button into stop.
+  await reopen(()=>window.botsFixture.a.seedCollections(1))
+  await chat.locator(".pa-composer .pa-send[data-stop]").waitFor()
+  assert.equal(await trailing.getAttribute("aria-label"),w.stop)
+  assert.equal(await call.count(),0)
+  await shot("call-running-stop")
+  return ["send stays while the key check reads","empty box offers the call capsule","typing turns it to send","sending never blinks the call out and back","the call waits disabled while a send is in flight","live call bar sits under the header","hang up releases the microphone","a running Bot shows stop"]
+}
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":url.pathname.endsWith(".json")?"application/json":"text/html");res.end(text)})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
@@ -779,7 +876,7 @@ try {
   for(const engine of [chromium,webkit].filter(e=>!process.env.BOTS_ENGINE||e.name()===process.env.BOTS_ENGINE))for(const width of (process.env.BOTS_WIDTH?[Number(process.env.BOTS_WIDTH)]:[390,1440]))for(const language of (process.env.BOTS_LANGUAGE?[process.env.BOTS_LANGUAGE]:["zh-Hant","en"])) {
     const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true,...(engine.name()==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})}),name=`${engine.name()}-${width}-${language}`
-    const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce",hasTouch:!!(process.env.BOTS_WORK_PROGRESS_ONLY||process.env.BOTS_ATTACHMENTS_ONLY)&&width<701})
+    const page=await browser.newPage({viewport:{width,height:width===1440?960:width===1280?800:844},reducedMotion:"reduce",hasTouch:!!(process.env.BOTS_WORK_PROGRESS_ONLY||process.env.BOTS_ATTACHMENTS_ONLY)&&width<701})
     if(process.env.BOTS_ATTACHMENTS_ONLY&&engine.name()==="chromium"&&width<701)page.touchInput=await page.context().newCDPSession(page)
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
@@ -793,6 +890,11 @@ try {
     try {
       if(process.env.BOTS_ATTACHMENTS_ONLY){
         const checks=await attachmentRecoveryChecks(page,origin,language,shot,log)
+        assert.deepEqual(consoleErrors,[])
+        results.push({engine:engine.name(),width,language,status:"pass",checks});continue
+      }
+      if(process.env.BOTS_CALL_ONLY){
+        const checks=await callPlacementChecks(page,origin,language,width,shot,log)
         assert.deepEqual(consoleErrors,[])
         results.push({engine:engine.name(),width,language,status:"pass",checks});continue
       }

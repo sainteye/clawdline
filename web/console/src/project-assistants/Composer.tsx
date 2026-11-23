@@ -10,7 +10,7 @@ import "./bot-mentions.css"
 import { useBotMentions, type BotMentionCandidate } from "./BotMentionField"
 import type { Words } from "./words"
 
-export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onAttach,acceptFiles=false,onRemoveImage,onReplaceImage,files=[],onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,mentions}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly MarkupPicture[];onAttach?:(files:readonly File[])=>void;acceptFiles?:boolean;onRemoveImage?:(id:MarkupPicture["id"])=>void;onReplaceImage?:(id:MarkupPicture["id"],url:string)=>void;files?:readonly {id:string;file:File}[];onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;mentions?:readonly BotMentionCandidate[]}) {
+export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onAttach,acceptFiles=false,onRemoveImage,onReplaceImage,files=[],onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,mentions,call}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly MarkupPicture[];onAttach?:(files:readonly File[])=>void;acceptFiles?:boolean;onRemoveImage?:(id:MarkupPicture["id"])=>void;onReplaceImage?:(id:MarkupPicture["id"],url:string)=>void;files?:readonly {id:string;file:File}[];onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;mentions?:readonly BotMentionCandidate[];call?:{label:string;disabled:boolean;start:()=>void}}) {
   const composing=useRef(false),picker=useRef<HTMLInputElement>(null)
   const voiceRow=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null)
   const mine=useRef(false),gone=useRef(false),latest=useRef({text,onText})
@@ -42,6 +42,13 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
   }
   const empty=!text.trim()&&!images.length&&!files.length
   const showStop=!!onStop&&empty&&!voiceBusy
+  // Trailing button: stop > call > send. An empty box offers the call, as Codync does.
+  const showCall=!showStop&&!!call&&empty&&!callActive
+  const placeCall=()=>{
+    if(!call||call.disabled)return
+    if(mine.current&&V.busy())V.cancel()
+    call.start()
+  }
   const ready=!marking&&(!disabled||sendTextDuringRecovery)&&!busy&&!sendBlocked&&!callActive&&!voiceBusy&&!empty
   const paste=(e:ClipboardEvent<HTMLTextAreaElement>)=>{
     if(e.clipboardData.files.length){e.preventDefault();onAttach?.([...e.clipboardData.files])}
@@ -79,9 +86,12 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
       <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} enterKeyHint="enter" aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onAttach?paste:undefined}
         onKeyDown={event=>{if(!composing.current&&event.keyCode!==229)mention.keyDown(event)}}/></div>
-      <button type={showStop?"button":"submit"} className="pa-send" data-stop={showStop||undefined} data-stop-busy={showStop&&stopBusy||undefined}
+      {showCall&&call?<button type="button" className="pa-send" data-call aria-label={call.label} title={call.label}
+        disabled={call.disabled||!!marking} onMouseDown={e=>e.preventDefault()} onClick={placeCall}>
+        <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" focusable="false"><path d="M2 7v2m3-4v6m3-9v12m3-9v6m3-4v2"/></svg>
+      </button>:<button type={showStop?"button":"submit"} className="pa-send" data-stop={showStop||undefined} data-stop-busy={showStop&&stopBusy||undefined}
         aria-label={showStop?w.stop:w.send} title={showStop?w.stop:w.send} aria-busy={showStop&&stopBusy||undefined}
-        disabled={showStop?stopDisabled||busy:!ready} onClick={showStop?onStop:undefined}>{showStop?(stopBusy?<span className="pa-send-spinner" aria-hidden="true"/>:null):"↑"}</button>
+        disabled={showStop?stopDisabled||busy:!ready} onClick={showStop?onStop:undefined}>{showStop?(stopBusy?<span className="pa-send-spinner" aria-hidden="true"/>:null):"↑"}</button>}
     </form>
   </div>
 }
