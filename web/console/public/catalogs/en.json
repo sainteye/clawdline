@@ -995,6 +995,8 @@
   "capacityRow.bots.carry_quote_bytes.what": "Largest UTF-8 excerpt of each historical chat message in a fresh Bot opening (2,000 bytes).",
   "capacityRow.bots.chat_gap_ms.full": "A larger gap starts a new time group. No message is dropped or hidden.",
   "capacityRow.bots.chat_gap_ms.what": "Largest gap between messages joined into one visual chat group.",
+  "capacityRow.bots.chat_initial_page_rows.full": "Open Earlier messages to load the rest of the conversation in pages.",
+  "capacityRow.bots.chat_initial_page_rows.what": "The number of timeline rows initially requested by the chat so the most recent messages can appear quickly.",
   "capacityRow.bots.cleanup_ms.full": "Report cleanup uncertainty; do not claim escaped descendants stopped without evidence.",
   "capacityRow.bots.cleanup_ms.what": "Deadline for cleaning up an owned assistant process.",
   "capacityRow.bots.cleanup_retries.full": "After the attempts run out the Bot keeps refusing new messages and says why; it never resends the earlier message.",

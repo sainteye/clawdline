@@ -50,6 +50,7 @@ export interface SourceClient {
   readonly intentAccount?: string
   canGroups?(): boolean
   canTeamCards?(): boolean
+  canDeferTraceCount?(): boolean
   canLeadTeamDefault?(): boolean
   canGroupContext?(): boolean
   canGroupDescription?(): boolean

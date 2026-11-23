@@ -6222,9 +6222,13 @@ type ProjectAssistantReadViewRequest struct {
 
 	// Signed collection position or detail reference, at most4096 UTF-8 bytes; never
 	// authorization.
-	Cursor string                       `json:"cursor"`
-	Key    ProjectAssistantBotKey       `json:"key"`
-	Mode   ProjectAssistantReadViewMode `json:"mode"`
+	Cursor string `json:"cursor"`
+
+	// When true, skip the aggregate trace count outside traces mode. A zero in the
+	// head then does not describe trace availability.
+	DeferTraceCount bool                         `json:"defer_trace_count,omitempty"`
+	Key             ProjectAssistantBotKey       `json:"key"`
+	Mode            ProjectAssistantReadViewMode `json:"mode"`
 
 	// Events up to256; other pages up to100; detail exactly1.
 	PageSize int64 `json:"page_size"`

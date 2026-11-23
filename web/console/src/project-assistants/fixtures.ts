@@ -68,7 +68,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const turns=latest(own.flatMap(e=>e.turn?[e.turn]:[]),t=>t.id)
     const pending=turns.filter(t=>["accepted","queued","running","waiting_permission"].includes(t.state))
     const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??""})
-    const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:traces.length}
+    const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
     head.conversation.memory_revision=memory.revision
     head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
     const response:W.ProjectAssistantReadViewResponse={contract_version:contractVersion,mode:r.mode,source:status(),source_epoch:readEpoch,head,items:[],has_more:false,next_cursor:"",next_seq:0}

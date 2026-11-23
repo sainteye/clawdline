@@ -1318,6 +1318,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.chat_initial_page_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.cleanup_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

@@ -50,9 +50,14 @@ uses a sentinel and rejects overflow. Unknown turns are an exact separate
 cross-generation count:17 unknown plus16 counted turns is valid. Captured turn
 instructions and failure narratives never enter a compact turn summary.
 
-Head includes exact current-fence pending-offer and latest-per-(turn,category)
-trace counts. Permissions and traces have separate summary pages and signed
-detail references. Detail returns one complete stored offer (including every
+Head includes exact current-fence pending-offer and latest-per-turn trace
+counts by default. An API 113 client can set `defer_trace_count` on chat
+reads to skip the complete trace aggregation and validation until the user
+opens the trace collection. In those reads, the trace count field is zero
+even if traces exist. Traces mode still returns the exact count and validates
+the stored trace chunks. Permissions and traces have separate summary pages
+and signed detail references. The chat requests 20 rows on entry and uses
+the signed cursor for earlier messages. Detail returns one complete stored offer (including every
 option) or trace; it does not invent tool/question text or authorize an answer.
 Trace references identify the selected latest event; superseded references
 expire. Runtime permission/fence checks remain authoritative.

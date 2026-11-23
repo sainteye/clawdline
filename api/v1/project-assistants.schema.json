@@ -2564,6 +2564,10 @@
           "type": "boolean",
           "description": "Include team approval cards in the chat timeline."
         },
+        "defer_trace_count": {
+          "type": "boolean",
+          "description": "When true, skip the aggregate trace count outside traces mode. A zero in the head then does not describe trace availability."
+        },
         "page_size": {
           "type": "integer",
           "minimum": 1,

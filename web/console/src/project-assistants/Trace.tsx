@@ -6,15 +6,20 @@ import { ThinkingOrb } from "./ThinkingOrb"
 import type { Words } from "./words"
 
 type Summary=ProjectAssistantReadTraceSummary
+export type TraceLoadState="idle"|"loading"|"ready"|"failed"
 
-export function Trace({summaries,details,incomplete=false,more=false,inline=false,expanded=false,onMore,onDetail,w}:{
+export function Trace({summaries,details,incomplete=false,more=false,inline=false,expanded=false,onMore,onDetail,deferred,w}:{
   summaries:readonly Summary[];details:Readonly<Record<string,ProjectAssistantTrace|ProjectAssistantPermissionOffer>>;
   incomplete?:boolean;more?:boolean;inline?:boolean;expanded?:boolean;onMore?:()=>void;
-  onDetail:(row:Summary)=>Promise<boolean|undefined>;w:Words
+  onDetail:(row:Summary)=>Promise<boolean|undefined>;deferred?:{state:TraceLoadState;load:()=>void};w:Words
 }) {
   const [open,setOpen]=useState(false)
   const [opened,setOpened]=useState(false)
   const visible=inline?expanded:open
+  const deferredState=deferred?.state,loadDeferred=deferred?.load
+  useEffect(()=>{
+    if(visible&&deferredState==="idle")loadDeferred?.()
+  },[visible,deferredState,loadDeferred])
   const [settled,setSettled]=useState<Record<string,{cursor:string;ok:boolean}>>({})
   const [retry,setRetry]=useState(0)
   const activeRead=useRef({summaries,onDetail,settled})
@@ -46,14 +51,17 @@ export function Trace({summaries,details,incomplete=false,more=false,inline=fals
   const waiting=eligible.some(row=>!details[row.id]&&settled[row.id]?.cursor!==row.detail_cursor)
   const failed=eligible.some(row=>!details[row.id]&&settled[row.id]?.cursor===row.detail_cursor&&settled[row.id]?.ok===false)
   const count=visible&&!waiting&&!failed?ready.length:eligible.length
-  if(!inline&&!eligible.length&&!more)return null
+  if(!inline&&!eligible.length&&!more&&!deferred)return null
+  const pending=deferredState==="idle"||deferredState==="loading"
+  const loadFailed=deferredState==="failed"
   const content=<div className="pa-trace-list">
     {ready.reverse().map(({row,trace})=><TraceStep key={row.id} id={row.id} trace={trace} w={w} unfolded={inline}/>)}
-    {waiting&&<span className="pa-trace-state" role="status"><ThinkingOrb size={14} color="var(--pa-dim)"/>{w.traceLoading}</span>}
+    {(waiting||pending)&&<span className="pa-trace-state" role="status"><ThinkingOrb size={14} color="var(--pa-dim)"/>{w.traceLoading}</span>}
     {!waiting&&failed&&<button type="button" className="pa-trace-more-btn" onClick={()=>{
       setSettled(old=>Object.fromEntries(Object.entries(old).filter(([,read])=>read.ok)));setRetry(value=>value+1)
     }}>{w.traceRetry}</button>}
-    {!ready.length&&!waiting&&!failed&&<p className="pa-trace-state">{w.workNoSteps}</p>}
+    {loadFailed&&<button type="button" className="pa-trace-more-btn" onClick={loadDeferred}>{w.traceRetry}</button>}
+    {!ready.length&&!waiting&&!failed&&!pending&&!loadFailed&&<p className="pa-trace-state">{w.workNoSteps}</p>}
     {more&&<button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.moreTrace}</button>}
   </div>
   return inline?content:<details className="pa-trace pa-flow-disclosure" data-trace-count={eligible.length} onToggle={event=>{

@@ -335,6 +335,9 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount); err != nil {
 		return err
 	}
+	if q.Request.DeferTraceCount && q.Request.Mode != pa.ReadViewTraces {
+		return nil
+	}
 	var bad int64
 	// The head counts distinct steps. Only the traces page needs the newest
 	// content or chronological anchors. Validate every chunk so

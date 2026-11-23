@@ -201,6 +201,10 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsPageRows, Class: Buffer, Unit: Rows, Limit: pa.MaxPageRows, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxPageRows"}},
+		// The console's opening page requests a smaller slice of BotsPageRows.
+		// The existing history cursor exposes the remaining rows on demand.
+		{Name: "bots.chat_initial_page_rows", Class: Buffer, Unit: Rows, Limit: 20, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
 		{Name: BotsEventRows, Class: Buffer, Unit: Rows, Limit: pa.MaxEventPageRows, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxEventPageRows"}},

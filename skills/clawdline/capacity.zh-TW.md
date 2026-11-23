@@ -70,6 +70,7 @@
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.chat_initial_page_rows` | 20 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.cleanup_retries` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_retry_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

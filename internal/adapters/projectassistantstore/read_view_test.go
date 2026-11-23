@@ -812,6 +812,52 @@ func TestReadViewLongHistoryWithinSourceDeadline(t *testing.T) {
 	requireCode(t, err, pa.CursorExpired)
 }
 
+func TestReadViewDefersTraceValidationUntilCollectionIsOpened(t *testing.T) {
+	e, _, current := viewFixture(t, 100, 0, false)
+	e.Events = append(e.Events, pa.Event{Version: pa.ContractVersion, ID: "trace-1", Seq: 101, Fence: current,
+		Kind: pa.TraceUpdated, At: e.Bot.CreatedAt, Trace: &pa.Trace{TurnID: "t1", Category: "thought", Text: "stored trace"}})
+	db, _, views, _ := restoreViews(t, e)
+	q := viewQuery(e.Bot)
+	q.Request.PageSize = 20
+	legacy := readView(t, views, q)
+	if legacy.Head.TraceCategoryCount != 1 || !legacy.HasMore || len(legacy.Items) != 20 {
+		t.Fatal("fixture needs a trace and a paged transcript")
+	}
+
+	// A damaged trace cannot block chat reads that explicitly defer the
+	// trace projection. Opening the collection must still reject it.
+	if _, err := db.Exec(`UPDATE project_assistant_events
+		SET data=json_set(CAST(data AS TEXT), '$.trace.text', 42)
+		WHERE machine=? AND bot=? AND json_extract(CAST(data AS TEXT), '$.kind')='trace_updated'`,
+		e.Bot.Key.MachineID, e.Bot.Key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	_, err := views.Read(testContext, q)
+	requireCode(t, err, pa.ScopeDenied)
+
+	q.Request.DeferTraceCount = true
+	snapshot := readView(t, views, q)
+	if snapshot.Head.TraceCategoryCount != 0 || !reflect.DeepEqual(snapshot.Items, legacy.Items) {
+		t.Fatal("opting out changed the messages or returned a trace count")
+	}
+
+	q.Request.Mode, q.Request.SourceEpoch, q.Request.Cursor = pa.ReadViewHistory, snapshot.SourceEpoch, snapshot.Items[19].AfterCursor
+	history := readView(t, views, q)
+	if len(history.Items) != 20 || history.Items[0].AnchorMessageSeq != snapshot.Items[19].AnchorMessageSeq-1 {
+		t.Fatal("older messages did not continue from the newest page")
+	}
+
+	q.Request.Mode, q.Request.Cursor, q.Request.AfterSeq = pa.ReadViewEvents, "", snapshot.Head.EventFrontier
+	events := readView(t, views, q)
+	if len(events.Items) != 0 || events.NextSeq != snapshot.Head.EventFrontier {
+		t.Fatal("empty event poll lost the snapshot frontier")
+	}
+
+	q.Request.Mode, q.Request.AfterSeq = pa.ReadViewTraces, 0
+	_, err = views.Read(testContext, q)
+	requireCode(t, err, pa.ScopeDenied)
+}
+
 func TestReadViewKeepsDistinctTraceStepsAndLatestStepContent(t *testing.T) {
 	e, _, current := viewFixture(t, 1, 0, false)
 	for i, trace := range []pa.Trace{

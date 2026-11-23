@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14200,
+  "englishKeys": 14202,
   "counts": {
     "negation": 3613,
-    "state": 2403,
+    "state": 2404,
     "permission": 853,
     "deletion": 326,
     "uncertainty": 565
   },
-  "unionCount": 6034,
+  "unionCount": 6035,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3757,6 +3757,7 @@
       "capacityRow.bots.attachment_bytes.full",
       "capacityRow.bots.background_waiting.full",
       "capacityRow.bots.chat_gap_ms.full",
+      "capacityRow.bots.chat_initial_page_rows.full",
       "capacityRow.bots.cleanup_ms.full",
       "capacityRow.bots.cloud_endpoints.full",
       "capacityRow.bots.cloud_pending.full",
@@ -8122,6 +8123,7 @@
     "capacityRow.bots.carry_messages.full",
     "capacityRow.bots.carry_quote_bytes.full",
     "capacityRow.bots.chat_gap_ms.full",
+    "capacityRow.bots.chat_initial_page_rows.full",
     "capacityRow.bots.cleanup_ms.full",
     "capacityRow.bots.cleanup_retries.full",
     "capacityRow.bots.cleanup_retries.what",

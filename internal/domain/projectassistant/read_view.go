@@ -17,14 +17,15 @@ const (
 )
 
 type ReadViewRequest struct {
-	Key            BotKey
-	ConversationID string
-	Mode           ReadViewMode
-	SourceEpoch    string
-	Cursor         string
-	AfterSeq       int64
-	PageSize       int
-	TeamCards      bool
+	Key             BotKey
+	ConversationID  string
+	Mode            ReadViewMode
+	SourceEpoch     string
+	Cursor          string
+	AfterSeq        int64
+	PageSize        int
+	TeamCards       bool
+	DeferTraceCount bool
 }
 
 func CheckReadViewRequest(q ReadViewRequest) error {

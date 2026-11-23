@@ -995,6 +995,8 @@
   "capacityRow.bots.carry_quote_bytes.what": "Bot 開新執行時，每則歷史聊天引用的 UTF-8 摘錄上限為 2,000 位元組。",
   "capacityRow.bots.chat_gap_ms.full": "超過間隔時開始新的時間群組，不刪除或隱藏訊息。",
   "capacityRow.bots.chat_gap_ms.what": "加入同一聊天視覺群組的訊息最大時間間隔。",
+  "capacityRow.bots.chat_initial_page_rows.full": "點選「較早的訊息」即可分頁載入其餘對話。",
+  "capacityRow.bots.chat_initial_page_rows.what": "聊天室開啟時先讀取的時間軸列數，讓最近的訊息能更快顯示。",
   "capacityRow.bots.cleanup_ms.full": "明確回報清理不確定性；沒有證據就不宣稱已停止逃逸子程序。",
   "capacityRow.bots.cleanup_ms.what": "清理自有助理程序的期限。",
   "capacityRow.bots.cleanup_retries.full": "次數用完後，Bot 仍拒收新訊息並說明原因；絕不重送先前的訊息。",

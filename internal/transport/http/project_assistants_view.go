@@ -51,8 +51,11 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 		}
 	}
 	fields := []string{"machine_id", "conversation_id", "mode", "source_epoch", "cursor", "after_seq", "page_size"}
-	if r.URL.Query().Has("team_cards") {
-		fields = append(fields, "team_cards")
+	flags := []string{"team_cards", "defer_trace_count"}
+	for _, flag := range flags {
+		if r.URL.Query().Has(flag) {
+			fields = append(fields, flag)
+		}
 	}
 	q, err := paHTTPQuery(r, fields...)
 	if err != nil {
@@ -70,11 +73,13 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	if err != nil || size < 1 || size > pa.MaxEventPageRows {
 		return nil, paHTTPFailure(pa.Invalid, "page_size")
 	}
-	if q.Has("team_cards") && q.Get("team_cards") != "true" {
-		return nil, paHTTPFailure(pa.Invalid, "team_cards")
+	for _, flag := range flags {
+		if q.Has(flag) && q.Get(flag) != "true" {
+			return nil, paHTTPFailure(pa.Invalid, flag)
+		}
 	}
 	request := pa.ReadViewRequest{Key: key, ConversationID: q.Get("conversation_id"), Mode: pa.ReadViewMode(q.Get("mode")),
-		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size), TeamCards: q.Has("team_cards")}
+		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size), TeamCards: q.Has("team_cards"), DeferTraceCount: q.Has("defer_trace_count")}
 	if err = pa.CheckReadViewRequest(request); err != nil {
 		return nil, err
 	}

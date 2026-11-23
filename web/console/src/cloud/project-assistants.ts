@@ -72,6 +72,7 @@ export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
+const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
@@ -112,6 +113,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly grant: Readonly<AssistantGrant>
   readonly machineName?: string
   canTeamCards() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL }
+  canDeferTraceCount() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL }
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
   canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
@@ -452,7 +454,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
-    const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,...(r.team_cards?{team_cards:"true"}:{})}),s,undefined,"GET",true,r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL)
+    const level=r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
+    const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
+      machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,
+      ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{})
+    }),s,undefined,"GET",true,level)
     this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL)
     if(!answer?.head)throw failure("pa_invalid")
     // The path owns Bot identity. Chat independently checks the captured Project scope.
@@ -724,12 +730,13 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     }
     if(tail==="/view") {
       const fields=["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
-      if(url.searchParams.has("team_cards")) {
-        if(q.team_cards!=="true")throw failure("pa_invalid")
-        fields.push("team_cards")
+      for(const flag of ["team_cards","defer_trace_count"]){
+        if(!url.searchParams.has(flag))continue
+        if(q[flag]!=="true")throw failure("pa_invalid")
+        fields.push(flag)
       }
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(field=>!url.searchParams.has(field))||Object.keys(q).some(field=>!fields.includes(field))||! /^(0|[1-9][0-9]*)$/.test(q.after_seq)||! /^[1-9][0-9]*$/.test(q.page_size))throw failure("pa_invalid")
-      const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size),...(q.team_cards?{team_cards:true}:{})}
+      const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size),...(q.team_cards?{team_cards:true}:{}),...(q.defer_trace_count?{defer_trace_count:true}:{})}
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }

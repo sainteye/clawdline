@@ -7161,6 +7161,12 @@ export interface ProjectAssistantReadViewRequest {
    * authorization.
    */
   cursor: string
+
+  /**
+   * When true, skip the aggregate trace count outside traces mode. A zero in the
+   * head then does not describe trace availability.
+   */
+  defer_trace_count?: boolean
   key: ProjectAssistantBotKey
   mode: ProjectAssistantReadViewMode
 
