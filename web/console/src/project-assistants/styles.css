@@ -39,8 +39,14 @@
 .project-assistants .pa-row-body strong { font-size:14px;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .project-assistants .pa-row-body>span,.project-assistants .pa-row-body>small { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px;color:var(--pa-dim); }
 .project-assistants .pa-row-body>small { font-size:12px;color:#8a8a90; }
-.project-assistants .pa-row-meta { display:flex;flex-direction:column;align-items:flex-end;gap:10px;font-size:12px;color:var(--pa-dim); }
-.project-assistants .pa-row-meta time { max-width:40px; }
+/* A Bot row is two fixed lines: name with its time, then preview with every badge. Placement is
+   explicit so a row without a time still keeps its badges on the preview's line. */
+.project-assistants .pa-row-grid { display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:20px 20px;grid-auto-rows:16px;column-gap:8px;row-gap:3px;align-items:center; }
+.project-assistants .pa-row-grid>strong { grid-area:1 / 1;align-self:baseline; }
+.project-assistants .pa-row-grid>.pa-row-time { grid-area:1 / 2;align-self:baseline;justify-self:end;white-space:nowrap;font-size:12px;color:var(--pa-dim);font-variant-numeric:tabular-nums; }
+.project-assistants .pa-row-grid>.pa-row-preview { grid-area:2 / 1; }
+.project-assistants .pa-row-grid>.pa-row-badges { grid-area:2 / 2;justify-self:end;display:flex;align-items:center;gap:6px;overflow:visible; }
+.project-assistants .pa-row-grid>small { grid-area:3 / 1 / 4 / 3; }
 .project-assistants .pa-unread { background:#fafafa;color:#080808;min-width:19px;height:19px;border-radius:50%;display:grid;place-items:center;font-size:10px; }
 .project-assistants .pa-avatar-status { position:relative;display:flex; }
 /* The agent's product mark sits on the avatar's lower right, as Codync shows it. */
@@ -219,7 +225,7 @@
   .project-assistants .pa-row-body strong { font-size:16px; }
   .project-assistants .pa-row-body>span { font-size:14px; }
   .project-assistants .pa-row-body>small { font-size:13px; }
-  .project-assistants .pa-row-meta { font-size:13px; }
+  .project-assistants .pa-row-grid>.pa-row-time { font-size:13px; }
   .project-assistants .pa-main { display:none; }
   .project-assistants.pa-selected .pa-roster { display:none; }
   .project-assistants.pa-selected .pa-main { display:block; }
