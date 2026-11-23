@@ -22,7 +22,8 @@
     "test:deps": "node --test ../tools/ensure-web-deps.test.mjs",
     "e2e:bots-send-recovery": "node console/tools/project-assistants-send-recovery.e2e.mjs",
     "test:fallback-progress": "node --experimental-strip-types --test console/src/project-assistants/fallback-progress.test.ts",
-    "e2e:bots-ui-alignment": "node console/tools/project-assistants-ui-alignment.e2e.mjs"
+    "e2e:bots-ui-alignment": "node console/tools/project-assistants-ui-alignment.e2e.mjs",
+    "e2e:bots-image-zoom": "node console/tools/project-assistants-image-zoom.e2e.mjs"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
