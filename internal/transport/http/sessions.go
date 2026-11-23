@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/claudeusage"
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
@@ -23,6 +25,7 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/coordinator"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/task"
 )
@@ -120,11 +123,13 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 			Icon                *contract.Icon     `json:"icon,omitempty"`
 			ExecutionGeneration string             `json:"execution_generation,omitempty"`
 			Status              status             `json:"status"`
+
+			BotDispatch *contract.SessionBotDispatch `json:"bot_dispatch,omitempty"`
 		}
 		rows := make([]presentation, 0, len(snapshot.Sessions))
 		for _, row := range snapshot.Sessions {
 			rows = append(rows, presentation{Backend: row.Backend, Assistant: row.Assistant, ID: row.ID, Title: row.Label, CWD: row.CWD, ProjectKey: row.ProjectKey,
-				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration,
+				Icon: row.Icon, ExecutionGeneration: row.ExecutionGeneration, BotDispatch: row.BotDispatch,
 				Status: status{SessionID: row.SessionID, EpicParent: row.EpicParent, Persona: row.Persona, State: row.State, WorkState: row.WorkState, WorkNote: row.WorkNote, ProviderBlock: string(row.ProviderBlock),
 					WorkProvenance: row.WorkProvenance, WorkMovedBy: row.WorkMovedBy,
 					WorkPersonNeeded: row.WorkPersonNeeded, Line: row.Line, Shells: row.Shells, BackgroundReading: row.BackgroundReading, BackgroundOmitted: row.BackgroundOmitted,
@@ -382,6 +387,9 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 	// Names first, because a coordination wait names the sessions on either
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
+	botDispatches := make(map[string]*contract.SessionBotDispatch)
+	legacyBotNames := make(map[pa.BotKey]string)
+	bots := projectassistantstore.New(s.store.ProjectAssistantReader())
 	for i, item := range items {
 		project := ""
 		if s.icons != nil {
@@ -390,7 +398,23 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 		if project == "" && item.CWD != "" {
 			project = filepath.Base(item.CWD)
 		}
-		labels[item.ID] = rowLabel(item, swift.TitleOf(lives[i], item.CustomTitle, lives), project)
+		titles := swift.TitleOf(lives[i], item.CustomTitle, lives)
+		labels[item.ID] = rowLabel(item, titles, project)
+		if dispatch := titles.BotDispatch; dispatch != nil {
+			name := dispatch.Name
+			if name == "" && dispatch.Key.BotID != "" && dispatch.Key.MachineID != "" {
+				// Earlier task records kept the source key but not its name.
+				// Resolve only dispatchers of visible rows, once per list build.
+				var known bool
+				if name, known = legacyBotNames[dispatch.Key]; !known {
+					if bot, err := bots.MemoryBot(records, dispatch.Key); err == nil {
+						name = bot.Name
+					}
+					legacyBotNames[dispatch.Key] = name
+				}
+			}
+			botDispatches[item.ID] = &contract.SessionBotDispatch{Name: strings.TrimSpace(name)}
+		}
 	}
 	labelOf := func(id string) string { return labels[id] }
 
@@ -425,6 +449,7 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 			latestDelivery:      deliveries[item.ID],
 			latestDeliveryErr:   deliveriesErr,
 		})
+		row.BotDispatch = botDispatches[item.ID]
 		if recapsOn {
 			row.Recap = s.recaps.For(item)
 		}

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"time"
+
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 // These are the Swift app's on-disk records, spelled as it writes them
@@ -31,6 +33,12 @@ type Seconds float64
 func (s Seconds) Unix() int64     { return int64(s) }
 func (s Seconds) Time() time.Time { return time.Unix(0, int64(float64(s)*1e9)) }
 
+// BotDispatch is the source identity and recorded display name of a Bot task.
+type BotDispatch struct {
+	Key  pa.BotKey
+	Name string
+}
+
 // Task is one dispatched task.
 type Task struct {
 	ID               string   `json:"id"`
@@ -46,13 +54,14 @@ type Task struct {
 	WorkPhase        *string  `json:"work_phase"`
 	ReasoningEffort  *string  `json:"reasoning_effort"`
 	ScheduleID       *string  `json:"schedule_id"`
-	BotDispatched    bool     `json:"-"`
 	SessionRoot      bool     `json:"session_root"`
 	Permission       string   `json:"permission"`
 	SpawnedAt        *Seconds `json:"spawned_at"`
 	BriefedAt        *Seconds `json:"briefed_at"`
 	FinishedAt       *Seconds `json:"finished_at"`
 	ResultVerifiedAt *Seconds `json:"result_verified_at"`
+
+	BotDispatch *BotDispatch `json:"-"`
 
 	// CallbackIntent is set only on this daemon's own callback records
 	// (orchestrator.Record.Callback): a command the root handed to the daemon

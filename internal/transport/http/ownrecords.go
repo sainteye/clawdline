@@ -157,25 +157,27 @@ func ownTasks(records []orchestrator.Record, byTerminal map[string]ownrecords.Li
 	out := make([]ownrecords.Task, 0, len(records))
 	for _, r := range records {
 		t := ownrecords.Task{
-			ID:            r.ID,
-			State:         string(r.State),
-			Kind:          r.Kind,
-			Title:         r.Title,
-			Assistant:     r.Assistant,
-			ProjectDir:    r.ProjectDir,
-			Created:       secondsOf(r.CreatedAt),
-			Model:         stringPtr(r.Model),
-			WorkItemID:    stringPtr(r.WorkID),
-			ScheduleID:    stringPtr(r.ScheduleID),
-			BotDispatched: r.AssistantOwner != nil,
-			Permission:    r.PermissionMode,
-			SpawnedAt:     secondsPtrOf(r.SpawnedAt),
-			BriefedAt:     secondsPtrOf(r.AcceptedAt),
-			FinishedAt:    secondsPtrOf(r.FinishedAt),
+			ID:         r.ID,
+			State:      string(r.State),
+			Kind:       r.Kind,
+			Title:      r.Title,
+			Assistant:  r.Assistant,
+			ProjectDir: r.ProjectDir,
+			Created:    secondsOf(r.CreatedAt),
+			Model:      stringPtr(r.Model),
+			WorkItemID: stringPtr(r.WorkID),
+			ScheduleID: stringPtr(r.ScheduleID),
+			Permission: r.PermissionMode,
+			SpawnedAt:  secondsPtrOf(r.SpawnedAt),
+			BriefedAt:  secondsPtrOf(r.AcceptedAt),
+			FinishedAt: secondsPtrOf(r.FinishedAt),
 
 			ChildTerminal: stringPtr(r.ChildTerminalID),
 			ChildBackend:  stringPtr(r.ChildBackend),
 			ChildSession:  stringPtr(r.ChildConversationID),
+		}
+		if owner := r.AssistantOwner; owner != nil {
+			t.BotDispatch = &ownrecords.BotDispatch{Key: owner.Fence.Key, Name: owner.BotName}
 		}
 		if r.Callback != nil {
 			t.CallbackIntent = r.Callback.Intent

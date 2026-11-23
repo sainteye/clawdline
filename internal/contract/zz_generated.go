@@ -8537,6 +8537,13 @@ const (
 // SessionAgentUnknownReasonValues is every value the contract allows, in contract order.
 var SessionAgentUnknownReasonValues = []SessionAgentUnknownReason{SessionAgentUnknownReasonNoRecord, SessionAgentUnknownReasonUnreadable, SessionAgentUnknownReasonUnrecognized}
 
+// The Bot that dispatched this Session, from the broker's matching task record.
+type SessionBotDispatch struct {
+	// The dispatcher's display name, absent if the name was not recorded and can no
+	// longer be resolved.
+	Name string `json:"name,omitempty"`
+}
+
 // Who this session is parked on, and who is parked on it. Absent when neither.
 // `state` is `waiting_on_session` whenever `waitingOn` is not empty, otherwise
 // `has_waiters`.
@@ -9055,8 +9062,9 @@ type SessionRow struct {
 	BackgroundOmitted int64 `json:"background_omitted,omitempty"`
 
 	// Whether daemon-owned callback rows could be read.
-	BackgroundReading string       `json:"background_reading,omitempty"`
-	Closeability      Closeability `json:"closeability"`
+	BackgroundReading string              `json:"background_reading,omitempty"`
+	BotDispatch       *SessionBotDispatch `json:"bot_dispatch,omitempty"`
+	Closeability      Closeability        `json:"closeability"`
 
 	// How full the conversation's context window is, 0 to 100, read from a short tail
 	// of its record at most every sessions.live_context_refresh_seconds. Rounded up,

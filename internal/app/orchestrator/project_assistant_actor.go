@@ -27,6 +27,7 @@ type AssistantCurrent struct {
 	Fence                  pa.Fence
 	Source                 pa.SourceStatus
 	Feature                pa.FeatureState
+	BotName                string
 	ActiveTurnID           string
 	BindingRevoked         bool
 	Project                pa.ProjectResolution
@@ -166,6 +167,7 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 // Board authority. The credential is deliberately absent from Record and Brief.
 type AssistantOwner struct {
 	Fence         pa.Fence        `json:"fence"`
+	BotName       string          `json:"bot_name,omitempty"`
 	TurnID        string          `json:"turn_id"`
 	Command       pa.Command      `json:"command"`
 	RequestHash   string          `json:"request_hash"`
@@ -309,7 +311,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	if err != nil {
 		return Dispatched{}, err
 	}
-	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject}
+	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject}
 	secret := make([]byte, 32)
 	if _, err = rand.Read(secret); err != nil {
 		return Dispatched{}, err
@@ -332,7 +334,10 @@ func (b *Broker) ValidateAssistantWork(ctx context.Context, q pa.WorkRequest) er
 }
 
 func sameAssistantOwner(a, b *AssistantOwner) bool {
-	return a != nil && b != nil && *a == *b
+	// The display name is recorded at first admission. A rename or a retry
+	// of a task created before names were recorded cannot change ownership.
+	return a != nil && b != nil && a.Fence == b.Fence && a.TurnID == b.TurnID &&
+		a.Command == b.Command && a.RequestHash == b.RequestHash && a.TargetProject == b.TargetProject
 }
 
 // AssistantWorkSnapshot is a sanitized source-owned projection. Task-only work

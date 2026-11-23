@@ -461,9 +461,11 @@ export function statusSource(current: () => StatusClient | null,
           const key = destinationKey(destination)
           if (!visible.has(key) || !currentRows.has(key)) continue
           const icon = record(session.icon)
+          const dispatch = record(session.bot_dispatch)
           const status = record(session.status)
           const statusState = status?.state
           result.push({ destination, projection: currentRows.get(key), title: session.title.trim(),
+            botDispatch: dispatch ? { name: typeof dispatch.name === "string" ? dispatch.name : undefined } : undefined,
             observedAt: trustworthyListTime ? listObservedAt : undefined,
             assistant: session.assistant === "claude" || session.assistant === "codex" || session.assistant === "antigravity" || session.assistant === "grok" ? session.assistant : undefined,
             cwd: typeof session.cwd === "string" ? session.cwd : undefined,

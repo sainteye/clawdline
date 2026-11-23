@@ -5,6 +5,7 @@ package projectassistanthost
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"log"
 	"sync"
@@ -67,7 +68,10 @@ type Options struct {
 	// A read returns the complete status, including its current write ceiling.
 	Source         func(context.Context, pa.BotKey, bool) (pa.SourceStatus, error)
 	DispatchPolicy func(context.Context, pa.BotKey) (DispatchPolicy, error)
-	Provider       func() (app.Provider, error)
+	// ManageBots calls the same source Bot operations as the console, with an
+	// execution-scoped Service supplied by the Host and no daemon credential.
+	ManageBots func(context.Context, *app.Service, pa.BotKey, app.LeadBotRequest) (json.RawMessage, error)
+	Provider   func() (app.Provider, error)
 	// NativeWork is composition-only. Unregister must remove its process-local
 	// entry synchronously without IO or background work; Host owns its lifetime.
 	NativeWork func(context.Context, app.OpenRequest, NativeWork) (func(), error)
@@ -317,7 +321,7 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 		return orchestrator.AssistantCurrent{}, failure(pa.ScopeDenied, "canonical_project")
 	}
 	f := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
-	out := orchestrator.AssistantCurrent{Fence: f, Source: source, Feature: state, Project: resolved}
+	out := orchestrator.AssistantCurrent{Fence: f, Source: source, Feature: state, Project: resolved, BotName: b.Name}
 	if c.BindingID != "" {
 		found := false
 		for _, binding := range x.Bindings {
@@ -347,8 +351,7 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			allowed := p.Allowed && p.TimeoutMinutes > 0
 			out.DispatchAllowed = allowed && resolved.Scope.Kind == pa.RepositoryProject
 			_, resolvesFolders := h.o.Projects.(app.TeamProjectResolver)
-			out.ProjectDispatchAllowed = allowed && resolvesFolders && b.Lead && active.Origin == pa.UserOrigin &&
-				active.Room == nil && active.Network == nil && active.RoutineRunID == ""
+			out.ProjectDispatchAllowed = allowed && resolvesFolders && b.Lead && pa.DirectUserTurn(active)
 			out.AllowedClaims = append([]string(nil), p.AllowedClaims...)
 			out.AnyProjectFile = p.AnyProjectFile
 			out.Assistant = p.Assistant

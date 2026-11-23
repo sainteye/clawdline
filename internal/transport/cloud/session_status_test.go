@@ -266,6 +266,29 @@ func TestStatusNotifiesOneMachineListReadWhenItsTitleSettles(t *testing.T) {
 	}
 }
 
+func TestBotDispatchNameRefreshesOnlyTheAuthorizedListPresentation(t *testing.T) {
+	c := &collector{}
+	p := &Publisher{MachineID: "mac_a", published: map[string][32]byte{}, sent: map[string]time.Time{}, Publish: c.publish}
+	row := map[string]any{"id": "%19", "state": "working", "label": "Restore drafts", "bot_dispatch": map[string]any{}}
+	reading := sessionReading{sessions: []map[string]any{row}, at: json.RawMessage(`100`), complete: true}
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	marker := "ss/mac_a/" + InventorySessionID
+	first := c.payload(t, marker)
+	row["bot_dispatch"] = map[string]any{"name": "Dispatcher fixture"}
+	p.publishStatuses(context.Background(), reading, []string{"%19"})
+	next := c.payload(t, marker)
+	if got := c.channels(); len(got) != 3 || got[2] != marker ||
+		next["presentation_generation"] == first["presentation_generation"] || next["snapshot_generation"] != first["snapshot_generation"] {
+		t.Fatalf("resolved Bot name did not refresh only the list: %v -> %v, %v", first, next, got)
+	}
+	for _, channel := range c.channels() {
+		payload := c.payload(t, channel)
+		if _, ok := payload["bot_dispatch"]; ok {
+			t.Fatalf("status channel %s exposed the Bot dispatch: %v", channel, payload)
+		}
+	}
+}
+
 // The Board's assignment dialog picks a Session by the Project its machine
 // says it belongs to. That answer can settle without the cwd moving (a
 // repository appearing around it), so it wakes the machine list the way the

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14068,
-  "riskKeys": 5974,
-  "nonRiskCount": 8094,
+  "englishContentKeys": 14075,
+  "riskKeys": 5976,
+  "nonRiskCount": 8099,
   "groups": [
     {
       "name": "acp / other",
@@ -4266,7 +4266,7 @@
     },
     {
       "name": "next / other",
-      "count": 1350,
+      "count": 1352,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5216,6 +5216,8 @@
         "next.sessionBoards",
         "next.sessionBoardsIntro",
         "next.sessionBoardsLoading",
+        "next.sessionBotDispatch",
+        "next.sessionBotDispatchBy",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",
         "next.sessionCallbacksActive",
@@ -8108,7 +8110,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 229,
+      "count": 232,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8225,6 +8227,9 @@
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
+        "transparency.card.persistent-bot-lead-controls.condition",
+        "transparency.card.persistent-bot-lead-controls.how",
+        "transparency.card.persistent-bot-lead-controls.title",
         "transparency.card.persistent-bot-lead.title",
         "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",

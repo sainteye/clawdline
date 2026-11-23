@@ -469,6 +469,7 @@ type Titles struct {
 	// Orchestrator is the task, Feature Root or handoff the tab was opened for
 	// (Orchestrator.title(forTerminal:)).
 	Orchestrator string
+	BotDispatch  *BotDispatch
 	// Automatic is a model-chosen name for a Claude conversation
 	// (Config.automaticSessionTitle), the thread rung for Claude.
 	Automatic string
@@ -495,7 +496,7 @@ func (s Snapshot) TitleOf(l Live, customTitle string, live []Live) Titles {
 	// Over this daemon's own records, laid in by With (own.go). The terminal
 	// rule stays strict; a conversation the Board opened, and that now runs
 	// in a tab nobody recorded, is found by the conversation behind it.
-	out.Orchestrator = s.orchestratorTitle(l.TerminalID, live)
+	out.Orchestrator, out.BotDispatch = s.orchestratorTitle(l, live)
 	board := s.boardTitle(l)
 	if board.AgentNamed || out.Orchestrator == "" {
 		out.Orchestrator = board.Label
@@ -575,7 +576,8 @@ func (s Snapshot) manualTitle(l Live, customTitle string) string {
 // directly off the sessions on screen. Tasks are applied oldest first so the
 // newest record for a reused terminal id wins — the Swift app walks a
 // dictionary there, whose order is not defined.
-func (s Snapshot) orchestratorTitle(terminalID string, live []Live) string {
+func (s Snapshot) orchestratorTitle(row Live, live []Live) (string, *BotDispatch) {
+	terminalID := row.TerminalID
 	alive := func(id RootAssignmentIdentity) bool {
 		for _, l := range live {
 			if looseMatch(id, l) {
@@ -604,42 +606,31 @@ func (s Snapshot) orchestratorTitle(terminalID string, live []Live) string {
 	// are reused, and an unbound old task must not rename the next session.
 	// While a task runs, its terminal is enough to show a provisional title.
 	taskAlive := func(t Task) bool {
-		for _, l := range live {
-			if isTerminalState(t.State) {
-				if taskMatches(t, l) {
-					return true
-				}
-				continue
-			}
-			if l.TerminalID != terminalID ||
-				(t.Assistant != "" && t.Assistant != l.Assistant) ||
-				(t.ChildPID != nil && *t.ChildPID != l.PID) ||
-				(t.ChildProcStart != nil && !sameStart(t.ChildProcStart, l.ProcessStart)) ||
-				(t.ChildSession != nil && *t.ChildSession != l.ConversationID) {
-				continue
-			}
-			return true
+		if isTerminalState(t.State) {
+			return taskMatches(t, row)
 		}
-		return false
+		return (t.Assistant == "" || t.Assistant == row.Assistant) &&
+			(t.ChildPID == nil || *t.ChildPID == row.PID) &&
+			(t.ChildProcStart == nil || sameStart(t.ChildProcStart, row.ProcessStart)) &&
+			(t.ChildSession == nil || *t.ChildSession == row.ConversationID)
 	}
+	var botDispatch *BotDispatch
 	for _, t := range tasksOldestFirst(s.Tasks) {
 		if deref(t.ChildTerminal) != terminalID || t.AttachSession != nil || !taskAlive(t) {
 			continue
 		}
 		title := t.Title
-		prefix := ""
 		switch {
-		case t.BotDispatched:
-			prefix = "[Bot Task]"
-		case t.ScheduleID != nil:
-			prefix = "[Task]"
+		case t.BotDispatch != nil:
+			if legacy, ok := strings.CutPrefix(title, "[Bot Task] "); ok && strings.TrimSpace(legacy) != "" {
+				title = legacy
+			}
+		case t.ScheduleID != nil && !strings.HasPrefix(title, "[Task]"):
+			title = "[Task] " + title
 		}
-		if prefix != "" && !strings.HasPrefix(title, prefix) {
-			title = prefix + " " + title
-		}
-		found = title
+		found, botDispatch = title, t.BotDispatch
 	}
-	return found
+	return found, botDispatch
 }
 
 // CloseInput is what the closeability projection needs besides the store.

@@ -221,13 +221,18 @@ func TestAssistantBrokerRejectsForgedExpiredRevokedAndCrossScopeActors(t *testin
 func TestAssistantBrokerIdempotencyCapacityAndHistoricalRead(t *testing.T) {
 	b, ctx, c, q, calls := assistantBrokerFixture(t)
 	b.MaxChildren = 1
+	c.BotName = "Original dispatcher"
 	one, err := b.DispatchAssistant(ctx, q)
 	if err != nil {
 		t.Fatal(err)
 	}
+	c.BotName = "Renamed dispatcher"
 	replay, err := b.DispatchAssistant(ctx, q)
 	if err != nil || !replay.Replayed || replay.Record.ID != one.Record.ID || calls.Load() != 1 {
 		t.Fatalf("replay %+v %v calls=%d", replay, err, calls.Load())
+	}
+	if replay.Record.AssistantOwner == nil || replay.Record.AssistantOwner.BotName != "Original dispatcher" {
+		t.Fatalf("dispatch lost its recorded name: %+v", replay.Record.AssistantOwner)
 	}
 	changed := q
 	changed.Brief += " Different payload."

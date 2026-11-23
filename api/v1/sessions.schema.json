@@ -131,6 +131,14 @@
         "current": { "type": "boolean", "description": "True when the conversation has not grown since the recap was written." }
       }
     },
+    "SessionBotDispatch": {
+      "description": "The Bot that dispatched this Session, from the broker's matching task record.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "description": "The dispatcher's display name, absent if the name was not recorded and can no longer be resolved." }
+      }
+    },
     "SessionRow": {
       "description": "One assistant session. Fields that cannot be supported are absent rather than invented; a reader that handles absence handles this too.",
       "type": "object",
@@ -150,6 +158,7 @@
         "agent_count_unknown": { "type": "boolean", "description": "The current Cloud status lists provider work whose running total cannot be confirmed." },
         "assistant": { "$ref": "common.schema.json#/$defs/Assistant" },
         "backend": { "$ref": "common.schema.json#/$defs/Backend" },
+        "bot_dispatch": { "$ref": "#/$defs/SessionBotDispatch" },
         "closeability": { "$ref": "#/$defs/Closeability" },
         "coordination": { "$ref": "#/$defs/SessionCoordination" },
 		"waiting_for": { "description": "The live broker work owned by this Session, collected by the same pass that decided the work state. Independent of the terminal state, so working and unknown rows can also name outstanding work; at most `session.waiting_for` entries, with `waiting_for_omitted` counting the rest. Both Cloud list scopes and the local list describe a wait from this field alone.", "type": "array", "items": { "$ref": "#/$defs/SessionWaitTarget" } },

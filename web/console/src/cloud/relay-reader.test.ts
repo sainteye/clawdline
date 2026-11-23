@@ -753,6 +753,7 @@ test("the single-machine page uses the fleet projection before a blocked rich sn
       snapshotGeneration: "a".repeat(32), presentationGeneration, rows }),
     listPresentations: async () => rows.slice(0, titles).map((row) => ({
       destination: row.destination, title: "Title " + row.destination.sessionID,
+      botDispatch: row.destination.sessionID === "s2" ? { name: "Dispatcher fixture" } : undefined,
       status: { state: "idle" }, projection: row,
     })),
   })
@@ -762,6 +763,7 @@ test("the single-machine page uses the fleet projection before a blocked rich sn
   assert.equal(first.sessions[0].machine_scope, true)
   assert.equal((first.sessions[0] as typeof first.sessions[0] & { coordinator_bound?: boolean }).coordinator_bound, true)
   assert.equal(first.sessions[1].machine_scope, false)
+  assert.deepEqual(first.sessions.map((row) => row.bot_dispatch), [undefined, { name: "Dispatcher fixture" }, undefined])
   assert.equal(first.scan.complete, true)
   titles = 1
   presentationGeneration = "b"

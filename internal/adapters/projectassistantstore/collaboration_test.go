@@ -303,6 +303,23 @@ func TestCollaborationDirectoryScopeHiddenAndLateFence(t *testing.T) {
 	}
 	_, err = s.AdmitExchange(testContext, reviewAdmission(t, s, a, b, "hidden"))
 	requireCode(t, err, pa.ScopeDenied)
+	current, err := s.Bot(testContext, a.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current.Lead = true
+	current.Version++
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(a.Key, pa.EditOperation, "make-lead"), ExpectedVersion: current.Version - 1, Bot: &current, DesignateLead: true, Receipt: pa.Receipt{ID: "make-lead", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	page, err = s.Directory(testContext, f, "turn", pa.BotDirectoryQuery{})
+	if err != nil || len(page.Bots) != 1 || page.Bots[0].ID != b.Key.BotID {
+		t.Fatal(page, err)
+	}
+	x, err := s.AdmitExchange(testContext, reviewAdmission(t, s, a, b, "lead-hidden"))
+	if err != nil || x.Target.Key != b.Key {
+		t.Fatal(x, err)
+	}
 	f.Generation++
 	_, err = s.Directory(testContext, f, "turn", pa.BotDirectoryQuery{})
 	requireCode(t, err, pa.StaleGeneration)

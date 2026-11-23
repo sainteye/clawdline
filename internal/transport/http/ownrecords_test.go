@@ -175,24 +175,32 @@ func TestTheEventsPruneKeepsTheDeliveredReceipt(t *testing.T) {
 }
 
 func TestSessionLabelsIdentifyBotDispatchedTasks(t *testing.T) {
-	const title = "重新連線後保留訊息草稿"
-	live := ownrecords.Live{TerminalID: "%1", Assistant: "claude"}
+	const title = "Restore drafts after reconnecting"
+	live := ownrecords.Live{TerminalID: "%1", Assistant: "claude", ConversationID: "current"}
 	for _, tc := range []struct {
-		name, title, schedule, want string
-		owner                       *orchestrator.AssistantOwner
+		name, title, child, schedule, want string
+		owner                              *orchestrator.AssistantOwner
+		wantDispatch                       bool
 	}{
-		{"Bot dispatch", title, "", "[Bot Task] " + title, &orchestrator.AssistantOwner{}},
-		{"already marked Bot dispatch", "[Bot Task] " + title, "", "[Bot Task] " + title, &orchestrator.AssistantOwner{}},
-		{"schedule", title, "schedule", "[Task] " + title, nil},
-		{"ordinary dispatch", title, "", title, nil},
+		{"Bot dispatch", title, "current", "", title, &orchestrator.AssistantOwner{BotName: "Test dispatcher"}, true},
+		{"older Bot dispatch", "[Bot Task] " + title, "", "", title, &orchestrator.AssistantOwner{}, true},
+		{"reused pane", title, "previous", "", "", &orchestrator.AssistantOwner{}, false},
+		{"schedule", title, "current", "schedule", "[Task] " + title, nil, false},
+		{"ordinary dispatch", title, "current", "", title, nil, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := orchestrator.Record{ID: "task", Title: tc.title, Assistant: live.Assistant, ChildTerminalID: live.TerminalID,
-				State: orchestrator.StateBriefed, ScheduleID: tc.schedule, AssistantOwner: tc.owner}
+				ChildConversationID: tc.child, State: orchestrator.StateBriefed, ScheduleID: tc.schedule, AssistantOwner: tc.owner}
 			snapshot := (ownrecords.Snapshot{}).With(ownrecords.Own{Tasks: ownTasks([]orchestrator.Record{r}, nil)})
 			titles := snapshot.TitleOf(live, "", []ownrecords.Live{live})
 			if got := rowLabel(session.Session{}, titles, ""); got != tc.want {
 				t.Fatalf("Session label = %q, want %q", got, tc.want)
+			}
+			if (titles.BotDispatch != nil) != tc.wantDispatch {
+				t.Fatalf("Bot dispatch = %+v, want presence %t", titles.BotDispatch, tc.wantDispatch)
+			}
+			if titles.BotDispatch != nil && titles.BotDispatch.Name != tc.owner.BotName {
+				t.Fatalf("Bot dispatch = %+v, want recorded name %q", titles.BotDispatch, tc.owner.BotName)
 			}
 		})
 	}
