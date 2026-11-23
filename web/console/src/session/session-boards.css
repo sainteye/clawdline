@@ -43,6 +43,16 @@
 }
 .session-bot-dispatch-project { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
 .session-bot-dispatch-project .pa-project-mark { flex: none; max-height: 14px; }
+/* The frame's heading opens the Bot that dispatched it; feedback stays quiet. */
+.session-bot-dispatch-open {
+  min-height: 44px; font: inherit; cursor: pointer;
+  -webkit-tap-highlight-color: transparent; transition: background-color .12s ease;
+}
+@media (hover: hover) { .session-bot-dispatch-open:hover { background: var(--card-hi); } }
+.session-bot-dispatch-open:active { background: color-mix(in srgb, var(--ink) 8%, var(--card)); }
+.session-bot-dispatch-open:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.session-bot-dispatch-chevron { margin-inline-start: auto; flex: none; color: var(--dim); font-size: 1.25em; line-height: 1; }
+@media (prefers-reduced-motion: reduce) { .session-bot-dispatch-open { transition: none; } }
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {

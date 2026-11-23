@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14189,
+  "englishContentKeys": 14191,
   "riskKeys": 6028,
-  "nonRiskCount": 8161,
+  "nonRiskCount": 8163,
   "groups": [
     {
       "name": "acp / other",
@@ -4280,7 +4280,7 @@
     },
     {
       "name": "next / other",
-      "count": 1352,
+      "count": 1353,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5232,6 +5232,7 @@
         "next.sessionBoardsLoading",
         "next.sessionBotDispatch",
         "next.sessionBotDispatchBy",
+        "next.sessionBotDispatchOpen",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",
         "next.sessionCallbacksActive",
@@ -6220,7 +6221,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 612,
+      "count": 613,
       "sources": [
         null
       ],
@@ -6262,6 +6263,7 @@
         "projectAssistants.botCreatedIn",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
+        "projectAssistants.botUnavailable",
         "projectAssistants.bots",
         "projectAssistants.cancel",
         "projectAssistants.changeModel",

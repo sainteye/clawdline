@@ -39,9 +39,11 @@ export interface BotsProps {
   manageHistory?:boolean
   onSelectionChange?:(key:W.ProjectAssistantBotKey|null)=>void
   voiceShortcut?:number
+  /** One Bot to open at mount, by its stable key (the Sessions list's dispatch frame). */
+  openBot?:W.ProjectAssistantBotKey
 }
 interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;loadedPages?:number;checked?:number}
-export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,manageHistory=false,onSelectionChange,voiceShortcut=0}:BotsProps) {
+export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,manageHistory=false,onSelectionChange,voiceShortcut=0,openBot}:BotsProps) {
   const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
   const [pages,setPages]=useState<Record<string,SourcePage>>({}),[creating,setCreating]=useState(false)
   const [rosterRetry,setRosterRetry]=useState(0)
@@ -77,7 +79,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const narrow=useNarrow()
   const [rosterHover,setRosterHover]=useState<string|null>(null)
   const [groupRoute,setGroupRoute]=useState<string|null>(null)
-  const [destination,setDestination]=useState(()=>botFromFragment(location.hash))
+  const [destination,setDestination]=useState(()=>openBot?{bot:openBot.bot_id,conversation:"",machine:openBot.machine_id}:botFromFragment(location.hash))
   const [livePending,setLivePending]=useState<Record<string,boolean>>({})
   const [projectNames,setProjectNames]=useState(new Map<string,string>()),[projectIcons,setProjectIcons]=useState(new Map<string,W.Icon>())
   // Existing browser preferences still guide the voice shortcut.
