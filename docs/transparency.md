@@ -140,6 +140,13 @@ consent with a pinned signed pair. Source transport ACKs do not assert native
 execution or Agent observation; production lifecycle attachment and real private
 bridge acceptance remain separately pending.
 
+Bot memory gained one source on 2026-11-24: machine-wide shared memory from Bots settings.
+The rows that apply to the Bot's Project are prefixed to the Bot's memory context as
+`<shared_memory>` (`internal/app/projectassistant/runtime.go`, `SharedMemory` option), so they
+travel through the existing fresh-session opening, `<memory_update>` and compaction redelivery
+paths; no new provider sink was added. A Bot's own "use shared memory" switch removes it. The
+context card does not yet list this source separately; that card is pending.
+
 The selected Bot extension card now covers execution-owned folder skill snapshots,
 selected stdio and HTTP MCP transports, dedicated encrypted connector credentials,
 per-call and publication revocation, and durable unknown-cleanup reservations.
