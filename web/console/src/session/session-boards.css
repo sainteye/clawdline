@@ -37,7 +37,6 @@
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
 .session-bot-dispatch-group .pa-avatar { flex: none; }
 .session-bot-dispatch-heading { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
-.session-bot-dispatch-heading span { color: var(--dim); }
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {

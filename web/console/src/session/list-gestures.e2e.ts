@@ -343,8 +343,15 @@ function rows(): Row[] {
       } : undefined,
     }),
     row(NEEDS_ATTESTATION, "Echo has not checked in", needsAttestationCloseability(), MOVED.needsAttestation),
-    row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown),
-    row(SPARE, "Delta is finished too", safeCloseability(), spareMoved),
+    row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown, {
+      bot_dispatch: botDispatchFixture ? { name: "Atlas", appearance: { shape: "hex", color: "#75c6a5" } } : undefined,
+    }),
+    row(SPARE, "Delta is finished too", safeCloseability(), spareMoved, {
+      bot_dispatch: botDispatchFixture ? {
+        name: "Atlas", appearance: { shape: "hex", color: "#75c6a5" },
+        task_title: "Compare where the Bot voice call button belongs",
+      } : undefined,
+    }),
   ]
   if (readingScenario !== "refresh") return current
   return current.map((session) => ({
@@ -1188,8 +1195,8 @@ class Tab {
     await this.b.event(this.session, "Page.loadEventFired", mark)
   }
 
-  async desktop(): Promise<void> {
-    await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, mobile: false, deviceScaleFactor: 1 }, this.session)
+  async desktop(height = 900): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height, mobile: false, deviceScaleFactor: 1 }, this.session)
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
   }
 
@@ -1566,39 +1573,46 @@ test("keyboard moves through focused options and Enter opens the highlighted Ses
     }
   }))
 
-test("a Bot dispatch wraps the regular Session card in a message-board-style group", async () => {
+test("a Bot dispatch wraps the regular Session card, titled by its task, in a message-board-style group", async () => {
   botDispatchFixture = boardFixture = true
   try {
     await inTab(async (tab) => {
       const group = "#rows .session-bot-dispatch-group"
       const option = `${group} li.row[role="option"]`
       for (const size of ["phone", "desktop"] as const) {
-        if (size === "desktop") await tab.desktop()
+        if (size === "desktop") await tab.desktop(800)
         await tab.go("/")
-        await shortcutUntil(tab, `!!document.querySelector('${option}') && !!document.querySelector(".session-board-group")`)
+        await shortcutUntil(tab, `document.querySelectorAll('${option}').length === 3 && !!document.querySelector(".session-board-group")`)
+        await tab.shot(`bot-dispatch-${size}`)
         assert.deepEqual(await tab.run(`(() => {
-          const group = document.querySelector('${group}')
-          const header = group.firstElementChild
-          const option = group.querySelector('li.row')
           const board = document.querySelector('.session-board-group')
-          const style = getComputedStyle(group)
-          const boardStyle = getComputedStyle(board)
-          const rowTitle = option.querySelector('.title .label')
-          return {
-            name: header.querySelector('strong').textContent,
-            task: header.querySelector('.session-bot-dispatch-heading span').textContent,
-            avatar: header.querySelectorAll('.pa-avatar stop')[1].getAttribute('stop-color'),
-            title: rowTitle.textContent,
-            attributionInRow: option.textContent.includes('Atlas'),
-            ordinaryTitleStyle: getComputedStyle(rowTitle).whiteSpace === getComputedStyle(board.querySelector('.row .title .label')).whiteSpace,
-            sameFrame: style.border === boardStyle.border && style.borderRadius === boardStyle.borderRadius,
-            fits: group.scrollWidth === group.clientWidth,
-          }
-        })()`), {
-          name: "Atlas", task: "Reconnect the draft editor and restore all unsaved changes across windows",
-          avatar: "#75c6a5", title: "Bravo is still working", attributionInRow: false,
-          ordinaryTitleStyle: true, sameFrame: true, fits: true,
-        })
+          return [...document.querySelectorAll('${group}')].map((group) => {
+            const header = group.firstElementChild
+            const option = group.querySelector('li.row')
+            const style = getComputedStyle(group)
+            const boardStyle = getComputedStyle(board)
+            const rowTitle = option.querySelector('.title .label')
+            return {
+              id: option.dataset.id,
+              name: header.querySelector('strong').textContent,
+              headingLines: header.querySelector('.session-bot-dispatch-heading').children.length,
+              group: group.querySelector('ul.rows').getAttribute('aria-label'),
+              avatar: header.querySelectorAll('.pa-avatar stop')[1].getAttribute('stop-color'),
+              title: rowTitle.textContent,
+              attributionInRow: option.textContent.includes('Atlas'),
+              ordinaryTitleStyle: getComputedStyle(rowTitle).whiteSpace === getComputedStyle(board.querySelector('.row .title .label')).whiteSpace,
+              sameFrame: style.border === boardStyle.border && style.borderRadius === boardStyle.borderRadius,
+              fits: group.scrollWidth === group.clientWidth,
+            }
+          }).sort((a, b) => a.id.localeCompare(b.id))
+        })()`), [BLOCKED, UNKNOWN, SPARE].sort().map((id) => ({
+          id, name: "Atlas", headingLines: 1, group: "由 Atlas 派工",
+          avatar: "#75c6a5",
+          title: id === BLOCKED ? "Reconnect the draft editor and restore all unsaved changes across windows"
+            : id === SPARE ? "Compare where the Bot voice call button belongs" : "Charlie cannot be read",
+          attributionInRow: false, ordinaryTitleStyle: true, sameFrame: true, fits: true,
+        })))
+        assert.equal(await tab.run(`document.querySelector('#rows li.row[data-id="${SAFE}"] .title .label').textContent`), "Alpha is finished")
         await tab.press(`#rows li.row[data-id="${SAFE}"]`)
         await shortcutUntil(tab, `document.querySelector('#rows li.row.open')?.dataset.id === '${SAFE}'`)
         await tab.press(`${group} .session-list-group-heading`)
