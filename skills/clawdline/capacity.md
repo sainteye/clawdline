@@ -754,7 +754,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `release.unpacked_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics` | — |
 | `resources.cache_bytes` | 4294967296 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.disk_low_free_bytes` | 21474836480 | `bytes` | `coalesce` | `diagnostics, notice` | — |
 | `resources.disk_reserve_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `resources.disk_source_scan_files` | 2000000 | `rows` | `refuse` | `diagnostics` | — |
 | `resources.log_seconds` | 604800 | `seconds` | `rotate` | `diagnostics, sender` | — |
 | `resources.page_rows` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.ready_seconds` | 60 | `seconds` | `expire` | `diagnostics, sender` | — |

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14185,
-  "riskKeys": 6025,
-  "nonRiskCount": 8160,
+  "englishContentKeys": 14189,
+  "riskKeys": 6028,
+  "nonRiskCount": 8161,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 742,
+      "count": 743,
       "sources": [
         null
       ],
@@ -1156,6 +1156,7 @@
         "capacityRow.resources.cache_total_bytes.full",
         "capacityRow.resources.cache_total_bytes.what",
         "capacityRow.resources.disk_reserve_bytes.full",
+        "capacityRow.resources.disk_source_scan_files.what",
         "capacityRow.resources.ready_seconds.what",
         "capacityRow.resources.scan_files.what",
         "capacityRow.resources.scratch_total_bytes.what",
