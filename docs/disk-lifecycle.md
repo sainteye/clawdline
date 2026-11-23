@@ -124,6 +124,32 @@ The Linux user-service deploy uses the same wrapper. The previous policy
 (2026-10-14) purged build, module, test and fuzz caches after every command;
 it avoided indefinite growth but forced each next check to start cold.
 
+### The default shared Go cache outside Linux (2026-11-23)
+
+On 2026-11-23 this machine's default cache (`go env GOCACHE`) reached 75 GB,
+57 GB of it written within one day, and the disk fell to about 160 MB free.
+Go removes only entries unused for five days and has no size ceiling.
+`tools/heavy.sh` on non-Linux machines now runs the command through
+`tools/run-heavy-shared-cache.sh`, which afterwards, still inside the compile
+slot, runs `clawdline go-cache trim` when the installed binary has it. The
+trim uses the registered `build.shared_go_cache_*` bounds: a 20 GiB budget and
+a 30 GiB free-space reserve trigger it; it removes only names Go writes
+(`xx/<64 hex>-a|-d`) in a directory carrying Go's README marker, oldest-used
+first; it keeps every entry used within two hours (Go refreshes mtimes at most
+hourly, so a running build's entries are newer) and re-reads each entry just
+before unlinking. An explicit `GOCACHE` is never trimmed. A failed listing,
+more than the scan bound, an unknown free-space reading or cancellation are
+typed errors and remove nothing; the command's own exit status is preserved.
+Direct `go test` runs outside `tools/heavy.sh` do not trigger a trim but are
+protected by the same window.
+
+A separate capacity row, `resources.disk_low_free_bytes`, alerts below 20 GiB
+free on the daemon's filesystem through the capacity notice channel: at most
+once per notice cooldown (24 hours), recovering quietly. The notice measures
+the default Go cache, the daemon's `tasks/` and `/tmp`, each bounded by
+`resources.disk_source_scan_files`; an unreadable source is reported as
+unmeasured or as a lower bound, never as zero. The alert removes nothing.
+
 Before an operator manually clears the shared cache, read `go env GOCACHE`,
 the active compile lease and queue, and whether other Go commands are using
 it. Wait for builds to finish. Record the exact cache path, approximate bytes

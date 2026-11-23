@@ -196,3 +196,12 @@ info does not query quota while the sender is busy, then release the response an
 quota reading. The usage receipt still asserts exactly one provider request. This makes the
 Linux CI timing failure in `TestOwnedSessionUsesExistingStartInventorySendAndTranscript`
 reproducible without calling an external provider or adding retries to product code.
+
+## Shared Go cache trim outside Linux
+
+`tools/heavy.sh` on macOS and Windows wraps native builds in
+`tools/run-heavy-shared-cache.sh`, which runs `clawdline go-cache trim` after
+the command when the installed binary supports it. The trim and its failure
+injection tests are in `internal/adapters/gocache`; its bounds are
+`build.shared_go_cache_*` in `internal/domain/capacity/heavy_cache.go`. See
+[disk lifecycle](disk-lifecycle.md).
