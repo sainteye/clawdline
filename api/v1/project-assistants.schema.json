@@ -958,6 +958,9 @@
           "items": {
             "$ref": "#/$defs/ProjectAssistantReactionActor"
           }
+        },
+        "notice": {
+          "$ref": "#/$defs/ProjectAssistantNoticeRef"
         }
       },
       "required": [
@@ -3035,6 +3038,25 @@
         "detail",
         "diffs",
         "shortened"
+      ]
+    },
+    "ProjectAssistantNoticeRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A notice Clawdline wrote, as a key and its values; each console renders it in its own language. text stays an English fallback.",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "tokens_before": {
+          "type": "integer"
+        },
+        "tokens_after": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "key"
       ]
     },
     "ProjectAssistantAttachment": {

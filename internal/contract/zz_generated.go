@@ -5695,6 +5695,7 @@ type ProjectAssistantMessage struct {
 	Files          []ProjectAssistantInputFile     `json:"files,omitempty"`
 	ID             string                          `json:"id"`
 	Kind           ProjectAssistantMessageKind     `json:"kind"`
+	Notice         *ProjectAssistantNoticeRef      `json:"notice,omitempty"`
 	Output         *ProjectAssistantOutput         `json:"output,omitempty"`
 	QuoteMessageID string                          `json:"quote_message_id"`
 	Reactions      []ProjectAssistantReactionActor `json:"reactions,omitempty"`
@@ -5777,6 +5778,14 @@ type ProjectAssistantNetworkSettingsView struct {
 	Capabilities ProjectAssistantNetworkCapabilities `json:"capabilities"`
 	Fence        ProjectAssistantFence               `json:"fence"`
 	Settings     ProjectAssistantNetworkSettings     `json:"settings"`
+}
+
+// A notice Clawdline wrote, as a key and its values; each console renders it in
+// its own language. text stays an English fallback.
+type ProjectAssistantNoticeRef struct {
+	Key          string `json:"key"`
+	TokensAfter  int64  `json:"tokens_after,omitempty"`
+	TokensBefore int64  `json:"tokens_before,omitempty"`
 }
 
 // Authenticated device observation of a receipt/event. It does not advance read
