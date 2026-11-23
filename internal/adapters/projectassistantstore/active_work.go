@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"iter"
-	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -15,7 +14,7 @@ import (
 const (
 	activeWorkLinkStatesSQL      = `('accepted','waiting_for_person','executing')`
 	activeBackgroundStatesSQL    = `('waiting','active')`
-	dispatchedWorkLinkStatesSQL  = `('accepted','waiting_for_person','executing','completed')`
+	dispatchedWorkLinkStatesSQL  = `('accepted','waiting_for_person','executing','completed','failed')`
 	backgroundWorkerTurnStateSQL = `json_extract(CAST(b.data AS TEXT),'$.Turns.'||json_quote(json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id'))||'.state')`
 	backgroundWorkCountsSQL      = `count(*) FILTER (WHERE t.state='active' AND ` + backgroundWorkerTurnStateSQL + ` IS NOT NULL),
 		count(*) FILTER (WHERE t.state='waiting' OR (` + backgroundWorkerTurnStateSQL + ` IS NULL AND t.state='active')),
@@ -38,12 +37,12 @@ func activeWorkLinks(a aggregate) (n int64) {
 	return n
 }
 
-// countDispatchedWork counts the broker Sessions a Bot dispatched. Failed,
-// landed and unknown links are not counted; a delivered link counts only
-// within pa.DeliveredWorkWindow of finishing, and not at all without a
-// finish time (an older record cannot say how long ago it was delivered).
-// The result is nil when nothing counts, so the field is absent.
-func countDispatchedWork(links iter.Seq[pa.WorkLink], now time.Time) *pa.DispatchedWork {
+// countDispatchedWork counts the broker Sessions a Bot dispatched. Landed and
+// unknown links are not counted; a finished link counts as delivered while
+// its landing is owed (pa.WorkLink.Unsettled), with no time limit, and stops
+// counting the moment the landing settles. The result is nil when nothing
+// counts, so the field is absent.
+func countDispatchedWork(links iter.Seq[pa.WorkLink]) *pa.DispatchedWork {
 	var out pa.DispatchedWork
 	for link := range links {
 		switch link.State {
@@ -51,8 +50,8 @@ func countDispatchedWork(links iter.Seq[pa.WorkLink], now time.Time) *pa.Dispatc
 			out.Running++
 		case pa.WorkWaitingForPerson:
 			out.NeedsYou++
-		case pa.WorkCompleted:
-			if !link.FinishedAt.IsZero() && now.Sub(link.FinishedAt) < pa.DeliveredWorkWindow {
+		default:
+			if link.Unsettled() {
 				out.Delivered++
 			}
 		}

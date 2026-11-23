@@ -80,6 +80,7 @@
 | `bots.cloud_pending` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.cloud_refresh_seconds` | 20 | `seconds` | `expire` | `diagnostics` | — |
+| `bots.completion_wake_retry_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.config_cache_entries` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `bots.config_cache_seconds` | 600 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.config_choices` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -98,7 +99,6 @@
 | `bots.decision_suggested_replies` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_rules` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
-| `bots.dispatched_delivered_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.dispatched_strip_rows` | 5 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

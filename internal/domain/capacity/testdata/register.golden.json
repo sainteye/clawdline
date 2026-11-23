@@ -1516,6 +1516,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.completion_wake_retry_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCompletionWakeRetrySeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.config_cache_entries",
     "Class": "cache",
     "Unit": "rows",
@@ -1870,26 +1890,6 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotDispatchSeconds"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "bots.dispatched_delivered_seconds",
-    "Class": "buffer",
-    "Unit": "seconds",
-    "Limit": 86400,
-    "WarnAt": 0,
-    "AtLimit": "coalesce",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/projectassistant.MaxDeliveredWorkSeconds"
     ]
   },
   {

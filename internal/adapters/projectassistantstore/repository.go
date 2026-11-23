@@ -1029,7 +1029,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 		}
 	}
 	out.ActiveWork = activeWorkLinks(a)
-	out.DispatchedWork = countDispatchedWork(maps.Values(a.WorkLinks), time.Now())
+	out.DispatchedWork = countDispatchedWork(maps.Values(a.WorkLinks))
 	projectRosterActivity(a, &out)
 	return out
 }

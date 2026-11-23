@@ -30,7 +30,7 @@ func runAssistantWorkCompleted(ctx context.Context, b *Broker, e store.Effect) e
 		sink, outcome = b.AssistantWorkCompleted, "bot_continuation_queued"
 	}
 	if sink == nil {
-		if b.now().Sub(r.FinishedAt) >= pa.DeliveredWorkWindow {
+		if b.now().Sub(r.FinishedAt) >= pa.CompletionWakeRetryWindow {
 			return effectResult{state: store.EffectFailed, outcome: "bot_host_unavailable"}
 		}
 		return effectResult{deferErr: errors.New("Bot completion host is unavailable")}
@@ -44,7 +44,7 @@ func runAssistantWorkCompleted(ctx context.Context, b *Broker, e store.Effect) e
 	case pa.ScopeDenied, pa.Revoked, pa.NotFound, pa.ContextStale, pa.Invalid, pa.IdempotencyConflict:
 		return effectResult{state: store.EffectFailed, outcome: string(code)}
 	default:
-		if b.now().Sub(r.FinishedAt) >= pa.DeliveredWorkWindow {
+		if b.now().Sub(r.FinishedAt) >= pa.CompletionWakeRetryWindow {
 			return effectResult{state: store.EffectFailed, outcome: string(code)}
 		}
 		return effectResult{deferErr: err}

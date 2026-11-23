@@ -6,5 +6,5 @@ const MaximumBotDispatchedStripRows = 5
 
 const (
 	BotsDispatchedStripRows        = "bots.dispatched_strip_rows"
-	BotsDispatchedDeliveredSeconds = "bots.dispatched_delivered_seconds"
+	BotsCompletionWakeRetrySeconds = "bots.completion_wake_retry_seconds"
 )

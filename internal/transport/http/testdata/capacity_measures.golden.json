@@ -360,6 +360,11 @@
     "Note": true
   },
   {
+    "Name": "bots.completion_wake_retry_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.config_cache_entries",
     "Known": true,
     "Note": true
@@ -446,11 +451,6 @@
   },
   {
     "Name": "bots.dispatch_seconds",
-    "Known": true,
-    "Note": true
-  },
-  {
-    "Name": "bots.dispatched_delivered_seconds",
     "Known": true,
     "Note": true
   },
