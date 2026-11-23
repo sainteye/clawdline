@@ -77,7 +77,7 @@ type NativeWork struct {
 	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
-	dispatch      func(context.Context, string, string, string, []string, string) (pa.WorkLink, error)
+	dispatch      func(context.Context, string, string, string, []string, string, string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
 	memoryIndex   func(context.Context) (app.MemoryIndex, error)
@@ -161,10 +161,13 @@ func (w NativeWork) Dispatch(ctx context.Context, id, title, brief string, claim
 	return w.DispatchToProject(ctx, id, title, brief, claims, "")
 }
 func (w NativeWork) DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error) {
+	return w.DispatchWithPersona(ctx, id, title, brief, claims, project, "")
+}
+func (w NativeWork) DispatchWithPersona(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error) {
 	if w.dispatch == nil {
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
-	return w.dispatch(ctx, id, title, brief, claims, project)
+	return w.dispatch(ctx, id, title, brief, claims, project, persona)
 }
 func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, error) {
 	if w.status == nil {
@@ -1018,7 +1021,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
-	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error) {
+	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error) {
 		if pa.IsPeerRequest(turn.Origin) {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
@@ -1068,10 +1071,11 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			Claims        []string
 			Title         string          `json:",omitempty"`
 			TargetProject pa.ProjectScope `json:"target_project,omitzero"`
-		}{q.Binding.Fence, turnID, brief, claims, title, target})
+			Persona       string          `json:",omitempty"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target, persona})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona})
 	}
 	tools.status = func(ctx context.Context, taskID string) (pa.WorkLink, error) {
 		ctx, cancel, e := bound(ctx)

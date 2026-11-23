@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -603,5 +604,35 @@ func TestAssistantProjectDispatchNeedsTheApprovedDestination(t *testing.T) {
 	current.ProjectDispatchAskable = false
 	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
 		t.Fatalf("approval outside a direct turn: %v", err)
+	}
+}
+
+func TestAssistantBrokerAdmitsBotPersonaThroughTheBrokerCatalog(t *testing.T) {
+	b, ctx, _, q, _ := assistantBrokerFixture(t)
+	plain := AssistantRequestHash(q)
+	q.Persona = ""
+	if AssistantRequestHash(q) != plain {
+		t.Fatal("an empty persona changed the request hash of existing receipts")
+	}
+	q.Persona = "no-such-persona"
+	_, err := b.DispatchAssistant(ctx, q)
+	var failure *pa.Failure
+	if !errors.As(err, &failure) || failure.Code != pa.Invalid || failure.Field != "persona" {
+		t.Fatalf("unknown persona = %v, want pa_invalid persona", err)
+	}
+	q.Persona = "performance"
+	if AssistantRequestHash(q) == plain {
+		t.Fatal("a persona is not part of the request hash")
+	}
+	out, err := b.DispatchAssistant(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Record.Persona != "performance" || out.Record.AssistantOwner.Persona != "performance" {
+		t.Fatalf("dispatched persona = %q owner %+v", out.Record.Persona, out.Record.AssistantOwner)
+	}
+	q.Persona = "architect"
+	if _, err = b.DispatchAssistant(ctx, q); pa.Code(err) != pa.IdempotencyConflict {
+		t.Fatalf("same key with another persona = %v, want conflict", err)
 	}
 }

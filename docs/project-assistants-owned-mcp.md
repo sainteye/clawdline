@@ -52,6 +52,21 @@ field `dispatch_project_direct`, telling the Bot to ask the person to talk to
 it directly. Saved rules deliberately do not apply to those turns either.
 The lead keeps its direct route and is never asked.
 
+Any Bot that may dispatch can also set `persona` on `dispatch_work`, with or
+without `project`, to start the work Session with a Session persona
+(`docs/personas.md`). The MCP layer only carries the id: the Broker admits it
+with the same `admitPersona` rule as every other dispatch, so a built-in id
+from `persona.IDs()` or a namespaced custom id from the Squad page is
+accepted, and anything else is refused as `pa_invalid` with field `persona`
+before any preparation receipt is written. That refusal, and the tool's
+description, list the built-in ids generated from `persona.IDs()`, so neither
+can drift from the catalog. The persona is recorded in the task's
+`AssistantOwner`, in the request hash and in the Host's content hash, so one
+idempotency key reused with another persona is `pa_idempotency_conflict`. An
+empty persona is omitted from both hashes, which keeps receipts written before
+the field existed replayable. The dispatch reply echoes `persona`;
+`work_status` does not show it yet.
+
 The ACP provider creates an HTTP MCP capability only after native capability
 admission. Its random bearer is independent of the daemon's credential. It is
 restricted to a literal loopback address with an explicit port, one execution
