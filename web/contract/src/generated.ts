@@ -7491,6 +7491,12 @@ export interface ProjectAssistantSendRequest {
    */
   call_started?: boolean
   command: ProjectAssistantCommand
+
+  /**
+   * Ask an idle assistant to compact its native context now. The source supplies
+   * the prompt.
+   */
+  compact?: boolean
   fence: ProjectAssistantFence
 
   /**

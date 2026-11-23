@@ -562,6 +562,9 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return nil, err
 	}
+	if q.Compact {
+		return c.sendCompact(ctx, q)
+	}
 	if (c.agent == pa.Grok || c.agent == pa.Gemini) && len(q.Images) > 0 && !c.promptImages {
 		return nil, refusal(pa.Unsupported, "images")
 	}

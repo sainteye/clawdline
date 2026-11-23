@@ -678,6 +678,12 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
+		if request.Compact {
+			if request.CallStarted || command.ClientAttemptID != "" || request.Text != "" || request.QuoteMessageID != "" || len(request.Images) > 0 || len(request.UploadIds) > 0 || request.Handoff != nil {
+				return nil, paHTTPFailure(pa.Invalid, "compact")
+			}
+			return paHTTPReceipt(s.CompactNow(ctx, command, fence))
+		}
 		if request.CallStarted {
 			if command.ClientAttemptID != "" || request.Text != "" || request.QuoteMessageID != "" || len(request.Images) > 0 || len(request.UploadIds) > 0 || request.Handoff != nil {
 				return nil, paHTTPFailure(pa.Invalid, "call_started")

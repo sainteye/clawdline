@@ -32,6 +32,9 @@ type Submission struct {
 	// person's words.
 	Notice   bool
 	LeadCall bool
+	// Compact asks for the person's "Compact now": admitted only while the Bot
+	// is idle and already holds a native session (see admitCompaction).
+	Compact bool
 }
 type StopRequest struct {
 	Command pa.Command

@@ -6534,7 +6534,11 @@ type ProjectAssistantSendRequest struct {
 	// prompt.
 	CallStarted bool                    `json:"call_started,omitempty"`
 	Command     ProjectAssistantCommand `json:"command"`
-	Fence       ProjectAssistantFence   `json:"fence"`
+
+	// Ask an idle assistant to compact its native context now. The source supplies the
+	// prompt.
+	Compact bool                  `json:"compact,omitempty"`
+	Fence   ProjectAssistantFence `json:"fence"`
 
 	// The exact draft version approved for this input on API 93 sources.
 	Handoff *ProjectAssistantHandoffRef `json:"handoff,omitempty"`

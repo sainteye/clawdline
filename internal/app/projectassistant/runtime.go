@@ -472,6 +472,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if len(unknown) > 0 && waiting > 0 {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 	}
+	if s.Compact {
+		if err = r.admitCompaction(ctx, a, bot, c, pending, s); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
 	// Capability admission is local evidence inspection, not a model request.
 	caps, err := r.o.Provider.Capabilities(ctx, bot)
 	if err != nil {
@@ -541,6 +546,10 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		}
 		turn.Origin = pa.LeadCallOrigin
 		turn.MessageID = pa.LeadCallKeyPrefix + turn.MessageID
+	}
+	if s.Compact {
+		turn.Origin = pa.CompactOrigin
+		kind = pa.NoticeMessage
 	}
 	if s.Network != nil {
 		turn.Origin = pa.NetworkRequestOrigin
@@ -1150,6 +1159,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
 	resume := handoffCard == nil && (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	if t.Origin == pa.CompactOrigin && (!resume || effectiveAgent != bot.Agent) {
+		// Nothing has been sent: the queued turn ends failed and the next
+		// message runs normally. A fresh session has nothing to compact.
+		a.mu.Unlock()
+		return runtimeFailure(pa.Unsupported, compactNoSession)
+	}
 	if resumedFrom != "" && resume {
 		carryKind = "catch_up"
 	} else {
@@ -1190,8 +1205,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// A resumed session last heard memory at its binding's revision.
 	memoryChanged := binding.MemoryRevision != current.Revision
 	compacted := compactedBeforeTurn(export, t, binding.Fence.BindingID)
-	binding.MemoryRevision = current.Revision
-	binding.ForgottenThrough = current.ForgottenThrough
+	// A /compact prompt delivers no memory, so the session's memory revision
+	// stays where it was and the next prompt still carries any change.
+	if t.Origin != pa.CompactOrigin {
+		binding.MemoryRevision = current.Revision
+		binding.ForgottenThrough = current.ForgottenThrough
+	}
 	leadRole := "member"
 	if bot.Lead {
 		leadRole = "lead"
@@ -1207,6 +1226,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	t.MemoryRevision = current.Revision
 	t.Instructions = bot.Instructions
 	c.ActiveTurnID = t.ID
+	priorUsage := c.ContextUsage
 	c.ContextUsage = pa.ContextSample{}
 	c.MemoryRevision = current.Revision
 	ordinal := 1
@@ -1258,7 +1278,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		return err
 	}
 	session, err := r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
-	if session == nil && resume && !isolatedRoutine && pa.Code(err) == pa.ResumeUnsupported {
+	if session == nil && resume && !isolatedRoutine && t.Origin != pa.CompactOrigin && pa.Code(err) == pa.ResumeUnsupported {
 		// As in Codync, a native session that cannot be loaded is replaced by
 		// a new one that receives the filtered history and memory; nothing
 		// was sent to the old one, so nothing is repeated.
@@ -1445,6 +1465,10 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 			}
 			handoff.editedSummary = &text
 		}
+		if t.Origin == pa.CompactOrigin {
+			pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: compactCommand, Context: filtered, Compact: true})
+			return e
+		}
 		pending, e = session.Send(ctx, PromptRequest{Turn: t, Text: promptText, Context: filtered, Quote: quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: resume && memoryChanged, Compacted: resume && compacted})
 		return e
 	})
@@ -1482,6 +1506,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	usage := completedContextSample(session, t)
 	compactedNotice := compactionNotice(session, t, r.o.Clock())
+	if t.Origin == pa.CompactOrigin {
+		compactedNotice = withPriorUsage(compactedNotice, session, priorUsage)
+	}
 	err = r.closeSession(a, session)
 	cleaned = true
 	cleanupConfirmed = err == nil
@@ -1498,6 +1525,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return err
+	}
+	if t.Origin == pa.CompactOrigin {
+		// The agent's own words about compacting are not a chat reply; the
+		// notice says what happened. An answered /compact that reported no
+		// compaction is a definite failure, never a silent success.
+		if compactedNotice == nil {
+			return r.finishWithContextLocked(ctx, a, t, pa.TurnFailed, "", runtimeFailure(pa.Unsupported, compactNotReported), usage)
+		}
+		result.FinalText = ""
 	}
 	a.compacted = compactedNotice
 	err = r.finishWithContextLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil, usage)

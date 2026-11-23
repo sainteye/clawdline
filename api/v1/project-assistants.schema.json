@@ -1714,6 +1714,10 @@
           "type": "boolean",
           "description": "Ask an idle lead assistant to greet once for this call. The source supplies the prompt."
         },
+        "compact": {
+          "type": "boolean",
+          "description": "Ask an idle assistant to compact its native context now. The source supplies the prompt."
+        },
         "text": {
           "type": "string"
         },

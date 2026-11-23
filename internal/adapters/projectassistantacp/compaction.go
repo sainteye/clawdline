@@ -1,5 +1,12 @@
 package projectassistantacp
 
+import (
+	"context"
+
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+)
+
 // An agent's own compaction, observed outside Clawdline's maintenance write.
 //
 // Claude Code's and Codex's ACP adapters compact a full context by
@@ -87,4 +94,59 @@ func (c *Client) observeUsageLocked(prevKnown bool, prev, used int64) {
 // Gemini hears them on every open.
 func compactionRedelivery(memory string) string {
 	return "<context_restored>\nYour earlier context was summarized to make room. Your memory is repeated here so the summary does not lose it.\n</context_restored>\n" + memoryUpdate(memory)
+}
+
+// compactKeep is Codync's keep-list for a host-requested compaction
+// (host/crates/memory/src/compaction.rs#L176-L178). Claude Code reads text
+// after /compact as instructions; Codex ignores it, so Codex gets the bare
+// command (Codync host/src/agent/bot/compaction.rs#L114-L121).
+const compactKeep = "Keep verbatim: the latest request, and every instruction not to do something. Keep exact paths, URLs and ids, decisions with their reasons, and open tasks."
+
+// sendCompact sends the person's "Compact now" as the agent's own command and
+// nothing else: no instructions, memory, quote, files or reminders, so the
+// agent recognizes it as a command. The adapter still reports the result
+// through compaction_update, which is counted as the agent's own compaction.
+func (c *Client) sendCompact(ctx context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
+	if q.Turn.Origin != pa.CompactOrigin || q.Handoff != nil || q.Quote != nil || len(q.Images) > 0 || len(q.Files) > 0 {
+		return nil, refusal(pa.ScopeDenied, "compact_prompt")
+	}
+	text := "/compact"
+	switch c.agent {
+	case pa.ClaudeCode:
+		text += " " + compactKeep
+	case pa.Codex:
+	default:
+		return nil, refusal(pa.Unsupported, "compact_agent")
+	}
+	deadline, _ := ctx.Deadline()
+	c.mu.Lock()
+	if c.compaction != nil {
+		c.mu.Unlock()
+		return nil, refusal(pa.Revoked, "compaction_lifetime")
+	}
+	if c.permissionsSealed {
+		c.mu.Unlock()
+		return nil, refusal(pa.Revoked, "prompt_lifetime")
+	}
+	if c.turnID != "" {
+		c.mu.Unlock()
+		return nil, refusal(pa.CapacityFull, "active_prompt")
+	}
+	// An agent that listed its commands without compact would read the text
+	// as an ordinary message; nothing is sent then.
+	if c.nativeContext.CommandsKnown && !c.nativeContext.CompactAdvertised {
+		c.mu.Unlock()
+		return nil, refusal(pa.Unsupported, "native_compaction")
+	}
+	c.turnID = q.Turn.ID
+	c.promptDeadline = deadline
+	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
+	c.traceSegment, c.traceTools = pa.Trace{}, nil
+	sid := c.sessionID
+	c.mu.Unlock()
+	p, err := c.begin(ctx, "session/prompt", map[string]any{"sessionId": sid, "prompt": []any{map[string]string{"type": "text", "text": text}}})
+	if err != nil {
+		return nil, err
+	}
+	return &promptPending{rpc: p, deadline: deadline}, nil
 }

@@ -9,10 +9,13 @@ import (
 type TurnOrigin string
 
 const (
-	UserOrigin                   TurnOrigin = "user"
-	HostNoticeOrigin             TurnOrigin = "host_notice"
-	BotRequestOrigin             TurnOrigin = "bot_request"
-	BotReplyOrigin               TurnOrigin = "bot_reply"
+	UserOrigin       TurnOrigin = "user"
+	HostNoticeOrigin TurnOrigin = "host_notice"
+	BotRequestOrigin TurnOrigin = "bot_request"
+	BotReplyOrigin   TurnOrigin = "bot_reply"
+	// CompactOrigin is the person's "Compact now": one idle turn whose only
+	// prompt is the agent's own /compact command (docs/bots.md).
+	CompactOrigin                TurnOrigin = "compact"
 	MaxCollaborationOutstanding             = 64
 	MaxCollaborationPerSender               = 16
 	MaxCollaborationHops                    = 8
@@ -155,6 +158,10 @@ func ValidateTurnOrigin(t Turn) error {
 	case "", UserOrigin, HostNoticeOrigin:
 		if t.ExchangeID != "" || t.Hops != 0 {
 			return fail(Invalid, "turn_origin")
+		}
+	case CompactOrigin:
+		if t.ExchangeID != "" || t.Hops != 0 || t.RoutineRunID != "" || t.Room != nil {
+			return fail(Invalid, "compact_origin")
 		}
 	case NetworkRequestOrigin:
 		if t.ExchangeID != "" || t.Hops != 0 || t.RoutineRunID != "" {
