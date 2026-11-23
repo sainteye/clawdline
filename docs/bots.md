@@ -323,7 +323,7 @@ links (`AssistantWorkSnapshotOf`), never from what the model says. The roster
 summary carries them as the optional `dispatched_work {running, needs_you,
 delivered}`; `status` keeps its four values because the console rejects a
 whole roster frame with an unknown status. Work links carry `title`,
-`project`, `session`, `started_at` and `finished_at`. Older sources omit
+`project`, `terminal`, `started_at` and `finished_at`. Older sources omit
 these fields and the console shows what it showed before. The chat strip reads
 the work links in the loaded timeline, so a link older than the loaded pages
 is counted on the roster but not listed until earlier messages load.

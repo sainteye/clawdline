@@ -1084,9 +1084,9 @@
           "type": "string",
           "description": "The destination Project directory of the broker task. Absent on older sources."
         },
-        "session": {
+        "terminal": {
           "type": "string",
-          "description": "The terminal that runs the dispatched Session, when the broker recorded one. Absent on older sources."
+          "description": "The child terminal (the Sessions list id) that runs the dispatched Session, when the broker recorded one. Absent on older sources."
         },
         "started_at": {
           "type": "string",

@@ -409,7 +409,7 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 		return AssistantWorkSnapshot{}
 	}
 	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID, BoardItemID: r.WorkID, State: pa.WorkUnknown,
-		Title: r.Title, Project: r.ProjectDir, Session: r.ChildTerminalID, StartedAt: r.SpawnedAt.UTC()}}
+		Title: r.Title, Project: r.ProjectDir, Terminal: r.ChildTerminalID, StartedAt: r.SpawnedAt.UTC()}}
 	if r.SpawnedAt.IsZero() {
 		s.Link.StartedAt = time.Time{}
 	}

@@ -7832,18 +7832,18 @@ export interface ProjectAssistantWorkLink {
   result_message_id: string
 
   /**
-   * The terminal that runs the dispatched Session, when the broker recorded one.
-   * Absent on older sources.
-   */
-  session?: string
-
-  /**
    * When the dispatched Session was started. Absent before it starts and on older
    * sources.
    */
   started_at?: string
   state: ProjectAssistantWorkState
   task_id: string
+
+  /**
+   * The child terminal (the Sessions list id) that runs the dispatched Session,
+   * when the broker recorded one. Absent on older sources.
+   */
+  terminal?: string
 
   /**
    * The broker task title. Absent on older sources.

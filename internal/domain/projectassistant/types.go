@@ -448,7 +448,7 @@ type WorkLink struct {
 	// Display facts projected from the broker record, never from client JSON.
 	Title      string    `json:"title,omitempty"`
 	Project    string    `json:"project,omitempty"`
-	Session    string    `json:"session,omitempty"`
+	Terminal   string    `json:"terminal,omitempty"`
 	StartedAt  time.Time `json:"started_at,omitzero"`
 	FinishedAt time.Time `json:"finished_at,omitzero"`
 }

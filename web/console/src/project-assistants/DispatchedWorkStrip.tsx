@@ -10,7 +10,7 @@ import "./dispatched-work.css"
 /** Opens the dispatched Session's row, the same address a notification uses;
  * without a recorded Session it falls back to the work result card. */
 export function openDispatchedSession(link: W.ProjectAssistantWorkLink, fallback?: (link: W.ProjectAssistantWorkLink) => void) {
-  if (link.session) location.hash = sessionFragment(link.session)
+  if (link.terminal) location.hash = sessionFragment(link.terminal)
   else fallback?.(link)
 }
 

@@ -6832,15 +6832,15 @@ type ProjectAssistantWorkLink struct {
 	Project         string `json:"project,omitempty"`
 	ResultMessageID string `json:"result_message_id"`
 
-	// The terminal that runs the dispatched Session, when the broker recorded one.
-	// Absent on older sources.
-	Session string `json:"session,omitempty"`
-
 	// When the dispatched Session was started. Absent before it starts and on older
 	// sources.
 	StartedAt string                    `json:"started_at,omitempty"`
 	State     ProjectAssistantWorkState `json:"state"`
 	TaskID    string                    `json:"task_id"`
+
+	// The child terminal (the Sessions list id) that runs the dispatched Session, when
+	// the broker recorded one. Absent on older sources.
+	Terminal string `json:"terminal,omitempty"`
 
 	// The broker task title. Absent on older sources.
 	Title  string `json:"title,omitempty"`
