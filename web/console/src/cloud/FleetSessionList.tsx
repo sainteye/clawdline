@@ -362,7 +362,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         (!unavailable || row.machineScope || presentations.current.has(destinationKey(row.destination)) ||
           confirmedTitles?.has(destinationKey(row.destination))) &&
         matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
-        (!search || `${machine.name} ${machine.id} ${machine.platform} ${row.machineScope ? "Clawdfather" : (confirmedTitles?.get(destinationKey(row.destination)) ?? presentations.current.get(destinationKey(row.destination))?.title ?? "")} ${row.destination.sessionID} ${stateWord(row.state)}`
+        (!search || `${machine.name} ${machine.id} ${machine.platform} ${row.machineScope ? "Clawdfather" : (confirmedTitles?.get(destinationKey(row.destination)) ?? presentations.current.get(destinationKey(row.destination))?.title ?? "")} ${presentations.current.get(destinationKey(row.destination))?.botDispatch?.name ?? ""} ${row.destination.sessionID} ${stateWord(row.state)}`
           .toLocaleLowerCase().includes(search))) : []
     const shown = filtered.map((row) => {
       const presentation = presentations.current.get(destinationKey(row.destination))
@@ -508,7 +508,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
                     actor: sessionBoardActor(row.assistant ?? presentation?.assistant,
                       status?.sessionId, title, status?.persona, presentation?.icon),
                     render: (board) => <ProjectedRow boardLead={board?.lead} boardAvatar={board?.avatar} key={destinationKey(row.destination)}
-                    title={title} icon={presentation?.icon} cwd={presentation?.cwd}
+                    title={title} icon={presentation?.icon} cwd={presentation?.cwd} botDispatch={presentation?.botDispatch}
                     machineScope={row.machineScope === true} coordinatorBound={row.coordinatorBound === true}
                     status={status}
                     runningAgents={row.freshness === "current" ? row.agentCountUnknown ? null : row.runningAgentCount : undefined}

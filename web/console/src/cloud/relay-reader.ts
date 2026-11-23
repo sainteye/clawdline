@@ -1915,6 +1915,7 @@ export class RelayReader {
         parent_session_id: row.parentSessionID,
         machine_scope: row.machineScope === true, coordinator_bound: row.coordinatorBound === true,
         label: presentation?.title ?? row.destination.sessionID, cwd: presentation?.cwd, project_key: presentation?.projectKey,
+        bot_dispatch: presentation?.botDispatch,
         icon: presentation?.icon, assistant: row.assistant ?? presentation?.assistant, backend: row.backend ?? (presentation?.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: row.state,
         source: { freshness: row.freshness === "current" ? "current" : "unverified",
           observed_at: row.observedAt / 1000 } }
@@ -2110,7 +2111,7 @@ export class RelayReader {
           machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration, label: presentation.title,
           parent_session_id: signedRow && typeof data?.parent_session_id === "string"
             ? data.parent_session_id : presentation.projection?.parentSessionID,
-          cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
+          cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon, bot_dispatch: presentation.botDispatch,
           assistant: signedRow ? data?.assistant ?? presentation.assistant : presentation.projection?.assistant ?? presentation.assistant,
           backend: (signedRow ? data?.backend : presentation.projection?.backend) ??
             (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined),
@@ -2143,7 +2144,7 @@ export class RelayReader {
         machineRows.push({ ...displayStatus, sessionBinding: presentation.status?.identity, id: target.sessionID, session: target.sessionID,
           machine: this.machine, identity: { machine: this.machine, session: target.sessionID }, execution_generation: target.executionGeneration,
           parent_session_id: typeof data.parent_session_id === "string" ? data.parent_session_id : undefined,
-          label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon,
+          label: presentation.title, cwd: presentation.cwd, project_key: presentation.projectKey, icon: presentation.icon, bot_dispatch: presentation.botDispatch,
           assistant: data.assistant ?? presentation.assistant, backend: data.backend ??
             (presentation.status?.identity === "protocol" && (presentation.assistant === "antigravity" || presentation.assistant === "grok") ? "owned" : undefined), state: data.state, source: data.source,
           ...statusActivity(data) })

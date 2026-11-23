@@ -10844,6 +10844,8 @@
   "next.sessionBoardArchiveNoPosts": "所有成員都不能再發言或回覆",
   "next.sessionBoardArchiveKept": "留言封存 30 天，可在「已封存」查看",
   "next.sessionBoardArchiveDeleted": "30 天後永久刪除",
+  "next.sessionBotDispatch": "由 Bot 派工",
+  "next.sessionBotDispatchBy": "由 {bot} 派工",
   "notifications.botSound": "Bots 完成提示音",
   "notifications.botSoundHint": "這個瀏覽器開著時，新任務完成會播放柔和提示音。僅套用此瀏覽器。",
   "notifications.destinationList": "點擊後開啟清單。",

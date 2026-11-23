@@ -313,7 +313,7 @@ func (p *Publisher) publishStatuses(ctx context.Context, reading sessionReading,
 			// Project can settle a pass after the Session first appears;
 			// without them here the list never learned to read its title
 			// again and kept drawing "Claude Session" with no icon.
-			"label": row["label"], "cwd": row["cwd"], "icon": row["icon"],
+			"label": row["label"], "cwd": row["cwd"], "icon": row["icon"], "bot_dispatch": row["bot_dispatch"],
 			// The Project the row would be accepted into moves with its cwd
 			// (or with a repository appearing around it), and the Board's
 			// assignment dialog picks by it.

@@ -10844,6 +10844,8 @@
   "next.sessionBoardArchiveNoPosts": "No member can post or reply any more",
   "next.sessionBoardArchiveKept": "Messages stay readable under Archived for 30 days",
   "next.sessionBoardArchiveDeleted": "After 30 days they are deleted for good",
+  "next.sessionBotDispatch": "Dispatched by a Bot",
+  "next.sessionBotDispatchBy": "Dispatched by {bot}",
   "notifications.botSound": "Bots completion sound",
   "notifications.botSoundHint": "Play a soft chime for new completions while this browser is open. This browser only.",
   "notifications.destinationList": "Opens the list.",

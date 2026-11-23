@@ -40,6 +40,7 @@ export function fleetMachineOffline(freshness: FleetMachine["freshness"], readin
 /** Metadata from a pinned, read_transcript-authorized list read. */
 export interface SessionListPresentation {
   title: string
+  botDispatch?: SessionRow["bot_dispatch"]
   /** Time of the authenticated machine list that supplied this status. */
   observedAt?: number
   assistant?: "claude" | "codex" | "antigravity" | "grok"
@@ -88,6 +89,7 @@ export function mergeListPresentation(row: SessionListPresentation,
   previous?: SessionListPresentation): SessionListPresentation {
   return {
     title: row.title,
+    botDispatch: row.botDispatch,
     assistant: row.assistant ?? previous?.assistant,
     icon: row.icon ?? previous?.icon, cwd: row.cwd ?? previous?.cwd,
     status: row.status ?? previous?.status,

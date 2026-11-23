@@ -15,12 +15,16 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/adapters/planner"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/config"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -50,6 +54,63 @@ func TestMachineListUsesTheSingleMachineSnapshotAndItsRowStatus(t *testing.T) {
 	if status == nil || status["line"] != "private work detail" || status["work_state"] == nil ||
 		status["sessionId"] != "conversation-41" || status["persona"] != "product-manager" {
 		t.Fatalf("machine list dropped the original status line: %v", row)
+	}
+}
+
+func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
+	for _, tc := range []struct{ name, recorded, current, want string }{
+		{"recorded", "Dispatcher at admission", "", "Dispatcher at admission"},
+		{"legacy", "", "Dispatcher in roster", "Dispatcher in roster"},
+		{"no longer resolvable", "", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			const child, title = "conversation-41", "Restore drafts after reconnecting"
+			item := session.Session{ID: "%41", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+				State: session.StateWorking, ConversationID: child}
+			s := paneServer(t, &pane{s: item})
+			s.cfg = config.Config{Dir: t.TempDir()}
+			key := pa.BotKey{MachineID: "fixture-machine", BotID: "fixture-bot"}
+			if tc.current != "" {
+				db := s.store.ProjectAssistantDatabase()
+				if err := (projectassistantstore.Installer{}).Install(ctx, db); err != nil {
+					t.Fatal(err)
+				}
+				body, err := json.Marshal(struct{ Bot pa.Bot }{Bot: pa.Bot{Key: key, Name: tc.current}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.ExecContext(ctx, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES(?,?,?,?)`,
+					key.MachineID, key.BotID, 1, body); err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := time.Now()
+			task := orchestrator.Record{Protocol: orchestrator.Protocol, ID: "e1111111-1111-4111-8111-000000000041",
+				Title: title, Assistant: "codex", State: orchestrator.StateBriefed, ProjectDir: "/project",
+				CreatedAt: now, ChildTerminalID: item.ID, ChildConversationID: child, ChildBackend: "tmux",
+				AssistantOwner: &orchestrator.AssistantOwner{Fence: pa.Fence{Key: key}, BotName: tc.recorded}}
+			if err := s.store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{ID: task.ID, Project: task.ProjectDir,
+				Assistant: task.Assistant, State: string(task.State), CreatedAt: now, UpdatedAt: now, Record: task.Encode()}, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			for _, tcRead := range []struct{ path, labelKey string }{{"/v1/sessions", "label"}, {"/v1/sessions?parts=list", "title"}} {
+				rec := httptest.NewRecorder()
+				s.sessions(rec, httptest.NewRequest(http.MethodGet, tcRead.path, nil))
+				var payload struct {
+					Sessions []map[string]any `json:"sessions"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || rec.Code != http.StatusOK || len(payload.Sessions) != 1 {
+					t.Fatalf("%s: %v %s", tcRead.path, err, rec.Body)
+				}
+				row := payload.Sessions[0]
+				dispatch, present := row["bot_dispatch"].(map[string]any)
+				name, _ := dispatch["name"].(string)
+				if row[tcRead.labelKey] != title || !present || name != tc.want {
+					t.Fatalf("%s: wrong task title or Bot, want %q / %q: %s", tcRead.path, title, tc.want, rec.Body)
+				}
+			}
+		})
 	}
 }
 

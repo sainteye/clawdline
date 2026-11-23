@@ -47,6 +47,13 @@ function RowIdentity({ title, icon, assistant, crown = false, bound = false, boa
   </>
 }
 
+function dispatchWord(dispatch: SessionRow["bot_dispatch"]): string {
+  if (!dispatch) return ""
+  return dispatch.name
+    ? nextWord("sessionBotDispatchBy", { bot: dispatch.name })
+    : nextWord("sessionBotDispatch")
+}
+
 function RowActivity({ at }: { at?: number }) {
   const word = sessionActivityWord({ activity: at ? { known: true, at } : undefined })
   return word ? <span className="session-activity">{word}</span> : null
@@ -66,11 +73,11 @@ function SwipeAction({ kind, title, hidden, onClick, word, closeability, disable
 
 /** Status-only rows keep the original list structure without inventing rich Session content. */
 export function ProjectedRow({ title, sessionID, machineID, machineName, assistant, state, stateLabel, icon, cwd,
-  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar,
+  machineScope = false, coordinatorBound = false, runningAgents, boardLead = false, boardAvatar, botDispatch,
   freshness, lastMovementAt, attention, open, selectionKey, depth, branchThrough, ancestorThrough, status, swiped = false, onOpen, onClose, onArchive, consumePress }: {
   title: string; sessionID: string; machineID: string; machineName: string
   assistant?: "claude" | "codex" | "antigravity" | "grok"
-  icon?: SessionRow["icon"]; cwd?: string
+  icon?: SessionRow["icon"]; cwd?: string; botDispatch?: SessionRow["bot_dispatch"]
   machineScope?: boolean; coordinatorBound?: boolean; boardLead?: boolean; boardAvatar?: SessionRow["icon"] | null
   state: string; stateLabel: string; freshness: string; lastMovementAt?: number; attention: boolean; open: boolean
   depth: number; branchThrough: boolean; ancestorThrough: boolean
@@ -83,17 +90,18 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   const identity = projectedSessionIdentity(title, icon, machineScope, coordinatorBound)
   const mark = identity.icon
   const shownTitle = identity.title
+  const dispatch = dispatchWord(botDispatch)
   const role = rowPersonaLine(usePersonas(machineID), status?.persona)
   useLayoutEffect(() => { if (state === "working") L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null) }, [state])
   const width = onArchive ? actionWidth(status?.sessionId) : ACTION_WIDTH
   useLayoutEffect(() => { if (ref.current) paintSwipe(ref.current, swiped ? "open" : "", swiped ? width : 0) }, [swiped, selectionKey, width])
   const activate = () => { if (!consumePress?.() && ref.current) onOpen(ref.current) }
   return <SessionRowLayout ref={ref} role="option" tabIndex={0} data-id={selectionKey} data-swipe-width={width} data-selection-key={selectionKey}
-    data-board-lead={boardLead || undefined} data-state={state} data-attention={attention ? "open" : undefined}
+    data-board-lead={boardLead || undefined} data-bot-dispatch={!!botDispatch || undefined} data-state={state} data-attention={attention ? "open" : undefined}
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
+    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, dispatch, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
@@ -101,7 +109,9 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
     <span className="kid" hidden={!depth} aria-hidden="true" />
     {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
     <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} boardAvatar={boardAvatar} />
-    <div className="meta">{cwd && <span className="path">{L.path(cwd)}</span>}
+    <div className="meta">
+      {dispatch && <span className="session-bot-dispatch" title={dispatch}>{dispatch}</span>}
+      {cwd && <span className="path">{L.path(cwd)}</span>}
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
       {machineScope && coordinatorBound ? <span className="coordinator-chip" aria-hidden="true">Clawdfather</span> : null}</div>
     {status ? <StateLine row={{ ...status, id: sessionID, state } as SessionRow}
@@ -442,6 +452,7 @@ export function Row({
   }, [swiped, row.sessionId])
   const reveal = swipeReveal(row)
   const name = detailSessionName(row)
+  const dispatch = dispatchWord(row.bot_dispatch)
   // 封存 only where there is a conversation to bring back (`swipe.ts`).
   const actions = richSessionSwipeActions(row)
   const canArchive = archivable(row.sessionId)
@@ -465,6 +476,7 @@ export function Row({
       data-id={row.id}
       data-selection-key={L.selectionKey(row)}
       data-board-lead={boardLead || undefined}
+      data-bot-dispatch={!!row.bot_dispatch || undefined}
       data-state={row.state}
       data-attention={row.attention_count && row.attention_count > 0 ? "open" : undefined}
       data-coordination={waiting ? "waiting" : owed ? "owed" : undefined}
@@ -483,6 +495,7 @@ export function Row({
       {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
       <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} boardAvatar={boardAvatar} />
       <div className="meta">
+        {dispatch && <span className="session-bot-dispatch" title={dispatch}>{dispatch}</span>}
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>
         <RowActivity at={row.activity?.known ? row.activity.at : undefined} />

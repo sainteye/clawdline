@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14070,
+  "englishContentKeys": 14072,
   "riskKeys": 5974,
-  "nonRiskCount": 8096,
+  "nonRiskCount": 8098,
   "groups": [
     {
       "name": "acp / other",
@@ -4266,7 +4266,7 @@
     },
     {
       "name": "next / other",
-      "count": 1350,
+      "count": 1352,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5216,6 +5216,8 @@
         "next.sessionBoards",
         "next.sessionBoardsIntro",
         "next.sessionBoardsLoading",
+        "next.sessionBotDispatch",
+        "next.sessionBotDispatchBy",
         "next.sessionCallbackActive",
         "next.sessionCallbackUnverified",
         "next.sessionCallbacksActive",
