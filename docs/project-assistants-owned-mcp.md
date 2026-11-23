@@ -2,7 +2,7 @@
 
 A Bot's ACP session receives its captured fixed instructions and one private
 loopback MCP endpoint. The endpoint calls the existing Host functions for
-`send_message`, `dispatch_work` and `work_status`. It does not create another
+`send_message`, `dispatch_work`, `work_status` and `message_work`. It does not create another
 actor registry, broker, receipt store or model provider. This follows the pinned
 Codync host-owned chat-tool boundary; the Go host retains Clawdline's existing
 Project, claims, worktree and durable-result authority.
@@ -40,7 +40,7 @@ Initialization and its initialized notification precede tools. Subsequent
 requests carry the negotiated protocol revision. There is no resumable HTTP
 session or server-initiated stream to restore after the execution ends.
 
-The three [MCP tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
+The [MCP tools](https://modelcontextprotocol.io/specification/2025-06-18/server/tools)
 have closed argument schemas. Mutating calls require an explicit durable
 `idempotency_key`, independent of the JSON-RPC request ID. The host's existing
 receipt conflict/replay rules remain authoritative; this transport does not
@@ -48,6 +48,44 @@ retry an unknown dispatch. Failed tool results expose a stable error code,
 not native stderr, a bearer or arbitrary exception text. Duplicate JSON keys,
 invalid Unicode, unsafe numbers and excessive nesting are rejected through the
 existing Cloud JSON parser. This narrow profile accepts string/integer RPC IDs.
+
+## Messaging dispatched work
+
+`message_work` lets a Bot correct or add to a work Session it dispatched while
+that Session is still running. The model supplies only `task_id`, `text` and
+`idempotency_key`; it never names a terminal, sender or identity. The Host
+binds the execution's signed actor, which needs the dispatch operation, and
+`Broker.AssistantMessageWork` reads the task record to decide the rest:
+
+- The task's `AssistantOwner` must match this Bot, Project and conversation,
+  otherwise `pa_scope_denied`/`work_owner`.
+- The task must be briefed (the worker signed for its briefing) and its
+  terminal must still be a live assistant Session. A queued or spawning task
+  answers `pa_offline`/`work_not_running`; a finished, failed or cancelled task
+  answers `pa_expired`/`work_finished`.
+- Text is at most `bots.work_message_bytes` (8,192 UTF-8 bytes), refused
+  before acceptance with `pa_capacity_full`/`text`.
+
+Delivery is the same durable outbox effect as `clawdline send`: the intent is
+recorded under a receipt, then one `<clawdline-message>` envelope line is typed
+into the worker's composer at once. A worker that is busy reads it at its next
+opportunity, as with any Session message. A worker showing a menu, or a
+terminal another writer holds, is refused rather than typed into
+(`work_session_menu`, `work_session_busy`), and the key is released so the same
+key can be sent again. The envelope's source is the Bot's name with
+"(dispatcher)" and its own agent, and the body begins
+"來自 <Bot>（派工者）／From <Bot> (dispatcher):" followed by a note that it is
+quoted guidance, not the person's authorization. It grants the worker no new
+permission; deployment, pushing, release and scope changes still need the
+person or the worker's briefing.
+
+The receipt is scoped to the owning Bot conversation. The same key and text
+return the first answer again (`replayed`), even after the task has ended, so
+an uncertain call is resolved under its original key; the same key with other
+text is `pa_idempotency_conflict`. The answer separates `stage: accepted`
+(durable, delivery not settled: ask again under the same key) from
+`stage: delivered` (typed into the composer). Neither means the worker read or
+followed it; its next turn and `work_status` are that evidence.
 
 ## Direct Lead Bot controls
 
