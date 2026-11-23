@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14221,
-  "riskKeys": 6043,
-  "nonRiskCount": 8178,
+  "englishContentKeys": 14223,
+  "riskKeys": 6044,
+  "nonRiskCount": 8179,
   "groups": [
     {
       "name": "acp / other",
@@ -6222,7 +6222,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 625,
+      "count": 627,
       "sources": [
         null
       ],
@@ -6264,6 +6264,8 @@
         "projectAssistants.botCreatedIn",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
+        "projectAssistants.botWorkReview",
+        "projectAssistants.botWorkReviewHint",
         "projectAssistants.bots",
         "projectAssistants.cancel",
         "projectAssistants.changeModel",
@@ -8180,7 +8182,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 241,
+      "count": 240,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8324,7 +8326,6 @@
         "transparency.card.persistent-bot-voice.how",
         "transparency.card.persistent-bot-voice.summary",
         "transparency.card.persistent-bot-voice.title",
-        "transparency.card.persistent-bot-work-completion.summary",
         "transparency.card.persistent-bot-work-completion.title",
         "transparency.card.persistent-bot-work-message.how",
         "transparency.card.persistent-bot-work-message.summary",

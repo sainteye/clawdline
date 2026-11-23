@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14221,
+  "englishKeys": 14223,
   "counts": {
-    "negation": 3618,
-    "state": 2406,
-    "permission": 854,
+    "negation": 3620,
+    "state": 2407,
+    "permission": 855,
     "deletion": 326,
     "uncertainty": 566
   },
-  "unionCount": 6043,
+  "unionCount": 6044,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3469,6 +3469,8 @@
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",
       "transparency.card.persistent-bot-work-completion.effect",
+      "transparency.card.persistent-bot-work-completion.how",
+      "transparency.card.persistent-bot-work-completion.summary",
       "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.effect",
       "transparency.card.persistent-bots.how",
@@ -5912,6 +5914,7 @@
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",
       "transparency.card.persistent-bot-work-completion.how",
+      "transparency.card.persistent-bot-work-completion.summary",
       "transparency.card.persistent-bot-work-message.condition",
       "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.effect",
@@ -6851,6 +6854,7 @@
       "transparency.card.persistent-bot-selected-extensions.how",
       "transparency.card.persistent-bot-team.condition",
       "transparency.card.persistent-bot-work-completion.condition",
+      "transparency.card.persistent-bot-work-completion.effect",
       "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.condition",
       "transparency.card.persistent-bots.effect",
@@ -13549,6 +13553,7 @@
     "transparency.card.persistent-bot-work-completion.condition",
     "transparency.card.persistent-bot-work-completion.effect",
     "transparency.card.persistent-bot-work-completion.how",
+    "transparency.card.persistent-bot-work-completion.summary",
     "transparency.card.persistent-bot-work-message.condition",
     "transparency.card.persistent-bot-work-message.effect",
     "transparency.card.persistent-bots.condition",
