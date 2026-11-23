@@ -30,6 +30,8 @@ const DESK = { width: 1280, height: 800, mobile: false }
 const PHONE = { width: 390, height: 844, mobile: true }
 
 const ID = "ttys032"
+const OTHER_ID = "ttys033"
+const OTHER_CONVERSATION = "10000000-0000-4000-8000-000000000033"
 
 const ROW = {
   id: ID,
@@ -58,8 +60,17 @@ let olderDelayMs = 0
 let toolDone = false
 let openingProbe = false
 let probeOlderAnswers = 0
+let activityProbe = false
+const activityFixture: { thumb?: string; release?: () => void } = {}
+function replyToActivity() {
+  const release = activityFixture.release
+  delete activityFixture.release
+  release?.()
+}
+
 function transcript(before = false) {
   const entries = Array.from({ length: turns }, (_, i) => ({
+    ...(activityProbe ? { at: i + 1 } : {}),
     ...(structured ? { id: "acp2:history-generation:" + (i + 1) } : {}),
     role: i % 2 ? "assistant" : "user",
     text: "Turn " + (i + 1) + ". " + "This is a line of the conversation that wraps across the reading column. ".repeat(3),
@@ -77,7 +88,10 @@ function snapshot() {
     at: Date.now(),
     scan: { complete: true, completed: { complete: true, sequence: 1 }, emptyAuthoritative: true, epoch: 1,
       generation: 1, provenance: "fixture" },
-    sessions: [{ ...ROW, ...(structured ? { assistant: "antigravity", isClaude: false, identity: "protocol" } : {}) }],
+    sessions: [
+      { ...ROW, ...(structured ? { assistant: "antigravity", isClaude: false, identity: "protocol" } : {}) },
+      ...(activityProbe ? [{ ...ROW, id: OTHER_ID, sessionId: OTHER_CONVERSATION, label: "Another conversation" }] : []),
+    ],
   }
 }
 
@@ -108,6 +122,14 @@ function daemon(): Server {
     }
     if (path === "/v1/strings") return json(res, 200,
       JSON.parse(readFileSync(join(dist, "catalogs", "zh-Hant.json"), "utf8")))
+    if (activityProbe && path === "/v1/browser/activity") {
+      const conversation = new URL(req.url ?? "/", "http://fixture").searchParams.get("conversation")
+      if (conversation !== ROW.sessionId) return json(res, 200, { rows: [] })
+      activityFixture.release = () => json(res, 200, { rows: Array.from({ length: 24 }, (_, i) => ({
+        id: "action-" + i, at: 100 - i, op: "key", target: "PageUp", ok: true, thumb: activityFixture.thumb,
+      })) })
+      return
+    }
     if (path === "/v1/transcript") {
       const older = new URL(req.url ?? "/", "http://fixture").searchParams.has("before")
       if (openingProbe) {
@@ -345,6 +367,77 @@ for (const [name, size] of [["desk-1280", DESK], ["phone-390", PHONE]] as const)
     }
   })
 }
+
+test("late Chrome activity keeps the reading position after switching Sessions", async (t) => {
+  activityProbe = true
+  turns = 60
+  paged = false
+  try {
+    for (const readingOlder of [false, true]) {
+      delete activityFixture.release
+      const { targetId } = await browser.send("Target.createTarget", { url: "about:blank" })
+      const { sessionId } = await browser.send("Target.attachToTarget", { targetId, flatten: true })
+      const run = async (expression: string) => {
+        const { result, exceptionDetails } = await browser.send("Runtime.evaluate",
+          { expression, returnByValue: true, awaitPromise: true }, sessionId)
+        if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text)
+        return result.value
+      }
+      const until = async (expression: string) => {
+        const deadline = Date.now() + 8000
+        while (!(await run(expression))) {
+          if (Date.now() > deadline) assert.fail("not ready: " + expression)
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+      }
+      try {
+        await browser.send("Page.enable", {}, sessionId)
+        await browser.send("Emulation.setDeviceMetricsOverride", { ...DESK, deviceScaleFactor: 1 }, sessionId)
+        const mark = browser.loadCount
+        await browser.send("Page.navigate", { url: origin + "/#session=" + OTHER_ID }, sessionId)
+        await browser.loaded(sessionId, mark)
+        await until('document.querySelector("#detail-name")?.textContent === "Another conversation"')
+        activityFixture.thumb = await run(`(() => {
+          const canvas = document.createElement("canvas")
+          canvas.width = 320
+          canvas.height = 200
+          return canvas.toDataURL("image/jpeg").split(",")[1]
+        })()`)
+        await run(`document.querySelector('li.row[data-id="${ID}"]').click()`)
+        await until(`document.querySelector("#detail-name")?.textContent === "${ROW.label}" &&
+          document.querySelector("#tx .entry") && !document.querySelector(".tx-history-loading") && ${FROM_END} <= 1`)
+        assert.equal(typeof activityFixture.release, "function", "the Chrome read is still pending")
+        if (readingOlder) await run('document.getElementById("tx-scroll").scrollTop = 300')
+        const top = 'document.getElementById("tx-scroll").scrollTop'
+        const before = await run(top)
+        replyToActivity()
+        const after = await run(`new Promise((resolve, reject) => {
+          const deadline = performance.now() + 8000
+          const frame = () => {
+            if (document.querySelectorAll(".browser-action").length === 24) return resolve({ top: ${top}, fromEnd: ${FROM_END} })
+            if (performance.now() > deadline) return reject(new Error("Chrome activity did not arrive"))
+            requestAnimationFrame(frame)
+          }
+          requestAnimationFrame(frame)
+        })`)
+        t.diagnostic(JSON.stringify({ readingOlder, before, after }))
+        if (readingOlder) assert.equal(after.top, before, "late cards moved someone reading earlier turns")
+        else {
+          assert.ok(after.fromEnd <= 1, `late cards moved the newest end ${after.fromEnd}px away`)
+          await until('[...document.querySelectorAll(".browser-action img")].at(-1)?.naturalWidth === 320')
+          assert.ok(await run(`${FROM_END} <= 1`), "decoding a Chrome thumbnail moved the newest end")
+        }
+      } finally {
+        replyToActivity()
+        await browser.send("Target.closeTarget", { targetId }).catch(() => undefined)
+      }
+    }
+  } finally {
+    activityProbe = false
+    delete activityFixture.release
+    delete activityFixture.thumb
+  }
+})
 
 test("phone: opening shows the newest message while the older page is still arriving", async (t) => {
   const measurements: { ms: number; olderAnswered: boolean }[] = []
