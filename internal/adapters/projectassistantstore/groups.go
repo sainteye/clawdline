@@ -83,11 +83,26 @@ func (GroupInstaller) Install(ctx context.Context, db *sql.DB) error {
 // it commits.
 type GroupStore struct {
 	db *sql.DB
+	// rd, when set, serves the person-facing list and history reads. The
+	// writer handle has one connection, so those polls would otherwise queue
+	// behind every write in the process.
+	rd *sql.DB
 	// hook, when set by a test, fails a write at the named stage.
 	hook func(stage string) error
 }
 
 func NewGroupStore(db *sql.DB) *GroupStore { return &GroupStore{db: db} }
+
+// NewGroupStoreReading also lends a query-only pool on the same file for the
+// group list, previews and history. Writes and their validation stay on db.
+func NewGroupStoreReading(db, rd *sql.DB) *GroupStore { return &GroupStore{db: db, rd: rd} }
+
+func (s *GroupStore) reads() *sql.DB {
+	if s.rd != nil {
+		return s.rd
+	}
+	return s.db
+}
 
 func (s *GroupStore) at(stage string) error {
 	if s.hook == nil {
@@ -159,7 +174,7 @@ func (s *GroupStore) Room(ctx context.Context, key pa.BotKey) (pa.RoomState, err
 
 // Groups lists one machine's groups, deleted ones included.
 func (s *GroupStore) Groups(ctx context.Context, machine string) ([]pa.Group, error) {
-	return groupsRead(ctx, s.db, machine)
+	return groupsRead(ctx, s.reads(), machine)
 }
 
 // GroupPreviews reads real metadata, room state and the newest stored line in
@@ -170,7 +185,7 @@ func (s *GroupStore) GroupPreviews(ctx context.Context, machine string, byteBudg
 	}
 	// Window only lengths/keys first. Optional data returned to Go is bounded
 	// by the caller's existing read budget, even with many large room lines.
-	rows, err := s.db.QueryContext(ctx, `WITH sizes AS MATERIALIZED (
+	rows, err := s.reads().QueryContext(ctx, `WITH sizes AS MATERIALIZED (
  SELECT g.machine,g.grp,l.seq,coalesce(length(r.data),0) room_bytes,coalesce(length(l.data),0) line_bytes
  FROM project_assistant_groups g
  LEFT JOIN project_assistant_group_rooms r ON r.machine=g.machine AND r.grp=g.grp

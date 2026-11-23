@@ -208,7 +208,7 @@ func (h *Host) makeService() error {
 		}
 	}
 
-	groups, err := app.NewGroupRooms(featurestore.NewGroupStore(h.o.Database), app.DefaultGroupLimits(), h.o.Clock)
+	groups, err := app.NewGroupRooms(featurestore.NewGroupStoreReading(h.o.Database, h.o.Reader), app.DefaultGroupLimits(), h.o.Clock)
 	if err != nil {
 		return err
 	}

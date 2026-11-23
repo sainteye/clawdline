@@ -16,7 +16,7 @@ func (s *GroupStore) History(ctx context.Context, key pa.BotKey, before int64, l
 	if limit < 1 {
 		return out, failure(pa.Invalid, "room_lines")
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := s.reads().BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return out, err
 	}
