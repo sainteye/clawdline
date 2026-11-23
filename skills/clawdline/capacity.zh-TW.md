@@ -198,6 +198,7 @@
 | `bots.tower_zone_shown` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.turn_control_window_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.user_message_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.work_message_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
