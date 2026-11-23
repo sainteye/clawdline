@@ -1221,6 +1221,8 @@
   "capacityRow.bots.server_caller_receipts.what": "Mutation receipts retained by one live source-owned calling execution.",
   "capacityRow.bots.server_definitions.full": "New definitions are refused at the limit; explicitly remove a stopped definition to make room.",
   "capacityRow.bots.server_definitions.what": "Saved development-server definitions on this source, including stopped servers.",
+  "capacityRow.bots.dispatch_rules.full": "New “always allow” choices are refused at the limit; remove a saved Bot-to-Project rule to make room.",
+  "capacityRow.bots.dispatch_rules.what": "Saved rules letting one Bot open work Sessions in another Project without asking each time.",
   "capacityRow.bots.server_log_bytes.full": "Older output is discarded; the reply reports that the retained tail is incomplete.",
   "capacityRow.bots.server_log_bytes.what": "Latest output retained for one development-server run.",
   "capacityRow.bots.server_probe_readers.full": "A busy observation is refused without queuing another OS query. The managed server keeps running; refresh later to inspect its ports.",

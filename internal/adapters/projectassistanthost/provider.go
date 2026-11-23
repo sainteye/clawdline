@@ -452,7 +452,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	// Signing occurs only from this actual provider Open. The authority may
 	// refuse dispatch while chat remains usable under a missing work policy.
 	var actor pa.AssistantExecutionActor
-	if c.DispatchAllowed || c.ProjectDispatchAllowed {
+	if c.DispatchAllowed || c.ProjectDispatchAllowed || c.ProjectDispatchAskable {
 		expires := deadline
 		if !bounded {
 			// An open prompt does not extend a signed Board capability.
@@ -984,7 +984,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		var target pa.ProjectScope
 		if project != "" {
-			if !c.ProjectDispatchAllowed {
+			if !c.ProjectDispatchAllowed && !c.ProjectDispatchAskable {
+				if !directUserTurn(turn) {
+					// The person must ask this Bot directly; no card is offered
+					// on a turn another Bot, a room or a routine started.
+					return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_project_direct")
+				}
 				return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_project")
 			}
 			folders := h.o.Projects.(app.TeamProjectResolver)
@@ -998,6 +1003,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			}
 			if err = pa.ValidateTarget(pa.ProjectSelection{MachineID: q.Bot.Key.MachineID, ProjectID: target.ProjectID}, resolved); err != nil {
 				return pa.WorkLink{}, err
+			}
+			if !c.ProjectDispatchAllowed {
+				ask := dispatchAsk{Fence: q.Binding.Fence, TurnID: turnID, MemoryRevision: q.Binding.MemoryRevision, BotName: q.Bot.Name, Key: id, Title: title, Claims: claims, Target: resolved}
+				if err = h.askDispatch(ctx, r, ask); err != nil {
+					return pa.WorkLink{}, err
+				}
 			}
 		}
 		if e = journal(ctx, "dispatch"); e != nil {

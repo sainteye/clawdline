@@ -14,6 +14,11 @@ const sourcePermissionPrefix = "clawdline-source-"
 const teamReviewAllow = "approve-team-change"
 const teamReviewDeny = "decline-team-change"
 
+// DispatchPermissionPrefix names a host-owned cross-Project dispatch card. Its
+// suffix is derived from the turn and idempotency key so a resent call finds
+// the same card and its stored answer instead of asking again.
+const DispatchPermissionPrefix = sourcePermissionPrefix + "dispatch-"
+
 // SourcePermissionRequest comes only from a source-authenticated Host callback.
 // The command handler defines the scope and may offer only choices it can honor.
 // Returning AllowAlways is a choice, not proof that its rule was installed:
@@ -95,7 +100,16 @@ func (r *Engine) sourcePermissionCurrent(ctx context.Context, a *runtimeActor, q
 // holds no actor, memory or SQLite lock. No provider Answer RPC is issued for
 // this namespace, and no choice is released before its answer commit succeeds.
 func (r *Engine) RequestSourcePermission(ctx context.Context, q SourcePermissionRequest) (pa.PermissionOption, error) {
-	return r.requestSourcePermission(ctx, q, "", nil)
+	return r.requestSourcePermission(ctx, q, "", nil, false)
+}
+
+// RequestHumanPermission asks the person on a card that no Bot permission
+// policy may answer automatically. id must carry DispatchPermissionPrefix.
+func (r *Engine) RequestHumanPermission(ctx context.Context, q SourcePermissionRequest, id string) (pa.PermissionOption, error) {
+	if !strings.HasPrefix(id, DispatchPermissionPrefix) || len(id) == len(DispatchPermissionPrefix) {
+		return pa.PermissionOption{}, runtimeFailure(pa.Invalid, "source_permission")
+	}
+	return r.requestSourcePermission(ctx, q, id, nil, true)
 }
 
 // ReviewTeamPlan presents a host-owned, explicitly human team decision on the
@@ -114,11 +128,11 @@ func (r *Engine) ReviewTeamPlan(ctx context.Context, plan TeamPlan, execution Ma
 		Action:  pa.PermissionAction{Title: plan.TargetName, ToolKind: kind, Detail: plan.Detail},
 		Options: []pa.PermissionOption{{ID: teamReviewAllow, Kind: pa.AllowOnce, Allow: true}, {ID: teamReviewDeny, Kind: pa.RejectOnce}},
 	}
-	_, err = r.requestSourcePermission(ctx, q, plan.ID, decide)
+	_, err = r.requestSourcePermission(ctx, q, plan.ID, decide, true)
 	return err
 }
 
-func (r *Engine) requestSourcePermission(ctx context.Context, q SourcePermissionRequest, id string, teamDecision func(context.Context, bool, pa.SourceStatus) error) (pa.PermissionOption, error) {
+func (r *Engine) requestSourcePermission(ctx context.Context, q SourcePermissionRequest, id string, teamDecision func(context.Context, bool, pa.SourceStatus) error, human bool) (pa.PermissionOption, error) {
 	deadline, ok := ctx.Deadline()
 	if !ok || !r.o.Clock().Before(deadline) || q.Action.Shortened || strings.TrimSpace(q.Action.Title) == "" || strings.TrimSpace(q.Action.ToolKind) == "" || len(q.Options) == 0 {
 		return pa.PermissionOption{}, runtimeFailure(pa.Invalid, "source_permission")
@@ -207,7 +221,7 @@ func (r *Engine) requestSourcePermission(ctx context.Context, q SourcePermission
 	}
 	// Match the existing native card policy, never infer it from an Agent name
 	// or sandbox label. Automatic approval uses only an eligible once option.
-	if teamDecision == nil && (bot.PermissionPolicy == pa.Approve || bot.PermissionPolicy == pa.AutoRead) {
+	if !human && (bot.PermissionPolicy == pa.Approve || bot.PermissionPolicy == pa.AutoRead) {
 		for _, option := range q.Options {
 			if option.Allow && option.Kind == pa.AllowOnce && (option.ReadOnly || bot.PermissionPolicy == pa.Approve) {
 				answer := pa.PermissionAnswer{Fence: q.Fence, OfferID: id, TurnID: q.TurnID, OptionID: option.ID}

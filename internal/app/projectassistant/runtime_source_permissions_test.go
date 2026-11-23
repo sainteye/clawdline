@@ -360,3 +360,41 @@ func TestSourceCancellationCannotRetireANewerGenerationWait(t *testing.T) {
 		t.Fatalf("old cancellation retired a newer wait: pending=%d turn=%+v old=%+v", pending, current, old)
 	}
 }
+
+// A cross-Project dispatch card always waits for the person, even when the
+// Bot's permission mode would answer an ordinary card automatically.
+func TestHumanPermissionIsNeverAnsweredByThePermissionPolicy(t *testing.T) {
+	f := newRuntimeFixture(t)
+	f.store.mu.Lock()
+	f.store.bot.PermissionPolicy = pa.Approve
+	f.store.mu.Unlock()
+	_, _ = f.submit(t, "synthetic", "one")
+	q := receivePrompt(t, f.provider)
+	request := sourceRequest(q)
+	request.Action.ToolKind = "dispatch_project"
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if _, err := f.r.RequestHumanPermission(ctx, request, "not-a-dispatch-card"); pa.Code(err) != pa.Invalid {
+		t.Fatalf("foreign id: %v", err)
+	}
+	done := make(chan sourceChoice, 1)
+	go func() {
+		option, err := f.r.RequestHumanPermission(ctx, request, DispatchPermissionPrefix+"fixed")
+		done <- sourceChoice{option, err}
+	}()
+	offers := awaitSourceOffer(t, f, 1)
+	if offers[0].ID != DispatchPermissionPrefix+"fixed" || offers[0].State != pa.PermissionPending {
+		t.Fatalf("card: %+v", offers[0])
+	}
+	select {
+	case choice := <-done:
+		t.Fatalf("answered without the person: %+v", choice)
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, err := answerSource(t, f, offers[0], "always"); err != nil {
+		t.Fatal(err)
+	}
+	if choice := receiveSourceChoice(t, done); choice.err != nil || choice.option.Kind != pa.AllowAlways {
+		t.Fatal(choice)
+	}
+}

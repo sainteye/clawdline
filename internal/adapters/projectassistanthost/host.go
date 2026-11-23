@@ -100,6 +100,13 @@ type Host struct {
 	team               *app.TeamCoordinator
 	authority          *orchestrator.AssistantAuthority
 	bridge             *app.BrokerWorkBridge
+	grants             dispatchGrants
+}
+
+// directUserTurn is a turn the person started by talking to this Bot, not a
+// message from another Bot, a room, the Network or a routine.
+func directUserTurn(t pa.Turn) bool {
+	return t.ID != "" && t.Origin == pa.UserOrigin && t.Room == nil && t.Network == nil && t.RoutineRunID == ""
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -347,8 +354,20 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			allowed := p.Allowed && p.TimeoutMinutes > 0
 			out.DispatchAllowed = allowed && resolved.Scope.Kind == pa.RepositoryProject
 			_, resolvesFolders := h.o.Projects.(app.TeamProjectResolver)
-			out.ProjectDispatchAllowed = allowed && resolvesFolders && b.Lead && active.Origin == pa.UserOrigin &&
-				active.Room == nil && active.Network == nil && active.RoutineRunID == ""
+			direct := allowed && resolvesFolders && directUserTurn(active)
+			out.ProjectDispatchAllowed = direct && b.Lead
+			// Another Bot asks the person first. Saved rules and once grants
+			// apply only to a turn the person started by talking to this Bot.
+			if out.ProjectDispatchAskable = direct && !b.Lead; out.ProjectDispatchAskable {
+				rules, err := h.dispatchRules(ctx, key)
+				if err != nil {
+					return orchestrator.AssistantCurrent{}, err
+				}
+				for project := range rules {
+					out.ApprovedProjects = append(out.ApprovedProjects, project)
+				}
+				out.ApprovedProjects = append(out.ApprovedProjects, h.grants.approved(key, active.ID)...)
+			}
 			out.AllowedClaims = append([]string(nil), p.AllowedClaims...)
 			out.AnyProjectFile = p.AnyProjectFile
 			out.Assistant = p.Assistant

@@ -227,6 +227,7 @@
         "pa_scope_denied",
         "pa_context_stale",
         "pa_cursor_expired",
+        "pa_declined",
         "cli_not_installed",
         "adapter_not_found",
         "adapter_inventory_unknown",

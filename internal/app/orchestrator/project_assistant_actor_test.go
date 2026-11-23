@@ -565,3 +565,34 @@ func TestAssistantProjectDispatchRejectsLostOrChangedAuthority(t *testing.T) {
 		t.Fatalf("a rejected dispatch wrote a task: %+v %v", rows, err)
 	}
 }
+
+// A non-lead Bot may only reach another Project after the person approved
+// that exact destination; asking alone admits nothing.
+func TestAssistantProjectDispatchNeedsTheApprovedDestination(t *testing.T) {
+	b, ctx, current, q, _ := assistantBrokerFixture(t)
+	target := current.Project
+	target.Scope.ProjectID = "destination"
+	target.Scope.CanonicalID = "destination"
+	q.TargetProject = target.Scope
+	b.AssistantAuthority.o.ResolveProject = func(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error) {
+		return target, nil
+	}
+	current.ProjectDispatchAskable = true
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("unapproved destination: %v", err)
+	}
+	current.ApprovedProjects = []string{"another"}
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("approval for another destination: %v", err)
+	}
+	current.ApprovedProjects = []string{"destination"}
+	target.Scope.CanonicalID = "replacement"
+	// Passing authorization reaches the Broker's own destination recheck.
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("approved destination was not rechecked: %v", err)
+	}
+	current.ProjectDispatchAskable = false
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("approval outside a direct turn: %v", err)
+	}
+}

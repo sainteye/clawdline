@@ -32,7 +32,14 @@ type AssistantCurrent struct {
 	Project                pa.ProjectResolution
 	DispatchAllowed        bool
 	ProjectDispatchAllowed bool
-	AllowedClaims          []string
+	// ProjectDispatchAskable marks a direct user turn of a Bot that may ask
+	// the person, on a permission card, to dispatch into another Project.
+	// It grants nothing by itself: only ApprovedProjects admits a target.
+	ProjectDispatchAskable bool
+	// ApprovedProjects are destination Project IDs the person allowed for
+	// this active turn, once on a card or by a saved Bot-to-Project rule.
+	ApprovedProjects []string
+	AllowedClaims    []string
 	// AnyProjectFile admits any exact relative file inside the Project, as
 	// CodyNC lets a Bot work anywhere in its workspace. Path, symlink and
 	// directory checks still apply to every claim.
@@ -152,7 +159,7 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 		if err = c.Feature.CheckWrite(); err != nil {
 			return c, err
 		}
-		if !(c.DispatchAllowed && c.Fence.Project.Kind == pa.RepositoryProject) && !c.ProjectDispatchAllowed {
+		if !(c.DispatchAllowed && c.Fence.Project.Kind == pa.RepositoryProject) && !c.ProjectDispatchAllowed && !c.ProjectDispatchAskable {
 			return c, assistantFailure(pa.ScopeDenied, "dispatch_policy")
 		}
 		if c.ActiveTurnID == "" {
@@ -219,7 +226,7 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	// The source fence owns the receipt. Resolve the destination separately
 	// for each admission check, including the check before durable creation.
 	if target := q.TargetProject; target != (pa.ProjectScope{}) {
-		if !c.ProjectDispatchAllowed || b.AssistantAuthority.o.ResolveProject == nil {
+		if !c.ProjectDispatchAllowed && !(c.ProjectDispatchAskable && slices.Contains(c.ApprovedProjects, target.ProjectID)) || b.AssistantAuthority.o.ResolveProject == nil {
 			return c, assistantFailure(pa.ScopeDenied, "dispatch_project")
 		}
 		selection := pa.ProjectSelection{MachineID: target.MachineID, ProjectID: target.ProjectID}

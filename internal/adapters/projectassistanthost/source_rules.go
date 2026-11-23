@@ -2,6 +2,8 @@ package projectassistanthost
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	serverstore "github.com/sainteye/clawdline/internal/adapters/botdevserverstore"
 	servers "github.com/sainteye/clawdline/internal/app/botdevserver"
@@ -11,7 +13,9 @@ import (
 
 type hostSourceRules struct{ h *Host }
 
-func (hostSourceRules) Handles(r pa.PermissionRule) bool { return servers.IsSourceRule(r) }
+func (hostSourceRules) Handles(r pa.PermissionRule) bool {
+	return servers.IsSourceRule(r) || isDispatchRule(r)
+}
 
 // serverMemory publishes local rule/process effects against the current
 // memory lock. Ordinary saves may advance Revision; only Forget changes the
@@ -49,6 +53,17 @@ func (s hostSourceRules) List(ctx context.Context, key pa.BotKey, project pa.Pro
 		return nil, err
 	}
 	out := []pa.PermissionRule{}
+	// Bot-to-Project dispatch rules belong to the Bot, shown on its own Project.
+	if project == s.h.botProject(ctx, key) {
+		dispatch, err := s.h.dispatchRules(ctx, key)
+		if err != nil {
+			return nil, err
+		}
+		for id, folder := range dispatch {
+			out = append(out, pa.PermissionRule{Behavior: "allow", Rule: dispatchRuleText(id, folder)})
+		}
+		slices.SortFunc(out, func(a, b pa.PermissionRule) int { return strings.Compare(a.Rule, b.Rule) })
+	}
 	for _, saved := range rows {
 		if saved.Spec.Key != key || saved.Spec.Project != project {
 			continue
@@ -70,6 +85,16 @@ func (s hostSourceRules) List(ctx context.Context, key pa.BotKey, project pa.Pro
 }
 
 func (s hostSourceRules) Remove(ctx context.Context, key pa.BotKey, project pa.ProjectScope, wire pa.PermissionRule) error {
+	if isDispatchRule(wire) {
+		id, err := dispatchRuleProject(wire)
+		if err != nil {
+			return err
+		}
+		if project != s.h.botProject(ctx, key) {
+			return failure(pa.ScopeDenied, "dispatch_rule")
+		}
+		return s.h.removeDispatchRule(ctx, key, id)
+	}
 	rule, err := servers.ParseRule(wire)
 	if err != nil {
 		return err
@@ -83,4 +108,19 @@ func (s hostSourceRules) Remove(ctx context.Context, key pa.BotKey, project pa.P
 	}
 	_, err = c.SaveRule(ctx, rule, "")
 	return err
+}
+
+// botProject is the Bot's own Project, or zero when it cannot be read.
+func (h *Host) botProject(ctx context.Context, key pa.BotKey) pa.ProjectScope {
+	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st == nil {
+		return pa.ProjectScope{}
+	}
+	b, err := st.Bot(ctx, key)
+	if err != nil {
+		return pa.ProjectScope{}
+	}
+	return b.Project
 }

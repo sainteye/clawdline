@@ -1221,6 +1221,8 @@
   "capacityRow.bots.server_caller_receipts.what": "一個仍有效的來源自有執行所保留的變更操作收據。",
   "capacityRow.bots.server_definitions.full": "達上限後拒絕新定義；可明確移除已停止的項目以騰出空間。",
   "capacityRow.bots.server_definitions.what": "這個來源保存的開發伺服器定義數量，包含已停止的伺服器。",
+  "capacityRow.bots.dispatch_rules.full": "達上限後不再接受新的「一律允許」；移除一條已存的 Bot 到 Project 規則即可騰出空間。",
+  "capacityRow.bots.dispatch_rules.what": "讓某個 Bot 不必每次詢問、就能在另一個 Project 開工作 Session 的已存規則數量。",
   "capacityRow.bots.server_log_bytes.full": "捨棄較舊輸出，並在回覆標明保留的尾端紀錄不完整。",
   "capacityRow.bots.server_log_bytes.what": "每次開發伺服器執行保留的最新輸出。",
   "capacityRow.bots.server_probe_readers.full": "名額已滿時會拒絕這次盤點，不排入另一個系統查詢。受管理的伺服器繼續執行，可稍後重新整理查看埠。",
