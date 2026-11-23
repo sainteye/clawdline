@@ -331,9 +331,11 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			return out, failure(pa.StaleGeneration, "binding")
 		}
 	}
+	var active pa.Turn
 	for _, turn := range x.Turns {
 		if turn.ID == c.ActiveTurnID && turn.Fence == f && (turn.State == pa.TurnRunning || turn.State == pa.TurnWaitingPermission) {
 			out.ActiveTurnID = turn.ID
+			active = turn
 			break
 		}
 	}
@@ -342,7 +344,11 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 		if e == nil {
 			// Isolated work needs a repository worktree. Another Project kind
 			// keeps chat and never asks the authority for a dispatch actor.
-			out.DispatchAllowed = p.Allowed && p.TimeoutMinutes > 0 && resolved.Scope.Kind == pa.RepositoryProject
+			allowed := p.Allowed && p.TimeoutMinutes > 0
+			out.DispatchAllowed = allowed && resolved.Scope.Kind == pa.RepositoryProject
+			_, resolvesFolders := h.o.Projects.(app.TeamProjectResolver)
+			out.ProjectDispatchAllowed = allowed && resolvesFolders && b.Lead && active.Origin == pa.UserOrigin &&
+				active.Room == nil && active.Network == nil && active.RoutineRunID == ""
 			out.AllowedClaims = append([]string(nil), p.AllowedClaims...)
 			out.AnyProjectFile = p.AnyProjectFile
 			out.Assistant = p.Assistant
@@ -365,7 +371,7 @@ func (h *Host) connect() error {
 	if h.o.Broker.AssistantAuthority != nil || h.o.Broker.AssistantWorkChanged != nil {
 		return failure(pa.ScopeDenied, "broker_owner")
 	}
-	a, err := orchestrator.NewAssistantAuthority(orchestrator.AssistantAuthorityOptions{Current: h.current, Clock: h.o.Clock})
+	a, err := orchestrator.NewAssistantAuthority(orchestrator.AssistantAuthorityOptions{Current: h.current, ResolveProject: h.o.Projects.Resolve, Clock: h.o.Clock})
 	if err != nil {
 		return err
 	}

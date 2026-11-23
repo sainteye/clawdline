@@ -539,3 +539,29 @@ func TestAssistantWorkSnapshotShowsAWorkerWaitingForThePerson(t *testing.T) {
 		t.Fatalf("an unanswered dialog that ended the spawn: %s", got)
 	}
 }
+
+func TestAssistantProjectDispatchRejectsLostOrChangedAuthority(t *testing.T) {
+	b, ctx, current, q, _ := assistantBrokerFixture(t)
+	target := current.Project
+	target.Scope.ProjectID = "destination"
+	target.Scope.CanonicalID = "destination"
+	q.TargetProject = target.Scope
+	b.AssistantAuthority.o.ResolveProject = func(_ context.Context, selection pa.ProjectSelection) (pa.ProjectResolution, error) {
+		if selection.ProjectID != q.TargetProject.ProjectID || selection.MachineID != current.Fence.Key.MachineID {
+			t.Fatalf("wrong destination lookup: %+v", selection)
+		}
+		return target, nil
+	}
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("non-lead dispatch: %v", err)
+	}
+	current.ProjectDispatchAllowed = true
+	target.Scope.CanonicalID = "replacement"
+	if _, err := b.DispatchAssistant(ctx, q); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("changed destination: %v", err)
+	}
+	rows, _, err := b.Records(ctx)
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("a rejected dispatch wrote a task: %+v %v", rows, err)
+	}
+}

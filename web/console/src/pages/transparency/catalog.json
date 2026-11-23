@@ -5215,6 +5215,46 @@
         "Native Bot role context and resumed prompt",
         "Source-owned Check in routine and browser voice opening"
       ]
+    },
+    {
+      "id": "persistent-bot-project-dispatch",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "start",
+        "turn"
+      ],
+      "scenes": [
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projectassistantacp/session_configuration.go",
+          "line": 170
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/mcp.go",
+          "line": 717
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/host.go",
+          "line": 350
+        },
+        {
+          "path": "internal/app/orchestrator/project_assistant_actor.go",
+          "line": 208
+        }
+      ],
+      "original": [
+        "When the user asks you to open a work Session or delegate work to a named Project, use dispatch_work with project set to the exact, unique registered repository folder name or its absolute registered path. For investigation only, pass claims: [] and include the no-write scope in the brief. Ask which Project if the destination is ambiguous. Report the receipt accurately and let the result return to this chat. 當使用者要求在指定 Project 開工作階段或派工到該 Project 時，請用 dispatch_work，在 project 填入已登錄且唯一的儲存庫資料夾名稱或絕對路徑。只調查時將 claims 設為空陣列，並在任務說明寫明範圍。若有多個同名 Project，請確認使用者指定哪一個。依派工收據回報，結果會回到這個對話。"
+      ],
+      "locations": [
+        "Designated Lead instructions",
+        "Owned dispatch_work tool and Broker admission"
+      ]
     }
   ],
   "sourceChecks": {
@@ -5289,7 +5329,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "52e669e4e43d3d7d4fcac710e736a987dc9a8bb9279cb4496094834d164f95e2",
+    "internal/adapters/projectassistantacp/mcp.go": "2c90d8005a7906fa05887a828e6d3ee5a9eae02965e91a2d97fa72f94ab0a6f9",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5298,7 +5338,7 @@
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "3b802530d9d5032276e4c561d0a3e1c9d96d5d98c0148cb169ae449ed3f9d145",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "0be2d6acd35a5056210cd2a1ae06fb7352186224c3c7352ffc4933f5a66bc166",
+    "internal/adapters/projectassistantacp/session_configuration.go": "0e1713436c1e019b55790e0df2e6b282f84d520c56a0eb028f364f1c2b32695a",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
     "internal/adapters/projectassistantacp/tcp_darwin.go": "a2bce0740704ba649ce41fcd7198d3e956273fb0725c52cf837eebb09fb05616",
     "internal/adapters/projectassistantacp/tcp_linux.go": "9848170c19f9cae199b6bf234ba47bfdd69020b6c46beb555aa23570a0f1990b",
@@ -5310,11 +5350,12 @@
     "internal/adapters/projectassistanthost/devservers.go": "c45d9c98aeb493d55c8fb1100dfe3558b22ff1554e307b857d8969c30b0c6a5d",
     "internal/adapters/projectassistanthost/devservers_human.go": "6d64c119af05d1787d04217d0eea2a9110d060909b0386ffdb62737065acfc0b",
     "internal/adapters/projectassistanthost/devservers_ports.go": "371bc4e39137e097aa4ff0e2cc7856e7527a203bc90aa2be363bdd6fe2a4f96a",
+    "internal/adapters/projectassistanthost/host.go": "92aa4c95c97c8ff87cdac7d38c86b0c9ee4eef5b3f32d471b5e3fce6b9921b27",
     "internal/adapters/projectassistanthost/lead.go": "e33b998121310d910a84a3f1493d9b737646bf9051d256ed17d2b8740484393e",
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",
     "internal/adapters/projectassistanthost/network.go": "d2243bd49e27136dbb00e8cf9a7b57e7705bc3d9d59f9a10524d5b06b82f2b8f",
     "internal/adapters/projectassistanthost/network_assistant.go": "252fd3dbd213bdb1875bfc152b51d1aaac960e100a55bdef5fadc42d7577a512",
-    "internal/adapters/projectassistanthost/provider.go": "464fbcefef10e7e134f71d751c897e60fb3474cf91be3a2a474dae7a271ce9fc",
+    "internal/adapters/projectassistanthost/provider.go": "a9ca690d198eed0c7f6a79da7b8e71d5f88ee89452b29f247e12cb63cf32ea06",
     "internal/adapters/projectassistanthost/source_rules.go": "5f4380e8d8e6e7f57f6d6b436cb9eb53faea12253547ac269264635cba1f478c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "0beedec8c2d5df57d47ff87ad975d2235ccbab1264f8438f40d4a0b2835153e9",
@@ -5368,6 +5409,7 @@
     "internal/app/orchestrator/owned_child.go": "40fa15e1b28ec67434b23a55373b43996a2bda27972ae355feebef938456293f",
     "internal/app/orchestrator/policy.go": "f165e3bbc9b3c96b60a9a14de6b7cbd942eed6146771a4cd59ae2c7a4385624f",
     "internal/app/orchestrator/policy_projection.go": "964d5d2db030ae7a489bfc00d393c68c74d8aaef05be70c3dd489cf45191d925",
+    "internal/app/orchestrator/project_assistant_actor.go": "215a2a3f9ac85efbc9707202a2e1255114937465ee61645a2c0cdef69569d3f0",
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
@@ -5544,7 +5586,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "a9cf7fc8713915fb17e0521f6811cdcec1ffb1becef28aad7fdc8c22ddfbf901",
-    "zh-Hant": "c8965a4ad8e8f1d166cc9240f936b5cecf8526dd4b06ca070c735661a53f65df"
+    "en": "ee5ffc93defc4c2ccd8a4965ac9c293235646c46bd3e8597882b86e9d152244f",
+    "zh-Hant": "dd75aa951434858268e377e52bc8fae46cfd84338f8ed20a98be1a0bba739153"
   }
 }

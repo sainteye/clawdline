@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14065,
+  "englishKeys": 14070,
   "counts": {
     "negation": 3595,
     "state": 2366,
-    "permission": 843,
+    "permission": 844,
     "deletion": 322,
     "uncertainty": 561
   },
-  "unionCount": 5973,
+  "unionCount": 5974,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6763,6 +6763,7 @@
       "transparency.card.persistent-bot-outputs.condition",
       "transparency.card.persistent-bot-outputs.effect",
       "transparency.card.persistent-bot-outputs.how",
+      "transparency.card.persistent-bot-project-dispatch.summary",
       "transparency.card.persistent-bot-review.condition",
       "transparency.card.persistent-bot-review.effect",
       "transparency.card.persistent-bot-review.how",
@@ -13380,6 +13381,7 @@
     "transparency.card.persistent-bot-outputs.condition",
     "transparency.card.persistent-bot-outputs.effect",
     "transparency.card.persistent-bot-outputs.how",
+    "transparency.card.persistent-bot-project-dispatch.summary",
     "transparency.card.persistent-bot-review.condition",
     "transparency.card.persistent-bot-review.effect",
     "transparency.card.persistent-bot-review.how",

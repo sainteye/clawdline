@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14065,
-  "riskKeys": 5973,
-  "nonRiskCount": 8092,
+  "englishContentKeys": 14070,
+  "riskKeys": 5974,
+  "nonRiskCount": 8096,
   "groups": [
     {
       "name": "acp / other",
@@ -8110,7 +8110,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 225,
+      "count": 229,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8231,6 +8231,10 @@
         "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",
         "transparency.card.persistent-bot-outputs.title",
+        "transparency.card.persistent-bot-project-dispatch.condition",
+        "transparency.card.persistent-bot-project-dispatch.effect",
+        "transparency.card.persistent-bot-project-dispatch.how",
+        "transparency.card.persistent-bot-project-dispatch.title",
         "transparency.card.persistent-bot-review.summary",
         "transparency.card.persistent-bot-review.title",
         "transparency.card.persistent-bot-routine-progress.summary",

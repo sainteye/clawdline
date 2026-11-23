@@ -56,12 +56,13 @@ func CheckActor(actor AssistantExecutionActor, current Fence, operation ActorOpe
 }
 
 type WorkRequest struct {
-	Actor   AssistantExecutionActor
-	Command Command
-	TurnID  string
-	Title   string
-	Brief   string
-	Claims  []string
+	Actor         AssistantExecutionActor
+	Command       Command
+	TurnID        string
+	Title         string
+	Brief         string
+	Claims        []string
+	TargetProject ProjectScope
 }
 
 // ValidateWorkTitle applies the broker's task title rules before an effect
@@ -89,7 +90,17 @@ func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 	if _, err := DecideReplay(request.Command, nil); err != nil {
 		return err
 	}
-	if request.TurnID == "" || request.Brief == "" || len(request.Claims) == 0 {
+	if request.TurnID == "" || request.Brief == "" || request.Claims == nil {
+		return fail(Invalid, "work")
+	}
+	if target := request.TargetProject; target != (ProjectScope{}) {
+		if err := ValidateScope(target); err != nil {
+			return err
+		}
+		if target.Kind != RepositoryProject || target.MachineID != current.Key.MachineID {
+			return fail(ScopeDenied, "dispatch_project")
+		}
+	} else if len(request.Claims) == 0 {
 		return fail(Invalid, "work")
 	}
 	if request.Title != "" {

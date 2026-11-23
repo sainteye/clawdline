@@ -24,14 +24,15 @@ import (
 // may come from model arguments or an HTTP request. DispatchAllowed is distinct
 // from native read-only permissions and from any human approval of Board work.
 type AssistantCurrent struct {
-	Fence           pa.Fence
-	Source          pa.SourceStatus
-	Feature         pa.FeatureState
-	ActiveTurnID    string
-	BindingRevoked  bool
-	Project         pa.ProjectResolution
-	DispatchAllowed bool
-	AllowedClaims   []string
+	Fence                  pa.Fence
+	Source                 pa.SourceStatus
+	Feature                pa.FeatureState
+	ActiveTurnID           string
+	BindingRevoked         bool
+	Project                pa.ProjectResolution
+	DispatchAllowed        bool
+	ProjectDispatchAllowed bool
+	AllowedClaims          []string
 	// AnyProjectFile admits any exact relative file inside the Project, as
 	// CodyNC lets a Bot work anywhere in its workspace. Path, symlink and
 	// directory checks still apply to every claim.
@@ -42,8 +43,9 @@ type AssistantCurrent struct {
 }
 
 type AssistantAuthorityOptions struct {
-	Current func(context.Context, pa.BotKey) (AssistantCurrent, error)
-	Clock   func() time.Time
+	Current        func(context.Context, pa.BotKey) (AssistantCurrent, error)
+	Clock          func() time.Time
+	ResolveProject func(context.Context, pa.ProjectSelection) (pa.ProjectResolution, error)
 }
 
 // AssistantAuthority signs private, process-local capabilities. It holds no
@@ -150,7 +152,7 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 		if err = c.Feature.CheckWrite(); err != nil {
 			return c, err
 		}
-		if !c.DispatchAllowed || c.Fence.Project.Kind != pa.RepositoryProject {
+		if !(c.DispatchAllowed && c.Fence.Project.Kind == pa.RepositoryProject) && !c.ProjectDispatchAllowed {
 			return c, assistantFailure(pa.ScopeDenied, "dispatch_policy")
 		}
 		if c.ActiveTurnID == "" {
@@ -163,10 +165,11 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 // AssistantOwner contains only public provenance. It grants no execution or
 // Board authority. The credential is deliberately absent from Record and Brief.
 type AssistantOwner struct {
-	Fence       pa.Fence   `json:"fence"`
-	TurnID      string     `json:"turn_id"`
-	Command     pa.Command `json:"command"`
-	RequestHash string     `json:"request_hash"`
+	Fence         pa.Fence        `json:"fence"`
+	TurnID        string          `json:"turn_id"`
+	Command       pa.Command      `json:"command"`
+	RequestHash   string          `json:"request_hash"`
+	TargetProject pa.ProjectScope `json:"target_project,omitzero"`
 }
 
 type assistantAdmission struct {
@@ -195,8 +198,9 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Fence         pa.Fence
 		TurnID, Brief string
 		Claims        []string
-		Title         string `json:",omitempty"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title})
+		Title         string          `json:",omitempty"`
+		TargetProject pa.ProjectScope `json:"target_project,omitzero"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -211,6 +215,27 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	}
 	if q.TurnID != c.ActiveTurnID {
 		return c, assistantFailure(pa.StaleVersion, "work_turn")
+	}
+	// The source fence owns the receipt. Resolve the destination separately
+	// for each admission check, including the check before durable creation.
+	if target := q.TargetProject; target != (pa.ProjectScope{}) {
+		if !c.ProjectDispatchAllowed || b.AssistantAuthority.o.ResolveProject == nil {
+			return c, assistantFailure(pa.ScopeDenied, "dispatch_project")
+		}
+		selection := pa.ProjectSelection{MachineID: target.MachineID, ProjectID: target.ProjectID}
+		destination, err := b.AssistantAuthority.o.ResolveProject(ctx, selection)
+		if err != nil {
+			return c, err
+		}
+		if err = pa.ValidateTarget(selection, destination); err != nil {
+			return c, err
+		}
+		if destination.Scope != target {
+			return c, assistantFailure(pa.StaleVersion, "dispatch_project")
+		}
+		c.Project = destination
+	} else if !c.DispatchAllowed || c.Fence.Project.Kind != pa.RepositoryProject {
+		return c, assistantFailure(pa.ScopeDenied, "dispatch_policy")
 	}
 	claims, err := admitClaims(q.Claims)
 	if err != nil {
@@ -284,7 +309,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	if err != nil {
 		return Dispatched{}, err
 	}
-	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q)}
+	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject}
 	secret := make([]byte, 32)
 	if _, err = rand.Read(secret); err != nil {
 		return Dispatched{}, err

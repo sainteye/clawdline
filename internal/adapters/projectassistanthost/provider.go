@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,7 +77,7 @@ type NativeWork struct {
 	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
-	dispatch      func(context.Context, string, string, string, []string) (pa.WorkLink, error)
+	dispatch      func(context.Context, string, string, string, []string, string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
 	memoryIndex   func(context.Context) (app.MemoryIndex, error)
@@ -154,10 +155,13 @@ func (w NativeWork) SendMessage(ctx context.Context, id, text string) error {
 	return w.send(ctx, id, text)
 }
 func (w NativeWork) Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error) {
+	return w.DispatchToProject(ctx, id, title, brief, claims, "")
+}
+func (w NativeWork) DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error) {
 	if w.dispatch == nil {
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
-	return w.dispatch(ctx, id, title, brief, claims)
+	return w.dispatch(ctx, id, title, brief, claims, project)
 }
 func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, error) {
 	if w.status == nil {
@@ -448,7 +452,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	// Signing occurs only from this actual provider Open. The authority may
 	// refuse dispatch while chat remains usable under a missing work policy.
 	var actor pa.AssistantExecutionActor
-	if c.DispatchAllowed {
+	if c.DispatchAllowed || c.ProjectDispatchAllowed {
 		expires := deadline
 		if !bounded {
 			// An open prompt does not extend a signed Board capability.
@@ -966,7 +970,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
-	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error) {
+	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error) {
 		if pa.IsPeerRequest(turn.Origin) {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
@@ -978,18 +982,37 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
 		}
+		var target pa.ProjectScope
+		if project != "" {
+			if !c.ProjectDispatchAllowed {
+				return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_project")
+			}
+			folders := h.o.Projects.(app.TeamProjectResolver)
+			resolved, err := folders.ResolveTeamFolder(ctx, q.Bot.Key.MachineID, project)
+			if err != nil {
+				return pa.WorkLink{}, err
+			}
+			target = resolved.Scope
+			if target.Kind != pa.RepositoryProject {
+				return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_project")
+			}
+			if err = pa.ValidateTarget(pa.ProjectSelection{MachineID: q.Bot.Key.MachineID, ProjectID: target.ProjectID}, resolved); err != nil {
+				return pa.WorkLink{}, err
+			}
+		}
 		if e = journal(ctx, "dispatch"); e != nil {
 			return pa.WorkLink{}, e
 		}
 		payload, _ := json.Marshal(struct {
-			Fence       pa.Fence
-			Turn, Brief string
-			Claims      []string
-			Title       string `json:",omitempty"`
-		}{q.Binding.Fence, turnID, brief, claims, title})
+			Fence         pa.Fence
+			Turn, Brief   string
+			Claims        []string
+			Title         string          `json:",omitempty"`
+			TargetProject pa.ProjectScope `json:"target_project,omitzero"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: append([]string(nil), claims...)})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target})
 	}
 	tools.status = func(ctx context.Context, taskID string) (pa.WorkLink, error) {
 		ctx, cancel, e := bound(ctx)

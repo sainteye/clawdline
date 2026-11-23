@@ -28,9 +28,16 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 	if os.Getenv("CLAWDLINE_HOST_MCP_PEER") != "1" {
 		return
 	}
+	failPeer := func(code int, detail string) {
+		if path := os.Getenv("CLAWDLINE_TEST_MCP_ERROR"); path != "" {
+			_ = os.WriteFile(path, []byte(fmt.Sprintf("%d: %s", code, detail)), 0600)
+		}
+		os.Exit(code)
+	}
 	write := func(id json.RawMessage, result any) {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 	}
+	leadDispatch := os.Getenv("CLAWDLINE_TEST_LEAD_DISPATCH") == "1"
 	var endpoint, authorization string
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	request := func(method string, id any, params any) []byte {
@@ -44,7 +51,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 		body, _ := json.Marshal(v)
 		r, e := http.NewRequest(http.MethodPost, endpoint, strings.NewReader(string(body)))
 		if e != nil {
-			os.Exit(11)
+			failPeer(11, fmt.Sprint(e))
 		}
 		r.Header.Set("Authorization", authorization)
 		r.Header.Set("Content-Type", "application/json")
@@ -52,12 +59,12 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 		r.Header.Set("MCP-Protocol-Version", "2025-06-18")
 		response, e := client.Do(r)
 		if e != nil {
-			os.Exit(12)
+			failPeer(12, fmt.Sprint(e))
 		}
 		b, e := io.ReadAll(response.Body)
 		response.Body.Close()
 		if e != nil || response.StatusCode >= 400 {
-			os.Exit(13)
+			failPeer(13, fmt.Sprintf("%s %d: %s %v", method, response.StatusCode, b, e))
 		}
 		return b
 	}
@@ -72,7 +79,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 			Error json.RawMessage
 		}
 		if json.Unmarshal(b, &v) != nil || len(v.Error) != 0 || v.Result.IsError != wantError {
-			os.Exit(14)
+			failPeer(14, string(b))
 		}
 	}
 	scan := bufio.NewScanner(os.Stdin)
@@ -83,7 +90,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 			Params json.RawMessage
 		}
 		if json.Unmarshal(scan.Bytes(), &f) != nil {
-			os.Exit(15)
+			failPeer(15, "invalid ACP frame")
 		}
 		switch f.Method {
 		case "initialize":
@@ -96,8 +103,12 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 				} `json:"mcpServers"`
 				SystemPrompt struct{ Content []struct{ Text string } } `json:"systemPrompt"`
 			}
-			if json.Unmarshal(f.Params, &p) != nil || len(p.MCPServers) != 1 || len(p.MCPServers[0].Headers) != 1 || p.MCPServers[0].Type != "http" || len(p.SystemPrompt.Content) != 1 || !strings.HasPrefix(p.SystemPrompt.Content[0].Text, "Agent profile:") || !strings.HasSuffix(p.SystemPrompt.Content[0].Text, "\nRead only") {
-				os.Exit(16)
+			if json.Unmarshal(f.Params, &p) != nil || len(p.MCPServers) != 1 || len(p.MCPServers[0].Headers) != 1 || p.MCPServers[0].Type != "http" || len(p.SystemPrompt.Content) != 1 || !strings.HasPrefix(p.SystemPrompt.Content[0].Text, "Agent profile:") {
+				failPeer(16, "missing owned MCP descriptor")
+			}
+			prompt := p.SystemPrompt.Content[0].Text
+			if leadDispatch && !strings.Contains(prompt, "delegate work to a named Project") || !leadDispatch && !strings.HasSuffix(prompt, "\nRead only") {
+				failPeer(16, "missing the captured Bot instructions")
 			}
 			endpoint, authorization = p.MCPServers[0].URL, p.MCPServers[0].Headers[0].Value
 			write(f.ID, map[string]string{"sessionId": "owned-go-peer"})
@@ -124,6 +135,14 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 			message["text"] = "Conflicting text"
 			check(call("send_message", message), true)
 			work := map[string]any{"idempotency_key": "native-work", "title": "保留工作樹的驗收紀錄", "brief": "Change only a.go in its isolated worktree.", "claims": []string{"a.go"}}
+			work["project"] = "fixture-repository"
+			if leadDispatch {
+				work["brief"] = "Inspect the repository. Make no changes."
+				work["claims"] = []string{}
+			} else {
+				check(call("dispatch_work", work), true)
+				delete(work, "project")
+			}
 			check(call("dispatch_work", work), false)
 			check(call("dispatch_work", work), true)
 			write(f.ID, map[string]string{"stopReason": "end_turn"})
@@ -132,25 +151,72 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 	os.Exit(0)
 }
 
+type leadDispatchResolver struct {
+	fixtureResolver
+	personal string
+}
+
+func (r leadDispatchResolver) Resolve(ctx context.Context, q pa.ProjectSelection) (pa.ProjectResolution, error) {
+	if pa.IsPersonalWorkspaceID(q.ProjectID) {
+		return pa.ProjectResolution{Scope: pa.PersonalScope(q), Directory: r.personal, Current: true, Available: true}, nil
+	}
+	return r.fixtureResolver.Resolve(ctx, q)
+}
+
+func (r leadDispatchResolver) ProvisionPersonalWorkspace(ctx context.Context, q pa.ProjectSelection) (pa.ProjectResolution, error) {
+	return r.Resolve(ctx, q)
+}
+
+func (r leadDispatchResolver) ResolveTeamFolder(ctx context.Context, machine, folder string) (pa.ProjectResolution, error) {
+	if folder != "fixture-repository" {
+		return pa.ProjectResolution{}, failure(pa.NotFound, "project")
+	}
+	return r.Resolve(ctx, pa.ProjectSelection{MachineID: machine, ProjectID: r.f.scope.ProjectID})
+}
+
 func TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration(t *testing.T) {
+	t.Run("own repository", func(t *testing.T) { runOwnedMCPWork(t, false) })
+	t.Run("lead dispatch from personal workspace", func(t *testing.T) { runOwnedMCPWork(t, true) })
+}
+
+func runOwnedMCPWork(t *testing.T, lead bool) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows native supervisor unavailable")
 	}
 	f := newHostFixture(t)
 	f.o.Limits.PromptTimeout = 15 * time.Second
 	f.o.Limits.CleanupTimeout = 2 * time.Second
+	peerError := filepath.Join(t.TempDir(), "mcp-error")
+	env := []string{"CLAWDLINE_HOST_MCP_PEER=1", "GORACE=atexit_sleep_ms=0", "CLAWDLINE_TEST_MCP_ERROR=" + peerError}
+	resolver := leadDispatchResolver{fixtureResolver: fixtureResolver{f}}
+	f.o.Projects = resolver
+	if lead {
+		resolver.personal = t.TempDir()
+		f.o.Projects = resolver
+		f.o.DefaultLeadAgent = func(time.Time) pa.Agent { return pa.Codex }
+		f.o.LeadTimeZone = "UTC"
+		env = append(env, "CLAWDLINE_TEST_LEAD_DISPATCH=1")
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
 	}
 	f.o.Provider = func() (app.Provider, error) {
-		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestHostOwnedMCPPeer$"}, Environment: []string{"CLAWDLINE_HOST_MCP_PEER=1", "GORACE=atexit_sleep_ms=0"}}}, Limits: acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
+		return acp.NewProvider(acp.ProviderOptions{Configurations: map[pa.Agent]acp.Configuration{pa.Codex: {Executable: executable, Arguments: []string{"-test.run=^TestHostOwnedMCPPeer$"}, Environment: env}}, Limits: acp.Limits{RPCPending: 8, Notifications: 32, FrameBytes: 1 << 20, CaptureBytes: 1 << 20, StderrBytes: 1024, OwnedDescendants: 64, WriteTimeout: time.Second, CleanupTimeout: 2 * time.Second, RPCTimeout: 10 * time.Second, DescendantPoll: 10 * time.Millisecond}, Verify: func(_ context.Context, b pa.Bot, _ acp.Configuration) (pa.Capabilities, error) {
 			return pa.Capabilities{Key: b.Key, Project: b.Project, Agent: b.Agent, CLIVersion: "scripted", AdapterVersion: "scripted", Evidence: "Go peer only; no vendor admission", ReadOnlyEnforced: true, NativeMemory: pa.NativeMemoryDisabled, NativeMemoryVerified: true, SendMessage: true}, nil
 		}})
 	}
 	f.start(t)
 	f.enable(t)
-	b := f.create(t, "native-mcp-bot")
+	var b pa.Bot
+	if lead {
+		b, err = f.h.store.Bot(context.Background(), pa.BotKey{MachineID: f.o.MachineID, BotID: "default-lead"})
+		if err != nil || !b.Lead || b.Project.Kind != pa.PersonalWorkspace {
+			t.Fatalf("expected the actual lead in a personal workspace: %+v %v", b, err)
+		}
+	} else {
+		b = f.create(t, "native-mcp-bot")
+	}
 	if _, err = f.send(t, b, "one"); err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +230,9 @@ func TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration(t *test
 		if len(x.WorkLinks) == 1 && x.Conversation.ActiveTurnID == "" {
 			link = x.WorkLinks[0]
 			break
+		}
+		if detail, err := os.ReadFile(peerError); err == nil {
+			t.Fatalf("unexpected MCP tool response: %s", detail)
 		}
 		if time.Now().After(deadline) {
 			t.Fatalf("native MCP did not finish: turns=%+v work=%+v usage=%+v", x.Turns, x.WorkLinks, f.h.Usage())
@@ -181,11 +250,20 @@ func TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration(t *test
 	if r.Title != "保留工作樹的驗收紀錄" {
 		t.Fatalf("worker Session title = %q", r.Title)
 	}
-	if err = os.WriteFile(filepath.Join(r.Worktree.Path, "a.go"), []byte("package a\n// MCP fixture delivery\n"), 0600); err != nil {
-		t.Fatal(err)
+	if r.ProjectDir != f.repo || r.Worktree.Repository != f.repo || r.AssistantOwner == nil || r.AssistantOwner.Fence.Project != b.Project {
+		t.Fatalf("the target worktree and the source chat must each retain their Project: %+v", r)
 	}
-	fixtureGit(t, r.Worktree.Path, "add", "a.go")
-	fixtureGit(t, r.Worktree.Path, "commit", "-q", "-m", "Deliver one isolated MCP fixture change")
+	if lead {
+		if r.AssistantOwner.TargetProject != f.scope || len(r.Claims) != 0 {
+			t.Fatalf("expected a claimless investigation in the target repository: %+v", r)
+		}
+	} else {
+		if err = os.WriteFile(filepath.Join(r.Worktree.Path, "a.go"), []byte("package a\n// MCP fixture delivery\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		fixtureGit(t, r.Worktree.Path, "add", "a.go")
+		fixtureGit(t, r.Worktree.Path, "commit", "-q", "-m", "Deliver one isolated MCP fixture change")
+	}
 	if _, err = f.o.Broker.Settle(ctx, r.ID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "One durable MCP work result."}); err != nil {
 		t.Fatal(err)
 	}

@@ -15,6 +15,17 @@ fence and active turn, checks the current source/feature/revocation state, and
 uses the existing engine and broker bridge. The model supplies operation data,
 never a Bot/Project identity, actor, human approval or machine credential.
 
+During a direct user turn, the designated Lead can set `project` on
+`dispatch_work` to a unique registered repository folder name or absolute
+registered path on this machine. The Host resolves it through the same
+Project registry used by Bot setup. The Broker rechecks the canonical
+destination before recording the task, checks claims relative to that
+repository, and starts a new isolated Session there. Investigations can
+declare an empty write set with `claims: []` and describe the investigation
+scope in the brief. The work receipt and result belong to the source Bot
+conversation. The destination is included in the durable task provenance
+and idempotency hash.
+
 The ACP provider creates an HTTP MCP capability only after native capability
 admission. Its random bearer is independent of the daemon's credential. It is
 restricted to a literal loopback address with an explicit port, one execution

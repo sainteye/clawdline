@@ -51,6 +51,12 @@ type OpenRequest struct {
 	Tools NativeTools `json:"-"`
 }
 
+// ProjectDispatchTools accepts a registered Project name or folder. The host
+// resolves it and authorizes the destination under the active Bot turn.
+type ProjectDispatchTools interface {
+	DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error)
+}
+
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)
