@@ -118,3 +118,51 @@ func TestABotCannotMessageWorkItDoesNotOwnOrThatIsNotRunning(t *testing.T) {
 		t.Fatalf("a released key answered %v", err)
 	}
 }
+
+// A Bot's thread worker answering another Bot reaches work through the owner
+// the host resolved for it, and only when that owner is the task's owner on
+// the worker's own machine and Project.
+func TestAResolvedWorkOwnerReachesOnlyThatOwnersWork(t *testing.T) {
+	b, ctx, current, q, _ := assistantBrokerFixture(t)
+	out, err := b.DispatchAssistant(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := q.Actor.Fence
+	owner.Key.BotID, owner.ConversationID = "atlas", "atlas-chat"
+	r, err := b.mutate(ctx, out.Record.ID, "task.accepted", func(r *Record) error {
+		r.State = StateBriefed
+		r.AssistantOwner.Fence = owner
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	typed := 0
+	b.Type = func(context.Context, string, string) error { typed++; return nil }
+	if _, err = b.AssistantStatus(ctx, q.Actor, r.ID); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("an unrelated actor read the work: %v", err)
+	}
+	foreignMachine, otherBot := owner, owner
+	foreignMachine.Key.MachineID = "elsewhere"
+	otherBot.Key.BotID = "lens"
+	for _, delegated := range []pa.Fence{foreignMachine, otherBot} {
+		current.WorkOwner = delegated
+		if _, err = b.AssistantStatus(ctx, q.Actor, r.ID); pa.Code(err) != pa.ScopeDenied {
+			t.Fatalf("work owner %+v read another owner's work: %v", delegated.Key, err)
+		}
+		if _, err = b.AssistantMessageWork(ctx, q.Actor, r.ID, "Not yours.", "k-"+delegated.Key.BotID+delegated.Key.MachineID); pa.Code(err) != pa.ScopeDenied {
+			t.Fatalf("work owner %+v messaged another owner's work: %v", delegated.Key, err)
+		}
+	}
+	if typed != 0 {
+		t.Fatalf("a refused message was typed %d times", typed)
+	}
+	current.WorkOwner = owner
+	if got, err := b.AssistantStatus(ctx, q.Actor, r.ID); err != nil || got.Link.TaskID != r.ID {
+		t.Fatalf("the resolved owner's work was refused: %+v, %v", got, err)
+	}
+	if got, err := b.AssistantMessageWork(ctx, q.Actor, r.ID, "Add the new spec.", "k-owner"); err != nil || got.Stage != StageDelivered {
+		t.Fatalf("message to the resolved owner's work: %+v, %v", got, err)
+	}
+}

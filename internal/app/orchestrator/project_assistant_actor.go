@@ -52,6 +52,29 @@ type AssistantCurrent struct {
 	Assistant      string
 	PermissionMode string
 	TimeoutMinutes int
+	// WorkOwner is the Bot conversation whose dispatched work this execution
+	// may also read and message. The host sets it only for a Bot's private
+	// thread worker answering another Bot's request, to the durable owner of
+	// that worker. It is zero otherwise and never comes from a model.
+	WorkOwner pa.Fence
+}
+
+// ownsAssistantWork reports whether the verified actor may act on work this
+// owner dispatched: its own conversation, or the one the host resolved as
+// the owner of the actor's thread worker on the same machine.
+func ownsAssistantWork(owner *AssistantOwner, actor pa.AssistantExecutionActor, current AssistantCurrent) bool {
+	if owner == nil {
+		return false
+	}
+	same := func(f pa.Fence) bool {
+		return f.Key == owner.Fence.Key && f.Project == owner.Fence.Project && f.ConversationID == owner.Fence.ConversationID
+	}
+	if same(actor.Fence) {
+		return true
+	}
+	delegated := current.WorkOwner
+	return delegated.Key.BotID != "" && delegated.ConversationID != "" &&
+		delegated.Key.MachineID == actor.Fence.Key.MachineID && delegated.Project == actor.Fence.Project && same(delegated)
 }
 
 type AssistantAuthorityOptions struct {
@@ -420,7 +443,8 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 // of the historical execution generation. The supplied actor must itself be
 // current. It never creates, resumes, respawns or lands a task.
 func (b *Broker) AssistantStatus(ctx context.Context, actor pa.AssistantExecutionActor, taskID string) (AssistantWorkSnapshot, error) {
-	if _, err := b.AssistantAuthority.verify(ctx, actor, pa.ReadWork); err != nil {
+	current, err := b.AssistantAuthority.verify(ctx, actor, pa.ReadWork)
+	if err != nil {
 		return AssistantWorkSnapshot{}, err
 	}
 	if !IsTaskID(taskID) {
@@ -430,7 +454,7 @@ func (b *Broker) AssistantStatus(ctx context.Context, actor pa.AssistantExecutio
 	if err != nil {
 		return AssistantWorkSnapshot{}, err
 	}
-	if r.AssistantOwner == nil || r.AssistantOwner.Fence.Key != actor.Fence.Key || r.AssistantOwner.Fence.Project != actor.Fence.Project || r.AssistantOwner.Fence.ConversationID != actor.Fence.ConversationID {
+	if !ownsAssistantWork(r.AssistantOwner, actor, current) {
 		return AssistantWorkSnapshot{}, assistantFailure(pa.ScopeDenied, "work_owner")
 	}
 	return AssistantWorkSnapshotOf(r), nil

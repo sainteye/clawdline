@@ -44,7 +44,7 @@ func (b *Broker) AssistantMessageWork(ctx context.Context, actor pa.AssistantExe
 		return Relayed{}, err
 	}
 	owner := r.AssistantOwner
-	if owner == nil || owner.Fence.Key != actor.Fence.Key || owner.Fence.Project != actor.Fence.Project || owner.Fence.ConversationID != actor.Fence.ConversationID {
+	if !ownsAssistantWork(owner, actor, current) {
 		return Relayed{}, assistantFailure(pa.ScopeDenied, "work_owner")
 	}
 

@@ -128,6 +128,40 @@ text is `pa_idempotency_conflict`. The answer separates `stage: accepted`
 `stage: delivered` (typed into the composer). Neither means the worker read or
 followed it; its next turn and `work_status` are that evidence.
 
+### While answering another Bot
+
+A Bot answers another Bot's `message_bot` in a private thread worker
+(`thread-<task>`), whose Bot key and conversation differ from the chat that
+dispatched the Bot's work. Until 2026-11-23 that turn could not reach the work:
+`work_status` compared the worker's own conversation with the task's owner and
+answered `pa_scope_denied`/`work_owner`, and the worker had no `message_work`
+at all (`pa_disabled`/`native_work`). A request such as "add this spec to the
+task you are running" then stopped at the hand-off.
+
+On a peer-request turn the Host now resolves the worker to the Bot that
+durably owns it (`project_assistant_background_tasks`) and passes that Bot's
+current conversation to the broker as `AssistantCurrent.WorkOwner`. The broker
+accepts a task when its `AssistantOwner` matches either the actor's own
+conversation or that resolved owner on the same machine and Project. The owner
+always comes from the task record and the background-task row, never from the
+model. The actor itself is still the worker's, signed for its live peer turn,
+so the capability ends with that turn.
+
+- `work_status` and `message_work` reach work this same Bot dispatched.
+- Work another Bot dispatched is refused as
+  `pa_scope_denied`/`work_dispatched_by_another_bot`: ask that Bot instead.
+- `message_work` text is prefixed with
+  "轉述 <requesting Bot> 的請求／relaying a request from <requesting Bot>:", after
+  the broker's dispatcher header, so the worker reads a peer's relayed request,
+  not the person's authorization. A request from another machine names
+  "another Bot". The prefix counts toward the 8,192-byte limit.
+- A background thread that is not answering another Bot still has no reach
+  into its owner's work; `message_work` there answers
+  `pa_scope_denied`/`message_work_from_main_chat`.
+
+Other tools blocked on peer-request turns (`dispatch_work`, `send_message`,
+routines, outputs) are unchanged.
+
 ## Direct Lead Bot controls
 
 A designated Lead responding to a person in its own chat receives `manage_bots`.
