@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14082,
+  "englishKeys": 14087,
   "counts": {
-    "negation": 3596,
-    "state": 2368,
-    "permission": 845,
+    "negation": 3597,
+    "state": 2370,
+    "permission": 846,
     "deletion": 323,
     "uncertainty": 561
   },
-  "unionCount": 5977,
+  "unionCount": 5979,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3448,6 +3448,7 @@
       "transparency.card.persistent-bot-selected-extensions.how",
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",
+      "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.effect",
       "transparency.card.persistent-bots.how",
       "transparency.card.playbook.summary",
@@ -5854,6 +5855,8 @@
       "transparency.card.persistent-bot-team.condition",
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",
+      "transparency.card.persistent-bot-work-message.condition",
+      "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.effect",
       "transparency.card.persistent-bots.how",
       "transparency.card.playbook.how",
@@ -6783,6 +6786,7 @@
       "transparency.card.persistent-bot-selected-extensions.effect",
       "transparency.card.persistent-bot-selected-extensions.how",
       "transparency.card.persistent-bot-team.condition",
+      "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.condition",
       "transparency.card.persistent-bots.effect",
       "transparency.card.persistent-bots.how",
@@ -13408,6 +13412,8 @@
     "transparency.card.persistent-bot-team.condition",
     "transparency.card.persistent-bot-team.effect",
     "transparency.card.persistent-bot-team.how",
+    "transparency.card.persistent-bot-work-message.condition",
+    "transparency.card.persistent-bot-work-message.effect",
     "transparency.card.persistent-bots.condition",
     "transparency.card.persistent-bots.effect",
     "transparency.card.persistent-bots.how",
