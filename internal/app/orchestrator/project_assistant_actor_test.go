@@ -174,7 +174,7 @@ func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *tes
 		t.Fatal(err)
 	}
 	s, err = b.AssistantStatus(ctx, q.Actor, r.ID)
-	if err != nil || s.Link.State != pa.WorkCompleted || s.Link.DeliveryCommit != commit || s.Link.LandingCommit != "" || s.Result != "The scoped change is ready." {
+	if err != nil || s.Link.State != pa.WorkCompleted || s.Link.DeliveryCommit != commit || s.Link.LandingCommit != "" || s.Link.Landing != "pending" || s.Link.LandingNote == "" || s.Result != "The scoped change is ready." {
 		t.Fatalf("completed %+v %v", s, err)
 	}
 	gitIn(t, current.Project.Directory, "merge", "--ff-only", r.Worktree.Branch)
@@ -182,7 +182,7 @@ func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *tes
 		t.Fatal(err)
 	}
 	s, err = b.AssistantStatus(ctx, q.Actor, r.ID)
-	if err != nil || s.Link.State != pa.WorkLanded || s.Link.LandingCommit != commit || s.Link.LandingTarget != "main" {
+	if err != nil || s.Link.State != pa.WorkLanded || s.Link.LandingCommit != commit || s.Link.LandingTarget != "main" || s.Link.Landing != "landed" {
 		t.Fatalf("landed %+v %v", s, err)
 	}
 	if calls.Load() != 1 {
