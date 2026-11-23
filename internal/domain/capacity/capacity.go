@@ -763,6 +763,7 @@ const (
 	BotsRPCPending            = "bots.rpc_rows"
 	BotsFrames                = "bots.frame_bytes"
 	BotsProcessCensusBytes    = "bots.process_census_bytes"
+	BotsProcessCensusAttempts = "bots.process_census_attempts"
 	BotsStderr                = "bots.stderr_bytes"
 	BotsMCPWrite              = "bots.mcp_write_ms"
 	BotsCleanup               = "bots.cleanup_ms"

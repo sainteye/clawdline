@@ -4,6 +4,7 @@ package projectassistantacp
 
 import (
 	"context"
+	"errors"
 	"io"
 	"runtime"
 	"syscall"
@@ -11,6 +12,8 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 )
 
 // Darwin sys/sysctl.h and sys/proc.h ABI values absent from x/sys.
@@ -25,31 +28,19 @@ const (
 // under the close deadline. Use the existing census byte budget before any
 // allocation; an incomplete or changing snapshot cannot prove cleanup.
 func processIdentities(ctx context.Context, budget int) ([]processIdentity, error) {
-	var size uintptr
-	if err := readDarwinProcesses(nil, &size); err != nil {
+	return darwinProcessIdentities(ctx, budget, readDarwinProcesses)
+}
+
+// darwinProcessReader is one sysctl(KERN_PROC_ALL) call; tests inject faults.
+type darwinProcessReader func(out *unix.KinfoProc, size *uintptr) error
+
+func darwinProcessIdentities(ctx context.Context, budget int, read darwinProcessReader) ([]processIdentity, error) {
+	procs, err := darwinProcessSnapshot(ctx, budget, read)
+	if err != nil {
 		return nil, err
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if size > uintptr(budget) {
-		return nil, io.ErrShortBuffer
-	}
-	if size == 0 || size%unix.SizeofKinfoProc != 0 {
-		return nil, syscall.EIO
-	}
-	procs := make([]unix.KinfoProc, size/unix.SizeofKinfoProc)
-	if err := readDarwinProcesses(&procs[0], &size); err != nil {
-		return nil, err
-	}
-	if size == 0 || size%unix.SizeofKinfoProc != 0 || size/unix.SizeofKinfoProc > uintptr(len(procs)) {
-		return nil, syscall.EIO
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	rows := make([]processIdentity, 0, size/unix.SizeofKinfoProc)
-	for _, p := range procs[:size/unix.SizeofKinfoProc] {
+	rows := make([]processIdentity, 0, len(procs))
+	for _, p := range procs {
 		pid := int(p.Proc.P_pid)
 		if pid <= 0 {
 			continue
@@ -70,6 +61,51 @@ func processIdentities(ctx context.Context, budget int) ([]processIdentity, erro
 		})
 	}
 	return rows, nil
+}
+
+// darwinProcessSnapshot copies the kernel process table. The size query's
+// estimate leaves room for only five processes started before the copy; when
+// more start, the copy answers ENOMEM and is incomplete. Each attempt asks for
+// a fresh estimate plus headroom, within the census budget, and a bounded
+// number of attempts never turns a persistently incomplete copy into proof.
+func darwinProcessSnapshot(ctx context.Context, budget int, read darwinProcessReader) ([]unix.KinfoProc, error) {
+	var err error
+	for attempt := 0; attempt < capacity.MaximumBotProcessCensusAttempts; attempt++ {
+		var procs []unix.KinfoProc
+		procs, err = darwinProcessCopy(ctx, budget, read)
+		if !errors.Is(err, syscall.ENOMEM) {
+			return procs, err
+		}
+	}
+	return nil, err
+}
+
+func darwinProcessCopy(ctx context.Context, budget int, read darwinProcessReader) ([]unix.KinfoProc, error) {
+	var size uintptr
+	if err := read(nil, &size); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if size > uintptr(budget) {
+		return nil, io.ErrShortBuffer
+	}
+	if size == 0 || size%unix.SizeofKinfoProc != 0 {
+		return nil, syscall.EIO
+	}
+	size = min(size+size/4, uintptr(budget)/unix.SizeofKinfoProc*unix.SizeofKinfoProc)
+	procs := make([]unix.KinfoProc, size/unix.SizeofKinfoProc)
+	if err := read(&procs[0], &size); err != nil {
+		return nil, err
+	}
+	if size == 0 || size%unix.SizeofKinfoProc != 0 || size/unix.SizeofKinfoProc > uintptr(len(procs)) {
+		return nil, syscall.EIO
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return procs[:size/unix.SizeofKinfoProc], nil
 }
 
 func readDarwinProcesses(out *unix.KinfoProc, size *uintptr) error {

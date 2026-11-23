@@ -109,3 +109,72 @@ These steps are for the person; nothing here was run by the investigation.
 4. Send the message again. The refused message was never accepted, so this
    does not duplicate it. The earlier turn stays marked as an unknown outcome;
    check its effect before asking the Bot to repeat that work.
+
+## 2026-11-24: `descendant_inventory: cannot allocate memory`
+
+### What the person saw
+
+On dev `v3.2.0-dev.87ee680`, which already carried the EPERM change above, an
+acceptance request from one Bot to another (`message_bot`) ended with
+`execution_effect_unknown:owned_cleanup`. `daemon.log` held 20 lines with
+`descendant_inventory: cannot allocate memory`, in three cleanup episodes
+(2026-11-23 23:33, 2026-11-24 00:01 and 02:16, three different Bots). In each
+episode every one of the five retries over about 31 seconds logged the same
+error. The machine was not short of memory (`memory_pressure` 47% free) and
+not near a process limit (638 processes, `kern.maxproc` 6000).
+
+### Cause
+
+`cannot allocate memory` is `ENOMEM` from `sysctl(CTL_KERN, KERN_PROC,
+KERN_PROC_ALL)` in `processIdentities`
+(`internal/adapters/projectassistantacp/process_census_darwin.go`; no `ps` is
+forked on macOS). The census asks the kernel for the table size, allocates
+exactly that, then copies. The kernel's estimate leaves room for only five
+more processes: a probe on this machine read an estimate of 636 entries and
+then received 631. When six or more processes start between the two calls, the
+copy is incomplete and the kernel answers `ENOMEM`. This is a race, not an
+allocation failure.
+
+Measured with a standalone probe of the same two calls (200 or 100 censuses
+per row), while shell loops started short-lived processes:
+
+| Load | Gap between calls | `ENOMEM` |
+|---|---|---|
+| idle | none | 0/200 |
+| 8 loops of `/usr/bin/true` | none | 3/200 |
+| 8 loops | 10 ms | 3/100 |
+| 40 loops of `sh -c 'true & true & wait'` | none | 3/100 |
+| 40 loops | 2 ms | 20/100 |
+| 40 loops, fresh estimate + 25% headroom, up to 4 attempts | none or 2 ms | 0/100 |
+
+A rare race became a certain failure because of when the census runs. The
+descendant survey (`Process.survey`, `process.go`) takes one every
+`bots.survey_ms` = 50 ms for the whole life of an Agent, about 72,000 an hour,
+while Agents and the daemon themselves start processes. The first `ENOMEM` is
+stored by `setCleanupError` as `descendant_inventory`, which is deliberately
+not in `reverifiablePhases`: an inventory gap is final (`cleanupFinal`),
+because a descendant that started and escaped during the gap could never be
+proved stopped. Every later Close therefore returned that one stored error,
+which is why all five retries logged the identical line. The retries were not
+failing a fresh census each time.
+
+### What changed
+
+- `darwinProcessSnapshot` sizes each copy as the kernel's fresh estimate plus
+  25%, capped by the existing census budget (`bots.process_census_bytes`). On
+  `ENOMEM` it discards the incomplete copy and repeats both calls, at most
+  `bots.process_census_attempts` = 4 times in all. Any other error, an
+  oversized table, or a fourth `ENOMEM` still fails the census as before.
+- Safety semantics are unchanged. A census that does fail is still a final
+  inventory gap; no partial copy is used; no earlier turn is resent. A
+  PID-and-start-time check of already known processes was considered as a
+  fallback and not adopted: it cannot show that no new descendant started
+  and escaped during the gap, so it cannot prove cleanup.
+- Tests inject the fault through the reader seam:
+  `TestDarwinProcessCensusRetriesASnapshotThatOutgrewItsEstimate` (two
+  `ENOMEM` answers, then a real copy) and
+  `TestDarwinProcessCensusGivesUpAfterBoundedAttempts` (persistent `ENOMEM`
+  makes exactly four copy attempts and still fails). Both failed before the
+  change.
+
+Linux and the BSDs still use `ps`, whose own sysctl loop handles growth.

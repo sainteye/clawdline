@@ -17,10 +17,13 @@ const (
 	MaximumBotRPCPending       = 32
 	MaximumBotFrameBytes       = 1048576
 	// Existing process-identity inventory budget; never limits native ACP text.
-	MaximumBotProcessCensusBytes  = 1048576
-	MaximumBotStderrBytes         = 65536
-	MaximumBotWriteMilliseconds   = 2000
-	MaximumBotCleanupMilliseconds = 5000
+	MaximumBotProcessCensusBytes = 1048576
+	// A macOS census copy that outgrows its size estimate (ENOMEM) is taken
+	// again with a fresh, larger estimate at most this many times in all.
+	MaximumBotProcessCensusAttempts = 4
+	MaximumBotStderrBytes           = 65536
+	MaximumBotWriteMilliseconds     = 2000
+	MaximumBotCleanupMilliseconds   = 5000
 	// A retained Bot re-attempts an unconfirmed Agent cleanup this many times,
 	// first after MaximumBotCleanupFirstRetryMilliseconds and doubling: 1+2+4+8+16 s.
 	MaximumBotCleanupRetries                = 5
@@ -222,6 +225,7 @@ func projectAssistantBounds() []Entry {
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotFrameBytes"}},
 		{Name: BotsProcessCensusBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotProcessCensusBytes, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotProcessCensusBytes"}},
+		{Name: BotsProcessCensusAttempts, Class: Buffer, Unit: Rows, Limit: MaximumBotProcessCensusAttempts, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotProcessCensusAttempts"}},
 		{Name: BotsStderr, Class: Buffer, Unit: Bytes, Limit: MaximumBotStderrBytes, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotStderrBytes"}},
