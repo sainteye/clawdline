@@ -14181,5 +14181,9 @@
   "projectAssistants.botCreatedIn": "已在「{project}」建立「{name}」",
   "projectAssistants.openBot": "開啟 Bot",
   "projectAssistants.routineEnabling": "正在啟用…",
-  "projectAssistants.routinePausing": "正在暫停…"
+  "projectAssistants.routinePausing": "正在暫停…",
+  "capacityRow.console.quota_last_reading_machines.what": "這個瀏覽器最多為幾台機器保留上一次的額度讀數。",
+  "capacityRow.console.quota_last_reading_machines.full": "超過時，最早存下的那筆讀數會被丟掉；那台機器下次讀取成功後，底部額度列會再顯示。",
+  "capacityRow.console.quota_last_reading_age_seconds.what": "讀不到新額度時，保留的上一次讀數最多能顯示多久。",
+  "capacityRow.console.quota_last_reading_age_seconds.full": "超過時就不再顯示保留的讀數，因為它的用量區間已經重置；在讀取成功之前，底部額度列會說目前無法讀取額度。"
 }

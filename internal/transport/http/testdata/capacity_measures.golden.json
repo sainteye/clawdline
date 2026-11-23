@@ -2476,6 +2476,16 @@
     "Note": true
   },
   {
+    "Name": "console.quota_last_reading_age_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "console.quota_last_reading_machines",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "console.relay_feature_wait_seconds",
     "Known": true,
     "Note": true

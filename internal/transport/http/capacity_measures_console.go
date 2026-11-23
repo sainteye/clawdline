@@ -405,6 +405,12 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.ConsoleDirectHistoryMachines: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-browser direct-attempt record in that browser's storage; daemon cannot read another device's storage"}
 		},
+		capacity.ConsoleQuotaLastReadingMachines: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser last quota reading in that browser's storage; daemon cannot read another device's storage"}
+		},
+		capacity.ConsoleQuotaLastReadingAge: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-browser last quota reading in that browser's storage; daemon cannot read another device's storage"}
+		},
 		capacity.ConsoleMachineListPoll: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-Console tab cadence; daemon cannot measure live browser timers"}
 		},

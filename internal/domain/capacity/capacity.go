@@ -536,7 +536,12 @@ const (
 	ConsoleDirectHistoryHours    = "console.direct_history_hours"
 	ConsoleDirectHistoryMachines = "console.direct_history_machines"
 	ConsoleMachineListPoll       = "console.machine_list_poll_seconds"
-	ConsoleOpsResolvingPoll      = "console.ops_resolving_poll_seconds"
+	// The last quota reading this browser keeps per machine, shown marked
+	// outdated while a remounted footer's first read is out or has failed
+	// (web/console/src/provider-quota/last-reading.ts).
+	ConsoleQuotaLastReadingMachines = "console.quota_last_reading_machines"
+	ConsoleQuotaLastReadingAge      = "console.quota_last_reading_age_seconds"
+	ConsoleOpsResolvingPoll         = "console.ops_resolving_poll_seconds"
 	// The ordinary shells this machine holds open for a person, and what one
 	// request may type into one or read back from it (limits N59).
 	TerminalCount        = "terminal.count"

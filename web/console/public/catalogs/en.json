@@ -14181,5 +14181,9 @@
   "projectAssistants.botCreatedIn": "Created {name} in {project}",
   "projectAssistants.openBot": "Open Bot",
   "projectAssistants.routineEnabling": "Enabling…",
-  "projectAssistants.routinePausing": "Pausing…"
+  "projectAssistants.routinePausing": "Pausing…",
+  "capacityRow.console.quota_last_reading_machines.what": "How many machines this browser keeps a last quota reading for.",
+  "capacityRow.console.quota_last_reading_machines.full": "Past it, the reading saved longest ago is dropped. That machine's footer shows its quota again after its next successful read.",
+  "capacityRow.console.quota_last_reading_age_seconds.what": "How long a kept quota reading can be shown while a new one cannot be read.",
+  "capacityRow.console.quota_last_reading_age_seconds.full": "Past it, the kept reading is no longer shown, because its usage windows have reset. The footer says the quota could not be read until a read succeeds."
 }

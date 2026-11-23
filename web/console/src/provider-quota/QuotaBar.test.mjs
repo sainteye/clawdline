@@ -32,12 +32,12 @@ const compiled = { exports: {} }
 new Function("require", "module", "exports", outputFiles[0].text)(renderRequire, compiled, compiled.exports)
 const { QuotaBar } = compiled.exports
 const provider = { id: "codex", label: "Codex", windows: [{ name: "7d", used_percent: 0 }], stale: false }
-function render({ providers = [], pending = false, error = null, mobile = false, mobileListShown = true, enabled = true, apiLevel = 56, offline = false } = {}) {
+function render({ providers = [], pending = false, error = null, mobile = false, mobileListShown = true, enabled = true, apiLevel = 56, offline = false, quotaScope = undefined, unread = false } = {}) {
   const prior = ["window", "quotaFixture"].map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)])
   try {
     globalThis.window = { matchMedia: () => ({ matches: mobile }) }
-    globalThis.quotaFixture = { poll: { data: pending ? null : { providers }, pending, error, poke() {} }, version: { apiLevel }, preference: { desktop: enabled, mobile: enabled } }
-    return renderToStaticMarkup(React.createElement(QuotaBar, { mobileListShown, offline, accessory: React.createElement("button", null, "Dock entry") }))
+    globalThis.quotaFixture = { poll: { data: pending || unread ? null : { providers }, pending, error, poke() {} }, version: { apiLevel }, preference: { desktop: enabled, mobile: enabled } }
+    return renderToStaticMarkup(React.createElement(QuotaBar, { mobileListShown, offline, quotaScope, accessory: React.createElement("button", null, "Dock entry") }))
   } finally {
     for (const [key, descriptor] of prior) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key] }
   }
@@ -64,4 +64,30 @@ test("shortcuts follow the original quota bar visibility", () => {
   for (const state of [{ enabled: false }, { enabled: false, mobile: true }, { mobile: true, mobileListShown: false }, { apiLevel: 27 }]) {
     assert.equal(render({ providers: [provider], ...state }), "")
   }
+})
+test("a remounted footer whose first read fails keeps the last reading, marked outdated", () => {
+  for (const mobile of [false, true]) {
+    const quotaScope = `mac-remount-${mobile}`
+    const used = { ...provider, windows: [{ name: "5h", used_percent: 55 }] }
+    assert.match(render({ providers: [used], quotaScope, mobile }), /value="55"/)
+    // A new mount: the poller has nothing of its own yet and its first read failed.
+    const html = render({ unread: true, error: "timeout", quotaScope, mobile })
+    assert.match(html, /data-provider="codex"/)
+    assert.match(html, /value="55"/)
+    assert.match(html, /data-stale="true"/)
+    assert.doesNotMatch(html, /quotaReadUnavailable/)
+  }
+})
+test("only a machine never read shows that its quota could not be read", () => {
+  const html = render({ unread: true, error: "timeout", quotaScope: "mac-never-read" })
+  assert.match(html, /quotaReadUnavailable/)
+  assert.doesNotMatch(html, /<progress/)
+})
+test("a saved reading shown while the first read is out is marked outdated", () => {
+  const quotaScope = "mac-loading"
+  render({ providers: [provider], quotaScope })
+  const html = render({ pending: true, quotaScope })
+  assert.match(html, /data-provider="codex"/)
+  assert.match(html, /data-stale="true"/)
+  assert.doesNotMatch(html, /quotaLoading/)
 })
