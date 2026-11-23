@@ -216,8 +216,9 @@ func distinctLines(body string) map[string]bool {
 // nearDuplicates suggests, and never moves, a live project or reference entry
 // whose body shares most of its lines with another of the same type. Exact
 // copies and same-description pairs are already in the plan; these differ in
-// name, description or a few lines, which only a person can weigh. The longer
-// body is offered as the one to keep, the first name on a tie.
+// name, description or a few lines, which only a person can weigh. When one
+// body names the other ("the latest is b-…"), the named one is offered as the
+// one to keep; otherwise the longer body, the first name on a tie.
 func nearDuplicates(entries []Entry, plan DreamPlan) []DreamChange {
 	covered := map[string]bool{}
 	for _, row := range plan.Archive {
@@ -278,7 +279,8 @@ func nearDuplicates(entries []Entry, plan DreamPlan) []DreamChange {
 			continue
 		}
 		drop, keep := pair[0], pair[1]
-		if len(pool[drop].entry.Body) > len(pool[keep].entry.Body) {
+		dropNames, keepNames := strings.Contains(a.entry.Body, b.entry.Name), strings.Contains(b.entry.Body, a.entry.Name)
+		if keepNames && !dropNames || dropNames == keepNames && len(a.entry.Body) > len(b.entry.Body) {
 			drop, keep = keep, drop
 		}
 		suggested[drop], suggested[keep] = true, true

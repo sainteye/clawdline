@@ -61,6 +61,22 @@ func TestDreamSuggestsNearDuplicatesWithoutMovingThem(t *testing.T) {
 	}
 }
 
+// A body that points at its near copy as the newer record is the one offered
+// for archive, whatever their lengths.
+func TestNearDuplicateKeepsTheRecordTheOtherPointsTo(t *testing.T) {
+	s := New(t.TempDir())
+	older := invented("a-older-stage", TypeProject)
+	older.Body = lessonBody(9, "Invented history; the latest is b-newer-stage, with a much longer closing line.")
+	newer := invented("b-newer-stage", TypeProject)
+	newer.Description = "another invented description"
+	newer.Body = lessonBody(9, "Invented closing line.")
+	seed(t, s, older, newer)
+	plan, err := s.PlanDream(testKey)
+	if err != nil || len(plan.Review) != 1 || plan.Review[0].Name != older.Name || plan.Review[0].Replacement != newer.Name {
+		t.Fatalf("want a-older-stage under b-newer-stage: %+v %v", plan.Review, err)
+	}
+}
+
 // The capacity reading carries the fullest Project's suggestions once it is
 // near its bound, and nothing below it.
 func TestFullestProjectReportsItsSuggestionsNearTheBound(t *testing.T) {
