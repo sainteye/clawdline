@@ -11,6 +11,10 @@ func resourceBounds() []Entry {
 		{Name: "resources.ready_seconds", Class: Cache, Unit: Seconds, Limit: taskresource.PreparationReadySecondsLimit, AtLimit: Expire, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.PreparationReadySecondsLimit"}},
 		{Name: "resources.scan_files", Class: Buffer, Unit: Rows, Limit: taskresource.FilesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.FilesLimit"}},
 		{Name: "resources.scratch_seconds", Class: Work, Unit: Seconds, Limit: taskresource.ScratchRetentionSecondsLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.ScratchRetentionSecondsLimit"}},
+		// A finished task's artifacts/ go once it has been over this long
+		// since it ended with its landing settled; result.json, task.json and
+		// the landing stay, and the reclaim row says the files expired.
+		{Name: ResourceArtifactRetention, Class: Work, Unit: Seconds, Limit: taskresource.ArtifactRetentionSecondsLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.ArtifactRetentionSecondsLimit"}},
 		{Name: "resources.log_seconds", Class: DiagnosticLog, Unit: Seconds, Limit: taskresource.LogRetentionSecondsLimit, AtLimit: Rotate, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.LogRetentionSecondsLimit"}},
 		{Name: "resources.cache_bytes", Class: Cache, Unit: Bytes, Limit: taskresource.CacheBytesLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.CacheBytesLimit"}},
 		{Name: "resources.cache_total_bytes", Class: Cache, Unit: Bytes, Limit: taskresource.CacheTotalBytesLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.CacheTotalBytesLimit"}},

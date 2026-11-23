@@ -8,15 +8,20 @@ import (
 )
 
 const (
-	ScratchRetentionSecondsLimit       = 24 * 60 * 60
-	LogRetentionSecondsLimit           = 7 * 24 * 60 * 60
-	CacheBytesLimit              int64 = 4 << 30
-	CacheTotalBytesLimit         int64 = 16 << 30
-	ScratchTotalBytesLimit       int64 = 16 << 30
-	DiskReserveBytesLimit        int64 = 2 << 30
-	PageRowsLimit                      = 64
-	FilesLimit                         = 262144
-	PreparationReadySecondsLimit       = 60
+	ScratchRetentionSecondsLimit = 24 * 60 * 60
+	LogRetentionSecondsLimit     = 7 * 24 * 60 * 60
+	// ArtifactRetentionSecondsLimit is how long a finished task's artifacts/
+	// are kept after the task ended and its landing settled (the person's
+	// decision of 2026-11-23: 30 days). Its result.json, task.json and landing
+	// record stay; only the artifact files go.
+	ArtifactRetentionSecondsLimit       = 30 * 24 * 60 * 60
+	CacheBytesLimit               int64 = 4 << 30
+	CacheTotalBytesLimit          int64 = 16 << 30
+	ScratchTotalBytesLimit        int64 = 16 << 30
+	DiskReserveBytesLimit         int64 = 2 << 30
+	PageRowsLimit                       = 64
+	FilesLimit                          = 262144
+	PreparationReadySecondsLimit        = 60
 	// LowDiskAlertBytesLimit is the free space below which the person is told
 	// once (capacity notice cooldown) what is using the disk.
 	LowDiskAlertBytesLimit int64 = 20 << 30

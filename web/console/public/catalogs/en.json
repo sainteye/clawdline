@@ -2353,6 +2353,8 @@
   "capacityRow.release.supervisor_runs.what": "How many times the helper that carries out one update may be started over. It stops an update that keeps getting interrupted from looping without end.",
   "capacityRow.release.unpacked_bytes.full": "That download is rejected as unsafe, nothing of it is kept, and the update panel shows the update as failed. Your current version keeps running; nothing for you to do.",
   "capacityRow.release.unpacked_bytes.what": "How much disk space one downloaded Clawdline release may take once unpacked. The ceiling stops a damaged or malicious download from filling your disk while it is being unpacked.",
+  "capacityRow.resources.artifact_seconds.full": "After 30 days, files go only when the task's landing is settled, nothing pins them and nothing is reading them. An end time that cannot be read keeps them. The summary and result stay.",
+  "capacityRow.resources.artifact_seconds.what": "A finished task keeps its artifacts for 30 days after it ended and its landing settled; its result, summary and landing record are kept.",
   "capacityRow.resources.cache_bytes.full": "Eligible cache data is reclaimed first. If the budget cannot be met safely, a new relevant build is refused with its reason.",
   "capacityRow.resources.cache_bytes.what": "Rebuildable files kept in one registered cache. The idle-cache budget is 4 GiB; active work and delivered files stay protected.",
   "capacityRow.resources.cache_total_bytes.full": "Reclaim only eligible caches. Protected outputs and active caches are kept even when the aggregate is over budget.",
