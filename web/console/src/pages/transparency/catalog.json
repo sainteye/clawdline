@@ -5664,7 +5664,7 @@
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
-    "web/console/src/project-assistants/ImageViewer.tsx": "81c1b3f7e72a1237ccf3d758d83f1a817ae76977ade90ac3c7875a22b0d77b76",
+    "web/console/src/project-assistants/ImageViewer.tsx": "d31081988eed7e19c66984a44ed4bd7d9e0ec6170054babe413a2cbb44a26f07",
     "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
     "web/console/src/project-assistants/NetworkSettings.tsx": "d2c99482a6a84e9fad9fae688f905eb0222d730775446f40cb0faaee05cbffcc",
     "web/console/src/project-assistants/OutputCard.tsx": "880948ab8e65488241340ecea927be6508ce55abe91101400907b7105f273c09",
