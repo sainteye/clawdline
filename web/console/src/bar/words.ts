@@ -14,48 +14,29 @@ export const ASSISTANT_LABEL: Record<string, string> = {
 }
 
 const baseWords = {
-  /** `placeholder` */
   placeholder: "跟 Claude 說⋯⋯",
 
-  /** `hintSend` */
   hintSend: "送出",
-  /** `hintNewline` */
   hintNewline: "換行",
-  /** `hintSwitch` */
   hintSwitch: "換分頁",
-  /** `hintList` */
   hintList: "清單",
-  /** `hintMascot` */
   hintMascot: "換角色",
-  /** `hintOutput` */
   hintOutput: "看輸出",
-  /** `hintStacks` */
   hintStacks: "伺服器",
-  /** `hintFullscreen` */
   hintFullscreen: "全螢幕",
-  /** `hintKeys` */
   hintKeys: "快速鍵",
-  /** `hintTextSize` */
   hintTextSize: "字級",
-  /** `hintOrder` */
   hintOrder: "反序",
-  /** `hintVoice` */
   hintVoice: "語音",
 
-  /** `scanning` */
   scanning: "掃描中⋯",
-  /** `noSession` */
   noSession: "目前沒有 Session",
-  /** `nothingToSend` */
   nothingToSend: "沒有可傳送的 Session。請先在終端機啟動 Claude Code 或 Codex。",
-  /** `sendFailed` */
   sendFailed: "送不出去",
 
-  /** `sessionWaiting` */
   sessionWaiting: "在等你回答",
   /** `sessionAgents`, with `{n}` */
   sessionAgents: "{n} 個在背景",
-  /** `sessionShellOne` */
   sessionShellOne: "1 個 shell 在跑",
   /** `sessionShellMany`, with `{n}` */
   sessionShellMany: "{n} 個 shell 在跑",

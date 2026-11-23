@@ -8,6 +8,8 @@ Settings → Session and access → Integrations selects one managed main workfl
 
 `superpowers` uses the existing selected debugging/review adaptation, not the entire upstream project. `poteto` uses the bundled Clawdline adaptation of pstack 0.15.36 at cursor/plugins revision c742dd61706fbacc1b95f1a20b7b988cf096ce6c. It routes investigation, bug-fix, feature, refactoring and evaluation tasks; models data before implementation; uses verifiable units and a criterion-to-evidence map; and verifies the affected surface. It does not depend on missing Cursor skills, automatically install tools, use PR-stack rewriting, call another model or authorize external actions. Source: https://github.com/cursor/plugins/blob/c742dd61706fbacc1b95f1a20b7b988cf096ce6c/pstack/skills/poteto-mode/SKILL.md. The upstream MIT notice is retained in `skills/LICENSE.pstack`.
 
+Poteto reviews comments changed in the current diff and considers formal verification for high-impact concurrency, retry, recovery, and lifecycle guarantees. The [Bot work completion model](formal-verification/bot-work-completion/README.md) is a project-local example. Its model check complements the real-code regression tests and runs on demand.
+
 When `workflow_profile` is absent, the old `workflow_skills_enabled=false` maps to `clawdline` and true maps to `superpowers`. Reads do not rewrite settings. Explicit profile selection wins. A legacy client write updates the explicit profile in the same atomic settings change; sending both selectors is refused. CodeGraph and unrelated settings are preserved.
 
 ## Frozen context and evidence

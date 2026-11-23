@@ -19,6 +19,7 @@ func ResolveWorkflow(id string, codegraph bool) (workflow.Snapshot, error) {
 		s.Source = "Superpowers selected debugging and review skills (Clawdline adaptation)"
 		s.Instructions = WorkflowInstructions()
 	case "poteto":
+		s.Version = "2"
 		s.Source = "cursor/plugins pstack 0.15.36 @ c742dd61706fbacc1b95f1a20b7b988cf096ce6c (Clawdline adaptation)"
 		body, err := profileFiles.ReadFile("poteto-workflow.md")
 		if err != nil {
