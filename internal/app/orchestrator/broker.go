@@ -863,9 +863,14 @@ var errUnchanged = errors.New("unchanged")
 // write right, and the effect guard (effects.go) refuses a terminal, a push or
 // a checkout asked for from inside it.
 func (b *Broker) mutate(ctx context.Context, id, kind string, change func(r *Record) error) (Record, error) {
-	r, _, err := b.mutateTx(ctx, id, kind, func(_ *store.Tx, r *Record) ([]store.Effect, error) {
+	r, ids, err := b.mutateTx(ctx, id, kind, func(_ *store.Tx, r *Record) ([]store.Effect, error) {
 		return nil, change(r)
 	})
+	// The only effects a plain mutation carries are the Bot work deliveries
+	// mutateEvent adds; run them now instead of after the unattended age.
+	if err == nil && len(ids) > 0 {
+		runMutationEffects(b, ctx, ids)
+	}
 	return r, err
 }
 

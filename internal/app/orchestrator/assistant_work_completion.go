@@ -17,7 +17,12 @@ const (
 	EffectAssistantWorkWaiting = "bot.work.waiting"
 )
 
+// runMutationEffects is assigned in init: the effect table's handlers call
+// mutate, so mutate cannot name the runner in a package initializer.
+var runMutationEffects func(*Broker, context.Context, []int64)
+
 func init() {
+	runMutationEffects = func(b *Broker, ctx context.Context, ids []int64) { b.runRecorded(ctx, ids) }
 	effectHandlers[EffectAssistantWorkCompleted] = effectHandler{idempotent: true, run: runAssistantWorkCompleted}
 	effectHandlers[EffectAssistantWorkWaiting] = effectHandler{idempotent: true, run: runAssistantWorkWaiting}
 }
