@@ -168,8 +168,23 @@ hourly, so a running build's entries are newer) and re-reads each entry just
 before unlinking. An explicit `GOCACHE` is never trimmed. A failed listing,
 more than the scan bound, an unknown free-space reading or cancellation are
 typed errors and remove nothing; the command's own exit status is preserved.
-Direct `go test` runs outside `tools/heavy.sh` do not trigger a trim but are
-protected by the same window.
+Most of that day's growth came from direct `go test`, `go vet` and
+`tools/check.sh` runs, which never pass through `tools/heavy.sh`. So
+`tools/check.sh` (gate and `--quick`, not `--plan`) also starts one detached,
+low-priority `clawdline go-cache trim` when it exits, pass or fail. It does not
+wait for the trim, keeps its own exit status, and writes the trim's output to
+`$TMPDIR/clawdline-go-cache-trim.log`. It skips the trim for an explicit
+`GOCACHE` (including a Project cache attached with `resources use-go`), inside
+the compile slot (`CLAWDLINE_HEAVY` set, where heavy trims after the command),
+while another `go-cache trim` process is running, for an installed clawdline
+without `go-cache`, and with `CLAWDLINE_CHECK_GO_CACHE_TRIM=0` (the check-modes
+fixture, whose `go` is a mock). It uses the same registered bounds; no new
+interval was added. `tools/test-check-go-cache-trim.sh` covers the wiring with a
+fake clawdline and, with `CHECK_TRIM_E2E_BIN` set to a built clawdline, fills a
+throwaway HOME's default cache with 25 sparse 1 GiB entries and requires the
+check to bring it to the 20 GiB budget. A bare `go test` run outside
+`tools/check.sh` still triggers nothing; the next check or heavy build trims
+it, and the protection window keeps what running builds use.
 
 A separate capacity row, `resources.disk_low_free_bytes`, alerts below 20 GiB
 free on the daemon's filesystem through the capacity notice channel: at most

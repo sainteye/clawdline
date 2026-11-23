@@ -9,7 +9,7 @@ scratch=$(mktemp -d)
 trap 'rm -rf -- "$scratch"' EXIT
 mkdir -p "$scratch/repo/tools" "$scratch/repo/web/console/tools" "$scratch/bin"
 cp tools/check.sh tools/check-plan.mjs tools/check-scope.mjs tools/check-profile.mjs "$scratch/repo/tools/"
-for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-staged-app-watcher.sh test-rounded-brand-mascot.sh test-shell-language.sh test-shell-pairing-permission.sh; do
+for name in check-legacy-css.sh check-machine-words.sh check-shell-expansions.sh check-private.sh test-notify-release-success.sh test-heavy-linux-cache.sh test-linux-dev-build.sh test-machine-words-changes.sh test-heavy-handoff.sh test-check-modes.sh test-check-go-cache-trim.sh test-staged-app-watcher.sh test-rounded-brand-mascot.sh test-shell-language.sh test-shell-pairing-permission.sh; do
   printf '#!/bin/sh\nprintf "%%s\\n" "%s" >> "$CALLS"\n' "$name" > "$scratch/repo/tools/$name"
   chmod +x "$scratch/repo/tools/$name"
 done
@@ -89,6 +89,8 @@ MOCK
 printf '#!/bin/sh\nexit 0\n' > "$scratch/bin/gofmt"
 chmod +x "$scratch/bin/"*
 export PATH="$scratch/bin:$PATH" TMPDIR="$scratch" CALLS="$scratch/calls" REAL_NODE="$real_node" REAL_PYTHON="$real_python" CLAWDLINE_CHECK_WRAPPED=1
+# The fixture's go is a mock: the exit-time trim (test-check-go-cache-trim.sh) stays off.
+export CLAWDLINE_CHECK_GO_CACHE_TRIM=0
 unset CLAWDLINE_HEAVY CLAWDLINE_GO_CACHE_ISOLATED
 cd "$scratch/repo"
 git init -q -b main
