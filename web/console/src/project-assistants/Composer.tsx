@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent } from "react"
+import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react"
 import { createPortal } from "react-dom"
 import * as V from "../legacy/voice-bridge.js"
 import * as L from "../legacy/bridge.js"
@@ -50,6 +50,17 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
     call.start()
   }
   const ready=!marking&&(!disabled||sendTextDuringRecovery)&&!busy&&!sendBlocked&&!callActive&&!voiceBusy&&!empty
+  // Enter sends where there is a mouse and therefore probably a keyboard (`L.keyboard()`, the same
+  // test the Session composer asks); on a touch screen Enter is a new line and the button sends.
+  // Read on every key press, so a tablet that gains a trackpad changes without a reload.
+  const keyDown=(event:KeyboardEvent<HTMLTextAreaElement>)=>{
+    // Not while an input method is mid-word: Enter there accepts the candidate.
+    if(composing.current||event.nativeEvent.isComposing||event.keyCode===229)return
+    if(mention.keyDown(event)||event.key!=="Enter"||event.shiftKey||event.altKey)return
+    if(!event.metaKey&&!event.ctrlKey&&!L.keyboard())return
+    event.preventDefault()
+    if(ready&&!event.repeat)onSend()
+  }
   const paste=(e:ClipboardEvent<HTMLTextAreaElement>)=>{
     if(e.clipboardData.files.length){e.preventDefault();onAttach?.([...e.clipboardData.files])}
   }
@@ -83,9 +94,9 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
       {!plain&&<button type="button" className="pa-mic" aria-label={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} title={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} aria-pressed={recording} disabled={recording?false:disabled||busy||voiceBusy||callActive} onMouseDown={e=>e.preventDefault()} onClick={pressVoice}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{recording?<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>:<><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.75 11.75v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18.5V21"/></>}</svg>
       </button>}
-      <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} enterKeyHint="enter" aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
+      <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} enterKeyHint={L.keyboard()?"send":"enter"} aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onAttach?paste:undefined}
-        onKeyDown={event=>{if(!composing.current&&event.keyCode!==229)mention.keyDown(event)}}/></div>
+        onKeyDown={keyDown}/></div>
       {showCall&&call?<button type="button" className="pa-send" data-call aria-label={call.label} title={call.label}
         disabled={call.disabled||!!marking} onMouseDown={e=>e.preventDefault()} onClick={placeCall}>
         <svg viewBox="0 0 16 16" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true" focusable="false"><path d="M2 7v2m3-4v6m3-9v12m3-9v6m3-4v2"/></svg>
