@@ -144,7 +144,16 @@
  .project-assistants .pa-queued-action { width:44px;height:44px; }
 }
 .project-assistants .pa-chat-metadata { display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:0 12px;margin:0 4px 2px; }
-.project-assistants .pa-context-usage { color:color-mix(in srgb,var(--pa-dim) 80%,var(--pa-bg));font-variant-numeric:tabular-nums; }
+.project-assistants .pa-context-usage { display:inline-flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums; }
+.project-assistants .pa-context-usage bdi { white-space:nowrap; }
+.project-assistants .pa-context-meter {
+  --pa-context-fill:#67cb8b;
+  display:block;flex:none;inline-size:38px;block-size:8px;
+  overflow:hidden;border:1px solid var(--pa-line);border-radius:4px;background:var(--pa-card);
+}
+.project-assistants .pa-context-meter[data-level="medium"] { --pa-context-fill:#e3bc6b; }
+.project-assistants .pa-context-meter[data-level="low"] { --pa-context-fill:#f07777;border-color:#a34c4c; }
+.project-assistants .pa-context-meter > span { display:block;block-size:100%;border-radius:inherit;background:var(--pa-context-fill); }
 .project-assistants .pa-chat-model,.project-assistants .pa-chat-model-name { margin-inline-start:auto;min-width:0;max-width:100%;font-size:11px; }
 .project-assistants .pa-chat-model { display:inline-flex;align-items:center;gap:5px;min-height:32px;padding:0 4px;background:transparent;border:0;color:var(--pa-dim); }
 .project-assistants :is(.pa-chat-model,.pa-chat-model-name) bdi { display:block;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
