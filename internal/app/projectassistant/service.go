@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -675,10 +676,16 @@ func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.Permission
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if offer, e := s.opts.Repository.Permission(ctx, c.Key, answer.OfferID); e == nil && offer.Kind == pa.DecisionOfferKind {
-		return s.answerDecision(ctx, c, answer, offer, a)
-	} else if answer.Text != "" {
-		return pa.Receipt{}, serviceFailure(pa.Invalid, "permission_text")
+	// Only a decision answer carries text or a suggested-reply option; a
+	// native permission answer goes to the runtime unchanged.
+	if answer.Text != "" || strings.HasPrefix(answer.OptionID, pa.DecisionOptionPrefix) {
+		offer, e := s.opts.Repository.Permission(ctx, c.Key, answer.OfferID)
+		if e == nil && offer.Kind == pa.DecisionOfferKind {
+			return s.answerDecision(ctx, c, answer, offer, a)
+		}
+		if answer.Text != "" {
+			return pa.Receipt{}, serviceFailure(pa.Invalid, "permission_text")
+		}
 	}
 	return s.opts.Runtime.Answer(ctx, AnswerRequest{Command: c, Answer: answer, Feature: a.Feature, Source: a.Source})
 }

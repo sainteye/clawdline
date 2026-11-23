@@ -106,7 +106,7 @@ func (s *Store) OfferDecision(ctx context.Context, fence pa.Fence, turnID string
 		ExpiresAt: at.Add(pa.DecisionOfferTTL), State: pa.PermissionPending,
 	}
 	for i, r := range q.SuggestedReplies {
-		offer.Options = append(offer.Options, pa.PermissionOption{ID: "reply-" + strconv.Itoa(i+1), Label: r, Kind: pa.AllowOnce})
+		offer.Options = append(offer.Options, pa.PermissionOption{ID: pa.DecisionOptionPrefix + strconv.Itoa(i+1), Label: r, Kind: pa.AllowOnce})
 	}
 	m := exchangeMutation(owner, id+"-offer", at, nil, nil)
 	m.Permissions = []pa.PermissionOffer{offer}

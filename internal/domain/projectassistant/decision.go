@@ -11,6 +11,9 @@ import (
 // answer it; no Bot tool can.
 const DecisionOfferKind = "decision"
 
+// DecisionOptionPrefix starts every suggested reply's option id.
+const DecisionOptionPrefix = "reply-"
+
 const (
 	// MaxDecisionOffersPerBot bounds pending questions in one Bot's chat.
 	MaxDecisionOffersPerBot = 8
