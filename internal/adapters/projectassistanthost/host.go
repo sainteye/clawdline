@@ -144,16 +144,27 @@ func New(ctx context.Context, o Options) (*Host, error) {
 	return h, nil
 }
 
+// inspector is the handle read-only inspection uses. Store's writer has one
+// connection, so a status check made on it waits for every write in progress;
+// every Bot read authorizes several times, which turned each read into a queue
+// behind Bot commits. The query-only pool sees the same committed WAL state.
+func (h *Host) inspector() *sql.DB {
+	if h.o.Reader != nil {
+		return h.o.Reader
+	}
+	return h.o.Database
+}
+
 func (h *Host) installedSchema(ctx context.Context) (bool, int, error) {
 	var exists int
-	if err := h.o.Database.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
+	if err := h.inspector().QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_schema'`).Scan(&exists); err != nil {
 		return false, 0, err
 	}
 	if exists == 0 {
 		return false, 0, nil
 	}
 	var version int
-	if err := h.o.Database.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
+	if err := h.inspector().QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 		return true, 0, failure(pa.Unsupported, "schema_version")
 	}
 	return true, version, nil
@@ -168,7 +179,7 @@ func (h *Host) inspect(ctx context.Context) (bool, bool, error) {
 		return true, false, failure(pa.Unsupported, "schema_version")
 	}
 	var has bool
-	err = h.o.Database.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?) OR EXISTS(SELECT 1 FROM project_assistant_groups WHERE machine=?)`, h.o.MachineID, h.o.MachineID).Scan(&has)
+	err = h.inspector().QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_bots WHERE machine=?) OR EXISTS(SELECT 1 FROM project_assistant_groups WHERE machine=?)`, h.o.MachineID, h.o.MachineID).Scan(&has)
 	return true, has, err
 }
 
