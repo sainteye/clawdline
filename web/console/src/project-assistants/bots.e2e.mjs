@@ -17,6 +17,12 @@ if(chatOverride)plugins.push({name:"bounded-read-chat-baseline",setup(build){bui
 const bundle=await build({plugins,entryPoints:[path.join(dir,"fixtures.ts")],outfile:"project-assistants-fixture.js",bundle:true,write:false,format:"esm",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const content=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.text]))
 const html=await readFile(new URL("../../tools/fixtures/project-assistants.html",import.meta.url),"utf8")
+if(process.env.BOTS_ATTACHMENTS_ONLY){
+  content.set("/catalog/zh-Hant.json",await readFile(new URL("../../public/catalogs/zh-Hant.json",import.meta.url),"utf8"))
+  const shellStyles=await Promise.all(["tokens","base"].map(name=>readFile(new URL("../legacy/"+name+".css",import.meta.url),"utf8")))
+  const stylesheet="/project-assistants-fixture.css"
+  content.set(stylesheet,[...shellStyles,content.get(stylesheet)].join("\n"))
+}
 // This matrix verifies injected metadata behavior; real transport/store acceptance is separate.
 async function catalogChecks(page,origin,language,shot,log) {
   const zh=language!=="en",w=zh?{create:"新增 Bot",submit:"建立",cancel:"取消",name:"名稱",machine:"機器",agent:"Agent",instructions:"固定指示",more:"載入更多",retry:"重試",search:"搜尋 Bot 或 Project",message:"訊息"}:{create:"Create Bot",submit:"Create",cancel:"Cancel",name:"Name",machine:"Machine",agent:"Agent",instructions:"Standing instructions",more:"Load more",retry:"Try again",search:"Search Bot or Project",message:"Message"}
@@ -55,7 +61,7 @@ async function catalogChecks(page,origin,language,shot,log) {
   await page.getByRole("searchbox",{name:w.search,exact:true}).fill("Catalog Bot")
   await page.getByRole("button",{name:/^Catalog Bot, [^,]+, studio(,|$)/}).click()
   await page.getByRole("textbox",{name:w.message,exact:true}).fill("First send cannot admit a provider")
-  await page.getByRole("textbox",{name:w.message,exact:true}).press("Enter")
+  await page.locator(".pa-composer .pa-send").click()
   await page.locator(".pa-chat").getByRole("alert").filter({hasText:"adapter_not_found"}).waitFor()
   assert.equal((await log()).filter(row=>row.method==="send").length,1,"explicit first Send retains typed unavailable")
   await shot("catalog-provider-unavailable")
@@ -160,6 +166,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   const workResult=value=>chat.locator(".pa-chat-content > article.pa-work-task code").filter({hasText:exactText(value)})
   const editor=()=>chat.getByRole("textbox",{name:w.message,exact:true}),row=(name="Project assistant",machine="studio")=>page.locator(`.pa-bot-row[data-bot-key^='["${machine}",']`).filter({hasText:name})
   const info=page.locator(".pa-info-panel")
+  const submit=()=>chat.locator(".pa-composer .pa-send").click()
   const openInfo=()=>chat.locator(".pa-chat-identity").click()
   const closeInfo=()=>info.getByRole("button",{name:zh?"關閉資訊":"Close information",exact:true}).click()
   const refresh=async()=>{
@@ -203,7 +210,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
       await editor().fill("parallel preflight retains this draft")
       await page.evaluate(()=>window.botsFixture.a.holdSnapshots())
       const initial=(await views("snapshot")).length
-      await editor().press("Enter");await waitView("snapshot",initial)
+      await submit();await waitView("snapshot",initial)
       await openInfo()
       await info.getByRole("tab",{name:w.settings,exact:true}).click()
       await info.locator(".pa-settings-part:not([hidden]) .pa-settings-disclosure > summary").first().click()
@@ -235,7 +242,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     await fresh();await open();await ready()
     const card=chat.locator('.pa-chat-content > article.pa-work-task').filter({hasText:'PA-01'})
     await card.waitFor()
-    await editor().fill('New instruction after the old work');await editor().press('Enter')
+    await editor().fill('New instruction after the old work');await submit()
     const latest=messageText('New instruction after the old work');await latest.waitFor()
     const latestRow=latest.locator('xpath=ancestor::article');const latestID=await latestRow.getAttribute('data-message-id')
     const assertOrder=async()=>{
@@ -511,7 +518,7 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await fresh(()=>window.botsFixture.a.configureViews({forbidLegacy:true}));await open();await ready();await editor().fill("preflight must not send")
   await page.evaluate(()=>window.botsFixture.a.holdView("snapshot"))
   const preflights=(await views("snapshot")).length
-  await editor().press("Enter");await waitView("snapshot",preflights)
+  await submit();await waitView("snapshot",preflights)
   await page.evaluate(()=>window.botsFixture.a.expireCursor());await refresh();await waitView("snapshot",preflights+1)
   await page.evaluate(()=>window.botsFixture.a.releaseView());await ready()
   assert.equal((await log()).filter(r=>r.method==="send").length,0)
@@ -550,9 +557,12 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await editor().evaluate(el=>el.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true,data:"中"})));await editor().press("Enter")
   assert.equal((await log()).filter(r=>r.method==="send").length,0)
   await editor().evaluate(el=>el.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true,data:"中"})));await editor().press("Shift+Enter");assert.match(await editor().inputValue(),/\n/)
-  await editor().fill("sent once");await editor().press("Enter");await messageText("sent once").waitFor()
+  await editor().fill("sent once");await editor().press("Enter")
+  assert.equal(await editor().inputValue(),"sent once\n")
+  assert.equal((await log()).filter(r=>r.method==="send").length,0)
+  await editor().fill("sent once");await submit();await messageText("sent once").waitFor()
   assert.equal((await log()).filter(r=>r.method==="send").length,1)
-  await editor().fill("unknown");await editor().press("Enter");await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===true)
+  await editor().fill("unknown");await submit();await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===true)
   await page.evaluate(()=>window.botsFixture.remount());await row().click();await editor().waitFor()
   assert.equal(await editor().isDisabled(),true);assert.equal(await editor().inputValue(),"unknown")
   await refresh();assert.equal(await editor().isDisabled(),true,"successful receipt-free snapshot cannot resolve an unknown intent")
@@ -658,17 +668,24 @@ async function workProgressChecks(page,origin,language,shot,log) {
 }
 async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   const zh=language!=="en"
-  await page.goto(origin+"/?lang="+language)
+  await page.addInitScript(tag=>localStorage.setItem("ui_language",tag),language)
+  await page.goto(origin+"/?header=1&lang="+language)
+  await page.waitForFunction(()=>!!window.botsFixture)
   await page.evaluate(()=>{window.botsFixture.a.pictures=()=>true;window.botsFixture.open()})
   await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
   const chat=page.locator(".pa-chat"),editor=chat.locator(".pa-editor textarea")
   await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===false)
+  await editor.fill("First line")
+  await editor.press("Enter")
+  assert.equal(await editor.inputValue(),"First line\n")
+  assert.equal(await editor.getAttribute("enterkeyhint"),"enter")
+  assert.equal((await log()).filter(r=>r.method==="send").length,0,"Enter sent the draft")
   const dropped=await chat.locator(process.env.BOTS_ATTACHMENT_REPRO==="recovery"?".pa-composer":".pa-chat-scroll").evaluate(async node=>{
     const data=new DataTransfer()
     const canvas=document.createElement("canvas")
-    canvas.width=8;canvas.height=6
+    canvas.width=80;canvas.height=60
     const ctx=canvas.getContext("2d")
-    ctx.fillStyle="#2490ca";ctx.fillRect(0,0,8,6)
+    ctx.fillStyle="#2490ca";ctx.fillRect(0,0,80,60)
     const bytes=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"))
     data.items.add(new File([bytes],"fixture.png"))
     node.dispatchEvent(new DragEvent("dragover",{bubbles:true,cancelable:true,dataTransfer:data}))
@@ -677,14 +694,70 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
     return drop.defaultPrevented
   })
   assert.equal(dropped,true,"the Bot chat did not accept a dropped picture")
-  await page.waitForFunction(()=>document.querySelector(".pa-pictures img")?.naturalWidth===8)
+  await page.waitForFunction(()=>document.querySelector(".pa-pictures img")?.naturalWidth===80)
   assert.equal((await log()).filter(r=>r.method==="send").length,0,"dropping a picture sent a message")
+  const preview=chat.getByRole("button",{name:zh?"圖片預覽":"Image preview",exact:true})
+  const thumbnail=preview.locator("img")
+  const original=await thumbnail.getAttribute("src")
+  const markup=page.locator(".image-markup")
+  const canvas=markup.locator("canvas[data-ready=true]")
+  await preview.click()
+  await canvas.waitFor({timeout:4000})
+  await markup.getByRole("button",{name:zh?"放大":"Zoom in",exact:true}).click()
+  assert.ok((await canvas.boundingBox()).width>80)
+  const draw=async()=>{
+    const {x,y,width,height}=await canvas.boundingBox()
+    const points=[[.3,.5],[.5,.25],[.7,.5],[.5,.75],[.3,.5]].map(([u,v])=>({x:x+width*u,y:y+height*v}))
+    if(page.touchInput){
+      await page.touchInput.send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[points[0]]})
+      for(const point of points.slice(1))await page.touchInput.send("Input.dispatchTouchEvent",{type:"touchMove",touchPoints:[point]})
+      await page.touchInput.send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]})
+    }else{
+      await page.mouse.move(points[0].x,points[0].y)
+      await page.mouse.down()
+      for(const point of points.slice(1))await page.mouse.move(point.x,point.y)
+      await page.mouse.up()
+    }
+    assert.equal(await markup.getByRole("button",{name:zh?/復原/:/Undo/}).isEnabled(),true)
+  }
+  await draw()
+  await markup.getByRole("button",{name:zh?"取消":"Cancel",exact:true}).click()
+  await markup.waitFor({state:"hidden"})
+  assert.equal(await thumbnail.getAttribute("src"),original)
+  await preview.click()
+  await canvas.waitFor()
+  await draw()
+  await markup.getByRole("button",{name:zh?/復原/:/Undo/}).click()
+  await markup.getByRole("button",{name:zh?"完成":"Done",exact:true}).click()
+  assert.equal(await thumbnail.getAttribute("src"),original)
+  await preview.click()
+  await canvas.waitFor()
+  await draw()
+  await shot("picture-markup")
+  await markup.getByRole("button",{name:zh?"完成":"Done",exact:true}).click()
+  await markup.waitFor({state:"hidden"})
+  const marked=await thumbnail.getAttribute("src")
+  assert.notEqual(marked,original)
+  assert.equal(await editor.inputValue(),"First line\n")
+  assert.equal((await log()).filter(r=>r.method==="send").length,0,"saving a mark sent the draft")
   await editor.fill("unknown")
-  await editor.press("Enter")
+  await chat.locator(".pa-composer .pa-send").click()
   const held=chat.locator(".pa-held-send").first()
   await held.waitFor()
   const picture=(await log()).find(row=>row.method==="send").request.images[0]
+  assert.equal(picture,marked)
   assert.match(picture,/^data:image\/png;base64,/)
+  assert.equal(await page.evaluate(async url=>{
+    const image=new Image()
+    image.src=url
+    await image.decode()
+    const canvas=document.createElement("canvas")
+    canvas.width=image.width;canvas.height=image.height
+    const ctx=canvas.getContext("2d")
+    ctx.drawImage(image,0,0)
+    const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data
+    return rgba.some((red,i)=>i%4===0&&red===255&&rgba[i+1]===45&&rgba[i+2]===45)
+  },picture),true,"the sent image has no red ink")
   const inspect=held.getByRole("button",{name:zh?"向機器核對":"Check with the machine",exact:true})
   const newMessage=held.getByRole("button",{name:zh?"另寫新訊息":"Write a new message",exact:true})
   if(!process.env.BOTS_ATTACHMENT_REPRO){
@@ -710,10 +783,10 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   await aside.waitFor({state:"hidden"})
   assert.equal(await editor.inputValue(),"A new draft")
   assert.equal((await log()).filter(r=>r.method==="send").length,1,"recovery must not resend the earlier message")
-  return ["drop attaches a picture without sending","uncertain send gets a status card","write a new message while checking","dismiss a failed check without touching the new draft"]
+  return ["Enter inserts a newline without sending","drop attaches a picture without sending","zoom, circle, cancel, undo, and send marked pixels","uncertain send gets a status card","write a new message while checking","dismiss a failed check without touching the new draft"]
 }
 let forbidden=0
-const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":"text/html");res.end(text)})
+const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":url.pathname.endsWith(".json")?"application/json":"text/html");res.end(text)})
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`,results=[]
 const failures=[]
@@ -721,7 +794,8 @@ try {
   for(const engine of [chromium,webkit].filter(e=>!process.env.BOTS_ENGINE||e.name()===process.env.BOTS_ENGINE))for(const width of (process.env.BOTS_WIDTH?[Number(process.env.BOTS_WIDTH)]:[390,1440]))for(const language of (process.env.BOTS_LANGUAGE?[process.env.BOTS_LANGUAGE]:["zh-Hant","en"])) {
     const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true,...(engine.name()==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})}),name=`${engine.name()}-${width}-${language}`
-    const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce",hasTouch:!!process.env.BOTS_WORK_PROGRESS_ONLY&&width<701})
+    const page=await browser.newPage({viewport:{width,height:width===1440?960:844},reducedMotion:"reduce",hasTouch:!!(process.env.BOTS_WORK_PROGRESS_ONLY||process.env.BOTS_ATTACHMENTS_ONLY)&&width<701})
+    if(process.env.BOTS_ATTACHMENTS_ONLY&&engine.name()==="chromium"&&width<701)page.touchInput=await page.context().newCDPSession(page)
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
     const shot=async(code,scope)=>{

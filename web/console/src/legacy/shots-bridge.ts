@@ -33,6 +33,12 @@ const MAX_COUNT = 6
 const MAX_EACH = 5 << 20
 const MAX_TOTAL = 15 << 20
 
+/** Keep screenshots crisp and fall back to the composer's JPEG quality for larger exports. */
+export function encodeMarkedPicture(canvas: HTMLCanvasElement, maxLength = MAX_EACH): string {
+  const png = canvas.toDataURL("image/png")
+  return png.length > maxLength ? canvas.toDataURL("image/jpeg", QUALITY) : png
+}
+
 export interface Shot {
   id: number
   url: string
@@ -201,8 +207,7 @@ export function createShots(onPictures: (urls: string[]) => void = () => {}) {
       const at = list.findIndex((shot) => String(shot.id) === id)
       if (at < 0) return false
       const without = total() - list[at].url.length
-      let url = canvas.toDataURL("image/png")
-      if (url.length > MAX_EACH || without + url.length > MAX_TOTAL) url = canvas.toDataURL("image/jpeg", QUALITY)
+      const url = encodeMarkedPicture(canvas, Math.min(MAX_EACH, MAX_TOTAL - without))
       if (url.length > MAX_EACH) {
         toast(T.webShotTooBig, true)
         return false

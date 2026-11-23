@@ -37,7 +37,7 @@ export function ImageMarkup({
 }: {
   shot: MarkupPicture
   onCancel: () => void
-  onSave: (canvas: HTMLCanvasElement) => boolean
+  onSave: (canvas: HTMLCanvasElement, hasMarks: boolean) => boolean | string
 }) {
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -52,6 +52,7 @@ export function ImageMarkup({
   const cancel = useRef(onCancel)
   cancel.current = onCancel
   const [ready, setReady] = useState(false)
+  const [saveError, setSaveError] = useState("")
   const [strokeCount, setStrokeCount] = useState(0)
   const [tool, setToolState] = useState<Tool>("pen")
   const toolRef = useRef<Tool>("pen")
@@ -310,13 +311,17 @@ export function ImageMarkup({
           disabled={!ready}
           onClick={() => {
             const canvas = canvasRef.current
-            if (canvas && onSave(canvas)) onCancel()
+            if (!canvas) return
+            const saved = onSave(canvas, strokes.current.length > 0)
+            if (saved === true) onCancel()
+            else setSaveError(typeof saved === "string" ? saved : "")
           }}
         >
           {nextWord("imageMarkupDone")}
         </button>
       </div>
       <div ref={stageRef} className="image-markup-stage" onWheel={wheel}>
+        {saveError && <p className="image-markup-error" role="alert">{saveError}</p>}
         <canvas
           ref={canvasRef}
           className="image-markup-canvas"

@@ -5,7 +5,6 @@ import { authorized, command, errorCode, type SourceClient } from "./client"
 import { canRead, canWrite } from "./view-state"
 import { GroupEditor, TeamApprovals, groupWord, sameGroupProject } from "./Groups"
 import { PaMenu } from "./PaSelect"
-import { composerEnter } from "./composer-keyboard"
 import { BotAvatar } from "./BotAvatar"
 import { GroupActionIcon, GroupAvatar } from "./GroupAvatar"
 import { words } from "./words"
@@ -256,7 +255,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       {quote&&<div className="pa-room-draft-quote"><div><strong>{groupWord("groupReplyTo")} {author(quote.author)}</strong><p>{quote.text}</p></div><button type="button" aria-label={w.clearQuote} disabled={busy||unknown} onClick={()=>{setQuote(null);pending.current=null;focusComposer()}}>×</button></div>}
       <form className="pa-composer pa-room-composer" onSubmit={event=>{event.preventDefault();if(!composing.current)void send()}}>
         {options.length>0&&<div id={mentionID} className="pa-room-mentions" role="listbox" aria-label={groupWord("groupMembers")}>{options.map((bot,index)=><button id={`${mentionID}-${index}`} key={identity(bot.key)} type="button" role="option" aria-selected={index===picked} onMouseDown={event=>event.preventDefault()} onClick={()=>mention(bot)}><BotAvatar appearance={bot.appearance} size={28}/><span>{bot.name}</span></button>)}</div>}
-        <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={composer} rows={1} aria-label={groupWord("groupMessage")} placeholder={`${groupWord("groupMessage")}...`} value={text} disabled={!writable||busy||unknown}
+        <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={composer} rows={1} enterKeyHint="enter" aria-label={groupWord("groupMessage")} placeholder={`${groupWord("groupMessage")}...`} value={text} disabled={!writable||busy||unknown}
           aria-controls={options.length?mentionID:undefined} aria-expanded={options.length>0} aria-autocomplete="list" aria-activedescendant={options.length?`${mentionID}-${picked}`:undefined}
           onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}}
           onSelect={event=>setCaret(event.currentTarget.selectionStart)}
@@ -268,7 +267,6 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
               if(event.key==="Escape"){event.preventDefault();event.stopPropagation();setDismissed(text);return}
               if(event.key==="Tab"||(event.key==="Enter"&&!event.repeat)){event.preventDefault();mention(options[picked]);return}
             }
-            if(composerEnter(event.nativeEvent,composing.current)==="send"){event.preventDefault();void send()}
           }}/></div>
         <button className="pa-send" type={showStop?"button":"submit"} data-stop={showStop||undefined} aria-label={groupWord(showStop?"groupStop":busy?"groupWorking":"groupSend")}
           title={showStop?groupWord("groupStop"):undefined} onClick={showStop?stopRoom:undefined} disabled={!writable||busy||unknown||!showStop&&!text.trim()}>{showStop?null:"↑"}</button>

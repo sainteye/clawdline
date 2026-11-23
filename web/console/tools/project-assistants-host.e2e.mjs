@@ -94,6 +94,7 @@ export async function runHostAcceptance({artifacts,playwrightModule,engines=["ch
         await editor.press("Enter")
         assert.equal(await page.evaluate(() => window.fixtureHost.log.filter(row => row.method === "send").length),0)
         await editor.evaluate(node => node.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true,data:"中"})))
+        await editor.fill("source-one draft")
         await back();await row().waitFor()
         await row().click();await editor.waitFor();assert.equal(await editor.inputValue(),"source-one draft")
         await shot("source-chat")

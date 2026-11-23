@@ -662,7 +662,7 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
   const tag=engine+'-'+width,click=loc=>width<700?loc.tap():loc.click()
   try{
    const firstRow=page.locator('[data-group-key]').filter({has:page.getByText('Review room',{exact:true})})
-   await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-orb'));await click(firstRow)
+   await page.goto('http://127.0.0.1:'+server.address().port+'/?lang=zh-Hant');await click(page.locator('.pa-dock'));await click(firstRow)
    const room=page.locator('.pa-room-layout'),text=room.locator('textarea'),send=room.locator('.pa-send')
    await room.locator('[data-room-seq]').last().waitFor()
    const outcome=process.env.BOTS_EXPECT_ROOM_OUTCOME
@@ -704,6 +704,27 @@ try{for(const engine of (process.env.BOTS_ENGINES??'chromium,webkit').split(',')
    }
    const inspect=async(state)=>{await page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));const observation=await room.evaluate(el=>{const rect=n=>n.getBoundingClientRect().toJSON(),text=el.querySelector('textarea'),send=el.querySelector('.pa-send'),scroll=el.querySelector('.pa-chat-scroll'),last=el.querySelector('[data-room-seq]:last-child'),footer=document.querySelector('.pa-status-bar'),checks=footer.querySelector('.pa-source-checks'),hit=n=>{const r=n.getBoundingClientRect();return n.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))};return {room:rect(el),text:rect(text),send:rect(send),scroll:rect(scroll),last:rect(last),footer:rect(footer),checks:checks?rect(checks):null,viewport:{height:visualViewport.height,top:visualViewport.offsetTop,width:visualViewport.width},textHit:hit(text),sendHit:hit(send),following:Math.abs(scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight)<=1}});results.push({tag,state,...observation});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});{assert.ok(observation.textHit&&observation.sendHit,JSON.stringify(observation));assert.ok(observation.send.bottom<=observation.viewport.height+observation.viewport.top+1);assert.ok(observation.last.bottom<=observation.scroll.bottom+1,'last message clipped while following');assert.ok(observation.following,'resize released bottom following')}}
    const fieldMetrics=async(state)=>{const value=await text.evaluate(el=>{const form=el.closest('form'),mirror=form.querySelector('.pa-editor-mirror'),send=form.querySelector('.pa-send'),r=el.getBoundingClientRect(),f=form.getBoundingClientRect(),m=mirror.getBoundingClientRect(),b=send.getBoundingClientRect(),s=getComputedStyle(el),mstyle=getComputedStyle(mirror);return {value:el.value,leftInset:r.left-f.left+parseFloat(s.paddingLeft),rightInset:b.left-r.right+parseFloat(s.paddingRight),lineHeight:parseFloat(s.lineHeight),padding:[s.paddingTop,s.paddingRight,s.paddingBottom,s.paddingLeft],mirrorPadding:[mstyle.paddingTop,mstyle.paddingRight,mstyle.paddingBottom,mstyle.paddingLeft],height:r.height,mirrorHeight:m.height,singleLineCenter:r.top+parseFloat(s.paddingTop)+parseFloat(s.lineHeight)/2,sendCenter:b.top+b.height/2}});results.push({tag,state,...value});await page.screenshot({path:path.join(artifacts,tag+'-'+state+'.png')});if(!baseline){assert.ok(value.leftInset>=14,'text/caret too close to rounded left edge: '+JSON.stringify(value));assert.ok(value.rightInset>=14,'text/caret too close to send button');assert.deepEqual(value.padding,value.mirrorPadding,'measurement differs from editable content');if(!value.value.includes('\n'))assert.ok(Math.abs(value.singleLineCenter-value.sendCenter)<=2,'single line and send are not centered')}}
+   if(!baseline){
+    const before=writes.length
+    await text.fill('第一行')
+    await text.press('End')
+    await text.press('Enter')
+    assert.equal(await text.inputValue(),'第一行\n')
+    assert.equal(await text.getAttribute('enterkeyhint'),'enter')
+    assert.equal(writes.length,before,'Enter sent the group draft')
+    results.push({tag,state:'enter-inserts-newline'})
+    if(process.env.BOTS_GROUP_KEYBOARD_ONLY==='1'){
+     await page.keyboard.insertText('第二行')
+     const draft='第一行\n第二行'
+     assert.equal(await text.inputValue(),draft)
+     await click(send)
+     await room.getByText('第二行',{exact:false}).first().waitFor()
+     assert.equal(writes.length,before+1)
+     assert.equal(writes.at(-1).body.text,draft)
+     assert.deepEqual(errors,[])
+     continue
+    }
+   }
    await text.fill('');await fieldMetrics('empty')
    await text.fill('嗨，大家好 👍');await fieldMetrics('filled')
    await text.fill('第一行：群聊問候\n第二行：保留多行與游標\n第三行：確認文字不會貼邊');await fieldMetrics('multiline');await inspect('multiline-viewport')

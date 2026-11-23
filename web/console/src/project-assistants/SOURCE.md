@@ -140,7 +140,7 @@ Upstream: Codync `234219cef2d3f991f0f7225ba89e3c99cdd34177`, Apache-2.0. Preserv
 
 | Upstream path under `apps/desktop/src/renderer/` | Retained behavior | Adaptation |
 | --- | --- | --- |
-| `views/thread/composer-keyboard.ts`, `composerEnter` | Enter sends, Shift/Alt Enter newline, repeat/composition/keyCode 229 ignored for send | Adds the explicit composition ref required across browser IME implementations. Pure behavior tests cover both confirmation and subsequent send. |
+| `views/thread/composer-keyboard.ts` | Codync uses Enter to send | Bots uses Enter for a newline and the form’s Send button for submission. Composition can still confirm text without sending. |
 | `views/thread/Composer.tsx`, `DestinationComposer` | Destination keyed editor, drafts outside editor, quoted reply, wrapping mirror | Drops Electron IPC, attachments, slash/mention, plugins, calls and dictation. CSS grid mirror measures without collapsing the live textarea. No new line-count bound. |
 | `views/thread/chat-items.ts`, `buildChat` | Stable row identity, author grouping, one-hour separators | Uses source message IDs and generated message kinds; deduplicates replay by ID and sequence order. Group exchanges, calls and upstream hooks are outside v1. History has no arrival animation, so replay never animates a duplicate. Calendar formatting uses the supplied interface language. |
 | `views/thread/queued-messages.ts`, `waitingMessages` / `outsideQueue` | A queued user message appears on exactly one surface | Uses authoritative accepted/queued turn and message IDs. Running transitions restore the message to chat. No unsupported steer/unqueue buttons or upstream host version assumption. |

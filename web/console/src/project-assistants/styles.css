@@ -278,7 +278,9 @@
 .project-assistants .pa-pictures { display:flex;gap:8px;flex-wrap:wrap;margin:0 0 8px; }
 .project-assistants .pa-picture { position:relative; }
 .project-assistants .pa-picture img { width:64px;height:64px;object-fit:cover;border-radius:10px;border:1px solid var(--pa-line);display:block; }
-.project-assistants .pa-picture button { position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;font-size:12px;line-height:18px; }
+.project-assistants .pa-picture .pa-picture-preview { display:block;padding:0;border:0;border-radius:10px;cursor:zoom-in; }
+.project-assistants .pa-picture-preview:focus-visible { outline:2px solid var(--accent);outline-offset:2px; }
+.project-assistants .pa-picture .pa-picture-remove { position:absolute;top:-6px;right:-6px;width:20px;height:20px;padding:0;border-radius:50%;font-size:12px;line-height:18px; }
 .project-assistants .pa-attach,.project-assistants .pa-mic { flex:0 0 auto;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0;border-radius:50%;background:transparent;align-self:flex-end;margin-bottom:1px;color:var(--pa-dim); }
 .project-assistants .pa-attach svg,.project-assistants .pa-mic svg { display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round; }
 .project-assistants .pa-attach:hover:not(:disabled),.project-assistants .pa-mic:hover:not(:disabled) { background:#242426;color:#fafafa; }

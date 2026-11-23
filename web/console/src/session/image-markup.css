@@ -44,6 +44,7 @@
 .image-markup-cancel { justify-self: start; }
 .image-markup-done { justify-self: end; background: var(--accent); color: #111116 !important; font-weight: 650; }
 .image-markup-done:disabled { opacity: 0.45; }
+.image-markup-error { position: absolute; z-index: 1; top: 10px; inset-inline: 14px; margin: 0; padding: 9px 14px; border-radius: 9px; background: #39211d; color: #ffd3cc; text-align: center; }
 .image-markup-stage {
   min-width: 0;
   min-height: 0;

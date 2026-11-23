@@ -36,6 +36,7 @@ import { handoffWords } from "./handoff-card-words"
 import { useHandoffCard } from "./useHandoffCard"
 import {uploadInputs,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer } from "./Composer"
+import type { MarkupPicture } from "../session/ImageMarkup.js"
 import { BotCallControls, useBotCall } from "./BotCall"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
@@ -485,7 +486,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       return operation(fresh,s,page)
     },control.signal)}finally{activeMutations.current.delete(control)}
   }
-  const [images,setImages]=useState<string[]>([])
+  const [images,setImages]=useState<MarkupPicture[]>([])
   const editBot=async(settings:W.ProjectAssistantEditSettings,original?:W.ProjectAssistantBot)=>{
     const result=await mutate(({bot:fresh},signal)=>{
       if(original&&fresh.version!==original.version){
@@ -556,7 +557,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       reader.onload=()=>resolve(String(reader.result))
       reader.onerror=()=>reject(reader.error)
       reader.readAsDataURL(file)
-    }))).then(urls=>{if(valid())setImages(old=>[...old,...urls])})
+    }))).then(urls=>{
+      if(!valid())return
+      const added=urls.map(url=>({id:crypto.randomUUID(),url}))
+      setImages(old=>[...old,...added])
+    })
       .catch(fail)
       .finally(()=>{const pending=--imageReads.current;if(valid())setReadingImages(pending)})
   }
@@ -597,7 +602,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(artifact&&(!artifact.text.trim()||handoffRef||!artifact.message.output?.artifact_id||!sameConversation(artifact.message.fence,scope)))return refused
     const submitted=artifact?.text??text,pictures=artifact?[]:images,selected=artifact?[]:files
     const captured=headRef.current?.current_fence??(currentData.current?fence(currentData.current):{...scope,binding_id:"",generation:0})
-    const intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:captured,text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures}:{})}
+    const intent:W.ProjectAssistantSendRequest={command:command(key,"send"),fence:captured,text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures.map(picture=>picture.url)}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;sendInFlight.current=true;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null);setInspection(null)
@@ -1469,7 +1474,8 @@ ${currentDraft}`:submitted)
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
       {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={i=>setImages(old=>old.filter((_,j)=>j!==i))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
+        onReplaceImage={(id,url)=>setImages(old=>old.map(picture=>picture.id===id?{...picture,url}:picture))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>
     </div>
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
