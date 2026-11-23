@@ -232,6 +232,8 @@ type runtimeProvider struct {
 	// onCapabilities runs inside every capability read, the slow step
 	// before a turn starts.
 	onCapabilities func()
+	// wrap, when set, decorates each opened session (for optional ports).
+	wrap func(*runtimeSession) ProviderSession
 }
 
 func (p *runtimeProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -250,6 +252,9 @@ func (p *runtimeProvider) Open(_ context.Context, q OpenRequest, sink func(conte
 	s := &runtimeSession{p: p, sink: sink, q: q, reply: make(chan PromptResult, 1), cancel: make(chan struct{}), answered: make(chan string, 1)}
 	p.opens = append(p.opens, q)
 	p.sessions = append(p.sessions, s)
+	if p.wrap != nil {
+		return p.wrap(s), nil
+	}
 	return s, nil
 }
 func (p *runtimeProvider) session() *runtimeSession {

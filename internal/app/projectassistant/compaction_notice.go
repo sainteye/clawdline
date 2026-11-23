@@ -25,11 +25,15 @@ func compactionNotice(session ProviderSession, t pa.Turn, at time.Time) *pa.Mess
 	if state.Fence != t.Fence || state.CompactedTurnID != t.ID || state.Compactions <= 0 {
 		return nil
 	}
+	return &pa.Message{ID: compactionNoticePrefix + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.NoticeMessage, Text: compactionNoticeText(state), At: at}
+}
+
+func compactionNoticeText(state NativeContextState) string {
 	text := "Earlier context was summarized to make room / 已摘要較早的內容，騰出空間"
 	if state.CompactedBefore > 0 && state.CompactedAfter > 0 && state.CompactedAfter < state.CompactedBefore {
 		text += "：" + compactTokens(state.CompactedBefore) + " → " + compactTokens(state.CompactedAfter)
 	}
-	return &pa.Message{ID: compactionNoticePrefix + t.ID, Fence: t.Fence, TurnID: t.ID, Kind: pa.NoticeMessage, Text: text, At: at}
+	return text
 }
 
 func compactTokens(n int64) string {

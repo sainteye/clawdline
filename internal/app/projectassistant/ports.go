@@ -35,6 +35,9 @@ type Submission struct {
 	// Decision is the person's answer to a decision offer, resolved in the
 	// same commit as their message so an offer is answered at most once.
 	Decision *pa.PermissionOffer
+	// Compact asks for the person's "Compact now": admitted only while the Bot
+	// is idle and already holds a native session (see admitCompaction).
+	Compact bool
 }
 type StopRequest struct {
 	Command pa.Command

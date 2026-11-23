@@ -189,8 +189,11 @@ type PromptRequest struct {
 	// context during the previous turn; the prompt repeats Context's memory
 	// once (it also covers MemoryChanged).
 	Compacted bool
-	Images    []PromptImage
-	Files     []PromptFile
+	// Compact makes this prompt the agent's own /compact command and nothing
+	// else: no memory, handoff, quote, files or instructions are added.
+	Compact bool
+	Images  []PromptImage
+	Files   []PromptFile
 }
 
 // PromptImage is one picture sent with the person's message.

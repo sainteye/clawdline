@@ -3935,6 +3935,10 @@
         {
           "path": "internal/adapters/projectassistantacp/installation_grok.go",
           "line": 19
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/compaction.go",
+          "line": 103
         }
       ],
       "original": [
@@ -3991,7 +3995,8 @@
         "The edited summary is also quoted history and cannot authorize actions. / 編輯後的摘要同樣是歷史引用，不得用來授權執行。",
         "Grok Build uses the native ACP agent, with cached personal sign-in before it opens a Bot session.\n",
         "params[\"_meta\"] = map[string]string{\"rules\": systemPrompt(q)}\n",
-        "After the agent compacted its own context, the next turn's prompt starts once with: <context_restored>\nYour earlier context was summarized to make room. Your memory is repeated here so the summary does not lose it.\n</context_restored>\n<memory_update>…all of the Bot's current filtered memory…</memory_update>"
+        "After the agent compacted its own context, the next turn's prompt starts once with: <context_restored>\nYour earlier context was summarized to make room. Your memory is repeated here so the summary does not lose it.\n</context_restored>\n<memory_update>…all of the Bot's current filtered memory…</memory_update>",
+        "When the person chooses Compact now on an idle Claude Code or Codex Bot, that turn's whole prompt is the agent's own command. Claude Code: /compact Keep verbatim: the latest request, and every instruction not to do something. Keep exact paths, URLs and ids, decisions with their reasons, and open tasks. Codex: /compact"
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -5502,9 +5507,10 @@
     "internal/adapters/planner/recap.go": "b3ebf0eaf6db01552c2a1050b1ddcf04a1c4a5f754a7afcc96eb4580574bde31",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "3a6adb41cafc7074db0f447da01b735ac30a1c551ba2b3329ba6b8c11eaeba6a",
-    "internal/adapters/projectassistantacp/client.go": "9d1a0282d4d4ace8e86b4a389240d14358a9cf953b3233f1a1737eb69c74f3c2",
+    "internal/adapters/projectassistantacp/client.go": "edee6f19de938e76537e921c3b9ee7b865faac314eadcd5ce682ebb22ca564a6",
     "internal/adapters/projectassistantacp/client_compaction.go": "e6b3cdc3301ff2d3e605808f23e484f2a6df07635ef28112f027268b00db114f",
     "internal/adapters/projectassistantacp/client_context.go": "1af96df8505ef72d70d8fb01547c442e5b73b820e7f6e76a20d0399128e941db",
+    "internal/adapters/projectassistantacp/compaction.go": "00f48d326df1673563250c5b654a1d0cfc5109915f3bccbf7f2023333d6988bf",
     "internal/adapters/projectassistantacp/extension_files.go": "4478b6303549dec9f6dded208811aae540c53bc5f2d899af8b658a5d828b3b81",
     "internal/adapters/projectassistantacp/fallback_error.go": "1eaf2cc231f8ff22dc8a14cfc850906ccf7ff9b9bf2908312bbb51ade1afad06",
     "internal/adapters/projectassistantacp/installation.go": "f20a4d5ace8c630f85b219406b17a17f59a666dd6e024cfb065c7b0c8f924b5c",
@@ -5619,11 +5625,11 @@
     "internal/app/projectassistant/memory_view.go": "056ecb5c8d4aa2ec987043815f687c9fc64e1556222173f7d331fddf25c050b9",
     "internal/app/projectassistant/native_context.go": "2ade40c59782a102e42f06d322d0137cc3cf629770a91eb317a130fa739cf830",
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
-    "internal/app/projectassistant/provider_failure.go": "3cc70bd09d74270cbc5b8a6cd3ff9eabefcd12f64336b5eeef177797460417bf",
+    "internal/app/projectassistant/provider_failure.go": "33686619557fb01cd15f053dfcb3e4937a75dde3829b90c3be56cc295448d8ad",
     "internal/app/projectassistant/queue_edit.go": "d8c6e2e6422af9f0581991eb0cff1105bfa6ff158ccec8fe85219a00a66c5d9c",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "1f15602ddbfcbd7cd64b9d52db48140c121ad02fdf03313d7ec8092b228d0083",
+    "internal/app/projectassistant/runtime.go": "407b599fa74b0b83fc30f51d5920eb5d704e6fccadc91c2855c11b9d5d8868c6",
     "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
@@ -5713,7 +5719,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "2f8d47427ec010fb5d39ffd106e67ddc84478afe9193b14dddd965cd3cc3e026",
+    "web/console/src/cloud/project-assistants.ts": "3dc2a77cbcb708a1a628a800fc575e43067c5e01038c35310e21aa2a4da9eaf7",
     "web/console/src/cloud/relay-writer.ts": "e9f17702f95c172a006019e9de0aa4b7c1b7a4300e94d5e710da6df16ef391f7",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
@@ -5724,7 +5730,7 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "9319912c2f8e67365aa2c01009921542e8ef714479450d5a60939f02312d7b86",
+    "web/console/src/project-assistants/Chat.tsx": "33facabba814ba4acf35b00573a8deaa0e27aedbb6c5221526c000e75e843cff",
     "web/console/src/project-assistants/ChatRows.tsx": "72cf448c807cca013a4b716bb55917427ee6c53310b392a1f3f0c9a0c536710e",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",

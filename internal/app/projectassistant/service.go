@@ -583,6 +583,34 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, AuthorityCheck: authorityCheck, Feature: a.Feature, Source: a.Source})
 }
 
+// CompactNow asks an idle Bot to compact its native context now. The prompt
+// is the agent's own command; the person supplies no text.
+func (s *Service) CompactNow(ctx context.Context, c pa.Command, fence pa.Fence) (pa.Receipt, error) {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if fence.Key != c.Key {
+		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")
+	}
+	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, struct {
+		Fence   pa.Fence
+		Compact bool
+	}{fence, true})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	check := func(ctx context.Context) error {
+		_, err := s.authorizeEffect(ctx, c.Key, true, a)
+		return err
+	}
+	if err = check(ctx); err != nil {
+		return pa.Receipt{}, err
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: pa.SendMessage{Fence: fence, Text: compactRequestText},
+		Feature: a.Feature, Source: a.Source, AuthorityCheck: check, Compact: true})
+}
+
 func (s *Service) LeadCallStarted(ctx context.Context, c pa.Command, fence pa.Fence) (pa.Receipt, error) {
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {

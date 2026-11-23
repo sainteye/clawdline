@@ -353,11 +353,54 @@ compaction counts once even when both signals arrive. Nothing is guessed from ti
   `<memory_update>` renderer and filtered snapshot a resumed session uses when memory changed, so there
   is one source. Instructions are not repeated: Claude Code and Codex keep them in the system prompt,
   which survives compaction, and Gemini hears them on every open. The guard is the persisted notice
-  itself: only the most recently started earlier turn on that binding counts, so a later turn disarms
-  it, and it survives restarts.
-- A manual **Compact now** is not available yet; the native `/compact` path stays limited to isolated
-  qualification (`docs/project-assistants-runtime.md`). See
-  `docs/research/codync-context-recovery-2026-11-23.md` for the comparison with Codync.
+  itself: only the most recently started earlier turn of the resumed session counts (each turn mints
+  a new binding ID, so it is the binding being replaced), a later turn disarms it, and it survives
+  restarts.
+
+#### Compact now and New session from the context meter
+
+Clicking the context meter under a Bot chat opens a small menu (a bottom sheet within the Safe Area on
+a phone): **Compact now**, **New session (with handoff)** and **Cancel**. New session is the existing
+roster action and confirmation (`fresh_context`).
+
+Compact now is `POST /v1/project-assistants/{bot}/messages` with `compact: true`, empty text and an
+idempotency key; Cloud carries it as the same `project-assistants.send` word. The source admits one
+ordinary, journaled turn with origin `compact` and the chat notice "Compact now / 立即壓縮". Its only
+prompt is the agent's own command: Claude Code gets `/compact` followed by a keep-list, Codex a bare
+`/compact`. Nothing else is added (no instructions, memory, quote or files), the session's memory
+revision is not advanced, and the agent's words about compacting are not posted as a reply.
+
+- **Path.** The compaction is a turn, not the native maintenance port. `BeginCompaction` reserves a
+  whole ACP client and no production binding supplies its journal; a turn already has a receipt,
+  idempotency, the queue, Stop and restart recovery, and its client closes when it ends, so the next
+  message opens a new one.
+- **Only while idle.** Refused with a typed error and no write while a turn runs or anything is queued
+  or unknown (`pa_capacity_full` / `compact_busy`), before the Bot has a native session
+  (`pa_unsupported` / `compact_no_session`) and for other agents (`compact_agent`). The menu disables
+  the item and says why. A fresh session is never opened to compact: a queued compaction that would
+  need one ends failed before anything is sent.
+- **Result.** The agent's `compaction_update` produces the same `compacted-<turn id>` notice as an
+  automatic compaction, with before → after usage (the before reading falls back to the last turn's
+  stored reading), and the next message repeats memory once. An answered `/compact` that reported no
+  compaction ends the turn failed with `compaction_not_reported`; an agent that listed its commands
+  without `compact` is refused before the write (`native_compaction`). Neither leaves a turn that
+  blocks the next message. A repeated idempotency key returns the first receipt and sends nothing.
+
+Compared with Codync (`9dae3e2b`): Codync has no "Compact now" button; a person types the agent's own
+`/compact`, which it passes through when the agent advertised it
+([turn.rs#L255-L261](https://github.com/leepokai/Codync/blob/9dae3e2bec9b91a4a42f85a943eb3983f95d0503/host/src/agent/bot/turn.rs#L255-L261)).
+Its host-timed compaction is a hidden turn that sends `/compact <keep-list>` to Claude and a bare
+`/compact` to Codex
+([compaction.rs#L114-L121](https://github.com/leepokai/Codync/blob/9dae3e2bec9b91a4a42f85a943eb3983f95d0503/host/src/agent/bot/compaction.rs#L114-L121),
+keep-list [memory compaction.rs#L176-L178](https://github.com/leepokai/Codync/blob/9dae3e2bec9b91a4a42f85a943eb3983f95d0503/host/crates/memory/src/compaction.rs#L176-L178));
+Codex hears the keep-list as `compact_prompt` in its launch config
+([session.rs#L196-L197](https://github.com/leepokai/Codync/blob/9dae3e2bec9b91a4a42f85a943eb3983f95d0503/host/src/agent/bot/session.rs#L196-L197)).
+Deliberate differences: Clawdline offers an explicit menu item instead of a slash command, because its
+composer does not list agent commands; the request is a visible notice rather than a hidden turn, so
+it has the receipt and failure of any message; Codex's launch configuration is not changed to carry
+`compact_prompt`; and an unadvertised command list does not block the send when the agent has not
+yet reported one, because Claude Code and Codex both implement `/compact` and an answered prompt that
+reports no compaction is a definite failure. See `docs/research/codync-context-recovery-2026-11-23.md`.
 
 ### Local roster event feed
 

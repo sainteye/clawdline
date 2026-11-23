@@ -907,3 +907,22 @@
 .project-assistants .pa-decision-form button { align-self:flex-end; }
 .project-assistants .pa-decision-pointer { display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:6px;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-decision-pointer button { background:transparent;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit; }
+/* Context meter menu: a quiet anchored menu; a bottom sheet on a phone. */
+.project-assistants .pa-context-control { position:relative;display:inline-flex; }
+.project-assistants .pa-context-button { all:unset;cursor:pointer;border-radius:8px;padding:2px 4px;margin:-2px -4px;color:inherit; }
+.project-assistants .pa-context-button:hover,.project-assistants .pa-context-button[aria-expanded="true"] { background:var(--pa-hover, #ffffff12); }
+.project-assistants .pa-context-button:focus-visible { outline:2px solid var(--pa-accent, #8ab4f8);outline-offset:1px; }
+.project-assistants .pa-context-backdrop { display:none; }
+.project-assistants .pa-context-menu { position:absolute;z-index:20;left:0;bottom:calc(100% + 6px);min-width:240px;padding:6px;display:flex;flex-direction:column;background:#1a1a1c;border:1px solid var(--pa-line);border-radius:14px;box-shadow:0 12px 32px #000c; }
+.project-assistants .pa-context-menu button { all:unset;cursor:pointer;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;color:inherit; }
+.project-assistants .pa-context-menu button small { color:var(--pa-dim, #aaa);font-size:12px; }
+.project-assistants .pa-context-menu button:hover:not([disabled]),.project-assistants .pa-context-menu button:focus-visible { background:var(--pa-hover, #ffffff12); }
+.project-assistants .pa-context-menu button[disabled] { cursor:default;opacity:.55; }
+.project-assistants .pa-context-menu .pa-context-cancel { color:var(--pa-dim, #aaa); }
+@media (max-width: 640px) {
+  .project-assistants .pa-context-backdrop { display:block;position:fixed;inset:0;z-index:40;background:#0008; }
+  .project-assistants .pa-context-menu { position:fixed;z-index:41;left:0;right:0;bottom:0;top:auto;min-width:0;border-radius:16px 16px 0 0;
+    padding:8px 8px calc(8px + env(safe-area-inset-bottom));padding-left:calc(8px + env(safe-area-inset-left));padding-right:calc(8px + env(safe-area-inset-right)); }
+  .project-assistants .pa-context-menu button { padding:12px; }
+  .project-assistants .pa-context-menu .pa-context-cancel { justify-content:center;align-items:center;margin-top:4px;border-top:1px solid var(--pa-line);border-radius:0 0 10px 10px; }
+}
