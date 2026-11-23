@@ -90,6 +90,25 @@ func (c *configurationCache) forget(agent pa.Agent, profile, directory string) {
 	}
 }
 
+// ConfigurationCacheUsage reports retained catalogs and the age of the oldest
+// catalog still eligible to serve a request. Expired entries are never reused.
+func (s *Service) ConfigurationCacheUsage() (entries int, oldestSeconds int64) {
+	c := s.catalogs
+	if c == nil {
+		return 0, 0
+	}
+	now := s.opts.Clock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, e := range c.entries {
+		age := now.Sub(e.at)
+		if age >= 0 && age < time.Duration(pa.MaxConfigurationCacheSeconds)*time.Second {
+			oldestSeconds = max(oldestSeconds, int64(age/time.Second))
+		}
+	}
+	return len(c.entries), oldestSeconds
+}
+
 func cloneCatalog(in pa.ConfigurationCatalog) pa.ConfigurationCatalog {
 	out := in
 	if in.Options == nil {

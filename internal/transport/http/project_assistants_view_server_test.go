@@ -329,7 +329,7 @@ func TestProjectAssistantViewCloudBridgeRouterServerRealStore(t *testing.T) {
 }
 
 func TestProjectAssistantViewServerRecoversFromInterruptedReads(t *testing.T) {
-	for _, stage := range []string{"query deadline", "publication cancelled"} {
+	for _, stage := range []string{"source query deadline", "publication cancelled"} {
 		t.Run(stage, func(t *testing.T) {
 			f := newPAServerFixture(t, true)
 			f.enable(t)
@@ -347,7 +347,7 @@ func TestProjectAssistantViewServerRecoversFromInterruptedReads(t *testing.T) {
 				}
 			})
 			var field string
-			if stage == "query deadline" {
+			if stage == "source query deadline" {
 				for range pool.Stats().MaxOpenConnections {
 					c, err := pool.Conn(t.Context())
 					if err != nil {
@@ -356,7 +356,7 @@ func TestProjectAssistantViewServerRecoversFromInterruptedReads(t *testing.T) {
 					loans = append(loans, c)
 				}
 				ctx, cancel = context.WithTimeout(t.Context(), 500*time.Millisecond)
-				field = "view_query_deadline"
+				field = "view_source_deadline"
 			} else {
 				ctx, cancel = context.WithCancel(t.Context())
 				f.s.projectAssistants.beforeViewPublish = cancel
@@ -369,7 +369,7 @@ func TestProjectAssistantViewServerRecoversFromInterruptedReads(t *testing.T) {
 			r.Header.Set("Authorization", "Bearer "+f.readonly)
 			w := httptest.NewRecorder()
 			f.h.ServeHTTP(w, r)
-			if stage == "query deadline" && pool.Stats().WaitCount <= wasWaiting {
+			if stage == "source query deadline" && pool.Stats().WaitCount <= wasWaiting {
 				t.Fatal("the read did not reach the occupied query pool")
 			}
 			if got := paAssertHTTPFailure(t, w, http.StatusServiceUnavailable, pa.Offline).Field; got != field {

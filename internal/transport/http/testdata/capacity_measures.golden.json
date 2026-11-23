@@ -350,6 +350,16 @@
     "Note": true
   },
   {
+    "Name": "bots.config_cache_entries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.config_cache_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.config_choices",
     "Known": true,
     "Note": true
@@ -386,6 +396,11 @@
   },
   {
     "Name": "bots.connector_secret_targets",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatch_rules",
     "Known": true,
     "Note": true
   },
@@ -949,6 +964,11 @@
   },
   {
     "Name": "bots.user_message_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.work_message_bytes",
     "Known": true,
     "Note": true
   },

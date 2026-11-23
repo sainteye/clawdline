@@ -95,6 +95,29 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			return capacity.Reading{Known: true, Used: total, Note: "durable outstanding exchanges; historical facts and owned process cleanup are counted separately"}
 		}
 	}
+	configCache := func(age bool) func() capacity.Reading {
+		return func() capacity.Reading {
+			p := &s.projectAssistants
+			p.mu.RLock()
+			h, failed := p.host, p.inspectionFailed
+			p.mu.RUnlock()
+			if failed {
+				return capacity.Unmeasured("Bot Host inspection failed")
+			}
+			if h == nil {
+				return capacity.Reading{Known: true, Note: "no Bot configuration cache before installation"}
+			}
+			service, err := h.Service()
+			if err != nil {
+				return capacity.Reading{Known: true, Note: "Bot configuration service has not been installed"}
+			}
+			entries, oldestSeconds := service.ConfigurationCacheUsage()
+			if age {
+				return capacity.Reading{Known: true, Used: oldestSeconds, Note: "age of the oldest catalog still eligible for reuse"}
+			}
+			return capacity.Reading{Known: true, Used: int64(entries), Note: "retained native configuration catalogs"}
+		}
+	}
 	measures := s.botRoutineHookCapacityMeasures()
 	for key, measure := range map[string]func() capacity.Reading{
 		"bots.server_definitions":     serverCount(false),
@@ -263,7 +286,11 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			}
 			return capacity.Reading{Known: true, Used: int64(h.ConfigurationUsage()), Note: "currently owned disposable native configuration probes"}
 		},
-		"bots.login_profiles": s.loginProfileMeasure,
+		"bots.config_cache_entries":   configCache(false),
+		"bots.config_cache_seconds":   configCache(true),
+		"bots.dispatch_rules":         s.botDispatchRulesMeasure,
+		capacity.BotsWorkMessageBytes: pure,
+		"bots.login_profiles":         s.loginProfileMeasure,
 		"bots.login_secret_targets": func() capacity.Reading {
 			p := &s.projectAssistants
 			p.mu.RLock()
@@ -305,4 +332,24 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		measures[key] = measure
 	}
 	return measures
+}
+
+// A rule is durable and the limit is per Bot. Read through the query-only pool
+// so periodic diagnostics do not wait for the Bot writer.
+func (s *Server) botDispatchRulesMeasure() capacity.Reading {
+	if s.store == nil {
+		return capacity.Unmeasured("Bot dispatch rule store unavailable")
+	}
+	db := s.store.ProjectAssistantReader()
+	var exists, used int64
+	if err := db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_dispatch_rules'`).Scan(&exists); err != nil {
+		return capacity.Unmeasured("Bot dispatch rule table cannot be inspected")
+	}
+	if exists == 0 {
+		return capacity.Reading{Known: true, Note: "optional Bot dispatch rule table is absent"}
+	}
+	if err := db.QueryRow(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_dispatch_rules GROUP BY machine,bot)`).Scan(&used); err != nil {
+		return capacity.Unmeasured("Bot dispatch rules cannot be read")
+	}
+	return capacity.Reading{Known: true, Used: used, Note: "largest saved dispatch permission rule count per Bot"}
 }
