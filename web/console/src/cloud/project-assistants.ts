@@ -819,6 +819,10 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     tail === "/visibility" ? "visibility" : tail === "/delete" ? "delete" : tail === "/queue-edit" ? "queue-edit" :
     tail === "/react" ? "react" : tail === "/network-settings" ? "network-settings-save" : tail === "/connector-secret" ? "connector-secret" : tail === "/connector-credential" ? "connector-credential" : tail === "/login-secret" ? "login-secret" : tail === "/login-profile" ? "login-profile" : tail === "/send-now" ? "send-now" : tail === "/rules/remove" ? "rule-remove" : null
   if (!action) throw failure("pa_invalid")
+  if(action==="send"&&fields.compact===true){
+    if(fields.text!==""||fields.quote_message_id!==""||fields.images||fields.upload_ids||fields.handoff||fields.call_started)throw failure("pa_invalid")
+    delete fields.text // Compact now has a host prompt and no user text.
+  }
   if(action==="send"&&fields.call_started===true){
     if(fields.text!==""||fields.quote_message_id!==""||fields.images||fields.upload_ids||fields.handoff)throw failure("pa_invalid")
     delete fields.text // This existing carry word has a host greeting shape without user text.

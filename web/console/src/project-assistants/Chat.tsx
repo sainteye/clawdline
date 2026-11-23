@@ -1,4 +1,4 @@
-import { ContextUsage } from "./ContextUsage"
+import { ContextMenu, type CompactBlock } from "./ContextMenu"
 import { ChatModel } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
@@ -103,9 +103,9 @@ export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
   showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
-  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void
+  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
 }
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
   const grant=useRef(source.authorizationRevision).current
@@ -1232,6 +1232,22 @@ ${currentDraft}`:submitted)
     const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
     return()=>clearTimeout(timer)
   },[nextDeadline,permissionTick])
+  const [compacting,setCompacting]=useState(false),[compactError,setCompactError]=useState("")
+  // "Compact now" is one idle turn on the source; the agent's own /compact
+  // runs there and the chat then shows the summarized notice.
+  const compactNow=async()=>{
+    if(compacting)return
+    setCompacting(true);setCompactError("")
+    try{
+      await mutate(async(d,s,page)=>{
+        if(d.conversation.active_turn_id||page.snapshot!.queued_messages.length||page.head.queued_turn_count||page.head.unknown_turn_count)throw failure("pa_capacity_full")
+        const intent:W.ProjectAssistantSendRequest={command:command(key,"send",`compact-${crypto.randomUUID()}`),fence:page.head.current_fence,text:"",quote_message_id:"",compact:true}
+        const result=await source.send(intent,s)
+        if(!sendAcknowledgement(result,intent))throw failure("pa_outcome_unknown")
+      })
+    }catch(e){if(valid())setCompactError(errorCode(e))}
+    finally{if(valid()){setCompacting(false);void refresh(true)}}
+  }
   const callObservation=():BotVoiceObservation|null=>{
     const d=currentData.current,h=headRef.current
     if(!d||!h||!epoch.current||!valid()||recovery.current||error||source.current?.()===false
@@ -1621,7 +1637,10 @@ ${currentDraft}`:submitted)
       {fileError&&<p role="alert">{fileError}</p>}
       {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
       {!thread&&data&&<div className="pa-chat-metadata">
-        {live&&head?.context_usage&&<ContextUsage usage={head.context_usage} w={w} language={language}/>}
+        {live&&head?.context_usage&&<ContextMenu usage={head.context_usage} w={w} language={language} compacting={compacting}
+          compactBlock={compactBlockFor(enabled,bot.agent,!!head.conversation.active_turn_id||!!head.queued_turn_count||!!head.unknown_turn_count||turns.some(turn=>turn.state==="queued"||turn.state==="accepted"),!!head.current_fence.binding_id)}
+          onCompact={()=>void compactNow()} onNewSession={onNewSession}/>}
+        {compactError&&<p role="alert">{w.compactFailed} ({compactError})</p>}
         <ChatModel bot={bot} source={source} enabled={enabled} activeTurn={!!head?.conversation.active_turn_id}
           reported={live?head?.active_model?.name:undefined} save={saveModel} w={w}/>
       </div>}
@@ -1670,4 +1689,11 @@ function pictureFile(file:File) {
   const ext=file.name.split(".").pop()?.toLowerCase()
   const mime=ext==="jpg"||ext==="jpeg"?"image/jpeg":ext==="png"||ext==="gif"||ext==="webp"?`image/${ext}`:null
   return mime?new File([file],file.name,{type:mime,lastModified:file.lastModified}):null
+}
+
+function compactBlockFor(enabled:boolean,agent:string,working:boolean,session:boolean):CompactBlock{
+  if(!enabled)return "readOnly"
+  if(agent!=="claude"&&agent!=="codex")return "agent"
+  if(working)return "working"
+  return session?null:"noSession"
 }
