@@ -86,6 +86,8 @@ type NativeWork struct {
 	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
 	artifacts     func(context.Context) ([]app.ArtifactInfo, error)
 
+	messageWork func(context.Context, string, string, string) (pa.WorkMessageReceipt, error)
+
 	leadBotAvailable func(context.Context) error
 	manageBots       func(context.Context, app.LeadBotRequest) (json.RawMessage, error)
 
@@ -1076,9 +1078,11 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return b.Status(ctx, actor, taskID)
 	}
+	tools.messageWork = messageWorkTool(turn, actor, b, bound, journal)
 	if taskOwner.BotID != "" {
 		tools.routines = nil
 		tools.dispatch = nil
+		tools.messageWork = nil
 		tools.teamAvailable = nil
 		tools.team = nil
 		tools.listBots = nil
