@@ -34,6 +34,13 @@ for cand in "${CLAWDLINE:-}" "$(command -v clawdline 2>/dev/null || true)" \
   if [ -n "$cand" ] && [ -x "$cand" ]; then cl=$cand; break; fi
 done
 
+# Elsewhere the shared default Go cache gets a post-build trim when this
+# clawdline has `go-cache` (run-heavy-shared-cache.sh says why).
+if [ "$(uname -s)" != Linux ] && [ -n "$cl" ] && { "$cl" go-cache 2>&1 || true; } | grep -q 'go-cache trim'; then
+  export CLAWDLINE_GO_CACHE_TRIM="$cl"
+  run=("$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)/run-heavy-shared-cache.sh" "$@")
+fi
+
 if [ -n "$cl" ] && { "$cl" 2>&1 || true; } | grep -q '|heavy|'; then
   heavy_flags=()
   if [ "${#compile_flags[@]}" -gt 0 ]; then heavy_flags=(--compile); fi

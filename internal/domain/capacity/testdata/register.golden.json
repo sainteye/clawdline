@@ -4471,6 +4471,86 @@
     ]
   },
   {
+    "Register": "tool",
+    "Name": "build.shared_go_cache_bytes",
+    "Class": "cache",
+    "Unit": "bytes",
+    "Limit": 21474836480,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaxSharedGoCacheBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "build.shared_go_cache_protect_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 7200,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaxSharedGoCacheProtectSeconds"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "build.shared_go_cache_reserve_bytes",
+    "Class": "cache",
+    "Unit": "bytes",
+    "Limit": 32212254720,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaxSharedGoCacheReserveBytes"
+    ]
+  },
+  {
+    "Register": "tool",
+    "Name": "build.shared_go_cache_scan_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4000000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "log"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaxSharedGoCacheScanFiles"
+    ]
+  },
+  {
     "Register": "daemon",
     "Name": "cache.assistant_quota",
     "Class": "cache",
@@ -14564,6 +14644,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.disk_low_free_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 21474836480,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": true,
+    "Sources": [
+      "internal/domain/taskresource.LowDiskAlertBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "resources.disk_reserve_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -14580,6 +14680,25 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/taskresource.DiskReserveBytesLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.disk_source_scan_files",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2000000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.DiskSourceScanFilesLimit"
     ]
   },
   {

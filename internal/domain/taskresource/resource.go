@@ -17,6 +17,12 @@ const (
 	PageRowsLimit                      = 64
 	FilesLimit                         = 262144
 	PreparationReadySecondsLimit       = 60
+	// LowDiskAlertBytesLimit is the free space below which the person is told
+	// once (capacity notice cooldown) what is using the disk.
+	LowDiskAlertBytesLimit int64 = 20 << 30
+	// DiskSourceScanFilesLimit bounds each largest-source measurement that
+	// accompanies a low-disk notice; a larger tree is reported as unmeasured.
+	DiskSourceScanFilesLimit = 2_000_000
 )
 
 type Class string

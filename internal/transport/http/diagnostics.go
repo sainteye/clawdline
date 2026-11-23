@@ -127,6 +127,9 @@ type capacityBeat struct {
 	loc *time.Location
 	// language is read when a push intent is recorded, then its text is fixed.
 	language func() string
+	// diskSources measures the largest disk users for a low free-space
+	// notice, only when that notice is recorded (at most once per cooldown).
+	diskSources func(context.Context) []capacity.DiskSource
 	// sending is the pushes sent off the beat and not yet finished.
 	sending sync.WaitGroup
 
@@ -162,15 +165,16 @@ func (s *Server) capacity() *capacityBeat {
 	}
 	resolved, problems := capacityOverrides()
 	beat := &capacityBeat{
-		resolved: resolved,
-		problems: problems,
-		tracker:  capacity.NewTracker(),
-		measure:  s.capacityMeasures,
-		record:   s.store.Append,
-		since:    time.Now(),
-		poke:     make(chan struct{}, 1),
-		loc:      time.Local,
-		language: s.productLanguage,
+		resolved:    resolved,
+		problems:    problems,
+		tracker:     capacity.NewTracker(),
+		measure:     s.capacityMeasures,
+		record:      s.store.Append,
+		since:       time.Now(),
+		poke:        make(chan struct{}, 1),
+		loc:         time.Local,
+		language:    s.productLanguage,
+		diskSources: s.lowDiskSources,
 		latest: func(ctx context.Context) ([]store.Effect, error) {
 			return s.store.LatestEffects(ctx, orchestrator.EffectCapacityPush)
 		},
@@ -479,6 +483,13 @@ func (b *capacityBeat) recordNotice(ctx context.Context, n owedNotice) (int64, e
 		language = productcopy.Resolve(b.language())
 	}
 	title, body := capacity.NoticeTextReading(language, st.Entry, state, st.Reading, st.Limit, st.ProjectedFullAt, b.loc)
+	if st.Entry.Name == capacity.MachineDiskLow && state != capacity.OK {
+		var sources []capacity.DiskSource
+		if b.diskSources != nil {
+			sources = b.diskSources(ctx)
+		}
+		title, body = capacity.LowDiskNoticeText(language, st.Reading.DiskFree, st.Limit, sources)
+	}
 	push, err := json.Marshal(orchestrator.CapacityPush{
 		Name: e.Subject, State: string(state), From: fmt.Sprint(e.Payload["from"]),
 		Used: st.Reading.Used, Limit: st.Limit,
