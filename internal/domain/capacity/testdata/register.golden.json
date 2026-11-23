@@ -1697,6 +1697,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.dispatched_delivered_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDeliveredWorkSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.dispatched_strip_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotDispatchedStripRows"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.error_kind_bytes",
     "Class": "buffer",
     "Unit": "bytes",

@@ -5360,6 +5360,12 @@ export interface ProjectAssistantBotSummary {
    * sources.
    */
   completed_turn_id?: string
+
+  /**
+   * Broker Sessions this Bot dispatched, counted from its work links. Absent when
+   * there are none or the source is older.
+   */
+  dispatched_work?: ProjectAssistantDispatchedWork
   failure?: ProjectAssistantFailure
   latest_message: string
   pending_permissions: number
@@ -5585,6 +5591,23 @@ export interface ProjectAssistantDevServersResponse {
   log?: ProjectAssistantDevServerLog
   server?: ProjectAssistantDevServer
   servers: ProjectAssistantDevServer[]
+}
+
+export interface ProjectAssistantDispatchedWork {
+  /**
+   * Dispatched Sessions delivered within the last day and not yet landed.
+   */
+  delivered: number
+
+  /**
+   * Dispatched Sessions waiting for the person.
+   */
+  needs_you: number
+
+  /**
+   * Dispatched Sessions accepted or executing.
+   */
+  running: number
 }
 
 export interface ProjectAssistantEditRequest {
@@ -7793,11 +7816,39 @@ export interface ProjectAssistantVisibilityRequest {
 export interface ProjectAssistantWorkLink {
   board_item_id: string
   fence: ProjectAssistantFence
+
+  /**
+   * When the broker task reached a terminal state. Absent while it runs and on
+   * older sources.
+   */
+  finished_at?: string
   id: string
   landing_commit: string
+
+  /**
+   * The destination Project directory of the broker task. Absent on older sources.
+   */
+  project?: string
   result_message_id: string
+
+  /**
+   * The terminal that runs the dispatched Session, when the broker recorded one.
+   * Absent on older sources.
+   */
+  session?: string
+
+  /**
+   * When the dispatched Session was started. Absent before it starts and on older
+   * sources.
+   */
+  started_at?: string
   state: ProjectAssistantWorkState
   task_id: string
+
+  /**
+   * The broker task title. Absent on older sources.
+   */
+  title?: string
   turn_id: string
 }
 

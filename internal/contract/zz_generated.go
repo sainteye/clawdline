@@ -4571,12 +4571,16 @@ type ProjectAssistantBotSummary struct {
 
 	// The latest committed successful main-chat task. Empty or absent on older
 	// sources.
-	CompletedTurnID    string                       `json:"completed_turn_id,omitempty"`
-	Failure            *ProjectAssistantFailure     `json:"failure,omitempty"`
-	LatestMessage      string                       `json:"latest_message"`
-	PendingPermissions int64                        `json:"pending_permissions"`
-	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
-	Source             ProjectAssistantSourceStatus `json:"source"`
+	CompletedTurnID string `json:"completed_turn_id,omitempty"`
+
+	// Broker Sessions this Bot dispatched, counted from its work links. Absent when
+	// there are none or the source is older.
+	DispatchedWork     *ProjectAssistantDispatchedWork `json:"dispatched_work,omitempty"`
+	Failure            *ProjectAssistantFailure        `json:"failure,omitempty"`
+	LatestMessage      string                          `json:"latest_message"`
+	PendingPermissions int64                           `json:"pending_permissions"`
+	ReadCursor         ProjectAssistantReadCursor      `json:"read_cursor"`
+	Source             ProjectAssistantSourceStatus    `json:"source"`
 
 	// The Bot’s own chat activity, independent of background work, unread count and
 	// source connection. Optional for older daemons.
@@ -4775,6 +4779,17 @@ type ProjectAssistantDevServersResponse struct {
 	Log             *ProjectAssistantDevServerLog `json:"log,omitempty"`
 	Server          *ProjectAssistantDevServer    `json:"server,omitempty"`
 	Servers         []ProjectAssistantDevServer   `json:"servers"`
+}
+
+type ProjectAssistantDispatchedWork struct {
+	// Dispatched Sessions delivered within the last day and not yet landed.
+	Delivered int64 `json:"delivered"`
+
+	// Dispatched Sessions waiting for the person.
+	NeedsYou int64 `json:"needs_you"`
+
+	// Dispatched Sessions accepted or executing.
+	Running int64 `json:"running"`
 }
 
 type ProjectAssistantEditRequest struct {
@@ -6804,14 +6819,32 @@ type ProjectAssistantVisibilityRequest struct {
 }
 
 type ProjectAssistantWorkLink struct {
-	BoardItemID     string                    `json:"board_item_id"`
-	Fence           ProjectAssistantFence     `json:"fence"`
-	ID              string                    `json:"id"`
-	LandingCommit   string                    `json:"landing_commit"`
-	ResultMessageID string                    `json:"result_message_id"`
-	State           ProjectAssistantWorkState `json:"state"`
-	TaskID          string                    `json:"task_id"`
-	TurnID          string                    `json:"turn_id"`
+	BoardItemID string                `json:"board_item_id"`
+	Fence       ProjectAssistantFence `json:"fence"`
+
+	// When the broker task reached a terminal state. Absent while it runs and on older
+	// sources.
+	FinishedAt    string `json:"finished_at,omitempty"`
+	ID            string `json:"id"`
+	LandingCommit string `json:"landing_commit"`
+
+	// The destination Project directory of the broker task. Absent on older sources.
+	Project         string `json:"project,omitempty"`
+	ResultMessageID string `json:"result_message_id"`
+
+	// The terminal that runs the dispatched Session, when the broker recorded one.
+	// Absent on older sources.
+	Session string `json:"session,omitempty"`
+
+	// When the dispatched Session was started. Absent before it starts and on older
+	// sources.
+	StartedAt string                    `json:"started_at,omitempty"`
+	State     ProjectAssistantWorkState `json:"state"`
+	TaskID    string                    `json:"task_id"`
+
+	// The broker task title. Absent on older sources.
+	Title  string `json:"title,omitempty"`
+	TurnID string `json:"turn_id"`
 }
 
 type ProjectAssistantWorkState string

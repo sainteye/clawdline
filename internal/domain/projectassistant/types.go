@@ -445,6 +445,12 @@ type WorkLink struct {
 	State           WorkState `json:"state"`
 	ResultMessageID string    `json:"result_message_id"`
 	LandingCommit   string    `json:"landing_commit"`
+	// Display facts projected from the broker record, never from client JSON.
+	Title      string    `json:"title,omitempty"`
+	Project    string    `json:"project,omitempty"`
+	Session    string    `json:"session,omitempty"`
+	StartedAt  time.Time `json:"started_at,omitzero"`
+	FinishedAt time.Time `json:"finished_at,omitzero"`
 }
 
 type MemorySource struct {
@@ -531,6 +537,22 @@ type BackgroundWork struct {
 	NeedsInput int64 `json:"needs_input"`
 }
 
+// DispatchedWork counts the broker Sessions a Bot dispatched, from its work
+// links: Running is accepted or executing, NeedsYou is waiting for the
+// person, Delivered is completed within MaxDeliveredWorkSeconds and not landed.
+type DispatchedWork struct {
+	Running   int64 `json:"running"`
+	NeedsYou  int64 `json:"needs_you"`
+	Delivered int64 `json:"delivered"`
+}
+
+// MaxDeliveredWorkSeconds is how long a delivered, not yet landed Session
+// stays visible to its Bot; registered as bots.dispatched_delivered_seconds.
+const MaxDeliveredWorkSeconds = 24 * 60 * 60
+
+// DeliveredWorkWindow is MaxDeliveredWorkSeconds as a duration.
+const DeliveredWorkWindow = MaxDeliveredWorkSeconds * time.Second
+
 type BotSummary struct {
 	CompletedTurnID string `json:"completed_turn_id,omitempty"`
 	Bot             Bot    `json:"bot"`
@@ -549,6 +571,7 @@ type BotSummary struct {
 	// plus background tasks still waiting or active. Absent means none.
 	ActiveWork     int64           `json:"active_work,omitempty"`
 	BackgroundWork *BackgroundWork `json:"background_work,omitempty"`
+	DispatchedWork *DispatchedWork `json:"dispatched_work,omitempty"`
 	Version        int64           `json:"version"`
 	Source         SourceStatus    `json:"source"`
 }

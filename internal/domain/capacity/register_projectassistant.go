@@ -87,6 +87,8 @@ const (
 // than inventing a number; that row already covers it.
 func groupBounds() []Entry {
 	return []Entry{
+		{Name: BotsDispatchedStripRows, Class: Buffer, Unit: Rows, Limit: MaximumBotDispatchedStripRows, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotDispatchedStripRows"}},
+		{Name: BotsDispatchedDeliveredSeconds, Class: Buffer, Unit: Seconds, Limit: pa.MaxDeliveredWorkSeconds, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxDeliveredWorkSeconds"}},
 		{Name: BotsGroupPreviewAvatars, Class: Buffer, Unit: Rows, Limit: MaximumBotGroupPreviewAvatars, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotGroupPreviewAvatars"}},
 		{Name: BotsSkillAssetFiles, Class: Buffer, Unit: Rows, Limit: pa.MaxSkillAssetFiles, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSkillAssetFiles"}},
 		{Name: BotsConnectorProcesses, Class: Buffer, Unit: Rows, Limit: pa.MaxConnectorProcesses, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxConnectorProcesses"}},

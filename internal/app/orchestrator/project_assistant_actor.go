@@ -408,7 +408,14 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	if r.AssistantOwner == nil {
 		return AssistantWorkSnapshot{}
 	}
-	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID, BoardItemID: r.WorkID, State: pa.WorkUnknown}}
+	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID, BoardItemID: r.WorkID, State: pa.WorkUnknown,
+		Title: r.Title, Project: r.ProjectDir, Session: r.ChildTerminalID, StartedAt: r.SpawnedAt.UTC()}}
+	if r.SpawnedAt.IsZero() {
+		s.Link.StartedAt = time.Time{}
+	}
+	if r.State.Terminal() && !r.FinishedAt.IsZero() {
+		s.Link.FinishedAt = r.FinishedAt.UTC()
+	}
 	switch r.State {
 	case StateQueued, StateSpawning:
 		s.Link.State = pa.WorkAccepted

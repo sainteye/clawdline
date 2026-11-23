@@ -290,6 +290,13 @@ func paWireWorkLink(value pa.WorkLink) contract.ProjectAssistantWorkLink {
 	out.State = contract.ProjectAssistantWorkState(value.State)
 	out.ResultMessageID = value.ResultMessageID
 	out.LandingCommit = value.LandingCommit
+	out.Title, out.Project, out.Session = value.Title, value.Project, value.Session
+	if !value.StartedAt.IsZero() {
+		out.StartedAt = value.StartedAt.UTC().Format(time.RFC3339Nano)
+	}
+	if !value.FinishedAt.IsZero() {
+		out.FinishedAt = value.FinishedAt.UTC().Format(time.RFC3339Nano)
+	}
 	return out
 }
 
@@ -412,6 +419,11 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	if work := value.BackgroundWork; work != nil {
 		out.BackgroundWork = &contract.ProjectAssistantBackgroundWork{
 			Working: work.Working, Waiting: work.Waiting, NeedsInput: work.NeedsInput,
+		}
+	}
+	if work := value.DispatchedWork; work != nil {
+		out.DispatchedWork = &contract.ProjectAssistantDispatchedWork{
+			Running: work.Running, NeedsYou: work.NeedsYou, Delivered: work.Delivered,
 		}
 	}
 	out.Version = value.Version

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -1010,6 +1011,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 		}
 	}
 	out.ActiveWork = activeWorkLinks(a)
+	out.DispatchedWork = countDispatchedWork(maps.Values(a.WorkLinks), time.Now())
 	projectRosterActivity(a, &out)
 	return out
 }
