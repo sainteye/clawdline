@@ -6,7 +6,7 @@ import { BotRosterReadAction } from "./BotRosterReadAction"
 import { catalogWord } from "../catalog"
 import { botIdentity, canWrite } from "./view-state"
 import type { Words } from "./words"
-import { PaSelect,type PaOption } from "./PaSelect"
+import { PaSelect } from "./PaSelect"
 import { PaMenu, type PaMenuAnchor, type PaMenuItem } from "./PaMenu"
 import { ProjectMark } from "./ProjectMark"
 import { projectKey, pinnedGroupKey } from "./roster-groups"
@@ -26,8 +26,7 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead}: {
-  leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection}: {
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
@@ -232,7 +231,6 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
             {createItems.length>0&&<PaMenu label={catalogWord("projectAssistants","rosterCreate")} items={createItems} triggerIcon={<GroupActionIcon size={20}/>}/>}
             {sorting?<button className="pa-roster-sort-done" type="button" onClick={finishSorting}>{w.rosterSortDone}</button>:<PaMenu label={w.rosterOptions} items={[{id:"sort",label:w.rosterSort,onSelect:()=>beginSorting()}]}/>}
           </header>
-          {leadOptions&&onPreferLead&&<PaSelect compact label={w.defaultLead} value={preferredLead??""} options={leadOptions} onChange={onPreferLead}/>}
           {view!=="tower"&&<label className="pa-search"><svg className="pa-search-icon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3.5 3.5"/></svg><input type="search" placeholder={w.search} aria-label={w.search} value={query} onChange={e=>onQuery(e.target.value)}/>{query&&<button type="button" className="pa-search-clear" aria-label={w.clearSearch} onClick={()=>onQuery("")}><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4l8 8M12 4L4 12"/></svg></button>}</label>}
           {(!tower||several)&&<div className="pa-roster-filter">
             <span>{(!loading&&!unavailable||shown.length>0)&&`${w.total} ${shown.length}`}</span>

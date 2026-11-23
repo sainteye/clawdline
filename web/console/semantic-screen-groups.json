@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14070,
+  "englishContentKeys": 14068,
   "riskKeys": 5974,
-  "nonRiskCount": 8096,
+  "nonRiskCount": 8094,
   "groups": [
     {
       "name": "acp / other",
@@ -6204,7 +6204,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 573,
+      "count": 571,
       "sources": [
         null
       ],
@@ -6227,7 +6227,6 @@
         "projectAssistants.attachFiles",
         "projectAssistants.attachPicture",
         "projectAssistants.attachedFile",
-        "projectAssistants.automaticLead",
         "projectAssistants.back",
         "projectAssistants.backToGroup",
         "projectAssistants.backgroundBack",
@@ -6281,7 +6280,6 @@
         "projectAssistants.createSaving",
         "projectAssistants.createSubmit",
         "projectAssistants.decisionActivity",
-        "projectAssistants.defaultLead",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",
