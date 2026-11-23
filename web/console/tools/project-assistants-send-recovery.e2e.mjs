@@ -146,7 +146,10 @@ export function mountFixture() {
   const w = words(language)
   const button = (label, onClick) => React.createElement("button", { type: "button", onClick }, label)
   const mode = next => () => { state.mode = next; paint() }
+  const compact = new URLSearchParams(location.search).has("compact")
   const paint = () => root.render(React.createElement("div", { className: "project-assistants pa-selected", style: { display: "grid", gridTemplateRows: "auto minmax(0,1fr)", height: "100dvh" } },
+    // ?compact=1 folds the controls away so a phone-sized screenshot shows the chat.
+    React.createElement(compact ? "details" : "div", compact ? { style: { padding: "0 8px", fontSize: 12 } } : { style: { display: "contents" } }, compact && React.createElement("summary", null, "Test controls"),
     React.createElement("nav", { "aria-label": "Synthetic test controls", style: { display: "flex", flexWrap: "wrap", gap: 6, padding: 8, fontSize: 12 } },
       injectStorageRefusal && button("Test: allow storage", () => {
         sessionStorage.setItem("send-recovery.storage-allowed", "yes"); refuseStorage = false; paint()
@@ -180,7 +183,7 @@ export function mountFixture() {
       !legacy && button("Test: revoke grant", () => { sources = []; paint() }),
       React.createElement("output", { "aria-label": "Transport log" }, "account=" + account + " grants=" + sources.length + " mode=" + (state.revokeSend ? "revoke-before" : state.mode) + " sends=" + state.sends + " exports=" + state.exports + " keys=" + state.transported.join(",")),
       // The composer's value is not page text; report it for the reader.
-      React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })())),
+      React.createElement("output", { "aria-label": "Composer state" }, (() => { const box = document.querySelector(".pa-composer textarea"); return box ? "composer=" + (box.disabled ? "locked" : "editable") + " draft=[" + box.value + "]" : "composer=absent" })()))),
     React.createElement("main", { className: "pa-main" }, shown && summary ? React.createElement(Chat, { key: account + generation, summary, source, current, accountKey: account, readerID: "fixture-reader", view, w, language, onBack: () => {}, onBotChanged: () => {} }) : React.createElement("p", null, "Chat closed"))))
   // Observe every DOM publication, including the first validated snapshot.
   const observation = document.createElement("output"); observation.id = "legacy-observation"; document.body.append(observation)
