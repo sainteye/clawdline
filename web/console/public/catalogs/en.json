@@ -12157,6 +12157,8 @@
   "projectAssistants.compactNewSession": "New session (with handoff)",
   "projectAssistants.compactNewSessionHint": "Start a fresh context; the chat stays",
   "projectAssistants.compactFailed": "Could not compact",
+  "projectAssistants.compactedNotice": "Earlier context was summarized to make room",
+  "projectAssistants.compactedNoticeSizes": "Earlier context was summarized to make room: {before} → {after}",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

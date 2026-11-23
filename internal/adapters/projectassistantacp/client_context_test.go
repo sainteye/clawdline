@@ -221,3 +221,25 @@ func TestNativeContextTraversesTheACPWireWithoutARealModel(t *testing.T) {
 		t.Fatal("actual cancellation left usable context", got)
 	}
 }
+
+// Live Codex (codex-acp 2.6.0, 2026-11-23): in the compaction turn the only
+// usage reading is the compaction call itself and it arrives before
+// compaction_update. That reading is not the context left afterwards, so the
+// turn reports usage as unknown until a reading follows the compaction.
+func TestNativeContextIsUnknownUntilAReadingFollowsACompaction(t *testing.T) {
+	c := &Client{sessionID: "own-session", fence: testFence(), turnID: "compact-turn"}
+	for _, u := range []string{`{"sessionUpdate":"usage_update","used":28959,"size":475000}`, `{"sessionUpdate":"compaction_update","compactionId":"c1","status":"completed"}`} {
+		if err := contextUpdate(t, c, "own-session", u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if s := c.NativeContext(); s.UsageKnown || s.UsedTokens != 0 || s.Compactions != 1 {
+		t.Fatalf("the compaction call's own reading was reported as context: %+v", s)
+	}
+	if err := contextUpdate(t, c, "own-session", `{"sessionUpdate":"usage_update","used":27242,"size":475000}`); err != nil {
+		t.Fatal(err)
+	}
+	if s := c.NativeContext(); !s.UsageKnown || s.UsedTokens != 27242 {
+		t.Fatalf("the reading after the compaction was lost: %+v", s)
+	}
+}

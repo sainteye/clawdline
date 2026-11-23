@@ -33,6 +33,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   let statusGate:Promise<void>|null=null,releaseStatus:(()=>void)|null=null
   const created=new Set<string>()
   let lostCreateReply=false
+  let contextUsage:{bot:string;usage:W.ProjectAssistantContextUsage}|undefined
   let sharedFile:{output:W.ProjectAssistantOutput;bytes:Uint8Array;message:W.ProjectAssistantMessage}|undefined
   const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:false,resume:false,send_message:false,native_memory:"unknown",native_memory_verified:false,evidence:"synthetic metadata; no native provider admitted",unavailable:failure("adapter_not_found").error})
   const status=():W.ProjectAssistantSourceStatus=>({machine_id:machineID,state,access,readable:state!=="revoked"&&state!=="unpaired",writable:state==="online"&&access==="interactive",fresh:state==="online",observed_at:at,capabilities:bots.map(capabilities)})
@@ -71,6 +72,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
     head.conversation.memory_revision=memory.revision
     head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
+    if(contextUsage?.bot===bot.key.bot_id&&!head.conversation.active_turn_id)head.context_usage={...contextUsage.usage}
     const response:W.ProjectAssistantReadViewResponse={contract_version:contractVersion,mode:r.mode,source:status(),source_epoch:readEpoch,head,items:[],has_more:false,next_cursor:"",next_seq:0}
     const work=latest(own.filter(e=>e.work),e=>e.work!.id)
     const timeline:W.ProjectAssistantReadViewItem[]=[...(messages.get(bot.key.bot_id)??[]).map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:seq,message})),...work.map(event=>({id:event.work!.id,kind:"work" as const,anchor_message_seq:messages.get(bot.key.bot_id)?.find(m=>m.turn_id===event.work!.turn_id)?.seq??0,observed_event_seq:seq,work:event.work}))].sort((a,b)=>a.anchor_message_seq-b.anchor_message_seq||(a.kind<b.kind?-1:a.kind>b.kind?1:0)||(a.id<b.id?-1:a.id>b.id?1:0))
@@ -177,6 +179,15 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     async export(r,s){if(legacyForbidden)throw new Error("huge legacy Export forbidden");if(exportGate)await exportGate;check("export",r,s);if(exportFailure!=="ok"&&sameBot(r,bots[0].key))throw failure(exportFailure);if(sameBot(r,bots[0].key))expiredCursor=false;const bot=find(r),revision={...memory,key:r},ownEvents=events.filter(e=>sameBot(e.fence.key,r));return{contract_version:contractVersion,schema_version:1,bot,conversation:conversation(bot),messages:messages.get(r.bot_id)??[],memory:revision,memory_entries:[],context:{memory:revision,provenance_complete:true,sources:[],text:""},bindings:[],permissions:ownEvents.flatMap(e=>e.permission?[e.permission]:[]),read_cursors:[],receipts:[...receipts.values()].filter(receipt=>sameBot(receipt.command.key,r)),turns:ownEvents.flatMap(e=>e.turn?[e.turn]:[]),work_links:[...new Map(ownEvents.flatMap(e=>e.work?[[e.work.id,e.work] as const]:[])).values()],events:ownEvents}},
   }
   return Object.assign(api,{configureProjects(options:{count?:number;failure?:W.ProjectAssistantErrorCode|null;invalid?:"duplicate"|"foreign"|"cursor"|"revision"|null}){if(options.count!==undefined){projectCount=options.count;projectRevision++}if("failure" in options)projectFailure=options.failure??null;if("invalid" in options)projectInvalid=options.invalid??null},
+    // A Codex Bot after its first turn: one compaction notice stored with a key,
+    // one stored earlier in both languages, and the reading kept from that turn.
+    compactionFixture(){
+      const bot=bots[2],rows=messages.get(bot.key.bot_id)!
+      bot.agent="codex"
+      const notice=(id:string,seq:number,text:string,ref?:W.ProjectAssistantNoticeRef):W.ProjectAssistantMessage=>({id,seq,kind:"notice",text,at,fence:fence(bot),turn_id:"turn-1",quote_message_id:"",...(ref?{notice:ref}:{})})
+      messages.set(bot.key.bot_id,[rows[0]!,notice("compacted-turn-0",2,"Earlier context was summarized to make room / 已摘要較早的內容，騰出空間：345K → 41K"),notice("compacted-turn-1",3,"Earlier context was summarized to make room: 26.2K → 22.1K",{key:"compacted",tokens_before:26182,tokens_after:22113}),{...rows[1]!,seq:4}])
+      contextUsage={bot:bot.key.bot_id,usage:{live:false,turn_id:"turn-1",used_tokens:22024,window_tokens:475000}}
+    },
     headerFixture(owned:boolean,readOnly:boolean){
       const bot=bots[0]
       if(readOnly)access="history_only"
@@ -318,6 +329,7 @@ export function mountFixture() {
     opened?React.createElement(Bots,{key:hostGeneration,viewState:view,sources:sourceList,onClose:()=>{opened=false;paint()},language,accountKey,readerID:"fixture-reader",manageHistory:true,returnFocus:opener}):null,
     React.createElement("button",{id:"voice-owner",onClick:()=>{},"aria-label":"Existing voice stop control"},"Voice stop")))
   const controls={log,a,b,
+    compactionFixture(){a.compactionFixture()},
     headerFixture(owned:boolean,readOnly:boolean){
       // This fixture exercises the explicit roster observation independently of viewport observations.
       Object.defineProperty(document,"hasFocus",{value:()=>false})

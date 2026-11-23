@@ -1,7 +1,6 @@
 package projectassistant
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +19,19 @@ func TestCompactionNoticeIsWrittenOnlyForTheReportedTurn(t *testing.T) {
 	at := time.Unix(1, 0)
 	s := compactionReader{state: NativeContextState{Fence: turn.Fence, CompactedTurnID: "t1", Compactions: 1, CompactedBefore: 345000, CompactedAfter: 41000}}
 	m := compactionNotice(s, turn, at)
-	if m == nil || m.ID != "compacted-t1" || m.Kind != pa.NoticeMessage || !strings.Contains(m.Text, "已摘要") || !strings.Contains(m.Text, "345K → 41K") {
+	if m == nil || m.ID != "compacted-t1" || m.Kind != pa.NoticeMessage || m.Text != "Earlier context was summarized to make room: 345K → 41K" {
 		t.Fatalf("%+v", m)
 	}
+	// The console renders the notice in its reader's language from the key
+	// and values; the English text is only a fallback.
+	if m.Notice == nil || *m.Notice != (pa.NoticeRef{Key: pa.NoticeCompacted, TokensBefore: 345000, TokensAfter: 41000}) {
+		t.Fatalf("notice %+v", m.Notice)
+	}
+	s.state.CompactedAfter = 0
+	if m = compactionNotice(s, turn, at); m == nil || m.Notice == nil || *m.Notice != (pa.NoticeRef{Key: pa.NoticeCompacted}) || m.Text != "Earlier context was summarized to make room" {
+		t.Fatalf("without sizes %+v", m)
+	}
+	s.state.CompactedAfter = 41000
 	s.state.CompactedTurnID = "t0"
 	if compactionNotice(s, turn, at) != nil {
 		t.Fatal("an earlier turn's compaction was written for this one")

@@ -329,6 +329,20 @@ type Message struct {
 	Attachments []Attachment `json:"attachments,omitempty"`
 	Files       []InputFile  `json:"files,omitempty"`
 	Output      *Output      `json:"output,omitempty"`
+	// Notice names a notice Clawdline wrote by key and values, so each
+	// reader renders it in its own language. Text is the English fallback.
+	Notice *NoticeRef `json:"notice,omitempty"`
+}
+
+// NoticeCompacted is the key of the notice for a turn during which the agent
+// summarized its own context; the token counts are before and after.
+const NoticeCompacted = "compacted"
+
+// NoticeRef is a language-neutral notice: a key and its values.
+type NoticeRef struct {
+	Key          string `json:"key"`
+	TokensBefore int64  `json:"tokens_before,omitempty"`
+	TokensAfter  int64  `json:"tokens_after,omitempty"`
 }
 type SendMessage struct {
 	Handoff        *HandoffRef  `json:"handoff,omitempty"`

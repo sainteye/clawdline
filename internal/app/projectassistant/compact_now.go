@@ -71,6 +71,6 @@ func withPriorUsage(notice *pa.Message, session ProviderSession, prior pa.Contex
 	}
 	state.CompactedBefore = prior.UsedTokens
 	out := *notice
-	out.Text = compactionNoticeText(state)
+	out.Text, out.Notice = compactionNoticeContent(state)
 	return &out
 }

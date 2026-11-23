@@ -6581,6 +6581,7 @@ export interface ProjectAssistantMessage {
   files?: ProjectAssistantInputFile[]
   id: string
   kind: ProjectAssistantMessageKind
+  notice?: ProjectAssistantNoticeRef
   output?: ProjectAssistantOutput
   quote_message_id: string
   reactions?: ProjectAssistantReactionActor[]
@@ -6655,6 +6656,16 @@ export interface ProjectAssistantNetworkSettingsView {
   capabilities: ProjectAssistantNetworkCapabilities
   fence: ProjectAssistantFence
   settings: ProjectAssistantNetworkSettings
+}
+
+/**
+ * A notice Clawdline wrote, as a key and its values; each console renders it in its
+ * own language. text stays an English fallback.
+ */
+export interface ProjectAssistantNoticeRef {
+  key: string
+  tokens_after?: number
+  tokens_before?: number
 }
 
 /**
