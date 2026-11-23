@@ -12065,6 +12065,7 @@
   "projectAssistants.dispatchAllowOnce": "這次允許",
   "projectAssistants.dispatchAllowAlways": "一律允許 {route}",
   "projectAssistants.dispatchDecline": "拒絕",
+  "projectAssistants.backgroundRunningCommand": "正在執行指令",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",
