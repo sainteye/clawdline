@@ -71,10 +71,7 @@ export function renderBotDispatchGroups(rows: DispatchEntry[]) {
         </div>
       </div>
       <ul className="rows" role="group" aria-label={attribution}>{group.entries.map(entry =>
-        <Fragment key={entry.id}>
-          {entry.dispatch?.task_title && <li className="session-bot-task-title" role="presentation">{entry.dispatch.task_title}</li>}
-          {render(entry, groupBranches)}
-        </Fragment>
+        <Fragment key={entry.id}>{render(entry, groupBranches)}</Fragment>
       )}</ul>
     </li>
   })

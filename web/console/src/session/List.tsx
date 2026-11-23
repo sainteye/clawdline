@@ -27,6 +27,15 @@ function SessionRowLayout({ children, className, ...props }: ComponentPropsWithR
   return <li {...props} className={["row", className].filter(Boolean).join(" ")}>{children}</li>
 }
 
+/**
+ * A Bot-dispatched card is titled by the task it was dispatched for; any other card keeps its
+ * Session name. A row cannot tell a name typed in Clawdline from any other label, so the task
+ * title wins whenever there is one.
+ */
+export function listRowTitle(sessionName: string, botDispatch?: SessionRow["bot_dispatch"]): string {
+  return botDispatch?.task_title?.trim() || sessionName
+}
+
 /** Identity and activity are the same cells in a local or a fleet list. */
 function RowIdentity({ title, icon, assistant, crown = false, bound = false, boardLead = false, boardAvatar }: {
   title: string; icon: SessionRow["icon"]; assistant?: SessionRow["assistant"]
@@ -83,6 +92,7 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
   const identity = projectedSessionIdentity(title, icon, machineScope, coordinatorBound)
   const mark = identity.icon
   const shownTitle = identity.title
+  const cardTitle = listRowTitle(shownTitle, botDispatch)
   const role = rowPersonaLine(usePersonas(machineID), status?.persona)
   useLayoutEffect(() => { if (state === "working") L.paintSpinner(ref.current?.querySelector<HTMLCanvasElement>("canvas.spin") ?? null) }, [state])
   const width = onArchive ? actionWidth(status?.sessionId) : ACTION_WIDTH
@@ -93,14 +103,14 @@ export function ProjectedRow({ title, sessionID, machineID, machineName, assista
     data-coordinator={coordinatorBound ? "1" : undefined}
     data-machine-pending={identity.pending ? "1" : undefined}
     data-depth={depth ? String(depth) : undefined} data-tree-through={branchThrough ? "1" : undefined}
-    aria-selected={open ? "true" : "false"} aria-label={[shownTitle, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
+    aria-selected={open ? "true" : "false"} aria-label={[cardTitle, boardLead ? nextWord("sessionBoardLead") : "", machineName, stateLabel, freshness].filter(Boolean).join(", ")}
     className={open ? "open projected-row" : "projected-row"}
     onClick={activate} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") {
       event.preventDefault(); activate()
     } }}>
     <span className="kid" hidden={!depth} aria-hidden="true" />
     {ancestorThrough && <span className="tree-ancestor" aria-hidden="true" />}
-    <RowIdentity title={shownTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} boardAvatar={boardAvatar} />
+    <RowIdentity title={cardTitle} icon={mark} assistant={assistant} crown={identity.crown} boardLead={boardLead} boardAvatar={boardAvatar} />
     <div className="meta">
       {cwd && <span className="path">{L.path(cwd)}</span>}
       <RowActivity at={lastMovementAt ? lastMovementAt / 1000 : undefined} />
@@ -482,7 +492,7 @@ export function Row({
       <span className="kid" hidden={!place.depth} aria-hidden="true" />
       {ancestorThrough ? <span className="tree-ancestor" aria-hidden="true" /> : null}
       {row.epic_parent && depth ? <span className="sr-only">{catalogWord("inline", "9ba541d50c44")}</span> : null}
-      <RowIdentity title={name} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} boardAvatar={boardAvatar} />
+      <RowIdentity title={listRowTitle(name, row.bot_dispatch)} icon={icon} assistant={row.assistant} crown={!!row.machine_scope || bound} bound={bound} boardLead={boardLead} boardAvatar={boardAvatar} />
       <div className="meta">
         <span className="path">{L.path(row.cwd)}</span>
         <span className="tty">{row.backend === "claude_remote" ? "" : row.tty || row.backend || ""}</span>

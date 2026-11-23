@@ -345,7 +345,7 @@ function rows(): Row[] {
     }),
     row(NEEDS_ATTESTATION, "Echo has not checked in", needsAttestationCloseability(), MOVED.needsAttestation),
     row(UNKNOWN, "Charlie cannot be read", unknownCloseability(), MOVED.unknown, {
-      bot_dispatch: botDispatchFixture ? { name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "other-atlas" }, task_title: "Inspect synchronization" } : undefined,
+      bot_dispatch: botDispatchFixture ? { name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "other-atlas" } } : undefined,
     }),
     row(SPARE, "Delta is finished too", safeCloseability(), spareMoved, {
       bot_dispatch: botDispatchFixture ? {
@@ -1196,8 +1196,8 @@ class Tab {
     await this.b.event(this.session, "Page.loadEventFired", mark)
   }
 
-  async desktop(): Promise<void> {
-    await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 900, mobile: false, deviceScaleFactor: 1 }, this.session)
+  async desktop(height = 900): Promise<void> {
+    await this.b.send("Emulation.setDeviceMetricsOverride", { width: 1280, height, mobile: false, deviceScaleFactor: 1 }, this.session)
     await this.b.send("Emulation.setTouchEmulationEnabled", { enabled: false }, this.session)
   }
 
@@ -1581,9 +1581,10 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
       const groups = "#rows .session-bot-dispatch-group"
       const option = `${groups} li.row[data-id="${BLOCKED}"]`
       for (const size of ["phone", "desktop"] as const) {
-        if (size === "desktop") await tab.desktop()
+        if (size === "desktop") await tab.desktop(800)
         await tab.go("/")
-        await shortcutUntil(tab, `!!document.querySelector('${option}') && !!document.querySelector(".session-board-group")`)
+        await shortcutUntil(tab, `document.querySelectorAll('${option}').length === 3 && !!document.querySelector(".session-board-group")`)
+        await tab.shot(`bot-dispatch-${size}`)
         assert.deepEqual(await tab.run(`(() => {
           const groups = [...document.querySelectorAll('${groups}')]
           const group = document.querySelector('${option}').closest('.session-bot-dispatch-group')
@@ -1595,7 +1596,8 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
           const rowTitle = row.querySelector('.title .label')
           return {
             names: groups.map(group => group.firstElementChild.querySelector('strong').textContent),
-            tasks: [...group.querySelectorAll('.session-bot-task-title')].map(title => title.textContent),
+            duplicateTasks: group.querySelectorAll('.session-bot-task-title').length,
+            fallbackTitle: groups.find(other => other !== group).querySelector('.row .title .label').textContent,
             projects: [...header.querySelectorAll('.session-bot-dispatch-project')].map(project => [
               project.textContent, project.querySelector('.pa-project-mark rect')?.getAttribute('fill'),
             ]),
@@ -1607,8 +1609,8 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
             fits: group.scrollWidth === group.clientWidth,
           }
         })()`), {
-          names: ["Atlas", "Atlas"], tasks: ["Reconnect the draft editor and restore all unsaved changes across windows", "Compare saved revisions"],
-          titles: ["Bravo is still working", "Delta is finished too"], avatar: "#75c6a5",
+          names: ["Atlas", "Atlas"], duplicateTasks: 0, fallbackTitle: "Charlie cannot be read",
+          titles: ["Reconnect the draft editor and restore all unsaved changes across windows", "Compare saved revisions"], avatar: "#75c6a5",
           projects: [["Draft Editor", "#225588"], ["Revision History", "#886633"]],
           attributionInRow: false, ordinaryTitleStyle: true, sameFrame: true, fits: true,
         })

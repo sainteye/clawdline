@@ -43,9 +43,6 @@
 }
 .session-bot-dispatch-project { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
 .session-bot-dispatch-project .pa-project-mark { flex: none; max-height: 14px; }
-.session-bot-task-title {
-  padding: 4px 8px; color: var(--dim); font-size: .85em; overflow-wrap: anywhere;
-}
 .session-board-group .row[data-board-lead]:not(.open, .selected) { background: var(--card-hi); }
 .session-board-group .row[data-board-lead] .coordinator-mark { margin: 0; }
 .session-board-lead {
