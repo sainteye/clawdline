@@ -86,7 +86,7 @@ export interface SourceClient {
   readonly authorizationRevision: string
   status(signal: AbortSignal): Promise<W.ProjectAssistantSourcesResponse>
   projects(request: W.ProjectAssistantProjectsRequest, signal: AbortSignal): Promise<W.ProjectAssistantProjectsResponse>
-  list(request: W.ProjectAssistantListRequest, signal: AbortSignal): Promise<W.ProjectAssistantListResponse>
+  list(request: W.ProjectAssistantListRequest, signal: AbortSignal, onFailure?: (failure: RosterFailure) => void): Promise<W.ProjectAssistantListResponse>
   create(request: W.ProjectAssistantCreateRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   get(request: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantGetResponse>
   edit(request: W.ProjectAssistantEditRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
@@ -144,6 +144,26 @@ export interface SourceClient {
   /** Where the console reads a stored picture, or null when it cannot. */
   attachment?(key: W.ProjectAssistantBotKey, id: string, signal: AbortSignal): Promise<Blob>
   attachmentURL?(key: W.ProjectAssistantBotKey, id: string): string | null
+}
+
+export interface RosterFailure {
+  machine: string
+  code: string
+  stage: "admission" | "request" | "answer"
+  transport_code: string | null
+  status: number | null
+  has_ref: boolean
+  request_seq: number | null
+  api_level: number | null
+}
+
+export interface RosterScreenEvidence {
+  machine: string | null
+  source_count: number
+  sources: string[]
+  searching: boolean
+  order: string
+  online: boolean
 }
 
 export function failure(code: W.ProjectAssistantErrorCode): W.ProjectAssistantErrorResponse {

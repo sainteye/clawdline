@@ -50,7 +50,8 @@ import { Trace,traceLabel,visibleTrace,workingCategory } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
 import { WorkingTransition } from "./WorkingTransition"
-import { botTurnOutcome, providerSetupFailure, readOnlyReason } from "./source-errors"
+import { providerSetupFailure, readOnlyReason } from "./source-errors"
+import { TurnInterruption } from "./TurnInterruption"
 import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
@@ -85,11 +86,12 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
 type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}
 
 function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
-  return !!head&&value.turn_id===head.conversation.active_turn_id&&sameFence(value.fence,head.current_fence)
+  // Only a validated decision may have an empty turn ID. It belongs to the chat.
+  return !!head&&sameFence(value.fence,head.current_fence)&&(value.turn_id===""||value.turn_id===head.conversation.active_turn_id)
 }
 
 export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,cards:readonly PermissionViewCard[],now:number) {
-  if(!head?.conversation.active_turn_id||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
+  if(!head||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
   // The collection can be paged. Keep counting requests we have yet to read.
   let count=Math.max(0,head.pending_permission_count-cards.length),nextDeadline=Infinity
   for(const {summary,offer} of cards){
@@ -795,7 +797,7 @@ ${currentDraft}`:submitted)
       if(!valid())return outcome
       setReceipt(result.receipt);setUnknown(uncertain())
       if(!uncertainRecovery&&(accepted||result.receipt.state==="unknown")&&!artifact){setFiles([]);rememberFiles(false);flush()}
-      void refresh(true)
+      void refresh(!accepted)
       return outcome
     }catch(e){
       // The source's own receipt outlives a later authority or abort check.
@@ -804,7 +806,7 @@ ${currentDraft}`:submitted)
         const owner=land(hold(kept.receipt))
         if(owner==="active"&&!artifact){clearRecovery();rememberFiles(false);view.flush(draftKey)}
         observation.accept(kept.receipt)
-        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!artifact)setFiles([]);setError("");await refresh(true)}
+        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!artifact)setFiles([]);setError("");await refresh()}
         return {state:"accepted",turn:kept.receipt.resource_id}
       }
       // Only a refusal that provably sent nothing releases the hold; anything
@@ -1367,7 +1369,11 @@ ${currentDraft}`:submitted)
   useLayoutEffect(()=>{
     if(queueEditorOpen)queueEditorInput.current?.focus({preventScroll:true})
   },[queueEditorOpen])
-  const queueLimited=(head?.queued_turn_count??0)>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
+  const queuedCount=head?.queued_turn_count??0
+  const unknownCount=head?.unknown_turn_count??0
+  const queuePaused=queuedCount>0&&unknownCount>0
+  const shownUnknown=turns.filter(turn=>turn.state==="unknown").length
+  const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
   const canReadActions=!!data&&!recoveryRequired&&source.current?.()!==false&&canMarkConversationRead(data.source)
@@ -1524,13 +1530,15 @@ ${currentDraft}`:submitted)
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
       {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
-      {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
+      {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(turn=>
+        <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
+          onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
         steps={liveSteps.length?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={liveTraceTurn===moreTraceTurn} onMore={loadMoreTraces}
           onDetail={readTraceDetail} w={w}/>:undefined}/>
       {stopText&&!visibleTurn&&<p className="pa-turn" role="status">{stopText}</p>}
-      {queueLimited&&<p className="pa-turn" role="status">{w.queueLimited}</p>}
+      {queueLimited&&!queuePaused&&<p className="pa-turn" role="status">{w.queueLimited}</p>}
       {waitingTurn&&<p className="pa-turn" data-waiting-turn={waitingTurn.id} role="status">{w[waitingTurn.state]}</p>}
       {orphanTraces.length>0&&<Trace summaries={orphanTraces} details={details} incomplete={moreOrphanTraces} more={moreOrphanTraces} onMore={loadMoreTraces} onDetail={readTraceDetail} w={w}/>}
       {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
@@ -1578,7 +1586,7 @@ ${currentDraft}`:submitted)
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
-          <span className="pa-queued-preview"><span className="pa-queued-label">{w.queued}: </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
+          <span className="pa-queued-preview"><span className="pa-queued-label">{queuePaused?w.queuePaused:w.queued} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}
@@ -1615,7 +1623,11 @@ ${currentDraft}`:submitted)
       </div>
     })}</div>}
       {!heldSend&&receipt&&(receipt.state==="failed"||receipt.state==="unknown"&&!unknown)&&<p role="status">{w[receipt.state]}</p>}
-      {!heldSend&&(unknown||(head?.unknown_turn_count??0)>0)&&<p role="status">{w.unknown}{(head?.unknown_turn_count??0)>0&&` · ${head!.unknown_turn_count}`}</p>}
+      {(queuePaused||unknownCount>shownUnknown)&&<div className="pa-chat-error" role="status">
+        <span>{(queuePaused?w.queuePausedUnknown:w.previousTurnUnknown).replace("{count}",String(queuePaused?queuedCount:unknownCount))}</span>
+        <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates}>{w.refresh}</button>
+      </div>}
+      {!heldSend&&unknown&&<p role="status">{w.unknown}</p>}
       {heldSend&&isBotCallSend(heldSend.intent.command.idempotency_key)&&<p role="status">{w.unknown} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}
       {view.heldOutcomes.problem(draftKey)==="unreadable"&&<p role="alert">{w.heldUnreadable} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}
       {view.heldOutcomes.problem(draftKey)==="unsaved"&&(unknown||pendingRows.length>0)&&<p role="alert">{w.heldUnsaved}</p>}

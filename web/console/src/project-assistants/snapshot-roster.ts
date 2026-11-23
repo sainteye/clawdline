@@ -1,15 +1,15 @@
 import type * as W from "@clawdline/contract"
-import type {SourceClient} from "./client"
+import type {RosterFailure, SourceClient} from "./client"
 // @ts-expect-error -- Node's strip-types runner uses source extensions.
 import {authorized, failure} from "./client.ts"
 
 /** Refresh the loaded page coverage using fresh keyset cursors, then replace atomically. */
-export async function readSnapshotRoster(source:SourceClient,current:()=>readonly SourceClient[],query:string,pages:number,signal:AbortSignal,cursor="") {
+export async function readSnapshotRoster(source:SourceClient,current:()=>readonly SourceClient[],query:string,pages:number,signal:AbortSignal,cursor="",onFailure?:(evidence:RosterFailure)=>void) {
   return authorized(source,current,async s=>{
     let sources:W.ProjectAssistantSourceStatus[]=[],loadedPages=0
     const items:W.ProjectAssistantBotSummary[]=[]
     do {
-      const response=await source.list({machine_id:source.machineID,query,cursor,page_size:100},s)
+      const response=await source.list({machine_id:source.machineID,query,cursor,page_size:100},s,onFailure)
       sources=response.sources
       if(response.next_cursor&&response.next_cursor===cursor)throw failure("pa_invalid")
       items.push(...response.items);cursor=response.next_cursor;loadedPages++

@@ -1,7 +1,7 @@
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
-import type { MemoryReadDetail, ProjectMemoryPage, SourceClient } from "../project-assistants/client.js"
+import type { MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -73,14 +73,6 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
-type RosterFailure = {
-  machine: string
-  code: string
-  stage: "admission" | "request" | "answer"
-  transport_code: string | null
-  status: number | null
-  has_ref: boolean
-}
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
   accountKey: string
@@ -302,7 +294,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.rememberSource(source)
     return {...answer,source}
   }
-  async list(r: W.ProjectAssistantListRequest,s: AbortSignal) {
+  async list(r: W.ProjectAssistantListRequest,s: AbortSignal,onFailure?: (failure: RosterFailure) => void) {
     this.key({machine_id:r.machine_id,bot_id:""})
     let answered = false
     try {
@@ -311,21 +303,24 @@ export class ProjectAssistantSourceClient implements SourceClient {
       const source=this.observeRosterSource(answer.contract_version,answer.sources?.find(item=>item.machine_id===this.machineID))
       return {...answer,sources:[source]}
     } catch (error) {
-      if (this.reportRosterFailure && !s.aborted && !this.lifetime.signal.aborted) {
+      if ((this.reportRosterFailure || onFailure) && !s.aborted && !this.lifetime.signal.aborted) {
         const transport = error instanceof AssistantTransportFailure
           ? error.response as {code?: unknown; status?: unknown; ref?: {seq?: unknown}} | null : null
         const sourceCode = sourceFailure(error) ? error.error.code : null
         const transportCode = transport?.code
-        try {
-          this.reportRosterFailure({
-            machine: this.machineID,
-            code: typeof sourceCode === "string" && isFailureCode(sourceCode) ? sourceCode : "unavailable",
-            stage: answered ? "answer" : provablyNotSent(error) ? "admission" : "request",
-            transport_code: typeof transportCode === "string" && isFailureCode(transportCode) ? transportCode : null,
-            status: typeof transport?.status === "number" && Number.isInteger(transport.status) ? transport.status : null,
-            has_ref: Number.isSafeInteger(transport?.ref?.seq),
-          })
-        } catch { /* Diagnostics cannot change the roster result. */ }
+        const seq = transport?.ref?.seq
+        const evidence: RosterFailure = {
+          machine: this.machineID,
+          code: typeof sourceCode === "string" && isFailureCode(sourceCode) ? sourceCode : "unavailable",
+          stage: answered ? "answer" : provablyNotSent(error) ? "admission" : "request",
+          transport_code: typeof transportCode === "string" && isFailureCode(transportCode) ? transportCode : null,
+          status: typeof transport?.status === "number" && Number.isInteger(transport.status) ? transport.status : null,
+          has_ref: typeof seq === "number" && Number.isSafeInteger(seq),
+          request_seq: typeof seq === "number" && Number.isSafeInteger(seq) ? seq : null,
+          api_level: this.currentGrant()?.apiLevel ?? null,
+        }
+        try { onFailure?.(evidence) } catch { /* Diagnostics cannot change the roster result. */ }
+        try { this.reportRosterFailure?.(evidence) } catch { /* Diagnostics cannot change the roster result. */ }
       }
       throw error
     }
@@ -879,7 +874,10 @@ export class ProjectAssistantRegistry {
   private clients = new Map<string,ProjectAssistantSourceClient>()
   private listeners = new Set<() => void>()
   private snapshot: readonly SourceClient[] = []
-  constructor(accountKey: string, readerID: string) { this.accountKey = accountKey; this.readerID = readerID }
+  readonly reportRosterScreen?: (evidence: RosterScreenEvidence) => void
+  constructor(accountKey: string, readerID: string, reportRosterScreen?: (evidence: RosterScreenEvidence) => void) {
+    this.accountKey = accountKey; this.readerID = readerID; this.reportRosterScreen = reportRosterScreen
+  }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => {this.listeners.delete(listener)} }
   getSnapshot = () => this.snapshot
   async captureWorkItem(work: W.ProjectAssistantWorkLink,signal: AbortSignal) {

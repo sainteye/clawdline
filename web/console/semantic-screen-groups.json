@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14189,
-  "riskKeys": 6028,
-  "nonRiskCount": 8161,
+  "englishContentKeys": 14195,
+  "riskKeys": 6031,
+  "nonRiskCount": 8164,
   "groups": [
     {
       "name": "acp / other",
@@ -6220,7 +6220,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 612,
+      "count": 615,
       "sources": [
         null
       ],
@@ -6333,6 +6333,7 @@
         "projectAssistants.extensionScope",
         "projectAssistants.extensions",
         "projectAssistants.failBotsOff",
+        "projectAssistants.failCleanupTimeout",
         "projectAssistants.failCloudOff",
         "projectAssistants.failConnection",
         "projectAssistants.failCredits",
@@ -6543,8 +6544,7 @@
         "projectAssistants.projectsLoading",
         "projectAssistants.queueHeld",
         "projectAssistants.queueKeepOriginal",
-        "projectAssistants.queueLimited",
-        "projectAssistants.queued",
+        "projectAssistants.queuePaused",
         "projectAssistants.quote",
         "projectAssistants.quoteMissing",
         "projectAssistants.reactWith",
@@ -6645,6 +6645,7 @@
         "projectAssistants.search",
         "projectAssistants.selectBot",
         "projectAssistants.send",
+        "projectAssistants.sendAccepted",
         "projectAssistants.sendNow",
         "projectAssistants.sending",
         "projectAssistants.serverActions",
@@ -6808,6 +6809,8 @@
         "projectAssistants.traceStep",
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",
+        "projectAssistants.turnRepliesKept",
+        "projectAssistants.turnUnknownNext",
         "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
         "projectAssistants.unread",

@@ -198,7 +198,10 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  AND ` + viewFenceSQL("m.value", false) + `),0) END)
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p WHERE a.permissions_type!='null' AND
  CASE WHEN p.type!='object' THEN 1 ELSE NOT coalesce((json_type(p.value,'$.id')='text' AND p.key=json_extract(p.value,'$.id') AND p.key!=''
- AND json_type(p.value,'$.turn_id')='text' AND json_extract(p.value,'$.turn_id')!=''
+ AND json_type(p.value,'$.turn_id')='text'
+ AND CASE WHEN json_extract(p.value,'$.kind')='decision'
+   THEN json_extract(p.value,'$.turn_id')='' AND json_type(p.value,'$.decision')='object'
+   ELSE json_extract(p.value,'$.turn_id')!='' END
  AND json_extract(p.value,'$.state') IN ('pending','answered','expired','cancelled','unknown')
  AND ` + viewFenceSQL("p.value", false) + `),0) END)
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w WHERE a.work_links_type!='null' AND
@@ -225,7 +228,8 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  WHERE m.id IS NULL OR json_extract(m.j,'$.kind') NOT IN ('user','notice') OR json_extract(m.j,'$.turn_id')!=t.id)
  AND (SELECT count(*) FROM timeline WHERE kind=1)=(SELECT count(*) FROM a,json_each(a.j,'$.WorkLinks') WHERE type='object')
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p LEFT JOIN turns t ON t.id=json_extract(p.value,'$.turn_id')
- WHERE p.type='object' AND (t.id IS NULL OR json_extract(p.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')
+ WHERE p.type='object' AND coalesce(json_extract(p.value,'$.kind'),'')!='decision'
+ AND (t.id IS NULL OR json_extract(p.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')
  OR json_extract(p.value,'$.fence.generation')!=json_extract(t.j,'$.fence.generation')))
  AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w LEFT JOIN turns t ON t.id=json_extract(w.value,'$.turn_id')
  WHERE w.type='object' AND (t.id IS NULL OR json_extract(w.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')

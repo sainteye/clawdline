@@ -130,7 +130,7 @@ func TestReadViewSQLCapabilitiesAndLegacyCollections(t *testing.T) {
 }
 
 func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T) {
-	for _, field := range []string{"prompt_timeout", "provider_usage_limit", "restart", strings.Repeat("private narrative", cloudops.ReadPlaintextBytesLimit)} {
+	for _, field := range []string{"prompt_timeout", "owned_cleanup_timeout", "provider_usage_limit", "restart", strings.Repeat("private narrative", cloudops.ReadPlaintextBytesLimit)} {
 		t.Run(field[:min(len(field), 20)], func(t *testing.T) {
 			e, _, _ := viewFixture(t, 1, 0, false)
 			e.Turns[0].State = pa.TurnUnknown
@@ -146,6 +146,44 @@ func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T
 				t.Fatalf("lost safe diagnostic or changed uncertainty: %+v", last)
 			}
 		})
+	}
+}
+
+func TestReadViewKeepsConversationAndDecisionWithoutATurn(t *testing.T) {
+	e, _, current := viewFixture(t, 2, 0, false)
+	offer := pa.PermissionOffer{
+		ID: "decision", NativeRequestID: "decision", Kind: pa.DecisionOfferKind, Fence: current,
+		Decision: &pa.DecisionRequest{Question: "Which option should I use?"}, AnchorMessageSeq: 2,
+		State: pa.PermissionPending, ExpiresAt: e.Bot.CreatedAt.Add(time.Hour),
+		Options: []pa.PermissionOption{{ID: pa.DecisionOptionPrefix + "1", Label: "Use the first option", Kind: pa.AllowOnce}},
+	}
+	e.Permissions = append(e.Permissions, offer)
+	_, _, views, _ := restoreViews(t, e)
+	q := viewQuery(e.Bot)
+	q.Request.PageSize = 1
+	snapshot := readView(t, views, q)
+	if len(snapshot.Items) != 1 || snapshot.Items[0].Message == nil || !snapshot.HasMore || snapshot.Head.PendingPermissionCount != 1 {
+		t.Fatalf("missing history or decision count: %+v", snapshot)
+	}
+	historyQuery := q
+	historyQuery.Request.Mode, historyQuery.Request.SourceEpoch, historyQuery.Request.Cursor = pa.ReadViewHistory, snapshot.SourceEpoch, snapshot.Items[0].AfterCursor
+	history := readView(t, views, historyQuery)
+	if len(history.Items) != 1 || history.Items[0].Message == nil || history.Items[0].Message.Seq != 1 {
+		t.Fatalf("missing earlier message: %+v", history)
+	}
+	q.Request.Mode, q.Request.SourceEpoch = pa.ReadViewPermissions, snapshot.SourceEpoch
+	collection := readView(t, views, q)
+	if len(collection.Items) != 1 || collection.Items[0].PermissionSummary == nil {
+		t.Fatalf("missing decision summary: %+v", collection)
+	}
+	summary := collection.Items[0].PermissionSummary
+	if summary.ID != offer.ID || summary.TurnID != "" || summary.ToolKind != pa.DecisionOfferKind || summary.Title != offer.Decision.Question {
+		t.Fatalf("wrong decision summary: %+v", summary)
+	}
+	q.Request.Mode, q.Request.Cursor, q.Request.PageSize = pa.ReadViewDetail, summary.DetailCursor, 1
+	detail := readView(t, views, q)
+	if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &offer) {
+		t.Fatalf("decision detail lost its answer options: %+v", detail)
 	}
 }
 
@@ -263,6 +301,8 @@ func TestReadViewRejectsBrokenFactRelations(t *testing.T) {
 		`json_set(CAST(data AS TEXT),'$.Messages[0].fence.project.canonical_id','foreign')`,
 		`json_set(CAST(data AS TEXT),'$.WorkLinks.w000.turn_id','absent')`,
 		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','absent')`,
+		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','')`,
+		`json_set(CAST(data AS TEXT),'$.Permissions.p000.kind','decision','$.Permissions.p000.decision',json('{"question":"Wrong turn"}'))`,
 		`json_set(CAST(data AS TEXT),'$.Bindings.current.fence.key.bot_id','foreign')`,
 	} {
 		t.Run(mutation, func(t *testing.T) {

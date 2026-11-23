@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -21,11 +22,14 @@ import (
 // Only local protocol data is executed, never a provider CLI or model API.
 type observationProvider struct {
 	alignmentProvider
-	finish  chan struct{}
-	start   chan struct{}
-	started chan struct{}
-	entered sync.Once
-	probes  atomic.Int32
+	finish        chan struct{}
+	start         chan struct{}
+	started       chan struct{}
+	entered       sync.Once
+	probes        atomic.Int32
+	closeFailure  error
+	promptFailure error
+	offerDecision func(context.Context, pa.Turn) error
 }
 
 func (p *observationProvider) Capabilities(ctx context.Context, bot pa.Bot) (pa.Capabilities, error) {
@@ -57,6 +61,13 @@ type observationSession struct {
 	owner *observationProvider
 }
 
+func (s *observationSession) Close(ctx context.Context) error {
+	if s.owner.closeFailure != nil {
+		return s.owner.closeFailure
+	}
+	return s.alignmentSession.Close(ctx)
+}
+
 func (s *observationSession) Send(_ context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
 	return observationPending{session: s, prompt: q}, nil
 }
@@ -74,6 +85,14 @@ func (p observationPending) Wait(ctx context.Context) (app.PromptResult, error) 
 	p.session.owner.entered.Do(func() { close(p.session.owner.started) })
 	select {
 	case <-p.session.owner.finish:
+		if offer := p.session.owner.offerDecision; offer != nil {
+			if err := offer(ctx, turn); err != nil {
+				return app.PromptResult{}, err
+			}
+		}
+		if p.session.owner.promptFailure != nil {
+			return app.PromptResult{}, p.session.owner.promptFailure
+		}
 		return app.PromptResult{FinalText: "Synthetic observation final answer"}, nil
 	case <-ctx.Done():
 		return app.PromptResult{}, ctx.Err()
@@ -85,7 +104,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -94,6 +113,27 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 			}
 			f := newPAServerFixture(t, true)
 			provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}
+			if name == "cleanup-timeout" {
+				provider.closeFailure = context.DeadlineExceeded
+			}
+			if name == "quota-card" {
+				provider.promptFailure = &app.ProviderFailure{
+					Reason: app.ProviderUsageExhausted,
+					Cause:  &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "synthetic_quota"},
+				}
+			}
+			if name == "decision-card" {
+				store := projectassistantstore.New(f.s.store.ProjectAssistantDatabase())
+				var once sync.Once
+				provider.offerDecision = func(ctx context.Context, turn pa.Turn) (err error) {
+					once.Do(func() {
+						_, err = store.OfferDecision(ctx, turn.Fence, turn.ID, pa.AskPersonRequest{
+							Question: "Which synthetic option should I use?", SuggestedReplies: []string{"Use the first option"},
+						}, time.Now())
+					})
+					return err
+				}
+			}
 			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
 			f.enable(t)
 			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))

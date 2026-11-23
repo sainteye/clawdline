@@ -607,7 +607,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   }, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const [assistantRefresh, setAssistantRefresh] = useState(0)
-  const assistantRegistry = useMemo(() => who?.account ? new ProjectAssistantRegistry(who.account,who.account) : null,[who?.account])
+  const webBuild = transport.kind === "cloud" ? transport.config.build : ""
+  const assistantRegistry = useMemo(() => who?.account ? new ProjectAssistantRegistry(who.account, who.account, evidence => {
+    const current = client.current
+    if (current?.account !== who.account) return
+    current.viewerEvents?.recordImmediately?.("cloud.bots.roster.unavailable", {
+      ...evidence, observed_at_ms: Date.now(), web_build: webBuild,
+    })
+  }) : null, [who?.account, webBuild])
   const assistantRegistryRef = useRef(assistantRegistry)
   const [assistantWorkIntent,setAssistantWorkIntent] = useState<AssistantWorkIntent | null>(null)
   const assistantWorkRequest = useRef(0)
@@ -623,7 +630,7 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
         machines.find(machine => machine.id === id)?.operationAllowed]))
     const current = () => client.current?.account === account ? client.current : null
     assistantRegistry.sync(grants,grant => capturedAssistantRelayFetch(grant.machineID,current,CARRY_TABLE.carried),failure => {
-      current()?.viewerEvents?.record?.("cloud.bots.roster.failed", failure,
+      current()?.viewerEvents?.record?.("cloud.bots.roster.failed", { ...failure },
         [failure.machine,failure.stage,failure.code,failure.transport_code].join("|"))
     })
   },[assistantRegistry,machines,clientEpoch,who?.device,forgotten,assistantRefresh])

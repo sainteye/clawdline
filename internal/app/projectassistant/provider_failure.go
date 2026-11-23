@@ -11,6 +11,15 @@ import (
 // Neither a native error narrative nor an arbitrary adapter field is public copy.
 // This metadata never proves no effects and never authorizes a prompt replay.
 func executionFailureField(cause error) string {
+	// Close has its own deadline. It must not be described as a deadline
+	// for running the prompt, even when cleanup follows another error.
+	var cleanup *ownedCleanupFailure
+	if errors.As(cause, &cleanup) {
+		if errors.Is(cleanup, context.DeadlineExceeded) {
+			return "owned_cleanup_timeout"
+		}
+		return "owned_cleanup"
+	}
 	if errors.Is(cause, context.DeadlineExceeded) {
 		return "prompt_timeout"
 	}

@@ -202,7 +202,7 @@ func (h *Host) makeService() error {
 	if h.service != nil {
 		return nil
 	}
-	h.store = featurestore.New(h.o.Database)
+	h.store = featurestore.New(h.o.Database).WithReader(h.o.Reader)
 	if h.o.Broker.Store != nil {
 		h.store.CompletionIntent = h.o.Broker.BotCompletionIntent
 	}

@@ -12,7 +12,7 @@ let visibility="hidden"
 Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>visibility})
 localStorage.setItem("ui_language",language)
 await bootCatalog(tag=>"/catalog/"+tag+".json")
-const carried=["status","list","projects","view","send","read","export"].map(word=>"project-assistants."+word)
+const carried=["status","list","projects","view","send","answer","read","export"].map(word=>"project-assistants."+word)
 const phases:unknown[]=[]
 async function call(id:string,word:string,fields:object,signal?:AbortSignal){
   phases.push({phase:"emitted",word,...fields,at:performance.now()})

@@ -10,13 +10,13 @@ import { validateHostedBundle } from "./hosted-bundle.mjs"
 
 import { hostedAssetPattern } from "./check-hosted-assets.mjs"
 
-const declared = JSON.stringify(productionCloud)
-validateHostedDeclaration(declared)
 const root = fileURLToPath(new URL("../", import.meta.url))
 const git = (...args) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim()
 if (git("status", "--porcelain")) throw new Error("Build the hosted console from a clean, committed worktree.")
 const stamp = git("rev-parse", "HEAD")
 const committed_at = git("show", "-s", "--format=%cI", stamp)
+const declared = JSON.stringify({ ...productionCloud, build: stamp })
+validateHostedDeclaration(declared)
 process.env.VITE_HOSTED_CONSOLE = declared
 await build({ root, configFile: join(root, "vite.config.ts"), build: { rollupOptions: { output: { assetFileNames: hostedAssetPattern(stamp) } } } })
 // Only the hosted build contains an edge worker; daemon releases stay static.
@@ -31,7 +31,7 @@ writeFileSync(index, readFileSync(index, "utf8").replace(/<title>[^<]*<\/title>/
 const assets = join(root, "dist", "assets")
 const main = readdirSync(assets).filter(name => /^main-.*\.js$/u.test(name))
 if (main.length !== 1) throw new Error("The hosted build must contain exactly one main bundle.")
-validateHostedBundle(readFileSync(join(assets, main[0]), "utf8"))
+validateHostedBundle(readFileSync(join(assets, main[0]), "utf8"), stamp)
 if (git("rev-parse", "HEAD") !== stamp || git("status", "--porcelain")) {
   throw new Error("The source changed during the hosted build; do not deploy its output.")
 }

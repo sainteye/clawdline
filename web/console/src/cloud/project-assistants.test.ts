@@ -53,7 +53,7 @@ test("local roster crosses a real Node HTTP SSE connection and cancels cleanly",
 const signal = () => new AbortController().signal
 test("a failed Cloud roster reports its stage without the query or response payload",async()=>{
   const fixture = {...grant(),apiLevel:61}
-  const events:unknown[]=[]
+  const events:unknown[]=[], screenRead:unknown[]=[]
   const request={machine_id:fixture.machineID,cursor:"",query:"private query",page_size:100}
   const transportFailure=Object.assign(new Error("private payload"),{code:"cloud_read_busy",status:429,ref:{seq:19}})
   let response=0
@@ -64,16 +64,17 @@ test("a failed Cloud roster reports its stage without the query or response payl
   fixture.online=false
   await assert.rejects(source.list(request,signal()),error=>errorCode(error)==="pa_offline")
   fixture.online=true
-  await assert.rejects(source.list(request,signal()),error=>errorCode(error)==="pa_offline")
+  await assert.rejects(source.list(request,signal(),event=>screenRead.push(event)),error=>errorCode(error)==="pa_offline")
   await assert.rejects(source.list(request,signal()),error=>errorCode(error)==="pa_invalid")
   const canceled=new AbortController()
   canceled.abort()
   await assert.rejects(source.list(request,canceled.signal),{name:"AbortError"})
   assert.deepEqual(events,[
-    {machine:"one",code:"pa_offline",stage:"admission",transport_code:null,status:null,has_ref:false},
-    {machine:"one",code:"pa_offline",stage:"request",transport_code:"cloud_read_busy",status:429,has_ref:true},
-    {machine:"one",code:"pa_invalid",stage:"answer",transport_code:null,status:null,has_ref:false},
+    {machine:"one",code:"pa_offline",stage:"admission",transport_code:null,status:null,has_ref:false,request_seq:null,api_level:61},
+    {machine:"one",code:"pa_offline",stage:"request",transport_code:"cloud_read_busy",status:429,has_ref:true,request_seq:19,api_level:61},
+    {machine:"one",code:"pa_invalid",stage:"answer",transport_code:null,status:null,has_ref:false,request_seq:null,api_level:61},
   ])
+  assert.deepEqual(screenRead,[events[1]])
 })
 const viewRequest:W.ProjectAssistantReadViewRequest={key:{machine_id:"one",bot_id:"same/id"},conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:100}
 test("bounded view keeps API58 metadata and requires API59 only for its captured read",async()=>{

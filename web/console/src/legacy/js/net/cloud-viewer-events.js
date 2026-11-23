@@ -688,7 +688,7 @@ export class ViewerEventLog {
         }
     }
 
-    _admit(key, now) {
+    _admit(key, now, immediate) {
         if (this.windowStartedAt === null || now - this.windowStartedAt >= this.limits.windowMs) {
             this.windowStartedAt = now;
             this.windowAll = 0;
@@ -696,7 +696,9 @@ export class ViewerEventLog {
         }
         var seen = this.windowKeys.get(key) || { count: 0, lastN: null };
         this.windowKeys.set(key, seen);
-        if (seen.count >= this.limits.perKeyInWindow || this.windowAll >= this.limits.allInWindow) {
+        // Keep one of the existing slots for a failure the page actually displayed.
+        var budget = immediate ? this.limits.allInWindow : Math.max(1, this.limits.allInWindow - 1);
+        if (seen.count >= this.limits.perKeyInWindow || this.windowAll >= budget) {
             return null;
         }
         seen.count += 1;
@@ -704,18 +706,23 @@ export class ViewerEventLog {
         return seen;
     }
 
+    /** Save a displayed failure before the person can close or reload the page. */
+    recordImmediately(event, data) {
+        return this.record(event, data, event, true);
+    }
+
     /**
      * Keep one row, or count it as refused by the rate limit. Answers `{ n, rateLimited, key }`;
      * `n` is what a later row (the door's) can name as the row that caused it.
      */
-    record(event, data, dedupeKey) {
+    record(event, data, dedupeKey, immediate = false) {
         var now = this.now();
         if (typeof event !== "string" || event.length > MAX_EVENT || !EVENT_NAME.test(event)) {
             return { n: null, rateLimited: false, key: null, refused: "bad_event" };
         }
         var key = typeof dedupeKey === "string" && dedupeKey ? boundedText(dedupeKey, 256) : event;
         var state = this._load();
-        var admitted = this._admit(key, now);
+        var admitted = this._admit(key, now, immediate);
         if (!admitted) {
             state.counts.rate_limited += 1;
             state.rate_limited_total += 1;
@@ -747,7 +754,7 @@ export class ViewerEventLog {
             if (state.unflushed_spans.length > 1) joinSpans(state);
         }
         this._journal(state);
-        this._save(state);
+        this._save(state, immediate);
         this._notify();
         return { n: row.n, rateLimited: false, key: key };
     }

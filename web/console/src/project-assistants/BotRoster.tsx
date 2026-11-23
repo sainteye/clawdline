@@ -28,7 +28,7 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onUnavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection}: {
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
@@ -36,7 +36,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;onGroupOpenChange?:(open:boolean)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary,fromGroup?:boolean)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
-  unavailable?:boolean;onRetry?:()=>void;onRefresh?:()=>Promise<void>;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
+  unavailable?:boolean;onUnavailable?:(order:string)=>void;onRetry?:()=>void;onRefresh?:()=>Promise<void>;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
   const {state: rosterState, problem, update} = useRosterState(rosterScope)
   const root=useRef<HTMLElement>(null)
@@ -175,7 +175,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
     })
     const handle = (source: RosterDrag, name: string, keys: string[]) => <RosterHandle label={`${w.rosterReorder}: ${name}`} hint={w.rosterReorderHint} onKey={keyboard(source, keys)}/>
     return <>
-      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<div className="pa-roster-unavailable"><p role="status">{w.rosterUnavailable}</p>{onRetry&&<button type="button" className="pa-pill" onClick={onRetry}>{w.retry}</button>}</div>:<p className="pa-empty">{query?w.searchEmpty:w.empty}</p>)}
+      {!loading&&!shown.length&&!roomEntries.length&&(unavailable?<RosterUnavailable key={machine} onVisible={onUnavailable} order={order} onRetry={onRetry} w={w}/>:<p className="pa-empty">{query?w.searchEmpty:w.empty}</p>)}
       {problem&&<p role="status" className="pa-roster-save-error">{w.rosterUnsaved}</p>}
       {context&&(()=>{
         const row=allRows.find(row=>row.kind==="bot"&&row.key===context.key)
@@ -258,4 +258,23 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       }}
     </Groups>
   </aside>
+}
+
+function RosterUnavailable({onVisible,order,onRetry,w}: {
+  onVisible?:(order:string)=>void;order:string;onRetry?:()=>void;w:Words
+}) {
+  const node = useRef<HTMLDivElement>(null)
+  const recorded = useRef(false)
+  useLayoutEffect(() => {
+    if (!onVisible || recorded.current) return
+    const record = () => {
+      if (recorded.current || document.visibilityState === "hidden" || !node.current?.getClientRects().length) return
+      recorded.current = true
+      onVisible(order)
+    }
+    record()
+    document.addEventListener("visibilitychange", record)
+    return () => document.removeEventListener("visibilitychange", record)
+  }, [onVisible, order])
+  return <div ref={node} className="pa-roster-unavailable"><p role="status">{w.rosterUnavailable}</p>{onRetry&&<button type="button" className="pa-pill" onClick={onRetry}>{w.retry}</button>}</div>
 }

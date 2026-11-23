@@ -48,17 +48,21 @@ export function providerSetupFailure(field: string | undefined, w: Record<string
   }
 }
 
-/** A terminal turn explains the interruption even when its effects are unknown. */
-export function botTurnOutcome(turn:{state:string;failure_code:string;failure_field?:string},w:Record<string,string>):string {
-  if(!turn.failure_code)return w[turn.state]??w.failed
+export function botTurnReason(field:string|undefined,w:Record<string,string>):string|undefined {
   const fields:Record<string,string>={
     prompt_timeout:"failTimeout",prompt_stopped:"failStopped",acp_eof:"failConnection",
     native_update:"failNativeUpdate",prompt_result:"failResponse",prompt_max_tokens:"failOutputLimit",prompt_max_turn_requests:"failStepLimit",
-    owned_cleanup:"failCleanup",restart:"failRestart",acknowledged:"failAcknowledged",
+    owned_cleanup:"failCleanup",owned_cleanup_timeout:"failCleanupTimeout",restart:"failRestart",acknowledged:"failAcknowledged",
     provider_usage_limit:"failUsage",provider_out_of_credits:"failCredits",provider_rate_limited:"failRate",
     provider_overloaded:"failOverloaded",provider_signed_out:"failSignedOut",provider_model_missing:"failModel",
   }
-  const reason=providerSetupFailure(turn.failure_field,w)??w[fields[turn.failure_field??""]]
+  return providerSetupFailure(field,w)??w[fields[field??""]]
+}
+
+/** A terminal turn explains the interruption even when its effects are unknown. */
+export function botTurnOutcome(turn:{state:string;failure_code:string;failure_field?:string},w:Record<string,string>):string {
+  if(!turn.failure_code)return w[turn.state]??w.failed
+  const reason=botTurnReason(turn.failure_field,w)
   if(turn.state==="unknown")return [reason,w.turnUnknownNext].filter(Boolean).join(" ")
   return reason||botFailureText(turn.failure_code,w)
 }

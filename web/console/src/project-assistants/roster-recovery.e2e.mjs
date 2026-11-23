@@ -59,18 +59,43 @@ async function checkIndependentSnapshots(page, language) {
   return proof
 }
 async function checkMobileToolbarAndRetry(page,language,width) {
-  await page.goto(origin+"/?snapshots&retry&lang="+language)
+  await page.goto(origin+"/?snapshots&retry&hold&lang="+language)
   const zh=language!=="en"
   const tower=page.locator(".pa-view-toggle")
   if(await tower.getAttribute("aria-pressed")==="true")await tower.click()
-  await page.getByText(zh?"暫時無法載入 Bot 清單。":"Could not load the Bot list right now.",{exact:true}).waitFor()
+  const error=page.getByText(zh?"暫時無法載入 Bot 清單。":"Could not load the Bot list right now.",{exact:true})
+  const stored=()=>page.evaluate(()=>JSON.parse(localStorage.getItem("roster-recovery-diagnostic")??"null")?.rows??[])
+  const release=()=>page.evaluate(()=>{
+    window.rosterRecovery.studio.release()
+    window.rosterRecovery.notebook.release()
+  })
+  assert.deepEqual(await stored(),[])
+  await page.context().setOffline(true)
+  try {
+    await release()
+    await error.waitFor()
+    const rows=await stored()
+    assert.equal(rows.length,1)
+    assert.equal(rows[0].event,"cloud.bots.roster.unavailable")
+    assert.deepEqual(rows[0].data,{
+      machine:null,source_count:2,searching:false,order:"default",online:false,
+      sources:["studio|pa_invalid|||||","notebook|pa_invalid|||||"],
+    })
+  } finally {
+    await page.context().setOffline(false)
+  }
+  await page.reload()
+  assert.equal((await stored()).length,1,"the loss of the old page keeps the displayed failure")
+  await release()
+  await error.waitFor()
   if(width<701){
     const controls=await page.locator(".pa-roster .pa-toolbar .pa-circle").evaluateAll(buttons=>buttons.map(button=>{
       const {left,right}=button.getBoundingClientRect()
       return {left,right}
     }))
-    assert.equal(controls.length,4)
-    assert.ok(controls[2].left-controls[1].right<=12&&controls[3].left-controls[2].right<=12,"the toolbar actions are still spread across the phone")
+    // An unreadable source offers no create action.
+    assert.equal(controls.length,3)
+    assert.ok(controls[2].left-controls[1].right<=12,"the toolbar actions are still spread across the phone")
     assert.ok(controls[0].right-controls[0].left>=44)
     assert.doesNotMatch(await page.locator(".pa-roster-filter").innerText(),/Bots\s+…/)
   }

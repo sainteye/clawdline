@@ -36,8 +36,8 @@ test("retryable source reads are separate from permanent authority or protocol e
 })
 
 test("an interrupted turn explains a known cause and preserves uncertainty",()=>{
-  const w={unknown:"unknown",failed:"failed",failUnknown:"unknown effect",failGeneric:"generic",failTimeout:"time limit",failConnection:"connection lost",failUsage:"usage exhausted",failNativeUpdate:"invalid Agent activity update",turnUnknownNext:"check results; send follow-up; no automatic replay",failAcknowledged:"follow-up received; earlier result unconfirmed"}
-  for(const [field,cause] of [["prompt_timeout","time limit"],["acp_eof","connection lost"],["provider_usage_limit","usage exhausted"],["native_update","invalid Agent activity update"]]){
+  const w={unknown:"unknown",failed:"failed",failUnknown:"unknown effect",failGeneric:"generic",failTimeout:"time limit",failConnection:"connection lost",failCleanupTimeout:"cleanup timed out",failUsage:"usage exhausted",failNativeUpdate:"invalid Agent activity update",turnUnknownNext:"check results; send follow-up; no automatic replay",failAcknowledged:"follow-up received; earlier result unconfirmed"}
+  for(const [field,cause] of [["prompt_timeout","time limit"],["owned_cleanup_timeout","cleanup timed out"],["acp_eof","connection lost"],["provider_usage_limit","usage exhausted"],["native_update","invalid Agent activity update"]]){
     const text=botTurnOutcome({state:"unknown",failure_code:"execution_effect_unknown",failure_field:field},w)
     assert.equal(text,`${cause} ${w.turnUnknownNext}`)
   }

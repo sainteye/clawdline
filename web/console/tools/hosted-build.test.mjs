@@ -38,6 +38,11 @@ test("the served bundle check refuses CloudGate with the incident's invalid decl
   assert.throws(() => validateHostedBundle('import("./CloudGate.js")'), /no usable production/)
   const valid = `const declared=${JSON.stringify(JSON.stringify(productionCloud))};import("./CloudGate.js")`
   assert.equal(validateHostedBundle(valid), true)
+  const stamp = "a".repeat(40)
+  assert.throws(() => validateHostedBundle(valid, stamp), /no usable production/)
+  const stamped = `const declared=${JSON.stringify(JSON.stringify({ ...productionCloud, build: stamp }))}`
+  assert.equal(validateHostedBundle(stamped, stamp), true)
+  assert.throws(() => validateHostedBundle(stamped, "b".repeat(40)), /no usable production/)
   assert.throws(() => validateHostedBundle(valid + "))"), /not valid JavaScript/)
   const wrong = { ...productionCloud, api_origin: "https://example.com" }
   assert.throws(() => validateHostedBundle(`const declared=${JSON.stringify(JSON.stringify(wrong))}`), /no usable production/)
