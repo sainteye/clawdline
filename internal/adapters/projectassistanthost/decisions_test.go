@@ -100,7 +100,7 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	}
 	main := fixtureReceive(t, f.p.sessions)
 	prompt := fixtureReceive(t, f.p.sent)
-	if main.q.Bot.Key != b.Key || prompt.Turn.Origin != pa.UserOrigin || !pa.DirectUserTurn(prompt.Turn) || prompt.Turn.DecisionExchangeID != x.ID ||
+	if main.q.Bot.Key != b.Key || prompt.Turn.Origin != pa.UserOrigin || !pa.DirectUserTurn(prompt.Turn) || !directUserTurn(prompt.Turn) || prompt.Turn.ExchangeID != "" || prompt.Turn.Hops != 0 || prompt.Turn.DecisionExchangeID != x.ID ||
 		!strings.Contains(prompt.Text, "Yes, roll it out") || !strings.Contains(prompt.Text, "Roll out the synthetic dev build.") {
 		t.Fatalf("the answer was not the person's turn in the recipient's main chat: %+v %q", prompt.Turn, prompt.Text)
 	}

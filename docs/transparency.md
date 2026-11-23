@@ -10,6 +10,17 @@ English and Taiwan Traditional Chinese `voice-work` explanations confirms that
 model context, tools, consent and execution behavior are unchanged. Only that
 source receipt is refreshed; this review does not deploy the public website.
 
+Bots are now told when to use `ask_person`. Reviewed the persistent-bot-review
+card in English and Taiwan Traditional Chinese against the fixed Bot frame,
+the peer-request and correlated-reply prompts and the `message_bot`
+description. The new instruction limits cards to permission, authorization,
+a choice between options, or irreversible, paid or data-changing steps; it
+forbids relaying authorization text and states that a card answer authorizes
+only the question and reply's scope. Claude Code's allowed owned tools gain
+`ask_person`, which creates an offer and answers nothing. No tool, approval
+choice or execution path is added; the real-agent behavior is not proven by
+this receipt.
+
 ## Content ownership
 
 The details address menu opens or copies only literal HTTP candidates supplied

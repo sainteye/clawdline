@@ -202,6 +202,29 @@ an offer (`TestBotToolsCanAskThePersonButNeverAnswer`).
 - When that turn ends, `ForwardDecision` completes the exchange with the
   turn's final text and queues the usual correlated `bot_reply` turn to the
   requester.
+- Every agent is told when to use it. Claude Code, Codex, Grok and Gemini all
+  receive the same "Decisions for the user" paragraph in the fixed Bot frame
+  (`systemPrompt`), in English and Taiwan Traditional Chinese: ask with
+  `ask_person` when the person's permission, authorization or a choice between
+  options is needed, or the next step is irreversible, costs money or changes
+  or deletes data; ask ordinary small questions in chat. In a peer request it
+  is the only way to reach the person — never ask the requester to relay it or
+  the person to paste authorization text. A requester only points the person
+  to the waiting Bot's chat (the "Go to" shortcut) and drafts no authorization.
+  The peer-request prompt, the correlated-reply prompt and the `message_bot`
+  description repeat the rule (`TestEveryAgentIsToldToAskThePersonWithACard`,
+  `TestPeerRequestPromptSendsAuthorizationToACard`,
+  `TestMessageBotToolTellsTheRequesterWhereThePersonAnswers`).
+- Claude Code lists `mcp__clawdline__ask_person` in `allowedTools`, so asking
+  never raises a native permission prompt — in a hidden worker nobody would
+  see one (`TestClaudeBotsCanAskThePersonWithoutANativePrompt`). Codex, Grok
+  and Gemini read the same owned MCP tool list; no Clawdline setting there
+  gates an MCP call.
+- The person's answer is a direct user turn (`pa.DirectUserTurn`, the Host's
+  `directUserTurn`, no exchange id, no hops), so within the scope of the
+  question and the reply it authorizes what a typed message would, such as a
+  deployment the Bot's own rules reserve for the person
+  (`TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer`).
 - An answer is refused once the offer expires (`bots.decision_offer_seconds`),
   when the Bot is hidden, or when its binding is revoked. Pending questions
   per Bot are bounded by `bots.decision_offers`; deleting a Bot removes its
