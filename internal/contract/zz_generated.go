@@ -6804,14 +6804,32 @@ type ProjectAssistantVisibilityRequest struct {
 }
 
 type ProjectAssistantWorkLink struct {
-	BoardItemID     string                    `json:"board_item_id"`
-	Fence           ProjectAssistantFence     `json:"fence"`
-	ID              string                    `json:"id"`
-	LandingCommit   string                    `json:"landing_commit"`
+	BoardItemID string `json:"board_item_id"`
+
+	// Committed worktree head recorded for a successful delivery.
+	DeliveryCommit string                `json:"delivery_commit,omitempty"`
+	Fence          ProjectAssistantFence `json:"fence"`
+	ID             string                `json:"id"`
+	LandingCommit  string                `json:"landing_commit"`
+
+	// Branch on which the Broker proved landing.
+	LandingTarget   string                    `json:"landing_target,omitempty"`
 	ResultMessageID string                    `json:"result_message_id"`
 	State           ProjectAssistantWorkState `json:"state"`
-	TaskID          string                    `json:"task_id"`
-	TurnID          string                    `json:"turn_id"`
+
+	// Destination Project for a cross-Project dispatch.
+	TargetProjectID string `json:"target_project_id,omitempty"`
+	TaskID          string `json:"task_id"`
+
+	// Broker-recorded task title.
+	Title  string `json:"title,omitempty"`
+	TurnID string `json:"turn_id"`
+
+	// Recorded conversation of the worker, used to reject terminal reuse.
+	WorkerSession string `json:"worker_session,omitempty"`
+
+	// Terminal of the worker, paired with its recorded conversation.
+	WorkerTerminal string `json:"worker_terminal,omitempty"`
 }
 
 type ProjectAssistantWorkState string

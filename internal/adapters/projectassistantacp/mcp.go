@@ -749,15 +749,30 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		return map[string]string{"state": "delivered", "idempotency_key": q.ID}, nil
 	case "dispatch_work":
 		var q struct {
-			ID      string   `json:"idempotency_key"`
-			Title   string   `json:"title"`
-			Brief   string   `json:"brief"`
-			Claims  []string `json:"claims"`
-			Project string   `json:"project"`
-			Persona string   `json:"persona"`
+			ID          string   `json:"idempotency_key"`
+			Title       string   `json:"title"`
+			Brief       string   `json:"brief"`
+			Claims      []string `json:"claims"`
+			Project     string   `json:"project"`
+			Persona     string   `json:"persona"`
+			BoardItemID string   `json:"board_item_id"`
 		}
 		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" {
 			return nil, refusal(pa.Invalid, "mcp_dispatch")
+		}
+		if q.BoardItemID != "" {
+			tools, ok := s.tools.(app.BoardDispatchTools)
+			if !ok {
+				return nil, refusal(pa.Unsupported, "board_item_id")
+			}
+			link, err := tools.DispatchWithBoard(ctx, q.ID, q.Title, q.Brief, q.Claims, q.Project, q.Persona, q.BoardItemID)
+			if err != nil {
+				return nil, err
+			}
+			return struct {
+				pa.WorkLink
+				Persona string `json:"persona,omitempty"`
+			}{link, q.Persona}, nil
 		}
 		if q.Persona != "" {
 			// Admission is the broker's; this only carries the id there.
@@ -946,9 +961,10 @@ func mcpTools() []any {
 			"idempotency_key": text(),
 			"title": map[string]any{"type": "string", "minLength": 1, "maxLength": work.OutcomeTitleLimit,
 				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
-			"brief":   text(),
-			"claims":  map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For investigation only with an explicit project, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。指定 Project 且只調查時，使用空陣列並在任務說明寫明只調查。"},
-			"project": map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
+			"brief":         text(),
+			"board_item_id": map[string]any{"type": "string", "description": "Optional UUID of the existing Board item explicitly named in the user's current message. Links this task for evidence without assigning or moving the item. 使用者在本則訊息明確指定既有看板項目時填入 UUID，只連結交付證據。"},
+			"claims":        map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For investigation only with an explicit project, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。指定 Project 且只調查時，使用空陣列並在任務說明寫明只調查。"},
+			"project":       map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
 		}, "idempotency_key", "title", "brief", "claims"),

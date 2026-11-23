@@ -17,6 +17,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/lane"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/work"
 )
 
 func assistantBrokerFixture(t *testing.T) (*Broker, context.Context, *AssistantCurrent, pa.WorkRequest, *atomic.Int64) {
@@ -83,6 +84,48 @@ func TestBotDispatchLaunchesClaudeInAutoMode(t *testing.T) {
 	}
 }
 
+func TestAssistantDispatchLinksOnlyARegisteredBoardItemInItsProject(t *testing.T) {
+	b, ctx, current, request, _ := assistantBrokerFixture(t)
+	request.BoardItemID = NewUUID()
+	if _, err := b.DispatchAssistant(ctx, request); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("missing Board item: %v", err)
+	}
+	item := work.ItemV2{
+		ID: request.BoardItemID, ProjectID: current.Project.Scope.ProjectID, ProjectPath: current.Project.Directory,
+		Kind: work.KindIssue, Title: "Keep the dispatch evidence", Phase: work.PhaseImplementing,
+		OwnerSession: "board-owner", DeploymentPolicy: work.DeployAgentDecides,
+		CreatedBy: "person", CreatedAt: time.Now(), UpdatedAt: time.Now(), Cycle: 1, Version: 1,
+	}
+	foreign := item
+	foreign.ID = NewUUID()
+	foreign.ProjectID = "another-project"
+	if err := b.Store.WriteWorkV2(ctx, func(tx *store.WorkV2Tx) error {
+		if err := tx.CreateItem(item, "person", "{}"); err != nil {
+			return err
+		}
+		return tx.CreateItem(foreign, "person", "{}")
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request.BoardItemID = foreign.ID
+	if _, err := b.DispatchAssistant(ctx, request); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("foreign Board item: %v", err)
+	}
+	request.BoardItemID = item.ID
+	dispatched, err := b.DispatchAssistant(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := AssistantWorkSnapshotOf(dispatched.Record).Link
+	if link.BoardItemID != item.ID || link.Title != dispatched.Record.Title {
+		t.Fatalf("missing Board link: %+v", link)
+	}
+	got, err := b.Store.WorkV2Item(ctx, item.ID)
+	if err != nil || got.OwnerSession != item.OwnerSession || got.Phase != item.Phase || got.Version != item.Version {
+		t.Fatalf("dispatch changed the Board item: %+v %v", got, err)
+	}
+}
+
 func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *testing.T) {
 	b, ctx, current, q, calls := assistantBrokerFixture(t)
 	var states []pa.WorkState
@@ -131,7 +174,7 @@ func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *tes
 		t.Fatal(err)
 	}
 	s, err = b.AssistantStatus(ctx, q.Actor, r.ID)
-	if err != nil || s.Link.State != pa.WorkCompleted || s.Link.LandingCommit != "" || s.Result != "The scoped change is ready." {
+	if err != nil || s.Link.State != pa.WorkCompleted || s.Link.DeliveryCommit != commit || s.Link.LandingCommit != "" || s.Result != "The scoped change is ready." {
 		t.Fatalf("completed %+v %v", s, err)
 	}
 	gitIn(t, current.Project.Directory, "merge", "--ff-only", r.Worktree.Branch)
@@ -139,7 +182,7 @@ func TestAssistantBrokerAcceptsIndependentOwnerAndReportsResultAndLanding(t *tes
 		t.Fatal(err)
 	}
 	s, err = b.AssistantStatus(ctx, q.Actor, r.ID)
-	if err != nil || s.Link.State != pa.WorkLanded || s.Link.LandingCommit != commit {
+	if err != nil || s.Link.State != pa.WorkLanded || s.Link.LandingCommit != commit || s.Link.LandingTarget != "main" {
 		t.Fatalf("landed %+v %v", s, err)
 	}
 	if calls.Load() != 1 {

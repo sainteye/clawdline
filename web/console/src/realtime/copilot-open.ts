@@ -8,6 +8,7 @@ export interface CopilotOpenDetail {
   sessionID: string
   /** The Session's machine, from every machine's list; the reading machine when absent. */
   machineID?: string
+  conversationID?: string
   /** Set by the page that opened it; left unset when no page handles the ask. */
   answer?: (opened: boolean) => void
 }
@@ -16,10 +17,10 @@ export interface CopilotOpenDetail {
 export const COPILOT_OPEN_WAIT_MS = 8000
 
 /** Asks this page to open the Session; true once it is open on screen. */
-export function openOnThisPage(sessionID: string, machineID?: string): Promise<boolean> {
+export function openOnThisPage(sessionID: string, machineID?: string, conversationID?: string): Promise<boolean> {
   return new Promise((resolve) => {
     const timer = setTimeout(() => resolve(false), COPILOT_OPEN_WAIT_MS)
-    const detail: CopilotOpenDetail = { sessionID, ...(machineID ? { machineID } : {}), answer: (opened) => { clearTimeout(timer); resolve(opened) } }
+    const detail: CopilotOpenDetail = { sessionID, ...(machineID ? { machineID } : {}), ...(conversationID ? { conversationID } : {}), answer: (opened) => { clearTimeout(timer); resolve(opened) } }
     document.dispatchEvent(new CustomEvent<CopilotOpenDetail>(COPILOT_OPEN, { detail }))
   })
 }

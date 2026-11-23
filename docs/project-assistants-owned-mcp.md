@@ -90,6 +90,17 @@ not native stderr, a bearer or arbitrary exception text. Duplicate JSON keys,
 invalid Unicode, unsafe numbers and excessive nesting are rejected through the
 existing Cloud JSON parser. This narrow profile accepts string/integer RPC IDs.
 
+## Linking a dispatch to a Board item
+
+When the person's current direct message explicitly names the full ID of an
+existing Board item, use `board_item_id` on `dispatch_work`. The Host checks the
+original message and the Broker checks the item against the destination
+Project. The task links to the item without changing the item's assignment or
+phase. The chat's work card reads independent verification from that linked
+item and displays the exact candidate separately from the worker's commit and
+the Broker's confirmed landing. Opening the worker requires its original
+terminal and conversation to still match the live Session.
+
 ## Messaging dispatched work
 
 `message_work` lets a Bot correct or add to a work Session it dispatched while

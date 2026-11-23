@@ -63,6 +63,7 @@ type WorkRequest struct {
 	Brief         string
 	Claims        []string
 	TargetProject ProjectScope
+	BoardItemID   string
 	// Persona is an optional Session persona id. The broker admits it with
 	// the same rule as every other dispatch; empty keeps the default Session.
 	Persona string

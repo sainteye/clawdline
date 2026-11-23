@@ -42,6 +42,19 @@ const boardItem = machine => ({id:"PA-01",project:{id:"project",label:"Synthetic
   acceptance_criteria:"Synthetic only",acceptance_version:1,acceptance_digest:"fixture",gate_snapshot_cycle:0,gate_snapshot_at:null,planning_gate:false,verify_gate:false,
   phase:"unassigned",condition:null,user_action:"",area:"unassigned",deployment_policy:"not_required",review_required:false,owner_session:null,
   created_at:1,updated_at:1,closed_at:null,cycle:1,version:1,documents:[],images:[],steps:[]})
+const verificationMode = params.get("verification") || "running"
+if (params.has("work-card")) {
+  for (const source of [a,b]) {
+    const bot = source.bots[0]
+    const saved = await source.export(bot.key,new AbortController().signal)
+    const work = saved.work_links[0]
+    source.push({id:"fixture-linked-work",seq:0,at:new Date().toISOString(),version:"project-assistants.v1",
+      kind:"work_updated",fence:work.fence,work:{...work,title:"Keep the Board scroll position",
+        state:params.has("landed") ? "landed" : "completed",delivery_commit:"8f24c109",
+        landing_target:params.has("landed") ? "main" : undefined,landing_commit:params.has("landed") ? "c31d8a22" : "",
+        worker_terminal:"%fixture-4",worker_session:"fixture-4"}})
+  }
+}
 const sourceState = params.get("source")
 const grants = () => [a,b].map(source => ({accountKey:registry.accountKey,readerID:registry.readerID,machineID:source.machineID,name:source.machineName,
   authorizationRevision:source.machineID === "studio" && grantMode === "history" ? "history-grant" : source.machineID+"-grant",apiLevel:sourceState === "unsupported" ? PROJECT_ASSISTANTS_API_LEVEL-1 : PROJECT_ASSISTANTS_VIEW_API_LEVEL,
@@ -51,7 +64,19 @@ let listMode = new URLSearchParams(location.search).get("list") || "ready", rele
 const transport = grant => async (path,init) => {
   const source = grant.machineID === "studio" ? a : b
   const request = assistantRelayRequest(path,init), signal = init?.signal || new AbortController().signal
-  if (request.word === "work.v2.item") {log.push({method:"workItem",machine:grant.machineID,request:request.fields});return Response.json({item:boardItem(grant.machineID)})}
+  if (request.word === "work.v2.item") {
+    log.push({method:"workItem",machine:grant.machineID,request:request.fields})
+    const item = boardItem(grant.machineID)
+    if (params.has("work-card")) {
+      item.verify_gate = true
+      item.phase = "verifying"
+      item.verification = { verify_gate:true, latest_round:{id:"round", candidate_commit:"8f24c109",
+        criteria_digest:verificationMode === "stale" ? "old" : "fixture",
+        state:verificationMode === "running" ? "running" : "complete", verdict:verificationMode === "running" ? undefined : "PASS"},
+        current_authorization:verificationMode === "pass" ? {kind:"pass"} : undefined}
+    }
+    return Response.json({item})
+  }
   const name = request.word.replace("project-assistants.","")
   const method = {read:"markRead",observed:"observe",memory:"saveMemory"}[name] || name
   if (method === "status" && !feature) log.push({method:"status",machine:grant.machineID,request:null})
@@ -86,7 +111,7 @@ window.EventSource = FixtureEvents
 let quotaMode = new URLSearchParams(location.search).get("quota") || "empty", releaseQuota = null
 const quotaAnswer = () => quotaMode === "error" ? Response.json({error:{code:"unavailable",message:"Synthetic quota failure"}},{status:503}) : Response.json({providers:quotaMode === "ready" ? [{id:"codex",label:"Codex",source:"codex_rollout",observed_at:1,stale:false,windows:[{name:"7d",used_percent:0}]}] : []})
 const at = Math.floor(Date.now()/1000)
-const row = index => ({id:"%fixture-"+index,label:index ? "Synthetic Session "+index : "Original Session",assistant:"claude",backend:"tmux",state:"idle",work_state:"idle",cwd:"/synthetic/project",isClaude:true,lastActivityAt:at,evidence:{},agents:[],shells:[],
+const row = index => ({id:"%fixture-"+index,sessionId:index === 4 && params.has("replacement") ? "different-conversation" : "fixture-"+index,label:index ? "Synthetic Session "+index : "Original Session",assistant:"claude",backend:"tmux",state:"idle",work_state:"idle",cwd:"/synthetic/project",isClaude:true,lastActivityAt:at,evidence:{},agents:[],shells:[],
   closeability:{state:"unknown",reasons:[],activity_generation:0,session_generation:0,obligation_generation:0,observed_at:at,provenance:[],source:{freshness:"unknown",provenance:"fixture",observed_at:at,max_age_seconds:0}}})
 const rows = Array.from({length:40},(_,index) => row(index))
 window.fetch = async (input,init) => {

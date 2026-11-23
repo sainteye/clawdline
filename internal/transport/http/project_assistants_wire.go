@@ -290,6 +290,12 @@ func paWireWorkLink(value pa.WorkLink) contract.ProjectAssistantWorkLink {
 	out.State = contract.ProjectAssistantWorkState(value.State)
 	out.ResultMessageID = value.ResultMessageID
 	out.LandingCommit = value.LandingCommit
+	out.Title = value.Title
+	out.DeliveryCommit = value.DeliveryCommit
+	out.LandingTarget = value.LandingTarget
+	out.WorkerTerminal = value.WorkerTerminal
+	out.WorkerSession = value.WorkerSession
+	out.TargetProjectID = value.TargetProjectID
 	return out
 }
 

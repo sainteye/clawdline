@@ -78,6 +78,11 @@ type PersonaDispatchTools interface {
 	DispatchWithPersona(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error)
 }
 
+// BoardDispatchTools associates a dispatch with a Board item the person named.
+type BoardDispatchTools interface {
+	DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
+}
+
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)

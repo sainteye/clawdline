@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14121,
-  "riskKeys": 6000,
-  "nonRiskCount": 8121,
+  "englishContentKeys": 14136,
+  "riskKeys": 6007,
+  "nonRiskCount": 8129,
   "groups": [
     {
       "name": "acp / other",
@@ -6209,7 +6209,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 583,
+      "count": 591,
       "sources": [
         null
       ],
@@ -6792,6 +6792,14 @@
         "projectAssistants.uploadingFiles",
         "projectAssistants.version",
         "projectAssistants.work",
+        "projectAssistants.workEvidence",
+        "projectAssistants.workLandedIn",
+        "projectAssistants.workLanding",
+        "projectAssistants.workVerification",
+        "projectAssistants.workVerificationFailed",
+        "projectAssistants.workVerificationPassed",
+        "projectAssistants.workVerificationRunning",
+        "projectAssistants.workViewVerification",
         "projectAssistants.workspace",
         "projectAssistants.writingReply",
         "projectAssistants.yes",

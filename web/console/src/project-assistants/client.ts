@@ -1,3 +1,4 @@
+import type { WorkV2Item } from "../pages/work/api"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node's strip-types runner loads the generated source extension.
 import {ProjectAssistantAgentValues} from "../../../contract/src/generated.ts"
@@ -78,6 +79,7 @@ export interface SourceClient {
   current?(): boolean
 	canOutputs?(): boolean
 	output?(request:W.ProjectAssistantOutputRequest,signal:AbortSignal):Promise<W.ProjectAssistantOutputResponse>
+  workItem?(work: W.ProjectAssistantWorkLink, signal: AbortSignal): Promise<WorkV2Item>
   readonly machineID: string
   /** The machine's own name, when known; the roster says "this machine" otherwise. */
   readonly machineName?: string

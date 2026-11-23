@@ -239,8 +239,9 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Title         string          `json:",omitempty"`
 		TargetProject pa.ProjectScope `json:"target_project,omitzero"`
 		// Omitted when empty so receipts written before personas keep their hash.
-		Persona string `json:",omitempty"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona})
+		Persona     string `json:",omitempty"`
+		BoardItemID string `json:"board_item_id,omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -279,6 +280,15 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 		c.Project = destination
 	} else if !c.DispatchAllowed || c.Fence.Project.Kind != pa.RepositoryProject {
 		return c, assistantFailure(pa.ScopeDenied, "dispatch_policy")
+	}
+	if q.BoardItemID != "" {
+		if !IsTaskID(q.BoardItemID) {
+			return c, assistantFailure(pa.Invalid, "board_item_id")
+		}
+		item, err := b.Store.WorkV2Item(ctx, q.BoardItemID)
+		if err != nil || item.ProjectID != c.Project.Scope.ProjectID || item.ProjectPath != c.Project.Directory {
+			return c, assistantFailure(pa.ScopeDenied, "board_item_id")
+		}
 	}
 	claims, err := admitClaims(q.Claims)
 	if err != nil {
@@ -362,6 +372,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	if err != nil {
 		return Dispatched{}, err
 	}
+	r.WorkID = q.BoardItemID
 	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona}
 	if pa.ValidateAppearance(c.BotAppearance) == nil {
 		r.AssistantOwner.BotAppearance = c.BotAppearance
@@ -408,7 +419,17 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	if r.AssistantOwner == nil {
 		return AssistantWorkSnapshot{}
 	}
-	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID, BoardItemID: r.WorkID, State: pa.WorkUnknown}}
+	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{
+		ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID,
+		BoardItemID: r.WorkID, State: pa.WorkUnknown, Title: r.Title,
+		TargetProjectID: r.AssistantOwner.TargetProject.ProjectID,
+	}}
+	if r.ChildTerminalID != "" && r.ChildConversationID != "" {
+		s.Link.WorkerTerminal, s.Link.WorkerSession = r.ChildTerminalID, r.ChildConversationID
+	}
+	if r.State == StateSuccess && r.Worktree != nil && r.Worktree.Head != r.Worktree.Base {
+		s.Link.DeliveryCommit = r.Worktree.Head
+	}
 	switch r.State {
 	case StateQueued, StateSpawning:
 		s.Link.State = pa.WorkAccepted
@@ -425,6 +446,7 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	}
 	if r.Landing != nil && (r.Landing.State == LandingLanded || r.Landing.State == LandingIncorporated) {
 		s.Link.State, s.Link.LandingCommit = pa.WorkLanded, r.Landing.Commit
+		s.Link.LandingTarget = r.Landing.Target
 	}
 	if r.State.Terminal() {
 		s.Link.ResultMessageID = "work-result-" + r.ID

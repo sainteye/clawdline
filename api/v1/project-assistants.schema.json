@@ -1075,7 +1075,13 @@
         },
         "landing_commit": {
           "type": "string"
-        }
+        },
+        "title": { "type": "string", "description": "Broker-recorded task title." },
+        "delivery_commit": { "type": "string", "description": "Committed worktree head recorded for a successful delivery." },
+        "landing_target": { "type": "string", "description": "Branch on which the Broker proved landing." },
+        "worker_terminal": { "type": "string", "description": "Terminal of the worker, paired with its recorded conversation." },
+        "worker_session": { "type": "string", "description": "Recorded conversation of the worker, used to reject terminal reuse." },
+        "target_project_id": { "type": "string", "description": "Destination Project for a cross-Project dispatch." }
       },
       "required": [
         "id",

@@ -12,6 +12,7 @@ import { assistantHistoryBackSteps, assistantWorkTarget } from "../page-route.js
 import { openWorkItem } from "./work/new-item.js"
 import { requestPage } from "../overlays/events.js"
 import { toast } from "../overlays/toast.js"
+import { openOnThisPage } from "../realtime/copilot-open.js"
 import { words } from "../project-assistants/words.js"
 import { errorCode, botFromFragment } from "../project-assistants/client.js"
 import {createCompletionTracker,startBotCompletionSound} from "../project-assistants/completion-sound.js"
@@ -34,7 +35,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const sources = useSyncExternalStore(registry.subscribe,registry.getSnapshot,registry.getSnapshot)
   const [opened,setOpened] = useState(false), [entry,setEntry] = useState(0),[voiceShortcut,setVoiceShortcut]=useState(0)
   const openedRef = useRef(false), opener = useRef<HTMLElement | null>(null)
-  const pendingWork = useRef<W.ProjectAssistantWorkLink | null>(null)
+  const pendingWork = useRef<{ work: W.ProjectAssistantWorkLink; view?: "session" } | null>(null)
   const ownedHistory = useRef("")
   const workHandler = useRef(onOpenWork)
   workHandler.current = onOpenWork
@@ -157,8 +158,17 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       for (const [node,top,left] of saved?.scrolls ?? []) if (node.isConnected) {node.scrollTop=top;node.scrollLeft=left}
       if (saved) window.scrollTo(saved.x,saved.y)
       opener.current?.focus({preventScroll:true})
-      const work = pendingWork.current; pendingWork.current = null
-      if (!work) return
+      const target = pendingWork.current; pendingWork.current = null
+      if (!target) return
+      const { work, view } = target
+      if (view === "session") {
+        const source = registry.getSnapshot().find(entry => entry.machineID === work.fence.key.machine_id)
+        if (!source || source.current?.() === false || !work.worker_terminal || !work.worker_session) return
+        void openOnThisPage(work.worker_terminal, source.machineID, work.worker_session).then(opened => {
+          if (!opened) toast(words(language).workSessionUnavailable)
+        })
+        return
+      }
       if (workHandler.current) {workHandler.current(work);return}
       // Local App's Board owner stays mounted. Cloud supplies a machine-switch handshake instead.
       void registry.captureWorkItem(work,new AbortController().signal).then(captured => {
@@ -213,7 +223,12 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
     <Bots key={entry} onRosterObserved={observeCompletions} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
       viewState={registry.viewState} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
-      onOpenWork={work => {if (assistantWorkTarget(work)?.kind !== "board") return;pendingWork.current=work;close()}}/>
+      onOpenWork={(work, view) => {
+        const target = assistantWorkTarget(work)
+        if (!target || (view !== "session" && target.kind !== "board")) return
+        pendingWork.current = { work, view }
+        close()
+      }}/>
   </section> : null
   return {opened,openedRef,content,dock:<BotOrb language={language} {...badge} onOpen={open}/>}
 }

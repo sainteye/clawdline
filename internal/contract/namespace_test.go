@@ -39,6 +39,8 @@ const (
 )
 
 var sessionFields = map[string]string{
+	"project-assistants#ProjectAssistantWorkLink.worker_session": conversation,
+
 	// Provider-native conversation handle, never a Clawdline Session or
 	// terminal identity. A new execution binding/generation retires it.
 	"project-assistants#ProjectAssistantExecutionBinding.native_session_id": "native: ACP adapter's opaque conversation handle; retires with its execution binding/generation",

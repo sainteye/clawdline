@@ -34,7 +34,7 @@ export interface BotsProps {
   readerID?:string
   viewState?:ViewState
   returnFocus?:HTMLElement|null
-  onOpenWork?:(work:W.ProjectAssistantWorkLink)=>void
+  onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void
   /** The shell may own route history instead. A mount always begins with no selection. */
   manageHistory?:boolean
   onSelectionChange?:(key:W.ProjectAssistantBotKey|null)=>void

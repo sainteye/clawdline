@@ -613,7 +613,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     this.key(work.fence.key)
     if (!work.board_item_id || work.fence.project.machine_id !== this.machineID) throw failure("pa_scope_denied")
     const answer = await this.request<{item:WorkV2Item}>("/v1/work/v2/items/"+encodeURIComponent(work.board_item_id),s)
-    if (answer.item.id !== work.board_item_id || answer.item.project.id !== work.fence.project.project_id) throw failure("pa_scope_denied")
+    if (answer.item.id !== work.board_item_id || answer.item.project.id !== (work.target_project_id || work.fence.project.project_id)) throw failure("pa_scope_denied")
     return answer.item
   }
 }

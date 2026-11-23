@@ -7792,13 +7792,43 @@ export interface ProjectAssistantVisibilityRequest {
 
 export interface ProjectAssistantWorkLink {
   board_item_id: string
+
+  /**
+   * Committed worktree head recorded for a successful delivery.
+   */
+  delivery_commit?: string
   fence: ProjectAssistantFence
   id: string
   landing_commit: string
+
+  /**
+   * Branch on which the Broker proved landing.
+   */
+  landing_target?: string
   result_message_id: string
   state: ProjectAssistantWorkState
+
+  /**
+   * Destination Project for a cross-Project dispatch.
+   */
+  target_project_id?: string
   task_id: string
+
+  /**
+   * Broker-recorded task title.
+   */
+  title?: string
   turn_id: string
+
+  /**
+   * Recorded conversation of the worker, used to reject terminal reuse.
+   */
+  worker_session?: string
+
+  /**
+   * Terminal of the worker, paired with its recorded conversation.
+   */
+  worker_terminal?: string
 }
 
 export type ProjectAssistantWorkState =

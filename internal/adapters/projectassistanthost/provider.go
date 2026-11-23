@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	wire "github.com/sainteye/clawdline/internal/domain/agenthandoff"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -77,7 +78,7 @@ type NativeWork struct {
 	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
-	dispatch      func(context.Context, string, string, string, []string, string, string) (pa.WorkLink, error)
+	dispatch      func(context.Context, string, string, string, []string, string, string, string) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	workReceipt   func(context.Context, string) (app.WorkReceipt, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
@@ -167,10 +168,13 @@ func (w NativeWork) DispatchToProject(ctx context.Context, id, title, brief stri
 	return w.DispatchWithPersona(ctx, id, title, brief, claims, project, "")
 }
 func (w NativeWork) DispatchWithPersona(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error) {
+	return w.DispatchWithBoard(ctx, id, title, brief, claims, project, persona, "")
+}
+func (w NativeWork) DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
 	if w.dispatch == nil {
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
-	return w.dispatch(ctx, id, title, brief, claims, project, persona)
+	return w.dispatch(ctx, id, title, brief, claims, project, persona, boardItemID)
 }
 func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, error) {
 	if w.status == nil {
@@ -1030,7 +1034,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
-	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error) {
+	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
 		if pa.IsPeerRequest(turn.Origin) {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
@@ -1041,6 +1045,24 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		defer cancel()
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
+		}
+		if boardItemID != "" {
+			if !directUserTurn(turn) || !orchestrator.IsTaskID(boardItemID) {
+				return pa.WorkLink{}, failure(pa.ScopeDenied, "board_item_id")
+			}
+			exported, err := h.store.Export(ctx, q.Bot.Key)
+			if err != nil {
+				return pa.WorkLink{}, err
+			}
+			named := slices.ContainsFunc(exported.Messages, func(message pa.Message) bool {
+				return message.ID == turn.MessageID && message.Kind == pa.UserMessage &&
+					slices.Contains(strings.FieldsFunc(message.Text, func(r rune) bool {
+						return !(r == '-' || r >= 'a' && r <= 'f' || r >= '0' && r <= '9')
+					}), boardItemID)
+			})
+			if !named {
+				return pa.WorkLink{}, failure(pa.ScopeDenied, "board_item_id")
+			}
 		}
 		var target pa.ProjectScope
 		if project != "" {
@@ -1081,10 +1103,11 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			Title         string          `json:",omitempty"`
 			TargetProject pa.ProjectScope `json:"target_project,omitzero"`
 			Persona       string          `json:",omitempty"`
-		}{q.Binding.Fence, turnID, brief, claims, title, target, persona})
+			BoardItemID   string          `json:"board_item_id,omitempty"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID})
 	}
 	tools.status = func(ctx context.Context, taskID string) (pa.WorkLink, error) {
 		ctx, cancel, e := bound(ctx)

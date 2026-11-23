@@ -881,9 +881,10 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   useEffect(() => {
     if (cloudSessions || fleetList) return undefined
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionID: string; answer?: (opened: boolean) => void }>).detail
+      const detail = (event as CustomEvent<{ sessionID: string; conversationID?: string; answer?: (opened: boolean) => void }>).detail
       if (!detail?.sessionID || !detail.answer) return
-      const known = rowsRef.current.some((r) => r.id === detail.sessionID)
+      const known = rowsRef.current.some((r) => r.id === detail.sessionID &&
+        (!detail.conversationID || r.sessionId === detail.conversationID))
       if (known) openSessionRef.current(detail.sessionID)
       const answer = detail.answer
       detail.answer = undefined

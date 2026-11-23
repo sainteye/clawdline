@@ -1970,17 +1970,29 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   // current execution of it, opened the way a started Session is.
   useEffect(() => {
     const onOpen = (event: Event) => {
-      const detail = (event as CustomEvent<{ sessionID: string; machineID?: string; answer?: (opened: boolean) => void }>).detail
+      const detail = (event as CustomEvent<{ sessionID: string; machineID?: string; conversationID?: string; answer?: (opened: boolean) => void }>).detail
       // A Session from every machine's list names its machine; otherwise it is the reading one's.
       const machine = detail?.machineID || reader.current?.machine
       if (!detail?.sessionID || !detail.answer || !machine) return
       const answer = detail.answer
       detail.answer = undefined
-      void liveSessionSource.readMachine(machine, new AbortController().signal).then((reading) => {
-        const destination = reading.kind === "ready"
-          ? reading.rows.find((row) => row.destination.sessionID === detail.sessionID && row.freshness === "current")?.destination
+      const signal = new AbortController().signal
+      const findDestination = async () => {
+        if (detail.conversationID) {
+          const rows = await liveSessionSource.readMachinePresentations?.(machine, signal)
+          return rows?.find(row => row.destination.sessionID === detail.sessionID &&
+            row.status?.sessionId === detail.conversationID && row.projection?.freshness === "current")?.destination
+        }
+        const reading = await liveSessionSource.readMachine(machine, signal)
+        return reading.kind === "ready"
+          ? reading.rows.find(row => row.destination.sessionID === detail.sessionID && row.freshness === "current")?.destination
           : undefined
-        if (destination) openStarted(destination)
+      }
+      void findDestination().then(destination => {
+        if (destination) {
+          if (detail.conversationID && !fleetScopeRef.current) location.hash = destinationFragment(destination)
+          else openStarted(destination)
+        }
         answer(!!destination)
       }, () => answer(false))
     }

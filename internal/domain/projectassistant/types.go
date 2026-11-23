@@ -445,6 +445,12 @@ type WorkLink struct {
 	State           WorkState `json:"state"`
 	ResultMessageID string    `json:"result_message_id"`
 	LandingCommit   string    `json:"landing_commit"`
+	Title           string    `json:"title,omitempty"`
+	DeliveryCommit  string    `json:"delivery_commit,omitempty"`
+	LandingTarget   string    `json:"landing_target,omitempty"`
+	WorkerTerminal  string    `json:"worker_terminal,omitempty"`
+	WorkerSession   string    `json:"worker_session,omitempty"`
+	TargetProjectID string    `json:"target_project_id,omitempty"`
 }
 
 type MemorySource struct {
