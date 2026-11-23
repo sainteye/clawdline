@@ -152,6 +152,11 @@ type Reading struct {
 	// failed. For an evidence or security-audit row that is an alarm whatever
 	// the ratio: the thing that must not be lost could not be written.
 	Failing bool
+	// Reclaimable is how much of Used the row's own maintenance already
+	// suggests a person could release, when HasReclaimable. It is advice for
+	// the notice, never something the daemon releases by itself.
+	Reclaimable    int64
+	HasReclaimable bool
 }
 
 // Unmeasured is the reading of a row that could not be measured.
@@ -305,7 +310,7 @@ func (t *Tracker) Observe(res Resolved, r Reading, now time.Time) (Status, []Eve
 
 	notice := false
 	switch {
-	case next != Unknown && rank(next) > rank(prev) && (next == Critical || next == Full):
+	case next != Unknown && rank(next) > rank(prev) && (next == Critical || next == Full || next == Warn && e.NoticeOnWarn):
 		notice = true
 		tr.alerted = true
 	case next == OK && tr.alerted:

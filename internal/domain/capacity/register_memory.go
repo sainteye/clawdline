@@ -5,12 +5,16 @@ func memoryBounds() []Entry {
 	return []Entry{
 		{
 			// The active set and the durable overflow share the live listing.
-			// Refuse only once both have reached their safety bounds.
+			// Refuse only once both have reached their safety bounds. Nothing
+			// is removed without the person, so they hear about it at 85%
+			// (NoticeEntryLimit), with the count of entries the Project's
+			// maintenance already suggests reviewing.
 			Name: MemoryEntries, Class: Evidence, Unit: Rows,
-			Limit: 1152, AtLimit: Refuse,
-			Told:      []Channel{Diagnostics, Sender, Health},
+			Limit: 1152, WarnAt: 0.85, NoticeOnWarn: true, AtLimit: Refuse,
+			Told:      []Channel{Diagnostics, Sender, Health, Notice},
 			EvictedBy: Person,
-			Sources:   []string{"internal/adapters/memory.LiveEntryLimit", "internal/adapters/memory.EntryCountLimit", "internal/adapters/memory.PendingEntryLimit"},
+			Sources: []string{"internal/adapters/memory.LiveEntryLimit", "internal/adapters/memory.EntryCountLimit", "internal/adapters/memory.PendingEntryLimit",
+				"internal/adapters/memory.NoticeEntryLimit"},
 		},
 		{
 			// At the archive bound, candidates stay in the live set. Explicit

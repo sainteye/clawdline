@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -187,6 +188,103 @@ func relatedDeliveries(entries []Entry, plan DreamPlan) []DreamChange {
 		if next := latest[key]; stage != 0 && next.stage > stage {
 			out = append(out, DreamChange{Name: entry.Name, Replacement: next.name, Reason: "related_delivery"})
 		}
+	}
+	return out
+}
+
+// nearDuplicateShare is the share of two bodies' distinct lines they must
+// have in common, and nearDuplicateLine the shortest line that counts: a
+// heading or a separator says nothing about whether two entries agree.
+const (
+	nearDuplicateShare = 0.8
+	nearDuplicateLine  = 16
+	// A line shared by more entries than this is boilerplate, not evidence.
+	nearDuplicateCommon = 8
+)
+
+func distinctLines(body string) map[string]bool {
+	lines := map[string]bool{}
+	for line := range strings.SplitSeq(body, "\n") {
+		line = strings.Join(strings.Fields(line), " ")
+		if len(line) >= nearDuplicateLine && !strings.HasPrefix(line, "Superseded-by:") {
+			lines[line] = true
+		}
+	}
+	return lines
+}
+
+// nearDuplicates suggests, and never moves, a live project or reference entry
+// whose body shares most of its lines with another of the same type. Exact
+// copies and same-description pairs are already in the plan; these differ in
+// name, description or a few lines, which only a person can weigh. When one
+// body names the other ("the latest is b-…"), the named one is offered as the
+// one to keep; otherwise the longer body, the first name on a tie.
+func nearDuplicates(entries []Entry, plan DreamPlan) []DreamChange {
+	covered := map[string]bool{}
+	for _, row := range plan.Archive {
+		covered[row.Name] = true
+	}
+	for _, row := range plan.Review {
+		covered[row.Name] = true
+	}
+	type candidate struct {
+		entry Entry
+		lines map[string]bool
+	}
+	var pool []candidate
+	byLine := map[string][]int{}
+	for _, e := range entries {
+		if e.Type != TypeProject && e.Type != TypeReference || e.Storage.archived() || e.Storage == retained || e.Storage == pendingRetained || covered[e.Name] {
+			continue
+		}
+		lines := distinctLines(e.Body)
+		if len(lines) < 3 {
+			continue
+		}
+		for line := range lines {
+			byLine[line] = append(byLine[line], len(pool))
+		}
+		pool = append(pool, candidate{e, lines})
+	}
+	shared := map[[2]int]int{}
+	for _, at := range byLine {
+		if len(at) < 2 || len(at) > nearDuplicateCommon {
+			continue
+		}
+		for i := range at {
+			for _, j := range at[i+1:] {
+				shared[[2]int{at[i], j}]++
+			}
+		}
+	}
+	pairs := make([][2]int, 0, len(shared))
+	for pair := range shared {
+		pairs = append(pairs, pair)
+	}
+	sort.Slice(pairs, func(a, b int) bool {
+		if pairs[a][0] != pairs[b][0] {
+			return pairs[a][0] < pairs[b][0]
+		}
+		return pairs[a][1] < pairs[b][1]
+	})
+	var out []DreamChange
+	suggested := map[int]bool{}
+	for _, pair := range pairs {
+		a, b := pool[pair[0]], pool[pair[1]]
+		if a.entry.Type != b.entry.Type || suggested[pair[0]] || suggested[pair[1]] {
+			continue
+		}
+		union := len(a.lines) + len(b.lines) - shared[pair]
+		if float64(shared[pair]) < nearDuplicateShare*float64(union) {
+			continue
+		}
+		drop, keep := pair[0], pair[1]
+		dropNames, keepNames := strings.Contains(a.entry.Body, b.entry.Name), strings.Contains(b.entry.Body, a.entry.Name)
+		if keepNames && !dropNames || dropNames == keepNames && len(a.entry.Body) > len(b.entry.Body) {
+			drop, keep = keep, drop
+		}
+		suggested[drop], suggested[keep] = true, true
+		out = append(out, DreamChange{Name: pool[drop].entry.Name, Replacement: pool[keep].entry.Name, Reason: "near_duplicate"})
 	}
 	return out
 }

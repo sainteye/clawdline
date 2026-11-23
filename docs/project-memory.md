@@ -119,8 +119,10 @@ Dreaming keeps preferences and feedback in the live set. It can archive a Projec
 entry with the same type, group, description and body as one it will keep. For a Project record
 whose replacement is known, its author can end the body with `Superseded-by: <name>` on a separate
 line. Both entries must be live Project records in the same group. Overlapping replacements and
-entries with the same description but different bodies can be reviewed in the CLI. Dreaming
-does not infer a successor from age or a similarity score, and it does not call a model.
+entries with the same description but different bodies can be reviewed in the CLI, as can two
+entries whose bodies share most of their lines (`near_duplicate`). Dreaming never archives on age
+or a similarity score, and it does not call a model. At 85% of the live bound the person is told,
+with the number of suggestions waiting ([memory capacity](memory-capacity.md)).
 
 An archive is an atomic metadata update in the original Markdown file. The entry keeps its name,
 body, and existing header data. `memory dream` shows the archive reason and surviving name, and

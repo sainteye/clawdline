@@ -12281,21 +12281,24 @@
     "Class": "evidence",
     "Unit": "rows",
     "Limit": 1152,
-    "WarnAt": 0,
+    "WarnAt": 0.85,
     "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics",
       "sender",
-      "health"
+      "health",
+      "notice"
     ],
     "EvictedBy": "person",
     "Projects": false,
     "QuietRecovery": false,
+    "NoticeOnWarn": true,
     "Sources": [
       "internal/adapters/memory.LiveEntryLimit",
       "internal/adapters/memory.EntryCountLimit",
-      "internal/adapters/memory.PendingEntryLimit"
+      "internal/adapters/memory.PendingEntryLimit",
+      "internal/adapters/memory.NoticeEntryLimit"
     ]
   },
   {
