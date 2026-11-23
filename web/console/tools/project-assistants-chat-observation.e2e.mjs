@@ -95,7 +95,7 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -185,6 +185,22 @@ try{
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,2)
     await capture(sessionId,"cleanup-refusal-preserves-draft")
     results.push({scenario,draftRetained:true,sends:2})
+  }else if(scenario==="quota-card"){
+    await until(sessionId,"document.querySelector('.pa-interruption strong')?.innerText==='Agent 可用額度已用完。'")
+    const card=".pa-interruption"
+    const outcome=await capture(sessionId,"quota-card-mobile")
+    assert.match(outcome.text,/已顯示的回覆會保留。/)
+    assert.equal(outcome.text.includes("execution_effect_unknown"),false)
+    assert.equal(await evaluate(sessionId,`document.querySelector('${card}').getBoundingClientRect().right<=innerWidth`),true)
+    await evaluate(sessionId,`document.querySelector('${card} summary').click()`)
+    const expanded=await capture(sessionId,"quota-card-details")
+    assert.match(expanded.text,/execution_effect_unknown · provider_usage_limit/)
+    const beforeRefresh=traffic.length
+    await evaluate(sessionId,`document.querySelector('${card} button').click()`)
+    await until(sessionId,`!!document.querySelector('${card} button:not(:disabled)')`)
+    assert.ok(traffic.slice(beforeRefresh).some(p=>p.word==="project-assistants.view"&&p.mode==="snapshot"&&p.status===200),"refresh fetches a new snapshot")
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1,"a refresh reads without resending the prompt")
+    results.push({scenario,closedDetails:true,refreshDoesNotResend:true})
   }else{
   await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
   const complete=await capture(sessionId,"completed")

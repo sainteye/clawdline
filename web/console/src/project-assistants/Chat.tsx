@@ -50,7 +50,8 @@ import { Trace,traceLabel,visibleTrace,workingCategory } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
 import { WorkingTransition } from "./WorkingTransition"
-import { botTurnOutcome, providerSetupFailure, readOnlyReason } from "./source-errors"
+import { providerSetupFailure, readOnlyReason } from "./source-errors"
+import { TurnInterruption } from "./TurnInterruption"
 import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
@@ -1528,8 +1529,9 @@ ${currentDraft}`:submitted)
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
       {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
-      {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><div className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}><span>{botTurnOutcome(t,w)}</span>{t.state==="unknown"&&<button type="button" className="pa-pill" disabled={checkingUpdates} onClick={()=>void checkForUpdates()}>{w.refresh}</button>}
-        {t.failure_code&&<details><summary>{w.details}</summary><small>{[t.failure_code,t.failure_field].filter(Boolean).join(" · ")}</small></details>}</div>)}
+      {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(turn=>
+        <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
+          onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
         steps={liveSteps.length?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={liveTraceTurn===moreTraceTurn} onMore={loadMoreTraces}

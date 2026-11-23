@@ -21,12 +21,13 @@ import (
 // Only local protocol data is executed, never a provider CLI or model API.
 type observationProvider struct {
 	alignmentProvider
-	finish       chan struct{}
-	start        chan struct{}
-	started      chan struct{}
-	entered      sync.Once
-	probes       atomic.Int32
-	closeFailure error
+	finish        chan struct{}
+	start         chan struct{}
+	started       chan struct{}
+	entered       sync.Once
+	probes        atomic.Int32
+	closeFailure  error
+	promptFailure error
 }
 
 func (p *observationProvider) Capabilities(ctx context.Context, bot pa.Bot) (pa.Capabilities, error) {
@@ -82,6 +83,9 @@ func (p observationPending) Wait(ctx context.Context) (app.PromptResult, error) 
 	p.session.owner.entered.Do(func() { close(p.session.owner.started) })
 	select {
 	case <-p.session.owner.finish:
+		if p.session.owner.promptFailure != nil {
+			return app.PromptResult{}, p.session.owner.promptFailure
+		}
 		return app.PromptResult{FinalText: "Synthetic observation final answer"}, nil
 	case <-ctx.Done():
 		return app.PromptResult{}, ctx.Err()
@@ -93,7 +97,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -104,6 +108,12 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 			provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}
 			if name == "cleanup-timeout" {
 				provider.closeFailure = context.DeadlineExceeded
+			}
+			if name == "quota-card" {
+				provider.promptFailure = &app.ProviderFailure{
+					Reason: app.ProviderUsageExhausted,
+					Cause:  &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "synthetic_quota"},
+				}
 			}
 			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
 			f.enable(t)

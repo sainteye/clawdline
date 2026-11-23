@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14185,
-  "riskKeys": 6024,
-  "nonRiskCount": 8161,
+  "englishContentKeys": 14187,
+  "riskKeys": 6025,
+  "nonRiskCount": 8162,
   "groups": [
     {
       "name": "acp / other",
@@ -6218,7 +6218,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 614,
+      "count": 615,
       "sources": [
         null
       ],
@@ -6807,6 +6807,7 @@
         "projectAssistants.traceStep",
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",
+        "projectAssistants.turnRepliesKept",
         "projectAssistants.turnUnknownNext",
         "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
