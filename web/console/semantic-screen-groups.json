@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14136,
-  "riskKeys": 6007,
-  "nonRiskCount": 8129,
+  "englishContentKeys": 14147,
+  "riskKeys": 6010,
+  "nonRiskCount": 8137,
   "groups": [
     {
       "name": "acp / other",
@@ -6209,7 +6209,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 591,
+      "count": 599,
       "sources": [
         null
       ],
@@ -6266,9 +6266,17 @@
         "projectAssistants.closeArtifact",
         "projectAssistants.closeInformation",
         "projectAssistants.collapse",
+        "projectAssistants.compactAgent",
+        "projectAssistants.compactBusy",
+        "projectAssistants.compactNewSession",
+        "projectAssistants.compactNewSessionHint",
+        "projectAssistants.compactNow",
+        "projectAssistants.compactNowHint",
+        "projectAssistants.compactRunning",
         "projectAssistants.compose",
         "projectAssistants.connectorSubmit",
         "projectAssistants.connectorValue",
+        "projectAssistants.contextMenu",
         "projectAssistants.contextRemaining",
         "projectAssistants.contextUsage",
         "projectAssistants.contextUsageLast",

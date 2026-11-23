@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14136,
+  "englishKeys": 14147,
   "counts": {
-    "negation": 3605,
+    "negation": 3608,
     "state": 2386,
-    "permission": 852,
+    "permission": 853,
     "deletion": 328,
     "uncertainty": 563
   },
-  "unionCount": 6007,
+  "unionCount": 6010,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3077,6 +3077,9 @@
       "projectAssistants.checkFailed",
       "projectAssistants.checkMissing",
       "projectAssistants.checkUnknown",
+      "projectAssistants.compactFailed",
+      "projectAssistants.compactNoSession",
+      "projectAssistants.compactReadOnly",
       "projectAssistants.connectorCredentialHint",
       "projectAssistants.connectorEmpty",
       "projectAssistants.connectorMissing",
@@ -6640,6 +6643,7 @@
       "projectAssistants.auto_read",
       "projectAssistants.botNotifyHint",
       "projectAssistants.checkEarlierFailed",
+      "projectAssistants.compactReadOnly",
       "projectAssistants.connectorCheck",
       "projectAssistants.connectorCredential",
       "projectAssistants.connectorCredentialHint",
@@ -12752,6 +12756,9 @@
     "projectAssistants.checkUnavailable",
     "projectAssistants.checkUnknown",
     "projectAssistants.clearQuote",
+    "projectAssistants.compactFailed",
+    "projectAssistants.compactNoSession",
+    "projectAssistants.compactReadOnly",
     "projectAssistants.completed",
     "projectAssistants.connectorCheck",
     "projectAssistants.connectorCredential",
