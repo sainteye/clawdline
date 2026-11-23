@@ -5614,7 +5614,7 @@
     "web/console/src/project-assistants/Chat.tsx": "8c2c62f9f3d9dbad52e328a55f9e442379e32f6a6e4c20d4fc87d40b1938785c",
     "web/console/src/project-assistants/ChatRows.tsx": "074e2657916390c5f586087971d6780bda7de12f7fb51ae63b744c4d626aa617",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
-    "web/console/src/project-assistants/ExchangePanel.tsx": "8cd66f0bf007dd9ff69f72fafa736f4b9af1830c30c71281e32210accff7c4ad",
+    "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
     "web/console/src/project-assistants/ImageViewer.tsx": "81c1b3f7e72a1237ccf3d758d83f1a817ae76977ade90ac3c7875a22b0d77b76",
     "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
