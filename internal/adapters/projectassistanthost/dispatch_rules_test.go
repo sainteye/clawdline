@@ -118,8 +118,8 @@ func TestNonLeadProjectDispatchAsksThePersonInsteadOfRefusing(t *testing.T) {
 	}
 	// The same key reads the same card and result; no second card, no new task.
 	again, err := n.tools.DispatchToProject(context.Background(), "cross-project", "Keep draft messages after reconnecting", "Change only a.go in the isolated worktree.", []string{"a.go"}, "fixture-repository")
-	// As for any dispatch, a resent key is answered by its existing receipt.
-	if pa.Code(err) != pa.OutcomeUnknown || len(dispatchCards(t, n)) != 1 || n.f.launcher.calls.Load() != 1 {
+	// As for any dispatch, a resent key recovers its accepted task.
+	if err != nil || again.TaskID != out.link.TaskID || len(dispatchCards(t, n)) != 1 || n.f.launcher.calls.Load() != 1 {
 		t.Fatalf("resend: %+v %v cards=%d", again, err, len(dispatchCards(t, n)))
 	}
 	// A once answer saves no rule: a new key asks again.
