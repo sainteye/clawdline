@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react"
+import { useDispatchedWorkShown } from "../dispatched-work-preference"
 import type * as W from "@clawdline/contract"
 import type { Words } from "../words"
 import { assignFloors, crowd, floorOfBot, leadPlace, portalHelpers, projectOf, slotPoint, strollPoint, towerBots, towerSummary, waitingList, TowerZoneShown, type TowerBot, type TowerMood, type TowerZone } from "./tower-state"
@@ -57,7 +58,7 @@ const Section = -1
 export const TowerBuildingMinBots = 7
 const RecomputeMs = 60_000
 const moodWord: Record<TowerMood, keyof Words> = {
-  wait: "towerMoodWait", work: "towerMoodWork", error: "towerMoodError",
+  wait: "towerMoodWait", work: "towerMoodWork", oversee: "towerMoodOversee", error: "towerMoodError",
   recent: "towerMoodRecent", idle: "towerMoodIdle", sleep: "towerMoodSleep",
 }
 
@@ -133,7 +134,8 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const toggleTags = () => setTags(on => { writePref(tagsKey, on ? "off" : "on"); return !on })
   const [layout, setLayoutState] = useState<TowerLayout>(() => readPref(layoutKey) === "building" ? "building" : "floor")
   const [chosenFloor, setChosenFloor] = useState<number | null>(() => { const v = readPref(floorKey); if (v === "section") return Section; const n = Number(v); return v !== null && Number.isInteger(n) && n >= 0 && n < towerFloors.length ? n : null })
-  const allBots = useMemo(() => towerBots(items, now, w as unknown as Record<string, string>), [items, now, w])
+  const showDispatched = useDispatchedWorkShown()
+  const allBots = useMemo(() => towerBots(items, now, w as unknown as Record<string, string>, showDispatched), [items, now, w, showDispatched])
   const summary = towerSummary(allBots)
   const waiting = useMemo(() => waitingList(allBots), [allBots])
   const listOpen = waitOpen && waiting.length > 0
@@ -190,7 +192,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
   const size = section ? SectionBotSize : BotSize
   // In the cross-section every Bot stands on its own floor's strip: busy ones at
   // desks, in the queue or the failure corner; everyone else at the rest spots.
-  const sectionGroup = (b: TowerBot) => b.mood === "work" ? "desk" : b.mood === "wait" ? "queue" : b.mood === "error" ? "repair" : "rest"
+  const sectionGroup = (b: TowerBot) => b.mood === "work" || b.mood === "oversee" ? "desk" : b.mood === "wait" ? "queue" : b.mood === "error" ? "repair" : "rest"
   // A crowded zone draws its first few and counts the rest as "+N"; the lead's
   // own spot is never part of a crowd.
   const crowdOf = (b: TowerBot) => section ? `${floorOfBot(b, floorOf)}:${sectionGroup(b)}` : b.lead ? undefined : b.zone
@@ -353,7 +355,7 @@ export default function BotTower({ items, w, language, paused = false, highlight
     if (!view || view.scrollWidth <= view.clientWidth + 1 || !bots.length) return
     // Busy Bots first; otherwise the one active most recently, so an all-idle
     // floor never opens on the empty middle between two far-apart Bots.
-    const focus = bots.filter(b => b.mood === "wait" || b.mood === "error" || b.mood === "work")
+    const focus = bots.filter(b => b.mood === "wait" || b.mood === "error" || b.mood === "work" || b.mood === "oversee")
     const recent = [...bots].sort((a, z) => (Date.parse(z.item.activity_at) || 0) - (Date.parse(a.item.activity_at) || 0))
     const pick = focus.length ? focus : recent.slice(0, 1)
     const xs = pick.map(b => locate(b, 0, true).at[0])

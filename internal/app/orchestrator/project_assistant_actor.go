@@ -430,6 +430,15 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	if r.State == StateSuccess && r.Worktree != nil && r.Worktree.Head != r.Worktree.Base {
 		s.Link.DeliveryCommit = r.Worktree.Head
 	}
+	if r.ProjectDir != "" {
+		s.Link.Project = filepath.Base(r.ProjectDir)
+	}
+	if !r.SpawnedAt.IsZero() {
+		s.Link.StartedAt = r.SpawnedAt.UTC()
+	}
+	if r.State.Terminal() && !r.FinishedAt.IsZero() {
+		s.Link.FinishedAt = r.FinishedAt.UTC()
+	}
 	switch r.State {
 	case StateQueued, StateSpawning:
 		s.Link.State = pa.WorkAccepted

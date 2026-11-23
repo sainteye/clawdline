@@ -58,6 +58,10 @@ function summary(value: unknown, change: W.ProjectAssistantBotKey, request: W.Pr
   if (work !== undefined && (!object(work) || !integer(work.working) || !integer(work.waiting) || !integer(work.needs_input))) {
     throw failure("pa_invalid")
   }
+  const dispatched = v.dispatched_work
+  if (dispatched !== undefined && (!object(dispatched) || !integer(dispatched.running) || !integer(dispatched.needs_you) || !integer(dispatched.delivered))) {
+    throw failure("pa_invalid")
+  }
   if (v.failure !== undefined) validateFailure(v.failure)
 }
 

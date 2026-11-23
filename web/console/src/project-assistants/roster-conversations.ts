@@ -5,6 +5,8 @@ import {botIdentity,canWrite} from "./view-state.ts"
 // @ts-expect-error Node executes source extensions.
 import {orderedKeys, type RosterOrder, type RosterState} from "./roster-state.ts"
 // @ts-expect-error Node executes source extensions.
+import {rosterShownState} from "./working.ts"
+// @ts-expect-error Node executes source extensions.
 import {projectKey,pinnedGroupKey} from "./roster-groups.ts"
 
 /** List projections are optional on older sources; never fetch a history per row. */
@@ -57,13 +59,17 @@ export function conversationSections(rows:readonly RosterConversation[],state:Ro
 
 }
 
-export function orderedConversationSections(sections:ConversationSection[],order:RosterOrder):ConversationSection[]{
+/** The state a row shows (botRosterActivity), so the order and the row agree. */
+export type RosterStateOf=(item:W.ProjectAssistantBotSummary)=>string
+export function orderedConversationSections(sections:ConversationSection[],order:RosterOrder,stateOf:RosterStateOf=item=>rosterShownState(item)):ConversationSection[]{
   if(order==="default"||!sections.length)return sections
   const rows=sections.flatMap(section=>section.items)
   if(order==="unread"){
-    // Unread first, then working; a Bot that is both appears once, under unread.
+    // Unread first, then working: a Bot's own work, then Bots waiting on the
+    // Sessions they dispatched. A Bot that is both appears once, under unread.
     const unread=rows.filter(row=>row.kind==="bot"&&row.item.unread_count>0)
-    const working=rows.filter(row=>row.kind==="bot"&&!(row.item.unread_count>0)&&row.item.status==="working")
+    const busy=(state:string)=>rows.filter(row=>row.kind==="bot"&&!(row.item.unread_count>0)&&stateOf(row.item)===state)
+    const working=[...busy("working"),...busy("waitingOnWork")]
     const lifted:ConversationSection[]=[{key:"unread-section",kind:"unread",machineID:"",items:unread},{key:"working-section",kind:"working",machineID:"",items:working}]
     return [...lifted.filter(section=>section.items.length),...sections]
   }

@@ -1,6 +1,6 @@
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node's strip-types runner uses source extensions.
-import { rosterActivity } from "../working.ts"
+import { rosterActivity, rosterShownState } from "../working.ts"
 // @ts-expect-error -- Node's strip-types runner uses source extensions.
 import { botIdentity } from "../view-state.ts"
 
@@ -9,7 +9,7 @@ import { botIdentity } from "../view-state.ts"
  * is a running caption such as a tool title and never decides placement. */
 /** Unread replies do not move a Bot: they accumulate for days, and would park
  * nearly every Bot in one spot. They appear on a badge (`unread`). */
-export type TowerMood = "wait" | "work" | "error" | "recent" | "idle" | "sleep"
+export type TowerMood = "wait" | "work" | "oversee" | "error" | "recent" | "idle" | "sleep"
 export type TowerZone = "queue" | "desk" | "repair" | "lounge" | "bed"
 
 /** Presentation thresholds for an idle Bot's last activity, not capacity bounds. */
@@ -33,7 +33,7 @@ export interface TowerBot {
 }
 
 export const zoneOf: Record<TowerMood, TowerZone> = {
-  wait: "queue", work: "desk", error: "repair", recent: "lounge", idle: "lounge", sleep: "bed",
+  wait: "queue", work: "desk", oversee: "desk", error: "repair", recent: "lounge", idle: "lounge", sleep: "bed",
 }
 
 /** A stable small integer per Bot, so routes and blinks repeat across reloads. */
@@ -52,8 +52,14 @@ export function idleMood(activityAt: string, now: number): "recent" | "idle" | "
   return age < TowerRecentMs ? "recent" : age < TowerSleepMs ? "idle" : "sleep"
 }
 
-export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Record<string, string>): { mood: TowerMood, caption: string, live: boolean } {
+export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Record<string, string>, showDispatched = false): { mood: TowerMood, caption: string, live: boolean } {
   const shown = rosterActivity(item, w) as { state: string, caption: string, live: boolean }
+  // A Bot otherwise idle while its dispatched Sessions run stands at its desk
+  // overseeing them, still, facing the portal where its helpers are drawn.
+  if (showDispatched && shown.state === "idle" && rosterShownState(item, true) === "waitingOnWork") {
+    const running = item.dispatched_work?.running ?? 0
+    return { mood: "oversee", caption: (w.rosterWaitingOnWork ?? "").replace("{count}", String(running)), live: shown.live }
+  }
   if (shown.state === "needsInput") return { mood: "wait", caption: shown.caption, live: shown.live }
   if (shown.state === "working") return { mood: "work", caption: shown.caption, live: shown.live }
   if (shown.state === "error") return { mood: "error", caption: shown.caption, live: shown.live }
@@ -61,9 +67,9 @@ export function towerMood(item: W.ProjectAssistantBotSummary, now: number, w: Re
   return { mood: idleMood(item.activity_at, now), caption: item.latest_message, live: shown.live }
 }
 
-export function towerBots(items: readonly W.ProjectAssistantBotSummary[], now: number, w: Record<string, string>): TowerBot[] {
+export function towerBots(items: readonly W.ProjectAssistantBotSummary[], now: number, w: Record<string, string>, showDispatched = false): TowerBot[] {
   return items.map(item => {
-    const key = botIdentity(item.bot.key) as string, m = towerMood(item, now, w)
+    const key = botIdentity(item.bot.key) as string, m = towerMood(item, now, w, showDispatched)
     return { key, item, mood: m.mood, zone: zoneOf[m.mood], caption: m.caption, unread: item.unread_count > 0, live: m.live, seed: seedOf(key), work: activeWork(item), lead: item.bot.lead === true }
   }).sort((a, b) => a.key < b.key ? -1 : a.key > b.key ? 1 : 0)
 }
@@ -173,7 +179,7 @@ export function leadPlace(beat: readonly Point[], b: TowerBot, index: number, no
 export const TowerZoneShown = 3
 
 /** Who keeps a drawn place when a zone is crowded: the person's attention first. */
-const crowdRank: Record<TowerMood, number> = { wait: 0, error: 1, work: 2, recent: 3, idle: 4, sleep: 5 }
+const crowdRank: Record<TowerMood, number> = { wait: 0, error: 1, work: 2, oversee: 2, recent: 3, idle: 4, sleep: 5 }
 
 /**
  * Split Bots into those drawn and, per crowd, those only counted. `group`

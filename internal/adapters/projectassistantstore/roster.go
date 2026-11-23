@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -283,11 +284,12 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
      AND json_extract(value,'$.exchange.target.key.machine_id')=json_extract(j,'$.Bot.key.machine_id')
      AND json_extract(value,'$.exchange.target.key.bot_id')=json_extract(j,'$.Bot.key.bot_id'))) unread,
  (SELECT count(*) FROM json_each(j,'$.Permissions') WHERE json_extract(value,'$.state')='pending') pending,
- (SELECT count(*) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work FROM a
+ (SELECT count(*) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work,
+ coalesce((SELECT json_group_array(json_object('state',json_extract(value,'$.state'),'finished_at',json_extract(value,'$.finished_at'))) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + dispatchedWorkLinkStatesSQL + `),'[]') dispatched FROM a
 ), guarded AS MATERIALIZED (
  SELECT *,length(CAST(projected AS BLOB))+length(CAST(read_cursor AS BLOB))+length(CAST(latest AS BLOB))+length(CAST(activity_at AS BLOB))<=? fits FROM projection
 )
-SELECT CASE WHEN fits THEN projected END,CASE WHEN fits THEN read_cursor ELSE '' END,CASE WHEN fits THEN latest ELSE '' END,CASE WHEN fits THEN activity_at ELSE '' END,unread,pending,work,active,waiting,needs_input,
+SELECT CASE WHEN fits THEN projected END,CASE WHEN fits THEN read_cursor ELSE '' END,CASE WHEN fits THEN latest ELSE '' END,CASE WHEN fits THEN activity_at ELSE '' END,unread,pending,work,dispatched,active,waiting,needs_input,
  (SELECT coalesce(max(seq),0) FROM project_assistant_roster_changes WHERE machine=? AND bot=?) FROM guarded CROSS JOIN background`
 
 func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string, budget int) (pa.BotSummary, app.RosterIdentity, int64, error) {
@@ -297,7 +299,8 @@ func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string
 	var read, latest, at string
 	var unread, pending, work, revision int64
 	var background pa.BackgroundWork
-	err := tx.QueryRowContext(ctx, rosterProjectionSQL, key.MachineID, key.BotID, reader, reader, budget, key.MachineID, key.BotID).Scan(&projected, &read, &latest, &at, &unread, &pending, &work, &background.Working, &background.Waiting, &background.NeedsInput, &revision)
+	var dispatched string
+	err := tx.QueryRowContext(ctx, rosterProjectionSQL, key.MachineID, key.BotID, reader, reader, budget, key.MachineID, key.BotID).Scan(&projected, &read, &latest, &at, &unread, &pending, &work, &dispatched, &background.Working, &background.Waiting, &background.NeedsInput, &revision)
 	if errors.Is(err, sql.ErrNoRows) {
 		return row, id, 0, failure(pa.NotFound, "roster_bot")
 	}
@@ -322,6 +325,11 @@ func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string
 	if err != nil {
 		return row, id, 0, failure(pa.Invalid, "roster_activity_at")
 	}
+	var links []pa.WorkLink
+	if json.Unmarshal([]byte(dispatched), &links) != nil {
+		return row, id, 0, failure(pa.Invalid, "roster_dispatched_work")
+	}
+	row.DispatchedWork = countDispatchedWork(slices.Values(links), time.Now())
 	projectRosterActivity(a, &row)
 	addRosterBackground(&row, background)
 	id = app.RosterIdentity{Key: key, Project: a.Bot.Project, ConversationID: a.Conversation.ID, Generation: a.Conversation.Generation, BindingID: a.Conversation.BindingID}

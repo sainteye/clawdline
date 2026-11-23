@@ -288,6 +288,46 @@ avatars use the original static lines. Animation pauses off screen and while
 the page is hidden. The small thinking orb retains its upstream Canvas geometry.
 License notices ship under `public/licenses/` in the console.
 
+### Dispatched Sessions (分身)
+
+A Bot that dispatches broker Sessions shows them in three places, all governed
+by one switch, **Show dispatched Sessions** in the roster's options menu (on by
+default; stored per browser). With it off, rows, avatars, the tower and the
+chat footer look exactly as they did before.
+
+- **Roster count.** A two-outline mark and a number under the row's time:
+  dispatched Sessions accepted, executing or waiting for the person. Delivered
+  (awaiting integration), failed, landed and background threads are not
+  counted. With nothing running the mark takes no space.
+- **`waitingOnWork` state.** A Bot whose own chat is idle while its dispatched
+  Sessions run shows "Waiting for N Sessions" / 「等 N 個分身完成」. Precedence is
+  `needsInput` (own permission, a background thread or a dispatched Session
+  waiting for the person) > `error` > `working` (own turn or background
+  threads) > `waitingOnWork` > `idle`. The avatar draws a thinner second
+  outline that drifts up-right and back every 4 seconds (translation only);
+  with reduced motion it is a still, dashed outline. The tower places the Bot
+  at its desk in the `oversee` mood. In unread-first order these Bots join the
+  working section after Bots that are working themselves, and that section now
+  reads the same state the row shows (a Bot working through background threads
+  used to be shown as working but not lifted).
+- **Chat strip.** Above the composer, one grey line "N running · M need you ·
+  K awaiting integration" shares the footer line with the background capsule.
+  Opening it lists at most `bots.dispatched_strip_rows` (5) Sessions with their
+  task title, state, elapsed time and destination Project (tagged when it is
+  not the Bot's own); a row opens the Session by its terminal address. A
+  delivered Session stays listed for `bots.dispatched_delivered_seconds`
+  (one day) after it finished.
+
+The facts come only from broker task records projected into the Bot's work
+links (`AssistantWorkSnapshotOf`), never from what the model says. The roster
+summary carries them as the optional `dispatched_work {running, needs_you,
+delivered}`; `status` keeps its four values because the console rejects a
+whole roster frame with an unknown status. Work links carry `title`,
+`project`, `terminal`, `started_at` and `finished_at`. Older sources omit
+these fields and the console shows what it showed before. The chat strip reads
+the work links in the loaded timeline, so a link older than the loaded pages
+is counted on the roster but not listed until earlier messages load.
+
 This first projection is exercised through the real local Store and HTTP
 boundary with a synthetic event producer, without a provider/model call.
 Set task-owned `CLAWDLINE_ROSTER_E2E_DIR`, `PLAYWRIGHT_MODULE` and

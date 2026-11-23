@@ -1116,7 +1116,19 @@
         "landing_target": { "type": "string", "description": "Branch on which the Broker proved landing." },
         "worker_terminal": { "type": "string", "description": "Terminal of the worker, paired with its recorded conversation." },
         "worker_session": { "type": "string", "description": "Recorded conversation of the worker, used to reject terminal reuse." },
-        "target_project_id": { "type": "string", "description": "Destination Project for a cross-Project dispatch." }
+        "target_project_id": { "type": "string", "description": "Destination Project for a cross-Project dispatch." },
+        "project": {
+          "type": "string",
+          "description": "The destination Project directory name. Absent on older sources."
+        },
+        "started_at": {
+          "type": "string",
+          "description": "When the dispatched Session was started. Absent before it starts and on older sources."
+        },
+        "finished_at": {
+          "type": "string",
+          "description": "When the broker task reached a terminal state. Absent while it runs and on older sources."
+        }
       },
       "required": [
         "id",
@@ -1305,6 +1317,16 @@
         "needs_input": { "type": "integer", "minimum": 0 }
       }
     },
+    "ProjectAssistantDispatchedWork": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["running", "needs_you", "delivered"],
+      "properties": {
+        "running": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions accepted or executing." },
+        "needs_you": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions waiting for the person." },
+        "delivered": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions delivered within the last day and not yet landed." }
+      }
+    },
     "ProjectAssistantBotSummary": {
       "type": "object",
       "additionalProperties": false,
@@ -1338,6 +1360,10 @@
         "background_work": {
           "$ref": "#/$defs/ProjectAssistantBackgroundWork",
           "description": "Unfinished background work for the roster, separate from the Bot's own chat activity. Absent when there is none or the source is older."
+        },
+        "dispatched_work": {
+          "$ref": "#/$defs/ProjectAssistantDispatchedWork",
+          "description": "Broker Sessions this Bot dispatched, counted from its work links. Absent when there are none or the source is older."
         },
         "active_work": {
           "type": "integer",

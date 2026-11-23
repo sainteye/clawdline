@@ -7,7 +7,10 @@ import {palette,avatarPaths,avatarLights} from "./avatar-paths"
 import type {Words} from "./words"
 import {useReduceMotion} from "./codync-rendering"
 
-type Mood = "idle" | "working" | "needsInput" | "failed"
+type Mood = "idle" | "working" | "needsInput" | "failed" | "waitingOnWork"
+
+/** How far, in outline units, the waiting-on-work echo drifts up and right. */
+const EchoOffset=8
 
 /** Keep the approved BR-06 outline and eyes. Codync supplies the activity
  * states and motion cadence; animation changes only the existing line art. */
@@ -15,15 +18,21 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
   const path=avatarPaths[appearance.shape]??avatarPaths.blob
   const color=palette.find(c=>c===appearance.color.toLowerCase())??palette[0]
   const lights=avatarLights[color],id=useId(),gradientID=`${id}-ink`,glowID=`${id}-glow`
-  const svg=useRef<SVGSVGElement>(null),gradient=useRef<SVGLinearGradientElement>(null),ripple=useRef<SVGPathElement>(null),eyes=useRef<SVGPathElement>(null)
+  const svg=useRef<SVGSVGElement>(null),gradient=useRef<SVGLinearGradientElement>(null),ripple=useRef<SVGPathElement>(null),echo=useRef<SVGPathElement>(null),eyes=useRef<SVGPathElement>(null)
   const reduce=useReduceMotion()
 
   useEffect(()=>{
-    const el=svg.current,light=gradient.current,wave=ripple.current,face=eyes.current
-    if(!el||!light||!wave||!face)return
+    const el=svg.current,light=gradient.current,wave=ripple.current,face=eyes.current,clone=echo.current
+    if(!el||!light||!wave||!face||!clone)return
     face.removeAttribute("transform");light.removeAttribute("gradientTransform")
     wave.setAttribute("opacity","0");wave.removeAttribute("transform")
-    if(reduce||(mood!=="working"&&mood!=="needsInput"))return
+    // W2 "echo clone": a thinner second body behind the Bot. Reduced motion
+    // keeps it still and dashed at the mid offset so the state stays visible.
+    clone.setAttribute("opacity",mood==="waitingOnWork"?"0.4":"0")
+    clone.setAttribute("transform",`translate(${EchoOffset/2} ${-EchoOffset/2})`)
+    if(reduce&&mood==="waitingOnWork")clone.setAttribute("stroke-dasharray","7 6")
+    else clone.removeAttribute("stroke-dasharray")
+    if(reduce||(mood!=="working"&&mood!=="needsInput"&&mood!=="waitingOnWork"))return
     let frame=0,drawn=-Infinity,visible=true
     const draw=(time:number)=>{
       frame=0
@@ -32,7 +41,14 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
         const t=(time/1000)%3600
         // Upstream's stepped 3.2-second glance and 4.7-second blink, mapped
         // to the original 100-unit outline instead of changing its geometry.
-        const glance=mood==="working"?Math.round(Math.sin(t*2*Math.PI/3.2)*1.4)*100/9:0
+        // The echo drifts up-right and back on a 4-second cosine: it only
+        // translates, never scales, so it reads apart from needsInput's wave.
+        const drift=mood==="waitingOnWork"?(1-Math.cos(t*2*Math.PI/4))/2:0
+        if(mood==="waitingOnWork"){
+          clone.setAttribute("transform",`translate(${drift*EchoOffset} ${-drift*EchoOffset})`)
+          clone.setAttribute("opacity",String(0.28+drift*0.22))
+        }
+        const glance=mood==="waitingOnWork"?Math.round(drift)*100/9:mood==="working"?Math.round(Math.sin(t*2*Math.PI/3.2)*1.4)*100/9:0
         const blink=(t/4.7)%1<0.035
         face.setAttribute("transform",`translate(${glance} 47.5) scale(1 ${blink?0.15:1}) translate(0 -47.5)`)
         // Keep the upstream light's spatial movement instead of dimming the
@@ -59,7 +75,7 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
     return()=>{onScreen.disconnect();document.removeEventListener("visibilitychange",resume);cancelAnimationFrame(frame)}
   },[path,color,mood,reduce])
 
-  return <svg ref={svg} className="pa-avatar" data-mood={mood} width={size} height={size} viewBox="-5 -5 110 110" aria-hidden="true" focusable="false">
+  return <svg ref={svg} className="pa-avatar" data-mood={mood} overflow={mood==="waitingOnWork"?"visible":undefined} width={size} height={size} viewBox="-5 -5 110 110" aria-hidden="true" focusable="false">
     <defs>
       <linearGradient ref={gradient} id={gradientID} gradientUnits="userSpaceOnUse" x1="8" y1="5" x2="92" y2="95">
         {lights.map((ink,i)=><stop key={i} offset={`${i*50}%`} stopColor={ink}/>)}
@@ -67,6 +83,7 @@ export function BotAvatar({appearance,size=44,mood="idle"}:{appearance:ProjectAs
       <filter id={glowID} x="-50%" y="-50%" width="200%" height="200%" colorInterpolationFilters="sRGB"><feGaussianBlur stdDeviation="3.5"/></filter>
     </defs>
     <g fill="none" stroke={`url(#${gradientID})`} strokeLinejoin="round">
+      <path ref={echo} className="pa-avatar-echo" d={path} strokeWidth="2.4" opacity="0"/>
       <path ref={ripple} d={path} strokeWidth="2" opacity="0"/>
       <path d={path} strokeWidth="6" filter={`url(#${glowID})`} opacity="0.55"/>
       <path d={path} strokeWidth="4.4"/>

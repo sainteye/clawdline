@@ -450,6 +450,15 @@
     "Note": true
   },
   {
+    "Name": "bots.dispatched_delivered_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.dispatched_strip_rows",
+    "Err": true
+  },
+  {
     "Name": "bots.error_kind_bytes",
     "Known": true,
     "Note": true

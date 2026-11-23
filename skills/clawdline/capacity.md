@@ -97,6 +97,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.decision_suggested_replies` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_rules` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatched_delivered_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
+| `bots.dispatched_strip_rows` | 5 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.extensions` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |

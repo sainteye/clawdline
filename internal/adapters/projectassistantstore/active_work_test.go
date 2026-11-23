@@ -2,6 +2,7 @@ package projectassistantstore
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -204,4 +205,65 @@ func TestActiveWorkCountsUnfinishedLinksAndBackgroundTasksAndWakesTheRoster(t *t
 		t.Fatal("a finished background task did not wake the roster")
 	}
 	check("finished", "idle", base+2, nil)
+}
+
+// The dispatched count is the roster's "clones" number and the source of the
+// waiting-on-work state: accepted and executing run, waiting for the person
+// needs you, a recent delivery is shown but not running, and failures,
+// landings and stale or undated deliveries do not count.
+func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
+	db, s, _ := testDB(t)
+	views := newTestViews(t, db)
+	bot := seed(t, s, "owner")
+	fence := populate(t, s, bot, pa.EffectDelivered)
+	b, err := s.Bot(testContext, bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replace populate's own link so the expected counts are absolute.
+	export, err := s.Export(testContext, bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	links := []pa.WorkLink{
+		{ID: "queued", Fence: fence, TurnID: "turn", TaskID: "task-a", State: pa.WorkAccepted, Title: "Queued work", Project: "/p"},
+		{ID: "running", Fence: fence, TurnID: "turn", TaskID: "task-b", State: pa.WorkExecuting, StartedAt: now.Add(-time.Minute)},
+		{ID: "asking", Fence: fence, TurnID: "turn", TaskID: "task-c", State: pa.WorkWaitingForPerson},
+		{ID: "delivered", Fence: fence, TurnID: "turn", TaskID: "task-d", State: pa.WorkCompleted, FinishedAt: now.Add(-time.Hour)},
+		{ID: "old-delivery", Fence: fence, TurnID: "turn", TaskID: "task-e", State: pa.WorkCompleted, FinishedAt: now.Add(-pa.DeliveredWorkWindow - time.Minute)},
+		{ID: "undated-delivery", Fence: fence, TurnID: "turn", TaskID: "task-f", State: pa.WorkCompleted},
+		{ID: "failed", Fence: fence, TurnID: "turn", TaskID: "task-g", State: pa.WorkFailed},
+		{ID: "landed", Fence: fence, TurnID: "turn", TaskID: "task-h", State: pa.WorkLanded},
+		{ID: "unknown", Fence: fence, TurnID: "turn", TaskID: "task-i", State: pa.WorkUnknown},
+	}
+	for _, link := range export.WorkLinks {
+		link.State = pa.WorkLanded
+		links = append(links, link)
+	}
+	if _, err = s.Commit(testContext, app.Mutation{Command: command(bot.Key, pa.DispatchOperation, "dispatched"), ExpectedVersion: b.Version,
+		WorkLinks: links, Receipt: pa.Receipt{ID: "dispatched", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	want := &pa.DispatchedWork{Running: 2, NeedsYou: 1, Delivered: 1}
+	if got := listSummary(t, s, bot.Key).DispatchedWork; !reflect.DeepEqual(got, want) {
+		t.Fatalf("list dispatched_work = %+v, want %+v", got, want)
+	}
+	for _, row := range rosterRead(t, views, rosterQuery()).Frame.Changes {
+		if row.Key == bot.Key && row.Summary != nil {
+			if got := row.Summary.DispatchedWork; !reflect.DeepEqual(got, want) {
+				t.Fatalf("roster dispatched_work = %+v, want %+v", got, want)
+			}
+			return
+		}
+	}
+	t.Fatal("roster has no row for the owner")
+}
+
+func TestDispatchedWorkIsAbsentWhenNothingCounts(t *testing.T) {
+	now := time.Now()
+	none := []pa.WorkLink{{State: pa.WorkFailed}, {State: pa.WorkLanded}, {State: pa.WorkCompleted}, {State: pa.WorkUnknown}}
+	if got := countDispatchedWork(slices.Values(none), now); got != nil {
+		t.Fatalf("got %+v, want nil so the field is absent", got)
+	}
 }

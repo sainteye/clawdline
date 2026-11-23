@@ -5,8 +5,11 @@ import type * as W from "@clawdline/contract"
 import {conversations,conversationSections,orderedConversationSections,firstCallableBot,groupConversationKey,groupLastSpeaker,groupPreviewMembers,type GroupRosterEntry,type RosterRoom} from "./roster-conversations.ts"
 // @ts-expect-error Node executes source extensions.
 import {emptyRosterState,pinRosterBot,moveRosterBot} from "./roster-state.ts"
+// @ts-expect-error Node executes source extensions.
+import {rosterShownState} from "./working.ts"
 const key=(bot_id:string,machine_id="m")=>({machine_id,bot_id})
-const bot=(id:string,at="2026-11-18T01:00:00Z")=>({bot:{key:key(id),name:id,project:{project_id:"p"}},activity_at:at} as W.ProjectAssistantBotSummary)
+const live={fresh:true,state:"online",readable:true,access:"interactive"}
+const bot=(id:string,at="2026-11-18T01:00:00Z")=>({bot:{key:key(id),name:id,project:{project_id:"p"}},activity_at:at,latest_message:"",activity:"",pending_permissions:0,unread_count:0,source:live} as unknown as W.ProjectAssistantBotSummary)
 const room=(id:string,last_entry?:RosterRoom["last_entry"])=>({source:{machineID:"m"},status:{},group:{key:key(id),name:id,project:{project_id:"p"},members:[{key:key("One"),joined_revision:1},{key:key("Two"),joined_revision:1}],last_entry,updated_at:"2099-01-01T00:00:00Z"}} as GroupRosterEntry)
 test("a group and Bot with the same IDs mix in their real Project and keep separate pins",()=>{
   const entries=conversations([bot("same")],[room("same")]),state=pinRosterBot(emptyRosterState(),groupConversationKey(key("same")),true)
@@ -108,4 +111,18 @@ test("each machine's lead stays above pinned Bots and every Project, whatever it
   const both=pinRosterBot(state,groups[0].items[0].key,true)
   assert.equal(conversationSections(rows,both)[0].kind,"lead")
   assert.deepEqual(conversationSections(rows,both)[0].items.map(r=>r.kind==="bot"?r.item.bot.name:""),["Lead","Other"])
+})
+
+test("unread first lifts the state each row shows: background work, then Bots waiting on dispatched Sessions",()=>{
+  const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
+  const own={...bot("Own"),status:"working"} as W.ProjectAssistantBotSummary
+  // The row shows this Bot as working (background threads); the order must agree.
+  const background={...bot("Background"),status:"idle",background_work:{working:1,waiting:0,needs_input:0}} as W.ProjectAssistantBotSummary
+  const waiting={...bot("Waiting"),status:"idle",dispatched_work:{running:2,needs_you:0,delivered:0}} as W.ProjectAssistantBotSummary
+  const idle={...bot("Idle"),status:"idle"} as W.ProjectAssistantBotSummary
+  const sections=conversationSections(conversations([idle,waiting,background,own],[]),emptyRosterState())
+  const lifted=(ordered:ReturnType<typeof orderedConversationSections>)=>ordered.filter((section:{kind:string})=>section.kind==="working").map((section:{items:ReturnType<typeof conversations>})=>section.items.map(name))
+  assert.deepEqual(lifted(orderedConversationSections(sections,"unread")),[["Background","Own","Waiting"]])
+  // With dispatched work hidden, a waiting Bot stays where it was.
+  assert.deepEqual(lifted(orderedConversationSections(sections,"unread",(item:W.ProjectAssistantBotSummary)=>rosterShownState(item,false))),[["Background","Own"]])
 })
