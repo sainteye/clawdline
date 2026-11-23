@@ -1,7 +1,7 @@
 import {useEffect, useState, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {CloneMark} from "./BotRow"
-import {dispatchedCounts, dispatchedRows, DispatchedStripRows, type DispatchedRow} from "./dispatched-work"
+import {dispatchedCounts, dispatchedReason, dispatchedRows, DispatchedStripRows} from "./dispatched-work"
 import {elapsed} from "./working"
 import type {Words} from "./words"
 import "./dispatched-work.css"
@@ -13,11 +13,6 @@ export function openDispatchedSession(link: W.ProjectAssistantWorkLink, openWork
   openWork?.(link, link.worker_terminal && link.worker_session ? "session" : undefined)
 }
 
-function stateWord(row: DispatchedRow, w: Words) {
-  return row.kind === "needsYou" ? w.dispatchedStateNeedsYou : row.kind === "running" ? w.dispatchedStateRunning
-    : row.kind === "queued" ? w.dispatchedStateQueued : w.dispatchedStateDelivered
-}
-
 /** "N 個工作在跑" above the Bot's composer, sharing the line with the
  * background capsule; it takes no space when nothing is dispatched. */
 export function DispatchedWorkStrip({links, ownProjectID, background, onOpen, w}: {
@@ -26,7 +21,7 @@ export function DispatchedWorkStrip({links, ownProjectID, background, onOpen, w}
 }) {
   const [now, setNow] = useState(Date.now)
   const [open, setOpen] = useState(false)
-  const rows = dispatchedRows(links, now), counts = dispatchedCounts(rows)
+  const rows = dispatchedRows(links), counts = dispatchedCounts(rows)
   const ticking = rows.some(row => row.kind === "running" && row.link.started_at)
   useEffect(() => {
     if (!ticking) return
@@ -54,10 +49,10 @@ export function DispatchedWorkStrip({links, ownProjectID, background, onOpen, w}
         const other = !!(ownProjectID && row.link.target_project_id && row.link.target_project_id !== ownProjectID)
         const time = row.kind === "running" ? elapsed(row.link.started_at, now) : ""
         return <li key={row.link.id}>
-          <button type="button" className="pa-dispatched-row" data-kind={row.kind} onClick={() => openDispatchedSession(row.link, onOpen)}>
+          <button type="button" className="pa-dispatched-row" data-kind={row.kind} title={row.link.landing_note || undefined} onClick={() => openDispatchedSession(row.link, onOpen)}>
             <span className="pa-dispatched-mark" aria-hidden="true"/>
             <span className="pa-dispatched-text"><strong>{row.link.title || row.link.task_id}</strong>
-              <small>{stateWord(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}</small></span>
+              <small>{dispatchedReason(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}</small></span>
             {time && <time>{time}</time>}<span aria-hidden="true">›</span>
           </button>
         </li>

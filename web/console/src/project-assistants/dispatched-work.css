@@ -15,6 +15,7 @@
 .project-assistants .pa-dispatched-row[data-kind="queued"] .pa-dispatched-mark { background:none;border:1.5px solid #3fb950; }
 .project-assistants .pa-dispatched-row[data-kind="needsYou"] .pa-dispatched-mark { background:var(--warning,#F0A030); }
 .project-assistants .pa-dispatched-row[data-kind="delivered"] .pa-dispatched-mark { background:none;border:1.5px solid var(--warning,#F0A030); }
+.project-assistants .pa-dispatched-row[data-kind="failed"] .pa-dispatched-mark { background:none;border:1.5px solid var(--danger,#E5534B); }
 .project-assistants .pa-dispatched-more { display:block;padding:8px;font-size:12px;color:var(--pa-dim,#888); }
 .project-assistants .pa-clones { display:inline-flex;align-items:center;gap:3px;color:var(--pa-ink,inherit);font-variant-numeric:tabular-nums; }
 @media (prefers-reduced-motion: no-preference) { .project-assistants .pa-dispatched-row[data-kind="running"] .pa-dispatched-mark { animation:pa-dispatched-pulse 1.6s ease-in-out infinite; } }
