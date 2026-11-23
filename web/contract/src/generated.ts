@@ -5532,6 +5532,30 @@ export interface ProjectAssistantCreateSettings {
 }
 
 /**
+ * A question a Bot asked the person. Bot-authored display data: only the person's
+ * press in the console answers it.
+ */
+export interface ProjectAssistantDecisionRequest {
+  /**
+   * The person's chosen or typed reply once answered.
+   */
+  answer_text?: string
+
+  /**
+   * The Bot-to-Bot exchange waiting for the person, when the question came from a
+   * peer request.
+   */
+  exchange_id?: string
+  question: string
+
+  /**
+   * The requesting Bot's message, shortened to the registered bound.
+   */
+  request?: string
+  source_bot_id?: string
+}
+
+/**
  * Deletes the Bot and its conversation, as Codync's Delete; files it changed stay
  * (API level 67).
  */
@@ -6716,6 +6740,11 @@ export interface ProjectAssistantPermissionAnswerRequest {
   fence: ProjectAssistantFence
   offer_id: string
   option_id: string
+
+  /**
+   * The person's own reply to a decision offer, used when option_id is empty.
+   */
+  text?: string
   turn_id: string
 }
 
@@ -6730,9 +6759,16 @@ export interface ProjectAssistantPermissionDiff {
 
 export interface ProjectAssistantPermissionOffer {
   action?: ProjectAssistantPermissionAction
+  decision?: ProjectAssistantDecisionRequest
   expires_at: string
   fence: ProjectAssistantFence
   id: string
+
+  /**
+   * Empty for a native tool permission; "decision" for a question a Bot asked the
+   * person with ask_person.
+   */
+  kind?: string
   native_request_id: string
   options: ProjectAssistantPermissionOption[]
   selected_option_id: string

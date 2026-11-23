@@ -29,6 +29,9 @@ const (
 	ExchangeFailed    ExchangeOutcome = "failed"
 	ExchangeCancelled ExchangeOutcome = "cancelled"
 	ExchangeUnknown   ExchangeOutcome = "unknown"
+	// ExchangeNeedsPerson: the recipient finished its turn by asking the
+	// person; the requester is answered after the person decides.
+	ExchangeNeedsPerson ExchangeOutcome = "needs_person"
 )
 
 // ExchangeEndpoint is a conversation snapshot, never a capability or native ID.

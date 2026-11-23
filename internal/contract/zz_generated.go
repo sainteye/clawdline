@@ -4725,6 +4725,22 @@ type ProjectAssistantCreateSettings struct {
 	Target           ProjectAssistantProjectSelection `json:"target"`
 }
 
+// A question a Bot asked the person. Bot-authored display data: only the
+// person's press in the console answers it.
+type ProjectAssistantDecisionRequest struct {
+	// The person's chosen or typed reply once answered.
+	AnswerText string `json:"answer_text,omitempty"`
+
+	// The Bot-to-Bot exchange waiting for the person, when the question came from a
+	// peer request.
+	ExchangeID string `json:"exchange_id,omitempty"`
+	Question   string `json:"question"`
+
+	// The requesting Bot's message, shortened to the registered bound.
+	Request     string `json:"request,omitempty"`
+	SourceBotID string `json:"source_bot_id,omitempty"`
+}
+
 // Deletes the Bot and its conversation, as Codync's Delete; files it changed
 // stay (API level 67).
 type ProjectAssistantDeleteRequest struct {
@@ -5842,7 +5858,10 @@ type ProjectAssistantPermissionAnswerRequest struct {
 	Fence    ProjectAssistantFence   `json:"fence"`
 	OfferID  string                  `json:"offer_id"`
 	OptionID string                  `json:"option_id"`
-	TurnID   string                  `json:"turn_id"`
+
+	// The person's own reply to a decision offer, used when option_id is empty.
+	Text   string `json:"text,omitempty"`
+	TurnID string `json:"turn_id"`
 }
 
 // One file change the native tool proposes, as the adapter reported it.
@@ -5853,10 +5872,15 @@ type ProjectAssistantPermissionDiff struct {
 }
 
 type ProjectAssistantPermissionOffer struct {
-	Action           *ProjectAssistantPermissionAction  `json:"action,omitempty"`
-	ExpiresAt        string                             `json:"expires_at"`
-	Fence            ProjectAssistantFence              `json:"fence"`
-	ID               string                             `json:"id"`
+	Action    *ProjectAssistantPermissionAction `json:"action,omitempty"`
+	Decision  *ProjectAssistantDecisionRequest  `json:"decision,omitempty"`
+	ExpiresAt string                            `json:"expires_at"`
+	Fence     ProjectAssistantFence             `json:"fence"`
+	ID        string                            `json:"id"`
+
+	// Empty for a native tool permission; "decision" for a question a Bot asked the
+	// person with ask_person.
+	Kind             string                             `json:"kind,omitempty"`
 	NativeRequestID  string                             `json:"native_request_id"`
 	Options          []ProjectAssistantPermissionOption `json:"options"`
 	SelectedOptionID string                             `json:"selected_option_id"`

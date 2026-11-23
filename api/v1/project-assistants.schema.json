@@ -1000,11 +1000,46 @@
         "kind"
       ]
     },
+    "ProjectAssistantDecisionRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A question a Bot asked the person. Bot-authored display data: only the person's press in the console answers it.",
+      "properties": {
+        "question": {
+          "type": "string"
+        },
+        "exchange_id": {
+          "type": "string",
+          "description": "The Bot-to-Bot exchange waiting for the person, when the question came from a peer request."
+        },
+        "source_bot_id": {
+          "type": "string"
+        },
+        "request": {
+          "type": "string",
+          "description": "The requesting Bot's message, shortened to the registered bound."
+        },
+        "answer_text": {
+          "type": "string",
+          "description": "The person's chosen or typed reply once answered."
+        }
+      },
+      "required": [
+        "question"
+      ]
+    },
     "ProjectAssistantPermissionOffer": {
       "type": "object",
       "additionalProperties": false,
       "description": "",
       "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Empty for a native tool permission; \"decision\" for a question a Bot asked the person with ask_person."
+        },
+        "decision": {
+          "$ref": "#/$defs/ProjectAssistantDecisionRequest"
+        },
         "id": {
           "type": "string"
         },
@@ -1766,6 +1801,10 @@
       "additionalProperties": false,
       "description": "",
       "properties": {
+        "text": {
+          "type": "string",
+          "description": "The person's own reply to a decision offer, used when option_id is empty."
+        },
         "command": {
           "$ref": "#/$defs/ProjectAssistantCommand"
         },

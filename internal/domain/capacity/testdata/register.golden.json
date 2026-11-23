@@ -1657,6 +1657,125 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.decision_offer_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionOfferSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.decision_offers",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionOffersPerBot"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.decision_question_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionQuestionBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.decision_reply_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionReplyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.decision_request_quote_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1500,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionRequestQuoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.decision_suggested_replies",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionSuggestedReplies"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.dispatch_rules",
     "Class": "buffer",
     "Unit": "rows",

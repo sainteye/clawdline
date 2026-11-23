@@ -253,6 +253,9 @@ type Turn struct {
 	Network        *NetworkWork        `json:"network,omitempty"`
 	Origin         TurnOrigin          `json:"origin,omitempty"`
 	ExchangeID     string              `json:"exchange_id,omitempty"`
+	// DecisionExchangeID marks the person's answer to a decision offer that
+	// a peer request raised; its result is forwarded to the requester.
+	DecisionExchangeID string `json:"decision_exchange_id,omitempty"`
 	Hops           int                 `json:"hops,omitempty"`
 	Attempts       []AttemptFact       `json:"attempts,omitempty"`
 	RoutineRunID   string              `json:"routine_run_id,omitempty"`
@@ -394,6 +397,10 @@ type PermissionOffer struct {
 	ExpiresAt        time.Time       `json:"expires_at"`
 	State            PermissionState `json:"state"`
 	SelectedOptionID string          `json:"selected_option_id"`
+	// Kind is empty for a native tool permission and DecisionOfferKind for
+	// a question a Bot asked the person with ask_person.
+	Kind     string           `json:"kind,omitempty"`
+	Decision *DecisionRequest `json:"decision,omitempty"`
 }
 
 type PermissionState string
@@ -411,6 +418,8 @@ type PermissionAnswer struct {
 	OfferID  string `json:"offer_id"`
 	OptionID string `json:"option_id"`
 	TurnID   string `json:"turn_id"`
+	// Text is the person's own reply to a decision offer.
+	Text string `json:"text,omitempty"`
 }
 
 type PermissionContext struct {
