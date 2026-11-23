@@ -2,6 +2,9 @@ package capacity
 
 import "github.com/sainteye/clawdline/internal/domain/taskresource"
 
+// MachineDiskLow is the low free-space alert row.
+const MachineDiskLow = "resources.disk_low_free_bytes"
+
 // resourceBounds registers retention, accounting and admission for disposable data.
 func resourceBounds() []Entry {
 	return []Entry{
@@ -13,6 +16,11 @@ func resourceBounds() []Entry {
 		{Name: "resources.cache_total_bytes", Class: Cache, Unit: Bytes, Limit: taskresource.CacheTotalBytesLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.CacheTotalBytesLimit"}},
 		{Name: "resources.scratch_total_bytes", Class: Work, Unit: Bytes, Limit: taskresource.ScratchTotalBytesLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.ScratchTotalBytesLimit"}},
 		{Name: "resources.disk_reserve_bytes", Class: Buffer, Unit: Bytes, Limit: taskresource.DiskReserveBytesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.DiskReserveBytesLimit"}},
+		// Free space on the daemon's filesystem. Below the limit the person is
+		// told once per notice cooldown, with the largest measured sources;
+		// coming back above it is only written down.
+		{Name: MachineDiskLow, Class: Buffer, Unit: Bytes, Limit: taskresource.LowDiskAlertBytesLimit, AtLimit: Coalesce, Told: []Channel{Diagnostics, Notice}, EvictedBy: Person, QuietRecovery: true, Sources: []string{"internal/domain/taskresource.LowDiskAlertBytesLimit"}},
+		{Name: "resources.disk_source_scan_files", Class: Buffer, Unit: Rows, Limit: taskresource.DiskSourceScanFilesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.DiskSourceScanFilesLimit"}},
 		{Name: "resources.page_rows", Class: Buffer, Unit: Rows, Limit: taskresource.PageRowsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.PageRowsLimit"}},
 	}
 }
