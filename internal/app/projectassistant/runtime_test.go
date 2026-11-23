@@ -663,8 +663,12 @@ func TestRuntimeWorkBridgeUnknownNeverDispatchesTwice(t *testing.T) {
 	if _, err = f.r.DispatchWork(context.Background(), q); pa.Code(err) != pa.OutcomeUnknown {
 		t.Fatal(err)
 	}
-	if bridge.calls.Load() != 1 {
-		t.Fatal("unknown broker effect repeated")
+	// The same key and content is handed back to the bridge, which owns the
+	// broker facts: it recovers an accepted task and refuses an unknown
+	// admission (TestWorkBridgeDoesNotReplayPreparedUnknownWithoutBrokerTask).
+	// The Engine never writes a second receipt or invents another key.
+	if bridge.calls.Load() != 2 {
+		t.Fatalf("bridge calls = %d, want the original and one same-key inspection", bridge.calls.Load())
 	}
 }
 

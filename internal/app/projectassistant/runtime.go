@@ -1980,12 +1980,17 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 		a.mu.Unlock()
 		return pa.WorkLink{}, err
 	}
-	if receipt, e := r.replay(ctx, q.Command, pa.DispatchOperation); e != nil {
+	receipt, err := r.replay(ctx, q.Command, pa.DispatchOperation)
+	if err != nil {
 		a.mu.Unlock()
-		return pa.WorkLink{}, e
-	} else if receipt != nil {
+		return pa.WorkLink{}, err
+	}
+	if receipt != nil {
+		// The same key and content again: the bridge recovers an accepted
+		// task from broker facts and refuses an unknown broker admission, so
+		// only a dispatch that never reached the broker runs now.
 		a.mu.Unlock()
-		return pa.WorkLink{}, runtimeFailure(pa.OutcomeUnknown, "inspect_work_receipt")
+		return r.finishDispatch(ctx, a, q, fence)
 	}
 	workMutation := Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: q.TurnID}}
 	turn, readErr := r.o.Repository.Turn(ctx, a.key, q.TurnID)
@@ -2002,20 +2007,27 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 	if err != nil {
 		return pa.WorkLink{}, err
 	}
+	return r.finishDispatch(ctx, a, q, fence)
+}
+
+// finishDispatch asks the bridge for the task and reads the persisted link
+// back. A task the broker accepted but whose link was not persisted carries
+// its task_id in the outcome-unknown failure.
+func (r *Engine) finishDispatch(ctx context.Context, a *runtimeActor, q pa.WorkRequest, fence pa.Fence) (pa.WorkLink, error) {
 	link, err := r.o.WorkBridge.Dispatch(ctx, q)
 	if err != nil {
 		return pa.WorkLink{}, err
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	bot, err = r.o.Repository.Bot(ctx, a.key)
+	bot, err := r.o.Repository.Bot(ctx, a.key)
 	if err != nil {
 		return link, err
 	}
 	if err = r.authorized(ctx, a.key, bot.Project); err != nil {
 		return link, err
 	}
-	c, err = r.o.Repository.Conversation(ctx, a.key, bot.ConversationID)
+	c, err := r.o.Repository.Conversation(ctx, a.key, bot.ConversationID)
 	if err != nil {
 		return link, err
 	}
@@ -2037,7 +2049,7 @@ func (r *Engine) DispatchWork(ctx context.Context, q pa.WorkRequest) (pa.WorkLin
 			return persisted, nil
 		}
 	}
-	return link, runtimeFailure(pa.OutcomeUnknown, "work_not_persisted")
+	return link, &pa.Failure{Code: pa.OutcomeUnknown, Field: "work_not_persisted", TaskID: link.TaskID}
 }
 
 func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error) {

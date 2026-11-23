@@ -48,6 +48,9 @@ type Failure struct {
 	Code              ErrorCode `json:"code"`
 	Field             string    `json:"field"`
 	RetryAfterSeconds int64     `json:"retry_after_seconds"`
+	// TaskID names a broker task already accepted when the rest of the
+	// outcome is unknown, so the caller can follow it with work_status.
+	TaskID string `json:"task_id,omitempty"`
 }
 
 func (f *Failure) Error() string              { return string(f.Code) + ": " + f.Field }

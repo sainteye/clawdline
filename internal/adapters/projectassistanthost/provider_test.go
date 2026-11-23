@@ -370,8 +370,11 @@ func TestHostRealStoreBrokerProjectsOneWorkResultAndRecoversDisabledHistory(t *t
 	if updates != 1 || len(x.WorkLinks) != 1 {
 		t.Fatalf("duplicate acceptance: updates=%d links=%d", updates, len(x.WorkLinks))
 	}
-	if _, e = n.tools.Dispatch(ctx, "work", "Keep draft messages after reconnecting", "Change only a.go in the isolated worktree.", []string{"a.go"}); pa.Code(e) != pa.OutcomeUnknown {
-		t.Fatal(e)
+	if again, e := n.tools.Dispatch(ctx, "work", "Keep draft messages after reconnecting", "Change only a.go in the isolated worktree.", []string{"a.go"}); e != nil || again.TaskID != link.TaskID {
+		t.Fatalf("same-key resend did not recover the accepted task: %+v %v", again, e)
+	}
+	if x, e = f.h.store.Export(ctx, n.bot.Key); e != nil || len(x.WorkLinks) != 1 {
+		t.Fatalf("same-key resend duplicated the link: %v", e)
 	}
 	if _, e = n.tools.Dispatch(ctx, "work", "Retain drafts during reconnect", "Change only a.go in the isolated worktree.", []string{"a.go"}); pa.Code(e) != pa.IdempotencyConflict {
 		t.Fatalf("changed title reused dispatch key: %v", e)

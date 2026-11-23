@@ -172,7 +172,11 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 				continue
 			}
 			check(call("dispatch_work", work), false)
-			check(call("dispatch_work", work), true)
+			// A same-key resend recovers the accepted task instead of opening
+			// a second one, and the key alone finds its receipt.
+			check(call("dispatch_work", work), false)
+			check(call("work_status", map[string]any{"idempotency_key": "native-work"}), false)
+			check(call("work_status", map[string]any{"idempotency_key": "never-dispatched"}), true)
 			write(f.ID, map[string]string{"stopReason": "end_turn"})
 		}
 	}
