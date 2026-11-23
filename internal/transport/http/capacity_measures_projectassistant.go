@@ -265,6 +265,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsStderr:                sessions(func(u app.SessionUsage) int { return u.StderrBytes }, "largest session-reported stderr byte count; no content is exposed"),
 		capacity.BotsMCPWrite:              unobserved,
 		capacity.BotsCleanup:               unobserved,
+		capacity.BotsCleanupRetries:        unobserved,
+		capacity.BotsCleanupRetryDelay:     unobserved,
 		capacity.BotsRPCDeadline:           unobserved,
 		capacity.BotsTurnControlWindow:     unobserved,
 		capacity.BotsSurvey:                pure,

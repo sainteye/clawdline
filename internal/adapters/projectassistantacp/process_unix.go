@@ -69,6 +69,12 @@ func (p *Process) identities(ctx context.Context) ([]processIdentity, error) {
 	}
 	return result, nil
 }
+func (p *Process) kill(pid int, sig syscall.Signal) error {
+	if p.signal != nil {
+		return p.signal(pid, sig)
+	}
+	return syscall.Kill(pid, sig)
+}
 func (p *Process) captureOwned(ctx context.Context) ([]processIdentity, error) {
 	rows, err := p.identities(ctx)
 	if err != nil {
@@ -119,29 +125,30 @@ func (p *Process) signalOwned(ctx context.Context, rows []processIdentity, force
 		if deadProcess(row) {
 			continue
 		}
-		if signalErr := syscall.Kill(row.pid, sig); signalErr != nil && signalErr != syscall.ESRCH {
+		if signalErr := p.kill(row.pid, sig); signalErr != nil && signalErr != syscall.ESRCH {
 			fresh, censusErr := p.identities(ctx)
 			if censusErr != nil {
 				result = errors.Join(result, signalFailure("signal_pid_inventory", errors.Join(signalErr, censusErr)))
 				continue
 			}
 			for _, current := range fresh {
-				if current.pid == row.pid && current.stamp == stamp && !deadProcess(current) {
+				if current.pid == row.pid && current.stamp == stamp && !stoppedProcess(current) {
 					result = errors.Join(result, signalFailure("signal_pid_live", signalErr))
 					break
 				}
 			}
 		}
 	}
-	// The complete fresh census distinguishes an already stopped zombie group
-	// from a denied signal against a live owned group. Never blanket-ignore EPERM.
+	// The complete fresh census distinguishes an already stopped group (zombies
+	// or members already exiting) from a denied signal against a live owned
+	// group. Never blanket-ignore EPERM.
 	if ownedGroup && liveGroup(rows, group) {
-		if signalErr := syscall.Kill(-group, sig); signalErr != nil && signalErr != syscall.ESRCH {
+		if signalErr := p.kill(-group, sig); signalErr != nil && signalErr != syscall.ESRCH {
 			fresh, censusErr := p.identities(ctx)
 			if censusErr != nil {
 				result = errors.Join(result, signalFailure("signal_group_inventory", errors.Join(signalErr, censusErr)))
 			} else {
-				result = errors.Join(result, confirmStoppedGroup(fresh, group, signalErr))
+				result = errors.Join(result, confirmStoppedGroup(fresh, group, p.rootStamp, signalErr))
 			}
 		}
 	}

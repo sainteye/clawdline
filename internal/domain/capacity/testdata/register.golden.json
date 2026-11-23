@@ -1338,6 +1338,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.cleanup_retries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotCleanupRetries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.cleanup_retry_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotCleanupFirstRetryMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.cloud_endpoints",
     "Class": "buffer",
     "Unit": "rows",

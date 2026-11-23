@@ -101,6 +101,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 	limits := app.RuntimeLimits{
 		MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses,
 		CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond,
+		CleanupRetries: capacity.MaximumBotCleanupRetries, CleanupRetryDelay: time.Duration(capacity.MaximumBotCleanupFirstRetryMilliseconds) * time.Millisecond,
 	}
 	if p.limits != nil {
 		limits = *p.limits

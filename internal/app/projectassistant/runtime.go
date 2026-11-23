@@ -72,6 +72,7 @@ type runtimeActor struct {
 	slot       bool               // Engine.mu: includes setup and unknown cleanup
 	retained   bool               // Engine.mu: cleanup owner and process slot survive unknown cleanup
 	cleanupErr error              // Engine.mu
+	retrying   bool               // Engine.mu: one bounded cleanup retry loop at a time
 	completion *routineCompletion // actor.mu; persisted before releasing a retained owner
 	opening    bool               // actor.mu
 	closing    bool               // actor.mu: seals live readings before native cleanup

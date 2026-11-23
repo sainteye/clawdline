@@ -20,6 +20,11 @@ type RuntimeLimits struct {
 	// Production leaves it zero; scheduled routines carry their own deadline.
 	PromptTimeout  time.Duration
 	CleanupTimeout time.Duration
+	// CleanupRetries bounds how often a retained owner re-attempts an
+	// unconfirmed Agent cleanup on its own, waiting CleanupRetryDelay and then
+	// doubling it. Zero leaves retries to an explicit Close.
+	CleanupRetries    int
+	CleanupRetryDelay time.Duration
 }
 
 // ControlWindow bounds maintenance and issued work authority independently of

@@ -320,6 +320,16 @@
     "Note": true
   },
   {
+    "Name": "bots.cleanup_retries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cleanup_retry_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.cloud_endpoints",
     "Known": true,
     "Note": true

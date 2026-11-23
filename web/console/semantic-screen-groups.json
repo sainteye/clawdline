@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14161,
-  "riskKeys": 6015,
-  "nonRiskCount": 8146,
+  "englishContentKeys": 14165,
+  "riskKeys": 6018,
+  "nonRiskCount": 8147,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 738,
+      "count": 739,
       "sources": [
         null
       ],
@@ -637,6 +637,7 @@
         "capacityRow.bots.carry_quote_bytes.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.cleanup_ms.what",
+        "capacityRow.bots.cleanup_retry_ms.full",
         "capacityRow.bots.cloud_endpoints.what",
         "capacityRow.bots.cloud_lease_seconds.what",
         "capacityRow.bots.config_cache_entries.what",

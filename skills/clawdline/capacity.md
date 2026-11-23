@@ -71,6 +71,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.cleanup_retries` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_retry_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_endpoints` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_frames` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_lease_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |

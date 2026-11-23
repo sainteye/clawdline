@@ -24,13 +24,68 @@ func (r *Engine) setProject(a *runtimeActor, project pa.ProjectScope) {
 }
 
 func (r *Engine) retain(a *runtimeActor, err error) {
-	// The cause was previously kept only in memory, so a Bot refusing every
-	// message left no record of which cleanup step failed (2026-11-23).
-	log.Printf("project assistant: Agent process cleanup unconfirmed; bot=%s keeps its owner until Clawdline restarts: %v", a.key.BotID, err)
 	r.mu.Lock()
 	a.retained, a.cleanupErr = true, err
+	start := !a.retrying && !r.closed && r.o.Limits.CleanupRetries > 0 && r.o.Limits.CleanupRetryDelay > 0
+	if start {
+		a.retrying = true
+	}
+	retrying := a.retrying
 	r.notifyLocked()
 	r.mu.Unlock()
+	// The cause was previously kept only in memory, so a Bot refusing every
+	// message left no record of which cleanup step failed (2026-11-23).
+	if retrying {
+		log.Printf("project assistant: Agent process cleanup unconfirmed; bot=%s keeps its owner and retries cleanup: %v", a.key.BotID, err)
+	} else {
+		log.Printf("project assistant: Agent process cleanup unconfirmed; bot=%s keeps its owner until cleanup is confirmed: %v", a.key.BotID, err)
+	}
+	if start {
+		go r.retryRetained(a)
+	}
+}
+
+// retryRetained re-attempts an unconfirmed cleanup a bounded number of times
+// with a doubling delay, so a Bot whose Agent process stopped a moment after
+// the first check no longer refuses every message until Clawdline restarts
+// (Beacon and Lens, 2026-11-23). Each attempt is the same verified
+// retryCleanup that shutdown uses: the owner is released only when Close
+// returns without error. It never resends the earlier turn, whose unknown
+// outcome is already recorded.
+func (r *Engine) retryRetained(a *runtimeActor) {
+	delay := r.o.Limits.CleanupRetryDelay
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	for attempt := 1; attempt <= r.o.Limits.CleanupRetries; attempt++ {
+		<-timer.C
+		r.mu.Lock()
+		if r.closed || !a.retained {
+			a.retrying = false
+			r.mu.Unlock()
+			return
+		}
+		// Another owner (the finishing worker or shutdown) still holds the
+		// actor; this attempt is skipped rather than run concurrently.
+		if a.users == 0 {
+			a.users++
+			r.mu.Unlock()
+			r.retryCleanup(a)
+			r.mu.Lock()
+			if !a.retained {
+				a.retrying = false
+				r.mu.Unlock()
+				log.Printf("project assistant: Agent process cleanup confirmed on retry %d; bot=%s accepts messages again", attempt, a.key.BotID)
+				return
+			}
+		}
+		r.mu.Unlock()
+		delay *= 2
+		timer.Reset(delay)
+	}
+	r.mu.Lock()
+	a.retrying = false
+	r.mu.Unlock()
+	log.Printf("project assistant: Agent process cleanup still unconfirmed after %d retries; bot=%s keeps its owner", r.o.Limits.CleanupRetries, a.key.BotID)
 }
 
 // The execution owner alone closes its session. A failed close keeps both the

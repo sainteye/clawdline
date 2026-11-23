@@ -753,6 +753,8 @@ const (
 	BotsStderr                = "bots.stderr_bytes"
 	BotsMCPWrite              = "bots.mcp_write_ms"
 	BotsCleanup               = "bots.cleanup_ms"
+	BotsCleanupRetries        = "bots.cleanup_retries"
+	BotsCleanupRetryDelay     = "bots.cleanup_retry_ms"
 	BotsRPCDeadline           = "bots.rpc_ms"
 	BotsTurnControlWindow     = "bots.turn_control_window_ms"
 	BotsSurvey                = "bots.survey_ms"
