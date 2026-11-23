@@ -321,7 +321,7 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 		return orchestrator.AssistantCurrent{}, failure(pa.ScopeDenied, "canonical_project")
 	}
 	f := pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
-	out := orchestrator.AssistantCurrent{Fence: f, Source: source, Feature: state, Project: resolved, BotName: b.Name}
+	out := orchestrator.AssistantCurrent{Fence: f, Source: source, Feature: state, Project: resolved, BotName: b.Name, BotAppearance: b.Appearance}
 	if c.BindingID != "" {
 		found := false
 		for _, binding := range x.Bindings {

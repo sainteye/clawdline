@@ -177,7 +177,7 @@ func ownTasks(records []orchestrator.Record, byTerminal map[string]ownrecords.Li
 			ChildSession:  stringPtr(r.ChildConversationID),
 		}
 		if owner := r.AssistantOwner; owner != nil {
-			t.BotDispatch = &ownrecords.BotDispatch{Key: owner.Fence.Key, Name: owner.BotName}
+			t.BotDispatch = &ownrecords.BotDispatch{Key: owner.Fence.Key, Name: owner.BotName, Appearance: owner.BotAppearance}
 		}
 		if r.Callback != nil {
 			t.CallbackIntent = r.Callback.Intent

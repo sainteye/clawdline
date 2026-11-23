@@ -1,5 +1,7 @@
 import { SESSION_INVENTORY_ID, SESSION_INVENTORY_LIMIT, channelSegment } from "../legacy/js/net/client.js"
 import type { AssistantSkill, SessionRow, TranscriptEntry } from "@clawdline/contract"
+// @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
+import { ProjectAssistantShapeValues } from "../../../contract/src/generated.ts"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { menuFingerprint } from "../session/fingerprint.ts"
@@ -10,6 +12,21 @@ import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { descriptorParents, record, STATUS_FRESH_MS, statusGapTarget, statusInventoryIDs, statusPassTransition, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
+
+function listBotDispatch(value: unknown): SessionRow["bot_dispatch"] {
+  const dispatch = record(value)
+  if (!dispatch) return undefined
+  const { name, task_title } = dispatch
+  const appearance = record(dispatch.appearance)
+  const shape = ProjectAssistantShapeValues.find((value) => value === appearance?.shape)
+  return {
+    name: typeof name === "string" ? name : undefined,
+    ...(typeof task_title === "string" && { task_title }),
+    ...(shape && typeof appearance?.color === "string" && {
+      appearance: { shape, color: appearance.color },
+    }),
+  }
+}
 
 type StatusClient = CloudClientHandle & {
   /** A recent Relay machine_offline ACK, cleared by a live machine envelope. */
@@ -461,11 +478,10 @@ export function statusSource(current: () => StatusClient | null,
           const key = destinationKey(destination)
           if (!visible.has(key) || !currentRows.has(key)) continue
           const icon = record(session.icon)
-          const dispatch = record(session.bot_dispatch)
           const status = record(session.status)
           const statusState = status?.state
           result.push({ destination, projection: currentRows.get(key), title: session.title.trim(),
-            botDispatch: dispatch ? { name: typeof dispatch.name === "string" ? dispatch.name : undefined } : undefined,
+            botDispatch: listBotDispatch(session.bot_dispatch),
             observedAt: trustworthyListTime ? listObservedAt : undefined,
             assistant: session.assistant === "claude" || session.assistant === "codex" || session.assistant === "antigravity" || session.assistant === "grok" ? session.assistant : undefined,
             cwd: typeof session.cwd === "string" ? session.cwd : undefined,

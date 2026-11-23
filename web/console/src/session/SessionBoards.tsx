@@ -317,8 +317,8 @@ function BoardRows({ source, rows, candidates }: { source: SessionBoardSource; r
       const branches = visualBranches(ordered.map(({ entry }) => entry), depths)
       const enrolled = new Map(b.members?.map(member => [member.id, member]))
       const icon = boardProjectIcon(b, candidateMap)
-      return <li key={b.id} className="session-board-group" role="presentation">
-        <button type="button" onClick={() => { setShow(b.id); void refresh() }}>
+      return <li key={b.id} className="session-list-group session-board-group" role="presentation">
+        <button className="session-list-group-heading" type="button" onClick={() => { setShow(b.id); void refresh() }}>
           {icon ? <SessionBoardMark icon={icon} project /> : <BoardGlyph />}
           <strong>{b.name}</strong>
           {unread > 0 && <small>{t("sessionBoardUnread", { count: unread })}</small>}

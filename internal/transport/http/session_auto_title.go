@@ -40,7 +40,7 @@ func (s *Server) automaticOwnedTitle(ctx context.Context, item session.Session) 
 		view = s.withOwnSessionTitles(ownrecords.Snapshot{}.With(own), time.Now())
 	}
 	titles := view.TitleOf(live, item.CustomTitle, []ownrecords.Live{live})
-	if titles.Manual != "" || titles.Orchestrator != "" || item.CustomTitle != "" || item.Rungs.Thread != "" {
+	if titles.Manual != "" || titles.Orchestrator != "" || titles.BotDispatch != nil || item.CustomTitle != "" || item.Rungs.Thread != "" {
 		return
 	}
 	first, err := s.firstRequest(item)

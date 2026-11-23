@@ -358,12 +358,18 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const presentationFailed = !!missingTitle && presentationFailures.current.get(machine.id) === pass
     const presentationLoading = !!missingTitle && !presentationFailed
     const filtered = reading?.phase === "settled" && reading.value.rows
-      ? reading.value.rows.filter((row) => isVisible(row) &&
-        (!unavailable || row.machineScope || presentations.current.has(destinationKey(row.destination)) ||
-          confirmedTitles?.has(destinationKey(row.destination))) &&
-        matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))) &&
-        (!search || `${machine.name} ${machine.id} ${machine.platform} ${row.machineScope ? "Clawdfather" : (confirmedTitles?.get(destinationKey(row.destination)) ?? presentations.current.get(destinationKey(row.destination))?.title ?? "")} ${presentations.current.get(destinationKey(row.destination))?.botDispatch?.name ?? ""} ${row.destination.sessionID} ${stateWord(row.state)}`
-          .toLocaleLowerCase().includes(search))) : []
+      ? reading.value.rows.filter((row) => {
+        const key = destinationKey(row.destination)
+        const presentation = presentations.current.get(key)
+        const confirmedTitle = confirmedTitles?.get(key)
+        if (!isVisible(row) || (unavailable && !row.machineScope && !presentation && !confirmedTitles?.has(key)) ||
+          !matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentation))) return false
+        if (!search) return true
+        const title = row.machineScope ? "Clawdfather" : confirmedTitle ?? presentation?.title
+        const dispatch = presentation?.botDispatch
+        return [machine.name, machine.id, machine.platform, title, dispatch?.name, dispatch?.task_title, row.destination.sessionID, stateWord(row.state)]
+          .join(" ").toLocaleLowerCase().includes(search)
+      }) : []
     const shown = filtered.map((row) => {
       const presentation = presentations.current.get(destinationKey(row.destination))
       // A new ss/ pass can arrive before the matching machine list read.

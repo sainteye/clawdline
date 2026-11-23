@@ -9862,11 +9862,18 @@ export const SessionAgentUnknownReasonValues: readonly SessionAgentUnknownReason
  * The Bot that dispatched this Session, from the broker's matching task record.
  */
 export interface SessionBotDispatch {
+  appearance?: ProjectAssistantAppearance
+
   /**
    * The dispatcher's display name, absent if the name was not recorded and can no
    * longer be resolved.
    */
   name?: string
+
+  /**
+   * The broker task title, independent of the Session's own title.
+   */
+  task_title?: string
 }
 
 /**

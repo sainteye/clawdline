@@ -8539,9 +8539,14 @@ var SessionAgentUnknownReasonValues = []SessionAgentUnknownReason{SessionAgentUn
 
 // The Bot that dispatched this Session, from the broker's matching task record.
 type SessionBotDispatch struct {
+	Appearance *ProjectAssistantAppearance `json:"appearance,omitempty"`
+
 	// The dispatcher's display name, absent if the name was not recorded and can no
 	// longer be resolved.
 	Name string `json:"name,omitempty"`
+
+	// The broker task title, independent of the Session's own title.
+	TaskTitle string `json:"task_title,omitempty"`
 }
 
 // Who this session is parked on, and who is parked on it. Absent when neither.

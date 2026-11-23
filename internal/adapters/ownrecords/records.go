@@ -33,10 +33,12 @@ type Seconds float64
 func (s Seconds) Unix() int64     { return int64(s) }
 func (s Seconds) Time() time.Time { return time.Unix(0, int64(float64(s)*1e9)) }
 
-// BotDispatch is the source identity and recorded display name of a Bot task.
+// BotDispatch is the task heading and the source Bot's display identity.
 type BotDispatch struct {
-	Key  pa.BotKey
-	Name string
+	Key        pa.BotKey
+	Name       string
+	Appearance pa.Appearance
+	TaskTitle  string
 }
 
 // Task is one dispatched task.
