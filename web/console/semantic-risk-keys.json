@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14070,
+  "englishKeys": 14075,
   "counts": {
     "negation": 3595,
-    "state": 2366,
-    "permission": 844,
-    "deletion": 322,
+    "state": 2367,
+    "permission": 845,
+    "deletion": 323,
     "uncertainty": 561
   },
-  "unionCount": 5974,
+  "unionCount": 5976,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5834,6 +5834,7 @@
       "transparency.card.persistent-bot-fallback.effect",
       "transparency.card.persistent-bot-group-rooms.how",
       "transparency.card.persistent-bot-inputs.effect",
+      "transparency.card.persistent-bot-lead-controls.effect",
       "transparency.card.persistent-bot-lead.effect",
       "transparency.card.persistent-bot-lead.summary",
       "transparency.card.persistent-bot-network.effect",
@@ -6755,6 +6756,7 @@
       "transparency.card.persistent-bot-fallback.condition",
       "transparency.card.persistent-bot-group-rooms.effect",
       "transparency.card.persistent-bot-inputs.effect",
+      "transparency.card.persistent-bot-lead-controls.effect",
       "transparency.card.persistent-bot-lead.how",
       "transparency.card.persistent-bot-network.condition",
       "transparency.card.persistent-bot-network.effect",
@@ -7128,6 +7130,7 @@
       "transparency.card.machine-codegraph.effect",
       "transparency.card.persistent-bot-api-key.effect",
       "transparency.card.persistent-bot-group-rooms.how",
+      "transparency.card.persistent-bot-lead-controls.summary",
       "transparency.card.persistent-bot-outputs.effect",
       "transparency.card.persistent-bot-team.how",
       "transparency.card.persistent-bots.effect",
@@ -13370,6 +13373,8 @@
     "transparency.card.persistent-bot-group-rooms.how",
     "transparency.card.persistent-bot-inputs.effect",
     "transparency.card.persistent-bot-inputs.how",
+    "transparency.card.persistent-bot-lead-controls.effect",
+    "transparency.card.persistent-bot-lead-controls.summary",
     "transparency.card.persistent-bot-lead.condition",
     "transparency.card.persistent-bot-lead.effect",
     "transparency.card.persistent-bot-lead.how",

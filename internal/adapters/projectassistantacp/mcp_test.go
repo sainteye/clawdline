@@ -412,3 +412,49 @@ func TestOwnedMCPAcceptsClientNotificationsItDoesNotActOn(t *testing.T) {
 		t.Fatalf("tools after the notification: %d %s", code, b)
 	}
 }
+
+type leadControlTestTools struct {
+	mcpTestTools
+	allowed atomic.Bool
+	calls   atomic.Int32
+}
+
+func (t *leadControlTestTools) LeadBotAvailable(context.Context) error {
+	if !t.allowed.Load() {
+		return refusal(pa.ScopeDenied, "lead_role")
+	}
+	return nil
+}
+
+func (t *leadControlTestTools) ManageBots(ctx context.Context, q app.LeadBotRequest) (json.RawMessage, error) {
+	if err := t.LeadBotAvailable(ctx); err != nil {
+		return nil, err
+	}
+	if q.Method != "PATCH" || q.Path != "/target" || q.IdempotencyKey != "rename-once" {
+		return nil, refusal(pa.Invalid, "test_arguments")
+	}
+	t.calls.Add(1)
+	return json.RawMessage(`{"result":"renamed"}`), nil
+}
+
+func TestOwnedMCPLeadControlFollowsTheLiveRole(t *testing.T) {
+	tools := &leadControlTestTools{}
+	tools.allowed.Store(true)
+	f := newMCPFixture(t, tools)
+	f.initialize(t)
+	const list = `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`
+	if code, b := f.post(t, list, nil); code != 200 || !bytes.Contains(b, []byte(`"name":"manage_bots"`)) {
+		t.Fatalf("Lead control discovery: %d %s", code, b)
+	}
+	args := map[string]any{"method": "PATCH", "path": "/target", "idempotency_key": "rename-once", "body": map[string]any{"settings": map[string]string{"name": "Renamed"}}}
+	if code, b := f.post(t, mcpCall("manage_bots", args), nil); code != 200 || !bytes.Contains(b, []byte(`renamed`)) {
+		t.Fatalf("Lead control: %d %s", code, b)
+	}
+	tools.allowed.Store(false)
+	if code, b := f.post(t, list, nil); code != 200 || bytes.Contains(b, []byte(`"name":"manage_bots"`)) {
+		t.Fatalf("Former Lead tool discovery: %d %s", code, b)
+	}
+	if code, b := f.post(t, mcpCall("manage_bots", args), nil); code != 200 || !bytes.Contains(b, []byte(`pa_scope_denied`)) || !bytes.Contains(b, []byte(`lead_role`)) || tools.calls.Load() != 1 {
+		t.Fatalf("Former Lead could reuse the tool: %d %s", code, b)
+	}
+}

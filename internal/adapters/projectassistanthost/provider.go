@@ -86,6 +86,9 @@ type NativeWork struct {
 	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
 	artifacts     func(context.Context) ([]app.ArtifactInfo, error)
 
+	leadBotAvailable func(context.Context) error
+	manageBots       func(context.Context, app.LeadBotRequest) (json.RawMessage, error)
+
 	browserStatus  func(context.Context) (app.BrowserStatus, error)
 	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
 }
@@ -519,6 +522,51 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
 	tools := NativeWork{}
+	if h.o.ManageBots != nil && taskOwner.BotID == "" && pa.DirectUserTurn(turn) {
+		authorize := func(ctx context.Context, key pa.BotKey, write bool) (app.Authority, error) {
+			if key.MachineID != q.Bot.Key.MachineID {
+				return app.Authority{}, failure(pa.ScopeDenied, "machine")
+			}
+			manager, err := r.ManagerContext(ctx, q.Binding.Fence, turnID)
+			if err != nil {
+				return app.Authority{}, err
+			}
+			if !manager.Caller.Lead {
+				return app.Authority{}, failure(pa.ScopeDenied, "lead_role")
+			}
+			feature, source, err := h.background(ctx, key, write)
+			principal := "lead-bot:" + q.Bot.Key.BotID
+			return app.Authority{PrincipalID: principal, ReaderID: principal, AuthorizationRevision: turnID, Feature: feature, Source: source}, err
+		}
+		tools.leadBotAvailable = func(ctx context.Context) error {
+			ctx, done, err := bound(ctx)
+			if err != nil {
+				return err
+			}
+			defer done()
+			_, err = authorize(ctx, q.Bot.Key, false)
+			return err
+		}
+		tools.manageBots = func(ctx context.Context, request app.LeadBotRequest) (json.RawMessage, error) {
+			ctx, done, err := bound(ctx)
+			if err != nil {
+				return nil, err
+			}
+			stop := context.AfterFunc(life.sealed, done)
+			defer func() { stop(); done() }()
+			if _, err := authorize(ctx, q.Bot.Key, request.Method != "GET"); err != nil {
+				return nil, err
+			}
+			if err := journal(ctx, "manageBots"); err != nil {
+				return nil, err
+			}
+			service, err := h.Service()
+			if err != nil {
+				return nil, err
+			}
+			return h.o.ManageBots(ctx, service.WithAuthority(authorize), q.Bot.Key, request)
+		}
+	}
 	tools.approveSource = func(ctx context.Context, action pa.PermissionAction, options []pa.PermissionOption) (pa.PermissionOption, error) {
 		ctx, done, err := bound(ctx)
 		if err != nil {
@@ -1042,6 +1090,20 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 // botTabKept answers a Bot's release: the tab stays the Bot's, and the person
 // takes it over from the Bot's chat.
 var botTabKept = json.RawMessage(`{"kept":true,"note":"The tab stays yours so the person can take it over from your chat's browser and hand it back. Tell them what to do there; use close when you no longer need the tab."}`)
+
+func (w NativeWork) LeadBotAvailable(ctx context.Context) error {
+	if w.leadBotAvailable == nil {
+		return failure(pa.ScopeDenied, "lead_user_turn")
+	}
+	return w.leadBotAvailable(ctx)
+}
+
+func (w NativeWork) ManageBots(ctx context.Context, request app.LeadBotRequest) (json.RawMessage, error) {
+	if w.manageBots == nil {
+		return nil, failure(pa.ScopeDenied, "lead_user_turn")
+	}
+	return w.manageBots(ctx, request)
+}
 
 func (w NativeWork) TeamAvailable(ctx context.Context) error {
 	if w.teamAvailable == nil {

@@ -75,6 +75,14 @@ func NewService(opts ServiceOptions) (*Service, error) {
 	return &Service{opts: opts, reader: r}, nil
 }
 
+// WithAuthority binds the existing operations to another trusted, in-process
+// principal without changing the authority used by ordinary HTTP callers.
+func (s *Service) WithAuthority(authorize func(context.Context, pa.BotKey, bool) (Authority, error)) *Service {
+	bound := *s
+	bound.opts.Authorize = authorize
+	return &bound
+}
+
 func serviceFailure(code pa.ErrorCode, field string) error {
 	return &pa.Failure{Code: code, Field: field}
 }

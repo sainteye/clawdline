@@ -31,3 +31,9 @@ func ValidLeadCallKey(key string) bool {
 }
 
 func IsLeadCallTurn(turn Turn) bool { return turn.Origin == LeadCallOrigin }
+
+// DirectUserTurn includes old persisted user turns whose origin was omitted.
+func DirectUserTurn(turn Turn) bool {
+	return turn.ID != "" && (turn.Origin == UserOrigin || turn.Origin == "") &&
+		turn.Room == nil && turn.Network == nil && turn.RoutineRunID == ""
+}

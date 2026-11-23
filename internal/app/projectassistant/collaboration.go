@@ -69,7 +69,7 @@ func (r *Engine) admitBotLocked(ctx context.Context, a *runtimeActor, p Collabor
 	if err != nil {
 		return pa.Exchange{}, err
 	}
-	if !pa.MayContactBot(bot, target) {
+	if !pa.MayContactBot(bot, target, t) {
 		return pa.Exchange{}, runtimeFailure(pa.ScopeDenied, "collaboration_project")
 	}
 	if err = r.authorized(ctx, key, target.Project); err != nil {
