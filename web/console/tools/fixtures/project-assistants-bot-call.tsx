@@ -10,6 +10,7 @@ import "../../src/project-assistants/styles.css"
 
 const at = new Date().toISOString()
 const received: W.ProjectAssistantSendRequest[] = []
+const stops: W.ProjectAssistantStopRequest[] = []
 const approved: W.ProjectAssistantPermissionAnswerRequest[] = []
 const rows = [
   { source: fixtureSource("fixture-one"), botIndex: 0 },
@@ -76,6 +77,27 @@ for (const row of rows) {
     if (network.loseReceipt) throw new Error("Synthetic acknowledgement lost")
     return receipt(request.command, id)
   }
+  row.source.stop = async request => {
+    stops.push(request)
+    turn(row, request.turn_id, "cancelled")
+    return receipt(request.command, request.turn_id)
+  }
+  if (new URLSearchParams(location.search).has("provider")) Object.assign(row.source, {
+    canMemorySettings: () => true,
+    memoryView: async (): Promise<W.ProjectAssistantMemoryViewResponse> => ({
+      contract_version: contractVersion, source_epoch: row.bot.key.machine_id + "-epoch-1",
+      view: {
+        bot: row.bot, conversation_id: row.bot.conversation_id,
+        memory: {key: row.bot.key, project: row.bot.project, revision: 1, forgotten_count: 0, forgotten_through: 0},
+        layers: [
+          {layer: "bot", available: true, revision: "1", cap: 10, used: 1, truncated: false,
+            entries: [{id:"owned",author:"bot",text:"fixture favorite color is teal",sources:[],updated_at:at}]},
+          {layer: "project", available: true, revision: "1", cap: 10, used: 1, truncated: false,
+            entries: [{id:"shared",author:"bot",text:"fixture favorite color is excluded",sources:[],updated_at:at}]},
+        ],
+      },
+    }),
+  })
   row.source.answer = async request => {
     if (offer?.id !== request.offer_id) throw new Error("Fixture received a foreign answer")
     approved.push(request)
@@ -147,7 +169,7 @@ Object.defineProperty(window, "SpeechRecognition", { value: SpeechFixture })
 Object.defineProperty(window, "SpeechSynthesisUtterance", { value: class {
   constructor(readonly text: string) {}
 } })
-Object.defineProperty(window, "speechSynthesis", { value: {
+Object.defineProperty(window, "speechSynthesis", { value: Object.assign(new EventTarget(), {
   getVoices: () => [{ name: "Local test output", localService: true, lang: lang === "en" ? "en-US" : "zh-TW" }],
   speak(utterance: SpeechSynthesisUtterance) {
     audio.plays.push(utterance.text)
@@ -168,7 +190,7 @@ Object.defineProperty(window, "speechSynthesis", { value: {
     playback?.oscillator.stop()
     playback = undefined
   },
-} })
+}) })
 
 async function tone(frequency: number, text: string, late = false) {
   const result = {resultIndex: 0, results: [{isFinal: true, 0: {transcript: text}}]}
@@ -194,7 +216,7 @@ async function tone(frequency: number, text: string, late = false) {
   return peak > 0
 }
 Object.assign(window, { callFixture: {
-  audio, received, approved, network, select, tone, handoffState,
+  audio, received, approved, stops, network, select, tone, handoffState,
   releaseHandoff() {handoffState.hold = false; releaseHandoff?.(); releaseHandoff = undefined},
   anotherHandoff() {handoffState.card = {...handoffState.card, state: "draft", ref: {...handoffState.card.ref, revision: handoffState.card.ref.revision + 1}}},
   complete(index: number, which: number, text: string) {

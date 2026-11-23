@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14075,
+  "englishContentKeys": 14080,
   "riskKeys": 5976,
-  "nonRiskCount": 8099,
+  "nonRiskCount": 8104,
   "groups": [
     {
       "name": "acp / other",
@@ -8110,7 +8110,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 232,
+      "count": 237,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8250,6 +8250,11 @@
         "transparency.card.persistent-bot-selected-extensions.title",
         "transparency.card.persistent-bot-team.summary",
         "transparency.card.persistent-bot-team.title",
+        "transparency.card.persistent-bot-voice.condition",
+        "transparency.card.persistent-bot-voice.effect",
+        "transparency.card.persistent-bot-voice.how",
+        "transparency.card.persistent-bot-voice.summary",
+        "transparency.card.persistent-bot-voice.title",
         "transparency.card.persistent-bots.summary",
         "transparency.card.persistent-bots.title",
         "transparency.card.playbook.condition",

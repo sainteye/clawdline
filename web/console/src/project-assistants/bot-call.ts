@@ -35,6 +35,7 @@ export interface CallInput {
   fence: W.ProjectAssistantFence
   text: string
   greeting?: boolean
+  allowQueue?: boolean
   signal: AbortSignal
 }
 

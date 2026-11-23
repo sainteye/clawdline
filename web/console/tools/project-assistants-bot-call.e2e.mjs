@@ -63,10 +63,10 @@ try {
       try {
         await page.goto(origin + "/?handoff=1&lang=" + lang)
         await wait(() => window.callFixture.handoffState.pending)
-        assert.equal(await dial(start).isDisabled(), true, "an unresolved handoff read cannot prove no draft exists")
+        assert.equal(await dial(start).count(), 0, "an unresolved handoff read cannot prove no draft exists")
         await fixture("releaseHandoff")
         await page.locator(".pa-handoff-card").waitFor()
-        assert.equal(await dial(start).isDisabled(), true, "a draft handoff must not become an unversioned call input")
+        assert.equal(await dial(start).count(), 0, "a draft handoff must not become an unversioned call input")
         assert.equal(await get("audio", "opens"), 0)
         assert.equal((await get("received")).length, 0)
         await click(button(lang === "en" ? "Keep current conversation" : "保留目前對話"))
@@ -195,6 +195,136 @@ try {
         await screenshot("failure")
         console.error(JSON.stringify({lang, errors, external, text: await page.locator("#app").innerText(),
           plays: await get("audio", "plays"), energy: await get("audio", "energy")}))
+        throw error
+      } finally {
+        await context.close()
+      }
+    }
+    for (const [engine, lang, width] of [["live", "zh-Hant", 390], ["realtime", "en", 1440]]) {
+      const context = await browser.newContext({ viewport: {width, height: 820}, hasTouch: width < 700 })
+      const page = await context.newPage()
+      const errors = [], unexpected = [], openings = []
+      page.on("pageerror", error => errors.push(String(error)))
+      await page.addInitScript(engine => {
+        const voice = { sent: [], current: null, emit(event) {
+          const data = JSON.stringify(event)
+          voice.current?.onmessage?.({data})
+          voice.current?.dispatchEvent(new MessageEvent("message", {data}))
+        } }
+        window.voiceFixture = voice
+        class Channel extends EventTarget {
+          readyState = "connecting"
+          send(raw) {
+            const event = JSON.parse(raw)
+            voice.sent.push(event)
+            if (event.type === "session.update") queueMicrotask(() => voice.emit({type:"session.updated",session:event.session}))
+            if (event.type === "session.close") queueMicrotask(() => voice.emit({type:"session.closed",usage:{seconds:15}}))
+          }
+          close() { this.readyState = "closed"; this.dispatchEvent(new Event("close")); this.onclose?.() }
+        }
+        window.RTCPeerConnection = class {
+          iceGatheringState = "complete"
+          addTrack() {}
+          createDataChannel() { return voice.current = new Channel() }
+          async createOffer() { return {type:"offer",sdp:"v=0 fixture-offer"} }
+          async setLocalDescription(sdp) { this.localDescription = sdp }
+          async setRemoteDescription() {
+            voice.current.readyState = "open"
+            queueMicrotask(() => {
+              if (engine === "live") voice.emit({type:"session.started"})
+              else voice.current.onopen?.()
+            })
+          }
+          close() {}
+        }
+      }, engine)
+      await page.route("**/*", async route => {
+        const request = route.request()
+        const url = new URL(request.url())
+        if (url.origin === origin) {
+          if (url.pathname === "/v1/settings/copilot") return route.fulfill({json:{key_set:true,engine,voice:"marin"}})
+          if (url.pathname === "/v1/voice/copilot-live") {
+            openings.push(request.postDataJSON())
+            return route.fulfill({json:{sdp:"v=0 fixture-answer",session_id:"synthetic"}})
+          }
+          if (url.pathname === "/v1/voice/copilot-session") return route.fulfill({json:{client_secret:"fixture-token",model:"gpt-realtime-mini"}})
+          if (url.pathname === "/v1/voice/copilot-journal") return route.fulfill({json:{ok:true}})
+          if (!url.pathname.startsWith("/v1/")) return route.continue()
+        }
+        if (url.origin === "https://api.openai.com" && url.pathname === "/v1/realtime/calls") {
+          openings.push({sdp:request.postData()})
+          return route.fulfill({body:"v=0 fixture-answer",headers:{"access-control-allow-origin":origin}})
+        }
+        unexpected.push(url.pathname)
+        return route.abort()
+      })
+      const emit = event => page.evaluate(event => window.voiceFixture.emit(event), event)
+      const sent = () => page.evaluate(() => window.voiceFixture.sent)
+      const speak = text => emit(engine === "live" ? {type:"session.input_transcript.delta",delta:text} : {type:"conversation.item.input_audio_transcription.completed",transcript:text})
+      let serial = 0
+      const tool = async (name, args = {}) => {
+        const id = "fixture-tool-" + ++serial
+        const call = {call_id:id,name,arguments:JSON.stringify(args)}
+        await emit(engine === "live"
+          ? {type:"response.event",event:{type:"response.output_item.done",item:{type:"function_call",...call}}}
+          : {type:"response.function_call_arguments.done",...call})
+        await page.waitForFunction(id => window.voiceFixture.sent.some(event => event.item?.call_id === id), id)
+        return JSON.parse((await sent()).find(event => event.item?.call_id === id).item.output)
+      }
+      try {
+        await page.goto(origin + "/?provider=1&lang=" + lang)
+        const callLabel = lang === "en" ? "Voice call" : "語音通話"
+        await page.getByRole("button", {name:callLabel+" · Project assistant",exact:true}).click()
+        const panel = page.locator(".pa-bot-voice-panel")
+        await panel.getByText(lang === "en" ? "Listening" : "正在聆聽",{exact:true}).waitFor()
+        assert.equal(await panel.locator("svg.pa-avatar").count(), 1)
+        const update = (await sent()).find(event=>event.type==="session.update")
+        const configured = engine === "live" ? update.session.delegation.responses : update.session
+        assert.deepEqual(configured.tools.map(tool=>tool.name),
+          ["bot_status","recent_messages","search_memory","send_to_bot","answer_approval","stop_bot"])
+        assert.match(configured.instructions,/Project assistant/)
+        assert.equal((await tool("bot_status")).status,"idle")
+        assert.ok((await tool("recent_messages",{count:1})).messages[0].text)
+        assert.deepEqual((await tool("search_memory",{query:"favorite color"})).matches,[{text:"fixture favorite color is teal"}])
+        assert.equal((await tool("list_sessions")).error,"tool_not_available_in_this_call")
+        assert.equal((await tool("send_to_bot",{text:"do not send"})).error,"new_spoken_confirmation_required")
+        const mute = panel.getByRole("button",{name:lang === "en" ? "Mute microphone" : "麥克風靜音"})
+        await mute.click()
+        assert.equal(await page.evaluate(()=>window.callFixture.trackStatus().enabled),false)
+        await mute.click()
+        await speak("Please send the confirmed request.")
+        assert.equal((await tool("send_to_bot",{text:"Synthetic first request"})).status,"accepted")
+        assert.equal((await tool("send_to_bot",{text:"Duplicate request"})).error,"new_spoken_confirmation_required")
+        await page.evaluate(()=>window.callFixture.permission(0))
+        await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>JSON.stringify(e).includes("needs approval")))
+        assert.equal((await tool("answer_approval")).status,"review_in_chat")
+        assert.equal(await page.evaluate(()=>window.callFixture.approved.length),0)
+        await page.locator(".pa-permissions [data-option-kind=allow_once]").click()
+        await page.waitForFunction(()=>window.callFixture.approved.length===1)
+        await page.evaluate(()=>window.callFixture.complete(0,0,"Synthetic finished reply"))
+        await page.waitForFunction(()=>window.voiceFixture.sent.some(e=>JSON.stringify(e).includes("Synthetic finished reply")))
+        await emit({type:engine==="live"?"session.output_transcript.delta":"response.output_audio_transcript.delta",delta:"Read back the result."})
+        await panel.getByText("Read back the result.",{exact:true}).waitFor()
+        await page.screenshot({path:path.join(artifacts,engine+"-bot-voice.png")})
+        await speak("Please send the second request.")
+        assert.equal((await tool("send_to_bot",{text:"Synthetic second request"})).status,"accepted")
+        await emit({type:engine==="live"?"session.output_transcript.delta":"response.output_audio_transcript.delta",delta:"The Bot accepted it."})
+        await speak("Please stop the Bot.")
+        assert.equal((await tool("stop_bot")).status,"accepted")
+        const writes = await page.evaluate(()=>({sends:window.callFixture.received,stops:window.callFixture.stops}))
+        assert.equal(writes.sends.length,2)
+        assert.ok([...writes.sends,...writes.stops].every(write=>write.fence.key.machine_id==="fixture-one" && write.fence.key.bot_id==="bot-0"))
+        assert.equal(writes.stops.length,1)
+        await page.evaluate(()=>window.callFixture.select(2))
+        await panel.waitFor({state:"hidden"})
+        await page.waitForFunction(()=>window.callFixture.trackStatus().state==="ended")
+        assert.equal(openings.length,1)
+        assert.deepEqual(unexpected,[])
+        assert.deepEqual(errors,[])
+        evidence.push({engine,lang,width,opens:openings.length,assertedTools:configured.tools.length,writes:writes.sends.length+writes.stops.length,providerRequests:0})
+      } catch (error) {
+        await page.screenshot({path:path.join(artifacts,engine+"-bot-voice-failure.png")})
+        console.error(JSON.stringify({engine, errors, unexpected, text: await page.locator("#app").innerText(),events:await sent()}))
         throw error
       } finally {
         await context.close()

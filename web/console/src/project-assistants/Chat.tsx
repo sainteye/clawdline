@@ -39,6 +39,8 @@ import { Composer } from "./Composer"
 import {clearSendAttachments,loadSendAttachments,saveSendAttachments,sendAttachmentKey,type SendAttachments} from "./send-attachments"
 import type { MarkupPicture } from "../session/ImageMarkup.js"
 import { BotCallControls, useBotCall } from "./BotCall"
+import { BotVoicePanel, useBotVoice } from "./BotVoicePanel"
+import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { Trace,traceLabel,visibleTrace,workingCategory } from "./Trace"
@@ -904,27 +906,30 @@ ${currentDraft}`:submitted)
     if(view.heldOutcomes.setAside(draftKey)){setUnknown(false);repaintJournal()}
   }
 
-  const stop=async()=>{
+  const stop=async(expectedTurn?:string,signal?:AbortSignal)=>{
     const active=currentData.current?.conversation.active_turn_id
-    if(!active||stopping.current||stopStatus?.turn===active||busy||!valid()||recovery.current)return
+    if(!active||expectedTurn&&expectedTurn!==active||signal?.aborted||stopping.current||stopStatus?.turn===active||busy||!valid()||recovery.current)return "stop_unavailable"
     stopping.current=true;setBusy(true);setStopStatus({turn:active,state:"sending"})
     const action=command(key,"stop")
     let attempted=false
     try{
       const result=await mutate((d,s)=>{
-        if(d.conversation.active_turn_id!==active)throw failure("pa_stale_generation")
+        if(signal?.aborted||d.conversation.active_turn_id!==active)throw failure("pa_stale_generation")
         attempted=true
         return source.stop({command:action,fence:fence(d),turn_id:active},s)
       })
       if(valid()){
         setReceipt(result.receipt)
-        if(result.receipt.state==="failed"){setStopStatus(null);fail(new Error("Stop request failed"));return}
+        if(result.receipt.state==="failed"){setStopStatus(null);fail(new Error("Stop request failed"));return "stop_refused"}
         setStopStatus({turn:active,state:result.receipt.state==="unknown"?"unknown":"acknowledged"})
         void refresh()
       }
+      return result.receipt.state==="unknown"?"stop_outcome_unknown":result.receipt.state
     }catch(e){
-      if(valid()&&attempted&&memoryOutcomeUnknown(e))setStopStatus({turn:active,state:"unknown"})
+      const uncertain=attempted&&memoryOutcomeUnknown(e)
+      if(valid()&&uncertain)setStopStatus({turn:active,state:"unknown"})
       else if(valid()){setStopStatus(null);fail(e)}
+      return uncertain?"stop_outcome_unknown":"stop_refused"
     }finally{stopping.current=false;if(valid())setBusy(false)}
   }
 
@@ -1212,15 +1217,21 @@ ${currentDraft}`:submitted)
     const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
     return()=>clearTimeout(timer)
   },[nextDeadline,permissionTick])
-  const callObservation=()=>{
+  const callObservation=():BotVoiceObservation|null=>{
     const d=currentData.current,h=headRef.current
     if(!d||!h||!epoch.current||!valid()||recovery.current||error||source.current?.()===false
       ||!canWrite(d.source)||document.hidden||!navigator.onLine||browserOpener||templateOpener
       ||editingHandoff||handoff.mutating()||handoff.error||handoff.card?.state==="draft")return null
     return {
       owner:JSON.stringify([accountKey,readerID,grant,epoch.current]),
+      sourceEpoch:epoch.current,
       fence:h.current_fence,activeTurn:h.conversation.active_turn_id,turns,
       messages,
+      activity:h.conversation.active_turn_id?(activity[h.conversation.active_turn_id]||summary.activity):"",
+      background:(h.background_tasks??[]).filter(liveBackgroundTask),
+      permissions:permissionCards.filter(({summary,offer})=>currentPermission(summary,h)&&permissionState(offer??summary)==="pending")
+        .map(({summary,offer})=>({id:summary.id,options:offer?.options.map(option=>option.label)})),
+      moreHistory:!!more,
       frontier:callViewFrontier.current,caughtUp:handoff.ready&&h.event_frontier<=callViewFrontier.current,
     }
   }
@@ -1235,8 +1246,10 @@ ${currentDraft}`:submitted)
     const received:{answer:W.ProjectAssistantReceipt|null}={answer:null}
     try{
       await mutate(async(d,s,page)=>{
-        if(input.signal.aborted||!sameFence(input.fence,page.head.current_fence)||d.conversation.active_turn_id
-          ||page.snapshot!.queued_messages.length||page.head.queued_turn_count||page.head.unknown_turn_count||view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
+        const idleRequired=input.greeting||!input.allowQueue
+        const waiting=d.conversation.active_turn_id||page.snapshot!.queued_messages.length||page.head.queued_turn_count
+        if(input.signal.aborted||!sameFence(input.fence,page.head.current_fence)||idleRequired&&waiting
+          ||page.head.unknown_turn_count||view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
         view.heldOutcomes.set(draftKey,{intent,receipt:null});view.heldOutcomes.beginTransport(draftKey,id)
         attempted=true
         // Once the source might have admitted the turn, hangup only ends the
@@ -1270,6 +1283,9 @@ ${currentDraft}`:submitted)
   }
   const callView=callObservation()
   const {call,state:callState}=useBotCall({current:callObservation,submit:submitCall})
+  const canVoiceCall=!thread&&!leadSetup.blocked&&!!callView?.caughtUp
+  const botVoice=useBotVoice({current:callObservation,submit:submitCall,stop,memory:signal=>readMemory(signal,undefined,botMemoryPage)},!thread&&canWrite(data?.source??summary.source))
+  const greeting=bot.lead&&(data?.source??summary.source).lead_call_supported===true
   const artifactDraftKey=(id:string)=>JSON.stringify(["artifact",draftKey,id])
   const artifactComposer:ArtifactComposerAccess|undefined=thread?undefined:{
     blocked:sendAuthorityLost||busy||unknown||call.active||legacyBlocked()||handoff.card?.state==="draft"||editingHandoff||handoff.busy||!!handoff.error,
@@ -1448,6 +1464,7 @@ ${currentDraft}`:submitted)
       <span>{reconnecting?w.chatReconnecting:providerSetupFailure(errorField,w)??(error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
     </div>}
+    {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
@@ -1589,8 +1606,9 @@ ${currentDraft}`:submitted)
       {leadSetup.show&&leadSetupBot&&<LeadSetup setup={leadSetup} w={w} choose={agent=>editBot({
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
-      {!thread&&<BotCallControls call={call} state={callState} enabled={canCall} name={bot.name} language={language} greeting={bot.lead&&(data?.source??summary.source).lead_call_supported===true} shortcut={voiceShortcut}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
+      {!thread&&<BotCallControls call={call} state={callState} enabled={canCall&&botVoice.configured===false} name={bot.name} language={language} greeting={greeting} shortcut={voiceShortcut}
+        realtime={botVoice.configured&&canVoiceCall?botVoice:undefined}/>}
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
         onReplaceImage={(id,url)=>setImages(old=>old.map(picture=>picture.id===id?{...picture,url}:picture))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>
     </div>

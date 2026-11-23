@@ -24,3 +24,63 @@
 .pa-bot-call .pa-bot-call-end {
   color: var(--danger, #f0a7a7);
 }
+
+.pa-bot-voice-panel {
+  flex: 0 0 auto;
+  margin: 0.35rem 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--pa-line);
+  border-radius: 16px;
+  background: var(--pa-card);
+  color: var(--pa-text);
+}
+.pa-bot-voice-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pa-bot-voice-identity > div:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.pa-bot-voice-identity strong,
+.pa-bot-voice-identity span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.pa-bot-voice-identity span {
+  color: var(--pa-dim);
+  font-size: 0.85em;
+}
+.pa-bot-voice-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+.pa-bot-voice-transcript {
+  margin-top: 0.35rem;
+  background: var(--pa-bg);
+  border-color: var(--pa-line);
+}
+.pa-bot-voice-transcript .bubble-label {
+  color: var(--pa-dim);
+}
+.pa-bot-voice-transcript .realtime-bubble {
+  overflow-wrap: anywhere;
+}
+.pa-bot-voice-identity > .pa-avatar {
+  flex: none;
+  width: clamp(56px, 17vw, 84px);
+  height: auto;
+}
+.project-assistants .pa-bot-voice-actions button {
+  min-height: 44px;
+  width: auto;
+  padding: 0.35rem 0.75rem;
+}
+.project-assistants .pa-bot-voice-actions .pa-bot-live-hangup {
+  border: 0;
+  background: #b91c1c;
+  color: white;
+}

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import type * as W from "@clawdline/contract"
 import { onStatusRefresh } from "../status-refresh.js"
 import { Bots } from "../project-assistants/Bots.js"
+import { browserBotVoiceAvailable } from "../project-assistants/BotVoicePanel"
 import { botCallAudioAvailable } from "../project-assistants/bot-call-audio.js"
 import { BotOrb } from "../project-assistants/BotOrb.js"
 import { canRead } from "../project-assistants/view-state.js"
@@ -191,7 +192,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
       if(call ? !hasReadableSource : !botFromFragment(location.hash))return
       if(noticeOpened.current===location.hash)return
       noticeOpened.current=location.hash
-      if(call&&botCallAudioAvailable())setVoiceShortcut(count=>count+1)
+      if(call&&(browserBotVoiceAvailable()||botCallAudioAvailable()))setVoiceShortcut(count=>count+1)
       if(!openedRef.current)open()
     }
     follow();window.addEventListener("hashchange",follow)
@@ -199,7 +200,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   },[hasReadableSource])
   useEffect(()=>{
     const call=(event:KeyboardEvent)=>{
-      if(!hasReadableSource||event.defaultPrevented||event.repeat||event.isComposing||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=="KeyV"||!botCallAudioAvailable())return
+      if(!hasReadableSource||event.defaultPrevented||event.repeat||event.isComposing||!event.altKey||!event.shiftKey||event.ctrlKey||event.metaKey||event.code!=="KeyV"||!(browserBotVoiceAvailable()||botCallAudioAvailable()))return
       event.preventDefault()
       setVoiceShortcut(count=>count+1)
       if(!openedRef.current)open()

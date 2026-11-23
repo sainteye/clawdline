@@ -359,6 +359,34 @@ person's next message as before.
 [CI run 43752755054](https://github.com/sainteye/clawdline/actions/runs/43752755054) failed `TestHostLazySendDisablePreservesUnknownAndExistingHostWork` while the real SQLite cleanup used the fixture's 100 ms deadline. The functional case now uses the registered 5,000 ms production cleanup budget. Its checks still require the interrupted turn to remain unknown, the queued turn to become cancelled, and the existing host work to survive. Dedicated short-deadline and failed-cleanup cases retain their original limits and verify that unresolved resources prevent re-enable. The focused preservation, late-open and failure-injection cases passed locally; the exact repaired main still requires CI acceptance.
 
 
+## Single-Bot voice calls
+
+The waveform control in a Bot conversation opens a call with that Bot. The
+call panel above the timeline shows the Bot avatar, connection and speaking
+state, transcript, microphone mute and hang-up. The chat stays visible for
+permission choices. If the selected voice configuration has an OpenAI key,
+the browser uses the same GPT-Live or Realtime transport and usage accounting
+as Session calls. A browser with supported on-device speech can use the
+existing on-device call when no provider key is configured.
+
+The scoped tool set follows [Codync's call
+tools](https://github.com/leepokai/Codync/blob/876492dbcd250d11cb4fcafe861730bf3d22186f/host/src/chat/calls/tools.rs#L12-L49).
+The voice can read the current activity and background tasks, recent chat, and
+matching previews from the Bot's own memory. It can relay a confirmed message
+using the Bot's normal send receipt and request a stop of the active chat
+turn. It reads pending approvals and directs the person to the existing
+approval card. The Bot's final reply or a new pending approval is sent to the
+voice as a call update. Switching conversations or hiding the page ends the
+browser's call and releases its microphone. An admitted Bot turn retains its
+own send receipt when the call ends.
+
+OpenAI receives the audio and the scoped tool results requested in the call.
+The Bot source continues to own message execution, permission decisions and
+durable conversation state. Browser verification with a simulated provider
+exercises the real data-channel event handlers and Bot chat entry points.
+It does not establish provider recognition, speaking quality or physical
+device behavior.
+
 ## Remaining Codync runtime construction
 
 This is a source audit of Clawdline `8938346924d7c4a057a20c5c64953d988d500d57`
@@ -376,7 +404,7 @@ contains other features. Current source boundaries are:
 | Behavior | Existing source | Remaining construction and verification |
 | --- | --- | --- |
 | Editable handoff card | API 93 stores an editable source-owned draft, Keep action and atomic adoption by the next input. SQLite and synthetic HTTP/browser checks cover stale edits, lost replies and API 90–92 fallback. Pending draft reads block calls; only an explicit pre-admission handoff refusal releases the call journal. | Installed and production Cloud acceptance remain separate. Original history stays readable. A fresh handoff can retain the physical history directory, so its read-only maintenance gate must still run before deciding whether to resume. |
-| Continuous Bot call | `BotCall.tsx` binds call IDs, input and replies to the chosen source/Bot/conversation. Synthetic Chromium checks cover playback, mute/interruption, explicit end, permission waits, source changes and unknown results without replay. Existing draft dictation remains available. | Installed and production Cloud acceptance remain pending. Synthetic audio does not qualify microphone recognition or voice quality. On-device recognition requires an installed language pack, and playback requires a local voice; there is no automatic remote speech fallback. |
+| Continuous Bot call | [Single-Bot voice calls](#single-bot-voice-calls) use the existing Session voice engine settings, bind tools to one source/Bot/conversation and keep the Bot chat available during the call. | Installed and production Cloud acceptance and provider audio quality require separate verification. |
 | Bot-owned dev server | The API 92 construction below composes the source-owned registry, exact command approval, native start/list/stop/log tools and known-handle cleanup. Captured Cloud routing adds two reads and four known-handle controls. Clean Host restarts consume exact terminal checkpoints under current standing approval. The existing Project devstack route stays read/probe only. | Paired viewer/workerd/source acceptance and physical crash/boot recovery remain pending. Selected-chat observation and title refresh are implemented below; installed and Cloud acceptance remain separate. Current evidence uses local synthetic processes and real SQLite/MCP, not an installed vendor, Cloud UI or updater qualification. |
 | Durable native maintenance | Isolated qualification owns intent/terminal/unknown receipts. Read-only detached-history gates survive disable/enable and protect pending or unknown histories before fresh handoff and resume. | Production provider, verified idle admission, retention and trusted rollback qualification remain separate construction. Do not infer completion from lower token usage or send maintenance as ordinary chat. The production writer stays disabled; reader/recovery qualification must precede any writer release. |
 

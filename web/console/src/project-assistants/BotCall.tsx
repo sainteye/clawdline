@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react"
 import { busy as dictating } from "../legacy/voice-bridge"
 import { BotCall, type CallPorts, type CallState } from "./bot-call"
 import { botCallAudioAvailable, browserCallAudio, browserCallAudioReady } from "./bot-call-audio"
+import type { useBotVoice } from "./BotVoicePanel"
 import { botCallWords } from "./bot-call-words"
 import "./bot-call.css"
 
@@ -33,8 +34,8 @@ export function useBotCall(ports: Pick<CallPorts, "current" | "submit">) {
   return { call, state }
 }
 
-export function BotCallControls({call, state, enabled, name, language, greeting=false, shortcut=0}: {
-  call: BotCall; state: CallState; enabled: boolean; name: string; language: string; greeting?: boolean; shortcut?:number
+export function BotCallControls({call, state, enabled, name, language, greeting=false, shortcut=0, realtime}: {
+  call: BotCall; state: CallState; enabled: boolean; name: string; language: string; greeting?: boolean; shortcut?:number; realtime?:ReturnType<typeof useBotVoice>
 }) {
   const w = botCallWords(language)
   const [readyLanguage,setReadyLanguage] = useState<string|null>(null)
@@ -51,19 +52,25 @@ export function BotCallControls({call, state, enabled, name, language, greeting=
       window.speechSynthesis.removeEventListener("voiceschanged", update)
     }
   }, [language])
-  const canStart = enabled && readyLanguage === language
+  const canStart = !!realtime || (enabled && readyLanguage === language)
   const label = `${w.start} · ${name}`
   const started = useRef(0)
+  const start = () => {
+    if (dictating()) call.end("microphone")
+    else if (realtime) realtime.start(name, language, greeting)
+    else void call.start(browserCallAudio(language), greeting)
+  }
   useEffect(() => {
     if (!shortcut || shortcut === started.current || !canStart) return
     started.current = shortcut
-    if (dictating()) call.end("microphone")
-    else void call.start(browserCallAudio(language), greeting)
-  }, [call, canStart, shortcut, language, greeting])
+    start()
+  }, [call, canStart, shortcut, language, greeting, realtime])
+  if (realtime?.active) return null
   if (!call.active) return canStart || state.phase !== "idle" ? <div className="pa-bot-call-start">
+    {realtime?.state?.error && <span role="alert">{realtime.state.error}</span>}
     {state.phase !== "idle" && <span role="status">{w[state.phase]}</span>}
     {canStart && <button type="button" className="pa-pill" aria-label={label} title={label}
-      onClick={() => { if (dictating()) call.end("microphone"); else void call.start(browserCallAudio(language), greeting) }}>
+      onClick={start}>
       <CallIcon/>{w.start}
     </button>}
   </div> : null
