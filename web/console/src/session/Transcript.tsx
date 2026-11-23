@@ -591,6 +591,22 @@ function TranscriptOf({ id, row, agentId, onAgent, onFilling, activityScope, onO
     measure()
   }, [data, drawnSignature])
 
+  // Chrome activity arrives on its own feed and can extend the transcript
+  // without changing its signature. Keep the newest end pinned if the
+  // reader was there before inserting the cards.
+  const shownBrowserCards = useRef(browserCards)
+  const browserCardsChanged = shownBrowserCards.current !== browserCards &&
+    (shownBrowserCards.current.length > 0 || browserCards.length > 0)
+  const browserScroll = data && browserCardsChanged ? document.getElementById("tx-scroll") : null
+  const previousHeight = browserScroll && atNewest(browserScroll, newestFirst) ? browserScroll.scrollHeight : null
+  useLayoutEffect(() => {
+    shownBrowserCards.current = browserCards
+    if (browserScroll && previousHeight !== null && previousHeight !== browserScroll.scrollHeight) {
+      toNewest(newestFirst)
+      measure()
+    }
+  }, [browserCards, browserScroll, measure, newestFirst, previousHeight])
+
   // The button follows the reader's scrolling, and the conversation growing
   // or a fold opening under them; a hand on the wheel or the glass stops a
   // jump still on its way.
