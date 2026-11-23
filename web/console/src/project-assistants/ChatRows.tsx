@@ -10,6 +10,7 @@ import {ArtifactIcon,type ArtifactComposerAccess} from "./ArtifactWorkspace"
 import {OutputCard} from "./OutputCard"
 import {OutputViewer} from "./OutputViewer"
 import { BotMessageMarkdown } from "./BotMessageMarkdown"
+import { compactedNoticeText } from "./notice-text"
 import { BotMentionText, type BotMentionCandidate } from "./BotMentionField"
 import type {SourceClient} from "./client"
 import {errorCode} from "./client"
@@ -100,7 +101,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,onQuote,onOp
           <summary>{w.sessionReport}<ChevronIcon direction="right"/></summary>
           <p>{item.message.text}</p>
         </details>:item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:
-          <p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
+          <p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:compactedNoticeText(item.message,w)??<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
       )}
       {onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}
     {source&&artifactsByReply.has(item.id)&&<div className="pa-reply-artifacts">
