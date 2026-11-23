@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14104,
-  "riskKeys": 5991,
-  "nonRiskCount": 8113,
+  "englishContentKeys": 14111,
+  "riskKeys": 5994,
+  "nonRiskCount": 8117,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 731,
+      "count": 732,
       "sources": [
         null
       ],
@@ -750,6 +750,7 @@
         "capacityRow.bots.tower_zone_shown.what",
         "capacityRow.bots.turn_control_window_ms.what",
         "capacityRow.bots.user_message_bytes.what",
+        "capacityRow.bots.work_message_bytes.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
@@ -8120,7 +8121,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 236,
+      "count": 239,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8264,6 +8265,9 @@
         "transparency.card.persistent-bot-voice.how",
         "transparency.card.persistent-bot-voice.summary",
         "transparency.card.persistent-bot-voice.title",
+        "transparency.card.persistent-bot-work-message.how",
+        "transparency.card.persistent-bot-work-message.summary",
+        "transparency.card.persistent-bot-work-message.title",
         "transparency.card.persistent-bots.summary",
         "transparency.card.persistent-bots.title",
         "transparency.card.playbook.condition",

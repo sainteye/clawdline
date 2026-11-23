@@ -24,11 +24,14 @@ import (
 // may come from model arguments or an HTTP request. DispatchAllowed is distinct
 // from native read-only permissions and from any human approval of Board work.
 type AssistantCurrent struct {
-	Fence                  pa.Fence
-	Source                 pa.SourceStatus
-	Feature                pa.FeatureState
-	BotName                string
-	BotAppearance          pa.Appearance
+	Fence         pa.Fence
+	Source        pa.SourceStatus
+	Feature       pa.FeatureState
+	BotName       string
+	BotAppearance pa.Appearance
+	// BotAgent is the Bot's own assistant, the sender a work Session sees
+	// on a message_work envelope. It authorizes nothing.
+	BotAgent               string
 	ActiveTurnID           string
 	BindingRevoked         bool
 	Project                pa.ProjectResolution

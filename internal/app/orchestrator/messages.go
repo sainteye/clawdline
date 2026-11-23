@@ -182,37 +182,46 @@ func (b *Broker) relay(ctx context.Context, m Message, key string, allowSelf boo
 	if source.ConversationID != "" {
 		sourceID = session.MessageConversationPrefix + source.ConversationID
 	}
+	answer, ok, err := b.typeMessage(ctx, receipt, key, messageSource{ID: sourceID, Assistant: string(source.Assistant), Label: label}, source.ID, target.ID, m.Text)
+	recorded = ok
+	return answer, err
+}
+
+// typeMessage records one envelope's intent under its receipt and runs the
+// typing effect. recorded reports whether the intent became durable: before
+// that, the caller still holds the reservation and gives it back.
+func (b *Broker) typeMessage(ctx context.Context, receipt store.ReceiptKey, key string, source messageSource, from, targetID, body string) (Relayed, bool, error) {
 	encoded, err := json.Marshal(sessionMessage{
 		Protocol: "clawdline.message",
 		Version:  1,
 		Kind:     "session_message",
-		Source:   messageSource{ID: sourceID, Assistant: string(source.Assistant), Label: label},
-		Body:     m.Text,
+		Source:   source,
+		Body:     body,
 	})
 	if err != nil || strings.ContainsAny(string(encoded), "\n\r") {
-		return Relayed{}, refuse(http.StatusInternalServerError, "encoding_failed",
+		return Relayed{}, false, refuse(http.StatusInternalServerError, "encoding_failed",
 			"The session message could not be encoded safely.")
 	}
 	if b.Type == nil {
-		return Relayed{}, refuse(http.StatusBadGateway, "delivery_failed",
+		return Relayed{}, false, refuse(http.StatusBadGateway, "delivery_failed",
 			"this daemon cannot type into a terminal")
 	}
 	acceptedAt := b.now()
-	payload, _ := json.Marshal(messageEffect{Target: target.ID, Source: source.ID, Accepted: acceptedAt.Unix(),
+	payload, _ := json.Marshal(messageEffect{Target: targetID, Source: from, Accepted: acceptedAt.Unix(),
 		Wire: "<clawdline-message>" + string(encoded) + "</clawdline-message>"})
-	accepted, _ := json.Marshal(map[string]any{"from": source.ID, "key": key, "stage": string(StageAccepted)})
+	accepted, _ := json.Marshal(map[string]any{"from": from, "key": key, "stage": string(StageAccepted)})
 	ids, err := b.Store.RecordIntent(ctx,
-		[]store.Event{{Kind: "session.message.accepted", Subject: target.ID, Payload: accepted}},
-		[]store.Effect{{Kind: EffectMessage, Subject: target.ID, Payload: payload, Receipt: &receipt}})
+		[]store.Event{{Kind: "session.message.accepted", Subject: targetID, Payload: accepted}},
+		[]store.Effect{{Kind: EffectMessage, Subject: targetID, Payload: payload, Receipt: &receipt}})
 	if err != nil {
-		return Relayed{}, storeError(err)
+		return Relayed{}, false, storeError(err)
 	}
-	recorded = true
 	results := b.runRecorded(ctx, ids)
 	if len(results) != 1 || results[0].answer == nil {
-		return Relayed{}, unsettled(acceptedAt, results)
+		return Relayed{}, true, unsettled(acceptedAt, results)
 	}
-	return relayedOf(*results[0].answer, false)
+	answer, err := relayedOf(*results[0].answer, false)
+	return answer, true, err
 }
 
 // unsettled is the answer to a request whose intent is durable and whose

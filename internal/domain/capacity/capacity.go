@@ -718,6 +718,7 @@ const (
 	BotsGroupDescriptionRunes = "bots.group_description_runes"
 	BotsInstructionBytes      = "bots.instruction_bytes"
 	BotsMessageBytes          = "bots.message_bytes"
+	BotsWorkMessageBytes      = "bots.work_message_bytes"
 	BotsUserMessageBytes      = "bots.user_message_bytes"
 	BotsAutomationBacklog     = "bots.automation_backlog"
 	BotsPageRows              = "bots.page_rows"

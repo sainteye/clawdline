@@ -499,7 +499,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		value, err := s.tool(ctx, q.Name, q.Arguments)
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
@@ -782,6 +782,8 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return tools.DispatchToProject(ctx, q.ID, q.Title, q.Brief, q.Claims, q.Project)
 		}
 		return s.tools.Dispatch(ctx, q.ID, q.Title, q.Brief, q.Claims)
+	case "message_work":
+		return s.messageWork(ctx, arguments)
 	case "work_status":
 		var q struct {
 			TaskID string `json:"task_id"`
@@ -953,7 +955,8 @@ func mcpTools() []any {
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
 		}, "idempotency_key", "title", "brief", "claims"),
-		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval.", map[string]any{"task_id": text()}, "task_id"),
+		tool("work_status", "Read a work receipt owned by this execution; it cannot grant human approval. To correct or add to a running task, use message_work. 讀取這次執行擁有的工作收據，不能代替使用者核准；要補充或修正執行中的工作，用 message_work。", map[string]any{"task_id": text()}, "task_id"),
+		mcpMessageWorkTool(),
 		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),
 		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. For named topic notes use note with title, summary, body and expected_revision from read_memory; entry_id replaces an existing note. note with entry_id, expected_revision and forget=true forgets it. Do not combine note and short-fact fields. After success read_memory returns the new index and revision. Revision conflicts require rereading; unknown responses require the exact same key and payload. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",

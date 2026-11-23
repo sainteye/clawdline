@@ -134,7 +134,7 @@ func TestProviderPassesCapturedInstructionsAndOwnedMCPOnNewAndLoad(t *testing.T)
 							t.Fatal("native persistence or background models enabled")
 						}
 					}
-					if !framed(meta.SystemPrompt.Append, q.Bot.Instructions.Text) || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || strings.Join(o.AllowedTools, ",") != "mcp__clawdline__send_message,mcp__clawdline__dispatch_work,mcp__clawdline__work_status,mcp__clawdline__read_memory,mcp__clawdline__search_memory,mcp__clawdline__edit_memory,mcp__clawdline__read_webhook_guide,mcp__clawdline__routine_webhook_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
+					if !framed(meta.SystemPrompt.Append, q.Bot.Instructions.Text) || !meta.SystemPrompt.ExcludeDynamicSections || o.Tools != nil || strings.Join(o.AllowedTools, ",") != "mcp__clawdline__send_message,mcp__clawdline__dispatch_work,mcp__clawdline__work_status,mcp__clawdline__message_work,mcp__clawdline__read_memory,mcp__clawdline__search_memory,mcp__clawdline__edit_memory,mcp__clawdline__read_webhook_guide,mcp__clawdline__routine_webhook_status" || o.SettingSources != nil || o.StrictMcpConfig || o.AllowDangerouslySkipPermissions || o.Settings.AutoMemoryEnabled || o.Settings.AutoDreamEnabled || o.Settings.DisableAllHooks {
 						t.Fatal("Claude owned preset", string(request))
 					}
 				}

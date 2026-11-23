@@ -3921,6 +3921,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.work_message_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 8192,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxWorkMessageBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "browser.activity_picture_bytes",
     "Class": "buffer",
     "Unit": "bytes",
