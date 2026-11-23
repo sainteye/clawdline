@@ -1,7 +1,10 @@
 .project-assistants .pa-roster-entry { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;border-radius:12px;transition:background-color .15s; }
 .project-assistants .pa-roster-entry > .pa-bot-row { grid-area:1 / 1;min-width:0;width:100%; }
-.project-assistants .pa-roster-entry:has(> .pa-roster-read) .pa-unread { margin-inline-end:36px; }
-.project-assistants .pa-roster-read { grid-area:1 / 1;justify-self:end;z-index:1;margin-block-start:28px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--pa-dim); }
+/* The read action overlays the row, so its badge line leaves room for it and the action is centred
+   on the preview line: 23px below centre for two lines, 4px when a project line is the third. */
+.project-assistants .pa-roster-entry:has(> .pa-roster-read) .pa-row-badges { padding-inline-end:30px; }
+.project-assistants .pa-roster-read { grid-area:1 / 1;justify-self:end;z-index:1;margin-block-start:23px;display:grid;place-items:center;width:44px;height:44px;padding:0;border:0;border-radius:10px;background:transparent;color:var(--pa-dim); }
+.project-assistants .pa-roster-entry:has(.pa-row-project) > .pa-roster-read { margin-block-start:4px; }
 .project-assistants .pa-roster-read:hover:not(:disabled) { background:var(--pa-hover,#242426);color:var(--pa-text); }
 .project-assistants .pa-roster-read-error { grid-column:1 / -1;margin:0;padding:0 8px 8px;color:var(--warning,#f0a030);font-size:12px; }
 .project-assistants .pa-roster-read-status { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap; }
@@ -30,7 +33,6 @@
   .project-assistants .pa-roster-compact .pa-roster-pin,
   .project-assistants .pa-roster-compact .pa-roster-handle { width:44px;height:44px; }
 }
-.project-assistants .pa-roster-compact .pa-row-meta time { max-width:none;white-space:nowrap; }
 
 .project-assistants .pa-roster-entry,
 .project-assistants [data-roster-project] > .pa-project-heading { -webkit-touch-callout:none;user-select:none;-webkit-user-select:none; }
