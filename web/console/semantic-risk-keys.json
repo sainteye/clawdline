@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14136,
+  "englishKeys": 14140,
   "counts": {
-    "negation": 3605,
+    "negation": 3606,
     "state": 2386,
     "permission": 852,
     "deletion": 328,
-    "uncertainty": 563
+    "uncertainty": 565
   },
-  "unionCount": 6007,
+  "unionCount": 6010,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -184,6 +184,7 @@
       "capacityRow.bots.carry_quote_bytes.full",
       "capacityRow.bots.chat_gap_ms.full",
       "capacityRow.bots.cleanup_ms.full",
+      "capacityRow.bots.cleanup_retries.full",
       "capacityRow.bots.cloud_endpoints.full",
       "capacityRow.bots.cloud_frames.what",
       "capacityRow.bots.cloud_lease_seconds.full",
@@ -7225,6 +7226,8 @@
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.assistant_receipts.what",
       "capacityRow.bots.carry_quote_bytes.full",
+      "capacityRow.bots.cleanup_retries.what",
+      "capacityRow.bots.cleanup_retry_ms.what",
       "capacityRow.bots.cloud_frames.full",
       "capacityRow.bots.cloud_pending.full",
       "capacityRow.bots.cloud_receipts.full",
@@ -8097,6 +8100,9 @@
     "capacityRow.bots.carry_quote_bytes.full",
     "capacityRow.bots.chat_gap_ms.full",
     "capacityRow.bots.cleanup_ms.full",
+    "capacityRow.bots.cleanup_retries.full",
+    "capacityRow.bots.cleanup_retries.what",
+    "capacityRow.bots.cleanup_retry_ms.what",
     "capacityRow.bots.cloud_endpoints.full",
     "capacityRow.bots.cloud_frames.full",
     "capacityRow.bots.cloud_frames.what",
