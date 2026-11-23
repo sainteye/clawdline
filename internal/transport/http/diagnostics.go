@@ -478,7 +478,7 @@ func (b *capacityBeat) recordNotice(ctx context.Context, n owedNotice) (int64, e
 	if b.language != nil {
 		language = productcopy.Resolve(b.language())
 	}
-	title, body := capacity.NoticeTextLanguage(language, st.Entry, state, st.Reading.Used, st.Limit, st.ProjectedFullAt, b.loc)
+	title, body := capacity.NoticeTextReading(language, st.Entry, state, st.Reading, st.Limit, st.ProjectedFullAt, b.loc)
 	push, err := json.Marshal(orchestrator.CapacityPush{
 		Name: e.Subject, State: string(state), From: fmt.Sprint(e.Payload["from"]),
 		Used: st.Reading.Used, Limit: st.Limit,

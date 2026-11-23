@@ -57,6 +57,14 @@ func NoticeText(e Entry, state State, used, limit int64, full time.Time, loc *ti
 
 // NoticeTextLanguage renders fixed copy in the selected product language.
 func NoticeTextLanguage(language string, e Entry, state State, used, limit int64, full time.Time, loc *time.Location) (title, body string) {
+	return NoticeTextReading(language, e, state, Reading{Known: true, Used: used}, limit, full, loc)
+}
+
+// NoticeTextReading is NoticeTextLanguage for a whole reading: a row whose
+// maintenance suggests what could be released says how much, and where to
+// read the suggestions, before what the person has to decide.
+func NoticeTextReading(language string, e Entry, state State, r Reading, limit int64, full time.Time, loc *time.Location) (title, body string) {
+	used := r.Used
 	amount := productcopy.Format(language, "capacity.amount", map[string]string{
 		"used": amountOfLanguage(language, e.Unit, used), "limit": amountOfLanguage(language, e.Unit, limit), "percent": percent(used, limit),
 	})
@@ -77,6 +85,9 @@ func NoticeTextLanguage(language string, e Entry, state State, used, limit int64
 			loc = time.UTC
 		}
 		body += productcopy.Format(language, "capacity.projected", map[string]string{"at": full.In(loc).Format("01-02 15:04")})
+	}
+	if r.HasReclaimable && e.Name == MemoryEntries {
+		body += productcopy.Format(language, "capacity.suggestions", map[string]string{"count": strconv.FormatInt(r.Reclaimable, 10)})
 	}
 	if e.EvictedBy == Person {
 		body += productcopy.Format(language, "capacity.person", nil)

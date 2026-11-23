@@ -245,6 +245,7 @@ func planDream(entries []Entry, stamp dreamStamp) DreamPlan {
 		}
 	}
 	p.Review = append(p.Review, relatedDeliveries(entries, p)...)
+	p.Review = append(p.Review, nearDuplicates(entries, p)...)
 	return p
 }
 

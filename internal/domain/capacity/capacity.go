@@ -644,6 +644,11 @@ type Entry struct {
 	// already happened has nothing to say when a day passes without it, and
 	// an announcement would spend the day's notice the next time it does.
 	QuietRecovery bool
+	// NoticeOnWarn says entering warn by ratio is also announced, under the
+	// same one-a-day budget as critical and full: a row the daemon never
+	// empties on its own, whose person needs days rather than hours to decide
+	// what to let go (memory.entries, docs/memory-capacity.md).
+	NoticeOnWarn bool `json:",omitempty"`
 	// Routine marks a shared pool or rolling receipt history whose occupancy
 	// alone is not pressure. Failures and readings above the bound still alert.
 	Routine bool `json:",omitempty"`

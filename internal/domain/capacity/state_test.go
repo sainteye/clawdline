@@ -94,6 +94,12 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 				t.Fatalf("empty: %+v", st)
 			}
 			var notices, transitions []string
+			// The warn write is the row's own warn ratio of twenty: the 16th
+			// at the default 80%, the 17th for a row that warns at 85%.
+			warnAt := 1
+			for float64(warnAt) < 20*e.Warn()-1e-9 {
+				warnAt++
+			}
 			for i := 1; i <= 21; i++ {
 				f.write()
 				now = now.Add(time.Minute)
@@ -107,15 +113,17 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 						notices = append(notices, ev.Payload["state"].(string)+"@"+itoa(int64(i)))
 					}
 				}
-				switch i {
-				case 15:
+				switch {
+				case i == warnAt-1:
 					if st.State != OK {
-						t.Fatalf("15/20 is %s", st.State)
+						t.Fatalf("%d/20 is %s", i, st.State)
 					}
-				case 16, 18:
+				case i == warnAt || i == 18:
 					if st.State != Warn {
 						t.Fatalf("%d/20 is %s", i, st.State)
 					}
+				}
+				switch i {
 				case 19:
 					if st.State != Critical {
 						t.Fatalf("19/20 is %s", st.State)
@@ -138,7 +146,7 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 					}
 				}
 			}
-			want := "ok→warn@16,warn→critical@19,critical→full@20"
+			want := "ok→warn@" + itoa(int64(warnAt)) + ",warn→critical@19,critical→full@20"
 			if e.AtLimit == Rotate || e.AtLimit == Disconnect {
 				// The 21st line opened a new segment, or the 21st frame ended
 				// the stream that had twenty waiting: back to ok in one step.
@@ -149,12 +157,20 @@ func TestEachRowGoesOkWarnCriticalFullAndActsAtTheLimit(t *testing.T) {
 			}
 			// One notice for the whole climb: critical, with full and any
 			// recovery inside the same day counted as suppressed.
-			if got := strings.Join(notices, ","); got != "critical@19" {
-				t.Errorf("notices %s, want critical@19", got)
+			// A row that announces warn spends the day's notice there.
+			wantNotice := "critical@19"
+			if e.NoticeOnWarn {
+				wantNotice = "warn@" + itoa(int64(warnAt))
+			}
+			if got := strings.Join(notices, ","); got != wantNotice {
+				t.Errorf("notices %s, want %s", got, wantNotice)
 			}
 			wantQuiet := int64(1)
 			if e.AtLimit == Rotate || e.AtLimit == Disconnect {
 				wantQuiet = 2
+			}
+			if e.NoticeOnWarn {
+				wantQuiet++
 			}
 			if st.Notices != 1 || st.Suppressed != wantQuiet {
 				t.Errorf("notices %d suppressed %d", st.Notices, st.Suppressed)

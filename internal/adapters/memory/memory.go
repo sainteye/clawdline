@@ -48,6 +48,10 @@ const (
 	PendingEntryLimit = 128
 	ArchiveEntryLimit = 512
 	LiveEntryLimit    = EntryCountLimit + PendingEntryLimit
+	// NoticeEntryLimit is the first live count at 85% of LiveEntryLimit,
+	// where the memory.entries row warns and pushes its notice with the
+	// Project's maintenance suggestions (docs/memory-capacity.md).
+	NoticeEntryLimit = (LiveEntryLimit*85 + 99) / 100
 	// DescriptionByteLimit is the longest one-line description.
 	DescriptionByteLimit = 512
 	// nameByteLimit is the longest entry name, and the longest group slug.
@@ -261,6 +265,44 @@ func (s *Store) MostEntries(archive bool) (int, error) {
 		}
 	}
 	return most, nil
+}
+
+// FullestProject answers the live entry count of the Project with the most,
+// and, once that count reaches NoticeEntryLimit, how many of its entries the
+// maintenance plan suggests archiving or reviewing. Below the notice bound the
+// plan is not computed and suggestions is -1.
+func (s *Store) FullestProject() (live, suggestions int, err error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	keys, err := s.projectKeys()
+	if err != nil {
+		return 0, 0, err
+	}
+	fullest := ""
+	for _, key := range keys {
+		entries, err := readEntries(filepath.Join(s.root, key), false)
+		if err != nil {
+			return 0, 0, err
+		}
+		counts := countStorage(entries)
+		if n := counts.Active + counts.Pending; n > live || fullest == "" {
+			live, fullest = n, key
+		}
+	}
+	if live < NoticeEntryLimit {
+		return live, -1, nil
+	}
+	dir := filepath.Join(s.root, fullest)
+	entries, err := readEntries(dir, true)
+	if err != nil {
+		return 0, 0, err
+	}
+	stamp, err := readDreamStamp(dir)
+	if err != nil {
+		return 0, 0, err
+	}
+	plan := planDream(entries, stamp)
+	return live, len(plan.Archive) + len(plan.Review), nil
 }
 
 // MostGroups is the number of groups in the Project with the most, which is
