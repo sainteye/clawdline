@@ -94,6 +94,7 @@ var (
 	ErrReservedChannel    = errors.New("a reserved channel prefix")
 	ErrReplyKeyID         = errors.New("a ctlr response needs an rk- key id")
 	ErrCiphertextTooBig   = errors.New("the ciphertext is past the wire maximum")
+	ErrSendWindowTooSmall = errors.New("the sealed frame is larger than the outbound send window")
 	ErrDecryptFailed      = errors.New("the ciphertext did not authenticate")
 	ErrKeyLength          = errors.New("a content key must be 32 bytes")
 	ErrSeedLength         = errors.New("a device key seed must be 32 bytes")

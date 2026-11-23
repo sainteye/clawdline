@@ -545,7 +545,21 @@ func itoa(v int64) string { return strconv.FormatInt(v, 10) }
 // reason Busy is: what may be published, and where, is a question about the
 // request's own identity fields, and an answer that could not be sent is not
 // evidence about them.
-func (b Bridge) Undeliverable(cmd Command, limit int) (answer Answer) {
+func (b Bridge) Undeliverable(cmd Command, limit int) Answer {
+	return b.undeliverable(cmd, Refusal{Status: 429, Code: "cloud_read_busy",
+		Message: "This machine answered, and the channel that answer goes on is full; try again shortly.", fixedCopy: true,
+		Detail: map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
+		Layer:  layerTransport})
+}
+
+// UnsendableReply refuses an oversized read response and preserves an
+// uncertain receipt for a command whose effect already happened.
+func (b Bridge) UnsendableReply(cmd Command) Answer {
+	return b.undeliverable(cmd, Refusal{Status: 413, Code: "body_too_large",
+		Message: "This read could not be answered.", fixedCopy: true, Layer: layerTransport})
+}
+
+func (b Bridge) undeliverable(cmd Command, refusal Refusal) (answer Answer) {
 	parsed, parseErr := decodeBody(cmd.Plaintext)
 	parsed, compressed := negotiateReadCompression(parsed)
 	defer func() {
@@ -559,15 +573,11 @@ func (b Bridge) Undeliverable(cmd Command, limit int) (answer Answer) {
 		return b.notice(cmd, Refusal{Status: 409, Code: "wrong_machine",
 			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
-	full := Refusal{Status: 429, Code: "cloud_read_busy",
-		Message: "This machine answered, and the channel that answer goes on is full; try again shortly.", fixedCopy: true,
-		Detail: map[string]any{"lane": "egress", "limit": limit, "retry_after": 5},
-		Layer:  layerTransport}
 	if parseErr != nil || word == "" {
-		return b.notice(cmd, full)
+		return b.notice(cmd, refusal)
 	}
 	if b.contentReadChannel(cmd) {
-		return b.refuseContentRead(cmd, parsed, word, full)
+		return b.refuseContentRead(cmd, parsed, word, refusal)
 	}
 	o, known := catalog[word]
 	if known && !o.read {
@@ -580,10 +590,10 @@ func (b Bridge) Undeliverable(cmd Command, limit int) (answer Answer) {
 	}
 	if known && o.read && cmd.Class == ClassCtl {
 		if p, ok := o.decode(parsed); ok {
-			return b.publish(cmd, p, full, nil)
+			return b.publish(cmd, p, refusal, nil)
 		}
 	}
-	return b.refuse(cmd, parsed, word, full)
+	return b.refuse(cmd, parsed, word, refusal)
 }
 
 func (b Bridge) Busy(cmd Command, limit int) (answer Answer) {

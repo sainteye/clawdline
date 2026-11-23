@@ -92,6 +92,7 @@ const (
 	BurnAttemptCapExpired  = "attempt_cap_expired"
 	BurnStaleReadyAtSend   = "stale_ready_at_restart"
 	BurnReplacedByCoalesce = "replaced_by_coalescing"
+	BurnFrameTooLarge      = "frame_too_large"
 	// BurnKeyRetired is a row sealed, or about to be sealed, under a master
 	// content key a cutover retired (RetireKeys). Its bytes must never be
 	// written again, whatever state it was in.
@@ -715,6 +716,16 @@ func (s *Spool) SealCorrelated(seq uint64, sealed []byte, sealedAt time.Time, co
 	}
 	if len(sealed) == 0 {
 		return ErrSpoolEmpty
+	}
+	if len(sealed) > s.limits.OutboundWindowByteCap {
+		// The reservation charged the logical answer. Its sealed form can
+		// exceed the window even with no other frames in flight.
+		now := s.now()
+		row.State = SpoolBurned
+		row.BurnReason = BurnFrameTooLarge
+		row.Tombstoned = now
+		s.refusedLocked(now)
+		return fmt.Errorf("%w: %d bytes exceeds %d", cloud.ErrSendWindowTooSmall, len(sealed), s.limits.OutboundWindowByteCap)
 	}
 	row.Sealed = sealed
 	row.SealedAt = sealedAt

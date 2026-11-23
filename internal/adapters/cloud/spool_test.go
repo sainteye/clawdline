@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 func testSpool(t *testing.T, now *time.Time) *Spool {
@@ -20,6 +22,37 @@ func sealRow(t *testing.T, spool *Spool, seq uint64, at time.Time) {
 	t.Helper()
 	if err := spool.Seal(seq, []byte(`{"ct":"x"}`), at); err != nil {
 		t.Fatalf("seal %d: %v", seq, err)
+	}
+}
+
+func TestAFrameLargerThanTheSendWindowCannotHoldTheQueue(t *testing.T) {
+	t.Parallel()
+	now := time.Unix(1789000000, 0)
+	limits := DefaultSpoolLimits()
+	spool := testSpool(t, &now)
+	const channel = "t/mac/session"
+	// A logical answer fits the channel while its base64 seal cannot fit
+	// the in-flight window, even when there are no writes awaiting receipts.
+	first, err := spool.ReserveAnswer(SpoolChannelT, channel, "large answer", limits.OutboundWindowByteCap*3/4, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := spool.Seal(first, make([]byte, limits.OutboundWindowByteCap+1), now); !errors.Is(err, cloud.ErrSendWindowTooSmall) {
+		t.Errorf("want an unsendable frame refusal, got %v", err)
+	}
+	if _, bytes := spool.Readings(); bytes.Used != 0 {
+		t.Errorf("the rejected frame still holds %d bytes", bytes.Used)
+	}
+	if burns := spool.TakeBurned(); len(burns) != 1 || burns[0].Seq != first || burns[0].BurnReason != BurnFrameTooLarge {
+		t.Fatalf("the frame's sequence was not burned: %+v", burns)
+	}
+	second, err := spool.Reserve(SpoolChannelT, channel, "small answer", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealRow(t, spool, second, now)
+	if next := spool.SendNext(); next.Row == nil || next.Row.Seq != second {
+		t.Fatalf("the next answer could not proceed: %+v", next)
 	}
 }
 

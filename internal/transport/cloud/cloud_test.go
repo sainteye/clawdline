@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
 func plaintext(t *testing.T, object map[string]any) []byte {
@@ -356,5 +357,25 @@ func TestAReadThatDidNotFitNamesItsOperation(t *testing.T) {
 	if len(lines) != 1 || !strings.Contains(lines[0], "did not fit its channel") ||
 		!strings.Contains(lines[0], "operation=work.v2.session-todos") {
 		t.Fatalf("the channel-full line does not name the read: %v", lines)
+	}
+}
+
+func TestUnsendableReadPublishesATypedRefusalForTheOriginalRequest(t *testing.T) {
+	fake := NewFake(4)
+	fake.Fail = cloud.ErrSendWindowTooSmall
+	service := Service{MachineID: "mac-01", Bridge: answering(t), Transport: fake}
+	service.Answer(context.Background(), Inbound{Channel: "ctl/mac-01", Class: "ctl",
+		Sender: "viewer-device-01", Sequence: 522,
+		Plaintext: plaintext(t, map[string]any{"type": "work.v2.session-todos",
+			"session": "__clawdline_machine__", "request": "req-todos", "terminal": "%19"})})
+	published := fake.Published()
+	if len(published) != 1 {
+		t.Fatalf("expected one refusal, got %d replies", len(published))
+	}
+	reply := published[0]
+	if !reply.Refusal || reply.Channel != "t/mac-01/__clawdline_machine__" ||
+		reply.Reply.Name != "read:req-todos" || reply.Reply.Status != 413 || reply.Reply.Code != "body_too_large" ||
+		reply.Reply.Sender != "viewer-device-01" || reply.Reply.Sequence != 522 {
+		t.Fatalf("wrong refusal for the oversized read: %+v", reply.Reply)
 	}
 }

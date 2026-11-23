@@ -16,6 +16,7 @@ package cloud
 import (
 	"context"
 	"crypto/ed25519"
+	"errors"
 	"log"
 	"time"
 
@@ -217,14 +218,8 @@ func (s Service) Run(ctx context.Context) error {
 // different reader would receive it.
 func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 	started := s.now()
-	answer := s.Bridge.Handle(ctx, cloudops.Command{
-		Channel:     request.Channel,
-		Class:       cloudops.Class(request.Class),
-		Sender:      request.Sender,
-		VerifiedKey: request.VerifiedKey,
-		Sequence:    request.Sequence,
-		Plaintext:   request.Plaintext,
-	})
+	command := replyCommand(request)
+	answer := s.Bridge.Handle(ctx, command)
 	if s.ReadHandled != nil {
 		s.ReadHandled()
 	}
@@ -254,8 +249,12 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		// the reserve. Measured on 2026-09-21: a transcript channel refused
 		// 34 answers over one evening, each of them one log line on this
 		// machine and sixty seconds of "loading" on somebody's phone.
+		if errors.Is(err, cloud.ErrSendWindowTooSmall) {
+			s.tellAnswerRefused(ctx, request, answer, s.Bridge.UnsendableReply(command), err)
+			return answer
+		}
 		if c, ok := s.Transport.(Congested); ok && c.ChannelFull(err) {
-			s.tellChannelFull(ctx, request, answer, c.ChannelByteLimit(), err)
+			s.tellAnswerRefused(ctx, request, answer, s.Bridge.Undeliverable(command, c.ChannelByteLimit()), err)
 			return answer
 		}
 		s.logf("cloud: %s (operation=%s) was not delivered: %v", answer.Name,
@@ -310,22 +309,20 @@ func codeOrOK(code string) string {
 	return code
 }
 
-// tellChannelFull publishes the typed refusal that says a channel is full, on
-// that same channel, and records it when even that could not go.
-//
-// The refusal is deliberately built from the request rather than from the
-// answer: whether the sender may be told "busy" or must be told "your command
-// ran and the reply is lost" is a fact about what was asked, and the answer
-// that will not fit is not evidence about it (Bridge.Undeliverable).
-func (s Service) tellChannelFull(ctx context.Context, request Inbound, answer cloudops.Answer, limit int, cause error) {
-	refusal := s.Bridge.Undeliverable(cloudops.Command{
+// The typed refusal follows the original request's identity and operation.
+func replyCommand(request Inbound) cloudops.Command {
+	return cloudops.Command{
 		Channel:     request.Channel,
 		Class:       cloudops.Class(request.Class),
 		Sender:      request.Sender,
 		VerifiedKey: request.VerifiedKey,
 		Sequence:    request.Sequence,
 		Plaintext:   request.Plaintext,
-	}, limit)
+	}
+}
+
+// tellAnswerRefused publishes the small refusal on the original reply channel.
+func (s Service) tellAnswerRefused(ctx context.Context, request Inbound, answer, refusal cloudops.Answer, cause error) {
 	if !refusal.Published() {
 		s.logf("cloud: %s (operation=%s) did not fit its channel and its sender could not be told: the request names no waiter (%s): %v",
 			answer.Name, operationOrUnknown(answer.Operation), refusal.Code, cause)
