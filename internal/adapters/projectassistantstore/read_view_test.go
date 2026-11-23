@@ -130,7 +130,7 @@ func TestReadViewSQLCapabilitiesAndLegacyCollections(t *testing.T) {
 }
 
 func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T) {
-	for _, field := range []string{"prompt_timeout", "provider_usage_limit", "restart", strings.Repeat("private narrative", cloudops.ReadPlaintextBytesLimit)} {
+	for _, field := range []string{"prompt_timeout", "owned_cleanup_timeout", "provider_usage_limit", "restart", strings.Repeat("private narrative", cloudops.ReadPlaintextBytesLimit)} {
 		t.Run(field[:min(len(field), 20)], func(t *testing.T) {
 			e, _, _ := viewFixture(t, 1, 0, false)
 			e.Turns[0].State = pa.TurnUnknown

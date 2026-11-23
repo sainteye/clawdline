@@ -47,9 +47,9 @@ const server=createServer(async(req,res)=>{
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline",field:"fixture_read",retry_after_seconds:0}}}));return
       }
       const answer=await fetch(cloud,{method:"POST",body:raw});let payload=await answer.text()
-      // Hold the real pre-binding snapshot, then finish provider opening so
-      // the following metadata collections necessarily see the newer fence.
-      if(sent&&!started&&envelope.mode==="snapshot"){
+      // Capture the first post-send read against the admission fence, then
+      // release the provider so later reads see the running fence.
+      if(sent&&!started&&envelope.type==="project-assistants.view"&&["events","snapshot"].includes(envelope.mode)){
         started=true
         const transition=await fetch(cloud+"/start",{method:"POST"})
         assert.equal(transition.status,204,"the local provider must reach the new running binding")
@@ -95,7 +95,7 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=scenario==="hidden-zh-mobile"||scenario==="read-failure",lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -110,11 +110,16 @@ try{
   }
   await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
   await send("Input.insertText",{text},sessionId)
-  await send("Input.dispatchKeyEvent",{type:"keyDown",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId)
-  await send("Input.dispatchKeyEvent",{type:"keyUp",key:"Enter",code:"Enter",windowsVirtualKeyCode:13},sessionId)
+  await until(sessionId,"!!document.querySelector('.pa-composer .pa-send:not(:disabled)')")
+  await evaluate(sessionId,"document.querySelector('.pa-composer .pa-send').click()")
   await until(sessionId,"window.chatObservation.phases.some(p=>p.phase==='returned'&&p.word==='project-assistants.send')")
   await new Promise(r=>setTimeout(r,200))
   const accepted=await capture(sessionId,"accepted-before-result")
+  if(scenario.startsWith("hidden-")){
+    const acknowledged=traffic.find(p=>p.word==="project-assistants.send")
+    const next=traffic.find(p=>p.word==="project-assistants.view"&&p.acceptedAt>acknowledged.returnedAt)
+    assert.equal(next?.mode,"events","a saved message must first reconcile with incremental events")
+  }
   const uncertain=scenario==="unknown"||scenario==="malformed"||scenario==="inspect"
   assert.ok(accepted.text.includes(text)||uncertain&&await evaluate(sessionId,`document.querySelector('.pa-composer textarea').value===${JSON.stringify(text)}`),"the submitted message disappeared before its canonical row was observed")
   if(uncertain&&scenario!=="inspect"){
@@ -165,6 +170,22 @@ try{
     await capture(sessionId,"observation-stopped");results.push({scenario,stopped:true,sends:1});await fetch(origin+"/finish",{method:"POST"})
   }else{
   await fetch(origin+"/finish",{method:"POST"})
+  if(scenario==="cleanup-timeout"){
+    await until(sessionId,"document.body.innerText.includes('Clawdline 在確認這一輪的 Agent 是否已關閉時逾時。')")
+    const stopped=await capture(sessionId,"cleanup-timeout")
+    assert.equal(stopped.text.includes("execution_effect_unknown"),false,"the technical code is collapsed")
+    assert.equal(stopped.text.includes("先前回合的結果無法確認"),false,"one interruption should have one explanation")
+    const followup="Synthetic follow-up retained in the composer"
+    await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
+    await send("Input.insertText",{text:followup},sessionId)
+    await until(sessionId,"!!document.querySelector('.pa-composer .pa-send:not(:disabled)')")
+    await evaluate(sessionId,"document.querySelector('.pa-composer .pa-send').click()")
+    await until(sessionId,"document.body.innerText.includes('這則訊息保留在輸入框。')")
+    assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),followup)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,2)
+    await capture(sessionId,"cleanup-refusal-preserves-draft")
+    results.push({scenario,draftRetained:true,sends:2})
+  }else{
   await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
   const complete=await capture(sessionId,"completed")
   assert.equal(await evaluate(sessionId,`[...document.querySelectorAll('.pa-message')].filter(e=>e.textContent.includes(${JSON.stringify(text)})).length`),1,"the optimistic and canonical message must not duplicate")
@@ -179,6 +200,7 @@ try{
   await new Promise(r=>setTimeout(r,3300))
   assert.equal(traffic.filter(p=>p.word==='project-assistants.view').length,readCount,"hidden periodic reads continued after the owned turn completed")
   results.push({scenario,accepted:true,complete:true,hidden:complete.visibility==="hidden",sends:1,duplicateMessages:0,phases:complete.phases})
+  }
   }
   }
   await send("Target.closeTarget",{targetId})

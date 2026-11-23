@@ -31,10 +31,14 @@ func (p *Process) identities(ctx context.Context) ([]processIdentity, error) {
 	if override != nil {
 		return override(ctx)
 	}
+	return processIdentities(ctx, p.limits.CaptureBytes)
+}
+
+func psIdentities(ctx context.Context, budget int) ([]processIdentity, error) {
 	// Only identifiers, group, state and start time are read. Arguments/environment may
 	// contain secrets and are deliberately excluded from this census.
 	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,stat=,lstart=")
-	capture := &censusCapture{budget: p.limits.CaptureBytes}
+	capture := &censusCapture{budget: budget}
 	cmd.Stdout = capture
 	err := cmd.Run()
 	b := capture.buf.Bytes()

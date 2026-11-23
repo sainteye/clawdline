@@ -279,7 +279,7 @@ func ProjectRoomMemberOutcome(room pa.RoomState, name string, t pa.Turn) pa.Room
 		}
 		switch t.Failure.Field {
 		case "prompt_timeout", "prompt_stopped", "acp_eof", "prompt_result", "prompt_max_tokens", "prompt_max_turn_requests",
-			"owned_cleanup", "restart", "acknowledged":
+			"owned_cleanup", "owned_cleanup_timeout", "restart", "acknowledged":
 			out.FailureField = t.Failure.Field
 		default:
 			if reason, ok := strings.CutPrefix(t.Failure.Field, "provider_"); ok && knownFallbackReason(ProviderFailureReason(reason)) {

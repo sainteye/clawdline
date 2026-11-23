@@ -161,7 +161,7 @@ func viewTurnProjection(value string) string {
 	// Keep mandatory snapshots bounded even if an old or imported failure has
 	// an arbitrary field. Only host diagnostic categories are public summaries.
 	field := "json_extract(" + value + ",'$.failure.field')"
-	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','restart','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
+	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','owned_cleanup_timeout','restart','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
  'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'))`

@@ -21,11 +21,12 @@ import (
 // Only local protocol data is executed, never a provider CLI or model API.
 type observationProvider struct {
 	alignmentProvider
-	finish  chan struct{}
-	start   chan struct{}
-	started chan struct{}
-	entered sync.Once
-	probes  atomic.Int32
+	finish       chan struct{}
+	start        chan struct{}
+	started      chan struct{}
+	entered      sync.Once
+	probes       atomic.Int32
+	closeFailure error
 }
 
 func (p *observationProvider) Capabilities(ctx context.Context, bot pa.Bot) (pa.Capabilities, error) {
@@ -57,6 +58,13 @@ type observationSession struct {
 	owner *observationProvider
 }
 
+func (s *observationSession) Close(ctx context.Context) error {
+	if s.owner.closeFailure != nil {
+		return s.owner.closeFailure
+	}
+	return s.alignmentSession.Close(ctx)
+}
+
 func (s *observationSession) Send(_ context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
 	return observationPending{session: s, prompt: q}, nil
 }
@@ -85,7 +93,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -94,6 +102,9 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 			}
 			f := newPAServerFixture(t, true)
 			provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}
+			if name == "cleanup-timeout" {
+				provider.closeFailure = context.DeadlineExceeded
+			}
 			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
 			f.enable(t)
 			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))

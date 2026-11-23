@@ -88,6 +88,10 @@ func (r *Engine) retryRetained(a *runtimeActor) {
 	log.Printf("project assistant: Agent process cleanup still unconfirmed after %d retries; bot=%s keeps its owner", r.o.Limits.CleanupRetries, a.key.BotID)
 }
 
+type ownedCleanupFailure struct{ error }
+
+func (f *ownedCleanupFailure) Unwrap() error { return f.error }
+
 // The execution owner alone closes its session. A failed close keeps both the
 // handle and process slot, including after its prompt caller has timed out.
 func (r *Engine) closeSession(a *runtimeActor, session ProviderSession) error {
@@ -99,7 +103,7 @@ func (r *Engine) closeSession(a *runtimeActor, session ProviderSession) error {
 	err := session.Close(ctx)
 	if err != nil {
 		r.retain(a, err)
-		return errors.Join(runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup"), err)
+		return &ownedCleanupFailure{errors.Join(runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup"), err)}
 	}
 	a.mu.Lock()
 	a.session = nil

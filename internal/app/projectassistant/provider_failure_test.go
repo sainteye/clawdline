@@ -96,6 +96,8 @@ func TestUnknownTurnExplainsInterruptionWithoutReplaying(t *testing.T) {
 		field string
 	}{
 		{"deadline", context.DeadlineExceeded, "prompt_timeout"},
+		{"cleanup deadline", &ownedCleanupFailure{context.DeadlineExceeded}, "owned_cleanup_timeout"},
+		{"cleanup after prompt cancellation", errors.Join(context.Canceled, &ownedCleanupFailure{context.DeadlineExceeded}), "owned_cleanup_timeout"},
 		{"cancelled", context.Canceled, "prompt_stopped"},
 		{"connection", &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acp_eof"}, "acp_eof"},
 		{"output limit", &pa.Failure{Code: pa.Unsupported, Field: "prompt_max_tokens"}, "prompt_max_tokens"},

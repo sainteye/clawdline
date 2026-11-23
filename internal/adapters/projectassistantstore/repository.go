@@ -24,6 +24,7 @@ type Store struct {
 	// CompletionIntent adds only database writes to this Bot transaction. It must not perform external IO.
 	CompletionIntent func(context.Context, *sql.Tx, pa.Bot, pa.Turn) error
 	db               *sql.DB
+	reader           *sql.DB
 	locks            sync.Map
 	roster           rosterBus
 	// groupHook, when set by a test, fails a group write at the named stage
@@ -31,7 +32,16 @@ type Store struct {
 	groupHook func(stage string) error
 }
 
-func New(db *sql.DB) *Store { return &Store{db: db} }
+func New(db *sql.DB) *Store { return &Store{db: db, reader: db} }
+
+// WithReader borrows the host's WAL reader for independent projections.
+// Configure it before the Store is shared.
+func (s *Store) WithReader(reader *sql.DB) *Store {
+	if reader != nil {
+		s.reader = reader
+	}
+	return s
+}
 
 var _ app.Repository = (*Store)(nil)
 var _ app.Memory = (*Store)(nil)
@@ -221,7 +231,7 @@ func (s *Store) SendReceipt(ctx context.Context, key pa.BotKey, conversation, id
 		WHERE r.machine=? AND r.bot=? AND r.operation='send' AND r.command_key=?
 		AND json_extract(CAST(b.data AS TEXT), '$.Conversation.id')=?`
 	var raw, projectRaw, turnRaw []byte
-	err := s.db.QueryRowContext(ctx, query, key.MachineID, key.BotID, id, conversation).Scan(&raw, &projectRaw, &turnRaw)
+	err := s.reader.QueryRowContext(ctx, query, key.MachineID, key.BotID, id, conversation).Scan(&raw, &projectRaw, &turnRaw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return pa.Receipt{}, failure(pa.NotFound, "send_receipt")
 	}
@@ -924,7 +934,7 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 	if err := pa.CheckPage(q.PageSize, false); err != nil {
 		return out, err
 	}
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := s.reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return out, err
 	}
