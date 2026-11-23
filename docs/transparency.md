@@ -255,7 +255,9 @@ Machine workflow selection now preserves Clawdline standard as the default with
 no added workflow prompt or compulsory stages. A previous skills opt-in keeps
 its Superpowers selection. The selected debugging/review content is unchanged;
 Poteto adds a bundled local pstack adaptation with task routing, verifiable units
-and evidence mapping. Neither option grants additional authorization. Fresh roots
+and evidence mapping. Poteto version 2 also reviews comments changed in the diff
+and considers formal verification for high-impact guarantees. Neither option
+grants additional authorization. Fresh roots
 seal a source/version/body/stage/tool-choice snapshot; owned children inherit it,
 and resume keeps its original context. Existing unsnapshotted conversations are
 not relabeled from current settings. CodeGraph remains separate, with its launch
