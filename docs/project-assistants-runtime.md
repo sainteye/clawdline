@@ -154,7 +154,7 @@ measurement wiring, translated notices and its selected integration values.
 | Native pipe writes | Caller cancellation | Wait cancellably. A write that might have transmitted a partial frame closes the transport and is never replayed. Owned HTTP writes and native control or cleanup calls have their own budgets. |
 | Limits.CleanupTimeout | 5 seconds | Bound native child cleanup and inventory commands. |
 | Limits.RPCTimeout | 120 seconds | Control RPC waits stay bounded. Native permissions follow the prompt lifetime, including for background work. A prompt response waits on its turn context. Stop, shutdown and revocation still cancel that context, and native termination and bounded cleanup still apply. |
-| Limits.DescendantPoll | 50 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. |
+| Limits.DescendantPoll | 250 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. A failed census opens a gap that a later cleanup re-checks (`docs/incidents/bot-cleanup-eperm-2026-11-23.md`). |
 
 Person-initiated sends queue durably without a row ceiling. The chat snapshot
 shows the prefix of the queue that fits its transport budget. Automated producers

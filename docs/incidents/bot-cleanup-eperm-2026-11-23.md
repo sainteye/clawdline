@@ -178,3 +178,82 @@ failing a fresh census each time.
   change.
 
 Linux and the BSDs still use `ps`, whose own sysctl loop handles growth.
+
+## Design review: a passing failure must not lock a Bot
+
+Both incidents have the same shape. A safety check met a passing condition
+(an exiting process answering `EPERM`, a census racing new processes into
+`ENOMEM`) and stored it as if the answer could never be known. The safe
+outcome, "do not release, do not resend", was right for that moment; storing it
+forever was not. The hand-written `reverifiablePhases` list made "final" the
+default, so every new phase locked a Bot until someone remembered to add it.
+
+### What changed
+
+`finalCleanupPhases` (`internal/adapters/projectassistantacp/process.go`) is
+now the only list, and it names the phases that stay locked, each with its
+reason. Every other phase, including one added later, makes a later `Close`
+(and so `Engine.retryRetained`) run `reverify` again.
+`TestCleanupPhasesAreReverifiableUnlessMarkedFinal` keeps that default.
+
+| Phase | Class | Why |
+|---|---|---|
+| `descendant_inventory` | re-verifiable | A census failed (`ENOMEM`, `EPERM`, timeout). A later census can succeed; the gap it leaves is checked as below. |
+| `cleanup_survey` | re-verifiable | The survey did not stop before the deadline, meaning a census hung. `reverify` first waits for the survey to return. |
+| `signal_inventory`, `signal_pid_inventory`, `signal_group_inventory` | re-verifiable | A census around a signal failed; ownership was complete, only the signal's effect is unknown. |
+| `signal_pid_live`, `signal_group_live` | re-verifiable | A signal was refused while a census still showed our process. A fresh census and new signals can settle it. |
+| `process_cleanup` | re-verifiable | The direct child was not reaped before the deadline; a later wait can see it reaped. |
+| `root_identity` | final | The root was never seen while unreaped. Once `Wait` reaps it, its start time, and with it our group's identity, can no longer be learned. |
+| `owned_descendants` | final | The Agent made more descendants than the bound records. The bound, not a race, dropped them; a repeated census does not bring them back. |
+
+Re-verification still needs complete evidence: a complete fresh census, new
+signals to any live owned identity, the reaped direct child, no live owned
+identity or group member, and, when a census had failed, a settled gap.
+
+A failed census opens a *census gap* from the start of the last successful
+census to the end of the next one. A gap can hide only a descendant that left
+our process group and lost its parent before any census saw it; such a process
+is reparented to the orphan reaper. The gap settles when a complete census
+shows no live, unowned process born inside the gap (plus 2 s for start-time
+resolution) whose oldest such ancestor hangs from the reaper or from an owned
+process. macOS always reparents to launchd (pid 1). Linux can reparent to a
+subreaper such as `systemd --user`, so there any unowned process born inside
+the gap keeps cleanup unknown until it exits. The window is fixed, so later
+retries see fewer such processes, never more.
+
+Red before, green after (`go test ./internal/adapters/projectassistantacp`):
+`TestProcessCloseReinventoriesAfterATransientCensusFailure` (`ENOMEM`,
+`EPERM`, deadline: the second Close returned the first error),
+`TestProcessCloseKeepsAnOrphanFromTheGapUnknown` and the default-phase guard
+failed; `TestProcessCloseKeepsFinalPhasesLocked` and
+`TestDarwinGapSuspectsHangFromLaunchdOrFromUs` hold the other side. With the
+gap check disabled, the orphan test fails again.
+
+### The survey interval
+
+`bots.survey_ms` was 50 ms from the first Bot runtime commit (91d6f6308,
+2026-11-12), with no measurement recorded. The runtime doc already said it "is
+not a guarantee against unobserved fast reparenting". What it buys is narrow:
+group signals already reach every descendant that stays in the Agent's process
+group, whatever the interval. The survey matters only for a descendant that
+leaves the group (`setsid`) *and* whose parent exits between two censuses. A
+typical daemonizing double fork does both within a few milliseconds, faster
+than either 50 or 250 ms; a long-lived parent is caught by either.
+
+Measured on this machine (about 640 processes), one Agent's survey alone, 10 s
+per row, CPU from `getrusage` including the Go runtime's idle cost:
+
+| Interval | Censuses per second | CPU per census | Share of one core | CPU per hour |
+|---|---|---|---|---|
+| 50 ms (before) | 20 | 0.71 ms | 1.43% | 51 s |
+| 250 ms (now) | 4 | 1.16 ms | 0.46% | 17 s |
+| 1 s | 1 | 2.47 ms | 0.25% | 9 s |
+
+The cost scales with each live Agent, and the census rate is what turned the
+sysctl race into a routine failure. The interval is now 250 ms: five times
+fewer censuses and a third of the CPU, while the window it narrows stays a
+fraction of a second. An event-driven survey was considered and not adopted:
+macOS removed kqueue `NOTE_TRACK`, so `NOTE_FORK` says that a watched process
+forked but not which child, and every new descendant must still be found by a
+census before it can be watched; Linux would need a different mechanism. It
+would not close the escape window, only move it.

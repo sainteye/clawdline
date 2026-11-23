@@ -30,9 +30,16 @@ const (
 	MaximumBotCleanupFirstRetryMilliseconds = 1000
 	MaximumBotRPCMilliseconds               = 120000
 	MaximumBotControlWindowMilliseconds     = 600000
-	MaximumBotSurveyMilliseconds            = 50
-	MaximumBotChatGapMilliseconds           = 3600000
-	MaximumBotRefreshMilliseconds           = 3000
+	// The descendant survey's census interval. It only narrows the window in
+	// which a descendant that leaves our process group and loses its parent
+	// goes unseen; it is never a guarantee. 50 ms took about 0.7 ms of CPU
+	// per census (20 a second, 1.4% of a core per Agent) and turned the rare
+	// sysctl estimate race into a routine failure (2026-11-24). Group
+	// signals, which cover every descendant that stays in the group, do not
+	// depend on it. See docs/incidents/bot-cleanup-eperm-2026-11-23.md.
+	MaximumBotSurveyMilliseconds  = 250
+	MaximumBotChatGapMilliseconds = 3600000
+	MaximumBotRefreshMilliseconds = 3000
 	// Live rows and removal revisions retained by one browser source.
 	MaximumBotRosterClientRows = 1000
 	// The longest isolated work one Bot dispatch may start.

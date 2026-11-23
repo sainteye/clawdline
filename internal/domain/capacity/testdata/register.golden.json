@@ -3981,7 +3981,7 @@
     "Name": "bots.survey_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
-    "Limit": 50,
+    "Limit": 250,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",

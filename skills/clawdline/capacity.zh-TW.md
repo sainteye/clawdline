@@ -204,7 +204,7 @@
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
-| `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.survey_ms` | 250 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.tool_probe_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_floor_project_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
