@@ -71,8 +71,8 @@ html.pa-roster-dragging,html.pa-roster-dragging * { cursor:grabbing!important;us
   display:grid;justify-items:start;gap:10px;margin:20px 0;padding:12px 16px;color:var(--pa-dim);font-size:14px;
 }
 .project-assistants .pa-roster-unavailable button { min-height:44px;color:var(--pa-text); }
-@media (max-width:700px) {
-  .project-assistants .pa-roster .pa-toolbar { justify-content:flex-start;gap:8px; }
-  .project-assistants .pa-roster .pa-toolbar .pa-collapse { margin-inline-end:auto; }
-  .project-assistants .pa-roster .pa-toolbar .pa-circle { width:44px;height:44px; }
-}
+/* Collapse stays at the start and the other buttons sit together at the end at every width; the
+   shared toolbar's space-between spread them evenly wherever the list was wider than a phone. */
+.project-assistants .pa-roster .pa-toolbar { justify-content:flex-start;gap:8px; }
+.project-assistants .pa-roster .pa-toolbar .pa-collapse { margin-inline-end:auto; }
+.project-assistants .pa-roster .pa-toolbar .pa-circle { width:44px;height:44px; }

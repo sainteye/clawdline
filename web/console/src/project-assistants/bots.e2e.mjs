@@ -560,10 +560,12 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   await editor().evaluate(el=>el.dispatchEvent(new CompositionEvent("compositionstart",{bubbles:true,data:"中"})));await editor().press("Enter")
   assert.equal((await log()).filter(r=>r.method==="send").length,0)
   await editor().evaluate(el=>el.dispatchEvent(new CompositionEvent("compositionend",{bubbles:true,data:"中"})));await editor().press("Shift+Enter");assert.match(await editor().inputValue(),/\n/)
-  await editor().fill("sent once");await editor().press("Enter")
-  assert.equal(await editor().inputValue(),"sent once\n")
-  assert.equal((await log()).filter(r=>r.method==="send").length,0)
-  await editor().fill("sent once");await submit();await messageText("sent once").waitFor()
+  // Enter sends with a mouse and keyboard (the person's 2026-11-23 decision); a touch screen keeps the button.
+  const enterSends=await page.evaluate(()=>matchMedia("(hover: hover) and (pointer: fine)").matches)
+  await editor().fill("sent once")
+  if(enterSends)await editor().press("Enter")
+  else{await editor().press("Enter");assert.equal(await editor().inputValue(),"sent once\n");assert.equal((await log()).filter(r=>r.method==="send").length,0);await editor().fill("sent once");await submit()}
+  await messageText("sent once").waitFor()
   assert.equal((await log()).filter(r=>r.method==="send").length,1)
   await editor().fill("unknown");await submit();await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===true)
   await page.evaluate(()=>window.botsFixture.remount());await row().click();await editor().waitFor()
@@ -678,11 +680,13 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   await page.locator(`.pa-bot-row[data-bot-key^='["studio",']`).filter({hasText:"Project assistant"}).click()
   const chat=page.locator(".pa-chat"),editor=chat.locator(".pa-editor textarea")
   await page.waitForFunction(()=>document.querySelector(".pa-editor textarea")?.disabled===false)
+  // A touch screen keeps Enter for a new line; with a mouse and keyboard Shift+Enter is the new line.
+  const enterSends=await page.evaluate(()=>matchMedia("(hover: hover) and (pointer: fine)").matches)
   await editor.fill("First line")
-  await editor.press("Enter")
+  await editor.press(enterSends?"Shift+Enter":"Enter")
   assert.equal(await editor.inputValue(),"First line\n")
-  assert.equal(await editor.getAttribute("enterkeyhint"),"enter")
-  assert.equal((await log()).filter(r=>r.method==="send").length,0,"Enter sent the draft")
+  assert.equal(await editor.getAttribute("enterkeyhint"),enterSends?"send":"enter")
+  assert.equal((await log()).filter(r=>r.method==="send").length,0,"A new line sent the draft")
   const dropped=await chat.locator(process.env.BOTS_ATTACHMENT_REPRO==="recovery"?".pa-composer":".pa-chat-scroll").evaluate(async node=>{
     const data=new DataTransfer()
     const canvas=document.createElement("canvas")
@@ -771,7 +775,7 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   assert.equal(writes.length,2)
   assert.deepEqual(writes[1].request,writes[0].request,"retry must keep the original picture and command ID")
   assert.equal(await editor.inputValue(),"A new draft")
-  return ["Enter inserts a newline without sending","zoom, circle, cancel, undo, and send marked pixels","drop attaches a picture without sending","uncertain send stays in the transcript","retry keeps the picture and command ID","a separate draft survives retry"]
+  return ["a new line does not send","zoom, circle, cancel, undo, and send marked pixels","drop attaches a picture without sending","uncertain send stays in the transcript","retry keeps the picture and command ID","a separate draft survives retry"]
 }
 
 // The composer's trailing button places the call while the box is empty; the live call's
