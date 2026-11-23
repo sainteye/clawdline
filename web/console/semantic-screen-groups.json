@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14080,
+  "englishContentKeys": 14082,
   "riskKeys": 5976,
-  "nonRiskCount": 8104,
+  "nonRiskCount": 8106,
   "groups": [
     {
       "name": "acp / other",
@@ -6206,7 +6206,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 571,
+      "count": 573,
       "sources": [
         null
       ],
@@ -6269,6 +6269,8 @@
         "projectAssistants.contextRemaining",
         "projectAssistants.contextUsage",
         "projectAssistants.contextUsageLast",
+        "projectAssistants.contextUsageLastTitle",
+        "projectAssistants.contextUsageTitle",
         "projectAssistants.copiedMessage",
         "projectAssistants.copyMessage",
         "projectAssistants.create",
