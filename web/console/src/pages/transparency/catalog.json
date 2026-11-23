@@ -4936,7 +4936,7 @@
         },
         {
           "path": "web/console/src/realtime/copilot-meter.ts",
-          "line": 237
+          "line": 278
         }
       ],
       "original": [
@@ -5611,7 +5611,7 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "8c2c62f9f3d9dbad52e328a55f9e442379e32f6a6e4c20d4fc87d40b1938785c",
+    "web/console/src/project-assistants/Chat.tsx": "a2e7d05741219693b8aeb2a9ba8ef0d1ef265a1d54bdfd97666ac850ca768b1b",
     "web/console/src/project-assistants/ChatRows.tsx": "074e2657916390c5f586087971d6780bda7de12f7fb51ae63b744c4d626aa617",
     "web/console/src/project-assistants/DevServers.tsx": "ab34dbe81c352964b405258645d9c083e1cabb446ce32de79526f021008c2c3d",
     "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",
@@ -5644,7 +5644,7 @@
     "web/console/src/realtime/copilot-help-loader.ts": "a1c3489f67d6c737b964177b964c511005601984f790f78476e97ced078a2951",
     "web/console/src/realtime/copilot-history.ts": "b81e3e47b48f0f2f34af3f7f0d24c3fa11bdc54c139a0de35d5da78ae7e43e5a",
     "web/console/src/realtime/copilot-live.ts": "1a9c24db86028a2956309807c7dbe09f1a8ecb51fb831f0a6bfa019ac293a70b",
-    "web/console/src/realtime/copilot-meter.ts": "37ea246463df5a67a2b4c95ab2486f3c03ff13be23476da8b6cbfcc905c44642",
+    "web/console/src/realtime/copilot-meter.ts": "2fdcb03ab3b50923d2a7102237199b280504911d5dc1ef7e84434bcb9d99619a",
     "web/console/src/realtime/copilot-questions.ts": "083146cbc56cec1c9f5a3a1dcfd283a3e05222b78e50fbe9e366fe8e83ec7036",
     "web/console/src/realtime/copilot-reports.ts": "fab8d50097148fca089bd64286e8e3d7b162ad1cd9ed7e3f7147043c073af598",
     "web/console/src/realtime/copilot-session-boards.ts": "160620f182f4024e6a5a7b5e2efbf08797b1dcfb1863eefc7db1354d3bcdebc2",

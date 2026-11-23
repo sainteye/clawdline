@@ -38,7 +38,7 @@ import {uploadInputs,MAX_INPUT_BYTES,type DraftInput} from "./inputs"
 import { Composer } from "./Composer"
 import {clearSendAttachments,loadSendAttachments,saveSendAttachments,sendAttachmentKey,type SendAttachments} from "./send-attachments"
 import type { MarkupPicture } from "../session/ImageMarkup.js"
-import { BotCallControls, useBotCall } from "./BotCall"
+import { BotCallBar, useBotCall, useBotCallStart } from "./BotCall"
 import { BotVoicePanel, useBotVoice } from "./BotVoicePanel"
 import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
@@ -1297,6 +1297,13 @@ ${currentDraft}`:submitted)
   }
   const canCall=!thread&&!leadSetup.blocked&&!!callView?.caughtUp&&!busy&&!unknown&&!legacyBlocked()
     &&!view.heldOutcomes.has(draftKey)&&!parts.queued.length&&!head?.unknown_turn_count
+  // The composer's call button shows once the call path is known and stays while a
+  // send is in flight (disabled), so it never blinks out and back. While the key
+  // check is still reading (configured === null) the trailing button stays send.
+  const realtimeCall=botVoice.configured===true?botVoice:undefined
+  const callStart=useBotCallStart({call,name:bot.name,language,greeting,shortcut:voiceShortcut,realtime:realtimeCall,
+    available:!thread&&!leadSetup.blocked&&botVoice.configured!==null,
+    ready:realtimeCall?canVoiceCall:canCall})
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
   const mood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
@@ -1465,6 +1472,7 @@ ${currentDraft}`:submitted)
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
     </div>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
+    {!thread&&<BotCallBar call={call} state={callState} name={bot.name} language={language} realtime={realtimeCall}/>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
@@ -1606,9 +1614,7 @@ ${currentDraft}`:submitted)
       {leadSetup.show&&leadSetupBot&&<LeadSetup setup={leadSetup} w={w} choose={agent=>editBot({
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
-      {!thread&&<BotCallControls call={call} state={callState} enabled={canCall&&botVoice.configured===false} name={bot.name} language={language} greeting={greeting} shortcut={voiceShortcut}
-        realtime={botVoice.configured&&canVoiceCall?botVoice:undefined}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} call={callStart.canStart?{label:callStart.label,disabled:!callStart.ready,start:callStart.start}:undefined} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
         onReplaceImage={(id,url)=>setImages(old=>old.map(picture=>picture.id===id?{...picture,url}:picture))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>
     </div>

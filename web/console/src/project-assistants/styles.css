@@ -114,6 +114,7 @@
 .project-assistants .pa-editor textarea { background:transparent;border:0;resize:none;width:100%;height:100%;overflow:hidden; }
 .project-assistants .pa-send { background:#fafafa;color:#080808;border:0;width:34px;height:34px;min-width:34px;border-radius:50%;padding:0;font-size:24px; }
 .project-assistants .pa-send[data-stop] { position:relative;display:grid;place-items:center;flex:none; }
+.project-assistants .pa-send[data-call] { display:grid;place-items:center;flex:none;width:46px;min-width:46px;border-radius:17px; }
 .project-assistants .pa-send[data-stop]:not([data-stop-busy])::before { content:"";width:10px;height:10px;background:currentColor;border-radius:2px; }
 .project-assistants .pa-send:active:not(:disabled) { transform:scale(.94); }
 .project-assistants .pa-send { transition:transform 100ms ease; }
