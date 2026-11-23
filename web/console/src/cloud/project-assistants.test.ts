@@ -791,6 +791,38 @@ test("Cloud Bots wait for the complete command list and use it for roster, chat 
   assert.deepEqual(sent,["project-assistants.list","project-assistants.send-pictures"])
 })
 
+test("a paired Cloud Bot roster recovers when its machine descriptor arrives after the list opens", async()=>{
+  const word = "project-assistants.list"
+  const request: W.ProjectAssistantListRequest = { machine_id: "one", query: "", cursor: "", page_size: 100 }
+  const snapshots = new Map<string, unknown>()
+  let cachedCommands: string[] | undefined
+  let reads = 0
+  const connection = {
+    orchestratorSnapshots: snapshots,
+    machineDescriptor: () => ({ machine: { commands: cachedCommands } }),
+    async _machineRequest(machine: string, command: string) {
+      assert.equal(machine, "one")
+      assert.equal(command, word)
+      reads++
+      return { ...sourceStatus(), items: [rosterFrame().changes![0].summary], next_cursor: "" }
+    },
+  }
+  const relay = capturedAssistantRelayFetch("one", () => connection, [word])
+  const source = make(relay, { ...grant(), apiLevel: 111 }).source
+  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
+  cachedCommands = ["transcript"]
+  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
+  snapshots.set("one", { machine: { platform: "darwin" } })
+  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_offline")
+  assert.equal(reads, 0)
+  snapshots.set("one", { machine: { commands: [word] } })
+  assert.equal((await source.list(request, signal())).items.length, 1)
+  assert.equal(reads, 1)
+  snapshots.set("one", { machine: { commands: ["transcript"] } })
+  await assert.rejects(source.list(request, signal()), e => errorCode(e) === "pa_unsupported")
+  assert.equal(reads, 1)
+})
+
 test("roster is local API71 only and cannot enter the Cloud recorder",async()=>{
   let calls=0
   for(const first of [grant(),{...grant(),apiLevel:71},{...rosterGrant(),apiLevel:70},{...rosterGrant(),apiLevel:undefined}]) {
