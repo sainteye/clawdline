@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14100,
+  "englishKeys": 14104,
   "counts": {
     "negation": 3601,
-    "state": 2374,
+    "state": 2376,
     "permission": 850,
     "deletion": 324,
     "uncertainty": 561
   },
-  "unionCount": 5989,
+  "unionCount": 5991,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3752,6 +3752,8 @@
       "capacityRow.bots.cloud_receipts.full",
       "capacityRow.bots.cloud_receipts.what",
       "capacityRow.bots.cloud_refresh_seconds.what",
+      "capacityRow.bots.config_cache_entries.full",
+      "capacityRow.bots.config_cache_seconds.full",
       "capacityRow.bots.config_choices.full",
       "capacityRow.bots.config_options.full",
       "capacityRow.bots.config_options.what",
@@ -8083,6 +8085,8 @@
     "capacityRow.bots.cloud_receipts.what",
     "capacityRow.bots.cloud_refresh_seconds.full",
     "capacityRow.bots.cloud_refresh_seconds.what",
+    "capacityRow.bots.config_cache_entries.full",
+    "capacityRow.bots.config_cache_seconds.full",
     "capacityRow.bots.config_choices.full",
     "capacityRow.bots.config_options.full",
     "capacityRow.bots.config_options.what",

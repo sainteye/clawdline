@@ -77,6 +77,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.cloud_pending` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.cloud_refresh_seconds` | 20 | `seconds` | `expire` | `diagnostics` | — |
+| `bots.config_cache_entries` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `bots.config_cache_seconds` | 600 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.config_choices` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_options` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.config_probes` | 1 | `rows` | `refuse` | `diagnostics, sender` | — |

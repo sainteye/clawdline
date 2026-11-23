@@ -1458,6 +1458,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.config_cache_entries",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationCacheEntries"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.config_cache_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 600,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxConfigurationCacheSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.config_choices",
     "Class": "buffer",
     "Unit": "rows",
