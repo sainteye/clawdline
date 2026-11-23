@@ -88,6 +88,7 @@
   "usage.wait_exit_2": "  4 a task could not be read; 4 over 3 over 1 over 5",
   "usage.wait_explain_1": "  waits until every task (--any: one) has finished, at most --timeout (default 9m, under a 10m tool call;",
   "usage.wait_explain_2": "  at most 2h), then shows each finished one as task show does and closes its notice;",
+  "view.artifacts_expired": "artifacts:    removed %s, past the %d-day retention; the result and summary are kept\n",
   "view.branch_commits": "branch:       %d delivery commit(s)\n",
   "view.callback_heavy": "heavy work",
   "view.callback_intent": "intent:       %s\n",

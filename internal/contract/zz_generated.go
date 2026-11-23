@@ -449,6 +449,21 @@ type BrokerAddressRow struct {
 	WorkState        WorkState             `json:"work_state"`
 }
 
+// A finished task's artifacts/ was removed because its retention elapsed: 30
+// days after the task ended with its landing settled. result.json, task.json
+// and the landing are kept, so `result` and `summary` still read. Present only
+// on a single task's detail, and only when the reclamation sweep recorded that
+// removal.
+type BrokerArtifactsExpired struct {
+	// When the files were removed, in Unix seconds.
+	At int64 `json:"at"`
+
+	// What the directory held when it was removed, as measured before removal.
+	Bytes            int64  `json:"bytes,omitempty"`
+	Reason           string `json:"reason"`
+	RetentionSeconds int64  `json:"retention_seconds"`
+}
+
 // The five things a Feature Root is briefed with, and nothing else: each
 // 1–8192 bytes, not blank, no NUL; 32768 bytes together.
 type BrokerAssignment struct {
@@ -1235,8 +1250,9 @@ type BrokerReclaimDecision struct {
 	Outcome  BrokerReclaimOutcome   `json:"outcome"`
 	Path     string                 `json:"path"`
 
-	// removed: landed, empty, committed_on_branch, preserved, work_scratch. kept:
-	// task_live, within_grace, owner_present, owner_unknown, path_not_owned,
+	// removed: landed, empty, committed_on_branch, preserved, work_scratch,
+	// artifact_retention_expired. kept: task_live, within_grace, landing_unsettled,
+	// pinned, ended_at_unknown, owner_present, owner_unknown, path_not_owned,
 	// unreadable, nested_repository, filters_present, preserve_failed,
 	// changed_during_sweep, intent_not_recorded, remove_failed.
 	Reason  string               `json:"reason"`
@@ -1346,12 +1362,13 @@ type BrokerReclaimState struct {
 type BrokerReclaimSubject string
 
 const (
-	BrokerReclaimSubjectWorktree BrokerReclaimSubject = "worktree"
-	BrokerReclaimSubjectTaskDir  BrokerReclaimSubject = "task_dir"
+	BrokerReclaimSubjectWorktree      BrokerReclaimSubject = "worktree"
+	BrokerReclaimSubjectTaskDir       BrokerReclaimSubject = "task_dir"
+	BrokerReclaimSubjectTaskArtifacts BrokerReclaimSubject = "task_artifacts"
 )
 
 // BrokerReclaimSubjectValues is every value the contract allows, in contract order.
-var BrokerReclaimSubjectValues = []BrokerReclaimSubject{BrokerReclaimSubjectWorktree, BrokerReclaimSubjectTaskDir}
+var BrokerReclaimSubjectValues = []BrokerReclaimSubject{BrokerReclaimSubjectWorktree, BrokerReclaimSubjectTaskDir, BrokerReclaimSubjectTaskArtifacts}
 
 // POST /v1/orchestrator/tasks/:id/respawn: a spawn_failed task's task.json
 // copied under a fresh id and dispatched. `secret` is the new task's, returned
@@ -1633,9 +1650,10 @@ type BrokerTask struct {
 	// When the child signed for its briefing with its own secret — POST
 	// …/accepted, or accepted.json. The only proof the briefing was read; a tab that
 	// starts a turn proves only that something is running.
-	AcceptedAt     int64                         `json:"accepted_at,omitempty"`
-	Assistant      Assistant                     `json:"assistant"`
-	AssistantQuota *BrokerAssistantQuotaDecision `json:"assistant_quota,omitempty"`
+	AcceptedAt       int64                         `json:"accepted_at,omitempty"`
+	ArtifactsExpired *BrokerArtifactsExpired       `json:"artifacts_expired,omitempty"`
+	Assistant        Assistant                     `json:"assistant"`
+	AssistantQuota   *BrokerAssistantQuotaDecision `json:"assistant_quota,omitempty"`
 
 	// What task.json's `auto_compact_window` asked for: a window, or 0 for its null.
 	// Null when it said nothing and the setting decided.

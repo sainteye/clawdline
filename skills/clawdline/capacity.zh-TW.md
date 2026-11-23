@@ -753,6 +753,7 @@
 | `release.state_file_bytes` | 65536 | `bytes` | `refuse` | `diagnostics` | — |
 | `release.supervisor_runs` | 5 | `rows` | `refuse` | `diagnostics` | — |
 | `release.unpacked_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics` | — |
+| `resources.artifact_seconds` | 2592000 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `resources.cache_bytes` | 4294967296 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.disk_low_free_bytes` | 21474836480 | `bytes` | `coalesce` | `diagnostics, notice` | — |

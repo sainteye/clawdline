@@ -21,7 +21,10 @@ func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading 
 			return capacity.Reading{Known: true, WindowSeconds: taskresource.ScratchRetentionSecondsLimit, Note: "per-completed-owner retention; presence and preservation are checked independently"}
 		},
 		"resources.log_seconds": func() capacity.Reading {
-			return capacity.Reading{Known: true, WindowSeconds: taskresource.LogRetentionSecondsLimit, Note: "non-artifact execution-log retention; retained outputs do not expire"}
+			return capacity.Reading{Known: true, WindowSeconds: taskresource.LogRetentionSecondsLimit, Note: "non-artifact execution-log retention; artifacts follow resources.artifact_seconds"}
+		},
+		capacity.ResourceArtifactRetention: func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: taskresource.ArtifactRetentionSecondsLimit, Note: "per-task artifact retention after the task ended and its landing settled; pins, pending landings, unknown end times and open readers keep the files"}
 		},
 		"resources.page_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-inspection-page admission guard"}

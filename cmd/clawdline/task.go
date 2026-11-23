@@ -880,6 +880,12 @@ func writeTaskView(w io.Writer, t contract.BrokerTask) {
 			fmt.Fprintln(w, cliCopy("task", "view.no_verification", "verification: none reported"))
 		}
 		fmt.Fprintf(w, cliCopy("task", "view.symbols", "symbols:      %d symbols, %d artifacts (--json lists them)\n"), len(r.Symbols), len(r.Artifacts))
+		// Expired files are said, so a listed artifact that is gone does not
+		// read as one that was never written.
+		if x := t.ArtifactsExpired; x != nil {
+			fmt.Fprintf(w, cliCopy("task", "view.artifacts_expired", "artifacts:    removed %s, past the %d-day retention; the result and summary are kept\n"),
+				time.Unix(x.At, 0).Format("2006-01-02"), x.RetentionSeconds/86400)
+		}
 		if r.Status == "failure" {
 			for _, path := range r.Artifacts {
 				fmt.Fprintf(w, cliCopy("task", "view.changed_file", "changed file:  %s\n"), path)

@@ -622,6 +622,9 @@ const (
 	CallbacksPerMachine  = "callback.per_machine"
 	CallbackOutputBytes  = "callback.output_bytes"
 	CallbackTailBytes    = "callback.tail_bytes"
+	// How long a finished, settled task keeps its artifacts/ before the
+	// reclamation sweep takes them (the person's 30 days, 2026-11-23).
+	ResourceArtifactRetention = "resources.artifact_seconds"
 )
 
 // Entry is one row of the register.

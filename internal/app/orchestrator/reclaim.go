@@ -58,6 +58,8 @@ import (
 const (
 	ReclaimWorktree = "worktree"
 	ReclaimTaskDir  = "task_dir"
+	// ReclaimTaskArtifacts (task_resources.go) is a settled task's
+	// artifacts/, past its retention.
 	// ReclaimCallbackFiles is a settled callback's evidence files (callback.go).
 	ReclaimCallbackFiles = "callback_files"
 )
@@ -328,6 +330,11 @@ func (b *Broker) Reclaim(ctx context.Context, dryRun bool) (ReclaimReport, error
 			if !dryRun {
 				b.recordTaskGoCacheDecision(ctx, r, d, rep.At)
 			}
+		}
+		if r.Dir != "" {
+			d := b.reclaimTaskArtifacts(ctx, rd, r, rep.At, dryRun)
+			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
+			b.decide(ctx, &rep, d, dryRun)
 		}
 		if r.Callback != nil {
 			d := b.reclaimCallback(ctx, r, rep.At, dryRun)

@@ -1,7 +1,9 @@
 # Task resources and safe reclamation
 
 Status: the managed service and command path are implemented. The policy is
-24 hours for all terminal scratch and 7 days for non-artifact raw logs. Rebuildable caches have no retention delay after positive completion and idle-use proofs. Existing
+24 hours for all terminal scratch, 7 days for non-artifact raw logs and,
+since the person's decision of 2026-11-23, 30 days for a settled task's
+`artifacts/`. Rebuildable caches have no retention delay after positive completion and idle-use proofs. Existing
 unregistered data remains protected by its original ownership boundary.
 
 The daemon creates callback scratch/cache before launch and provides a separate
@@ -112,8 +114,13 @@ publication generation. A digest is integrity evidence, not an independent claim
 that the task is accepted. Missing files, changed bytes, unsupported links or an
 unfinished publication block reclamation that depends on those files.
 
-An existing result, attachment, source archive, preservation patch, brief or
-Cloud document reference never expires merely because its task is old. Artifact
+A result, source archive, preservation patch, brief or Cloud document
+reference never expires merely because its task is old. A task's `artifacts/`
+does: on 2026-11-23 the person set its retention to 30 days after the task
+ended with its landing settled. Its removal still needs every positive proof
+below, plus a settled landing and no pin; `result.json`, `task.json` and the
+landing stay, and the reclaim record says the files expired
+([disk lifecycle](disk-lifecycle.md)). Artifact
 relocation needs a verified replacement and stable locator resolution before the
 old copy can become disposable. No relocation is needed in the first delivery.
 
@@ -208,7 +215,8 @@ rejecting an unregistered bound before the final green check.
 | Idle managed cache, each / aggregate | 4 GiB eviction target / 16 GiB aggregate admission limit; no retention floor |
 | Other managed scratch, aggregate | 16 GiB |
 | Minimum available filesystem space | 2 GiB |
-| Results, attachments and protected evidence | No automatic deletion |
+| Settled task `artifacts/` | 30 days after completion or the later landing (2026-11-23) |
+| Results and other protected evidence | No automatic deletion |
 
 The person also requested size attribution before further cleanup: identify
 compiled variants, test data, source snapshots, raw logs and protected outputs

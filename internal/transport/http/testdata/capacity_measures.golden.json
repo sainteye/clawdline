@@ -3670,6 +3670,12 @@
     "Note": true
   },
   {
+    "Name": "resources.artifact_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
     "Name": "resources.cache_bytes",
     "Known": true,
     "Note": true

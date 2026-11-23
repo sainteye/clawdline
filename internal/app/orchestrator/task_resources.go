@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -98,7 +99,12 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 					Accepted any
 					Raw      string
 				}{stored, digestGate(raw)})
+				// Expired artifacts are a recorded removal, not unsaved output.
+				_, expired := b.ArtifactsExpired(ctx, id)
 				for _, name := range stored.Artifacts {
+					if expired {
+						break
+					}
 					path := name
 					if !filepath.IsAbs(path) {
 						path = filepath.Join(r.Dir, path)
@@ -398,4 +404,215 @@ func sameSavedResult(disk, stored taskdir.Result) bool {
 	a, ea := json.Marshal(disk)
 	b, eb := json.Marshal(stored)
 	return ea == nil && eb == nil && bytes.Equal(a, b)
+}
+
+// Task artifacts expire. The person decided on 2026-11-23 that a finished
+// task keeps artifacts/ for taskresource.ArtifactRetentionSecondsLimit (30
+// days) after it ended and its landing settled. Only artifacts/ goes: the
+// brief, result.json and the landing stay, so `task show` still has the
+// summary, and the standing reclaim row says the files expired rather than
+// that there never were any.
+const (
+	// ReclaimTaskArtifacts is a finished task's artifacts/ directory.
+	ReclaimTaskArtifacts = "task_artifacts"
+	// WhyArtifactRetention: removed because the retention elapsed.
+	WhyArtifactRetention = "artifact_retention_expired"
+	// WhyLandingUnsettled: the task still owes a landing, or has a branch
+	// and no landing record at all.
+	WhyLandingUnsettled = "landing_unsettled"
+	// WhyPinned: a registered resource of this task is pinned.
+	WhyPinned = "pinned"
+	// WhyEndUnknown: the task's end time cannot be read.
+	WhyEndUnknown = "ended_at_unknown"
+)
+
+// artifactRetention is the bound as a duration.
+func artifactRetention() time.Duration {
+	return time.Duration(taskresource.ArtifactRetentionSecondsLimit) * time.Second
+}
+
+// artifactRetentionState is whether a terminal state is one the person named:
+// success, failure, cancelled or spawn_failed. A timeout's child may still be
+// working, so its files stay.
+func artifactRetentionState(s State) bool {
+	switch s {
+	case StateSuccess, StateFailure, StateCancelled, StateSpawnFailed:
+		return true
+	}
+	return false
+}
+
+// landingSettled is whether nothing is still owed: landed, incorporated,
+// nothing to land or abandoned. A task with no landing record is settled only
+// when it never had a branch to land.
+func landingSettled(r Record) bool {
+	if r.Landing == nil {
+		return r.Worktree == nil
+	}
+	switch r.Landing.State {
+	case LandingLanded, LandingIncorporated, LandingNothingToLand, LandingAbandoned:
+		return true
+	}
+	return false
+}
+
+// taskPinned answers whether any registered resource of the task is pinned.
+// A page that cannot be read, or more than one page, is not a "no".
+func (b *Broker) taskPinned(ctx context.Context, id string) (pinned bool, known bool) {
+	rows, next, err := b.Store.TaskResourcesByOwnerPage(ctx, "task", id, "")
+	if err != nil || next != "" {
+		return false, false
+	}
+	for _, r := range rows {
+		if r.Pinned {
+			return true, true
+		}
+	}
+	return false, true
+}
+
+// reclaimTaskArtifacts decides about one task's artifacts/. Within the
+// retention it says nothing at all: a young directory is not a decision worth
+// a row. Past it, a removal rests on the same positive answers reclaimTaskDir
+// needs — owned path, owner gone, nothing reading the files, a stable tree —
+// plus a settled landing and no pin, all asked again after the intent is
+// recorded.
+func (b *Broker) reclaimTaskArtifacts(ctx context.Context, rd reading, r Record, now time.Time, dryRun bool) ReclaimDecision {
+	dir := filepath.Join(r.Dir, "artifacts")
+	if !r.State.Terminal() || !dirExists(dir) {
+		return ReclaimDecision{}
+	}
+	if !artifactRetentionState(r.State) {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyLive, nil)
+	}
+	if r.FinishedAt.IsZero() {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyEndUnknown, nil)
+	}
+	retention := artifactRetention()
+	at := ended(r)
+	if now.Sub(at) < retention {
+		return ReclaimDecision{}
+	}
+	evidence := map[string]any{"ended_at": at.Unix(), "retention_seconds": int(retention.Seconds())}
+	if !landingSettled(r) {
+		if r.Landing != nil {
+			evidence["landing"] = string(r.Landing.State)
+		}
+		return kept(r, ReclaimTaskArtifacts, dir, WhyLandingUnsettled, evidence)
+	}
+	if !ownedPath(b.Tasks.Dir, r.Dir, r.ID) || !ownedPath(r.Dir, dir, "artifacts") {
+		evidence["root"] = b.Tasks.Dir
+		return kept(r, ReclaimTaskArtifacts, dir, WhyPathNotOwned, evidence)
+	}
+	if pinned, known := b.taskPinned(ctx, r.ID); !known {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyUnreadable, evidence)
+	} else if pinned {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyPinned, evidence)
+	}
+	checkout := ""
+	if r.Worktree != nil {
+		checkout = r.Worktree.Path
+	}
+	gone, why, owner := b.artifactOwnerGone(ctx, rd, r, checkout)
+	if !gone {
+		evidence["owner"] = owner
+		return kept(r, ReclaimTaskArtifacts, dir, why, evidence)
+	}
+	evidence["owner"] = owner
+	snapshot, err := resourcefs.InspectLegacyScratch(ctx, dir)
+	if err != nil {
+		evidence["tree"] = "unverified"
+		return kept(r, ReclaimTaskArtifacts, dir, WhyUnreadable, evidence)
+	}
+	if presence := b.resourceUsePresence(ctx, dir); presence != "absent" {
+		why := WhyOwnerUnknown
+		if presence == "present" {
+			why = WhyOwnerPresent
+		}
+		evidence["open_files"] = presence
+		return kept(r, ReclaimTaskArtifacts, dir, why, evidence)
+	}
+	bytes := snapshot.Logical
+	if snapshot.AllocationKnown {
+		bytes = snapshot.Allocated
+	}
+	d := ReclaimDecision{Task: r.ID, Subject: ReclaimTaskArtifacts, Path: dir, Reason: WhyArtifactRetention,
+		Bytes: bytes, Evidence: evidence}
+	if dryRun {
+		d.Outcome = ReclaimWouldRemove
+		return d
+	}
+	intent := d
+	intent.Outcome = reclaimRemoving
+	if err := b.markReclaim(ctx, intent, b.now()); err != nil {
+		evidence["intent"] = err.Error()
+		return kept(r, ReclaimTaskArtifacts, dir, WhyUnrecorded, evidence)
+	}
+	// Every proof again, after the intent: the record, the landing, the
+	// pins, the owner, the tree and the readers.
+	current, _, err := b.Record(ctx, r.ID)
+	if err != nil || !current.State.Terminal() || !landingSettled(current) || ended(current) != at {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyChanged, evidence)
+	}
+	if pinned, known := b.taskPinned(ctx, r.ID); !known || pinned {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyChanged, evidence)
+	}
+	if gone, why, _ := b.artifactOwnerGone(ctx, b.read(ctx), current, checkout); !gone {
+		return kept(r, ReclaimTaskArtifacts, dir, why, evidence)
+	}
+	tree, err := resourcefs.InspectLegacyScratch(ctx, dir)
+	if err != nil || tree.Digest != snapshot.Digest {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyChanged, evidence)
+	}
+	if b.resourceUsePresence(ctx, dir) != "absent" {
+		return kept(r, ReclaimTaskArtifacts, dir, WhyOwnerUnknown, evidence)
+	}
+	remove := b.removeTaskScratch
+	if remove == nil {
+		remove = removeOwned
+	}
+	if err := remove(r.Dir, dir, "artifacts"); err != nil {
+		evidence["remove"] = err.Error()
+		return kept(r, ReclaimTaskArtifacts, dir, WhyRemoveFailed, evidence)
+	}
+	d.Outcome = ReclaimRemoved
+	return d
+}
+
+// artifactOwnerGone is ownerGone for a child, and for a callback — which has
+// no tab — its own lock and process-group answer followed by the same kernel
+// reading of who works inside the directory.
+func (b *Broker) artifactOwnerGone(ctx context.Context, rd reading, r Record, checkout string) (bool, string, map[string]any) {
+	if r.Callback == nil {
+		return b.ownerGone(ctx, rd, r, r.Dir, checkout)
+	}
+	evidence := map[string]any{"callback": b.callbackResourcePresence(r)}
+	switch evidence["callback"] {
+	case "absent":
+	case "present":
+		return false, WhyOwnerPresent, evidence
+	default:
+		return false, WhyOwnerUnknown, evidence
+	}
+	inside, err := b.occupied(ctx, r.Dir)
+	if err != nil {
+		evidence["process_table"] = err.Error()
+		return false, WhyOwnerUnknown, evidence
+	}
+	if inside != "" {
+		evidence["working_inside"] = inside
+		return false, WhyOwnerPresent, evidence
+	}
+	return true, "", evidence
+}
+
+// ArtifactsExpired is the standing record that a task's artifacts/ was
+// removed because its retention elapsed, and whether there is one. A read
+// that fails is "no record", never a claim that the files expired.
+func (b *Broker) ArtifactsExpired(ctx context.Context, id string) (store.Reclaim, bool) {
+	row, err := b.Store.ReclaimOf(ctx, id, ReclaimTaskArtifacts)
+	if err != nil || row.Outcome != ReclaimRemoved || row.Reason != WhyArtifactRetention {
+		return store.Reclaim{}, false
+	}
+	return row, true
 }

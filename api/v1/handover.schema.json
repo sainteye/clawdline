@@ -249,7 +249,7 @@
         "at": { "type": "integer" }
       }
     },
-    "BrokerReclaimSubject": { "type": "string", "enum": ["worktree", "task_dir"] },
+    "BrokerReclaimSubject": { "type": "string", "enum": ["worktree", "task_dir", "task_artifacts"] },
     "BrokerReclaimOutcome": {
       "description": "`removing` is the intent recorded before a removal is attempted; the `would_` pair is a dry run's.",
       "type": "string",
@@ -297,7 +297,7 @@
         "subject": { "$ref": "#/$defs/BrokerReclaimSubject" },
         "path": { "type": "string" },
         "outcome": { "$ref": "#/$defs/BrokerReclaimOutcome" },
-        "reason": { "description": "removed: landed, empty, committed_on_branch, preserved, work_scratch. kept: task_live, within_grace, owner_present, owner_unknown, path_not_owned, unreadable, nested_repository, filters_present, preserve_failed, changed_during_sweep, intent_not_recorded, remove_failed.", "type": "string" },
+        "reason": { "description": "removed: landed, empty, committed_on_branch, preserved, work_scratch, artifact_retention_expired. kept: task_live, within_grace, landing_unsettled, pinned, ended_at_unknown, owner_present, owner_unknown, path_not_owned, unreadable, nested_repository, filters_present, preserve_failed, changed_during_sweep, intent_not_recorded, remove_failed.", "type": "string" },
         "bytes": { "type": "integer" },
         "evidence": { "$ref": "#/$defs/BrokerReclaimEvidence" }
       }

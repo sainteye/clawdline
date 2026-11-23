@@ -227,6 +227,7 @@
         "completion_delivery": { "$ref": "#/$defs/BrokerNotice" },
         "progress": { "type": "array", "items": { "$ref": "#/$defs/BrokerProgressNote" } },
         "result": { "$ref": "#/$defs/BrokerResult" },
+        "artifacts_expired": { "$ref": "#/$defs/BrokerArtifactsExpired" },
         "summary": { "type": "string" },
         "spawn_error": { "type": "string" },
         "executor": { "$ref": "#/$defs/BrokerExecutor" },
@@ -234,6 +235,18 @@
         "respawn_generation": { "type": "integer" },
         "auto_compact_window": { "description": "The context size in tokens this child was launched to compact at — task.json's `auto_compact_window` when it named one, the machine's `claude_auto_compact_window` otherwise — and 0 when none was applied. Null for a Codex task, which is never given one, and for a task not launched yet.", "nullable": true, "type": "integer" },
         "auto_compact_requested": { "description": "What task.json's `auto_compact_window` asked for: a window, or 0 for its null. Null when it said nothing and the setting decided.", "nullable": true, "type": "integer" }
+      }
+    },
+    "BrokerArtifactsExpired": {
+      "description": "A finished task's artifacts/ was removed because its retention elapsed: 30 days after the task ended with its landing settled. result.json, task.json and the landing are kept, so `result` and `summary` still read. Present only on a single task's detail, and only when the reclamation sweep recorded that removal.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "reason", "retention_seconds"],
+      "properties": {
+        "at": { "description": "When the files were removed, in Unix seconds.", "type": "integer" },
+        "reason": { "type": "string", "enum": ["artifact_retention_expired"] },
+        "bytes": { "description": "What the directory held when it was removed, as measured before removal.", "type": "integer" },
+        "retention_seconds": { "type": "integer" }
       }
     },
     "BrokerChild": {
