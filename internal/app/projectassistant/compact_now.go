@@ -55,12 +55,8 @@ func (r *Engine) admitCompaction(ctx context.Context, a *runtimeActor, bot pa.Bo
 	return nil
 }
 
-// withPriorUsage gives a manual compaction the numbers the person saw: the
-// before is the last turn's stored reading, taken while the Bot was idle and
-// before the request, and the after is the agent's reading after the
-// compaction, else this turn's last reading. The order the agent reports in
-// does not matter: Codex (codex-acp 2.6.0) sends the post-compaction usage
-// before its compaction_update, which made that reading look like the before.
+// withPriorUsage fills a manual compaction's "before" from the last turn's
+// stored reading when the agent reported only the reading after it.
 func withPriorUsage(notice *pa.Message, session ProviderSession, prior pa.ContextSample) *pa.Message {
 	if notice == nil {
 		return nil
@@ -70,14 +66,10 @@ func withPriorUsage(notice *pa.Message, session ProviderSession, prior pa.Contex
 		return notice
 	}
 	state := reader.NativeContext()
-	after := state.CompactedAfter
-	if after <= 0 && state.UsageKnown {
-		after = state.UsedTokens
-	}
-	if prior.UsedTokens <= 0 || after <= 0 || after >= prior.UsedTokens {
+	if state.CompactedBefore > 0 || prior.UsedTokens <= 0 || state.CompactedAfter <= 0 || state.CompactedAfter >= prior.UsedTokens {
 		return notice
 	}
-	state.CompactedBefore, state.CompactedAfter = prior.UsedTokens, after
+	state.CompactedBefore = prior.UsedTokens
 	out := *notice
 	out.Text = compactionNoticeText(state)
 	return &out

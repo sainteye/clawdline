@@ -16,11 +16,7 @@ import (
 type compactingSession struct {
 	*runtimeSession
 	report *atomic.Bool
-	// usageFirst scripts Codex's order: the reading after the compaction
-	// arrives before its compaction_update, so the agent reports that reading
-	// as the "before" and nothing after it.
-	usageFirst *atomic.Bool
-	mu         sync.Mutex
+	mu     sync.Mutex
 	turn   string
 	fence  pa.Fence
 	comp   bool
@@ -40,26 +36,16 @@ func (s *compactingSession) NativeContext() NativeContextState {
 	if s.comp {
 		state.UsedTokens = 30_000
 		state.CompactedTurnID, state.Compactions, state.CompactedAfter = s.turn, 1, 30_000
-		if s.usageFirst != nil && s.usageFirst.Load() {
-			state.CompactedBefore, state.CompactedAfter = 30_000, 0
-		}
 	}
 	return state
 }
 
 func newCompactFixture(t *testing.T) (*runtimeFixture, *atomic.Bool) {
-	f, report, _ := newOrderedCompactFixture(t)
-	return f, report
-}
-
-func newOrderedCompactFixture(t *testing.T) (*runtimeFixture, *atomic.Bool, *atomic.Bool) {
 	f := newRuntimeFixture(t)
-	report, usageFirst := &atomic.Bool{}, &atomic.Bool{}
+	report := &atomic.Bool{}
 	report.Store(true)
-	f.provider.wrap = func(s *runtimeSession) ProviderSession {
-		return &compactingSession{runtimeSession: s, report: report, usageFirst: usageFirst}
-	}
-	return f, report, usageFirst
+	f.provider.wrap = func(s *runtimeSession) ProviderSession { return &compactingSession{runtimeSession: s, report: report} }
+	return f, report
 }
 
 func (f *runtimeFixture) compact(id string) (pa.Receipt, error) {
@@ -209,33 +195,4 @@ func TestCompactNowWithTheSameKeyRunsOnce(t *testing.T) {
 	if f.provider.count() != 2 {
 		t.Fatalf("opens=%d", f.provider.count())
 	}
-}
-
-// Live Codex (codex-acp 2.6.0, 2026-11-23) sent the post-compaction usage
-// before compaction_update, so the notice said only "summarized" although the
-// meter had read 28.7K before and 27.4K after. The before of a manual
-// compaction is the reading the person saw before asking; the after is the
-// turn's last reading.
-func TestCompactNowShowsBeforeAndAfterWhenUsageArrivesFirst(t *testing.T) {
-	f, _, usageFirst := newOrderedCompactFixture(t)
-	finishOrdinaryTurn(t, f, "one")
-	usageFirst.Store(true)
-	receipt, err := f.compact("compact-usage-first")
-	if err != nil {
-		t.Fatal(err)
-	}
-	receivePrompt(t, f.provider)
-	f.provider.session().reply <- PromptResult{}
-	awaitTurn(t, f, receipt.ResourceID, pa.TurnSucceeded)
-	f.store.mu.Lock()
-	defer f.store.mu.Unlock()
-	for _, m := range f.store.messages {
-		if m.ID == compactionNoticePrefix+receipt.ResourceID {
-			if !strings.Contains(m.Text, "120K → 30K") {
-				t.Fatalf("notice without before and after: %q", m.Text)
-			}
-			return
-		}
-	}
-	t.Fatal("no summarized notice")
 }
