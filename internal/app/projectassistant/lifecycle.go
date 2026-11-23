@@ -143,6 +143,9 @@ pendingTurns:
 		// A planned restart retains only the original queue identity whose
 		// execution has not started, or whose no-effect refusal was durably
 		// proved and cleaned up. Running/unknown work never takes this path.
+		if field == RestartField && unstartedExchangeReply(t) {
+			continue
+		}
 		if field == RestartField && t.State == pa.TurnQueued && t.QueueEditID != "" {
 			continue
 		}
@@ -223,7 +226,7 @@ pendingTurns:
 			return err
 		}
 	}
-	if p, ok := repo.(CollaborationRepository); ok && !permissionWaitsOnly {
+	if p, ok := repo.(CollaborationRepository); ok && !permissionWaitsOnly && field != RestartField {
 		return p.DropExchangeReplies(ctx, key, clock())
 	}
 	return nil

@@ -525,29 +525,34 @@ func collaborationWaitingReplyFixture(t *testing.T) (*Store, pa.Bot, pa.Exchange
 }
 
 func TestCollaborationStopDropsAndRestartKeepsWaitingReply(t *testing.T) {
-	for _, restart := range []bool{false, true} {
-		t.Run(fmt.Sprint("restart=", restart), func(t *testing.T) {
+	for _, phase := range []string{"stop", "shutdown", "recovery"} {
+		t.Run(phase, func(t *testing.T) {
 			s, a, x := collaborationWaitingReplyFixture(t)
-			if restart {
+			n := 0
+			id := func() string { n++; return fmt.Sprint("quiesce-source-", n) }
+			switch phase {
+			case "shutdown":
+				if err := app.QuiesceHistoryFor(testContext, s, time.Now, id, a.Key, app.RestartField); err != nil {
+					t.Fatal(err)
+				}
+			case "stop":
+				if err := app.QuiesceHistory(testContext, s, time.Now, id, a.Key); err != nil {
+					t.Fatal(err)
+				}
+			case "recovery":
 				peer := &recoveryPeer{sent: make(chan app.PromptRequest, 1), result: make(chan app.PromptResult)}
 				r := recoveryEngine(t, s, a, peer)
 				if err := r.Recover(testContext, a.Key); err != nil {
 					t.Fatal(err)
 				}
 				if peer.opens.Load() != 0 || peer.sends.Load() != 0 {
-					t.Fatal("restart invoked native work", peer.opens.Load(), peer.sends.Load())
-				}
-			} else {
-				n := 0
-				id := func() string { n++; return fmt.Sprint("stop-source-", n) }
-				if err := app.QuiesceHistory(testContext, s, time.Now, id, a.Key); err != nil {
-					t.Fatal(err)
+					t.Fatal("recovery invoked native work", peer.opens.Load(), peer.sends.Load())
 				}
 			}
 			// An explicit Stop drops the unstarted reply; a restart keeps it
 			// waiting for queue space, as Codync resumes reply turns.
 			want := "dropped"
-			if restart {
+			if phase != "stop" {
 				want = "waiting"
 			}
 			got, err := s.Exchange(testContext, a.Key, x.ID)

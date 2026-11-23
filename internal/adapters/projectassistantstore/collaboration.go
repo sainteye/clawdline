@@ -608,6 +608,14 @@ func exchangeReplyTurn(a aggregate, x pa.Exchange) *pa.Turn {
 	return &pa.Turn{ID: x.ReplyTurnID, Fence: exchangeFence(a), MessageID: x.ID + "-reply-input", State: pa.TurnQueued, Origin: pa.BotReplyOrigin, ExchangeID: x.ID, Hops: x.Hops, IdempotencyKey: x.ID + "-reply"}
 }
 
+// HasPendingExchangeReply looks only at the sender's pending delivery index.
+func (s *Store) HasPendingExchangeReply(ctx context.Context, key pa.BotKey) (bool, error) {
+	var pending bool
+	err := s.db.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM project_assistant_exchanges
+		WHERE machine=? AND source=? AND json_extract(CAST(data AS TEXT),'$.delivery') IN ('waiting','queued'))`, key.MachineID, key.BotID).Scan(&pending)
+	return pending, err
+}
+
 // Promotion is only a local transfer from a durable completed result into
 // available chat queue space. It cannot repeat the recipient invocation.
 func (s *Store) PromoteExchangeReply(ctx context.Context, key pa.BotKey, at time.Time) (bool, error) {
@@ -658,7 +666,7 @@ func (s *Store) PromoteExchangeReply(ctx context.Context, key pa.BotKey, at time
 	return true, s.commitRoster(ctx, tx, key.MachineID)
 }
 
-// Explicit Stop/restart drops source replies which had no queue space yet.
+// Explicit Stop drops source replies which had no queue space yet.
 // The completed payload survives in both the exchange and historical notices.
 func (s *Store) DropExchangeReplies(ctx context.Context, key pa.BotKey, at time.Time) error {
 	unlock := s.lock(key)

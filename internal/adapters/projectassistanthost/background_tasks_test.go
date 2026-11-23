@@ -198,3 +198,74 @@ func TestCollaborationBackgroundRecipientCanAnswerItsOwnChat(t *testing.T) {
 		return err == nil && got.Outcome == pa.ExchangeCompleted && got.Delivery == "delivered"
 	})
 }
+
+func TestHostRestartDeliversInterruptedBotRequestStatus(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Limits.MaxProcesses = 2
+	f.start(t)
+	f.enable(t)
+	a, b := f.create(t, "requester"), f.create(t, "recipient")
+	if _, err := f.send(t, a, "Ask the peer."); err != nil {
+		t.Fatal(err)
+	}
+	sender := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	tools, ok := sender.q.Tools.(interface {
+		MessageBot(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	})
+	if !ok {
+		t.Fatal("sender cannot start an exchange")
+	}
+	x, err := tools.MessageBot(ctx, pa.BotMessageRequest{
+		TargetBotID: b.Key.BotID, Text: "Check one synthetic fact.", IdempotencyKey: "check",
+	})
+	if err != nil || x.RequestWorkerID == "" {
+		t.Fatalf("request was not assigned to a background worker: %+v, %v", x, err)
+	}
+	sender.reply <- app.PromptResult{FinalText: "I asked the peer."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, a.Key, x.SourceTurnID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	f.h.tickBackgroundTasks(ctx)
+	fixtureReceive(t, f.p.sessions)
+	request := fixtureReceive(t, f.p.sent)
+	if request.Turn.ID != x.RequestTurnID || request.Turn.Origin != pa.BotRequestOrigin {
+		t.Fatalf("unexpected request: %+v", request.Turn)
+	}
+
+	if err := f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stopped, err := f.h.store.Exchange(ctx, a.Key, x.ID)
+	if err != nil || stopped.Outcome != pa.ExchangeUnknown || stopped.Delivery != "queued" || stopped.Reply != "" {
+		t.Fatalf("shutdown did not preserve the interrupted request status: %+v, %v", stopped, err)
+	}
+	turn, err := f.h.store.Turn(ctx, a.Key, stopped.ReplyTurnID)
+	if err != nil || turn.State != pa.TurnQueued || turn.StartedAt != nil {
+		t.Fatalf("unexpected status turn at shutdown: %+v, %v", turn, err)
+	}
+
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	replySession := fixtureReceive(t, f.p.sessions)
+	reply := fixtureReceive(t, f.p.sent)
+	if replySession.q.Bot.Key != a.Key || reply.Turn.ID != stopped.ReplyTurnID || reply.Turn.Origin != pa.BotReplyOrigin ||
+		!strings.Contains(reply.Text, "did not finish") || !strings.Contains(reply.Text, "Do not resend the request") {
+		t.Fatalf("restart did not send the original status to the sender: %+v", reply.Turn)
+	}
+	replySession.reply <- app.PromptResult{FinalText: "The peer did not finish."}
+	fixtureEventually(t, func() bool {
+		got, err := f.h.store.Exchange(ctx, a.Key, x.ID)
+		return err == nil && got.Outcome == pa.ExchangeUnknown && got.Delivery == "delivered"
+	})
+	worker, err := f.h.store.Turn(ctx, x.Recipient().Key, x.RequestTurnID)
+	if err != nil || worker.State != pa.TurnUnknown || worker.Failure == nil || worker.Failure.Field != app.RestartField {
+		t.Fatalf("restart altered the interrupted request: %+v, %v", worker, err)
+	}
+	if opens := f.p.opens.Load(); opens != 3 {
+		t.Fatalf("restart opened extra provider sessions: %d", opens)
+	}
+}
