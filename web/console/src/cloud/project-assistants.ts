@@ -826,11 +826,11 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
       if (!client) throw failure("pa_offline")
       if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
       const advertised=machineCommands(client,machineID)
-      // A saved descriptor can be stale or incomplete. Keep the read retryable
+      // A saved descriptor can be stale or incomplete. Keep the roster retryable
       // until this connection has opened the machine's command advertisement.
       if (advertised.incomplete) throw failure("pa_offline")
       if (!advertised.commands?.includes(request.word)) {
-        throw failure(request.kind === "read" && !advertised.fromSnapshot ? "pa_offline" : "pa_unsupported")
+        throw failure(request.word === "project-assistants.list" && !advertised.fromSnapshot ? "pa_offline" : "pa_unsupported")
       }
       if(request.word==="project-assistants.send-pictures"){
         // AES-GCM adds its 16-byte authentication tag to the complete plaintext.

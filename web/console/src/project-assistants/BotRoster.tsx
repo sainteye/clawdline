@@ -11,6 +11,9 @@ import { PaMenu, type PaMenuAnchor, type PaMenuItem } from "./PaMenu"
 import { ProjectMark } from "./ProjectMark"
 import { projectKey, pinnedGroupKey } from "./roster-groups"
 import { LoadingSkeleton } from "../LoadingSkeleton"
+import { strings } from "../legacy/bridge.js"
+import { usePullToRefresh } from "../session/use-pull-to-refresh"
+import type { Swipes } from "../session/swipe"
 import { useShowAfter } from "./PaLoading"
 import type { SourceClient } from "./client"
 import { Groups, groupWord } from "./Groups"
@@ -23,7 +26,7 @@ import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,leadOptions,preferredLead,onPreferLead}: {
   leadOptions?:PaOption[];preferredLead?:string;onPreferLead?:(key:string)=>void;
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
@@ -32,10 +35,15 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   onOpenGroup?:(key:W.ProjectAssistantBotKey)=>void;onGroupOpenChange?:(open:boolean)=>void;groupRoute?:string|null;onGroupBack?:()=>boolean;rosterScope:string;items:W.ProjectAssistantBotSummary[];machines:readonly string[];selected:string|null;query:string;onQuery:(s:string)=>void;machine:string;onMachine:(s:string)=>void;
   onSelect:(i:W.ProjectAssistantBotSummary,fromGroup?:boolean)=>void;onCreate?:()=>void;onClose:()=>void;w:Words;language:string;loading:boolean;
   current?:()=>readonly SourceClient[];readerID?:string;onRead?:(source:SourceClient)=>Promise<void>;
-  unavailable?:boolean;onRetry?:()=>void;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
+  unavailable?:boolean;onRetry?:()=>void;onRefresh?:()=>Promise<void>;onMore?:()=>void;projectNames:ReadonlyMap<string,string>;projectIcons?:ReadonlyMap<string,W.Icon>;machineNames?:ReadonlyMap<string,string>;hidden?:ReactNode;sources?:readonly SourceClient[];groupsItems?:readonly W.ProjectAssistantBotSummary[]
 }) {
   const {state: rosterState, problem, update} = useRosterState(rosterScope)
   const root=useRef<HTMLElement>(null)
+  const scroll=useRef<HTMLDivElement>(null),pullPad=useRef<HTMLDivElement>(null)
+  const [swipe]=useState<Pick<Swipes,"axis">>(()=>({
+    axis:()=>root.current?.dataset.rosterDragging?"row":"undecided",
+  }))
+  const pullWord=usePullToRefresh(scroll,pullPad,()=>onRefresh?.(),swipe)
   const draft = useRef<RosterState|null>(null)
   const pinAtStart=useRef<{item:W.ProjectAssistantBotSummary;value:boolean}|null>(null)
   const started=useRef(rosterState)
@@ -235,7 +243,10 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
             </div>}
             {several&&<PaSelect compact ariaLabel={w.machine} value={machine} onChange={onMachine} options={[{value:"",label:w.allMachines},...machines.map(m=>({value:m,label:named(m)}))]}/>}
           </div>}
-          <div className="pa-roster-scroll">
+          <div className="pa-roster-scroll" ref={scroll}>
+            <div className="ptr" ref={pullPad}>
+              <span>{pullWord==="release"?strings.webPullRelease:pullWord==="busy"?strings.webPullBusy:strings.webPull}</span>
+            </div>
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
             {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
             {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}

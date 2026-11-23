@@ -11,7 +11,7 @@ export function usePullToRefresh(
   scrollRef: RefObject<HTMLDivElement | null>,
   padRef: RefObject<HTMLDivElement | null>,
   refresh: () => void | Promise<void>,
-  swipe: Swipes = swipes,
+  swipe: Pick<Swipes, "axis"> = swipes,
 ): "pull" | "release" | "busy" {
   const [word, setWord] = useState<"pull" | "release" | "busy">("pull")
   const refreshRef = useRef(refresh)

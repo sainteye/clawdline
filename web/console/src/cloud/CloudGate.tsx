@@ -597,7 +597,6 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
   }, [])
   const [clientEpoch, setClientEpoch] = useState(0)
   const [assistantRefresh, setAssistantRefresh] = useState(0)
-  useEffect(() => onStatusRefresh(() => setAssistantRefresh(n => n + 1)),[])
   const assistantRegistry = useMemo(() => who?.account ? new ProjectAssistantRegistry(who.account,who.account) : null,[who?.account])
   const assistantRegistryRef = useRef(assistantRegistry)
   const [assistantWorkIntent,setAssistantWorkIntent] = useState<AssistantWorkIntent | null>(null)
@@ -742,6 +741,12 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       },
     )
   }, [])
+
+  useEffect(() => onStatusRefresh(() => {
+    line.current?.retry()
+    listMachines()
+    setAssistantRefresh(n => n + 1)
+  }), [listMachines])
 
   // A machine leaves "current" by staying quiet, which is no event, so the list
   // was worked out again only when another machine spoke, and a page whose other

@@ -47,7 +47,7 @@ try{
  await connect()
  const hasWindow = '!!document.querySelector(".pa-window")'
  const hasRows = '!!document.querySelector(".pa-window button[data-bot-key]")'
- const unavailable = '!!document.querySelector(".pa-window .pa-empty[role=status]")'
+ const unavailable = '!!document.querySelector(".pa-window .pa-roster-unavailable [role=status]")'
  for(const language of ["en","zh-Hant"]){
   const zh=language==="zh-Hant",orb=zh?"所有 Bots":"All Bots",collapse=zh?"收起 Bots":"Collapse Bots"
   for(const scenario of ["disabled","offline","unsupported","unpaired","held-list","failed-list","denied-list","revoked"]){
@@ -127,6 +127,36 @@ try{
  assert.ok(await evaluate('(()=>{const b=document.querySelector(".pa-dock").getBoundingClientRect();return b.left>=0&&b.top>=0&&b.right<=innerWidth&&b.bottom<=innerHeight})()'),"dock outside phone viewport")
  await browser("close");tab=undefined
  results.push({language:"zh-Hant",scenario:"footer-refresh",passed:true})
+ await browser("open",origin+"/?lang=zh-Hant")
+ await browser("viewport","mobile")
+ await send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:1},session)
+ await until('!!document.querySelector(".pa-dock:enabled")',"Bots dock did not load for gesture")
+ await browser("click","所有 Bots")
+ const rows = '[...document.querySelectorAll(".pa-roster-scroll [data-bot-key]")].map(row=>row.dataset.botKey).sort()'
+ await until(`new Set((${rows}).map(key=>JSON.parse(key)[0])).size===2`,"both fixture machines must have visible Bots")
+ const originalRows=await evaluate(rows)
+ await evaluate('window.fixtureHost.holdStatus();window.fixtureHost.listMode("hold")')
+ const start=await evaluate('(()=>{const rect=document.querySelector(".pa-roster-scroll").getBoundingClientRect();return {x:Math.round(rect.left+rect.width/2),y:Math.round(rect.top+16)}})()')
+ const touch=(type,touchPoints=[])=>send("Input.dispatchTouchEvent",{type,touchPoints},session)
+ const pull=async()=>{
+  await touch("touchStart",[start])
+  await touch("touchMove",[{...start,y:start.y+45}])
+  await touch("touchMove",[{...start,y:start.y+190}])
+  await touch("touchEnd")
+ }
+ await pull()
+ await until('document.querySelector(".pa-roster-scroll .ptr")?.style.height === "34px"',"releasing a pull did not show the refresh indicator")
+ await until('new Set(window.fixtureHost.log.filter(row=>row.method==="list-unavailable").map(row=>row.machine)).size===2',"pull did not begin a roster read for each machine")
+ assert.deepEqual(await evaluate(rows),originalRows,"existing lists vanished while refreshing")
+ const pending=await evaluate('window.fixtureHost.log.filter(row=>row.method==="list-unavailable").length')
+ await pull()
+ assert.equal(await evaluate('window.fixtureHost.log.filter(row=>row.method==="list-unavailable").length'),pending,"a second pull duplicated the pending reads")
+ await evaluate('window.fixtureHost.listMode("ready");window.fixtureHost.releaseStatus()')
+ await until('document.querySelector(".pa-roster-scroll .ptr")?.style.height === "0px"',"the refresh indicator outlived the roster reads")
+ assert.deepEqual(await evaluate(rows),originalRows)
+ assert.equal(await evaluate(hasWindow),true,"the gesture closed the Bots window")
+ await browser("close");tab=undefined
+ results.push({language:"zh-Hant",scenario:"bots-pull-to-refresh",passed:true})
  console.log(JSON.stringify(results))
 }finally{
  if(tab&&send)await browser("close").catch(e=>console.error(e.message))
