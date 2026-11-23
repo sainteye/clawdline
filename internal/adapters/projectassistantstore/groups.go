@@ -83,11 +83,22 @@ func (GroupInstaller) Install(ctx context.Context, db *sql.DB) error {
 // it commits.
 type GroupStore struct {
 	db *sql.DB
+	// reader, when set, answers the Bots roster's group previews on the
+	// query-only pool so a held writer cannot stall the roster.
+	reader *sql.DB
 	// hook, when set by a test, fails a write at the named stage.
 	hook func(stage string) error
 }
 
 func NewGroupStore(db *sql.DB) *GroupStore { return &GroupStore{db: db} }
+
+// WithReader routes GroupPreviews, a single-statement snapshot read, to the
+// query-only pool on the same WAL file. Writes and read-decide-write paths
+// keep the writer.
+func (s *GroupStore) WithReader(reader *sql.DB) *GroupStore {
+	s.reader = reader
+	return s
+}
 
 func (s *GroupStore) at(stage string) error {
 	if s.hook == nil {
@@ -170,7 +181,11 @@ func (s *GroupStore) GroupPreviews(ctx context.Context, machine string, byteBudg
 	}
 	// Window only lengths/keys first. Optional data returned to Go is bounded
 	// by the caller's existing read budget, even with many large room lines.
-	rows, err := s.db.QueryContext(ctx, `WITH sizes AS MATERIALIZED (
+	db := s.db
+	if s.reader != nil {
+		db = s.reader
+	}
+	rows, err := db.QueryContext(ctx, `WITH sizes AS MATERIALIZED (
  SELECT g.machine,g.grp,l.seq,coalesce(length(r.data),0) room_bytes,coalesce(length(l.data),0) line_bytes
  FROM project_assistant_groups g
  LEFT JOIN project_assistant_group_rooms r ON r.machine=g.machine AND r.grp=g.grp
