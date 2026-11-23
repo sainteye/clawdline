@@ -16,6 +16,7 @@ import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
 import {botFailureText,providerSetupFailure} from "./source-errors"
 import "./bot-settings.css"
+import { useSharedMemorySwitch } from "./BotsSettingsModal"
 
 
 export function settingsSaveFailure({code,field}:{code:string;field?:string},w:Words,conflict=w.fallbackSaveStale):string {
@@ -78,6 +79,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
   const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
   const [workReview,setWorkReview]=useState(bot.work_review!=="off")
+  const sharedMemory=useSharedMemorySwitch(bot.key.bot_id)
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
   const showTeamSetting=!(bot.lead&&source?.canLeadTeamDefault?.())
   const teamChanged=showTeamSetting&&manageTeam!==(original.manage_team??false)
@@ -169,6 +171,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
         <SettingsGroup title={w.settingsAccess}>
           {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
           {switchRow(w.botWorkReview,w.botWorkReviewHint,workReview,false,setWorkReview)}
+          {sharedMemory.available&&switchRow(catalogWord("botsSettings","useShared"),catalogWord("botsSettings","useSharedHint"),sharedMemory.use,false,sharedMemory.set)}
           {bot.background_threads!==undefined&&<label className="pa-settings-field">{w.backgroundConcurrency}<select value={backgroundThreads} onChange={e=>setBackgroundThreads(Number(e.target.value))}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}</select></label>}
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
           {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}

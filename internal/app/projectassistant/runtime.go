@@ -36,6 +36,9 @@ type RuntimeOptions struct {
 	// Rooms gates group members' room turns; without it a room submission
 	// is unsupported. Its repository must implement RoomRepository.
 	Rooms RoomGate
+	// SharedMemory returns the machine's shared memory section for a Bot,
+	// already filtered by its Project and its own switch; empty adds nothing.
+	SharedMemory func(context.Context, pa.Bot) string
 }
 
 // AttachmentReader returns the bytes stored for one attachment of a Bot.
@@ -1432,6 +1435,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	err = r.o.Memory.WithCurrent(ctx, a.key, current.Revision, func(filtered pa.ContextSnapshot) error {
 		if err := pa.CheckContext(filtered, current); err != nil {
 			return err
+		}
+		if r.o.SharedMemory != nil {
+			// Shared memory is read before the Bot's own memory, which wins.
+			if shared := r.o.SharedMemory(ctx, bot); shared != "" {
+				filtered.Text = "<shared_memory>\n" + shared + "</shared_memory>\n" + filtered.Text
+			}
 		}
 		var handoff *SessionHandoff
 		if !resume && !isolatedRoutine {

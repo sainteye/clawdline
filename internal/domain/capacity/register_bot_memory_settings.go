@@ -42,6 +42,7 @@ func sharedSettingsBounds() []Entry {
 		{Name: "bots.dispatch_kind_bytes", Class: Buffer, Unit: Bytes, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchKindBytes"}},
 		{Name: "bots.dispatch_hint_bytes", Class: Buffer, Unit: Bytes, Limit: 300, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchHintBytes"}},
 		{Name: "bots.dispatch_model_bytes", Class: Buffer, Unit: Bytes, Limit: 64, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.maxDispatchModel"}},
+		{Name: "bots.shared_memory_opt_outs", Class: Buffer, Unit: Rows, Limit: pa.MaxSharedMemoryOptOuts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxSharedMemoryOptOuts"}},
 		{Name: "bots.shared_settings_body_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxSharedSettingsBodyBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSharedSettingsBodyBytes"}},
 	}
 }

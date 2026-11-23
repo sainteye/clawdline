@@ -75,6 +75,14 @@ type SharedSettings struct {
 	Rules            []DispatchRule                     `json:"rules"`
 	Memory           []SharedMemoryEntry                `json:"memory"`
 	ProjectOverrides map[string]ProjectSettingsOverride `json:"project_overrides,omitempty"`
+	// MemoryOptOut lists Bot IDs whose "use shared memory" switch is off.
+	// Absent means on, the default for every Bot including new ones.
+	MemoryOptOut []string `json:"memory_opt_out,omitempty"`
+}
+
+// UsesSharedMemory reports a Bot's switch.
+func (s SharedSettings) UsesSharedMemory(botID string) bool {
+	return !slices.Contains(s.MemoryOptOut, botID)
 }
 
 // DispatchAgentOption is an agent this machine can dispatch, with the effort
@@ -254,6 +262,9 @@ func validScope(s SharedScope) bool {
 // MaxProjectsPerScope bounds one row's Project list.
 const MaxProjectsPerScope = 64
 
+// MaxSharedMemoryOptOuts bounds the Bots that turned shared memory off.
+const MaxSharedMemoryOptOuts = 256
+
 func validRowID(id string) bool {
 	if id == "" || len(id) > 64 {
 		return false
@@ -312,6 +323,14 @@ func ValidateSharedSettings(s SharedSettings) error {
 		}
 		seen[m.ID] = true
 		total += len(m.Text)
+	}
+	if len(s.MemoryOptOut) > MaxSharedMemoryOptOuts {
+		return fail(CapacityFull, "shared_memory_opt_out")
+	}
+	for _, id := range s.MemoryOptOut {
+		if id == "" || len(id) > 256 {
+			return fail(Invalid, "shared_memory_opt_out")
+		}
 	}
 	if total > MaxSharedMemoryTotalBytes {
 		return fail(CapacityFull, "shared_memory_total")

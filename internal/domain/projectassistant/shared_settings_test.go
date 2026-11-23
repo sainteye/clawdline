@@ -124,3 +124,13 @@ func TestSharedSettingsBounds(t *testing.T) {
 		t.Fatal("valid rules refused")
 	}
 }
+
+func TestABotThatTurnsSharedMemoryOffGetsNothing(t *testing.T) {
+	s := SharedSettings{Memory: []SharedMemoryEntry{{ID: "a", Text: "Answer with the conclusion first", Scope: SharedScope{All: true}}}, MemoryOptOut: []string{"quiet"}}
+	if got := SharedMemoryOpening(s, "p", s.UsesSharedMemory("quiet")); got != "" {
+		t.Fatalf("an opted-out Bot got %q", got)
+	}
+	if got := SharedMemoryOpening(s, "p", s.UsesSharedMemory("new-bot")); got == "" {
+		t.Fatal("a new Bot must use shared memory by default")
+	}
+}

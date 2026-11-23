@@ -45,7 +45,7 @@ export function DispatchedWorkStrip({links, ownProjectID, background, onOpen, w}
       {background}
       <button type="button" className="pa-dispatched-toggle" aria-expanded={open} aria-label={`${w.dispatchedStripLabel}: ${parts.join(", ")}`} onClick={() => setOpen(!open)}>
         <CloneMark/><span>{parts.map((part, i) => <span key={i} className={i === 0 && counts.running > 0 ? "pa-dispatched-lead" : undefined}>{i > 0 ? " · " : ""}{part}</span>)}</span>
-        <span className="pa-dispatched-chevron" aria-hidden="true">{open ? "▾" : "▸"}</span>
+        <svg className="pa-dispatched-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? "rotate(90deg)" : undefined }}><path d="M6 4l4 4-4 4"/></svg>
       </button>
     </div>
     {open && <ul className="pa-dispatched-list" aria-label={w.dispatchedStripLabel}>

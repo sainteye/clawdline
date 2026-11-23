@@ -57,7 +57,8 @@ import (
 // Team approval cards in Bot chat history arrive at API 110.
 // Session GitHub change reports arrive at API 111.
 // Deferring the Bot chat trace count arrives at API 113.
-const APILevel = 113
+// Machine-wide Bots dispatch rules and shared memory arrive at API 114.
+const APILevel = 114
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

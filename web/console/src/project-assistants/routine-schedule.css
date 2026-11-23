@@ -188,8 +188,9 @@
 .pa-routine-webhook-note { padding: 12px; border-radius: 12px; background: var(--pa-bg); color: var(--pa-dim); font-size: 13px; }
 .pa-routine-run-settings { margin-top: 18px; }
 .pa-routine-run-settings summary { display: flex; align-items: center; justify-content: space-between; gap: 8px; cursor: pointer; color: var(--pa-dim); }
-.pa-routine-run-settings summary span::after { content: "⌄"; margin-inline-start: 6px; }
-.pa-routine-run-settings[open] summary span::after { content: "⌃"; }
+.pa-routine-run-settings summary span { display: inline-flex; align-items: center; }
+.pa-routine-run-settings summary span::after { content:"";display:inline-block;flex:none;width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;margin-inline-start: 8px; transform: translateY(-2px) rotate(45deg); }
+.pa-routine-run-settings[open] summary span::after { transform: translateY(1px) rotate(-135deg); }
 .pa-routine-run-settings[open] summary small { visibility: hidden; }
 .pa-routine-advanced { margin-top: 8px; }
 .pa-routine-footer kbd { font-family: inherit; font-size: 11px; margin-inline-start: 3px; opacity: .68; }
@@ -307,8 +308,9 @@
 .project-assistants .pa-routine-secondary { margin-top: 14px; }
 .project-assistants .pa-routine-history { margin-top: 14px; }
 .project-assistants .pa-routine-history[open] summary { margin-bottom: 6px; }
-.project-assistants .pa-routine-history summary span::after { content: "⌄"; margin-inline-start: 6px; }
-.project-assistants .pa-routine-history[open] summary span::after { content: "⌃"; }
+.project-assistants .pa-routine-history summary span { display: inline-flex; align-items: center; }
+.project-assistants .pa-routine-history summary span::after { content:"";display:inline-block;flex:none;width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;margin-inline-start: 8px; transform: translateY(-2px) rotate(45deg); }
+.project-assistants .pa-routine-history[open] summary span::after { transform: translateY(1px) rotate(-135deg); }
 .project-assistants .pa-routine-runs { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .project-assistants .pa-routines .pa-routine-run { padding: 10px 12px; border: 0; border-radius: 12px; background: var(--pa-bg); }
 .project-assistants .pa-routine-run p { margin: 0; }

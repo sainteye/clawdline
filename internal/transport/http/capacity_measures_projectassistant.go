@@ -320,14 +320,26 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			}
 			return capacity.Reading{Known: true, Used: int64(used), Note: "current unexpired Bot profile Secret Handoff targets"}
 		},
-		"bots.extensions":                s.memorySettingsMeasure(`SELECT coalesce(max(coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.skills'),0)+coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.connectors'),0)),0) FROM project_assistant_bots`, "largest persisted application extension selection per Bot"),
-		"bots.config_options":            s.memorySettingsMeasure(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_bots b,json_each(CAST(b.data AS TEXT),'$.Bot.runtime_settings.options') GROUP BY b.machine,b.bot)`, "largest persisted configuration option count per Bot; discovery catalogs hold no retained allocation"),
-		"bots.config_value_bytes":        s.memorySettingsMeasure(`SELECT coalesce(max(max(length(CAST(t.value AS BLOB)),length(CAST(t.key AS BLOB)))),0) FROM project_assistant_bots b,json_tree(CAST(b.data AS TEXT),'$.Bot.runtime_settings') t WHERE t.type='text'`, "largest persisted model, option key or value in UTF-8 bytes per Bot"),
-		"bots.config_choices":            pure,
-		"bots.memory_preview":            pure,
-		capacity.BotsMemorySearchResults: pure,
-		capacity.BotsSteerAnswer:         pure,
-		capacity.BotsRulesFileBytes:      pure,
+		"bots.extensions":         s.memorySettingsMeasure(`SELECT coalesce(max(coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.skills'),0)+coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.connectors'),0)),0) FROM project_assistant_bots`, "largest persisted application extension selection per Bot"),
+		"bots.config_options":     s.memorySettingsMeasure(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_bots b,json_each(CAST(b.data AS TEXT),'$.Bot.runtime_settings.options') GROUP BY b.machine,b.bot)`, "largest persisted configuration option count per Bot; discovery catalogs hold no retained allocation"),
+		"bots.config_value_bytes": s.memorySettingsMeasure(`SELECT coalesce(max(max(length(CAST(t.value AS BLOB)),length(CAST(t.key AS BLOB)))),0) FROM project_assistant_bots b,json_tree(CAST(b.data AS TEXT),'$.Bot.runtime_settings') t WHERE t.type='text'`, "largest persisted model, option key or value in UTF-8 bytes per Bot"),
+		"bots.config_choices":     pure,
+		"bots.memory_preview":     pure,
+		// Shared Bots settings are refused at write; no live surface reads them yet.
+		"bots.dispatch_hint_bytes":        pure,
+		"bots.dispatch_kind_bytes":        pure,
+		"bots.dispatch_kind_rules":        pure,
+		"bots.dispatch_model_bytes":       pure,
+		"bots.dispatch_rule_agents":       pure,
+		"bots.shared_memory_entries":      pure,
+		"bots.shared_memory_entry_bytes":  pure,
+		"bots.shared_memory_opt_outs":     pure,
+		"bots.shared_memory_total_bytes":  pure,
+		"bots.shared_scope_projects":      pure,
+		"bots.shared_settings_body_bytes": pure,
+		capacity.BotsMemorySearchResults:  pure,
+		capacity.BotsSteerAnswer:          pure,
+		capacity.BotsRulesFileBytes:       pure,
 
 		// Group rooms: per-room-turn and per-prompt bounds hold no occupancy.
 		// Bots created by managers is a live count that no surface reads yet.

@@ -73,6 +73,8 @@ type Options struct {
 	// A read returns the complete status, including its current write ceiling.
 	Source         func(context.Context, pa.BotKey, bool) (pa.SourceStatus, error)
 	DispatchPolicy func(context.Context, pa.BotKey) (DispatchPolicy, error)
+	// SharedMemory is the machine's shared Bot memory section for one Bot.
+	SharedMemory func(context.Context, pa.Bot) string
 	// ManageBots calls the same source Bot operations as the console, with an
 	// execution-scoped Service supplied by the Host and no daemon credential.
 	ManageBots func(context.Context, *app.Service, pa.BotKey, app.LeadBotRequest) (json.RawMessage, error)
@@ -764,7 +766,7 @@ func (h *Host) runtime() (*app.Engine, error) {
 		return h.engine, nil
 	}
 	p := &lazyProvider{factory: h.o.Provider}
-	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, NativeHistory: h.o.NativeHistory, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, LeadQuotaNear: h.o.LeadQuotaNear, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	r, err := app.NewRuntime(app.RuntimeOptions{NetworkCheck: h.checkNetworkTurn, NativeHistory: h.o.NativeHistory, Repository: h.store, Memory: h.store, WorkBridge: h.bridge, ProjectResolver: h.o.Projects, LeadQuotaNear: h.o.LeadQuotaNear, Provider: &ownedProvider{h: h, p: p}, Clock: h.o.Clock, ID: h.o.ID, Limits: h.o.Limits, Rooms: h.rooms, Attachments: h.o.Attachments, Inputs: h.o.Inputs, SharedMemory: h.o.SharedMemory, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		f, s, e := h.background(ctx, key, true)
 		if e != nil {
 			return f, s, e

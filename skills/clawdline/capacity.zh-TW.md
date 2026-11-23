@@ -96,6 +96,11 @@
 | `bots.decision_reply_bytes` | 500 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.decision_request_quote_bytes` | 1500 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.decision_suggested_replies` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatch_hint_bytes` | 300 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatch_kind_bytes` | 64 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatch_kind_rules` | 12 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.dispatch_model_bytes` | 64 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatch_rule_agents` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_rules` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatched_delivered_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
@@ -201,6 +206,12 @@
 | `bots.server_probe_readers` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.shared_memory_entries` | 20 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.shared_memory_entry_bytes` | 1024 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.shared_memory_opt_outs` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.shared_memory_total_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.shared_scope_projects` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.shared_settings_body_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

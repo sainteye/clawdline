@@ -4060,6 +4060,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.shared_memory_opt_outs",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSharedMemoryOptOuts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.shared_memory_total_bytes",
     "Class": "buffer",
     "Unit": "bytes",

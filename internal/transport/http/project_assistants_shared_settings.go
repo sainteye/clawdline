@@ -93,3 +93,13 @@ func (s *Server) projectAssistantSharedSettingsRoute(w http.ResponseWriter, r *h
 // projectAssistantSharedSettingsChanged lets running Bots read new shared
 // memory on their next turn. Without a running host nothing is pending.
 func (s *Server) projectAssistantSharedSettingsChanged(context.Context) {}
+
+// projectAssistantSharedMemory reads the stored document on every prompt so
+// a saved change reaches the next fresh, compacted or memory-updated prompt.
+func (s *Server) projectAssistantSharedMemory(_ context.Context, bot pa.Bot) string {
+	shared, err := s.projectAssistantSharedSettings().Load()
+	if err != nil {
+		return ""
+	}
+	return pa.SharedMemoryOpening(shared, bot.Project.ProjectID, shared.UsesSharedMemory(bot.Key.BotID))
+}

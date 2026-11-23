@@ -37,6 +37,11 @@
       "guide": "project"
     },
     {
+      "method": "*",
+      "pattern": "/v1/project-assistants/shared-settings",
+      "guide": "project"
+    },
+    {
       "method": "GET",
       "pattern": "/v1/project-assistants/first-run",
       "guide": "project"

@@ -94,8 +94,8 @@
 .project-assistants .pa-actions { display:flex;flex-wrap:wrap;gap:8px;margin-top:14px; }
 .project-assistants .pa-trace { margin:4px 0 0;color:var(--pa-dim); }
 .project-assistants .pa-trace summary { display:flex;align-items:center;gap:6px;width:fit-content;cursor:pointer;padding:2px 0;border:0;border-radius:0;background:transparent;font-size:12px;line-height:20px;color:var(--pa-dim);transition:color .15s; }
-.project-assistants .pa-trace summary::before { content:"▸"; }
-.project-assistants .pa-trace[open] summary::before { content:"▾"; }
+.project-assistants .pa-trace summary::before { content:"";display:inline-block;flex:none;width:5px;height:5px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:translateX(-1px) rotate(-45deg); }
+.project-assistants .pa-trace[open] summary::before { transform:translateY(-2px) rotate(45deg); }
 .project-assistants .pa-trace summary:hover { color:var(--pa-ink); }
 .project-assistants .pa-trace[open] summary { margin-bottom:6px; }
 .project-assistants .pa-trace-list { display:flex;flex-direction:column;gap:8px;max-width:864px; }
