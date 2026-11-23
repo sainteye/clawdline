@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14072,
-  "riskKeys": 5974,
-  "nonRiskCount": 8098,
+  "englishContentKeys": 14077,
+  "riskKeys": 5976,
+  "nonRiskCount": 8101,
   "groups": [
     {
       "name": "acp / other",
@@ -8112,7 +8112,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 229,
+      "count": 232,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8229,6 +8229,9 @@
         "transparency.card.persistent-bot-inputs.condition",
         "transparency.card.persistent-bot-inputs.summary",
         "transparency.card.persistent-bot-inputs.title",
+        "transparency.card.persistent-bot-lead-controls.condition",
+        "transparency.card.persistent-bot-lead-controls.how",
+        "transparency.card.persistent-bot-lead-controls.title",
         "transparency.card.persistent-bot-lead.title",
         "transparency.card.persistent-bot-network.summary",
         "transparency.card.persistent-bot-outputs.summary",

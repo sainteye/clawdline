@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	network "github.com/sainteye/clawdline/internal/app/botnetwork"
@@ -55,6 +56,20 @@ type OpenRequest struct {
 // resolves it and authorizes the destination under the active Bot turn.
 type ProjectDispatchTools interface {
 	DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error)
+}
+
+// LeadBotTools is a private capability scoped to the current Lead's direct user turn.
+type LeadBotTools interface {
+	LeadBotAvailable(context.Context) error
+	ManageBots(context.Context, LeadBotRequest) (json.RawMessage, error)
+}
+
+type LeadBotRequest struct {
+	Method         string            `json:"method"`
+	Path           string            `json:"path"`
+	Query          map[string]string `json:"query,omitempty"`
+	Body           json.RawMessage   `json:"body,omitempty"`
+	IdempotencyKey string            `json:"idempotency_key,omitempty"`
 }
 
 type NativeTools interface {

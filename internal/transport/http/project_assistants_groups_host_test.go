@@ -20,6 +20,7 @@ import (
 // This scripted provider receives the real Host-owned NativeWork. It blocks
 // its real running turn while the person answers through the real HTTP gate.
 type groupsManagerProvider struct {
+	run     func(context.Context, app.NativeTools) error
 	action  string
 	args    json.RawMessage
 	outcome chan error
@@ -27,7 +28,9 @@ type groupsManagerProvider struct {
 }
 
 func (p *groupsManagerProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
-	return paServerCaps(b), nil
+	caps := paServerCaps(b)
+	caps.Resume = p.run != nil
+	return caps, nil
 }
 func (p *groupsManagerProvider) Open(_ context.Context, q app.OpenRequest, emit func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
 	return &groupsManagerSession{p: p, q: q, emit: emit}, nil
@@ -50,6 +53,10 @@ func (s *groupsManagerSession) Send(ctx context.Context, q app.PromptRequest) (a
 	return s, nil
 }
 func (s *groupsManagerSession) Wait(ctx context.Context) (app.PromptResult, error) {
+	if s.p.run != nil {
+		s.p.outcome <- s.p.run(ctx, s.q.Tools)
+		return app.PromptResult{FinalText: "Synthetic manager finished"}, nil
+	}
 	tools, ok := s.q.Tools.(app.TeamTools)
 	if !ok {
 		err := fmt.Errorf("host did not bind team tools")

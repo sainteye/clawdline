@@ -135,7 +135,8 @@ func (s *Store) Directory(ctx context.Context, fence pa.Fence, turn string, q pa
 	if err != nil {
 		return pa.BotDirectoryPage{}, err
 	}
-	if _, err = exchangeActive(a, fence, turn); err != nil {
+	active, err := exchangeActive(a, fence, turn)
+	if err != nil {
 		return pa.BotDirectoryPage{}, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot>? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL ORDER BY bot`, fence.Key.MachineID, q.Cursor)
@@ -155,7 +156,7 @@ func (s *Store) Directory(ctx context.Context, fence pa.Fence, turn string, q pa
 			return out, err
 		}
 		b := row.Bot
-		if a.BackgroundOwner != nil || row.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b) {
+		if a.BackgroundOwner != nil || row.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b, active) {
 			continue
 		}
 		match := true
@@ -270,7 +271,7 @@ func (s *Store) AdmitExchange(ctx context.Context, q app.ExchangeAdmission) (pa.
 	if a.Bot.Version != q.SourceVersion || b.Bot.Version != q.TargetVersion {
 		return x, failure(pa.StaleVersion, "exchange_bot")
 	}
-	if a.Bot.Project != x.Project || b.Bot.Project != x.DestinationProject() || b.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b.Bot) || a.Conversation.ID != x.Source.ConversationID || b.Conversation.ID != x.Target.ConversationID || x.Hops != t.Hops+1 {
+	if a.Bot.Project != x.Project || b.Bot.Project != x.DestinationProject() || b.BackgroundOwner != nil || !pa.MayContactBot(a.Bot, b.Bot, t) || a.Conversation.ID != x.Source.ConversationID || b.Conversation.ID != x.Target.ConversationID || x.Hops != t.Hops+1 {
 		return x, failure(pa.ScopeDenied, "exchange_project")
 	}
 	var total, sender int

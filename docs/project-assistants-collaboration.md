@@ -12,7 +12,7 @@ The Host binds optional `list_bots` and `message_bot` tools to its current
 Bot key, full Project, conversation, turn, fence, authority and lifetime.
 Model arguments contain no sender identity or machine credential. Admission
 returns a durable queued exchange and wakes the recipient only after commit.
-Directory results contain ID, name and agent, excluding self and hidden Bots.
+Directory results contain ID, name and agent, excluding self. Hidden Bots appear only to the Lead during a direct user turn.
 
 Since 2026-11-21 the directory and admission span every Project and personal
 workspace on the same machine, for ordinary Bots and routine runs alike; before
@@ -22,7 +22,7 @@ workspace found an empty directory and stopped. Each side still keeps its own
 fence: the exchange records the sender's Project and the recipient's
 `target_project`, the target's Project is resolved again on admission, and the
 recipient works with its own workspace, memory and permissions. A forwarded
-request still cannot contact another Bot, and hidden Bots remain unreachable.
+request still cannot contact another Bot. The Lead can contact a hidden Bot in a direct user turn.
 
 The feature-owned exchange table and both Bot aggregates are changed in one
 transaction, locking aggregate keys in stable order. Source admission receipts,

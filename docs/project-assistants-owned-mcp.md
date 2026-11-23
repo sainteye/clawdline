@@ -49,6 +49,33 @@ not native stderr, a bearer or arbitrary exception text. Duplicate JSON keys,
 invalid Unicode, unsafe numbers and excessive nesting are rejected through the
 existing Cloud JSON parser. This narrow profile accepts string/integer RPC IDs.
 
+## Direct Lead Bot controls
+
+A designated Lead responding to a person in its own chat receives `manage_bots`.
+It can list and operate Bots across registered Projects and personal workspaces on
+this source. It uses the same application operations as the console, under a
+separate Lead principal and the current live turn. It has no reusable human or
+machine credential. The Host rechecks the role and turn at admission and through
+the service authorization checks. The tool exposes a fixed list of Bot operations,
+never arbitrary network or daemon requests.
+
+Use an empty path with `GET` for the roster and `GET /<bot-id>` for a Bot's
+settings and version. `PATCH /<bot-id>` takes a `settings` object with
+`expected_version` and the fields to change, such as `name`. It preserves the
+current name, instructions and appearance when omitted. Pass a stable
+`idempotency_key` for mutations and use the latest target version or fence.
+Creation accepts an exact registered `folder` name or absolute path. The tool
+also exposes visibility, deletion, work and queue controls,
+schedules, memory, group management and existing development server controls.
+A person's direct request can be performed without a second team proposal.
+Legacy team proposals remain available when the person asks for a proposal.
+
+Delegate with `message_bot`. During a direct user turn the Lead can discover
+and contact hidden Bots too. The recipient still runs with its own authority.
+Use `dispatch_work` for an isolated repository Session. Peer, routine, room,
+voice-greeting and background work do not get direct Lead controls. Credential
+entry and native permission answers stay on the person's own surface.
+
 ## Native session settings
 
 Before creating/loading a session, the client checks ACP protocol 1, the exact

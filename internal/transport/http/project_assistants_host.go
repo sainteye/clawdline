@@ -168,7 +168,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		// Dispatch follows CodyNC: a Bot may hand isolated work on any file
 		// of its own repository Project to a Claude worker in Auto mode.
 		// The Broker still owns claims, worktrees, quota and landing.
-		DispatchPolicy: projectAssistantDispatchPolicy,
+		DispatchPolicy: projectAssistantDispatchPolicy, ManageBots: s.manageBots,
 		// Browser tools use the same Profiles and Bridge as the CLI, under an
 		// owner Host derives from the Bot conversation; see project_assistants_browser.go.
 		Browser: s.projectAssistantBrowser(),
