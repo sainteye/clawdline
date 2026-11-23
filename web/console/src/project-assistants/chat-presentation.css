@@ -242,6 +242,11 @@
 .project-assistants .pa-unsent-actions button[aria-busy="true"] { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim); }
 .project-assistants .pa-unsent-failure { flex:1 1 100%;margin:0;color:var(--pa-ink);font-size:12px; }
 .project-assistants .pa-unsent-failure small { display:inline;margin:0; }
+/* Deleting is the quiet second choice: dim until asked, then an inline confirmation in the row. */
+.project-assistants .pa-unsent-actions .pa-unsent-discard { min-width:44px;padding:0 6px;color:var(--pa-dim);text-decoration:underline;text-underline-offset:3px; }
+.project-assistants .pa-unsent-confirm { flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:0 12px;color:var(--pa-ink); }
+.project-assistants .pa-unsent-confirm p { flex:1 1 100%;margin:4px 0 0;font-size:12px; }
+.project-assistants .pa-unsent-actions .pa-unsent-confirm-action { color:var(--pa-bad,#f39b9c); }
 .project-assistants .pa-held-actions button {
   min-height:40px;padding:5px 11px;border:1px solid var(--pa-line);border-radius:9px;
   color:var(--pa-ink);background:var(--pa-card);font-size:12px;line-height:1.3;text-align:start;

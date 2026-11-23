@@ -1,5 +1,7 @@
 import type * as W from "@clawdline/contract"
+import { useState } from "react"
 import { errorCode } from "./client"
+import type { HeldOutcome } from "./view-state"
 import type { Words } from "./words"
 
 export type RetryFailure = { code: string, at: number }
@@ -46,11 +48,39 @@ export function retryFailureText(failure: RetryFailure, w: Words, language: stri
   return { title: w.retryFailedAt.replace("{time}", time).replace("{reason}", reason), next }
 }
 
-export function UnsentActions({ retrying, accepted, failure, restore, canRestore = true, canRetry, disabled, onRetry, onRestore, w, language }: {
-  retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
-  disabled: boolean, onRetry: () => void, onRestore: () => void, w: Words, language: string
+/**
+ * How a held send may leave this device. The device's journal is its only
+ * record; the source keeps a message only after admitting it. `delete`: the
+ * source refused it or answered for another attempt (`needsEdit`), so this
+ * text was never delivered. `remove`: the outcome is unknown; removing it stops
+ * this device from tracking or retrying it, and a message the source did admit
+ * still appears in the transcript from the source's own history. Nothing is
+ * offered for an accepted send, which clears itself when it appears, or while
+ * its request is open.
+ */
+export type UnsentDiscard = "delete" | "remove"
+export function unsentDiscardKind(row: Pick<HeldOutcome, "needsEdit">, state: { accepted: boolean, transporting: boolean }): UnsentDiscard | null {
+  if (state.accepted || state.transporting) return null
+  return row.needsEdit ? "delete" : "remove"
+}
+
+export function UnsentDiscardConfirm({ kind, disabled, onConfirm, onCancel, w }: {
+  kind: UnsentDiscard, disabled?: boolean, onConfirm: () => void, onCancel: () => void, w: Words
 }) {
+  return <div className="pa-unsent-confirm" role="group" aria-label={kind === "delete" ? w.unsentDelete : w.unsentRemove}>
+    <p>{kind === "delete" ? w.unsentDeleteQuestion : w.unsentRemoveQuestion}</p>
+    <button type="button" className="pa-unsent-confirm-action" disabled={disabled} onClick={onConfirm}>{kind === "delete" ? w.unsentDeleteConfirm : w.unsentRemoveConfirm}</button>
+    <button type="button" onClick={onCancel}>{w.cancel}</button>
+  </div>
+}
+
+export function UnsentActions({ retrying, accepted, failure, restore, canRestore = true, canRetry, disabled, onRetry, onRestore, discard = null, discardFailed = false, onDiscard, w, language }: {
+  retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
+  disabled: boolean, onRetry: () => void, onRestore: () => void, discard?: UnsentDiscard | null, discardFailed?: boolean, onDiscard?: () => void, w: Words, language: string
+}) {
+  const [confirming, setConfirming] = useState(false)
   const notice = !retrying && !accepted && failure ? retryFailureText(failure, w, language) : null
+  const offer = !retrying && !!discard && !!onDiscard
   return <div className="pa-unsent-actions">
     {notice
       ? <p className="pa-unsent-failure" role="alert">{notice.title} {notice.next} <small>({failure!.code})</small></p>
@@ -60,5 +90,8 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
         : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
+    {offer && !confirming && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={() => setConfirming(true)}>{discard === "delete" ? w.unsentDelete : w.unsentRemove}</button>}
+    {offer && confirming && <UnsentDiscardConfirm kind={discard!} disabled={disabled} onConfirm={() => { setConfirming(false); onDiscard!() }} onCancel={() => setConfirming(false)} w={w}/>}
+    {discardFailed && <p className="pa-unsent-failure" role="alert">{w.unsentDiscardFailed}</p>}
   </div>
 }

@@ -120,6 +120,25 @@ test("send recovery journal: setting a send aside keeps it, with its own identit
   reloaded.settleAside(own,"old")
   assert.deepEqual(createViewState(store).heldOutcomes.aside(own),[])
 })
+test("deleting an unsent message removes it from this device's journal, so a reload does not bring it back",()=>{
+  const {store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
+  view.heldOutcomes.set(own,{intent:journalSend("refused","never admitted"),receipt:null,needsEdit:true});view.heldOutcomes.setAside(own)
+  view.heldOutcomes.set(own,{intent:journalSend("kept","still held"),receipt:null});view.heldOutcomes.setAside(own)
+  assert.equal(view.heldOutcomes.discard(own,"refused"),true)
+  assert.deepEqual(view.heldOutcomes.aside(own).map(o=>o.intent.command.idempotency_key),["kept"])
+  assert.deepEqual(createViewState(store).heldOutcomes.aside(own).map(o=>o.intent.command.idempotency_key),["kept"],"the deleted message stays gone after a reload")
+  assert.equal(createViewState(store).heldOutcomes.discard(own,"missing"),false)
+})
+test("a delete this device cannot save keeps the message, on screen and after a reload",()=>{
+  const {disk,store}=memoryStore(),own=draftIdentity("account",key)
+  const view=createViewState(store)
+  view.heldOutcomes.set(own,{intent:journalSend("refused"),receipt:null,needsEdit:true});view.heldOutcomes.setAside(own)
+  const refusing={...store,setItem:()=>{throw new Error("full")},removeItem:()=>{throw new Error("full")}}
+  const blocked=createViewState(refusing).heldOutcomes
+  assert.equal(blocked.discard(own,"refused"),false)
+  assert.deepEqual(blocked.aside(own).map(o=>o.intent.command.idempotency_key),["refused"],"an unsaved delete does not pretend the message is gone")
+  assert.ok(disk.has(viewStateModule.heldJournalKey(own)))
+})
 test("send recovery journal: corruption and storage failure are reported and never make a held send resendable",()=>{
   const {disk,store}=memoryStore(),own=draftIdentity("account",key)
   disk.set(viewStateModule.heldJournalKey(own),"{not json")
