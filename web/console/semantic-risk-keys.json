@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14080,
+  "englishKeys": 14082,
   "counts": {
-    "negation": 3595,
-    "state": 2367,
+    "negation": 3596,
+    "state": 2368,
     "permission": 845,
     "deletion": 323,
     "uncertainty": 561
   },
-  "unionCount": 5976,
+  "unionCount": 5977,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -245,6 +245,7 @@
       "capacityRow.bots.tool_probe_bytes.full",
       "capacityRow.bots.tool_probe_ms.full",
       "capacityRow.bots.user_message_bytes.full",
+      "capacityRow.bots.work_message_bytes.full",
       "capacityRow.browser.activity_picture_bytes.full",
       "capacityRow.browser.audit_rows.full",
       "capacityRow.browser.close_receipt_bytes.full",
@@ -3840,6 +3841,7 @@
       "capacityRow.bots.tower_zone_shown.full",
       "capacityRow.bots.turn_control_window_ms.full",
       "capacityRow.bots.user_message_bytes.full",
+      "capacityRow.bots.work_message_bytes.full",
       "capacityRow.browser.activity_picture_rows.full",
       "capacityRow.browser.close_receipt_bytes.full",
       "capacityRow.browser.close_receipt_rows.full",
@@ -8197,6 +8199,7 @@
     "capacityRow.bots.tower_zone_shown.full",
     "capacityRow.bots.turn_control_window_ms.full",
     "capacityRow.bots.user_message_bytes.full",
+    "capacityRow.bots.work_message_bytes.full",
     "capacityRow.browser.activity_picture_bytes.full",
     "capacityRow.browser.activity_picture_rows.full",
     "capacityRow.browser.audit_rows.full",

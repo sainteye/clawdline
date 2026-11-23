@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14080,
-  "riskKeys": 5976,
-  "nonRiskCount": 8104,
+  "englishContentKeys": 14082,
+  "riskKeys": 5977,
+  "nonRiskCount": 8105,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 729,
+      "count": 730,
       "sources": [
         null
       ],
@@ -748,6 +748,7 @@
         "capacityRow.bots.tower_zone_shown.what",
         "capacityRow.bots.turn_control_window_ms.what",
         "capacityRow.bots.user_message_bytes.what",
+        "capacityRow.bots.work_message_bytes.what",
         "capacityRow.browser.activity_picture_bytes.what",
         "capacityRow.browser.activity_picture_rows.what",
         "capacityRow.browser.audit_rows.what",
