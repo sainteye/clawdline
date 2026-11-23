@@ -81,7 +81,7 @@ echo "the served $bundle takes the Cloud branch (CloudGate x$gates)"
 
 # The same word also exists in the error page produced by a truthy, invalid
 # declaration. Validate the compiled configuration, not only the branch name.
-curl -fsS --max-time 20 "$origin/$bundle" | node web/console/tools/check-hosted-build.mjs || exit 1
+curl -fsS --max-time 20 "$origin/$bundle" | node web/console/tools/check-hosted-build.mjs "$stamp" || exit 1
 
 # A missing CSS asset can return the SPA HTML with HTTP 200. The generated
 # entry's styles must actually be CSS before this deployment is accepted.
@@ -91,11 +91,9 @@ while IFS= read -r style; do
   node web/console/tools/check-hosted-assets.mjs --style "$style" "$assets_tmp/headers" "$assets_tmp/body" || exit 1
 done < "$assets_tmp/styles"
 
-# The source directory marks builds that advertise the new catalogs. Older
-# released builds have no such directory, so their existing CloudGate check
-# remains sufficient. Once a build ships catalogs, all of them must be served.
+# Check the same versioned paths that CloudGate fetches during startup.
 if [ -f web/console/public/catalogs/en.json ]; then
-  python3 tools/check-hosted-catalogs.py "$origin" $strict_catalogs || exit 1
+  python3 tools/check-hosted-catalogs.py "$origin" --build "$stamp" $strict_catalogs || exit 1
 fi
 tools/notify-release-success.sh cloud "$stamp"
 exit 0

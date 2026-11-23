@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify every shipped product catalog on the served Cloud origin."""
 
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -15,13 +16,16 @@ LANGUAGES = ("en", "zh-Hant", "ja", "zh-Hans", "ko", "es", "pt-BR", "fr", "de")
 VALIDATOR = Path(__file__).resolve().parents[1] / "web/console/tools/validate-catalog.mjs"
 
 
-def catalog(origin: str, tag: str, destination: Path) -> None:
-    url = origin.rstrip("/") + "/catalogs/" + quote(tag) + ".json"
+def catalog(origin: str, build: str, tag: str, destination: Path) -> None:
+    prefix = "/app/" + quote(build, safe="") if build else ""
+    url = origin.rstrip("/") + prefix + "/catalogs/" + quote(tag) + ".json"
     try:
         # Cloudflare rejects urllib's default Python user agent even when the
         # same public catalog is available to browsers and named clients.
         request = Request(url, headers={"User-Agent": "clawdline-catalog-check/1"})
         with urlopen(request, timeout=20) as response:
+            if response.headers.get_content_type() != "application/json":
+                raise ValueError(f"expected application/json, received {response.headers.get_content_type()}")
             content = response.read()
         data = json.loads(content)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
@@ -51,13 +55,13 @@ def validate(reference: Path, target: Path, tag: str, strict: bool) -> dict:
     return report
 
 
-def check(origin: str, strict: bool = False) -> None:
+def check(origin: str, build: str, strict: bool = False) -> None:
     if not VALIDATOR.is_file():
         raise ValueError(f"catalog validator missing: {VALIDATOR}")
     with TemporaryDirectory(prefix="clawdline-hosted-catalogs-") as temporary:
         directory = Path(temporary)
         for tag in LANGUAGES:
-            catalog(origin, tag, directory / f"{tag}.json")
+            catalog(origin, build, tag, directory / f"{tag}.json")
         reference = directory / "en.json"
         coverage = []
         for tag in LANGUAGES:
@@ -67,11 +71,15 @@ def check(origin: str, strict: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) not in (2, 3) or not sys.argv[1].startswith(("https://", "http://")) or (len(sys.argv) == 3 and sys.argv[2] != "--strict"):
-        print("usage: tools/check-hosted-catalogs.py <origin> [--strict]", file=sys.stderr)
-        sys.exit(2)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("origin")
+    parser.add_argument("--build", default="")
+    parser.add_argument("--strict", action="store_true")
+    args = parser.parse_args()
+    if not args.origin.startswith(("https://", "http://")):
+        parser.error("origin must start with https:// or http://")
     try:
-        check(sys.argv[1], strict=len(sys.argv) == 3)
+        check(args.origin, args.build, strict=args.strict)
     except ValueError as exc:
         print(f"FAILED: hosted catalogs: {exc}", file=sys.stderr)
         sys.exit(1)
