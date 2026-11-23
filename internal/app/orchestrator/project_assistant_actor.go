@@ -170,6 +170,7 @@ type AssistantOwner struct {
 	Command       pa.Command      `json:"command"`
 	RequestHash   string          `json:"request_hash"`
 	TargetProject pa.ProjectScope `json:"target_project,omitzero"`
+	Persona       string          `json:"persona,omitempty"`
 }
 
 type assistantAdmission struct {
@@ -200,7 +201,9 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Claims        []string
 		Title         string          `json:",omitempty"`
 		TargetProject pa.ProjectScope `json:"target_project,omitzero"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject})
+		// Omitted when empty so receipts written before personas keep their hash.
+		Persona string `json:",omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -215,6 +218,9 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	}
 	if q.TurnID != c.ActiveTurnID {
 		return c, assistantFailure(pa.StaleVersion, "work_turn")
+	}
+	if _, err = admitPersona(assistantPersona(q)); err != nil {
+		return c, assistantFailure(pa.Invalid, "persona")
 	}
 	// The source fence owns the receipt. Resolve the destination separately
 	// for each admission check, including the check before durable creation.
@@ -270,6 +276,16 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	return c, nil
 }
 
+// assistantPersona hands a Bot's persona to the same admitPersona every other
+// dispatch uses, so the broker's catalog is the only list of valid ids.
+func assistantPersona(q pa.WorkRequest) json.RawMessage {
+	if q.Persona == "" {
+		return nil
+	}
+	raw, _ := json.Marshal(q.Persona)
+	return raw
+}
+
 func assistantTaskTitle(q pa.WorkRequest) string {
 	if q.Title != "" {
 		return strings.TrimSpace(q.Title)
@@ -301,7 +317,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	id := AssistantTaskID(q.Command)
 	protocol := Protocol
 	d := draft{Protocol: &protocol, TaskID: id, Kind: "implementation", Assistant: c.Assistant, PermissionMode: c.PermissionMode, ProjectDir: c.Project.Directory,
-		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes}
+		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes, Persona: assistantPersona(q)}
 	if c.PermissionMode == "" {
 		return Dispatched{}, assistantFailure(pa.ScopeDenied, "worker_permission")
 	}
@@ -309,7 +325,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	if err != nil {
 		return Dispatched{}, err
 	}
-	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject}
+	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona}
 	secret := make([]byte, 32)
 	if _, err = rand.Read(secret); err != nil {
 		return Dispatched{}, err

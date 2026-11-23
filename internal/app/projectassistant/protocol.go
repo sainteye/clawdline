@@ -57,6 +57,12 @@ type ProjectDispatchTools interface {
 	DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error)
 }
 
+// PersonaDispatchTools also names the Session persona the work Session starts
+// with. The broker admits the id; an empty persona is an ordinary dispatch.
+type PersonaDispatchTools interface {
+	DispatchWithPersona(ctx context.Context, id, title, brief string, claims []string, project, persona string) (pa.WorkLink, error)
+}
+
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)

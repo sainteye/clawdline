@@ -38,6 +38,7 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
 	}
 	leadDispatch := os.Getenv("CLAWDLINE_TEST_LEAD_DISPATCH") == "1"
+	personaDispatch := os.Getenv("CLAWDLINE_TEST_PERSONA_DISPATCH") == "1"
 	var endpoint, authorization string
 	client := &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	request := func(method string, id any, params any) []byte {
@@ -143,6 +144,28 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 				check(call("dispatch_work", work), true)
 				delete(work, "project")
 			}
+			if personaDispatch {
+				unknown := map[string]any{"idempotency_key": "native-work-unknown-persona", "title": "保留工作樹的驗收紀錄", "brief": work["brief"], "claims": work["claims"], "persona": "no-such-persona"}
+				refused := call("dispatch_work", unknown)
+				check(refused, true)
+				if !strings.Contains(string(refused), `\"field\":\"persona\"`) || !strings.Contains(string(refused), `\"performance\"`) {
+					failPeer(17, "unknown persona refusal lacks the built-in list: "+string(refused))
+				}
+				work["persona"] = "performance"
+				accepted := call("dispatch_work", work)
+				check(accepted, false)
+				if !strings.Contains(string(accepted), `\"persona\":\"performance\"`) {
+					failPeer(18, "dispatch receipt lacks its persona: "+string(accepted))
+				}
+				work["persona"] = "architect"
+				conflict := call("dispatch_work", work)
+				check(conflict, true)
+				if !strings.Contains(string(conflict), string(pa.IdempotencyConflict)) {
+					failPeer(19, "a changed persona under one key was not a conflict: "+string(conflict))
+				}
+				write(f.ID, map[string]string{"stopReason": "end_turn"})
+				continue
+			}
 			check(call("dispatch_work", work), false)
 			check(call("dispatch_work", work), true)
 			write(f.ID, map[string]string{"stopReason": "end_turn"})
@@ -179,7 +202,15 @@ func TestOwnedMCPReachesRealStoreBrokerAndDurableChatWithoutRegistration(t *test
 	t.Run("lead dispatch from personal workspace", func(t *testing.T) { runOwnedMCPWork(t, true) })
 }
 
-func runOwnedMCPWork(t *testing.T, lead bool) {
+// A Bot that names a persona gets a work Session launched with it; the broker,
+// not the MCP layer, decides which ids exist.
+func TestOwnedMCPDispatchStartsTheNamedPersona(t *testing.T) {
+	runOwnedMCPWorkWith(t, false, "performance")
+}
+
+func runOwnedMCPWork(t *testing.T, lead bool) { runOwnedMCPWorkWith(t, lead, "") }
+
+func runOwnedMCPWorkWith(t *testing.T, lead bool, wantPersona string) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows native supervisor unavailable")
 	}
@@ -196,6 +227,9 @@ func runOwnedMCPWork(t *testing.T, lead bool) {
 		f.o.DefaultLeadAgent = func(time.Time) pa.Agent { return pa.Codex }
 		f.o.LeadTimeZone = "UTC"
 		env = append(env, "CLAWDLINE_TEST_LEAD_DISPATCH=1")
+	}
+	if wantPersona != "" {
+		env = append(env, "CLAWDLINE_TEST_PERSONA_DISPATCH=1")
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -249,6 +283,13 @@ func runOwnedMCPWork(t *testing.T, lead bool) {
 	}
 	if r.Title != "保留工作樹的驗收紀錄" {
 		t.Fatalf("worker Session title = %q", r.Title)
+	}
+	launched, _ := f.launcher.command.Load().(string)
+	if r.Persona != wantPersona || r.AssistantOwner == nil || r.AssistantOwner.Persona != wantPersona {
+		t.Fatalf("work Session persona = %q (owner %+v), want %q; launch: %s", r.Persona, r.AssistantOwner, wantPersona, launched)
+	}
+	if wantPersona != "" && !strings.Contains(launched, wantPersona) {
+		t.Fatalf("the launched work Session does not carry persona %q: %s", wantPersona, launched)
 	}
 	if r.ProjectDir != f.repo || r.Worktree.Repository != f.repo || r.AssistantOwner == nil || r.AssistantOwner.Fence.Project != b.Project {
 		t.Fatalf("the target worktree and the source chat must each retain their Project: %+v", r)

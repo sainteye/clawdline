@@ -38,13 +38,15 @@ func (r fixtureResolver) Resolve(_ context.Context, q pa.ProjectSelection) (pa.P
 
 type fixtureLauncher struct {
 	ports.Launcher
-	calls atomic.Int64
+	calls   atomic.Int64
+	command atomic.Value
 }
 
 func (*fixtureLauncher) ITermRunning(context.Context) (bool, error) { return false, nil }
 func (*fixtureLauncher) TmuxReach(context.Context) int              { return 2 }
-func (l *fixtureLauncher) NewTmuxSession(context.Context, string, string, string) (string, error) {
+func (l *fixtureLauncher) NewTmuxSession(_ context.Context, _, _, command string) (string, error) {
 	l.calls.Add(1)
+	l.command.Store(command)
 	return "%80", nil
 }
 func (*fixtureLauncher) CloseTmuxSession(context.Context, string, string) (bool, error) {

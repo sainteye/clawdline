@@ -63,6 +63,9 @@ type WorkRequest struct {
 	Brief         string
 	Claims        []string
 	TargetProject ProjectScope
+	// Persona is an optional Session persona id. The broker admits it with
+	// the same rule as every other dispatch; empty keeps the default Session.
+	Persona string
 }
 
 // ValidateWorkTitle applies the broker's task title rules before an effect
