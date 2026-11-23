@@ -267,3 +267,123 @@ Invoke both binaries five times, in alternating order, from
 Use the `mode=events after_seq=1` completion for the backlog read. A separate
 trial that slimmed snapshot metadata and timeline relation SQL did not produce
 a consistent improvement on both complete-page fixtures and was reverted.
+
+### Validate history without materializing the timeline (2026-11-23)
+
+Opening a direct Bot chat requests a snapshot; scrolling back requests a history
+page. Both validate persisted facts before returning up to 100 visible rows.
+On the existing 9,001-message store fixture, five instrumented reads spent a
+median 414 ms in `viewValidateFacts` (p95 454 ms). The timeline read itself
+took a median 158 ms (p95 183 ms). The validation query rendered each object
+as JSON text for repeated field lookups and materialized full message bodies
+to check relationships.
+
+The shape checks now read SQLite's binary JSON values with `jsonb_each`.
+Relationship checks materialize IDs, sequences and fence fields. Both still
+inspect all persisted rows in the same transaction. The change uses the
+existing SQLite dependency and adds no schema, cache or provider work.
+The SQL maintains a scalar projection specifically for validation, while the
+timeline retains its payload and artifact-title projection. The corruption
+fixture also checks duplicate IDs, duplicate positions and missing turn
+messages with a one-row page.
+
+#### Cloud Bridge comparison
+
+Baseline `889075cd4`, Apple M4 Pro (24 GB, darwin/arm64, Go 1.27.1). Each
+variant ran 12 times per fixture under shared machine load. One round used
+each binary sequentially with a new database per fixture. The six permutations
+of the three variant orders were run twice. Reported p95 is nearest-rank (the
+maximum of 12 samples). Times are milliseconds for Bridge → Router → HTTP →
+SQLite → serialized reply. They exclude network transit, browser rendering
+and provider calls.
+
+| Fixture and read | Baseline median / p95 | Binary JSON shape only | Binary JSON and scalar relationships |
+| --- | ---: | ---: | ---: |
+| 9,001 short messages, snapshot | 801 / 988 | 721 / 1217 | 608 / 786 |
+| 9,001 short messages, history | 740 / 992 | 657 / 1485 | 580 / 943 |
+| 9,001 short messages, empty event resume | 185 / 211 | 211 / 297 | 203 / 365 |
+| 200 rich messages, snapshot | 231 / 296 | 209 / 287 | 205 / 328 |
+| 200 rich messages, history | 217 / 311 | 192 / 251 | 195 / 278 |
+| 200 rich messages, empty event resume | 70 / 111 | 70 / 151 | 72 / 138 |
+
+The scalar-only trial moved median validation from 414 to 388 ms in five
+instrumented reads, with overlapping samples. The binary-JSON-only candidate
+cut long-history medians but had the slowest long-history tails. The combined
+change cut median source time by 193 ms on first open and 160 ms on the older
+page and improved both long-history p95s. The rich snapshot p95 increased.
+Event resume skips this validation and serves as a control. Its spread shows
+that p95s on this shared machine are sensitive to load, so the measurements
+support the long-history median comparison more strongly than the tails.
+The existing 60-second reader deadline was met in every Bridge run. Neither
+the Bridge sample nor the existing route aggregate measures how often people
+open a history this long or how long a phone waits before the first message
+appears.
+
+Build each comparison revision from its checkout, using the existing fixtures:
+
+```sh
+go test -c -o "$BOT_TEST_BINARY" ./internal/transport/http
+```
+
+Then run from `internal/transport/http` in the order described above:
+
+```sh
+"$BOT_TEST_BINARY" -test.v \
+  -test.run '^TestProjectAssistantViewServer(LongHistoryFitsExistingCloudReadDeadline|RichHistory)$'
+```
+
+Compare the `Cloud Bridge request` elapsed lines per mode. For the store
+fixture used to locate the bottleneck, the unchanged timing test is:
+
+```sh
+go test -run '^TestReadViewLongHistoryWithinSourceDeadline$' -count=15 -v ./internal/adapters/projectassistantstore
+```
+
+#### Chrome click to visible message
+
+The same two source variants served a 9,001-message synthetic Bot through the
+normal Cloud request decoder, authenticated HTTP gate, Host and SQLite. The
+browser used the same production-mode Bots shell, list and Chat components
+for both variants, with a loopback adapter in place of the encrypted relay.
+The fixture sent the normal automatic read acknowledgement and checked that
+each recorded click issued exactly one successful snapshot. Neither source
+started a provider.
+
+Chrome 157.0.8103.80 ran on the same M4 Pro. Each viewport used a fresh tab
+per trial, one unrecorded warm-up per variant, and 12 pairs with alternating
+order. Actual mouse or touch input opened Bots and selected the roster row.
+Timing starts on the trusted roster click and ends on the frame after the
+latest message first intersects the chat viewport. Reported p95 is the
+maximum of 12 samples.
+
+| Chrome viewport | Before median / p95 (ms) | After median / p95 (ms) | Faster pairs |
+| --- | ---: | ---: | ---: |
+| Desktop, 1280 × 800 | 887 / 2168 | 803 / 1558 | 8 of 12 |
+| Mobile emulation, 390 × 844 | 907 / 1977 | 671 / 2330 | 11 of 12 |
+
+The mobile outlier was already present in the snapshot request (2281 ms);
+the next-frame browser observation was 2330 ms. This run establishes a
+lower median on both tested viewports, with stronger paired evidence at
+the mobile size. It does not establish a mobile tail improvement or
+production network latency.
+
+The local browser harness combines the server fixture from
+`project_assistants_view_server_test.go`, the synthetic relay used by
+`project_assistants_roster_entry_browser_test.go`, and the production host
+fixture `web/console/tools/fixtures/project-assistants-message-menu-host.tsx`.
+The task's retained `browser-source-{before,after}.json` Go overlays,
+`browser-ui.mjs`, `browser-runner.mjs`, and JSON samples reproduce the run:
+
+```sh
+go test -overlay="$EVIDENCE/browser-source-$variant.json" -c \
+  -o "$EVIDENCE/browser-source-$variant.test" ./internal/transport/http
+# From internal/transport/http, start one fixture per variant.
+CHAT_READ_SOURCE_READY="$EVIDENCE/browser-$variant.origin" \
+  "$EVIDENCE/browser-source-$variant.test" -test.run '^TestTaskBrowserChatReadSource$' -test.v
+# From the checkout root, after both .origin files have been written.
+node "$EVIDENCE/browser-ui.mjs" "$PWD" "$EVIDENCE"
+node "$EVIDENCE/browser-runner.mjs" "$EVIDENCE" "$CHROME"
+```
+
+The Go overlay keys are absolute paths in the checkout being tested.
+Write the matching `.origin.done` files to finish both source fixtures.

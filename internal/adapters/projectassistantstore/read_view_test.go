@@ -299,6 +299,9 @@ func TestReadViewRejectsBrokenFactRelations(t *testing.T) {
 		`json_set(CAST(data AS TEXT),'$.Messages[0]',null)`,
 		`json_set(CAST(data AS TEXT),'$.Messages[0]','text')`,
 		`json_set(CAST(data AS TEXT),'$.Messages[0].fence.project.canonical_id','foreign')`,
+		`json_set(CAST(data AS TEXT),'$.Messages[0].id','m002')`,
+		`json_set(CAST(data AS TEXT),'$.Messages[0].seq',2)`,
+		`json_set(CAST(data AS TEXT),'$.Turns.t1.message_id','missing-message')`,
 		`json_set(CAST(data AS TEXT),'$.WorkLinks.w000.turn_id','absent')`,
 		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','absent')`,
 		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','')`,
@@ -311,7 +314,11 @@ func TestReadViewRejectsBrokenFactRelations(t *testing.T) {
 			if _, err := db.Exec(`UPDATE project_assistant_bots SET data=` + mutation); err != nil {
 				t.Fatal(err)
 			}
-			_, err := views.Read(testContext, viewQuery(e.Bot))
+			// The latest row is intact. A small returned page still needs
+			// to reject corrupt shapes and relationships in older history.
+			q := viewQuery(e.Bot)
+			q.Request.PageSize = 1
+			_, err := views.Read(testContext, q)
 			if pa.Code(err) != pa.Invalid && pa.Code(err) != pa.ScopeDenied {
 				t.Fatalf("corrupt fact was accepted: %v", err)
 			}

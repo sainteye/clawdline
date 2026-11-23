@@ -182,21 +182,22 @@ SELECT version,valid AND json_type(j)='object'
 }
 
 func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) error {
-	// Detect malformed members rather than filtering them into an empty view.
-	// Do not copy complete turns/instructions into Go just to validate relations.
+	// Check every persisted member, including rows outside the current page.
+	// jsonb_each keeps objects in SQLite's binary JSON form for the field checks,
+	// avoiding a render to text for each object before extracting its fields.
 	statement := viewAggregateSQL + `SELECT
- NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Turns') t WHERE a.turns_type!='null' AND
+ NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.Turns') t WHERE a.turns_type!='null' AND
  CASE WHEN t.type!='object' THEN 1 ELSE NOT coalesce((json_type(t.value,'$.id')='text' AND t.key=json_extract(t.value,'$.id') AND t.key!=''
  AND json_type(t.value,'$.message_id')='text' AND json_extract(t.value,'$.message_id')!=''
  AND json_extract(t.value,'$.state') IN ('accepted','queued','running','waiting_permission','succeeded','failed','cancelled','unknown')
  AND ` + viewFenceSQL("t.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Messages') m WHERE a.messages_type!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.Messages') m WHERE a.messages_type!='null' AND
  CASE WHEN m.type!='object' THEN 1 ELSE NOT coalesce((json_type(m.value,'$.id')='text' AND json_extract(m.value,'$.id')!=''
  AND json_type(m.value,'$.seq')='integer' AND json_extract(m.value,'$.seq')>0
  AND json_extract(m.value,'$.kind') IN ('user','assistant','work','notice')
  AND json_type(m.value,'$.text')='text' AND coalesce(json_type(m.value,'$.reactions'),'missing')='missing'
  AND ` + viewFenceSQL("m.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p WHERE a.permissions_type!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.Permissions') p WHERE a.permissions_type!='null' AND
  CASE WHEN p.type!='object' THEN 1 ELSE NOT coalesce((json_type(p.value,'$.id')='text' AND p.key=json_extract(p.value,'$.id') AND p.key!=''
  AND json_type(p.value,'$.turn_id')='text'
  AND CASE WHEN json_extract(p.value,'$.kind')='decision'
@@ -204,7 +205,7 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
    ELSE json_extract(p.value,'$.turn_id')!='' END
  AND json_extract(p.value,'$.state') IN ('pending','answered','expired','cancelled','unknown')
  AND ` + viewFenceSQL("p.value", false) + `),0) END)
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w WHERE a.work_links_type!='null' AND
+ AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.WorkLinks') w WHERE a.work_links_type!='null' AND
  CASE WHEN w.type!='object' THEN 1 ELSE NOT coalesce((json_type(w.value,'$.id')='text' AND w.key=json_extract(w.value,'$.id') AND w.key!=''
  AND json_type(w.value,'$.turn_id')='text' AND json_extract(w.value,'$.turn_id')!=''
  AND json_type(w.value,'$.task_id')='text' AND json_extract(w.value,'$.task_id')!=''
@@ -217,23 +218,33 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
 	if !valid {
 		return failure(pa.Invalid, "read_view_fact_shape")
 	}
-	// Missing joins must be an error, not missing rows in an apparently
-	// complete timeline. Materialized scalar projections stay inside SQLite.
-	statement = strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + viewTimelineCTE + `SELECT
+	// Validate the complete history using scalar relationships. Materializing
+	// the timeline here would copy message bodies and hydrate artifact titles.
+	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, messages AS MATERIALIZED (
+ SELECT json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor,
+ json_extract(m.value,'$.kind') kind,json_extract(m.value,'$.turn_id') turn_id
+ FROM a,jsonb_each(a.j,'$.Messages') m WHERE m.type='object'
+), turns AS MATERIALIZED (
+ SELECT t.key id,json_extract(t.value,'$.message_id') message_id,
+ json_extract(t.value,'$.fence.binding_id') binding_id,json_extract(t.value,'$.fence.generation') generation
+ FROM a,jsonb_each(a.j,'$.Turns') t WHERE t.type='object'
+) SELECT
  (SELECT count(*) FROM messages)=(SELECT count(DISTINCT id) FROM messages)
  AND (SELECT count(*) FROM messages)=(SELECT count(DISTINCT anchor) FROM messages)
  AND (SELECT count(*) FROM messages)=(SELECT json_extract(j,'$.Conversation.last_message_seq') FROM a)
  AND (SELECT coalesce(max(anchor),0) FROM messages)=(SELECT json_extract(j,'$.Conversation.last_message_seq') FROM a)
  AND NOT EXISTS(SELECT 1 FROM turns t LEFT JOIN messages m ON m.id=t.message_id
- WHERE m.id IS NULL OR json_extract(m.j,'$.kind') NOT IN ('user','notice') OR json_extract(m.j,'$.turn_id')!=t.id)
- AND (SELECT count(*) FROM timeline WHERE kind=1)=(SELECT count(*) FROM a,json_each(a.j,'$.WorkLinks') WHERE type='object')
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Permissions') p LEFT JOIN turns t ON t.id=json_extract(p.value,'$.turn_id')
+ WHERE m.id IS NULL OR m.kind NOT IN ('user','notice') OR m.turn_id!=t.id)
+ AND (SELECT count(*) FROM a,jsonb_each(a.j,'$.WorkLinks') w
+ JOIN turns t ON t.id=json_extract(w.value,'$.turn_id') JOIN messages m ON m.id=t.message_id)
+   =(SELECT count(*) FROM a,jsonb_each(a.j,'$.WorkLinks') WHERE type='object')
+ AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.Permissions') p LEFT JOIN turns t ON t.id=json_extract(p.value,'$.turn_id')
  WHERE p.type='object' AND coalesce(json_extract(p.value,'$.kind'),'')!='decision'
- AND (t.id IS NULL OR json_extract(p.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')
- OR json_extract(p.value,'$.fence.generation')!=json_extract(t.j,'$.fence.generation')))
- AND NOT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.WorkLinks') w LEFT JOIN turns t ON t.id=json_extract(w.value,'$.turn_id')
- WHERE w.type='object' AND (t.id IS NULL OR json_extract(w.value,'$.fence.binding_id')!=json_extract(t.j,'$.fence.binding_id')
- OR json_extract(w.value,'$.fence.generation')!=json_extract(t.j,'$.fence.generation')))`
+ AND (t.id IS NULL OR json_extract(p.value,'$.fence.binding_id')!=t.binding_id
+ OR json_extract(p.value,'$.fence.generation')!=t.generation))
+ AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.WorkLinks') w LEFT JOIN turns t ON t.id=json_extract(w.value,'$.turn_id')
+ WHERE w.type='object' AND (t.id IS NULL OR json_extract(w.value,'$.fence.binding_id')!=t.binding_id
+ OR json_extract(w.value,'$.fence.generation')!=t.generation))`
 	if err := tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID).Scan(&valid); err != nil {
 		return err
 	}
