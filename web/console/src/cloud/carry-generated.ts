@@ -262,6 +262,7 @@ export const CARRIED = {
   "project-assistants.send-files": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
   "project-assistants.send-now": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/send-now",
   "project-assistants.send-pictures": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/messages",
+  "project-assistants.send-receipt": "captured Bot source GET /v1/project-assistants/{bot_id}/send-receipt",
   "project-assistants.status": "captured Bot source GET /v1/project-assistants/status",
   "project-assistants.stop": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/stop",
   "project-assistants.team-answer": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/team-answer",

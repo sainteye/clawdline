@@ -13,9 +13,9 @@ provably sent nothing at all.
 |---|---|---|
 | Refused before any transport | `ProjectAssistantSourceClient.request` pre-checks (grant, abort, scope), `authorized()` pre-check, the Cloud relay's checks before its encrypted request | Releases the hold; the draft returns editable; the refusal code is shown |
 | The source answered with a typed refusal | the response body | Releases the hold, as before |
-| The write may have crossed | network loss, a non-OK reply, an abort or grant change *after* the transport was invoked | `pa_outcome_unknown`; the hold and the locked draft stay |
+| The write may have crossed | network loss, a non-OK reply, an abort or grant change *after* the transport was invoked | `pa_outcome_unknown`; the original message stays in the transcript with a recovery action |
 | The source returned a receipt, then a later check failed | the outer `authorized()` post-check | The source's receipt is kept as the outcome |
-| The write answer has no valid receipt for this command | response shape and command identity checks in Chat | Keeps the original intent as `pa_outcome_unknown`, including the raw answer; never resends |
+| The write answer has no valid receipt for this command | response shape and command identity checks in Chat | Keeps the original intent as `pa_outcome_unknown`, including the raw answer; only the person can choose a retry |
 
 The "not sent" mark is a non-enumerable property set by `notSent()` and read
 by `provablyNotSent()` (`web/console/src/project-assistants/client.ts`), so a
@@ -55,71 +55,35 @@ revocation stops its reads. Ordinary hidden polling remains paused. None of
 this changes execution fences, permissions, transport deadlines, retry policy
 or read acknowledgements: fetching a hidden result does not mark it read.
 
-## The explicit check
+## Recovering from the original message
 
-While a send is held, the footer explains that the message stays locked and is
-never resent, and offers **Check with the machine**. One click is one
-authenticated read of the existing export route — never a poll, retry or
-acknowledgement. `inspectHeldSend` (`view-state.ts`) trusts only:
+An uncertain send stays in the transcript while the composer can take a new
+draft. Normal conversation sync looks up that send's original key through the
+read-only `send-receipt` operation (source API 112). The machine reads one
+receipt and its linked user turn in the same SQLite snapshot and checks Bot,
+Project, and conversation identity. A matching receipt reattaches the bubble
+to the user message. A missing receipt leaves the outcome unconfirmed.
 
-- an export whose Bot, Project and conversation match the chat's captured scope;
-- exactly one receipt with the same Bot, operation `send` and idempotency key;
-- for an admitted receipt (`accepted`, `executing`, `delivered`, `observed`,
-  `read`, or a source `unknown` whose turn exists), the turn named by
-  `resource_id` with the same idempotency key in the same conversation.
+**Retry sending** sends the original payload with the original command key.
+**Restore to composer** brings back text, quote and available attachments. It
+appears when attachments are missing or the original payload needs editing.
+A separate draft is kept and can be switched back into the composer. The person
+can reattach missing files or explicitly continue without them.
 
-Outcomes: *delivered* reattaches — the restored copy leaves the composer and
-the chat refreshes onto the existing turn. A confirmed admitted receipt keeps
-its pending row and journal until that turn's message is observed, including
-when the following read fails; *failed* releases
-the draft for editing; *unknown*, *missing* and anything invalid keep the hold.
-A missing receipt is never read as non-delivery: a Cloud request may still
-arrive. A held permission answer is host-owned and is never inspected as a
-message send.
+A recovery edit competes for the original command key. Its separate attempt ID
+correlates the Cloud response and identifies the winning variant on lookup. The
+serialized admission and SQLite command receipt allow only one variant to
+create a turn. If the original arrives first, the transcript shows the original
+and the editor keeps the amended text. A receipt proves admission, regardless
+of how the agent's run ended.
 
-## Surviving a reload
-
-The hold is journaled before the transport is invoked, under
-`clawdline.bot-held.<draft key>` in the storage the console already uses for
-drafts (the draft key is account, machine and Bot; the record carries the
-send's fence, so its Project and conversation). `HeldOutcomes`
-(`view-state.ts`) keeps, per account/Bot, the `active` send in the box and the
-sends the person set `aside`. A record holds the original command (same
-idempotency key), text, quote id, `upload_ids`, file names, the number of
-pictures and the source's `unknown` or validated admitted receipt, if any. It never holds picture
-data, tokens or grants. Unreadable originals are preserved as opaque local
-bytes when the person continues; they are never interpreted as commands. An admitted record restores its pending row until its canonical message is read. For an uncertain record, a full reload reads a valid record back: the box shows the held
-text and quote, locked, with **Check with the machine**; nothing is read or
-sent until the person clicks. Pictures cannot come back, so the held context
-says how many were attached and that they may already have been sent.
-
-The journal retains every set-aside send independently of the source's pending
-execution slots. It adds no message-count ceiling. Text still follows the
-source's registered 32 KiB message bound (`bots.message_bytes`, pa.MaxMessageBytes).
-
-Failures are never silent. A write that fails (quota, a text beyond the bound)
-keeps the hold in this tab and shows that reloading would lose the lock. A
-record that cannot be read back — malformed, another Bot's, carrying picture
-data — keeps the box locked with an alert, and the raw record is left in place
-until the person acts. A permission answer is host-owned: it is not journaled
-and is never released by the controls below; a reload still forgets it, as
-before.
-
-## Writing a new message
-
-While a send is held, **Write a new message** is the person's explicit choice
-to continue. The held send moves aside, still visible with its text and its
-own **Check this earlier message** control (the same single export read); the
-box starts empty; the next send gets a new command identity. Nothing is copied
-from the old draft or submitted. This action cancels an in-progress check of
-that send. A later check settles an aside send only on a delivered or
-recorded-failed receipt. The person can also remove its local note, including
-after a failed check, without contacting the source or clearing the new draft.
-For an unreadable record, the same control preserves its original bytes in
-the journal before emptying the box, and leaves a dismissible note. Dismissing
-the note does not erase those bytes. If storage cannot preserve the original,
-the record and lock remain. There is no
-time or idle heuristic anywhere.
+The local journal is written before sending. Text, quote, attachment counts and
+upload references stay in the existing account-scoped journal. Picture data and
+files use browser IndexedDB, scoped by account, Bot, conversation, and attempt.
+The console removes those bytes when the corresponding message is observed or
+the recovery attempt is replaced. Legacy records with no attachment bytes
+still surface the restoration action. Sources below API 112 can retry the
+original request using its existing command key.
 
 ## Legacy plain drafts without a command identity
 
@@ -158,68 +122,18 @@ Its legacy drafts predate the journal and have no nonce to reuse.
 
 ## Evidence
 
-- `TestProjectAssistantChatObservationBrowser` injects hidden visibility into
-  the actual Bots/Chat and captured source client, then crosses the closed
-  Cloud decoder, authenticated HTTP Host and SQLite. A local protocol provider
-  holds execution preflight until the first post-admission snapshot is captured,
-  changes the binding generation before metadata reads, emits a tool trace and waits for the harness
-  before finishing. No provider CLI, model API or production Bot is used.
-  The old Chat loses its accepted row before any canonical read. The matrix
-  covers English desktop and Traditional Chinese narrow widths, a busy older
-  read and foreground demand, terminal-before-message recovery, a typed read
-  failure across reload, leaving, revocation, unknown and malformed write
-  answers without replay, and an explicit receipt check followed by a failed
-  read. The outer encrypted carrier is simulated; this is
-  not production pairing or UI acceptance. Run with
-  `CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR=/task-owned/evidence-directory go test ./internal/transport/http -run '^TestProjectAssistantChatObservationBrowser$' -count=1 -v`.
+- `TestProjectAssistantSendRecoveryHasOneWinner` exercises the authenticated
+  HTTP source, SQLite, and Cloud receipt read. It tests both request orders
+  and concurrent original and edited sends with the same command key.
+- `web/console/tools/project-assistants-send-recovery.e2e.mjs` drives the live
+  Chat and source client in a browser against a synthetic source. The matrix
+  covers automatic reconciliation after a lost reply, intact picture retry
+  after reload, restoration of a message with missing bytes, preservation of
+  both drafts when the original wins, and zero full Bot exports. The existing
+  `--read-recovery` and `--legacy` modes cover interrupted reads and drafts
+  that predate command IDs.
+- `web/console/src/cloud/project-assistants.test.ts` exercises refusals before
+  transport, authority changes, lost responses, and relay refusals.
 
-- `web/console/src/cloud/project-assistants.test.ts` — the `send recovery:`
-  tests: pre-transport refusals, authority changes after transport, lost
-  responses, Cloud relay pre-send refusals.
-- `web/console/src/project-assistants/view-state.test.ts` — the inspection
-  matrix: same key on a different Bot, wrong operation, Project/conversation
-  mismatch, duplicate receipts, missing turn, failed, unknown, delivered.
-- `web/console/tools/project-assistants-send-recovery.e2e.mjs`
-  (`npm run e2e:bots-send-recovery`) — the production Chat and source client
-  in a real browser through `clawdline browser`, with a synthetic in-page
-  source. Against 8378f470f the pre-transport step shows the unknown banner
-  with a locked draft and zero transport requests; with this change all five
-  steps pass: refusal returns the draft, an explicit send works, a lost
-  response reattaches after one export read with no second send (also after
-  leaving and reopening the chat), a missing receipt stays held, and a held
-  draft cannot be edited or resent. Against f74ef215c the extended script
-  fails its sixth step: after a full reload the box is editable again with
-  the uncertain text. With the journal all ten steps pass, adding: a reload
-  keeps the send held with no read or send; **Write a new message** gives an
-  empty box and exactly one new send under a new key while the earlier one
-  stays visible; a lost response survives a reload and reattaches after one
-  read while the earlier send's own check reports it still missing; another
-  account sees none of it; a revoked grant reads and sends nothing.
-- `view-state.test.ts` `send recovery journal:` tests — identity, text, quote
-  and references across a reload without picture data; account and source
-  isolation; permission answers; corruption and write failure; preserving unreadable bytes and retaining history
-  independently of pending execution capacity.
-
-The `--legacy` browser mode seeds synthetic historical source facts and a
-saved plain draft without a held journal. The narrow scenario checks a single
-copy in the scrollable transcript, an immediately empty composer, separate
-drafts after reload, one explicit new UUID send, zero automatic exports, and
-account isolation. Add `--refuse-storage` to fault the initial save, verify the
-lock, and recover through the local save control. State tests inject failures
-at each persistence stage, verify conversation scope and protect newer drafts.
-The fixture uses a synthetic source and does not exercise native execution
-or production Cloud admission.
-
-## Not covered
-
-- A held permission answer still lives only in host memory.
-- The Cloud relay's own request layer cannot yet say whether an encrypted
-  request left the page, so a relay failure after it is invoked stays unknown.
-- The journal is per browser storage: another device or browser does not see
-  this device's held sends.
-- The browser script drives a tab opened from the Session's shell
-  (`SEND_RECOVERY_URL`/`SEND_RECOVERY_TAB`); a tab the script opens itself was
-  refused as another Session's (`browser_tab_other_session`).
-- Translations other than English and Taiwan Traditional Chinese still carry
-  the earlier "check the Bot list before trying again" wording for
-  `failUnknown` and fall back to English for the new keys.
+Held permission answers continue to use the separate host-owned permission
+flow. Browser storage is local to that account and browser on the device.

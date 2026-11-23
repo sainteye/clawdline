@@ -56,7 +56,7 @@ import (
 // Local Bot first-run readiness arrives at API 109.
 // Team approval cards in Bot chat history arrive at API 110.
 // Session GitHub change reports arrive at API 111.
-const APILevel = 111
+const APILevel = 112
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

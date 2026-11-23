@@ -1350,6 +1350,10 @@
         },
         "content_hash": {
           "type": "string"
+        },
+        "client_attempt_id": {
+          "type": "string",
+          "description": "An edited recovery attempt sharing this original send identity."
         }
       },
       "required": [

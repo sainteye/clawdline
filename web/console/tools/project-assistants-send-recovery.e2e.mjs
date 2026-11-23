@@ -1,5 +1,5 @@
 /**
- * Uncertain Bot send recovery, in a real browser through `clawdline browser`.
+ * Uncertain Bot send recovery in a real browser with a synthetic source.
  *
  * The page mounts the production Chat with the production
  * ProjectAssistantSourceClient. Only its transport is synthetic: an in-page
@@ -7,7 +7,7 @@
  * (receipt.resource_id is the admitted turn, whose idempotency_key is the
  * send's). Nothing reaches a daemon, Cloud, provider or model.
  *
- *   SEND_RECOVERY_ARTIFACTS=<dir> node tools/project-assistants-send-recovery.e2e.mjs
+ *   PLAYWRIGHT_MODULE=<module> SEND_RECOVERY_ARTIFACTS=<dir> node tools/project-assistants-send-recovery.e2e.mjs
  *   SEND_RECOVERY_SOURCE=<other web/console/src> ...   # run the same steps against a baseline tree
  *   ... --serve-only                                    # print the URL and keep serving
  *   SEND_RECOVERY_URL=<served URL> SEND_RECOVERY_TAB=<tab> ... # drive a tab this Session already opened
@@ -35,9 +35,11 @@ const artifacts = process.env.SEND_RECOVERY_ARTIFACTS
 const legacy = process.argv.includes("--legacy")
 const readRecovery = process.argv.includes("--read-recovery")
 const refuseLegacyStorage = legacy && process.argv.includes("--refuse-storage")
-const query = "?lang=en" + (legacy ? "&legacy=1" : "") + (refuseLegacyStorage ? "&refuse-storage=1" : "")
+const language = process.env.SEND_RECOVERY_LANG === "zh-Hant" ? "zh-Hant" : "en"
+const query = "?lang=" + language + (legacy ? "&legacy=1" : "") + (refuseLegacyStorage ? "&refuse-storage=1" : "")
 const serveOnly = process.argv.includes("--serve-only")
 if (!artifacts && !serveOnly) throw new Error("Set SEND_RECOVERY_ARTIFACTS to a task-owned evidence directory")
+if (!legacy && !serveOnly && !process.env.PLAYWRIGHT_MODULE) throw new Error("Set PLAYWRIGHT_MODULE to an existing Playwright module")
 if (artifacts) await mkdir(artifacts, { recursive: true })
 
 const entry = String.raw`
@@ -55,19 +57,20 @@ export function mountFixture() {
   const fixture = fixtureSource("studio")
   const legacy = new URLSearchParams(location.search).has("legacy")
   if (legacy) fixture.seedPending(0, 1)
-  const turns = []
+  const turns = [], receipts = new Map()
   const readFaults = []
   const persisted = (() => { try { return JSON.parse(sessionStorage.getItem("send-recovery.synthetic-source") ?? "null") } catch { return null } })()
-  const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], failed: null, ...(persisted ?? {}) }
-  const persist = () => sessionStorage.setItem("send-recovery.synthetic-source", JSON.stringify({ mode: state.mode, sends: state.sends, transported: state.transported, exports: state.exports, admitted: state.admitted, failed: state.failed }))
+  const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], pending: null, ...(persisted ?? {}) }
+  const persist = () => sessionStorage.setItem("send-recovery.synthetic-source", JSON.stringify({ mode: state.mode, sends: state.sends, transported: state.transported, exports: state.exports, admitted: state.admitted, pending: state.pending }))
   const admit = async (request, signal) => {
     const answer = await fixture.send(request, signal)
     const receipt = answer.receipt
     if (!turns.some(t => t.id === receipt.id)) turns.push({ id: receipt.id, fence: request.fence, idempotency_key: request.command.idempotency_key, message_id: receipt.id, state: "succeeded", memory_revision: 1, instructions: { text: "", revision: 1, role_snapshot_ref: "" } })
     receipt.resource_id = receipt.id
+    receipts.set(request.command.idempotency_key, answer)
     return answer
   }
-  const live = { accountKey: "fixture-account", readerID: "fixture-reader", machineID: "studio", authorizationRevision: "grant-1", apiLevel: 61, paired: true, online: true, writable: true }
+  const live = { accountKey: "fixture-account", readerID: "fixture-reader", machineID: "studio", authorizationRevision: "grant-1", apiLevel: 112, paired: true, online: true, writable: true }
   // One grant refusal at the send's own pre-transport check, and nowhere else.
   const grant = () => { if (state.revokeSend && /ProjectAssistantSourceClient\.send\b/.test(new Error().stack ?? "")) { state.revokeSend = false; return { ...live, authorizationRevision: "replaced-grant" } } return live }
   const json = (value, status = 200) => Response.json(value, { status })
@@ -89,6 +92,10 @@ export function mountFixture() {
         const answer = await fixture.view({ key, conversation_id: q.conversation_id, mode: q.mode, source_epoch: q.source_epoch, cursor: q.cursor, after_seq: Number(q.after_seq), page_size: Number(q.page_size) }, signal)
         return json(answer)
       }
+      if (method === "GET" && tail === "/send-receipt") {
+        const receipt = receipts.get(q.idempotency_key)
+        return receipt ? json(receipt) : json({contract_version:"project-assistants.v1",error:{code:"pa_not_found",field:"send_receipt",retry_after_seconds:0}},404)
+      }
       if (method === "GET" && tail === "/export") {
         state.exports++; persist()
         const value = await fixture.export(key, signal)
@@ -98,8 +105,13 @@ export function mountFixture() {
         const request = JSON.parse(init.body)
         state.sends++; state.transported.push(request.command.idempotency_key)
         const mode = state.mode; state.mode = "normal"; persist()
-        if (mode === "missing") lose()
-        if (mode === "failed") { state.failed = { id: "failed-" + request.command.idempotency_key, command: request.command, event_seq: 0, resource_id: "", state: "failed" }; persist(); lose() }
+        if (mode === "missing") { state.pending = request; persist(); lose() }
+        if (mode === "original-wins" || mode === "original-wins-lost") {
+          if (!state.pending || state.pending.command.idempotency_key !== request.command.idempotency_key || !request.command.client_attempt_id) throw new Error("recovery lost its command identity")
+          await admit(state.pending, signal); state.admitted.push(state.pending); persist()
+          if (mode === "original-wins-lost") lose()
+          return refusal({contract_version:"project-assistants.v1",error:{code:"pa_idempotency_conflict",field:"command",retry_after_seconds:0}})
+        }
         const answer = await admit(request, signal)
         state.admitted.push(request); persist()
         if (mode === "lose") lose()
@@ -114,14 +126,7 @@ export function mountFixture() {
       throw error
     }
   }
-  // The failed receipt is recorded only in this source's own export.
-  const exportTransport = async (input, init) => {
-    const response = await transport(input, init)
-    if (!state.failed || !new URL(input, location.origin).pathname.endsWith("/export")) return response
-    const value = await response.json()
-    return Response.json({ ...value, receipts: [...value.receipts, state.failed] })
-  }
-  const source = new ProjectAssistantSourceClient(live, exportTransport, grant)
+  const source = new ProjectAssistantSourceClient(live, transport, grant)
   let sources = [source]
   const current = () => sources
   const legacyKey = draftIdentity("fixture-account", { machine_id: "studio", bot_id: "bot-0" })
@@ -148,7 +153,23 @@ export function mountFixture() {
       !legacy && button("Test: interrupt reads after an accepted send", mode("recover-read")),
       !legacy && button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       !legacy && button("Test: next send leaves no receipt", mode("missing")),
-      !legacy && button("Test: next send records failure", mode("failed")),
+      !legacy && button("Test: original wins during recovery", mode("original-wins")),
+      !legacy && button("Test: original wins and loses its response", mode("original-wins-lost")),
+      !legacy && button("Test: attach picture", () => {
+        const canvas = document.createElement("canvas"); canvas.width = 8; canvas.height = 8
+        canvas.toBlob(bytes => {
+          const data = new DataTransfer(); data.items.add(new File([bytes], "fixture.png", {type:"image/png"}))
+          document.querySelector(".pa-chat").dispatchEvent(new DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer:data}))
+        }, "image/png")
+      }),
+      !legacy && button("Test: forget cached attachment", () => {
+        const open = indexedDB.open("clawdline-bot-outgoing",1)
+        open.onsuccess = () => {
+          const db = open.result, transaction = db.transaction("attachments","readwrite")
+          transaction.objectStore("attachments").clear()
+          transaction.oncomplete = () => { db.close(); location.reload() }
+        }
+      }),
       !legacy && button("Test: leave chat", () => { shown = false; paint() }),
       !legacy && button("Test: reopen chat", () => { shown = true; generation++; paint() }),
       button("Test: reload page", () => location.reload()),
@@ -230,7 +251,7 @@ if (readRecovery) {
       await page.getByRole("button",{name:"Test: interrupt reads after an accepted send"}).click()
       const text="Synthetic send during a read interruption"
       await draft.fill(text);await send.click()
-      const reconnect=page.getByText("Reconnecting to the conversation…",{exact:true})
+      const reconnect=page.getByText("Syncing the conversation…",{exact:true})
       try{await reconnect.waitFor({timeout:5000})}
       catch(error){throw new Error("expected automatic recovery after one admitted send: "+await page.locator(".pa-chat-error").innerText(),{cause:error})}
       const followUp="A fresh draft during recovery"
@@ -248,6 +269,91 @@ if (readRecovery) {
       record("accepted send recovers from cursor expiry and offline without resending",state)
     } finally { await engine.close() }
   } finally { if (server.listening) await new Promise(resolve=>server.close(resolve)) }
+} else if (process.env.PLAYWRIGHT_MODULE && !legacy) {
+  const {chromium}=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
+  const engine=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:["--disable-features=OmniboxEverywhere"]})
+  try {
+    const context=await engine.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true})
+    await context.route("**/*",route=>new URL(route.request().url()).origin===origin?route.continue():route.abort())
+    const page=await context.newPage()
+    await page.goto(origin+"/"+query)
+    await page.getByText("I split the work into five tasks",{exact:false}).first().waitFor()
+    const zh=language==="zh-Hant"
+    const draft=page.locator(".pa-composer textarea"), pending=page.locator(".pa-chat-scroll .pa-unsent")
+    const btn=name=>page.getByRole("button",{name,exact:true})
+    const send=btn(zh?"傳送訊息":"Send message")
+    const retry=btn(zh?"重試送出":"Retry sending")
+    const restore=btn(zh?"恢復到輸入框":"Restore to composer")
+    const count=()=>page.evaluate(()=>window.sendRecovery.state.sends)
+    const sendID=()=>page.evaluate(()=>window.sendRecovery.state.transported.at(-1))
+    const enter=async(text)=>{await draft.fill(text);await send.click()}
+    const attach=async()=>{
+      await btn("Test: attach picture").click()
+      await page.waitForFunction(()=>document.querySelector(".pa-pictures img")?.naturalWidth===8)
+    }
+    const waitDraft=async(value)=>page.waitForFunction(v=>document.querySelector(".pa-composer textarea")?.value===v,value)
+    await btn("Test: refuse next send before transport").click()
+    await enter("Synthetic refused draft")
+    await waitDraft("Synthetic refused draft")
+    assert.equal(await count(),0)
+    await send.click()
+    await page.waitForFunction(()=>window.sendRecovery.state.sends===1)
+
+    await btn("Test: lose next response").click()
+    await enter("Synthetic lost-response message")
+    await page.locator(".pa-chat-scroll .pa-message:not(.pa-unsent):not(.pa-sending)").getByText("Synthetic lost-response message",{exact:true}).waitFor()
+    await pending.waitFor({state:"hidden"})
+    assert.equal(await count(),2)
+    record("a lost response reattaches automatically",{sends:2})
+
+    await btn("Test: next send leaves no receipt").click()
+    await attach()
+    await enter("Synthetic unsent picture")
+    await retry.waitFor()
+    const retryID=await sendID()
+    await page.reload()
+    await retry.waitFor()
+    assert.equal(await count(),3)
+    await waitDraft("")
+    await page.screenshot({path:path.join(artifacts,"picture-after-reload.png")})
+    await retry.click()
+    await pending.waitFor({state:"hidden"})
+    assert.equal(await count(),4);assert.equal(await sendID(),retryID)
+    assert.equal(await page.evaluate(()=>window.sendRecovery.state.admitted.at(-1).images?.length),1)
+    record("a reloaded picture retries under its original ID",{sends:4})
+
+    await btn("Test: next send leaves no receipt").click()
+    await attach()
+    await enter("Synthetic original awaiting its picture")
+    await retry.waitFor()
+    const originalID=await sendID()
+    await btn("Test: forget cached attachment").click()
+    await restore.waitFor()
+    assert.equal(await retry.count(),0)
+    await draft.fill("A separate draft")
+    await restore.click()
+    await waitDraft("Synthetic original awaiting its picture")
+    await page.getByText(zh?"請重新附上 1 張圖片。":"Reattach pictures (1 missing).",{exact:false}).first().waitFor()
+    assert.equal(await send.isEnabled(),false)
+    assert.equal(await count(),5)
+    await page.screenshot({path:path.join(artifacts,"restored-with-missing-picture.png")})
+    await attach()
+    await draft.fill("Synthetic edited draft")
+    await btn(zh?"Test: original wins and loses its response":"Test: original wins during recovery").click()
+    await send.click()
+    await page.getByText(zh?"機器已收到原訊息。你修改的內容還留在輸入框。":"The computer received the original message. Your draft is still here.",{exact:true}).waitFor()
+    await waitDraft("Synthetic edited draft")
+    assert.equal(await count(),6);assert.equal(await sendID(),originalID)
+    await btn(zh?"回到先前的草稿":"Resume previous draft").click()
+    await waitDraft("A separate draft")
+    assert.equal(await page.evaluate(()=>window.sendRecovery.state.exports),0)
+    assert.equal(await btn(zh?"向機器核對":"Check with the machine").count(),0)
+    record("a missing image restores the composer, and the original winning preserves both drafts",{sends:6})
+  } finally {
+    if(artifacts)await writeFile(path.join(artifacts,"send-recovery-browser-steps.json"),JSON.stringify({language,results},null,2))
+    await engine.close()
+    if(server.listening)await new Promise(resolve=>server.close(resolve))
+  }
 } else try {
   // An open that timed out may still have run: find it by URL, never open twice.
   const url = origin + "/" + query
@@ -312,137 +418,6 @@ if (readRecovery) {
     page = await until(p => p.includes("legacy-transcript=0") && p.includes("composer=editable draft=[Legacy uncertain draft]"), "removal and editable draft survive reload")
     assert.equal(log(page)?.[1], "1"); assert.equal(log(page)?.[2], "0")
     record("one archived draft, explicit new UUID, account scope, edit and local removal", { refusedInitialStorage: refuseLegacyStorage, sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]), keys })
-  } else {
-  // 1. A pre-transport refusal leaves an editable draft, not a permanent lock.
-  click("Test: refuse next send before transport"); await settle(300)
-  await typeDraft("Synthetic refused draft")
-  click("Send message")
-  let page = await until(p => /pa_revoked/.test(p), "the pre-transport refusal")
-  shot("02-refused-before-transport")
-  assert.equal(log(page)?.[1], "0", "the refused send never reached the transport")
-  record("pre-transport refusal", { locked: /Check with the machine/.test(page), unknownBanner: page.includes("Outcome unknown; no automatic retry"), draftKept: page.includes("draft=[Synthetic refused draft]"), composer: /composer=(\w+)/.exec(page)?.[1] })
-  assert.equal(page.includes("Check with the machine"), false, "a provably unsent message is not held")
-  assert.equal(page.includes("composer=editable draft=[Synthetic refused draft]"), true, "the draft is returned for editing")
-
-  // 2. The same draft sends normally afterward (one transport request).
-  click("Send message")
-  page = await until(p => log(p)?.[1] === "1", "the explicit send by the person")
-  record("person sends again explicitly", { sends: log(page)?.[1] })
-
-  // 3. Accepted send whose response is lost: held, then one receipt check reattaches.
-  click("Test: lose next response"); await settle(300)
-  await typeDraft("Synthetic lost-response message")
-  click("Send message")
-  page = await until(p => p.includes("Check with the machine"), "the held uncertain send")
-  shot("03-held-after-lost-response")
-  const keyAfterLoss = log(page)?.[3]
-  assert.equal(log(page)?.[1], "2")
-  assert.match(page, /stays locked in the box/)
-  assert.equal(page.includes("composer=locked draft=[Synthetic lost-response message]"), true, "the uncertain message stays visible and locked")
-  // Navigation and reopening do not resend.
-  click("Test: leave chat"); await settle(400); click("Test: reopen chat")
-  page = await until(p => p.includes("Check with the machine"), "the held send after reopening")
-  assert.equal(log(page)?.[1], "2", "reopening never resends")
-  shot("04-held-after-reopen")
-  click("Check with the machine")
-  // The transport log repaints every 500 ms; wait for it, not only for the outcome line.
-  page = await until(p => p.includes("The machine has this message. It was not sent again.") && log(p)?.[2] !== "0" && p.includes("composer=editable"), "the reattached receipt")
-  shot("05-reattached")
-  assert.equal(log(page)?.[1], "2", "inspection sent nothing"); assert.equal(log(page)?.[2], "1", "exactly one explicit receipt read")
-  assert.equal(log(page)?.[3], keyAfterLoss)
-  assert.equal(page.includes("Check with the machine"), false)
-  assert.equal(page.includes("composer=editable draft=[]"), true, "the delivered copy leaves the box")
-  record("lost response reattaches by its exact receipt", { sends: 2, exports: 1 })
-
-  // 4. No receipt yet: stays held; nothing is resent.
-  click("Test: next send leaves no receipt"); await settle(300)
-  await typeDraft("Synthetic message with no receipt")
-  click("Send message")
-  await until(p => p.includes("Check with the machine"), "the held send without receipt")
-  click("Check with the machine")
-  page = await until(p => p.includes("The machine has no record of this message yet."), "the missing-receipt outcome")
-  shot("06-missing-receipt-stays-held")
-  assert.equal(log(page)?.[1], "3"); assert.equal(page.includes("Check with the machine"), true, "still held")
-  assert.equal(page.includes("composer=locked draft=[Synthetic message with no receipt]"), true)
-  record("missing receipt stays unknown", { sends: 3, exports: Number(log(page)?.[2]) })
-
-  // 5. While held, the composer refuses typing and nothing is resent.
-  click("Message"); await settle(200)
-  try { browser(...withTab(["type", " extra"])) } catch {}
-  await settle(400); page = read()
-  assert.equal(log(page)?.[1], "3"); assert.equal(page.includes("draft=[Synthetic message with no receipt]"), true)
-  record("held draft cannot be edited or resent", { sends: 3 })
-
-  // 6. A full page reload keeps the held send locked with its check; nothing is resent.
-  const exportsBeforeReload = Number(log(page)?.[2])
-  click("Test: reload page")
-  page = await until(p => p.includes("I split the work into five tasks") && p.includes("Check with the machine") && p.includes("composer=locked"), "the held send after a full reload", 20)
-  shot("07-held-after-reload")
-  assert.equal(log(page)?.[1], "3", "a reload never resends")
-  assert.equal(Number(log(page)?.[2]), exportsBeforeReload, "a reload reads no receipts by itself")
-  assert.equal(page.includes("composer=locked draft=[Synthetic message with no receipt]"), true, "the uncertain intent stays noneditable after reload")
-  click("Check with the machine")
-  page = await until(p => p.includes("The machine has no record of this message yet.") && Number(log(p)?.[2]) === exportsBeforeReload + 1, "the missing receipt after reload")
-  assert.equal(page.includes("composer=locked"), true)
-  record("full reload keeps the uncertain send held", { sends: 3, exports: exportsBeforeReload + 1 })
-
-  // 7. The person explicitly writes a new message: an empty box; the old one stays visible with its own check.
-  click("Write a new message")
-  page = await until(p => p.includes("composer=editable draft=[]") && p.includes("Check this earlier message"), "an empty new draft beside the earlier held send")
-  shot("08-new-draft-beside-held")
-  assert.equal(log(page)?.[1], "3", "setting a send aside sends nothing")
-  assert.match(page, /Earlier message, outcome unknown: .?Synthetic message with no receipt/)
-  assert.equal(page.includes("Check with the machine"), false, "the box itself is no longer held")
-  await typeDraft("A different new message")
-  click("Send message")
-  page = await until(p => log(p)?.[1] === "4" && p.includes("composer=editable draft=[]"), "exactly one new send")
-  shot("09-new-message-sent")
-  const keys = log(page)?.[3].split(",") ?? []
-  assert.equal(keys.length, 4); assert.equal(new Set(keys).size, 4, "the new message is a new command")
-  assert.equal(page.includes("Check this earlier message"), true, "the earlier uncertain message stays visible")
-  assert.equal(page.includes("A different new message"), true)
-  record("explicit new message sends once beside the held one", { sends: 4, keys })
-
-  // 8. A lost response, then a full reload: still held; one exact check reattaches; the earlier one is untouched.
-  click("Test: lose next response"); await settle(300)
-  await typeDraft("Synthetic lost before reload")
-  click("Send message")
-  page = await until(p => p.includes("Check with the machine") && log(p)?.[1] === "5" && p.includes("composer=locked"), "the second held send")
-  const lostKey = log(page)?.[3].split(",").at(-1)
-  click("Test: reload page")
-  page = await until(p => p.includes("I split the work into five tasks") && p.includes("Check with the machine") && p.includes("Check this earlier message") && p.includes("composer=locked"), "both held sends after reload", 20)
-  shot("10-two-held-after-reload")
-  assert.equal(log(page)?.[1], "5"); assert.equal(page.includes("composer=locked draft=[Synthetic lost before reload]"), true)
-  const exportsBefore = Number(log(page)?.[2])
-  click("Check with the machine")
-  page = await until(p => p.includes("The machine has this message. It was not sent again.") && Number(log(p)?.[2]) === exportsBefore + 1 && p.includes("composer=editable"), "reattachment after reload")
-  shot("11-reattached-after-reload")
-  assert.equal(log(page)?.[1], "5", "inspection after reload sent nothing")
-  assert.equal(log(page)?.[3].split(",").at(-1), lostKey)
-  assert.equal(page.includes("composer=editable draft=[]"), true)
-  assert.equal(page.includes("Check this earlier message"), true, "the earlier unknown message is still held")
-  click("Check this earlier message")
-  page = await until(p => p.includes("The machine has no record of the earlier message yet.") && Number(log(p)?.[2]) === exportsBefore + 2, "the earlier message's own check")
-  assert.equal(log(page)?.[1], "5")
-  record("lost response survives reload and reattaches by its exact receipt", { sends: 5, exports: exportsBefore + 2 })
-
-  // 9. Another account never sees this account's held send; switching back restores it.
-  click("Test: switch account")
-  page = await until(p => p.includes("account=other-account") && p.includes("I split the work into five tasks"), "the other account's chat")
-  shot("12-other-account")
-  assert.equal(page.includes("Check this earlier message"), false, "held sends never cross accounts")
-  click("Test: switch account")
-  page = await until(p => p.includes("account=fixture-account") && p.includes("Check this earlier message"), "the original account's held send")
-  record("account fencing", { crossed: false })
-
-  // 10. A revoked grant reads nothing and sends nothing, even on an explicit check.
-  const beforeRevoke = log(page)
-  click("Test: revoke grant"); await settle(400)
-  try { click("Check this earlier message") } catch {}
-  await settle(1200); page = read()
-  shot("13-revoked")
-  assert.equal(log(page)?.[1], beforeRevoke[1]); assert.equal(log(page)?.[2], beforeRevoke[2], "a revoked grant reads no receipts")
-  record("revoked grant never reads or sends", { sends: Number(log(page)?.[1]), exports: Number(log(page)?.[2]) })
   }
 } finally {
   if (artifacts) await writeFile(path.join(artifacts, "send-recovery-browser-steps.json"), JSON.stringify({ origin, source: src, results, steps }, null, 2))

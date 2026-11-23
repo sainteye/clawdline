@@ -514,7 +514,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","status","stop","projects","view","visibility","queue-edit"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","send-receipt","status","stop","projects","view","visibility","queue-edit"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -524,6 +524,16 @@ test("every Bot word is carried and read-only metadata retains action refs",asyn
     assert.equal(captured.at(-1)?.ref,"stable-"+word)
     assert.deepEqual(captured.at(-1)?.fields,fields)
   }
+})
+
+test("edited Bot sends keep their source identity and correlate the edited reply independently",()=>{
+  const key={machine_id:"one",bot_id:"bot"},first="c6000001-0000-4000-8000-000000000001",edited="c6000001-0000-4000-8000-000000000002"
+  const fields={command:{...command(key,"send",first),client_attempt_id:edited},text:"Revised input",quote_message_id:""}
+  const write=assistantRelayRequest("/v1/project-assistants/bot/messages",{method:"POST",body:JSON.stringify(fields),headers:{"Idempotency-Key":first}})
+  assert.equal(write.id,edited)
+  assert.deepEqual(write.fields,fields)
+  const read=assistantRelayRequest("/v1/project-assistants/bot/send-receipt?machine_id=one&conversation_id=chat&idempotency_key="+first)
+  assert.deepEqual(read,{word:"project-assistants.send-receipt",kind:"read",id:"",fields:{...key,conversation_id:"chat",idempotency_key:first}})
 })
 
 test("view checks API59 and every captured authority again after delayed JSON decoding",async()=>{

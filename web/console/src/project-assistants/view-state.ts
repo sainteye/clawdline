@@ -52,6 +52,8 @@ export interface HeldOutcome {
   files?: string[]
   /** Read back from storage: the intent lost its pictures' data with the page that sent it. */
   restored?: boolean
+  needsEdit?: boolean
+  superseded?: boolean
 }
 /**
  * A held text larger than the source transcript budget
@@ -87,18 +89,18 @@ function decodeOutcome(v: unknown, draftKey: string): HeldOutcome | null {
     // own source receipt until the matching message is actually observed.
     if (r.state !== "unknown" && (!admitted.has(r.state) || r.command.operation !== "send" || !r.command.key || !sameBot(r.command.key,c.key) || !str(r.command.content_hash) || !str(r.id) || !r.id || !str(r.resource_id) || !r.resource_id || !Number.isSafeInteger(r.event_seq) || r.event_seq < 0)) return null
   }
-  return { intent: i, receipt: r, ...(o.pictures ? { pictures: o.pictures } : {}), ...(o.files?.length ? { files: o.files } : {}), restored: true }
+  return { intent: i, receipt: r, ...(o.pictures ? { pictures: o.pictures } : {}), ...(o.files?.length ? { files: o.files } : {}), restored: true, ...(o.needsEdit === true ? { needsEdit: true } : {}), ...(o.superseded === true ? { superseded: true } : {}) }
 }
 /** What storage keeps of a held send: its command, text, quote, upload references and receipt. No picture data, no credentials. */
 function encodeOutcome(o: HeldOutcome) {
   const { images, ...intent } = o.intent as W.ProjectAssistantSendRequest
   const pictures = o.pictures ?? images?.length ?? 0
-  return { intent, receipt: o.receipt, ...(pictures ? { pictures } : {}), ...(o.files?.length ? { files: o.files } : {}) }
+  return { intent, receipt: o.receipt, ...(pictures ? { pictures } : {}), ...(o.files?.length ? { files: o.files } : {}), ...(o.needsEdit ? { needsEdit: true } : {}), ...(o.superseded ? { superseded: true } : {}) }
 }
 /**
  * The held sends for each account/Bot. The one in the box is `active`; the
  * person may set it aside to write a new message, and it stays in `aside`
- * with its own check. A send is journaled to storage before its transport so
+ * for reconciliation or retry. A send is journaled before its transport so
  * a full reload still holds it; nothing here ever sends.
  */
 export class HeldOutcomes {
@@ -148,8 +150,13 @@ export class HeldOutcomes {
   has(key: string) { return !!this.load(key).active }
   get(key: string) { return this.load(key).active ?? undefined }
   set(key: string, outcome: HeldOutcome) { const j = this.load(key); j.active = outcome; this.save(key, j); return this }
+  activate(key: string, outcome: HeldOutcome) {
+    const j = this.load(key)
+    j.aside = j.aside.filter(prior => prior.intent.command.idempotency_key !== outcome.intent.command.idempotency_key)
+    return this.set(key, outcome)
+  }
   delete(key: string) { const j = this.load(key), had = !!j.active; j.active = null; this.save(key, j); return had }
-  /** Sends the person set aside to write a new message; each keeps its own check. */
+  /** Sends awaiting reconciliation, independent of the current composer. */
   aside(key: string): readonly HeldOutcome[] { return this.load(key).aside }
   /** Why this device could not keep, or could not read back, the held record. */
   problem(key: string) { return this.load(key).problem }
@@ -176,14 +183,6 @@ export class HeldOutcomes {
     const j = this.load(key), before = j.aside.length
     j.aside = j.aside.filter(o => o.intent.command.idempotency_key !== idempotencyKey)
     if (j.aside.length !== before) this.save(key, j)
-  }
-  /** Confirms local removal only once the updated journal can survive reload. */
-  dismissAside(key: string, idempotencyKey: string): boolean {
-    const j = this.load(key)
-    const next = { ...j, aside: j.aside.filter(o => o.intent.command.idempotency_key !== idempotencyKey) }
-    if (this.storage && !this.save(key, next)) return false
-    this.journals.set(key, next)
-    return true
   }
   dismissUnreadable(key: string) { const j = this.load(key); if (j.unreadable) { j.unreadable = false; this.save(key, j) } }
   /**
@@ -227,38 +226,6 @@ export class HeldOutcomes {
 }
 /** One send's request ended; its outcome is already in the journal. */
 export interface SendLanded { idempotency_key: string; receipt: W.ProjectAssistantReceipt | null }
-/**
- * What one explicit read of the source's durable receipts says about a held
- * send. `delivered`: the source admitted exactly this command and its turn is
- * in this conversation. `failed`: the source recorded that it did not start.
- * `unknown`: the source recorded an unknown effect. `missing`: no receipt yet,
- * which never proves non-delivery. `invalid`: the answer cannot be trusted for
- * this Bot, Project, conversation or command.
- */
-export type HeldInspection =
-  | { state: "delivered"; receipt: W.ProjectAssistantReceipt; turn_id: string }
-  | { state: "failed" | "unknown"; receipt: W.ProjectAssistantReceipt }
-  | { state: "missing" | "invalid" }
-export function inspectHeldSend(value: W.ProjectAssistantExport, held: HeldOutcome, scope: Pick<W.ProjectAssistantFence, "key" | "project" | "conversation_id">): HeldInspection {
-  const intent = held.intent, c = intent.command
-  // A permission answer is host-owned and never becomes a message outcome.
-  if (c.operation !== "send" || !("text" in intent) || !sameBot(c.key, scope.key)) return { state: "invalid" }
-  if (!value?.bot?.key || !value.bot.project || !value.conversation || !Array.isArray(value.receipts) || !Array.isArray(value.turns)) return { state: "invalid" }
-  if (!sameConversation({ key: value.bot.key, project: value.bot.project, conversation_id: value.conversation.id }, scope)) return { state: "invalid" }
-  const matches = value.receipts.filter(r => !!r?.command?.key && sameBot(r.command.key, c.key) && r.command.operation === "send" && r.command.idempotency_key === c.idempotency_key)
-  if (!matches.length) return { state: "missing" }
-  if (matches.length > 1) return { state: "invalid" }
-  const receipt = matches[0]
-  if (receipt.state === "failed") return { state: "failed", receipt }
-  const turn = value.turns.find(t => t?.id === receipt.resource_id)
-  if (admitted.has(receipt.state) || receipt.state === "unknown") {
-    // Admission creates the turn and its message together; a receipt without
-    // its own turn in this conversation is not evidence for this chat.
-    if (!turn || turn.idempotency_key !== c.idempotency_key || !turn.fence || !sameConversation(turn.fence, scope)) return receipt.state === "unknown" ? { state: "unknown", receipt } : { state: "invalid" }
-    return { state: "delivered", receipt, turn_id: turn.id }
-  }
-  return { state: "invalid" }
-}
 /** A plain draft has no command identity and cannot establish any delivery fact. */
 export interface UnverifiedDraft {
   scope: Pick<W.ProjectAssistantFence, "key" | "project" | "conversation_id">

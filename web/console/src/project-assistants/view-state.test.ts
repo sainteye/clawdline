@@ -6,7 +6,8 @@ import { botIdentity,draftIdentity,sameConversation,sameFence,canRead,canWrite,c
 // @ts-expect-error Node executes source extensions.
 import * as viewStateModule from "./view-state.ts"
 const key={machine_id:"one",bot_id:"same"},project={machine_id:"one",project_id:"p",canonical_id:"repo",kind:"repository" as const}
-const fence={key,project,conversation_id:"c",binding_id:"b",generation:1}
+const scope={key,project,conversation_id:"c"}
+const fence={...scope,binding_id:"b",generation:1}
 test("machine and account identity isolate drafts and same-named Bots",()=>{
   assert.notEqual(botIdentity(key),botIdentity({...key,machine_id:"two"}))
   assert.notEqual(draftIdentity("a",key),draftIdentity("b",key))
@@ -71,38 +72,6 @@ test("roster uses activity order, stable source tie-break and versions without d
   assert.deepEqual(result.map(r=>[r.bot.key.machine_id,r.version]),[["a",2],["b",1]])
 })
 
-type Inspect=(value:W.ProjectAssistantExport,held:{intent:W.ProjectAssistantSendRequest|W.ProjectAssistantPermissionAnswerRequest;receipt:null},scope:{key:W.ProjectAssistantBotKey;project:typeof project;conversation_id:string})=>{state:string;turn_id?:string}
-const inspect=(...args:Parameters<Inspect>)=>{const f=(viewStateModule as {inspectHeldSend?:Inspect}).inspectHeldSend;assert.ok(f,"a held send can be inspected against durable receipts");return f(...args)}
-const scope={key,project,conversation_id:"c"}
-const heldSend=(id="held-key"):{intent:W.ProjectAssistantSendRequest;receipt:null}=>({intent:{command:{key,operation:"send",idempotency_key:id,content_hash:""},fence,text:"synthetic held text",quote_message_id:""},receipt:null})
-const turnOf=(id:string,key_="held-key",f=fence)=>({id,fence:f,idempotency_key:key_,message_id:"m-"+id,state:"queued",memory_revision:1,instructions:{text:"",revision:1,role_snapshot_ref:""}} as W.ProjectAssistantTurn)
-const receiptOf=(state:W.ProjectAssistantEffectState,over:Partial<W.ProjectAssistantCommand>={},resource="turn-1")=>({id:"r-"+state+(over.idempotency_key??""),command:{key,operation:"send",idempotency_key:"held-key",content_hash:"canonical",...over},event_seq:3,resource_id:resource,state} as W.ProjectAssistantReceipt)
-const exportOf=(receipts:W.ProjectAssistantReceipt[],turns:W.ProjectAssistantTurn[]=[turnOf("turn-1")],over:Partial<{bot:W.ProjectAssistantBotKey;project:typeof project;conversation:string}>={})=>({bot:{key:over.bot??key,project:over.project??project},conversation:{id:over.conversation??"c"},receipts,turns} as unknown as W.ProjectAssistantExport)
-test("send recovery: only the exact admitted command for this Bot and conversation reattaches",()=>{
-  for(const state of ["accepted","executing","delivered","observed","read"] as const)assert.deepEqual(inspect(exportOf([receiptOf(state)]),heldSend(),scope),{state:"delivered",receipt:receiptOf(state),turn_id:"turn-1"})
-  assert.equal(inspect(exportOf([receiptOf("failed")]),heldSend(),scope).state,"failed")
-  // A source-recorded unknown effect stays unknown unless its own turn proves admission.
-  assert.equal(inspect(exportOf([receiptOf("unknown")],[]),heldSend(),scope).state,"unknown")
-  assert.equal(inspect(exportOf([receiptOf("unknown")]),heldSend(),scope).state,"delivered")
-})
-test("send recovery: absence, foreign identity and inconsistent receipts never release a held send",()=>{
-  assert.equal(inspect(exportOf([]),heldSend(),scope).state,"missing","a missing receipt is not proof of non-delivery")
-  assert.equal(inspect(exportOf([receiptOf("accepted",{idempotency_key:"other-key"})]),heldSend(),scope).state,"missing")
-  assert.equal(inspect(exportOf([receiptOf("accepted",{key:{...key,bot_id:"other"}})]),heldSend(),scope).state,"missing","same key on a different Bot")
-  assert.equal(inspect(exportOf([receiptOf("accepted",{operation:"answer"})]),heldSend(),scope).state,"missing","wrong operation")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],[],{bot:{...key,bot_id:"other"}}),heldSend(),scope).state,"invalid","export of another Bot")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],undefined,{project:{...project,project_id:"other"}}),heldSend(),scope).state,"invalid","another Project")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],undefined,{conversation:"other"}),heldSend(),scope).state,"invalid","another conversation")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],[turnOf("turn-1","other-key")]),heldSend(),scope).state,"invalid","turn of another command")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],[turnOf("turn-1","held-key",{...fence,conversation_id:"other"})]),heldSend(),scope).state,"invalid","turn of another conversation")
-  assert.equal(inspect(exportOf([receiptOf("accepted")],[]),heldSend(),scope).state,"invalid","accepted receipt without its turn")
-  assert.equal(inspect(exportOf([receiptOf("accepted"),{...receiptOf("failed"),id:"second"}]),heldSend(),scope).state,"invalid","duplicate receipts")
-  assert.equal(inspect({} as W.ProjectAssistantExport,heldSend(),scope).state,"invalid")
-})
-test("send recovery: a held permission answer is never inspected as a message send",()=>{
-  const answer={intent:{command:{key,operation:"answer",idempotency_key:"held-key",content_hash:""},fence,offer_id:"offer",turn_id:"turn-1",option_id:"allow"},receipt:null} as const
-  assert.equal(inspect(exportOf([receiptOf("accepted",{operation:"answer"})]),answer,scope).state,"invalid")
-})
 const memoryStore=()=>{const disk=new Map<string,string>();return {disk,store:{getItem:(k:string)=>disk.get(k)??null,setItem:(k:string,v:string)=>{disk.set(k,v)},removeItem:(k:string)=>{disk.delete(k)}}}}
 const journalSend=(id:string,text="retained draft",extra:Partial<W.ProjectAssistantSendRequest>={}):W.ProjectAssistantSendRequest=>({command:{key,operation:"send",idempotency_key:id,content_hash:""},fence,text,quote_message_id:"quote-1",...extra})
 test("send recovery journal: accepted but unobserved text survives reload with its own receipt",()=>{

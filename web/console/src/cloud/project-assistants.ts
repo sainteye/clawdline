@@ -600,6 +600,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
   configuration(key:W.ProjectAssistantBotKey,conversation:string,agent:W.ProjectAssistantAgent,model:string,signal:AbortSignal,loginProfile?:string){this.key(key);return this.request<W.ProjectAssistantConfigurationResponse>(endpoint(key,"/configuration")+query({machine_id:this.machineID,conversation_id:conversation,agent,model,...(loginProfile!==undefined?{login_profile:loginProfile}:{})}),signal,undefined,"GET",true,agent==="antigravity"?PROJECT_ASSISTANTS_GEMINI_API_LEVEL:agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:loginProfile!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)}
   forget(r: W.ProjectAssistantForgetRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory/forget"),s,r,"POST") }
   saveMemory(r: W.ProjectAssistantMemoryWriteRequest,s: AbortSignal) { return this.request<W.ProjectAssistantMemoryResponse>(endpoint(r.command.key,"/memory"),s,r,"POST",true,r.entry?.kind!==undefined||r.entry?.title!==undefined||r.entry?.summary!==undefined?PROJECT_ASSISTANTS_TOPIC_MEMORY_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL) }
+  canRecoverSend(){ return (this.grant.apiLevel??0)>=112 }
+  sendReceipt(r: W.ProjectAssistantSendRequest,s: AbortSignal) {
+    this.key(r.command.key)
+    return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/send-receipt")+query({
+      machine_id:this.machineID,conversation_id:r.fence.conversation_id,idempotency_key:r.command.idempotency_key,
+    }),s,undefined,"GET",true,112)
+  }
   export(r: W.ProjectAssistantBotKey,s: AbortSignal) { this.key(r); return this.request<W.ProjectAssistantExport>(endpoint(r,"/export")+query({machine_id:this.machineID}),s) }
   /** Board remains its existing owner; this only reads its full item on the captured source. */
   async workItem(work: W.ProjectAssistantWorkLink,s: AbortSignal): Promise<WorkV2Item> {
@@ -772,6 +779,11 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     }
     const picture=/^\/attachments\/([0-9a-f]{64})$/.exec(tail)
     if(picture){if(url.searchParams.size!==1||!q.machine_id)throw failure("pa_invalid");return {word:"project-assistants.attachment",kind:"read" as const,fields:{...key,id:picture[1]},id:""}}
+    if(tail==="/send-receipt"){
+      const keys=["machine_id","conversation_id","idempotency_key"]
+      if(init?.body!=null||url.searchParams.size!==keys.length||keys.some(k=>url.searchParams.getAll(k).length!==1||!q[k]))throw failure("pa_invalid")
+      return {word:"project-assistants.send-receipt",kind:"read" as const,fields:{...key,conversation_id:q.conversation_id,idempotency_key:q.idempotency_key},id:""}
+    }
     const action = tail === "/messages" ? "history" : tail === "/events" ? "events" : tail === "/export" ? "export" : tail === "/rules" ? "rules" : tail === "" ? "get" : null
     if (!action) throw failure("pa_invalid")
     const fields = action === "history" ? {key,conversation_id:q.conversation_id,before_seq:Number(q.before_seq),page_size:Number(q.page_size)} : action === "events" ? {key,after_seq:Number(q.after_seq),page_size:Number(q.page_size)} : key
@@ -811,7 +823,9 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     if(fields.text!==""||fields.quote_message_id!==""||fields.images||fields.upload_ids||fields.handoff)throw failure("pa_invalid")
     delete fields.text // This existing carry word has a host greeting shape without user text.
   }
-  return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:command.idempotency_key}
+  const attempt = action==="send" && "client_attempt_id" in command ? command.client_attempt_id : undefined
+  if(attempt!==undefined&&(typeof attempt!=="string"||!attempt))throw failure("pa_invalid")
+  return {word:`project-assistants.${action==="send"&&Array.isArray(fields.upload_ids)&&fields.upload_ids.length?"send-files":action==="send"&&Array.isArray(fields.images)&&fields.images.length?"send-pictures":action}`,kind:"action" as const,fields,id:attempt??command.idempotency_key}
 }
 
 /** Uses the passed machine and authenticated connection, never install.ts's active reader. */

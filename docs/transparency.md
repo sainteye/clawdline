@@ -1161,3 +1161,10 @@ turned off). The shell reads the same startup files, and the launch line it
 is given is unchanged, so the English and Taiwan Traditional Chinese
 launch-context explanations still describe every input at launch. The
 reviewed start-route and settings receipts follow the new switch.
+
+Bot send recovery keeps an uncertain user message in the transcript and
+looks up that command's admission receipt. The browser retains its pending
+attachments for an explicit retry or draft restoration. An edited recovery
+and the original compete for the same source admission. Review of the
+English and Taiwan Traditional Chinese Bot context and routine explanations
+found the same instruction inputs, provider scopes, and execution rules.

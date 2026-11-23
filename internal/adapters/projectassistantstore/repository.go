@@ -211,6 +211,44 @@ func receipt(ctx context.Context, r reader, c pa.Command) (*pa.Receipt, error) {
 func (s *Store) Receipt(ctx context.Context, c pa.Command) (*pa.Receipt, error) {
 	return receipt(ctx, s.db, c)
 }
+
+// SendReceipt reads one receipt and its turn in the same SQLite snapshot.
+func (s *Store) SendReceipt(ctx context.Context, key pa.BotKey, conversation, id string) (pa.Receipt, error) {
+	const query = `SELECT r.data, json_extract(CAST(b.data AS TEXT), '$.Bot.project'), coalesce(json_extract(CAST(b.data AS TEXT),
+		'$.Turns."' || json_extract(CAST(r.data AS TEXT), '$.resource_id') || '"'), '')
+		FROM project_assistant_receipts r JOIN project_assistant_bots b USING (machine,bot)
+		WHERE r.machine=? AND r.bot=? AND r.operation='send' AND r.command_key=?
+		AND json_extract(CAST(b.data AS TEXT), '$.Conversation.id')=?`
+	var raw, projectRaw, turnRaw []byte
+	err := s.db.QueryRowContext(ctx, query, key.MachineID, key.BotID, id, conversation).Scan(&raw, &projectRaw, &turnRaw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return pa.Receipt{}, failure(pa.NotFound, "send_receipt")
+	}
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	var result pa.Receipt
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return pa.Receipt{}, err
+	}
+	if result.Command.Key != key || result.Command.Operation != pa.SendOperation || result.Command.IdempotencyKey != id {
+		return pa.Receipt{}, failure(pa.Invalid, "send_receipt")
+	}
+	var project pa.ProjectScope
+	if err := json.Unmarshal(projectRaw, &project); err != nil {
+		return pa.Receipt{}, err
+	}
+	var turn pa.Turn
+	if len(turnRaw) == 0 || json.Unmarshal(turnRaw, &turn) != nil || turn.ID != result.ResourceID ||
+		turn.IdempotencyKey != id || turn.Fence.Key != key || turn.Fence.ConversationID != conversation || turn.Fence.Project != project ||
+		(turn.Origin != pa.UserOrigin && turn.Origin != "") {
+		return pa.Receipt{}, failure(pa.OutcomeUnknown, "send_receipt_turn")
+	}
+	// The identified user turn proves admission even when native execution ended uncertainly.
+	result.State = pa.EffectAccepted
+	return result, nil
+}
+
 func writeReceipt(ctx context.Context, tx *sql.Tx, r pa.Receipt) error {
 	data, err := json.Marshal(r)
 	if err != nil {

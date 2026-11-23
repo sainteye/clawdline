@@ -67,6 +67,7 @@ func projectAssistantOperationCases() []operationCase {
 		{"login-profile", "POST", "/bot/login-profile", map[string]any{"fence": fence, "expected_version": 1, "profile_id": "", "revision": 0, "agent": "codex", "action": "create", "name": "Synthetic account"}, nil},
 		{"configuration", "GET", "/bot/configuration", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "agent": "codex", "model": ""}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "agent": "codex", "model": ""}},
 		{"export", "GET", "/bot/export", key, map[string]string{"machine_id": "mac-01"}},
+		{"send-receipt", "GET", "/bot/send-receipt", map[string]any{"machine_id": "mac-01", "bot_id": "bot", "conversation_id": "chat", "idempotency_key": "c6000001-0000-4000-8000-000000000001"}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "idempotency_key": "c6000001-0000-4000-8000-000000000001"}},
 		{"history", "GET", "/bot/messages", map[string]any{"key": key, "conversation_id": "chat", "before_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "before_seq": "3", "page_size": "2"}},
 		{"view", "GET", "/bot/view", map[string]any{"key": key, "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": 0, "page_size": 100}, map[string]string{"machine_id": "mac-01", "conversation_id": "chat", "mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": "0", "page_size": "100"}},
 		{"events", "GET", "/bot/events", map[string]any{"key": key, "after_seq": 3, "page_size": 2}, map[string]string{"machine_id": "mac-01", "after_seq": "3", "page_size": "2"}},
@@ -138,7 +139,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 71 {
+	if len(out) != 72 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out

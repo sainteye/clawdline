@@ -5400,6 +5400,10 @@ export interface ProjectAssistantCapabilities {
  * bot_id; same command returns same Bot.
  */
 export interface ProjectAssistantCommand {
+  /**
+   * An edited recovery attempt sharing this original send identity.
+   */
+  client_attempt_id?: string
   content_hash: string
   idempotency_key: string
   key: ProjectAssistantBotKey

@@ -16,7 +16,7 @@ import (
 
 func init() {
 	register(op{name: "project-assistants.attachment", read: true, shape: projectAssistantAttachmentReply, partial: projectAssistantFailure})
-	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "configuration-profile", "login-profiles", "extensions", "network-settings", "handoff-card", "dev-servers", "dev-server-logs", "tower-floors"} {
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "send-receipt", "view", "rules", "output", "input", "memory-view", "configuration", "configuration-profile", "login-profiles", "extensions", "network-settings", "handoff-card", "dev-servers", "dev-server-logs", "tower-floors"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
@@ -39,6 +39,15 @@ func projectAssistantGuard(p plan) *Refusal {
 	b, err := decodeBody(p.local.Body)
 	if err != nil {
 		return projectAssistantMalformed()
+	}
+	if b.genAt("command.operation") == "send" {
+		id := genText(b.genAt("command.idempotency_key"))
+		if attempt, present := b.genLookup("command.client_attempt_id"); present {
+			id = genText(attempt)
+		}
+		if id == "" || id != p.request {
+			return projectAssistantMalformed()
+		}
 	}
 	key, _ := b.genAt("command.key").(map[string]any)
 	for _, path := range []string{"fence.key", "cursor.key", "entry.key"} {

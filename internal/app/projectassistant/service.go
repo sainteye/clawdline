@@ -481,6 +481,49 @@ func (s *Service) Export(ctx context.Context, key pa.BotKey) (Export, error) {
 	return s.opts.Repository.Export(ctx, key)
 }
 
+// SendReceipt returns admission evidence for one browser send in its original chat.
+func (s *Service) SendReceipt(ctx context.Context, key pa.BotKey, conversation, id string) (pa.Receipt, error) {
+	if !validBrowserSendID(id) || conversation == "" {
+		return pa.Receipt{}, serviceFailure(pa.Invalid, "send_identity")
+	}
+	ctx, _, err := s.backgroundChannel(ctx, key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	a, err := s.authorize(ctx, key, false)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	store, ok := s.opts.Repository.(interface {
+		SendReceipt(context.Context, pa.BotKey, string, string) (pa.Receipt, error)
+	})
+	if !ok {
+		return pa.Receipt{}, serviceFailure(pa.Unsupported, "send_receipt")
+	}
+	receipt, err := store.SendReceipt(ctx, key, conversation, id)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	_, err = s.authorizeEffect(ctx, key, false, a)
+	return receipt, err
+}
+
+func validBrowserSendID(id string) bool {
+	if len(id) != len("00000000-0000-0000-0000-000000000000") {
+		return false
+	}
+	for i, ch := range id {
+		if i == 8 || i == 13 || i == 18 || i == 23 {
+			if ch != '-' {
+				return false
+			}
+		} else if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage) (pa.Receipt, error) {
 	ctx, thread, err := s.backgroundChannel(ctx, c.Key)
 	if err != nil {
@@ -492,6 +535,9 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {
 		return pa.Receipt{}, err
+	}
+	if c.ClientAttemptID != "" && (!validBrowserSendID(c.IdempotencyKey) || !validBrowserSendID(c.ClientAttemptID)) {
+		return pa.Receipt{}, serviceFailure(pa.Invalid, "client_attempt_id")
 	}
 	if c.Key != message.Fence.Key {
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")

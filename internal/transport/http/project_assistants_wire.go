@@ -502,6 +502,7 @@ func paWireCommand(value pa.Command) contract.ProjectAssistantCommand {
 	out.Operation = contract.ProjectAssistantOperation(value.Operation)
 	out.IdempotencyKey = value.IdempotencyKey
 	out.ContentHash = value.ContentHash
+	out.ClientAttemptID = value.ClientAttemptID
 	return out
 }
 
@@ -589,6 +590,7 @@ func paDomainCommand(value contract.ProjectAssistantCommand) pa.Command {
 	out.Operation = pa.Operation(value.Operation)
 	out.IdempotencyKey = value.IdempotencyKey
 	out.ContentHash = value.ContentHash
+	out.ClientAttemptID = value.ClientAttemptID
 	return out
 }
 

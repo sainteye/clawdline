@@ -7772,13 +7772,16 @@
               "idempotency_key": {
                 "type": "string",
                 "non_empty": true,
-                "same_as": "request",
-                "checks": [
+                  "checks": [
                   "request_name"
                 ]
               },
               "content_hash": {
                 "type": "string"
+              },
+              "client_attempt_id": {
+                "type": "string",
+                "checks": ["request_name"]
               }
             },
             "required": [
@@ -8113,13 +8116,16 @@
               "idempotency_key": {
                 "type": "string",
                 "non_empty": true,
-                "same_as": "request",
-                "checks": [
+                  "checks": [
                   "request_name"
                 ]
               },
               "content_hash": {
                 "type": "string"
+              },
+              "client_attempt_id": {
+                "type": "string",
+                "checks": ["request_name"]
               }
             },
             "required": [
@@ -8637,13 +8643,16 @@
               "idempotency_key": {
                 "type": "string",
                 "non_empty": true,
-                "same_as": "request",
-                "checks": [
+                  "checks": [
                   "request_name"
                 ]
               },
               "content_hash": {
                 "type": "string"
+              },
+              "client_attempt_id": {
+                "type": "string",
+                "checks": ["request_name"]
               }
             },
             "required": [
@@ -8800,6 +8809,7 @@
         }
       }
     },
+    {"op":"project-assistants.send-receipt","kind":"read","write_gate":false,"console":"carried","console_route":"captured Bot source GET /v1/project-assistants/{bot_id}/send-receipt","console_seam":"client","local":{"method":"GET","device":true},"special":["partial_answer","shaped_answer"],"example":{"machine_id":"source-one","bot_id":"bot-one","conversation_id":"chat","idempotency_key":"c6000001-0000-4000-8000-000000000001","session":"__clawdline_machine__","request":"stable-send-receipt"},"shapes":[{"body":["bot_id","conversation_id","idempotency_key","machine_id","request","session"],"path":"/v1/project-assistants/{bot_id}/send-receipt","query":["conversation_id","idempotency_key","machine_id"]}],"decode":{"reply":"machine","fields":{"machine_id":{"type":"string","non_empty":true},"bot_id":{"type":"string","checks":["pa_bot_id"]},"conversation_id":{"type":"string","non_empty":true},"idempotency_key":{"type":"string","checks":["request_name"]}},"route":{"path":"/v1/project-assistants/{bot_id}/send-receipt","query":{"machine_id":{"from":"machine_id"},"conversation_id":{"from":"conversation_id"},"idempotency_key":{"from":"idempotency_key"}}}}},
     {
       "op": "project-assistants.status",
       "kind": "read",

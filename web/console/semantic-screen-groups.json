@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14055,
-  "riskKeys": 5968,
-  "nonRiskCount": 8087,
+  "englishContentKeys": 14064,
+  "riskKeys": 5973,
+  "nonRiskCount": 8091,
   "groups": [
     {
       "name": "acp / other",
@@ -6204,7 +6204,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 568,
+      "count": 572,
       "sources": [
         null
       ],
@@ -6482,7 +6482,9 @@
         "projectAssistants.online",
         "projectAssistants.openingOutput",
         "projectAssistants.openingPDF",
+        "projectAssistants.originalAlreadyReceived",
         "projectAssistants.otherReaction",
+        "projectAssistants.outgoingPictureCount",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",
         "projectAssistants.permissionExecute",
@@ -6521,8 +6523,10 @@
         "projectAssistants.renameArtifact",
         "projectAssistants.renameArtifactFailed",
         "projectAssistants.renamingArtifact",
+        "projectAssistants.resumePreviousDraft",
         "projectAssistants.retry",
         "projectAssistants.retryReaction",
+        "projectAssistants.retryUnsentSend",
         "projectAssistants.roomEveryone",
         "projectAssistants.roomFallbackAttempt",
         "projectAssistants.roomFallbackRestReason",

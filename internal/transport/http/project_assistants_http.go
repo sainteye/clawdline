@@ -248,7 +248,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "history"}, nil
-					case "events", "export", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions", "network-settings", "handoff-card":
+					case "events", "export", "send-receipt", "view", "rules", "output", "input", "memory-view", "configuration", "login-profiles", "extensions", "network-settings", "handoff-card":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -320,6 +320,9 @@ func (h *projectAssistantHTTP) command(r *http.Request, route paHTTPRoute, c con
 	}
 	if !paHTTPSafeBotID(command.Key.BotID) {
 		return command, paHTTPFailure(pa.Invalid, "bot_id")
+	}
+	if command.ClientAttemptID != "" && operation != pa.SendOperation {
+		return command, paHTTPFailure(pa.Invalid, "client_attempt_id")
 	}
 	if command.Operation != operation {
 		return command, paHTTPFailure(pa.Invalid, "operation")
@@ -469,6 +472,8 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 		fields = append(fields, "conversation_id", "before_seq", "page_size")
 	case "events":
 		fields = append(fields, "after_seq", "page_size")
+	case "send-receipt":
+		fields = append(fields, "conversation_id", "idempotency_key")
 	}
 	q, err := paHTTPQuery(r, fields...)
 	if err != nil {
@@ -576,6 +581,8 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 			response.Rules[i] = contract.ProjectAssistantPermissionRule{Behavior: rule.Behavior, Rule: rule.Rule}
 		}
 		return response, nil
+	case "send-receipt":
+		return paHTTPReceipt(s.SendReceipt(ctx, key, q.Get("conversation_id"), q.Get("idempotency_key")))
 	case "export":
 		snapshot, err := s.Export(ctx, key)
 		if err != nil {
@@ -672,7 +679,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 			return nil, err
 		}
 		if request.CallStarted {
-			if request.Text != "" || request.QuoteMessageID != "" || len(request.Images) > 0 || len(request.UploadIds) > 0 || request.Handoff != nil {
+			if command.ClientAttemptID != "" || request.Text != "" || request.QuoteMessageID != "" || len(request.Images) > 0 || len(request.UploadIds) > 0 || request.Handoff != nil {
 				return nil, paHTTPFailure(pa.Invalid, "call_started")
 			}
 			return paHTTPReceipt(s.LeadCallStarted(ctx, command, fence))

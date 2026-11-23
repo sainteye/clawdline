@@ -660,7 +660,8 @@ type Command struct {
 	Operation      Operation `json:"operation"`
 	IdempotencyKey string    `json:"idempotency_key"`
 	// SHA-256 of the canonical validated command, excluding transport metadata.
-	ContentHash string `json:"content_hash"`
+	ContentHash     string `json:"content_hash"`
+	ClientAttemptID string `json:"client_attempt_id,omitempty"`
 }
 type Receipt struct {
 	Command    Command     `json:"command"`

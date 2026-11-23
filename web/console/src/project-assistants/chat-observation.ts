@@ -9,7 +9,7 @@ export function admittedReceipt(receipt:W.ProjectAssistantReceipt|null|undefined
 /** A malformed write answer cannot prove refusal or release the original intent. */
 export function sendAcknowledgement(value:unknown,intent:W.ProjectAssistantSendRequest):value is W.ProjectAssistantReceiptResponse {
   const v=value as W.ProjectAssistantReceiptResponse|undefined,r=v?.receipt,c=r?.command
-  return v?.contract_version==="project-assistants.v1"&&!!r&&!!c?.key&&sameBot(c.key,intent.command.key)&&c.operation==="send"&&c.idempotency_key===intent.command.idempotency_key&&typeof c.content_hash==="string"&&typeof r.id==="string"&&!!r.id&&Number.isSafeInteger(r.event_seq)&&r.event_seq>=0&&typeof r.resource_id==="string"&&["accepted","executing","delivered","observed","read","failed","unknown"].includes(r.state)&&(!admittedReceipt(r)||!!r.resource_id)
+  return v?.contract_version==="project-assistants.v1"&&!!r&&!!c?.key&&sameBot(c.key,intent.command.key)&&c.operation==="send"&&c.idempotency_key===intent.command.idempotency_key&&c.client_attempt_id===intent.command.client_attempt_id&&typeof c.content_hash==="string"&&typeof r.id==="string"&&!!r.id&&Number.isSafeInteger(r.event_seq)&&r.event_seq>=0&&typeof r.resource_id==="string"&&["accepted","executing","delivered","observed","read","failed","unknown"].includes(r.state)&&(!admittedReceipt(r)||!!r.resource_id)
 }
 
 /** Admission is not observation: match the source's turn and message, not text alone. */

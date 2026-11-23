@@ -742,8 +742,8 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
   assert.equal((await log()).filter(r=>r.method==="send").length,0,"saving a mark sent the draft")
   await editor.fill("unknown")
   await chat.locator(".pa-composer .pa-send").click()
-  const held=chat.locator(".pa-held-send").first()
-  await held.waitFor()
+  const pending=chat.locator(".pa-chat-scroll .pa-unsent").first()
+  await pending.waitFor()
   const picture=(await log()).find(row=>row.method==="send").request.images[0]
   assert.equal(picture,marked)
   assert.match(picture,/^data:image\/png;base64,/)
@@ -758,32 +758,17 @@ async function attachmentRecoveryChecks(page,origin,language,shot,log) {
     const rgba=ctx.getImageData(0,0,canvas.width,canvas.height).data
     return rgba.some((red,i)=>i%4===0&&red===255&&rgba[i+1]===45&&rgba[i+2]===45)
   },picture),true,"the sent image has no red ink")
-  const inspect=held.getByRole("button",{name:zh?"向機器核對":"Check with the machine",exact:true})
-  const newMessage=held.getByRole("button",{name:zh?"另寫新訊息":"Write a new message",exact:true})
-  if(!process.env.BOTS_ATTACHMENT_REPRO){
-    assert.equal(await held.locator("h3").count(),1,"the held-send panel needs a distinct status heading")
-    assert.equal(await held.locator(".pa-held-attachments").count(),1)
-    await shot("held-picture")
-  }
-  await page.evaluate(()=>window.botsFixture.a.holdExport())
-  await inspect.click()
-  await held.locator("button[aria-busy=true]").waitFor()
-  assert.equal(await newMessage.isEnabled(),true,"an in-progress check blocks writing a new message")
-  await newMessage.click()
   assert.equal(await editor.inputValue(),"")
   await editor.fill("A new draft")
-  const aside=chat.locator(".pa-held-aside")
-  await aside.waitFor()
-  await page.evaluate(()=>window.botsFixture.a.releaseExport())
-  // A failed check leaves the earlier entry removable without touching the new draft.
-  await page.evaluate(()=>window.botsFixture.a.failExport())
-  await aside.getByRole("button",{name:zh?"核對這則先前的訊息":"Check this earlier message",exact:true}).click()
-  await aside.getByRole("status").waitFor()
-  await aside.getByRole("button",{name:zh?"從這台裝置移除":"Remove from this device",exact:true}).click()
-  await aside.waitFor({state:"hidden"})
+  const retry=pending.getByRole("button",{name:zh?"重試送出":"Retry sending",exact:true})
+  await shot("held-picture")
+  await retry.click()
+  await retry.waitFor()
+  const writes=(await log()).filter(r=>r.method==="send")
+  assert.equal(writes.length,2)
+  assert.deepEqual(writes[1].request,writes[0].request,"retry must keep the original picture and command ID")
   assert.equal(await editor.inputValue(),"A new draft")
-  assert.equal((await log()).filter(r=>r.method==="send").length,1,"recovery must not resend the earlier message")
-  return ["Enter inserts a newline without sending","drop attaches a picture without sending","zoom, circle, cancel, undo, and send marked pixels","uncertain send gets a status card","write a new message while checking","dismiss a failed check without touching the new draft"]
+  return ["Enter inserts a newline without sending","zoom, circle, cancel, undo, and send marked pixels","drop attaches a picture without sending","uncertain send stays in the transcript","retry keeps the picture and command ID","a separate draft survives retry"]
 }
 let forbidden=0
 const server=createServer((req,res)=>{const url=new URL(req.url,"http://fixture");if(url.pathname.startsWith("/v1")){forbidden++;res.writeHead(500);res.end("No live API in fixture");return}const text=url.pathname==="/"?html:content.get(url.pathname);if(text===undefined){res.writeHead(404);res.end();return}res.setHeader("Content-Type",url.pathname.endsWith(".js")?"text/javascript":url.pathname.endsWith(".css")?"text/css":url.pathname.endsWith(".json")?"application/json":"text/html");res.end(text)})

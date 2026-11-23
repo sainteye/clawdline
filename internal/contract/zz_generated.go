@@ -4606,10 +4606,12 @@ type ProjectAssistantCapabilities struct {
 // machine/Bot/operation/key, not device. At create, client chooses a stable
 // opaque bot_id; same command returns same Bot.
 type ProjectAssistantCommand struct {
-	ContentHash    string                    `json:"content_hash"`
-	IdempotencyKey string                    `json:"idempotency_key"`
-	Key            ProjectAssistantBotKey    `json:"key"`
-	Operation      ProjectAssistantOperation `json:"operation"`
+	// An edited recovery attempt sharing this original send identity.
+	ClientAttemptID string                    `json:"client_attempt_id,omitempty"`
+	ContentHash     string                    `json:"content_hash"`
+	IdempotencyKey  string                    `json:"idempotency_key"`
+	Key             ProjectAssistantBotKey    `json:"key"`
+	Operation       ProjectAssistantOperation `json:"operation"`
 }
 
 type ProjectAssistantConfigChoice struct {
