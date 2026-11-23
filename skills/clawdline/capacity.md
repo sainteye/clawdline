@@ -496,6 +496,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.public_analytics_path` | 300 | `characters` | `refuse` | `sender, diagnostics` | — |
 | `console.public_analytics_readms` | 10000 | `milliseconds` | `expire` | `sender, diagnostics` | — |
 | `console.public_analytics_rows` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
+| `console.quota_last_reading_age_seconds` | 86400 | `seconds` | `expire` | `diagnostics` | — |
+| `console.quota_last_reading_machines` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
 | `console.service_performance_alerts` | 30 | `rows` | `refuse` | `diagnostics` | — |
