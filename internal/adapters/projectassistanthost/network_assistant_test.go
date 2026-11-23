@@ -153,7 +153,10 @@ func testAssistantSignedHTTPNativeACP(t *testing.T, closeFault bool) {
 	final := post(read, []byte(`{}`))
 	if closeFault {
 		steps := lifecycle.snapshot()
-		if final.Receipt == nil || final.Receipt.State != "unknown" || final.Receipt.Reply != "" || final.Receipt.Failure == nil || final.Receipt.Failure.Code != pa.ExecutionEffectUnknown || final.Receipt.Failure.Field != "prompt_timeout" || turn.State != pa.TurnUnknown || !slices.Equal(steps, []string{"b/open=<nil>", "b/send=<nil>", "b/wait=<nil>", "b/close=context deadline exceeded"}) {
+		if final.Receipt == nil || final.Receipt.State != "unknown" || final.Receipt.Reply != "" ||
+			final.Receipt.Failure == nil || final.Receipt.Failure.Code != pa.ExecutionEffectUnknown || final.Receipt.Failure.Field != "owned_cleanup_timeout" ||
+			turn.State != pa.TurnUnknown || turn.Failure == nil || *turn.Failure != *final.Receipt.Failure ||
+			!slices.Equal(steps, []string{"b/open=<nil>", "b/send=<nil>", "b/wait=<nil>", "b/close=context deadline exceeded"}) {
 			t.Fatalf("native cleanup uncertainty lost: receipt=%+v turn=%+v lifecycle=%v", final.Receipt, turn, steps)
 		}
 		return
