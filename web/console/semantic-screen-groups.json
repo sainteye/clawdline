@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14080,
+  "englishContentKeys": 14081,
   "riskKeys": 5976,
-  "nonRiskCount": 8104,
+  "nonRiskCount": 8105,
   "groups": [
     {
       "name": "acp / other",
@@ -6206,7 +6206,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 571,
+      "count": 572,
       "sources": [
         null
       ],
@@ -6564,6 +6564,7 @@
         "projectAssistants.rosterUnpin",
         "projectAssistants.rosterUnpinGroup",
         "projectAssistants.rosterUpdated",
+        "projectAssistants.rosterWorkingSection",
         "projectAssistants.routineAddTrigger",
         "projectAssistants.routineAt",
         "projectAssistants.routineCron",
