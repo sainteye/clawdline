@@ -16,11 +16,41 @@ manifest. It rechecks the scratch tree, owner and open readers after recording
 intent. All terminal outcomes keep scratch for at least 24 hours. Missing output
 proof, nested repositories and uncertain linked trees keep the scratch for review.
 Only then does it remove the task's `work/`.
-`CHILD.md`, `result.json`, and `artifacts/` remain evidence for the Root. Go
+`CHILD.md` and `result.json` remain evidence for the Root; `artifacts/` follows
+the retention below. Go
 modules downloaded into `work/` may have read-only directories; the removal
 prepares directories under that proved scratch path for deletion and leaves
 shared module caches and symlink targets alone. A failed removal remains a
 `kept` decision with `remove_failed` and can be reconsidered on a later sweep.
+
+### Task artifacts expire after 30 days (decided 2026-11-23)
+
+The person decided that a finished task keeps `artifacts/` for 30 days
+(`resources.artifact_seconds`, `taskresource.ArtifactRetentionSecondsLimit`).
+At the decision the task directory held about 4.6 GB of artifacts across 3,451
+tasks; that figure is the brief's, not re-measured here. The same sweep decides
+about `artifacts/` as subject `task_artifacts` (`reclaimTaskArtifacts` in
+`task_resources.go`). It removes the directory only when:
+
+- the task ended `success`, `failure`, `cancelled` or `spawn_failed` and its end
+  time is readable; a `timeout` keeps its files because its child may still be
+  working, and a missing end time is `ended_at_unknown`;
+- 30 days have passed since the end or the later landing;
+- the landing is `landed`, `incorporated`, `nothing_to_land` or `abandoned`, or the
+  task never had a branch; `pending`, or a branch with no landing, is `landing_unsettled`;
+- no registered resource of the task is pinned (`pinned`); an unreadable or
+  multi-page resource listing keeps it as `unreadable`;
+- the owner is provably gone, nothing has the directory open, and its tree is
+  unchanged. Each is checked again after the intent is recorded.
+
+Within the 30 days the sweep records nothing about `artifacts/`. Only
+`artifacts/` is removed: `task.json`, `result.json` and the landing record stay.
+The standing `broker_reclaim` row (`task_artifacts`, `removed`,
+`artifact_retention_expired`) is the record of the expiry. A single task's detail
+carries it as `artifacts_expired`, and `clawdline task show` prints that the files
+were removed after the retention while keeping the summary. A result that lists
+expired artifacts is not treated as an unsaved output. The sweep's per-pass limit
+applies, so an existing backlog is worked through over several sweeps.
 
 ### Why task scratch stayed after its task ended (measured 2026-11-23)
 
@@ -255,8 +285,9 @@ registered gate caches and non-artifact callback logs. A cache nested in task
 scratch is subtracted from that scratch total and counted once as cache. This
 accounting does not adopt an external cache or authorize a new deletion path.
 The legacy reclaimer retains its own procedure; pressure admission visits its
-advancing pages before refusing new heavy work. Protected artifacts and entire
-Root assignment directories remain outside eviction budgets.
+advancing pages before refusing new heavy work. Artifacts are never removed to
+meet a budget; they go only through the 30-day retention above. Entire Root
+assignment directories remain outside eviction budgets.
 
 
 ## Admission and callback receipts
