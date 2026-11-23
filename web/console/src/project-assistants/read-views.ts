@@ -67,7 +67,8 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
-  if(!p||!text(p.id)||!text(p.turn_id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!Array.isArray(p.options)||typeof p.native_request_id!=="string"||typeof p.selected_option_id!=="string")throw failure("pa_invalid")
+  if(!p||!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!Array.isArray(p.options)||typeof p.native_request_id!=="string"||typeof p.selected_option_id!=="string")throw failure("pa_invalid")
+  if(p.kind==="decision"?p.turn_id!==""||!object(p.decision)||!text(p.decision.question):!text(p.turn_id))throw failure("pa_invalid")
   own(p.fence,scope,current)
   // Display text from the adapter; an older daemon omits it.
   const a=p.action
@@ -143,7 +144,12 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     const identity=JSON.stringify([row.kind,payloadID]);if(identities.has(identity))throw failure("pa_invalid");identities.add(identity)
     if(row.message){message(row.message,scope);if(row.anchor_message_seq!==row.message.seq)throw failure("pa_invalid")}
     if(row.work)work(row.work,scope)
-    if(row.permission_summary){const p=row.permission_summary;if(!text(p.id)||!text(p.turn_id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid");own(p.fence,scope,h.current_fence)}
+    if(row.permission_summary){
+      const p=row.permission_summary
+      if(!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid")
+      if(p.tool_kind==="decision"?p.turn_id!=="":!text(p.turn_id))throw failure("pa_invalid")
+      own(p.fence,scope,h.current_fence)
+    }
     if(row.trace_summary){const t=row.trace_summary;if(!text(t.id)||!text(t.turn_id)||!text(t.category)||typeof t.complete!=="boolean"||!cursor(t.detail_cursor)||!t.detail_cursor)throw failure("pa_invalid")}
     if(row.permission){
       if(q.mode==="detail")offer(row.permission,scope,h.current_fence)

@@ -507,6 +507,8 @@ func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQ
 	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, candidates AS MATERIALIZED (
  SELECT p.key id,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),
  'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),
+ 'kind',json_extract(p.value,'$.kind'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision'
+ THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
  'expires_at',json_extract(p.value,'$.expires_at')) j
  FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending'
  AND ` + viewFenceSQL("p.value", true) + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)

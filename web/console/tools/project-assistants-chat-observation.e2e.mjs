@@ -95,7 +95,7 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -201,6 +201,23 @@ try{
     assert.ok(traffic.slice(beforeRefresh).some(p=>p.word==="project-assistants.view"&&p.mode==="snapshot"&&p.status===200),"refresh fetches a new snapshot")
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1,"a refresh reads without resending the prompt")
     results.push({scenario,closedDetails:true,refreshDoesNotResend:true})
+  }else if(scenario==="decision-card"){
+    await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
+    await send("Page.reload",{},sessionId)
+    await until(sessionId,"!!document.querySelector('[data-bot-key]')")
+    await evaluate(sessionId,"window.chatObservation.visibility('visible')")
+    await evaluate(sessionId,"document.querySelector('[data-bot-key]').click()")
+    const reply=".pa-decision button[data-option-kind=decision]:not(:disabled)"
+    await until(sessionId,`!!document.querySelector('${reply}')`)
+    const reopened=await capture(sessionId,"decision-with-history")
+    assert.match(reopened.text,/Which synthetic option should I use\?/)
+    assert.match(reopened.text,/Synthetic observation message/)
+    assert.match(reopened.text,/Synthetic observation final answer/)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1,"opening the chat does not resend the earlier message")
+    await evaluate(sessionId,`document.querySelector('${reply}').click()`)
+    await until(sessionId,"document.querySelector('.pa-message .pa-message-bubble') && [...document.querySelectorAll('.pa-message-bubble')].some(e=>e.textContent.includes('Use the first option'))")
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.answer"&&p.status===200).length,1)
+    results.push({scenario,historyRetained:true,decisionAnswered:true})
   }else{
   await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
   const complete=await capture(sessionId,"completed")

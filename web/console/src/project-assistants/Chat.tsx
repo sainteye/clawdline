@@ -86,11 +86,12 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
 type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}
 
 function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
-  return !!head&&value.turn_id===head.conversation.active_turn_id&&sameFence(value.fence,head.current_fence)
+  // Only a validated decision may have an empty turn ID. It belongs to the chat.
+  return !!head&&sameFence(value.fence,head.current_fence)&&(value.turn_id===""||value.turn_id===head.conversation.active_turn_id)
 }
 
 export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,cards:readonly PermissionViewCard[],now:number) {
-  if(!head?.conversation.active_turn_id||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
+  if(!head||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
   // The collection can be paged. Keep counting requests we have yet to read.
   let count=Math.max(0,head.pending_permission_count-cards.length),nextDeadline=Infinity
   for(const {summary,offer} of cards){
