@@ -131,6 +131,17 @@
         "current": { "type": "boolean", "description": "True when the conversation has not grown since the recap was written." }
       }
     },
+    "SessionBotDispatchProject": {
+      "description": "The destination Project as displayed in the Bot dispatch group.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "name"],
+      "properties": {
+        "key": { "type": "string", "description": "The destination Project path from the matching broker task." },
+        "name": { "type": "string", "description": "The Project's display name." },
+        "icon": { "$ref": "common.schema.json#/$defs/Icon" }
+      }
+    },
     "SessionBotDispatch": {
       "description": "The Bot that dispatched this Session, from the broker's matching task record.",
       "type": "object",
@@ -139,7 +150,8 @@
         "name": { "type": "string", "description": "The dispatcher's display name, absent if the name was not recorded and can no longer be resolved." },
         "appearance": { "$ref": "project-assistants.schema.json#/$defs/ProjectAssistantAppearance" },
         "dispatcher": { "$ref": "project-assistants.schema.json#/$defs/ProjectAssistantBotKey", "description": "Stable source identity, independent of the dispatcher’s display name." },
-        "task_title": { "type": "string", "description": "The broker task title, independent of the Session's own title." }
+        "task_title": { "type": "string", "description": "The broker task title, independent of the Session's own title." },
+        "project": { "$ref": "#/$defs/SessionBotDispatchProject" }
       }
     },
     "SessionRow": {

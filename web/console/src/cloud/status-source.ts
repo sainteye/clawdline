@@ -1,5 +1,5 @@
 import { SESSION_INVENTORY_ID, SESSION_INVENTORY_LIMIT, channelSegment } from "../legacy/js/net/client.js"
-import type { AssistantSkill, SessionRow, TranscriptEntry } from "@clawdline/contract"
+import type { AssistantSkill, Icon, SessionRow, TranscriptEntry } from "@clawdline/contract"
 // @ts-expect-error -- Node's type-stripping runner loads the source in its focused test.
 import { ProjectAssistantShapeValues } from "../../../contract/src/generated.ts"
 import type { ArtifactRef } from "../legacy/images-bridge.js"
@@ -13,12 +13,21 @@ import { destinationAvailable, destinationKey } from "./all-machine-sessions.ts"
 import { descriptorParents, record, STATUS_FRESH_MS, statusGapTarget, statusInventoryIDs, statusPassTransition, statusProjection } from "./status-projection.ts"
 import type { CloudClientHandle } from "./copied.js"
 
+function listIcon(value: unknown): Icon | undefined {
+  const icon = record(value)
+  if (typeof icon?.accent !== "string" || !Array.isArray(icon.cells) ||
+    !icon.cells.every((line: unknown) => Array.isArray(line) &&
+      line.every((cell: unknown) => cell === null || typeof cell === "string"))) return undefined
+  return { accent: icon.accent, cells: icon.cells, svg: typeof icon.svg === "string" ? icon.svg : undefined }
+}
+
 function listBotDispatch(value: unknown): SessionRow["bot_dispatch"] {
   const dispatch = record(value)
   if (!dispatch) return undefined
   const { name, task_title } = dispatch
   const appearance = record(dispatch.appearance)
   const dispatcher = record(dispatch.dispatcher)
+  const project = record(dispatch.project)
   const shape = ProjectAssistantShapeValues.find((value) => value === appearance?.shape)
   return {
     name: typeof name === "string" ? name : undefined,
@@ -26,6 +35,9 @@ function listBotDispatch(value: unknown): SessionRow["bot_dispatch"] {
     ...(typeof dispatcher?.machine_id === "string" && dispatcher.machine_id &&
       typeof dispatcher.bot_id === "string" && dispatcher.bot_id && {
       dispatcher: { machine_id: dispatcher.machine_id, bot_id: dispatcher.bot_id },
+    }),
+    ...(typeof project?.key === "string" && project.key && typeof project.name === "string" && project.name && {
+      project: { key: project.key, name: project.name, icon: listIcon(project.icon) },
     }),
     ...(shape && typeof appearance?.color === "string" && {
       appearance: { shape, color: appearance.color },
@@ -482,7 +494,6 @@ export function statusSource(current: () => StatusClient | null,
           const destination = { machineID, sessionID: session.id, executionGeneration: session.execution_generation }
           const key = destinationKey(destination)
           if (!visible.has(key) || !currentRows.has(key)) continue
-          const icon = record(session.icon)
           const status = record(session.status)
           const statusState = status?.state
           result.push({ destination, projection: currentRows.get(key), title: session.title.trim(),
@@ -494,11 +505,7 @@ export function statusSource(current: () => StatusClient | null,
             status: status && typeof status.work_state === "string" &&
               (statusState === "working" || statusState === "waiting" || statusState === "idle" || statusState === "unknown")
               ? status as Partial<SessionRow> : undefined,
-            icon: typeof icon?.accent === "string" && Array.isArray(icon.cells) &&
-              icon.cells.every((line: unknown) => Array.isArray(line) &&
-                line.every((cell: unknown) => cell === null || typeof cell === "string"))
-              ? { accent: icon.accent, cells: icon.cells as ((string | null)[])[],
-                  svg: typeof icon.svg === "string" ? icon.svg : undefined } : undefined })
+            icon: listIcon(session.icon) })
         }
         return result
       } catch { return null }

@@ -624,6 +624,7 @@ func (s Snapshot) orchestratorTitle(row Live, live []Live) (string, *BotDispatch
 		if t.BotDispatch != nil {
 			dispatch := *t.BotDispatch
 			dispatch.TaskTitle = strings.TrimSpace(strings.TrimPrefix(title, "[Bot Task] "))
+			dispatch.ProjectDir = t.ProjectDir
 			found, botDispatch = assignmentTitle, &dispatch
 			continue
 		}

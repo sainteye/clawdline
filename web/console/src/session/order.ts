@@ -98,7 +98,7 @@ export function compareSessions(a: SessionRow, b: SessionRow): number {
 export function matchesFilter(row: SessionRow, filter: string): boolean {
   const q = filter.trim().toLowerCase()
   if (!q) return true
-  return `${row.label || ""} ${row.bot_dispatch?.name || ""} ${row.bot_dispatch?.task_title || ""} ${row.cwd || ""} ${row.tty || ""} ${row.backend || ""}`.toLowerCase().includes(q)
+  return `${row.label || ""} ${row.bot_dispatch?.name || ""} ${row.bot_dispatch?.task_title || ""} ${row.bot_dispatch?.project?.name || ""} ${row.cwd || ""} ${row.tty || ""} ${row.backend || ""}`.toLowerCase().includes(q)
 }
 
 /** The order a pointer froze, and the waiting set it froze beside. */

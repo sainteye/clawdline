@@ -2,6 +2,7 @@ import { Fragment, type ReactNode } from "react"
 import type { SessionBotDispatch } from "@clawdline/contract"
 import { nextWord } from "../next-strings.js"
 import { BotAvatar } from "../project-assistants/BotAvatar.js"
+import { ProjectMark } from "../project-assistants/ProjectMark.js"
 import { visualBranches } from "./order.js"
 
 export type RowTree = { depth: number; branchThrough: boolean; ancestorThrough: boolean }
@@ -49,12 +50,25 @@ export function renderBotDispatchGroups(rows: DispatchEntry[]) {
     if (group.entries[0] !== row) return null
 
     const { name, appearance } = group.dispatch
+    const projects = new Map<string, NonNullable<SessionBotDispatch["project"]>>()
+    for (const entry of group.entries) {
+      const project = entry.dispatch?.project
+      if (project && !projects.has(project.key)) projects.set(project.key, project)
+    }
     const attribution = name ? nextWord("sessionBotDispatchBy", { bot: name }) : nextWord("sessionBotDispatch")
     const groupBranches = visualBranches(group.entries, depths)
     return <li className="session-list-group session-bot-dispatch-group" key={group.key} role="presentation">
       <div className="session-list-group-heading">
         <BotAvatar appearance={appearance ?? { shape: "blob", color: "#9ca6b3" }} size={24} />
-        <strong>{name || attribution}</strong>
+        <div className="session-bot-dispatch-heading">
+          <strong>{name || attribution}</strong>
+          {projects.size > 0 && <div className="session-bot-dispatch-projects">
+            {[...projects.values()].map(project => <span className="session-bot-dispatch-project" key={project.key}>
+              <ProjectMark icon={project.icon} size={14} />
+              <span>{project.name}</span>
+            </span>)}
+          </div>}
+        </div>
       </div>
       <ul className="rows" role="group" aria-label={attribution}>{group.entries.map(entry =>
         <Fragment key={entry.id}>

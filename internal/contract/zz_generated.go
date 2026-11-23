@@ -8546,10 +8546,22 @@ type SessionBotDispatch struct {
 
 	// The dispatcher's display name, absent if the name was not recorded and can no
 	// longer be resolved.
-	Name string `json:"name,omitempty"`
+	Name    string                     `json:"name,omitempty"`
+	Project *SessionBotDispatchProject `json:"project,omitempty"`
 
 	// The broker task title, independent of the Session's own title.
 	TaskTitle string `json:"task_title,omitempty"`
+}
+
+// The destination Project as displayed in the Bot dispatch group.
+type SessionBotDispatchProject struct {
+	Icon *Icon `json:"icon,omitempty"`
+
+	// The destination Project path from the matching broker task.
+	Key string `json:"key"`
+
+	// The Project's display name.
+	Name string `json:"name"`
 }
 
 // Who this session is parked on, and who is parked on it. Absent when neither.

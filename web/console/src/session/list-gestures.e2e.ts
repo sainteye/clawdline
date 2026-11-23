@@ -340,6 +340,7 @@ function rows(): Row[] {
       bot_dispatch: botDispatchFixture ? {
         name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "atlas" },
         appearance: { shape: "hex", color: "#75c6a5" }, task_title: "Reconnect the draft editor and restore all unsaved changes across windows",
+        project: { key: "editor", name: "Draft Editor", icon: { accent: "#225588", cells: [["#225588"]] } },
       } : undefined,
     }),
     row(NEEDS_ATTESTATION, "Echo has not checked in", needsAttestationCloseability(), MOVED.needsAttestation),
@@ -347,7 +348,10 @@ function rows(): Row[] {
       bot_dispatch: botDispatchFixture ? { name: "Atlas", dispatcher: { machine_id: "fixture", bot_id: "other-atlas" }, task_title: "Inspect synchronization" } : undefined,
     }),
     row(SPARE, "Delta is finished too", safeCloseability(), spareMoved, {
-      bot_dispatch: botDispatchFixture ? { name: "Atlas renamed", dispatcher: { machine_id: "fixture", bot_id: "atlas" }, task_title: "Compare saved revisions" } : undefined,
+      bot_dispatch: botDispatchFixture ? {
+        name: "Atlas renamed", dispatcher: { machine_id: "fixture", bot_id: "atlas" }, task_title: "Compare saved revisions",
+        project: { key: "history", name: "Revision History", icon: { accent: "#886633", cells: [["#886633"]] } },
+      } : undefined,
     }),
   ]
   if (readingScenario !== "refresh") return current
@@ -1592,6 +1596,9 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
           return {
             names: groups.map(group => group.firstElementChild.querySelector('strong').textContent),
             tasks: [...group.querySelectorAll('.session-bot-task-title')].map(title => title.textContent),
+            projects: [...header.querySelectorAll('.session-bot-dispatch-project')].map(project => [
+              project.textContent, project.querySelector('.pa-project-mark rect')?.getAttribute('fill'),
+            ]),
             titles: [...group.querySelectorAll('.row .title .label')].map(label => label.textContent),
             avatar: header.querySelectorAll('.pa-avatar stop')[1].getAttribute('stop-color'),
             attributionInRow: row.textContent.includes('Atlas'),
@@ -1602,6 +1609,7 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
         })()`), {
           names: ["Atlas", "Atlas"], tasks: ["Reconnect the draft editor and restore all unsaved changes across windows", "Compare saved revisions"],
           titles: ["Bravo is still working", "Delta is finished too"], avatar: "#75c6a5",
+          projects: [["Draft Editor", "#225588"], ["Revision History", "#886633"]],
           attributionInRow: false, ordinaryTitleStyle: true, sameFrame: true, fits: true,
         })
         await tab.press(`#rows li.row[data-id="${SAFE}"]`)

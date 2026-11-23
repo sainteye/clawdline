@@ -257,6 +257,7 @@ test("a cold status gap uses one complete pinned machine list for rows and title
   const dispatch = {
     name: "Dispatcher fixture", task_title: "Restore drafts", appearance: { shape: "hex", color: "#75c6a5" },
     dispatcher: { machine_id: machineID, bot_id: "source-bot" },
+    project: { key: "/repo", name: "Draft Editor", icon: { accent: "#225588", cells: [["#225588"]], svg: undefined } },
   }
   client.listPresentationsForMachine = async (machine) => {
     const reply = await list(machine)

@@ -9874,11 +9874,29 @@ export interface SessionBotDispatch {
    * longer be resolved.
    */
   name?: string
+  project?: SessionBotDispatchProject
 
   /**
    * The broker task title, independent of the Session's own title.
    */
   task_title?: string
+}
+
+/**
+ * The destination Project as displayed in the Bot dispatch group.
+ */
+export interface SessionBotDispatchProject {
+  icon?: Icon
+
+  /**
+   * The destination Project path from the matching broker task.
+   */
+  key: string
+
+  /**
+   * The Project's display name.
+   */
+  name: string
 }
 
 /**

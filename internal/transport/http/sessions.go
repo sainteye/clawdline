@@ -150,6 +150,27 @@ func (s *Server) sessions(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(snapshot)
 }
 
+// Use the broker destination rather than a worktree or the Session's current directory.
+func (s *Server) botDispatchProject(headers map[string]*contract.SessionBotDispatchProject, dir string) *contract.SessionBotDispatchProject {
+	if !filepath.IsAbs(dir) {
+		return nil
+	}
+	if header := headers[dir]; header != nil {
+		return header
+	}
+	header := &contract.SessionBotDispatchProject{Key: dir, Name: filepath.Base(dir)}
+	if s.icons == nil {
+		header.Icon = wireIcon(icon.Generated(dir))
+	} else {
+		if label := strings.TrimSpace(s.icons.Label(dir)); label != "" {
+			header.Name = label
+		}
+		header.Icon = wireIcon(s.icons.For(dir))
+	}
+	headers[dir] = header
+	return header
+}
+
 func (s *Server) refreshSnapshotIcons(snapshot *sessionsSnapshotWire) error {
 	if s.icons == nil {
 		return nil
@@ -162,8 +183,14 @@ func (s *Server) refreshSnapshotIcons(snapshot *sessionsSnapshotWire) error {
 	// no sessions then read as one still loading (the header waited forever).
 	rows := make([]sessionRowWire, len(snapshot.Sessions))
 	copy(rows, snapshot.Sessions)
+	projectHeaders := make(map[string]*contract.SessionBotDispatchProject)
 	for i := range rows {
 		rows[i].Icon = wireIcon(s.icons.For(rows[i].CWD))
+		if dispatch := rows[i].BotDispatch; dispatch != nil && dispatch.Project != nil {
+			next := *dispatch
+			next.Project = s.botDispatchProject(projectHeaders, dispatch.Project.Key)
+			rows[i].BotDispatch = &next
+		}
 	}
 	snapshot.Sessions = rows
 	return nil
@@ -388,6 +415,7 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 	// side of it by the label this list gives them.
 	labels := make(map[string]string, len(items))
 	botDispatches := make(map[string]*contract.SessionBotDispatch)
+	projectHeaders := make(map[string]*contract.SessionBotDispatchProject)
 	legacyBots := make(map[pa.BotKey]pa.Bot)
 	bots := projectassistantstore.New(s.store.ProjectAssistantReader())
 	for i, item := range items {
@@ -419,7 +447,10 @@ func (s *Server) sessionsPayloadRead(ctx context.Context, inv session.Inventory,
 					appearance = bot.Appearance
 				}
 			}
-			projected := &contract.SessionBotDispatch{Name: name, TaskTitle: dispatch.TaskTitle}
+			projected := &contract.SessionBotDispatch{
+				Name: name, TaskTitle: dispatch.TaskTitle,
+				Project: s.botDispatchProject(projectHeaders, dispatch.ProjectDir),
+			}
 			if hasDispatcher {
 				key := paWireBotKey(dispatch.Key)
 				projected.Dispatcher = &key

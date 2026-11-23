@@ -36,6 +36,13 @@
 .session-board-group > button svg { width: 19px; height: 19px; color: var(--session-board-accent); flex: none; }
 .session-board-group > button small { margin-inline-start: auto; white-space: nowrap; color: var(--session-board-accent); }
 .session-bot-dispatch-group .pa-avatar { flex: none; }
+.session-bot-dispatch-heading { display: grid; gap: 3px; min-width: 0; }
+.session-bot-dispatch-projects {
+  display: flex; flex-wrap: wrap; gap: 4px 12px;
+  color: var(--dim); font-size: .85em;
+}
+.session-bot-dispatch-project { display: inline-flex; align-items: center; gap: 5px; min-width: 0; overflow-wrap: anywhere; }
+.session-bot-dispatch-project .pa-project-mark { flex: none; max-height: 14px; }
 .session-bot-task-title {
   padding: 4px 8px; color: var(--dim); font-size: .85em; overflow-wrap: anywhere;
 }

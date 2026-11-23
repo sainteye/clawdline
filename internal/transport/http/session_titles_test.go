@@ -73,10 +73,19 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			const child, title, sessionTitle = "conversation-41", "Restore drafts after reconnecting", "Draft recovery workspace"
+			root := t.TempDir()
+			target := filepath.Join(root, "drafts")
 			item := session.Session{ID: "%41", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
-				State: session.StateWorking, ConversationID: child, Rungs: session.LabelRungs{Conversation: sessionTitle}}
+				State: session.StateWorking, ConversationID: child, CWD: filepath.Join(root, "worker"),
+				Rungs: session.LabelRungs{Conversation: sessionTitle}}
 			s := paneServer(t, &pane{s: item})
-			s.cfg = config.Config{Dir: t.TempDir()}
+			s.cfg = config.Config{Dir: root}
+			s.icons = &icon.Registry{}
+			const projectName, accent = "Draft Editor", "#225588"
+			cell := accent
+			s.icons.SetMirror(func(dir string) (icon.Grid, string, bool) {
+				return icon.Grid{Accent: accent, Cells: [][]*string{{&cell}}}, projectName, dir == target
+			})
 			key := pa.BotKey{MachineID: "fixture-machine", BotID: "fixture-bot"}
 			if tc.currentName != "" {
 				db := s.store.ProjectAssistantDatabase()
@@ -94,7 +103,7 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 			}
 			now := time.Now()
 			task := orchestrator.Record{Protocol: orchestrator.Protocol, ID: "e1111111-1111-4111-8111-000000000041",
-				Title: title, Assistant: "codex", State: orchestrator.StateBriefed, ProjectDir: "/project",
+				Title: title, Assistant: "codex", State: orchestrator.StateBriefed, ProjectDir: target,
 				CreatedAt: now, ChildTerminalID: item.ID, ChildConversationID: child, ChildBackend: "tmux",
 				AssistantOwner: &orchestrator.AssistantOwner{Fence: pa.Fence{Key: key}, BotName: tc.recordedName, BotAppearance: tc.recordedLook}}
 			if err := s.store.SaveBrokerTaskWithNotice(ctx, store.BrokerRow{ID: task.ID, Project: task.ProjectDir,
@@ -115,6 +124,11 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 				name, _ := dispatch["name"].(string)
 				if row[tcRead.labelKey] != sessionTitle || !present || dispatch["task_title"] != title || name != tc.wantName {
 					t.Fatalf("%s: want Session %q, task %q, Bot %q: %s", tcRead.path, sessionTitle, title, tc.wantName, rec.Body)
+				}
+				project, _ := dispatch["project"].(map[string]any)
+				projectIcon, _ := project["icon"].(map[string]any)
+				if project["key"] != target || project["name"] != projectName || projectIcon["accent"] != accent {
+					t.Fatalf("project heading = %v, want broker target %q, name %q and icon %q", project, target, projectName, accent)
 				}
 				dispatcher, _ := dispatch["dispatcher"].(map[string]any)
 				if dispatcher["machine_id"] != key.MachineID || dispatcher["bot_id"] != key.BotID {

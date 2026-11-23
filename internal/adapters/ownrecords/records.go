@@ -39,6 +39,7 @@ type BotDispatch struct {
 	Name       string
 	Appearance pa.Appearance
 	TaskTitle  string
+	ProjectDir string
 }
 
 // Task is one dispatched task.

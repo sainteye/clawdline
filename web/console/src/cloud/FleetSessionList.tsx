@@ -367,7 +367,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         if (!search) return true
         const title = row.machineScope ? "Clawdfather" : confirmedTitle ?? presentation?.title
         const dispatch = presentation?.botDispatch
-        return [machine.name, machine.id, machine.platform, title, dispatch?.name, dispatch?.task_title, row.destination.sessionID, stateWord(row.state)]
+        return [machine.name, machine.id, machine.platform, title, dispatch?.name, dispatch?.task_title, dispatch?.project?.name, row.destination.sessionID, stateWord(row.state)]
           .join(" ").toLocaleLowerCase().includes(search)
       }) : []
     const shown = filtered.map((row) => {
