@@ -1583,7 +1583,7 @@ test("a Bot's tasks share a message-board-style frame around regular Session car
       for (const size of ["phone", "desktop"] as const) {
         if (size === "desktop") await tab.desktop(800)
         await tab.go("/")
-        await shortcutUntil(tab, `document.querySelectorAll('${option}').length === 3 && !!document.querySelector(".session-board-group")`)
+        await shortcutUntil(tab, `document.querySelectorAll('${groups}').length === 2 && !!document.querySelector('${option}') && !!document.querySelector(".session-board-group")`)
         await tab.shot(`bot-dispatch-${size}`)
         assert.deepEqual(await tab.run(`(() => {
           const groups = [...document.querySelectorAll('${groups}')]
