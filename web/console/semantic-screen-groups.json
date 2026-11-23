@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14136,
-  "riskKeys": 6007,
-  "nonRiskCount": 8129,
+  "englishContentKeys": 14161,
+  "riskKeys": 6015,
+  "nonRiskCount": 8146,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 732,
+      "count": 738,
       "sources": [
         null
       ],
@@ -643,6 +643,12 @@
         "capacityRow.bots.config_cache_seconds.what",
         "capacityRow.bots.config_choices.what",
         "capacityRow.bots.config_probes.what",
+        "capacityRow.bots.decision_offer_seconds.what",
+        "capacityRow.bots.decision_question_bytes.what",
+        "capacityRow.bots.decision_reply_bytes.what",
+        "capacityRow.bots.decision_request_quote_bytes.full",
+        "capacityRow.bots.decision_request_quote_bytes.what",
+        "capacityRow.bots.decision_suggested_replies.what",
         "capacityRow.bots.dispatch_seconds.what",
         "capacityRow.bots.event_rows.what",
         "capacityRow.bots.extensions.what",
@@ -6209,7 +6215,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 591,
+      "count": 602,
       "sources": [
         null
       ],
@@ -6287,6 +6293,17 @@
         "projectAssistants.createSaving",
         "projectAssistants.createSubmit",
         "projectAssistants.decisionActivity",
+        "projectAssistants.decisionAnswered",
+        "projectAssistants.decisionBadge",
+        "projectAssistants.decisionContext",
+        "projectAssistants.decisionGo",
+        "projectAssistants.decisionOwn",
+        "projectAssistants.decisionOwnPlaceholder",
+        "projectAssistants.decisionSend",
+        "projectAssistants.decisionSendsAs",
+        "projectAssistants.decisionSuggested",
+        "projectAssistants.decisionTitle",
+        "projectAssistants.decisionWithdrawn",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",

@@ -400,6 +400,36 @@
     "Note": true
   },
   {
+    "Name": "bots.decision_offer_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.decision_offers",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.decision_question_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.decision_reply_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.decision_request_quote_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.decision_suggested_replies",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.dispatch_rules",
     "Known": true,
     "Note": true

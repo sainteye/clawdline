@@ -32,6 +32,9 @@ type Submission struct {
 	// person's words.
 	Notice   bool
 	LeadCall bool
+	// Decision is the person's answer to a decision offer, resolved in the
+	// same commit as their message so an offer is answered at most once.
+	Decision *pa.PermissionOffer
 }
 type StopRequest struct {
 	Command pa.Command
@@ -135,6 +138,13 @@ type CollaborationRepository interface {
 	StartExchange(context.Context, pa.Fence, string, string) error
 	PromoteExchangeReply(context.Context, pa.BotKey, time.Time) (bool, error)
 	DropExchangeReplies(context.Context, pa.BotKey, time.Time) error
+}
+
+// DecisionRepository holds questions a Bot asks the person. Only the
+// console's authorized answer route resolves one, through Submit.
+type DecisionRepository interface {
+	OfferDecision(context.Context, pa.Fence, string, pa.AskPersonRequest, time.Time) (pa.PermissionOffer, error)
+	ForwardDecision(context.Context, pa.BotKey, pa.Turn, string, time.Time) (pa.Exchange, error)
 }
 
 // RoomRepository finishes a group member's room turn: the member's own

@@ -43,6 +43,7 @@ import { BotVoicePanel, useBotVoice } from "./BotVoicePanel"
 import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
+import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
 import { Trace,traceLabel,visibleTrace,workingCategory } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -103,9 +104,9 @@ export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
   showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
-  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void
+  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void
 }
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
   const grant=useRef(source.authorizationRevision).current
@@ -1063,7 +1064,7 @@ ${currentDraft}`:submitted)
     })
     return()=>{cancelled=true}
   },[traceSummaries,details,recoveryRequired,source])
-  const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption)=>{
+  const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption|null,text?:string)=>{
     let attempted=false
     const displayed=()=>detailRows.current[offer.id]===offer||teamCards&&timelineRef.current.some(row=>row.permission===offer)
     try{
@@ -1080,8 +1081,8 @@ ${currentDraft}`:submitted)
         if(permissionState(live)==="expired")throw failure("pa_expired")
         if(live.state!=="pending"||!currentPermission(live,page.head)||!currentPermission(live,headRef.current))throw failure("pa_stale_generation")
         // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
-        if(!live.options.some(o=>o.id===option.id&&o.kind===option.kind))throw failure("pa_scope_denied")
-        const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option.id}
+        if(option?!live.options.some(o=>o.id===option.id&&o.kind===option.kind):live.kind!=="decision"||!text)throw failure("pa_scope_denied")
+        const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option?.id??"",...(text?{text}:{})}
         attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
         return source.answer(intent,s)
       }),valid,lock)
@@ -1089,7 +1090,7 @@ ${currentDraft}`:submitted)
       if(result.receipt.state==="unknown"&&held){view.heldOutcomes.set(draftKey,{...held,receipt:result.receipt});if(valid())setUnknown(true)}else view.heldOutcomes.delete(draftKey)
       if(valid()&&!recovery.current){
         setReceipt(result.receipt)
-        const next={...detailRows.current,[offer.id]:{...offer,state:result.receipt.state==="unknown"?"unknown" as const:"answered" as const,selected_option_id:option.id}}
+        const next={...detailRows.current,[offer.id]:{...offer,state:result.receipt.state==="unknown"?"unknown" as const:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
         detailRows.current=next;setDetails(next)
       }
     }catch(e){
@@ -1222,7 +1223,9 @@ ${currentDraft}`:submitted)
     return {summary,identity,offer:value&&"fence" in value?value:undefined}
   })
   const inlinePermissionIds=new Set(timeline.flatMap(row=>row.permission?[row.permission.id]:[]))
-  const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id))
+  const exchangeDecisions=decisionsUnderCapsules(permissionCards,messages,inlinePermissionIds)
+  const exchangeDecisionIds=new Set([...exchangeDecisions.values()].map(card=>card.summary.id))
+  const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id)&&!exchangeDecisionIds.has(summary.id))
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{
@@ -1458,6 +1461,8 @@ ${currentDraft}`:submitted)
 
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} enabled={enabled&&!unknown&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
     const offer=detail&&"fence" in detail&&samePermission(detail,card)&&detail.state!=="pending"?detail:card
@@ -1491,7 +1496,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1514,7 +1519,7 @@ ${currentDraft}`:submitted)
       })}
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
-      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=><PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
+      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(t=><p className="pa-turn" role={t.failure_code?"status":undefined} key={t.id}>{botTurnOutcome(t,w)}{t.failure_code&&<small> ({t.failure_code})</small>}</p>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}

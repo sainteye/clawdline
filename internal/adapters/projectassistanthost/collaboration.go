@@ -18,6 +18,14 @@ func (w NativeWork) MessageBot(ctx context.Context, q pa.BotMessageRequest) (pa.
 	return w.messageBot(ctx, q)
 }
 
+// AskPerson only creates a decision offer; nothing on this surface answers one.
+func (w NativeWork) AskPerson(ctx context.Context, q pa.AskPersonRequest) (pa.PermissionOffer, error) {
+	if w.askPerson == nil {
+		return pa.PermissionOffer{}, failure(pa.Disabled, "decision_tools")
+	}
+	return w.askPerson(ctx, q)
+}
+
 func (h *Host) CollaborationUsage(ctx context.Context) (int64, int64, error) {
 	h.mu.Lock()
 	s := h.store

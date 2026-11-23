@@ -748,7 +748,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if request.OfferID != route.offer {
 			return nil, paHTTPFailure(pa.ScopeDenied, "offer_id")
 		}
-		return paHTTPReceipt(s.Answer(ctx, command, pa.PermissionAnswer{Fence: fence, OfferID: request.OfferID, OptionID: request.OptionID, TurnID: request.TurnID}))
+		return paHTTPReceipt(s.Answer(ctx, command, pa.PermissionAnswer{Fence: fence, OfferID: request.OfferID, OptionID: request.OptionID, TurnID: request.TurnID, Text: request.Text}))
 	case "read":
 		request, err := paDecodeHTTP[contract.ProjectAssistantReadRequest](w, r)
 		if err != nil {

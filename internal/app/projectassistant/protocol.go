@@ -109,6 +109,12 @@ type CollaborationTools interface {
 	MessageBot(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
 }
 
+// DecisionTools lets a Bot ask the person. It only creates an offer; no Bot
+// tool can answer one.
+type DecisionTools interface {
+	AskPerson(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
+}
+
 // OutputTools is additive so older native tool adapters remain compatible.
 type OutputTools interface {
 	PublishOutput(context.Context, string, OutputRequest) (pa.Output, error)
