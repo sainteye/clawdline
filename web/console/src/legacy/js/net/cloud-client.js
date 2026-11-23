@@ -1778,6 +1778,7 @@ export class CloudClient {
             if (this._macBuild(machine) !== buildBefore || arrived
                 || descriptorCommandsKey(this._descriptorFor(machine)) !== commandsBefore) {
                 this.machineLacks.delete(machine);
+                this._scheduleViewerEvents();
             }
             this._consumeCloudStatus(machine, payload && payload.cloud_status, envelope);
             // A retained Session envelope may arrive before its machine descriptor. Re-project

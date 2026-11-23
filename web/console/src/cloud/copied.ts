@@ -79,6 +79,7 @@ export interface CloudClientHandle extends CloudReadClient {
   /** The bounded receive log; an error receipt points to the row that names its machine. */
   readonly viewerEvents?: {
     record?(event: string, data: Record<string, unknown>, key?: string): unknown
+    recordImmediately?(event: string, data: Record<string, unknown>): unknown
     snapshot(): {
       rows?: { n?: number; data?: { machine?: unknown; routed_machine?: unknown } }[]
     }

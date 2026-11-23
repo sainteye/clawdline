@@ -224,3 +224,31 @@ test("a deliberate diagnostic does not call an unready or unsupported machine an
   client._machineRequestAs = async () => { throw Object.assign(new Error("lost"), { code: "cloud_read_timeout" }) }
   await assert.rejects(client.sendDiagnostic(SECOND, {}), { code: "cloud_read_timeout" })
 })
+
+
+test("a displayed outage is persisted through an exhausted background window and sent after reconnect", async () => {
+  const items = new Map()
+  const storage = {
+    getItem: key => items.get(key) ?? null,
+    setItem: (key, value) => { items.set(key, String(value)) },
+    removeItem: key => { items.delete(key) },
+  }
+  const {client} = twoMacs({storage})
+  client.ready = false
+  const log = client.viewerEvents
+  for (let index = 0; index < log.limits.allInWindow; index++) readFailed(log, FIRST)
+  const event = "cloud.bots.roster.unavailable"
+  const data = {observed_at_ms: log.now(), source_count: 2, sources: [FIRST + "|pa_offline", SECOND + "|pa_unsupported"], web_build: "shown-build"}
+  assert.ok(log.recordImmediately(event, data).n)
+  assert.equal((await client._deliverViewerEvents()).why, "not_ready")
+
+  // Do not close or flush the old log. The new page must see the row already in storage.
+  const reopened = twoMacs({storage})
+  assert.equal(reopened.client.viewerEvents.rows().length, log.limits.allInWindow)
+  assert.equal((await reopened.deliver()).state, "delivered")
+  assert.equal(reopened.sent.length, 1)
+  const displayed = reopened.sent[0].batch.rows.filter(row => row.event === event)
+  assert.equal(displayed.length, 1)
+  assert.deepEqual(displayed[0].data, data)
+  assert.equal(reopened.client.viewerEvents.pending(), false)
+})

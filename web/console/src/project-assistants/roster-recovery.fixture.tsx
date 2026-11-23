@@ -4,6 +4,7 @@ import {createRoot} from "react-dom/client"
 import type * as W from "@clawdline/contract"
 import {Bots} from "./Bots"
 import {fixtureSource} from "./fixtures"
+import {ViewerEventLog} from "../legacy/js/net/cloud-viewer-events.js"
 import {failure,type SourceClient} from "./client"
 import "./styles.css"
 
@@ -43,5 +44,8 @@ const initial=params.has("retry")?"pa_invalid":"pa_offline"
 const studio=controlled("studio",!params.has("snapshots"),initial),notebook=controlled("notebook",false,initial)
 const language=params.get("lang")??"en"
 const sources=[studio.source,notebook.source]
-createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}/>)
+if(params.has("hold")){studio.hold();notebook.hold()}
+const diagnostic = new ViewerEventLog({storage:localStorage,key:"roster-recovery-diagnostic"})
+createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}
+  onRosterUnavailable={params.has("hold") ? evidence => diagnostic.recordImmediately("cloud.bots.roster.unavailable",evidence) : undefined}/>)
 Object.assign(window,{rosterRecovery:{studio,notebook}})

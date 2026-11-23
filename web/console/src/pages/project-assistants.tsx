@@ -221,7 +221,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
-    <Bots key={entry} onRosterObserved={observeCompletions} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
+    <Bots key={entry} onRosterObserved={observeCompletions} onRosterUnavailable={registry.reportRosterScreen} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
       viewState={registry.viewState} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={(work, view) => {
         const target = assistantWorkTarget(work)

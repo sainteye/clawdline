@@ -327,6 +327,18 @@ On the machine, inspect `cloud: viewer reported: event=cloud.send.diagnostic_req
 and the batch's `cloud: viewer events delivered:` summary in the daemon log.
 A relay acknowledgement alone does not establish that the machine logged the row.
 
+When the Bots roster actually displays its unavailable state, the hosted console
+records `cloud.bots.roster.unavailable`. The viewer-event writer flushes it to
+browser storage immediately and keeps it in the existing outbox for delivery
+after reconnect. This uses a reserved slot within the existing event limit.
+The event gives the display time, running web revision, selected scope, order,
+and the failure code, stage, transport code, HTTP status, request sequence and
+known API level for each recorded source when available. It carries no search
+text or Bot content. Find it with the same `cloud: viewer reported:` log prefix.
+If storage is unavailable, the event is held in memory for the life of the page.
+A tab waiting for the account's writer lock keeps its events in memory until it
+takes the lock.
+
 ## Community sharing metadata
 
 The Cloud build emits `_worker.js` and a restricted `_routes.json` for `/community` and `/help`.
