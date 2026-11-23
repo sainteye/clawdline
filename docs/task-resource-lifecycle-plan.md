@@ -7,7 +7,10 @@ unregistered data remains protected by its original ownership boundary.
 The daemon creates callback scratch/cache before launch and provides a separate
 retained artifact directory. Explicit task/Root allocation, source-backed output
 sealing, read-only inventory, reviewed plan/apply, pins, durable recovery and
-usage/admission share `internal/app/taskresources`. Legacy task `work/`, registered
+usage/admission share `internal/app/taskresources`. Legacy scratch compares the saved
+`result.json` with the accepted result as the store encodes it, so an empty
+list written by a child is not a changed output (2026-11-23,
+[disk lifecycle](disk-lifecycle.md)). Legacy task `work/`, registered
 gate caches and callback logs are included in accounting without path adoption;
 nested gate-cache bytes are counted once. Legacy scratch removal also refreshes
 saved-result, protected-output, tree and open-reader proofs. Ownership-root failure keeps

@@ -22,6 +22,34 @@ prepares directories under that proved scratch path for deletion and leaves
 shared module caches and symlink targets alone. A failed removal remains a
 `kept` decision with `remove_failed` and can be reconsidered on a later sweep.
 
+### Why task scratch stayed after its task ended (measured 2026-11-23)
+
+The machine's task directory held 17 GB, 12.6 GB of it in 100 task `work/`
+directories. The reclaimer was not idle: `broker_reclaim` recorded 1,009 removed
+task scratch directories totalling 208,227 MB. What stayed had standing `kept`
+decisions:
+
+| Standing reason | Tasks | Size at first measurement | Cause |
+| --- | ---: | ---: | --- |
+| `outputs_unverified` | 38 | 3.2 GB | The saved-result check compared the on-disk `result.json` with the accepted result by `reflect.DeepEqual`. A child writes `"symbols": []`; the store keeps the result with `omitempty`, so it decodes as `nil`. 37 of the 38 differed only that way. The check now compares both as the store encodes them (`sameSavedResult`). |
+| `unreadable` (`tree: unverified`) | 13 | 8.5 GB | The scratch tree holds symbolic links (a `node_modules` copy) or a nested `.git` (a repository copy such as `run1/`). Both are deliberate review boundaries (`TestLegacyUnregisteredGateScratchKeepsLinksForReview`); they were not relaxed. |
+| no decision yet, `within_grace`, `owner_present`, `owner_unknown` | 50 | 0.96 GB | Not yet eligible, or not yet visited by the advancing 64-subject sweep. |
+
+Other cleanup removed most of these directories during the measurement, so
+the counts are a snapshot, not a standing total. Children should keep
+repository copies out of `work/` when a worktree or `--ephemeral` checkout
+would do, because a nested repository keeps the whole scratch directory for a
+person to review.
+
+Two `/tmp` sources were separate. The HTTP package's `TestMain` left one
+`clawdline-http-test-home-*` per killed or timed-out run (17,873 found); homes
+now live under `$TMPDIR/clawdline-http-test-homes/<pid>-<random>`, and the next
+run removes those whose PID the kernel reports absent. Root Sessions' copies
+under `/tmp` (24.6 GB of `clawdline-*`, 27 of them registered worktrees) had no
+owner record; `tools/check-worktrees.sh --root-checkout` now creates them with
+one ([worktrees.md](worktrees.md)). Neither change adopts or removes what was
+already there.
+
 The worktree reclaimer refreshes the owner reading, Git registration, checkout
 snapshot, landing and target before removal. Uncommitted and untracked
 non-ignored content is preserved as a branch and a proved patch. An unknown or
