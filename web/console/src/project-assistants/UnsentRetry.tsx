@@ -54,24 +54,15 @@ export function retryFailureText(failure: RetryFailure, w: Words, language: stri
  * source refused it or answered for another attempt (`needsEdit`), so this
  * text was never delivered. `remove`: the outcome is unknown; removing it stops
  * this device from tracking or retrying it, and a message the source did admit
- * still appears in the transcript from the source's own history. Nothing is
- * offered for an accepted send, which clears itself when it appears, or while
- * its request is open.
+ * still appears in the transcript from the source's own history. Either way
+ * one press of Clear does it, without a confirmation: the person asked for
+ * that. Nothing is offered for an accepted send, which clears itself when it
+ * appears, or while its request is open.
  */
 export type UnsentDiscard = "delete" | "remove"
 export function unsentDiscardKind(row: Pick<HeldOutcome, "needsEdit">, state: { accepted: boolean, transporting: boolean }): UnsentDiscard | null {
   if (state.accepted || state.transporting) return null
   return row.needsEdit ? "delete" : "remove"
-}
-
-export function UnsentDiscardConfirm({ kind, disabled, onConfirm, onCancel, w }: {
-  kind: UnsentDiscard, disabled?: boolean, onConfirm: () => void, onCancel: () => void, w: Words
-}) {
-  return <div className="pa-unsent-confirm" role="group" aria-label={w.unsentClear}>
-    <p>{kind === "delete" ? w.unsentDeleteQuestion : w.unsentRemoveQuestion}</p>
-    <button type="button" className="pa-unsent-confirm-action" disabled={disabled} onClick={onConfirm}>{kind === "delete" ? w.unsentDeleteConfirm : w.unsentRemoveConfirm}</button>
-    <button type="button" onClick={onCancel}>{w.cancel}</button>
-  </div>
 }
 
 /** What the status icon opens: the delivery fact, then the plain next step. */
@@ -83,7 +74,6 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
   retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
   disabled: boolean, onRetry: () => void, onRestore: () => void, discard?: UnsentDiscard | null, discardFailed?: boolean, onDiscard?: () => void, w: Words, language: string
 }) {
-  const [confirming, setConfirming] = useState(false)
   const [explained, setExplained] = useState(false)
   const row = useRef<HTMLDivElement>(null), noteID = useId()
   // The explanation closes on a second tap of the icon, a tap elsewhere, or Escape.
@@ -110,9 +100,8 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
         : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
-    {offer && !confirming && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={() => setConfirming(true)}>{w.unsentClear}</button>}
+    {offer && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={onDiscard}>{w.unsentClear}</button>}
     {unconfirmed && explained && <UnsentStatusNote id={noteID} w={w}/>}
-    {offer && confirming && <UnsentDiscardConfirm kind={discard!} disabled={disabled} onConfirm={() => { setConfirming(false); onDiscard!() }} onCancel={() => setConfirming(false)} w={w}/>}
     {discardFailed && <p className="pa-unsent-failure" role="alert">{w.unsentDiscardFailed}</p>}
   </div>
 }
