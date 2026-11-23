@@ -136,6 +136,20 @@ func runtimeFailure(code pa.ErrorCode, field string) error {
 	return &pa.Failure{Code: code, Field: field}
 }
 
+// notAdmitted describes an acquire refusal of a new message. acquire only
+// inspects the in-memory owner, so nothing was accepted, executed or
+// delivered: the message has no receipt and sending it again is safe. A
+// previous turn whose Agent process could not be confirmed stopped keeps its
+// owner (and its own unknown outcome); that uncertainty belongs to that turn,
+// not to this message, which is refused as busy with the same field.
+func notAdmitted(err error) error {
+	var refusal *pa.Failure
+	if errors.As(err, &refusal) && refusal.Code == pa.ExecutionEffectUnknown && refusal.Field == "owned_cleanup" {
+		return runtimeFailure(pa.CapacityFull, "owned_cleanup")
+	}
+	return err
+}
+
 func NewRuntime(o RuntimeOptions) (*Engine, error) {
 	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, runtimeFailure(pa.Invalid, "runtime_options")
@@ -356,7 +370,7 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	}
 	a, err := r.acquire(s.Command.Key)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, notAdmitted(err)
 	}
 	defer r.release(a)
 	a.mu.Lock()

@@ -2,6 +2,8 @@ package projectassistant
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -177,4 +179,35 @@ func TestRuntimeCloseAdmissionAndBlockingCleanupStayBounded(t *testing.T) {
 			t.Fatal(e)
 		}
 	})
+}
+
+// A finished turn whose Agent process could not be confirmed stopped keeps
+// its owner. A later message is refused before anything is written, so the
+// refusal must say it was not accepted rather than that its effect is unknown
+// (observed 2026-11-23: five sends answered execution_effect_unknown while
+// their receipts were absent).
+func TestRuntimeRetainedCleanupRefusesNewMessageAsNotAccepted(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	p.closeUnknown.Store(true)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	eventually(t, func() bool { return !f.r.Usage().Known })
+
+	_, err = f.submit(t, "two", "two")
+	var refusal *pa.Failure
+	if !errors.As(err, &refusal) || refusal.Code != pa.CapacityFull || refusal.Field != "owned_cleanup" {
+		t.Fatalf("a message refused before admission was reported as %v", err)
+	}
+	cmd := pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "two", ContentHash: strings.Repeat("a", 64)}
+	if receipt, e := f.r.replay(context.Background(), cmd, pa.SendOperation); e != nil || receipt != nil {
+		t.Fatalf("a refused message left a receipt %+v %v", receipt, e)
+	}
+	if f.provider.count() != 1 {
+		t.Fatal("a refused message launched another Agent process")
+	}
 }
