@@ -5668,6 +5668,7 @@ export type ProjectAssistantErrorCode =
   | "pa_scope_denied"
   | "pa_context_stale"
   | "pa_cursor_expired"
+  | "pa_declined"
   | "cli_not_installed"
   | "adapter_not_found"
   | "adapter_inventory_unknown"
@@ -5684,7 +5685,7 @@ export type ProjectAssistantErrorCode =
   | "resume_unsupported"
   | "execution_effect_unknown"
 
-export const ProjectAssistantErrorCodeValues: readonly ProjectAssistantErrorCode[] = ["pa_invalid", "pa_disabled", "pa_read_only", "pa_not_found", "pa_offline", "pa_unsupported", "pa_unpaired", "pa_revoked", "pa_stale_generation", "pa_stale_version", "pa_idempotency_conflict", "pa_capacity_full", "pa_outcome_unknown", "pa_expired", "pa_scope_denied", "pa_context_stale", "pa_cursor_expired", "cli_not_installed", "adapter_not_found", "adapter_inventory_unknown", "provider_version_unsupported", "auth_required", "auth_probe_unknown", "auth_rejected", "auth_unavailable_in_isolated_runtime", "sandbox_unavailable", "read_only_unverified", "scope_expansion_denied", "memory_isolation_unverified", "resume_forbidden_after_forget", "resume_unsupported", "execution_effect_unknown"] as const
+export const ProjectAssistantErrorCodeValues: readonly ProjectAssistantErrorCode[] = ["pa_invalid", "pa_disabled", "pa_read_only", "pa_not_found", "pa_offline", "pa_unsupported", "pa_unpaired", "pa_revoked", "pa_stale_generation", "pa_stale_version", "pa_idempotency_conflict", "pa_capacity_full", "pa_outcome_unknown", "pa_expired", "pa_scope_denied", "pa_context_stale", "pa_cursor_expired", "pa_declined", "cli_not_installed", "adapter_not_found", "adapter_inventory_unknown", "provider_version_unsupported", "auth_required", "auth_probe_unknown", "auth_rejected", "auth_unavailable_in_isolated_runtime", "sandbox_unavailable", "read_only_unverified", "scope_expansion_denied", "memory_isolation_unverified", "resume_forbidden_after_forget", "resume_unsupported", "execution_effect_unknown"] as const
 
 export interface ProjectAssistantErrorResponse {
   contract_version: string

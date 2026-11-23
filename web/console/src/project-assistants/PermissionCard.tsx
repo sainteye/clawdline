@@ -15,7 +15,8 @@ export function sortedOptions(options:readonly W.ProjectAssistantPermissionOptio
   const rank={allow_once:0,allow_always:1,reject_once:2,reject_always:3}
   return [...options].sort((a,b)=>rank[a.kind]-rank[b.kind])
 }
-function permissionOptionLabel(option:W.ProjectAssistantPermissionOption,w:Words) {
+function permissionOptionLabel(option:W.ProjectAssistantPermissionOption,w:Words,kind="",title="") {
+  if(kind==="dispatch_project")return option.kind==="allow_always"?w.dispatchAllowAlways.replace("{route}",title):option.allow?w.dispatchAllowOnce:w.dispatchDecline
   if(option.kind==="allow_always"&&option.label.trim().toLowerCase()==="allow for this session")return w.allow_session
   return w[option.kind]
 }
@@ -69,7 +70,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
     </details>}
     {team&&!offer&&state==="pending"&&<p className="pa-team-loading" role={detailState==="failed"?"alert":"status"}>{detailState==="failed"?<>{w.unavailable}{detailError&&` (${detailError})`} <button type="button" onClick={()=>void load()}>{w.retry}</button></>:w.loading}</p>}
     {offer&&(!team||state==="pending")&&<div className="pa-permission-options">{sortedOptions(offer.options).map(option=>{
-      const label=team?(option.allow?(kind==="team_create"?w.teamApproveCreate:w.teamApproveUpdate):w.reject_once):permissionOptionLabel(option,w),selected=offer.selected_option_id===option.id
+      const label=team?(option.allow?(kind==="team_create"?w.teamApproveCreate:w.teamApproveUpdate):w.reject_once):permissionOptionLabel(option,w,kind,title),selected=offer.selected_option_id===option.id
       return <button key={option.id} type="button" data-option-kind={option.kind} data-selected={selected||undefined} disabled={!enabled||busy||state!=="pending"} onClick={async()=>{if(!enabled||pending.current||permissionCardState(value,summary)!=="pending")return;pending.current=true;setBusy(true);setError("");try{await onAnswer(offer,option)}catch(error){setError(errorCode(error))}finally{pending.current=false;setBusy(false)}}}><span>{selected&&<span aria-hidden="true">✓ </span>}{label}</span>{!team&&option.label&&option.label!==label&&<small>{option.label}</small>}</button>
     })}</div>}{error&&<p role="alert">{w.permissionAnswerFailed} ({error})</p>}</section>
 }
@@ -83,7 +84,7 @@ function permissionCardState(value:PermissionStatus,summary?:PermissionStatus) {
 // Codync titles a card by what the tool would do; an unknown kind still says
 // it asks for permission.
 function actionHeading(kind:string,w:Words){
-  const heading:Record<string,string>={execute:w.permissionExecute,source_command:w.permissionExecute,edit:w.permissionEdit,delete:w.permissionDelete,move:w.permissionMove,read:w.permissionRead,search:w.permissionSearch,fetch:w.permissionFetch,switch_mode:w.permissionSwitchMode,team_create:w.teamCreateTitle,team_update:w.teamUpdateTitle}
+  const heading:Record<string,string>={execute:w.permissionExecute,source_command:w.permissionExecute,edit:w.permissionEdit,delete:w.permissionDelete,move:w.permissionMove,read:w.permissionRead,search:w.permissionSearch,fetch:w.permissionFetch,switch_mode:w.permissionSwitchMode,dispatch_project:w.permissionDispatchProject,team_create:w.teamCreateTitle,team_update:w.teamUpdateTitle}
   return heading[kind]??w.permission
 }
 

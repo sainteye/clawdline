@@ -85,6 +85,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.connector_credentials` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.dispatch_rules` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

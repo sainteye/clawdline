@@ -140,7 +140,12 @@ func TestHostOwnedMCPPeer(t *testing.T) {
 				work["brief"] = "Inspect the repository. Make no changes."
 				work["claims"] = []string{}
 			} else {
-				check(call("dispatch_work", work), true)
+				// Another Bot waits on a permission card; the host declines it.
+				declined := call("dispatch_work", work)
+				check(declined, true)
+				if !strings.Contains(string(declined), string(pa.Declined)) {
+					failPeer(17, string(declined))
+				}
 				delete(work, "project")
 			}
 			check(call("dispatch_work", work), false)
@@ -222,6 +227,7 @@ func runOwnedMCPWork(t *testing.T, lead bool) {
 	}
 	deadline := time.Now().Add(15 * time.Second)
 	var link pa.WorkLink
+	asked := 0
 	for {
 		x, e := f.h.store.Export(context.Background(), b.Key)
 		if e != nil {
@@ -234,6 +240,22 @@ func runOwnedMCPWork(t *testing.T, lead bool) {
 		if detail, err := os.ReadFile(peerError); err == nil {
 			t.Fatalf("unexpected MCP tool response: %s", detail)
 		}
+		for _, card := range x.Permissions {
+			if !strings.HasPrefix(card.ID, app.DispatchPermissionPrefix) || card.State != pa.PermissionPending {
+				continue
+			}
+			if lead {
+				t.Fatalf("the lead was asked: %+v", card)
+			}
+			s, e := f.h.Service()
+			if e != nil {
+				t.Fatal(e)
+			}
+			if _, e = s.Answer(context.Background(), pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "decline-" + card.ID}, pa.PermissionAnswer{Fence: card.Fence, TurnID: card.TurnID, OfferID: card.ID, OptionID: dispatchDecline}); e != nil {
+				t.Fatal(e)
+			}
+			asked++
+		}
 		if time.Now().After(deadline) {
 			t.Fatalf("native MCP did not finish: turns=%+v work=%+v usage=%+v", x.Turns, x.WorkLinks, f.h.Usage())
 		}
@@ -241,6 +263,9 @@ func runOwnedMCPWork(t *testing.T, lead bool) {
 	}
 	if f.launcher.calls.Load() != 1 {
 		t.Fatal("native work replayed", f.launcher.calls.Load())
+	}
+	if lead && asked != 0 || !lead && asked != 1 {
+		t.Fatalf("dispatch cards answered = %d, lead = %v", asked, lead)
 	}
 	ctx := context.Background()
 	r, _, err := f.o.Broker.Record(ctx, link.TaskID)

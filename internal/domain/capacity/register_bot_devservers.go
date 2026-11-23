@@ -3,6 +3,8 @@ package capacity
 const (
 	// Source-local definitions include stopped entries; people remove them.
 	MaximumBotServerDefinitions = 64
+	// Saved "always allow" Bot-to-Project dispatch rules; people revoke them.
+	MaximumBotDispatchRules = 64
 	// Independent foreground servers do not occupy the Agent's own slots.
 	MaximumBotServerProcesses = 4
 	// Complete command/name/directory metadata must fit a human review card.
@@ -18,6 +20,7 @@ const (
 func botServerBounds() []Entry {
 	return []Entry{
 		{Name: "bots.server_definitions", Class: Buffer, Unit: Rows, Limit: MaximumBotServerDefinitions, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotServerDefinitions"}},
+		{Name: "bots.dispatch_rules", Class: Buffer, Unit: Rows, Limit: MaximumBotDispatchRules, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotDispatchRules"}},
 		{Name: "bots.server_processes", Class: Buffer, Unit: Rows, Limit: MaximumBotServerProcesses, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerProcesses"}},
 		{Name: "bots.server_spec_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumBotServerSpecBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotServerSpecBytes"}},
 		{Name: "bots.server_log_bytes", Class: Observation, Unit: Bytes, Limit: MaximumBotServerLogBytes, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerLogBytes"}},
