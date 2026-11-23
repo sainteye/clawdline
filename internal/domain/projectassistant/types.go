@@ -249,24 +249,24 @@ type Fence struct {
 type Turn struct {
 	// QueueEditID identifies a paused, never-started human message. Only an
 	// explicit save, cancel, or turn withdrawal releases this hold.
-	QueueEditID    string              `json:"queue_edit_id,omitempty"`
-	Network        *NetworkWork        `json:"network,omitempty"`
-	Origin         TurnOrigin          `json:"origin,omitempty"`
-	ExchangeID     string              `json:"exchange_id,omitempty"`
+	QueueEditID string       `json:"queue_edit_id,omitempty"`
+	Network     *NetworkWork `json:"network,omitempty"`
+	Origin      TurnOrigin   `json:"origin,omitempty"`
+	ExchangeID  string       `json:"exchange_id,omitempty"`
 	// DecisionExchangeID marks the person's answer to a decision offer that
 	// a peer request raised; its result is forwarded to the requester.
-	DecisionExchangeID string `json:"decision_exchange_id,omitempty"`
-	Hops           int                 `json:"hops,omitempty"`
-	Attempts       []AttemptFact       `json:"attempts,omitempty"`
-	RoutineRunID   string              `json:"routine_run_id,omitempty"`
-	ID             string              `json:"id"`
-	Fence          Fence               `json:"fence"`
-	MessageID      string              `json:"message_id"`
-	State          TurnState           `json:"state"`
-	Instructions   InstructionSnapshot `json:"instructions"`
-	MemoryRevision int64               `json:"memory_revision"`
-	IdempotencyKey string              `json:"idempotency_key"`
-	Failure        *Failure            `json:"failure,omitempty"`
+	DecisionExchangeID string              `json:"decision_exchange_id,omitempty"`
+	Hops               int                 `json:"hops,omitempty"`
+	Attempts           []AttemptFact       `json:"attempts,omitempty"`
+	RoutineRunID       string              `json:"routine_run_id,omitempty"`
+	ID                 string              `json:"id"`
+	Fence              Fence               `json:"fence"`
+	MessageID          string              `json:"message_id"`
+	State              TurnState           `json:"state"`
+	Instructions       InstructionSnapshot `json:"instructions"`
+	MemoryRevision     int64               `json:"memory_revision"`
+	IdempotencyKey     string              `json:"idempotency_key"`
+	Failure            *Failure            `json:"failure,omitempty"`
 	// StartedAt is when the turn began running; absent while it waits.
 	StartedAt *time.Time `json:"started_at,omitempty"`
 	// JoinedTurnID names the running turn this queued message was sent into
