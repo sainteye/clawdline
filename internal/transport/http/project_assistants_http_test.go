@@ -52,6 +52,7 @@ func (r *paHTTPRepo) Bot(context.Context, pa.BotKey) (pa.Bot, error) {
 	}
 	return r.bot, r.err
 }
+
 // Permission finds no decision offer, so answers reach the runtime port.
 func (r *paHTTPRepo) Permission(context.Context, pa.BotKey, string) (pa.PermissionOffer, error) {
 	return pa.PermissionOffer{}, &pa.Failure{Code: pa.NotFound, Field: "permission"}
