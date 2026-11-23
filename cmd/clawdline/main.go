@@ -163,6 +163,10 @@ func main() {
 		coordinationCommand(os.Args[2:])
 	case "usage":
 		usageCommand(os.Args[2:])
+	case "go-cache":
+		// Keep the shared Go build cache under its registered budget
+		// (gocache.go); tools/heavy.sh runs it after a native build.
+		os.Exit(goCacheCommand(os.Args[2:], os.Stdout, os.Stderr))
 	case "heavy":
 		// A build or a test suite, after the machine's compile slot and
 		// enough memory (heavy.go).
