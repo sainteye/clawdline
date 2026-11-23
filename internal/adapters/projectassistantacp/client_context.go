@@ -35,6 +35,11 @@ func (c *Client) NativeContext() app.NativeContextState {
 		state.CompactedTurnID, state.Compactions = c.observed.turnID, c.observed.count
 		state.CompactedBefore, state.CompactedAfter = c.observed.before, c.observed.after
 	}
+	// A completed compaction with no reading after it: the last reading is
+	// the compaction call's own (Codex sends it first), not the context left.
+	if c.observed.awaitUsage {
+		state.UsageKnown, state.UsedTokens, state.WindowTokens = false, 0, 0
+	}
 	return state
 }
 

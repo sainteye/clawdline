@@ -1,7 +1,6 @@
 package projectassistant
 
 import (
-	"strings"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ func TestCompactionNoticeIsWrittenOnlyForTheReportedTurn(t *testing.T) {
 	at := time.Unix(1, 0)
 	s := compactionReader{state: NativeContextState{Fence: turn.Fence, CompactedTurnID: "t1", Compactions: 1, CompactedBefore: 345000, CompactedAfter: 41000}}
 	m := compactionNotice(s, turn, at)
-	if m == nil || m.ID != "compacted-t1" || m.Kind != pa.NoticeMessage || !strings.Contains(m.Text, "已摘要") || !strings.Contains(m.Text, "345K → 41K") {
+	if m == nil || m.ID != "compacted-t1" || m.Kind != pa.NoticeMessage || m.Text != "Earlier context was summarized to make room: 345K → 41K" {
 		t.Fatalf("%+v", m)
 	}
 	s.state.CompactedTurnID = "t0"
