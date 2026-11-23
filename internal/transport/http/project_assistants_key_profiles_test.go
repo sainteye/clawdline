@@ -180,10 +180,11 @@ func TestAPIKeyProfileCrossesSecretHTTPVaultRestartAndActualACP(t *testing.T) {
 	}
 	f.s.projectAssistants.mu.Lock()
 	f.s.projectAssistants.host = nil
-	// A daemon restart creates a fresh broker. Clear only this stopped fixture
-	// broker’s two in-memory Bot-owner registrations before rebuilding its Host.
+	// A daemon restart creates a fresh broker. Clear the stopped fixture
+	// broker's in-memory Bot-owner registrations before rebuilding its Host.
 	f.s.broker.AssistantAuthority = nil
 	f.s.broker.AssistantWorkChanged = nil
+	f.s.broker.AssistantWorkCompleted = nil
 	f.s.projectAssistants.mu.Unlock()
 	g = f.get(t, f.local)
 	edit := contract.ProjectAssistantEditRequest{Command: f.command(pa.EditOperation, "select-key-after-source-restart"), Settings: contract.ProjectAssistantEditSettings{ExpectedVersion: g.Bot.Version, Name: g.Bot.Name, Appearance: g.Bot.Appearance, Instructions: g.Bot.Instructions.Text, LoginProfile: &contract.ProjectAssistantLoginSelection{ID: p.ID}}}
