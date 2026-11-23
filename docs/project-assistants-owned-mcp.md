@@ -128,6 +128,40 @@ text is `pa_idempotency_conflict`. The answer separates `stage: accepted`
 `stage: delivered` (typed into the composer). Neither means the worker read or
 followed it; its next turn and `work_status` are that evidence.
 
+## Asking the person (`ask_person`)
+
+`ask_person(question, suggested_replies[1..3])` is the one way a Bot puts a
+decision in front of the person. It is available in ordinary turns and in a
+peer-request turn, including the hidden background worker that runs a
+`message_bot` request for an ordinary recipient. It creates one decision
+offer and sends no chat message; nothing in the Bot's tool list can answer
+an offer (`TestBotToolsCanAskThePersonButNeverAnswer`).
+
+- The offer is a `PermissionOffer` with `kind: "decision"` and a
+  `decision` block (question, exchange id, requesting Bot, the request
+  clipped to `bots.decision_request_quote_bytes`). It belongs to a chat, not a
+  turn, so `turn_id` is empty. A peer request's offer is stored in the
+  **visible recipient's main chat**, never in the worker.
+- When the peer-request turn then succeeds, `FinishExchange` records the
+  exchange as `needs_person` instead of `completed`; no reply turn is queued
+  for the requester, whose chat shows a navigation-only row
+  "<Bot> is waiting for your decision · Go to <Bot> ›". Any other ending of the
+  turn withdraws the offer.
+- Only the console's authorized answer route answers it.
+  `Service.Answer` sees the decision kind and commits the person's press — a
+  suggested reply's full text or their own `text` — as a `user` message in
+  that chat, prefixed with the request and the question quoted as data. The
+  offer resolves in the same commit (pending → answered), and the command's
+  idempotency key is derived from the offer, so a second, different answer is
+  refused. The turn is an ordinary direct user turn.
+- When that turn ends, `ForwardDecision` completes the exchange with the
+  turn's final text and queues the usual correlated `bot_reply` turn to the
+  requester.
+- An answer is refused once the offer expires (`bots.decision_offer_seconds`),
+  when the Bot is hidden, or when its binding is revoked. Pending questions
+  per Bot are bounded by `bots.decision_offers`; deleting a Bot removes its
+  offers with its chat.
+
 ## Direct Lead Bot controls
 
 A designated Lead responding to a person in its own chat receives `manage_bots`.

@@ -546,6 +546,9 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		if offer.Action != nil {
 			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Action.Title, offer.Action.ToolKind
 		}
+		if offer.Kind == pa.DecisionOfferKind && offer.Decision != nil {
+			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Decision.Question, pa.DecisionOfferKind
+		}
 		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "permissions", ID: id})
 		out.Items = append(out.Items, item)
 	}
