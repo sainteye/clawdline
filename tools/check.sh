@@ -61,6 +61,33 @@ for arg in "$@"; do
   esac
 done
 
+# Direct `go test`/`go vet` runs grow the default shared Go cache without ever
+# passing through tools/heavy.sh's post-build trim; on 2026-11-23 that was
+# 57 GB in one day. So every exit, pass or fail, starts one detached
+# `clawdline go-cache trim` (registered build.shared_go_cache_* bounds, recent
+# entries protected, unknown measurements remove nothing) and does not wait for
+# it or change this script's status. Skipped for an explicit GOCACHE (its owner
+# keeps it), inside the compile slot (heavy trims after the command), while
+# another trim runs, for a clawdline without `go-cache`, or with
+# CLAWDLINE_CHECK_GO_CACHE_TRIM=0. tools/test-check-go-cache-trim.sh covers it.
+trim_go_cache_on_exit() {
+  local status=$? cl="" cand
+  if [ "${CLAWDLINE_CHECK_GO_CACHE_TRIM:-1}" != 0 ] && [ -z "${GOCACHE:-}" ] && [ -z "${CLAWDLINE_HEAVY:-}" ] &&
+     command -v go >/dev/null 2>&1 && ! pgrep -f -- ' go-cache trim' >/dev/null 2>&1; then
+    for cand in "${CLAWDLINE:-}" "$(command -v clawdline 2>/dev/null || true)" \
+        "${XDG_DATA_HOME:-$HOME/.local/share}/clawdline-next/current/clawdline"; do
+      if [ -n "$cand" ] && [ -x "$cand" ]; then cl=$cand; break; fi
+    done
+    if [ -n "$cl" ] && { "$cl" go-cache 2>&1 || true; } | grep -q 'go-cache trim'; then
+      local trim_log="${TMPDIR:-/tmp}"; trim_log="${trim_log%/}/clawdline-go-cache-trim.log"
+      nohup nice -n 10 "$cl" go-cache trim </dev/null >"$trim_log" 2>&1 &
+      echo "check: trimming the default Go cache in the background (log $trim_log)" >&2
+    fi
+  fi
+  exit "$status"
+}
+if [ "$plan_only" != yes ]; then trap trim_go_cache_on_exit EXIT; fi
+
 # A Root callback's default private Go cache is replaceable by a source-owned
 # Project cache. Explicit cache overrides and isolated verification stay private.
 # Older installed CLIs have no use-go capability; do not guess their routes.
@@ -93,7 +120,8 @@ fi
 if [ "$quick" = yes ]; then
   echo 'DEVELOPMENT CHECK ONLY: this does not satisfy the pre-commit gate.'
   run_args=(); [ -z "$run_pattern" ] || run_args+=("-run=$run_pattern")
-  exec go test ${run_args[@]+"${run_args[@]}"} ${packages[@]+"${packages[@]}"}
+  go test ${run_args[@]+"${run_args[@]}"} ${packages[@]+"${packages[@]}"}
+  exit $?
 fi
 
 tmp=${TMPDIR:-/tmp}
@@ -245,6 +273,7 @@ if [ "$(uname -s)" = Linux ]; then
 fi
 check "check planning and profiling tests" bounded_test_step 180 node --test --test-timeout=120000 tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
 check "check modes integration" bash tools/test-check-modes.sh
+check "check exit-time Go cache trim" bash tools/test-check-go-cache-trim.sh
 check "machine-word delta guard" bash tools/test-machine-words-changes.sh
 check "heavy handoff capability" bash tools/test-heavy-handoff.sh
 if [ "$(uname -s)" = Darwin ]; then
