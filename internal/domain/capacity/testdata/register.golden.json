@@ -2975,6 +2975,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.process_census_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotProcessCensusAttempts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.process_census_bytes",
     "Class": "buffer",
     "Unit": "bytes",

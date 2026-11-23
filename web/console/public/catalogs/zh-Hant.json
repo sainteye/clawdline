@@ -1149,6 +1149,8 @@
   "capacityRow.bots.page_rows.what": "每頁 Bots 清單或可見聊天訊息最多回傳的筆數，限制單次讀取量而不刪除歷史。",
   "capacityRow.bots.permission_action_bytes.full": "較長的原生內容會標示已截短；來源自有動作的完整核閱內容放不下時直接拒絕。",
   "capacityRow.bots.permission_action_bytes.what": "單一原生或來源自有權限請求可擷取的核閱內容大小：標題、命令或輸入，以及檔案差異。",
+  "capacityRow.bots.process_census_attempts.full": "macOS 程序列舉在複製時持續變動、重試這些次數仍不完整時，清理維持未確認，不採用不完整的清單。",
+  "capacityRow.bots.process_census_attempts.what": "macOS 複製程序表時若有新程序啟動，單次程序列舉最多重新取得的次數。",
   "capacityRow.bots.process_census_bytes.full": "程序列舉不完整時不能確認清理完成；保留尚未釐清的資源持有者，不終止未經核對的程序。",
   "capacityRow.bots.process_census_bytes.what": "原有程序身分列舉的清理預算，不限制 Agent 輸入、輸出或 ACP 通知。",
   "capacityRow.bots.processes.full": "不啟動額外程序；已持久接受的回合等待可用位置。",

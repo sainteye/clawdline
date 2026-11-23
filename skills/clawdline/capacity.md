@@ -154,6 +154,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.process_census_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.reaction_emoji_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |

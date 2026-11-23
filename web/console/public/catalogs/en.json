@@ -1149,6 +1149,8 @@
   "capacityRow.bots.page_rows.what": "The maximum number of Bots or visible chat messages returned in one history or roster page, keeping reads bounded without deleting history.",
   "capacityRow.bots.permission_action_bytes.full": "Long native text is marked shortened; a source-owned action is refused if its complete review cannot fit.",
   "capacityRow.bots.permission_action_bytes.what": "Maximum content captured for one native or source permission request: its title, command or input, and file diffs.",
+  "capacityRow.bots.process_census_attempts.full": "A macOS process census that keeps changing while it is copied stays incomplete after these attempts; cleanup remains unconfirmed instead of trusting a partial list.",
+  "capacityRow.bots.process_census_attempts.what": "How many times one macOS process census is taken again when processes start while the kernel table is being copied.",
   "capacityRow.bots.process_census_bytes.full": "An incomplete process census cannot establish cleanup; the resource owner remains unresolved instead of terminating unverified processes.",
   "capacityRow.bots.process_census_bytes.what": "Existing process-identity inventory budget for safe native cleanup; it does not limit Agent input, output or ACP notifications.",
   "capacityRow.bots.processes.full": "No additional process starts; durably accepted turns wait for an available slot.",
