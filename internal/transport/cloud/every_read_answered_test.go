@@ -151,16 +151,16 @@ func TestFiveImagesInFlightDoNotStarveTheTodoRead(t *testing.T) {
 // The rule this replaces admitted one live refusal per channel, so the first
 // was told and every later one waited out its browser's timeout.
 func TestEveryReadRefusedOnAFullChannelGetsItsOwnRefusal(t *testing.T) {
-	relay, _ := newRecordingRelay(t, adaptercloud.DefaultSpoolLimits())
+	relay, spool := newRecordingRelay(t, adaptercloud.DefaultSpoolLimits())
 	var lines []string
-	// 3,000,000 bytes is 4,000,000 as base64: on its own it may go, and it
-	// leaves no room for another picture.
-	service := Service{MachineID: "mac-01", Bridge: imageBridge(3_000_000, 10), Transport: relay,
+	// After the inner and outer base64 encodings, one 2 MB image fits the
+	// send window and its logical reply leaves too little room for another.
+	service := Service{MachineID: "mac-01", Bridge: imageBridge(2_000_000, 10), Transport: relay,
 		Log: func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) }}
 	ctx := context.Background()
 	service.Answer(ctx, imageRead(t, "first", 1))
-	if a, ok := relay.answers()["read:first"]; !ok || a.Refusal {
-		t.Fatalf("a picture the size of the channel could not go on an idle one: %q", lines)
+	if a, ok := relay.answers()["read:first"]; !ok || a.Refusal || spool.SendNext().Row == nil {
+		t.Fatalf("the first picture could not be sent on an idle channel: %q", lines)
 	}
 
 	const n = 12
@@ -191,10 +191,13 @@ func TestTheRefusalCapBoundsWhatAFloodHolds(t *testing.T) {
 	limits.RecipientRefusalCap = 3
 	relay, spool := newRecordingRelay(t, limits)
 	var lines []string
-	service := Service{MachineID: "mac-01", Bridge: imageBridge(3_000_000, 10), Transport: relay,
+	service := Service{MachineID: "mac-01", Bridge: imageBridge(2_000_000, 10), Transport: relay,
 		Log: func(f string, a ...any) { lines = append(lines, fmt.Sprintf(f, a...)) }}
 	ctx := context.Background()
 	service.Answer(ctx, imageRead(t, "first", 1))
+	if a, ok := relay.answers()["read:first"]; !ok || a.Refusal || spool.SendNext().Row == nil {
+		t.Fatalf("the first picture could not be sent on an idle channel: %q", lines)
+	}
 	for i := 0; i < 5; i++ {
 		service.Answer(ctx, imageRead(t, fmt.Sprintf("r%d", i), uint64(10+i)))
 	}
