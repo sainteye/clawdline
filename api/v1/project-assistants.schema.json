@@ -512,6 +512,14 @@
             "off"
           ]
         },
+        "work_review": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "description": "Whether finished, failed or waiting dispatched work queues one review turn. Omitted means on."
+        },
         "login_profile": {
           "type": "string"
         },
@@ -649,6 +657,14 @@
             "on",
             "off"
           ]
+        },
+        "work_review": {
+          "type": "string",
+          "enum": [
+            "on",
+            "off"
+          ],
+          "description": "Whether finished, failed or waiting dispatched work queues one review turn. Omitted means on."
         },
         "agent": {
           "$ref": "#/$defs/ProjectAssistantAgent"

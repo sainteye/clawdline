@@ -5348,6 +5348,12 @@ export interface ProjectAssistantBot {
   sidebar_section?: string
   updated_at: string
   version: number
+
+  /**
+   * Whether finished, failed or waiting dispatched work queues one review turn.
+   * Omitted means on.
+   */
+  work_review?: string
 }
 
 export interface ProjectAssistantBotKey {
@@ -5702,6 +5708,12 @@ export interface ProjectAssistantEditSettings {
   permission_policy?: ProjectAssistantPermissionPolicy
   roster?: ProjectAssistantRosterEdit
   runtime_settings?: ProjectAssistantRuntimeSettings
+
+  /**
+   * Whether finished, failed or waiting dispatched work queues one review turn.
+   * Omitted means on.
+   */
+  work_review?: string
 }
 
 /**

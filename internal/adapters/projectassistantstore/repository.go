@@ -625,6 +625,9 @@ func validateAggregate(a aggregate) error {
 	if b.Notify != "" && b.Notify != "on" && b.Notify != "off" {
 		return failure(pa.Invalid, "notify")
 	}
+	if b.WorkReview != "" && b.WorkReview != "on" && b.WorkReview != "off" {
+		return failure(pa.Invalid, "work_review")
+	}
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")
 	}

@@ -91,6 +91,7 @@ func paWireBot(value pa.Bot) (contract.ProjectAssistantBot, error) {
 	}
 	out.Mode = value.Mode
 	out.Notify = value.Notify
+	out.WorkReview = value.WorkReview
 	out.LoginProfile = value.LoginProfile
 	if len(value.Extensions.Skills)+len(value.Extensions.Connectors) > 0 {
 		out.Extensions = paWireExtensions(value.Extensions)

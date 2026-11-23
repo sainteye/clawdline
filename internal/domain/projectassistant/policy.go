@@ -210,6 +210,12 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		}
 		bot.Notify = in.Notify
 	}
+	if in.WorkReview != "" {
+		if in.WorkReview != "on" && in.WorkReview != "off" {
+			return bot, fail(Invalid, "work_review")
+		}
+		bot.WorkReview = in.WorkReview
+	}
 	if in.ExpectedVersion != bot.Version {
 		return bot, fail(StaleVersion, "bot")
 	}

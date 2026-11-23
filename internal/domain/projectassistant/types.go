@@ -116,10 +116,13 @@ type InstructionSnapshot struct {
 	RoleSnapshotRef string `json:"role_snapshot_ref"`
 }
 type Bot struct {
-	Extensions       ExtensionSelection `json:"extensions,omitempty,omitzero"`
-	LoginProfile     string             `json:"login_profile,omitempty"`
-	RuntimeSettings  RuntimeSettings    `json:"runtime_settings,omitempty,omitzero"`
-	Notify           string             `json:"notify,omitempty"`
+	Extensions      ExtensionSelection `json:"extensions,omitempty,omitzero"`
+	LoginProfile    string             `json:"login_profile,omitempty"`
+	RuntimeSettings RuntimeSettings    `json:"runtime_settings,omitempty,omitzero"`
+	Notify          string             `json:"notify,omitempty"`
+	// WorkReview is "off" when finished, failed or waiting dispatched work
+	// only publishes its result. Empty and "on" queue one review turn.
+	WorkReview       string             `json:"work_review,omitempty"`
 	Key              BotKey             `json:"key"`
 	Project          ProjectScope       `json:"project"`
 	ConversationID   string             `json:"conversation_id"`
@@ -183,6 +186,7 @@ type EditBot struct {
 	Agent           Agent               `json:"agent,omitempty"`
 	RuntimeSettings *RuntimeSettings    `json:"runtime_settings,omitempty"`
 	Notify          string              `json:"notify,omitempty"`
+	WorkReview      string              `json:"work_review,omitempty"`
 	FallbackAgents  *[]Agent            `json:"fallback_agents,omitempty"`
 	FallbackSteps   *[]FallbackStep     `json:"fallback_steps,omitempty"`
 	ExpectedVersion int64               `json:"expected_version"`

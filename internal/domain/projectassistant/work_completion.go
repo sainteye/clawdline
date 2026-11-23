@@ -18,3 +18,7 @@ func WorkCompletionTask(turn Turn) string {
 func QueuedWorkCompletion(turn Turn) bool {
 	return WorkCompletionTask(turn) != "" && turn.State == TurnQueued && turn.StartedAt == nil
 }
+
+// ReviewsWork reports the per-Bot default: every dispatched task queues one
+// review turn unless the person turned the setting off.
+func (b Bot) ReviewsWork() bool { return b.WorkReview != "off" }

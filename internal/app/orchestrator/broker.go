@@ -912,7 +912,7 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 			before = &copied
 		}
 		out = r
-		wasTerminal := r.State.Terminal()
+		wasTerminal, wasWaiting := r.State.Terminal(), !r.AwaitingDialogSince.IsZero()
 		effects, err := change(tx, &r)
 		if err != nil {
 			if errors.Is(err, errUnchanged) {
@@ -940,6 +940,8 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 		}
 		if !wasTerminal && r.State.Terminal() && r.AssistantOwner != nil {
 			effects = append(effects, store.Effect{Kind: EffectAssistantWorkCompleted, Subject: r.ID})
+		} else if !wasTerminal && !wasWaiting && !r.State.Terminal() && !r.AwaitingDialogSince.IsZero() && r.AssistantOwner != nil {
+			effects = append(effects, store.Effect{Kind: EffectAssistantWorkWaiting, Subject: r.ID})
 		}
 		body := map[string]any{"state": r.State, "task": r.ID}
 		for k, v := range extra {

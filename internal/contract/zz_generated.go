@@ -4561,6 +4561,10 @@ type ProjectAssistantBot struct {
 	SidebarSection   string                           `json:"sidebar_section,omitempty"`
 	UpdatedAt        string                           `json:"updated_at"`
 	Version          int64                            `json:"version"`
+
+	// Whether finished, failed or waiting dispatched work queues one review turn.
+	// Omitted means on.
+	WorkReview string `json:"work_review,omitempty"`
 }
 
 type ProjectAssistantBotKey struct {
@@ -4861,6 +4865,10 @@ type ProjectAssistantEditSettings struct {
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
 	Roster           *ProjectAssistantRosterEdit      `json:"roster,omitempty"`
 	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
+
+	// Whether finished, failed or waiting dispatched work queues one review turn.
+	// Omitted means on.
+	WorkReview string `json:"work_review,omitempty"`
 }
 
 // Acceptance is durable admission; delivery is a persisted reply; observation
