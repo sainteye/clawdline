@@ -31,6 +31,10 @@ func (c *Client) NativeContext() app.NativeContextState {
 	state.UsageKnown = c.nativeContext.UsageKnown
 	state.UsedTokens = c.nativeContext.UsedTokens
 	state.WindowTokens = c.nativeContext.WindowTokens
+	if c.observed.count > 0 {
+		state.CompactedTurnID, state.Compactions = c.observed.turnID, c.observed.count
+		state.CompactedBefore, state.CompactedAfter = c.observed.before, c.observed.after
+	}
 	return state
 }
 
@@ -114,6 +118,9 @@ func (c *Client) updateNativeContext(sessionID, kind string, commands, used, siz
 	case "usage_update":
 		var usedTokens, windowTokens *int64
 		known := json.Unmarshal(used, &usedTokens) == nil && json.Unmarshal(size, &windowTokens) == nil && usedTokens != nil && windowTokens != nil && *usedTokens >= 0 && *windowTokens > 0
+		if known {
+			c.observeUsageLocked(c.nativeContext.UsageKnown, c.nativeContext.UsedTokens, *usedTokens)
+		}
 		c.nativeContext.UsageKnown = known
 		c.nativeContext.UsedTokens, c.nativeContext.WindowTokens = 0, 0
 		if known {

@@ -73,7 +73,12 @@ func (c *Client) updateNativeCompaction(sessionID, id, status string) error {
 		return refusal(pa.StaleGeneration, "native_session")
 	}
 	op := c.compaction
-	if op == nil || c.cancelled || c.failure != nil || op.terminal {
+	if op == nil {
+		// Not Clawdline's maintenance write: the agent compacted by itself.
+		c.observeCompletedCompactionLocked(status)
+		return nil
+	}
+	if c.cancelled || c.failure != nil || op.terminal {
 		return nil
 	}
 	if id == "" || op.started && id != op.result.ID {
