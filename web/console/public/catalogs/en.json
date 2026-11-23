@@ -11304,7 +11304,7 @@
   "projectAssistants.failAcknowledged": "Follow-up instructions were received; this earlier turn's result remains unconfirmed.",
   "projectAssistants.failBotsOff": "Bots are turned off on that machine.",
   "projectAssistants.failCleanup": "The Agent process could not be confirmed stopped.",
-  "projectAssistants.sendCleanupPending": "This message was not sent. The Agent process from the previous turn has not been confirmed stopped, so the Bot is not starting new work. It is safe to send again; if this keeps appearing, restart Clawdline on that machine.",
+  "projectAssistants.sendCleanupPending": "This message was not sent. The Agent process from the previous turn has not been confirmed stopped, so the Bot is not starting new work. Clawdline re-checks it on its own for about 30 seconds; sending again is safe. If this still appears after that, restart Clawdline on that machine.",
   "projectAssistants.failCloudOff": "That machine has operation from Clawdline Cloud turned off.",
   "projectAssistants.failConnection": "The connection to the Agent ended before its result was received.",
   "projectAssistants.failCredits": "The Agent reported insufficient credits.",
