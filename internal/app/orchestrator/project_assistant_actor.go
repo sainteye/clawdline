@@ -248,7 +248,9 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Persona              string `json:",omitempty"`
 		BoardItemID          string `json:"board_item_id,omitempty"`
 		ContinueOnCompletion bool   `json:"continue_on_completion,omitempty"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion})
+		// Omitted when empty so receipts written before dispatch rules keep their hash.
+		Choice pa.DispatchChoice `json:"choice,omitzero"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
