@@ -11,6 +11,10 @@ const (
 	MaxConfigurationChoices    = 100
 	MaxConfigurationValueBytes = 16 << 10
 	MaxMemoryPreviewRunes      = 128
+	// A native configuration catalog is reused for this long, then read again.
+	MaxConfigurationCacheSeconds = 600
+	// Distinct Agent account, model and Project directory catalogs kept at once.
+	MaxConfigurationCacheEntries = 32
 )
 
 // RuntimeSettings contains only ACP selections, never launch commands or flags.

@@ -63,8 +63,9 @@ type ServiceOptions struct {
 // Service has no startup side effects. Configuration, history, memory and
 // projection operations never call Runtime or initialize a provider process.
 type Service struct {
-	opts   ServiceOptions
-	reader ReaderRepository
+	opts     ServiceOptions
+	reader   ReaderRepository
+	catalogs *configurationCache
 }
 
 func NewService(opts ServiceOptions) (*Service, error) {
@@ -72,7 +73,7 @@ func NewService(opts ServiceOptions) (*Service, error) {
 	if !ok || opts.Memory == nil || opts.Events == nil || opts.Runtime == nil || opts.Projects == nil || opts.Authorize == nil || opts.Clock == nil || opts.ID == nil {
 		return nil, errors.New("project assistants require repository, reader projection, memory, events, runtime, projects, authority, clock and IDs")
 	}
-	return &Service{opts: opts, reader: r}, nil
+	return &Service{opts: opts, reader: r, catalogs: newConfigurationCache()}, nil
 }
 
 func serviceFailure(code pa.ErrorCode, field string) error {

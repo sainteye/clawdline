@@ -5415,7 +5415,7 @@
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
     "internal/app/projectassistant/collaboration.go": "8dcfc59481d4c70b5cb5e0c7e1164fc2d63cbc2438427fc8e01e9983bc825b1b",
-    "internal/app/projectassistant/configuration.go": "facfc35732c43bd54dda82a9687d76fbe3b646484b4a529cec9971389e48844d",
+    "internal/app/projectassistant/configuration.go": "39df67333a7764f211f57d430aad5b54863bd1854a78ac5025f5155189d77e4b",
     "internal/app/projectassistant/devservers.go": "f5103c3342c67a09cc26f5dfbfd3eedf013bc9008edd4477c2f536f398f4a8f0",
     "internal/app/projectassistant/extensions.go": "ade658b4d4fc1e821879449ccd2c2b2734b61f190875f6e8c4e2c43e7f095c4c",
     "internal/app/projectassistant/fallback.go": "35ef8d81a19ec9ef0811ae740948e65356f6b99d481147f4035ddfc4841d3819",

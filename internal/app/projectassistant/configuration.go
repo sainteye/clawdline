@@ -42,12 +42,17 @@ func (s *Service) Configuration(ctx context.Context, q MemoryReadRequest, agent 
 	// Catalog reads do not apply this Bot’s saved option choices. The human
 	// Save path validates them in its own disposable native session.
 	b.RuntimeSettings = pa.RuntimeSettings{}
-	out, err := s.opts.Configuration(ctx, b, resolved.Directory, model)
-	if err != nil {
-		return out, nil, err
-	}
-	if out.Agent != b.Agent {
-		return out, nil, serviceFailure(pa.ScopeDenied, "configuration_agent")
+	key := configurationKey{Agent: b.Agent, LoginProfile: b.LoginProfile, Model: model, Directory: resolved.Directory}
+	out, cached := s.catalogs.get(key, s.opts.Clock())
+	if !cached {
+		out, err = s.opts.Configuration(ctx, b, resolved.Directory, model)
+		if err != nil {
+			return out, nil, err
+		}
+		if out.Agent != b.Agent {
+			return out, nil, serviceFailure(pa.ScopeDenied, "configuration_agent")
+		}
+		s.catalogs.put(key, out, s.opts.Clock())
 	}
 	check := func(ctx context.Context) error {
 		_, _, _, now, err := s.memoryOwner(ctx, q)
@@ -77,6 +82,10 @@ func (s *Service) validateConfiguration(ctx context.Context, bot pa.Bot) error {
 		return serviceFailure(pa.ScopeDenied, "configuration_project")
 	}
 	actual, err := s.opts.Configuration(ctx, bot, resolved.Directory, bot.RuntimeSettings.Model)
+	if pa.Code(err) == pa.Unsupported || pa.Code(err) == pa.ScopeDenied {
+		// The Agent no longer accepts what a cached catalog offered.
+		s.catalogs.forget(bot.Agent, bot.LoginProfile, resolved.Directory)
+	}
 	if err != nil {
 		return err
 	}
@@ -93,6 +102,7 @@ func (s *Service) validateConfiguration(ctx context.Context, bot pa.Bot) error {
 			}
 		}
 		if !found {
+			s.catalogs.forget(bot.Agent, bot.LoginProfile, resolved.Directory)
 			return serviceFailure(pa.Unsupported, "model_option")
 		}
 	}
