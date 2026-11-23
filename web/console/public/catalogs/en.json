@@ -12065,6 +12065,7 @@
   "projectAssistants.dispatchAllowOnce": "Allow this time",
   "projectAssistants.dispatchAllowAlways": "Always allow {route}",
   "projectAssistants.dispatchDecline": "Decline",
+  "projectAssistants.backgroundRunningCommand": "Running a command",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

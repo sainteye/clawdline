@@ -5649,7 +5649,7 @@
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
-    "web/console/src/project-assistants/BackgroundTasks.tsx": "a4efd8933a9b36b7adbc9ecb1d2a124e3b05f99f5b9fc8ae3e0b42e1ac05f8b3",
+    "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "ac22acf7f8ee19ece636a7924fee6c4851067f7dcbe28fa5803fd8c36a7c8896",
     "web/console/src/project-assistants/ChatRows.tsx": "074e2657916390c5f586087971d6780bda7de12f7fb51ae63b744c4d626aa617",

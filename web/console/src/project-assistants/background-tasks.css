@@ -20,8 +20,11 @@
   background: transparent;
   color: var(--pa-dim);
 }
-.pa-background-open span, .pa-background-open time { flex-shrink: 0; }
-.pa-background-open .pa-background-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* State, label, duration, +N and stop never shrink; the activity and title give way first. */
+.pa-background-open span, .pa-background-open time { flex-shrink: 0; white-space: nowrap; }
+.pa-background-open .pa-background-kind { margin-inline-end: -5px; }
+.pa-background-open .pa-background-activity { flex: 0 1 auto; max-width: 55%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-open .pa-background-title { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pa-background-mark { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; flex: none; }
 .pa-background-mark[data-active] { background: currentColor; animation: pa-background-pulse 1.8s ease-in-out infinite; }
 @keyframes pa-background-pulse { 50% { opacity: .35; } }

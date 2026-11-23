@@ -11,9 +11,18 @@ export function liveBackgroundTask(task: BackgroundTask) {
   return task.state === "waiting" || task.state === "active" || task.state === "waiting_permission"
 }
 
+// A raw shell line (Codex reports the command itself) can carry the person's home
+// directory and runs far wider than a phone; name the action instead of echoing it.
+const shellLine = /;|&&|\|\||\||(^|[\s'"=])(\/Users\/|\/home\/|~\/|[A-Za-z]:\\)/
+
+export function backgroundActivityLabel(activity: string, w: Words) {
+  const shown = rowActivity(activity,w)
+  return shown === activity && shellLine.test(activity) ? w.backgroundRunningCommand : shown
+}
+
 export function backgroundTaskLabel(task: BackgroundTask, w: Words) {
   if (task.state === "waiting") return w.backgroundQueued
-  if (task.state === "active") return task.activity?rowActivity(task.activity,w):w.backgroundWorking
+  if (task.state === "active") return task.activity?backgroundActivityLabel(task.activity,w):w.backgroundWorking
   if (task.state === "waiting_permission") return w.backgroundPermission
   if (task.state === "succeeded") return w.backgroundCompleted
   if (task.state === "failed") return w.failed
@@ -76,9 +85,10 @@ export function BackgroundCapsule({tasks, open, stop, stopping, outcomes, writab
   return <div className="pa-background-capsule">
     <button type="button" className="pa-background-open" onClick={event => open(task,event.currentTarget)}>
       <span className="pa-background-mark" data-active={task.state==="active"||undefined} aria-hidden="true"/>
-      <span>{w.backgroundLabel} · <strong>{backgroundTaskLabel(task,w)}</strong></span>
+      <span className="pa-background-kind">{w.backgroundLabel} ·</span>
+      <strong className="pa-background-activity">{backgroundTaskLabel(task,w)}</strong>
       <span className="pa-background-title">{task.title}</span><BackgroundDuration task={task}/>
-      {live.length>1&&<span aria-label={w.backgroundThreads}>+{live.length-1}</span>}
+      {live.length>1&&<span className="pa-background-more" aria-label={w.backgroundThreads}>+{live.length-1}</span>}
     </button>
     {task.worker&&<BackgroundStop key={task.id} w={w} disabled={!writable||!!stopping||!!outcomes[task.id]} action={()=>stop(task)}/>}
     {(stopping===task.id||outcomes[task.id])&&<span className="pa-background-stop-status" role="status">

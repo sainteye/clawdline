@@ -13,7 +13,7 @@ import "./styles.css"
 const source=fixtureSource("motion"),baseList=source.list.bind(source),baseView=source.view!.bind(source)
 const failureField=new URL(location.href).searchParams.get("failure")??""
 let phase:"idle"|"working"|"needsInput"|"error"=failureField?"error":"working",revision=1
-let background:"waiting"|"active"|"waiting_permission"|undefined
+let background:"waiting"|"active"|"waiting_permission"|undefined,backgroundActivity=""
 const listeners=new Set<(frame:W.ProjectAssistantRosterFrame)=>void>()
 const disconnects=new Set<()=>void>()
 const query={machine_id:source.machineID,cursor:"",query:"",page_size:100}
@@ -32,6 +32,7 @@ source.view=async(r,s)=>{
   if(background){
     page.head.background_tasks=[{
       id:"fixture-background", title:"Check the notes", origin_message_id:"motion-message", state:background,
+      ...(backgroundActivity?{activity:backgroundActivity}:{}),
       ...(background==="waiting"?{}:{started_at:new Date().toISOString(),worker:{...r.key,bot_id:"thread-fixture-background"}}),
     }]
   }
@@ -63,7 +64,7 @@ async function publish(){
 }
 const fixture={
   phase(next:typeof phase){phase=next;return publish()},
-  background(next:typeof background){background=next;return publish()},
+  background(next:typeof background,activity=""){background=next;backgroundActivity=activity;return publish()},
   offline(){source.setState("offline");for(const disconnect of [...disconnects])disconnect()},
   subscribers:()=>listeners.size,
   writes:()=>source.log.filter(row=>["send","stop","answer","create"].includes(row.method)).length,
