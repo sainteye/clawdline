@@ -88,6 +88,11 @@ type BoardDispatchTools interface {
 	DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
 }
 
+// CompletionDispatchTools asks for one callback after a dispatched worker settles.
+type CompletionDispatchTools interface {
+	DispatchWithCompletion(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
+}
+
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)

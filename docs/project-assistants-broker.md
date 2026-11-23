@@ -63,9 +63,10 @@ admission marker is unexported; JSON cannot select this door. Ordinary Session
 dispatch still validates its root Session and Squad capability as before.
 Replaying a Bot task through an ordinary dispatch request is refused.
 
-The Bot door requires a nonempty exact file list, runs the existing broker
-claims validator, and rejects traversal, absolute paths, globs, directory
-claims, symlink components and files outside the host's allowed list. It
+The Bot door runs the existing broker claims validator and rejects traversal,
+absolute paths, globs, directory claims, symlink components and files outside
+the host's allowed list. An explicitly targeted investigation or a dispatch
+with a completion callback may declare an empty list for read-only work. It
 always selects `isolation: worktree`; the host chooses the canonical directory,
 worker provider, permission ceiling and timeout. It retains inventory freshness,
 rate admission, per-owner and machine child capacity, quota evidence, terminal
@@ -139,9 +140,31 @@ incrementing unread. Work state changes are not trace messages.
 
 Completed does not imply landed. A failed source transaction leaves the broker
 facts intact, logs that projection is pending without private error contents,
-and can be repaired by `Status`. The host must expose/reconcile that pending
-delivery when mounting its transport. There is no automatic model resubmission
-or background timer in this bridge.
+and can be repaired by `Status`. The host reconciles the result before delivering a requested completion
+callback. Without a callback, the terminal result is published to the chat
+and the Bot stays idle.
+
+### Waiting for dispatched work
+
+Use `dispatch_work` with `continue_on_completion: true` when answering the
+current request depends on the worker's result. For a long build, test or
+external wait, the brief gives the isolated work Session the command and
+asks it to use the existing [command callback](broker.md#callbacks-waiting-without-a-turn-2026-10-06).
+Once the dispatch is accepted, the Bot ends its turn. The same native turn
+may read a running task's status once. A repeat returns
+`work_completion_pending`; receipt reconciliation by the original dispatch
+key and later human status questions remain available.
+
+Worker settlement records a `bot.work.completed` outbox effect in the same
+transaction. Whether the worker succeeded, failed, or timed out, the effect
+reconciles the result. When continuation was requested, it also queues at
+most one follow-up with a reference to the existing result message. The Bot reply uses the ordinary conversation
+queue. The task ID keys its send receipt, so a retry of callback delivery
+does not launch the worker or queue another Bot turn. The broker's existing
+outbox recovery handles interrupted delivery. An unstarted follow-up survives a
+daemon restart; an interrupted model prompt is never sent again automatically.
+A conversation reset, forgotten source or cancelled originating turn prevents
+the quoted result from starting a follow-up.
 
 At the assistant boundary, the broker's known `over_capacity` refusal becomes
 `pa_capacity_full` with the original retry-after metadata. Its raw diagnostic

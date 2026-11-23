@@ -9,10 +9,10 @@ import (
 )
 
 const workStatusDescription = "Read a work receipt owned by this execution; it cannot grant human approval. " +
-	"Give task_id to follow accepted work. After dispatch_work answered pa_outcome_unknown without a task_id, give the same idempotency_key instead: " +
+	"Use task_id for an explicit status question or receipt recovery. End your turn while work runs; the daemon brings back the result automatically. A repeated check for a running task returns work_completion_pending: end the turn. After dispatch_work answered pa_outcome_unknown without a task_id, give the same idempotency_key instead: " +
 	"state accepted returns the task_id and work; not_accepted means safe_to_resend_same_key, so resend the same key and content once; " +
 	"undetermined gives a reason and is not safe to resend. A key you never dispatched answers pa_not_found. To correct or add to a running task, use message_work. " +
-	"讀取這次執行擁有的工作收據，不能代替使用者核准。有 task_id 時用它追蹤；dispatch_work 結果不明又沒有 task_id 時，改用同一個 idempotency_key 查詢：" +
+	"讀取這次執行擁有的工作收據，不能代替使用者核准。只有需要回答明確進度問題或補查收據才用 task_id 查。工作執行期間結束回合，常駐程式會送回結果，同一回合再次查詢執行中的工作會收到 work_completion_pending，請結束回合；dispatch_work 結果不明又沒有 task_id 時，改用同一個 idempotency_key 查詢：" +
 	"accepted 會回傳 task_id；not_accepted 表示可以用同一個鍵與內容安全重送一次；undetermined 會附原因，不能重送。沒派過的鍵回 pa_not_found。要補充或修正執行中的工作，用 message_work。"
 
 func mcpWorkStatusTool(tool func(string, string, map[string]any, ...string) any) any {

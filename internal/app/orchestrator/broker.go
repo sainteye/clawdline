@@ -47,9 +47,10 @@ type Broker struct {
 	managedCleanup         managedResourceCleanup
 	// AssistantAuthority is opt-in. Without a source-owned verifier and result
 	// sink, the typed Bot door is closed; ordinary Session doors are unchanged.
-	AssistantAuthority   *AssistantAuthority
-	AssistantWorkChanged func(context.Context, AssistantWorkSnapshot) error
-	assistantMu          sync.Mutex
+	AssistantAuthority     *AssistantAuthority
+	AssistantWorkChanged   func(context.Context, AssistantWorkSnapshot) error
+	AssistantWorkCompleted func(context.Context, AssistantWorkSnapshot) error
+	assistantMu            sync.Mutex
 	// SquadActorRequired makes agent dispatch prove the bound launch and root
 	// conversation. Production enables it; isolated broker tests can exercise
 	// legacy protocol behavior without a squad catalog.
@@ -911,6 +912,7 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 			before = &copied
 		}
 		out = r
+		wasTerminal := r.State.Terminal()
 		effects, err := change(tx, &r)
 		if err != nil {
 			if errors.Is(err, errUnchanged) {
@@ -935,6 +937,9 @@ func (b *Broker) mutateEvent(ctx context.Context, id, kind string, extra map[str
 		case before != nil && (r.Notice == nil || !sameNotice(*before, *r.Notice)):
 			decided = errNoticeOutsideLedger
 			return nil, decided
+		}
+		if !wasTerminal && r.State.Terminal() && r.AssistantOwner != nil {
+			effects = append(effects, store.Effect{Kind: EffectAssistantWorkCompleted, Subject: r.ID})
 		}
 		body := map[string]any{"state": r.State, "task": r.ID}
 		for k, v := range extra {

@@ -200,14 +200,15 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 // AssistantOwner contains only public provenance. It grants no execution or
 // Board authority. The credential is deliberately absent from Record and Brief.
 type AssistantOwner struct {
-	Fence         pa.Fence        `json:"fence"`
-	BotName       string          `json:"bot_name,omitempty"`
-	BotAppearance pa.Appearance   `json:"bot_appearance,omitzero"`
-	TurnID        string          `json:"turn_id"`
-	Command       pa.Command      `json:"command"`
-	RequestHash   string          `json:"request_hash"`
-	TargetProject pa.ProjectScope `json:"target_project,omitzero"`
-	Persona       string          `json:"persona,omitempty"`
+	Fence                pa.Fence        `json:"fence"`
+	BotName              string          `json:"bot_name,omitempty"`
+	BotAppearance        pa.Appearance   `json:"bot_appearance,omitzero"`
+	TurnID               string          `json:"turn_id"`
+	Command              pa.Command      `json:"command"`
+	RequestHash          string          `json:"request_hash"`
+	TargetProject        pa.ProjectScope `json:"target_project,omitzero"`
+	Persona              string          `json:"persona,omitempty"`
+	ContinueOnCompletion bool            `json:"continue_on_completion,omitempty"`
 }
 
 type assistantAdmission struct {
@@ -239,9 +240,10 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		Title         string          `json:",omitempty"`
 		TargetProject pa.ProjectScope `json:"target_project,omitzero"`
 		// Omitted when empty so receipts written before personas keep their hash.
-		Persona     string `json:",omitempty"`
-		BoardItemID string `json:"board_item_id,omitempty"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID})
+		Persona              string `json:",omitempty"`
+		BoardItemID          string `json:"board_item_id,omitempty"`
+		ContinueOnCompletion bool   `json:"continue_on_completion,omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -358,7 +360,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	if err != nil {
 		return Dispatched{}, err
 	}
-	if b.AssistantWorkChanged == nil {
+	if b.AssistantWorkChanged == nil || q.ContinueOnCompletion && b.AssistantWorkCompleted == nil {
 		return Dispatched{}, assistantFailure(pa.Disabled, "work_result_sink")
 	}
 	id := AssistantTaskID(q.Command)
@@ -373,7 +375,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 		return Dispatched{}, err
 	}
 	r.WorkID = q.BoardItemID
-	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona}
+	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion}
 	if pa.ValidateAppearance(c.BotAppearance) == nil {
 		r.AssistantOwner.BotAppearance = c.BotAppearance
 	}
@@ -392,7 +394,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 // writes its preparation receipt. Dispatch rechecks immediately before create.
 func (b *Broker) ValidateAssistantWork(ctx context.Context, q pa.WorkRequest) error {
 	_, err := b.checkAssistantRequest(ctx, q)
-	if err == nil && b.AssistantWorkChanged == nil {
+	if err == nil && (b.AssistantWorkChanged == nil || q.ContinueOnCompletion && b.AssistantWorkCompleted == nil) {
 		return assistantFailure(pa.Disabled, "work_result_sink")
 	}
 	return err

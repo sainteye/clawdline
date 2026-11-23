@@ -190,6 +190,8 @@ type effectResult struct {
 	// stage is the rung this attempt reached. Empty means the effect never
 	// got as far as being attempted.
 	stage Stage
+	// deferErr keeps a started idempotent effect available to the existing recovery beat.
+	deferErr error
 	// err is why there is no answer, carried as an error so that a caller
 	// decides on `errors.Is` and not on the shape of `outcome` — which is
 	// prose for a person and has been rewritten more than once.
@@ -266,6 +268,9 @@ func (b *Broker) runEffect(ctx context.Context, id int64) (res effectResult, err
 	}
 	b.fault("started", e)
 	res = h.run(run, b, e)
+	if res.deferErr != nil {
+		return res, res.deferErr
+	}
 	if res.stage == "" && res.state == store.EffectDone {
 		res.stage = StageExecuted
 	}

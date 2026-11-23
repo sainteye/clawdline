@@ -458,3 +458,32 @@ func TestOwnedMCPLeadControlFollowsTheLiveRole(t *testing.T) {
 		t.Fatalf("Former Lead could reuse the tool: %d %s", code, b)
 	}
 }
+
+type completionMCPTools struct {
+	mcpTestTools
+	record func(id, title, brief string, claims []string, project, persona, boardItemID string) pa.WorkLink
+}
+
+func (t completionMCPTools) DispatchWithCompletion(_ context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
+	return t.record(id, title, brief, claims, project, persona, boardItemID), nil
+}
+
+func TestMCPDispatchRequestsCompletionForReadOnlyWork(t *testing.T) {
+	var calls atomic.Int64
+	f := newMCPFixture(t, completionMCPTools{record: func(id, title, brief string, claims []string, project, persona, boardItemID string) pa.WorkLink {
+		calls.Add(1)
+		if id != "dispatch-1" || title != "Wait for checks" || brief != "Run the checks without editing" || claims == nil || len(claims) != 0 ||
+			project != "" || persona != "reviewer" || boardItemID != "" {
+			t.Errorf("unexpected callback dispatch: %q %q %q %v %q %q %q", id, title, brief, claims, project, persona, boardItemID)
+		}
+		return pa.WorkLink{TaskID: "one", State: pa.WorkAccepted}
+	}})
+	f.initialize(t)
+	code, body := f.post(t, mcpCall("dispatch_work", map[string]any{
+		"idempotency_key": "dispatch-1", "title": "Wait for checks", "brief": "Run the checks without editing",
+		"claims": []string{}, "persona": "reviewer", "continue_on_completion": true,
+	}), nil)
+	if code != http.StatusOK || calls.Load() != 1 || !bytes.Contains(body, []byte(`\"continue_on_completion\":true`)) || !bytes.Contains(body, []byte(`\"task_id\":\"one\"`)) {
+		t.Fatalf("callback admission response: %d %s", code, body)
+	}
+}

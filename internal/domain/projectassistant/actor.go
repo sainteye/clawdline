@@ -64,6 +64,8 @@ type WorkRequest struct {
 	Claims        []string
 	TargetProject ProjectScope
 	BoardItemID   string
+	// ContinueOnCompletion asks the host to queue one turn after the worker settles.
+	ContinueOnCompletion bool
 	// Persona is an optional Session persona id. The broker admits it with
 	// the same rule as every other dispatch; empty keeps the default Session.
 	Persona string
@@ -104,7 +106,7 @@ func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 		if target.Kind != RepositoryProject || target.MachineID != current.Key.MachineID {
 			return fail(ScopeDenied, "dispatch_project")
 		}
-	} else if len(request.Claims) == 0 {
+	} else if len(request.Claims) == 0 && !request.ContinueOnCompletion {
 		return fail(Invalid, "work")
 	}
 	if request.Title != "" {

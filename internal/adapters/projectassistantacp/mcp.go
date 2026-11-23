@@ -763,16 +763,32 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		return map[string]string{"state": "delivered", "idempotency_key": q.ID}, nil
 	case "dispatch_work":
 		var q struct {
-			ID          string   `json:"idempotency_key"`
-			Title       string   `json:"title"`
-			Brief       string   `json:"brief"`
-			Claims      []string `json:"claims"`
-			Project     string   `json:"project"`
-			Persona     string   `json:"persona"`
-			BoardItemID string   `json:"board_item_id"`
+			ID                   string   `json:"idempotency_key"`
+			Title                string   `json:"title"`
+			Brief                string   `json:"brief"`
+			Claims               []string `json:"claims"`
+			Project              string   `json:"project"`
+			Persona              string   `json:"persona"`
+			BoardItemID          string   `json:"board_item_id"`
+			ContinueOnCompletion bool     `json:"continue_on_completion"`
 		}
-		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" {
+		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion {
 			return nil, refusal(pa.Invalid, "mcp_dispatch")
+		}
+		if q.ContinueOnCompletion {
+			tools, ok := s.tools.(app.CompletionDispatchTools)
+			if !ok {
+				return nil, refusal(pa.Unsupported, "continue_on_completion")
+			}
+			link, err := tools.DispatchWithCompletion(ctx, q.ID, q.Title, q.Brief, q.Claims, q.Project, q.Persona, q.BoardItemID)
+			if err != nil {
+				return nil, err
+			}
+			return struct {
+				pa.WorkLink
+				Persona              string `json:"persona,omitempty"`
+				ContinueOnCompletion bool   `json:"continue_on_completion"`
+			}{link, q.Persona, true}, nil
 		}
 		if q.BoardItemID != "" {
 			tools, ok := s.tools.(app.BoardDispatchTools)
@@ -972,14 +988,15 @@ func mcpTools() []any {
 		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
 			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": map[string]any{"type": "object"}, "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
 		tool("send_message", "Send the user one Markdown chat message immediately as its own bubble. Send several for several thoughts in the same turn; use a different idempotency key for each distinct message. After sending any message, final reply text stays in the trace: send all user-facing results here. Reuse the same key and text after an uncertain response; do not invent a replacement key. 立即傳送一則獨立的 Markdown 訊息；同一回合可傳多則，不同訊息各用自己的冪等鍵。傳送後最後文字只留在處理過程，所有要讓使用者看到的結果都要在此傳送。結果不確定時沿用相同鍵與文字。", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
-		tool("dispatch_work", "Open a new isolated work Session and return its receipt. Set project when the user explicitly names another destination: the lead Bot dispatches directly; any other Bot first shows the user a permission card and waits for the answer, unless they saved an always-allow rule. pa_declined means the user refused; do not retry. Only a turn the user started by talking to you can ask; field dispatch_project_direct means ask the user to tell you directly. After pa_outcome_unknown, never switch to a new key: follow task_id with work_status when the reply has one; otherwise call work_status with the same idempotency_key. Resend the same key and content only when it answers safe_to_resend_same_key. 開啟新的隔離工作階段並回傳收據。使用者明確指定其他目的 Project 時填入 project：大總管直接派工；其他 Bot 會先在聊天跳出權限卡等使用者回答（已存「一律允許」則不問）。pa_declined 代表使用者拒絕，不要重試；dispatch_project_direct 代表請使用者直接跟你說。結果不明時不要換新鍵：回覆有 task_id 就用 work_status 追蹤，沒有就用同一個 idempotency_key 呼叫 work_status 查收據，只有回答可安全重送時才用同一個鍵與內容重送。", map[string]any{
+		tool("dispatch_work", "Open an isolated work Session. Its result arrives in this chat. End your turn after acceptance. Set continue_on_completion only when you must use the result to finish this user request: the daemon will start one follow-up turn after completion. Do not poll. Set project when the user explicitly names another destination: the lead Bot dispatches directly; any other Bot first shows the user a permission card and waits for the answer, unless they saved an always-allow rule. pa_declined means the user refused; do not retry. Only a turn the user started by talking to you can ask; field dispatch_project_direct means ask the user to tell you directly. After pa_outcome_unknown, never switch to a new key: follow task_id with work_status when the reply has one; otherwise call work_status with the same idempotency_key. Resend the same key and content only when it answers safe_to_resend_same_key. 開啟隔離工作階段。結果會回到聊天，收到收據後就結束回合。必須接著用結果才能完成使用者要求時，設定 continue_on_completion，常駐程式會在完成後啟動一次接續回合。請勿輪詢。使用者明確指定其他目的 Project 時填入 project：大總管直接派工；其他 Bot 會先在聊天跳出權限卡等使用者回答（已存「一律允許」則不問）。pa_declined 代表使用者拒絕，不要重試；dispatch_project_direct 代表請使用者直接跟你說。結果不明時不要換新鍵：回覆有 task_id 就用 work_status 追蹤，沒有就用同一個 idempotency_key 呼叫 work_status 查收據，只有回答可安全重送時才用同一個鍵與內容重送。", map[string]any{
 			"idempotency_key": text(),
 			"title": map[string]any{"type": "string", "minLength": 1, "maxLength": work.OutcomeTitleLimit,
 				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
-			"brief":         text(),
-			"board_item_id": map[string]any{"type": "string", "description": "Optional UUID of the existing Board item explicitly named in the user's current message. Links this task for evidence without assigning or moving the item. 使用者在本則訊息明確指定既有看板項目時填入 UUID，只連結交付證據。"},
-			"claims":        map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For investigation only with an explicit project, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。指定 Project 且只調查時，使用空陣列並在任務說明寫明只調查。"},
-			"project":       map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
+			"brief":                  text(),
+			"continue_on_completion": map[string]any{"type": "boolean"},
+			"board_item_id":          map[string]any{"type": "string", "description": "Optional UUID of the existing Board item explicitly named in the user's current message. Links this task for evidence without assigning or moving the item. 使用者在本則訊息明確指定既有看板項目時填入 UUID，只連結交付證據。"},
+			"claims":                 map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For read-only work with an explicit project or a completion callback, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。只調查且有指定 Project 或完成回呼時，使用空陣列並在任務說明寫明只調查。"},
+			"project":                map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
 		}, "idempotency_key", "title", "brief", "claims"),

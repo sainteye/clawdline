@@ -206,7 +206,7 @@ pendingTurns:
 		// A planned restart retains only the original queue identity whose
 		// execution has not started, or whose no-effect refusal was durably
 		// proved and cleaned up. Running/unknown work never takes this path.
-		if field == RestartField && unstartedExchangeReply(t) {
+		if field == RestartField && (unstartedExchangeReply(t) || pa.QueuedWorkCompletion(t)) {
 			continue
 		}
 		if field == RestartField && t.State == pa.TurnQueued && t.QueueEditID != "" {

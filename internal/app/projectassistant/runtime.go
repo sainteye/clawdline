@@ -467,8 +467,13 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if s.LeadCall && (!bot.Lead || a.working || c.ActiveTurnID != "" || len(pending) > 0) {
 		return pa.Receipt{}, runtimeFailure(pa.ReadOnly, "lead_call_busy")
 	}
-	if len(unknown) > 0 && s.Network != nil {
-		return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
+	if len(unknown) > 0 {
+		if s.Network != nil {
+			return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
+		}
+		if s.Notice && strings.HasPrefix(s.Command.IdempotencyKey, pa.WorkCompletionPrefix) {
+			return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "work_completion_unknown_barrier")
+		}
 	}
 	if len(unknown) > 0 && waiting > 0 {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
@@ -719,7 +724,7 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 				return nil, err
 			}
 			for _, m := range export.Messages {
-				if !pa.IsPeerRequest(t.Origin) && t.Origin != pa.BotReplyOrigin && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
+				if !pa.IsPeerRequest(t.Origin) && t.Origin != pa.BotReplyOrigin && pa.WorkCompletionTask(t) == "" && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
 					resumable = append(resumable, t)
 				}
 			}
@@ -845,7 +850,7 @@ func (r *Engine) work(a *runtimeActor) {
 		if err != nil && a.completion == nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
 			// Shutdown can cancel the worker while it waits for a process slot.
-			preserveReply := e == nil && unstartedExchangeReply(latest) && a.lifetime.Err() != nil && r.unknownField() == RestartField
+			preserveQueued := e == nil && (unstartedExchangeReply(latest) || pa.QueuedWorkCompletion(latest)) && a.lifetime.Err() != nil && r.unknownField() == RestartField
 			if e == nil {
 				retried, retryErr := r.retryRoutineNotStartedLocked(context.Background(), a, latest, err)
 				if retried || retryErr != nil {
@@ -854,7 +859,7 @@ func (r *Engine) work(a *runtimeActor) {
 					return
 				}
 			}
-			if e == nil && !preserveReply && (latest.State == pa.TurnRunning || latest.State == pa.TurnWaitingPermission || latest.State == pa.TurnQueued) {
+			if e == nil && !preserveQueued && (latest.State == pa.TurnRunning || latest.State == pa.TurnWaitingPermission || latest.State == pa.TurnQueued) {
 				state := pa.TurnUnknown
 				if latest.State == pa.TurnQueued {
 					state = pa.TurnFailed
@@ -1077,6 +1082,12 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	if pa.IsPeerRequest(t.Origin) && (bot.Hidden && !peerWorker || len(input.Files) > 0 || len(input.Attachments) > 0) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "collaboration_recipient")
+	}
+	if task := pa.WorkCompletionTask(t); task != "" {
+		if err = checkWorkCompletion(export, task, input.QuoteMessageID, true); err != nil {
+			a.mu.Unlock()
+			return err
+		}
 	}
 	quote, err := resolvePromptQuote(export, input.QuoteMessageID, currentFence(bot, c), current)
 	if err != nil {
@@ -2311,7 +2322,7 @@ func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
 		return err
 	}
 	t := pending[0]
-	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
+	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin || pa.WorkCompletionTask(t) != "" || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
 		return nil
 	}
 	x, err := r.o.Repository.Export(ctx, key)

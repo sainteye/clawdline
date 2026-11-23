@@ -79,7 +79,7 @@ type NativeWork struct {
 	askPerson     func(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
-	dispatch      func(context.Context, string, string, string, []string, string, string, string) (pa.WorkLink, error)
+	dispatch      func(context.Context, string, string, string, []string, string, string, string, bool) (pa.WorkLink, error)
 	status        func(context.Context, string) (pa.WorkLink, error)
 	workReceipt   func(context.Context, string) (app.WorkReceipt, error)
 	memory        func(context.Context) ([]pa.MemoryEntry, error)
@@ -172,10 +172,16 @@ func (w NativeWork) DispatchWithPersona(ctx context.Context, id, title, brief st
 	return w.DispatchWithBoard(ctx, id, title, brief, claims, project, persona, "")
 }
 func (w NativeWork) DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
+	return w.dispatchWork(ctx, id, title, brief, claims, project, persona, boardItemID, false)
+}
+func (w NativeWork) DispatchWithCompletion(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
+	return w.dispatchWork(ctx, id, title, brief, claims, project, persona, boardItemID, true)
+}
+func (w NativeWork) dispatchWork(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
 	if w.dispatch == nil {
 		return pa.WorkLink{}, failure(pa.Disabled, "native_work")
 	}
-	return w.dispatch(ctx, id, title, brief, claims, project, persona, boardItemID)
+	return w.dispatch(ctx, id, title, brief, claims, project, persona, boardItemID, continueOnCompletion)
 }
 func (w NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, error) {
 	if w.status == nil {
@@ -1048,9 +1054,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
-	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error) {
+	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
 		if pa.IsPeerRequest(turn.Origin) {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
+		}
+		if continueOnCompletion && !directUserTurn(turn) {
+			return pa.WorkLink{}, failure(pa.ScopeDenied, "work_completion_origin")
 		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -1111,18 +1120,23 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.WorkLink{}, e
 		}
 		payload, _ := json.Marshal(struct {
-			Fence         pa.Fence
-			Turn, Brief   string
-			Claims        []string
-			Title         string          `json:",omitempty"`
-			TargetProject pa.ProjectScope `json:"target_project,omitzero"`
-			Persona       string          `json:",omitempty"`
-			BoardItemID   string          `json:"board_item_id,omitempty"`
-		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID})
+			Fence                pa.Fence
+			Turn, Brief          string
+			Claims               []string
+			Title                string          `json:",omitempty"`
+			TargetProject        pa.ProjectScope `json:"target_project,omitzero"`
+			Persona              string          `json:",omitempty"`
+			BoardItemID          string          `json:"board_item_id,omitempty"`
+			ContinueOnCompletion bool            `json:"continue_on_completion,omitempty"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion})
 	}
+	// One turn gets one observation of a running task. Further observations
+	// belong to the completion callback or a later status question.
+	var workStatusMu sync.Mutex
+	pendingWorkSeen := make(map[string]struct{})
 	tools.status = func(ctx context.Context, taskID string) (pa.WorkLink, error) {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -1132,10 +1146,18 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
 		}
+		workStatusMu.Lock()
+		defer workStatusMu.Unlock()
+		if _, seen := pendingWorkSeen[taskID]; seen {
+			return pa.WorkLink{}, failure(pa.ReadOnly, "work_completion_pending")
+		}
 		if e = journal(ctx, "status"); e != nil {
 			return pa.WorkLink{}, e
 		}
 		link, e := b.Status(ctx, actor, taskID)
+		if e == nil && link.ResultMessageID == "" {
+			pendingWorkSeen[taskID] = struct{}{}
+		}
 		return link, peerWorkRefusal(turn, e)
 	}
 	tools.messageWork = messageWorkTool(turn, actor, b, bound, journal, func(ctx context.Context) string {

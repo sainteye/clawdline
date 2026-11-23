@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -407,12 +408,12 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 // another owner. Once installed, disable/enable reuses these exact objects.
 func (h *Host) connect() error {
 	if h.bridge != nil {
-		if h.o.Broker.AssistantAuthority != h.authority || h.o.Broker.AssistantWorkChanged == nil {
+		if h.o.Broker.AssistantAuthority != h.authority || h.o.Broker.AssistantWorkChanged == nil || h.o.Broker.AssistantWorkCompleted == nil {
 			return failure(pa.ScopeDenied, "broker_owner")
 		}
 		return nil
 	}
-	if h.o.Broker.AssistantAuthority != nil || h.o.Broker.AssistantWorkChanged != nil {
+	if h.o.Broker.AssistantAuthority != nil || h.o.Broker.AssistantWorkChanged != nil || h.o.Broker.AssistantWorkCompleted != nil {
 		return failure(pa.ScopeDenied, "broker_owner")
 	}
 	a, err := orchestrator.NewAssistantAuthority(orchestrator.AssistantAuthorityOptions{Current: h.current, ResolveProject: h.o.Projects.Resolve, Clock: h.o.Clock})
@@ -427,6 +428,7 @@ func (h *Host) connect() error {
 	}
 	h.authority, h.bridge = a, b
 	h.o.Broker.AssistantWorkChanged = b.Sync
+	h.o.Broker.AssistantWorkCompleted = h.completeWork
 	return nil
 }
 
@@ -547,7 +549,7 @@ func (h *Host) resumeInterrupted() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
 	defer cancel()
-	var keys, expiredCalls, replySenders []pa.BotKey
+	var keys, expiredCalls, replySenders, completionSenders []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 	for {
 		page, err := st.List(ctx, query)
@@ -560,6 +562,9 @@ func (h *Host) resumeInterrupted() {
 				replySenders = append(replySenders, bot.Bot.Key)
 			}
 			pending, err := st.PendingTurns(ctx, bot.Bot.Key)
+			if err == nil && slices.ContainsFunc(pending, pa.QueuedWorkCompletion) {
+				completionSenders = append(completionSenders, bot.Bot.Key)
+			}
 			if err == nil && len(pending) == 1 {
 				turn := pending[0]
 				if pa.IsLeadCallTurn(turn) && turn.State != pa.TurnUnknown {
@@ -574,7 +579,7 @@ func (h *Host) resumeInterrupted() {
 		}
 		query.Cursor = page.NextCursor
 	}
-	if len(keys) == 0 && len(expiredCalls) == 0 && len(replySenders) == 0 {
+	if len(keys) == 0 && len(expiredCalls) == 0 && len(replySenders) == 0 && len(completionSenders) == 0 {
 		return
 	}
 	// The runtime is otherwise built on first use; resuming is a use, so it
@@ -596,6 +601,11 @@ func (h *Host) resumeInterrupted() {
 	}
 	for _, key := range replySenders {
 		r.ResumeExchangeReplies(key)
+	}
+	for _, key := range completionSenders {
+		if err := r.Recover(ctx, key); err != nil {
+			log.Printf("bots: a work completion did not resume: %s", pa.Code(err))
+		}
 	}
 }
 

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14195,
-  "riskKeys": 6031,
-  "nonRiskCount": 8164,
+  "englishContentKeys": 14200,
+  "riskKeys": 6034,
+  "nonRiskCount": 8166,
   "groups": [
     {
       "name": "acp / other",
@@ -8168,7 +8168,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 239,
+      "count": 241,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8312,6 +8312,8 @@
         "transparency.card.persistent-bot-voice.how",
         "transparency.card.persistent-bot-voice.summary",
         "transparency.card.persistent-bot-voice.title",
+        "transparency.card.persistent-bot-work-completion.summary",
+        "transparency.card.persistent-bot-work-completion.title",
         "transparency.card.persistent-bot-work-message.how",
         "transparency.card.persistent-bot-work-message.summary",
         "transparency.card.persistent-bot-work-message.title",

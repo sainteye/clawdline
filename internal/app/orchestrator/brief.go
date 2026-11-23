@@ -114,6 +114,9 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	if r.AssistantOwner != nil {
 		w("You are a CHILD worker for a persistent Bot, not a human or terminal Root.")
 		w("The existing broker returns result.json and landing facts to the source Bot chat.")
+		if r.AssistantOwner.ContinueOnCompletion {
+			w("For a long command or external wait, use the Clawdline command callback and end your turn until it completes. Read the result once when notified. Do not poll with model turns.")
+		}
 		w("You have no authority to approve, claim or finish Board items for a person.")
 		w("Your one job is the task under \"The task\" below.")
 	} else if r.Root == nil && r.ScheduleID != "" {
