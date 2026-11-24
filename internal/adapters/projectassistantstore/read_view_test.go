@@ -149,16 +149,16 @@ func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T
 	}
 }
 
-func TestReadViewKeepsConversationAndDecisionWithoutATurn(t *testing.T) {
-	e, _, current := viewFixture(t, 2, 0, false)
+func TestReadViewKeepsAnOpenDecisionAfterTheChatRebinds(t *testing.T) {
+	e, old, current := viewFixture(t, 2, 0, false)
 	offer := pa.PermissionOffer{
-		ID: "decision", NativeRequestID: "decision", Kind: pa.DecisionOfferKind, Fence: current,
+		ID: "decision", NativeRequestID: "decision", Kind: pa.DecisionOfferKind, Fence: old,
 		Decision: &pa.DecisionRequest{Question: "Which option should I use?"}, AnchorMessageSeq: 2,
 		State: pa.PermissionPending, ExpiresAt: e.Bot.CreatedAt.Add(time.Hour),
 		Options: []pa.PermissionOption{{ID: pa.DecisionOptionPrefix + "1", Label: "Use the first option", Kind: pa.AllowOnce}},
 	}
 	e.Permissions = append(e.Permissions, offer)
-	_, _, views, _ := restoreViews(t, e)
+	_, store, views, _ := restoreViews(t, e)
 	q := viewQuery(e.Bot)
 	q.Request.PageSize = 1
 	snapshot := readView(t, views, q)
@@ -177,13 +177,19 @@ func TestReadViewKeepsConversationAndDecisionWithoutATurn(t *testing.T) {
 		t.Fatalf("missing decision summary: %+v", collection)
 	}
 	summary := collection.Items[0].PermissionSummary
-	if summary.ID != offer.ID || summary.TurnID != "" || summary.ToolKind != pa.DecisionOfferKind || summary.Title != offer.Decision.Question {
+	if summary.ID != offer.ID || summary.TurnID != "" || summary.ToolKind != pa.DecisionOfferKind || summary.Title != offer.Decision.Question || summary.Fence != current {
 		t.Fatalf("wrong decision summary: %+v", summary)
 	}
 	q.Request.Mode, q.Request.Cursor, q.Request.PageSize = pa.ReadViewDetail, summary.DetailCursor, 1
 	detail := readView(t, views, q)
-	if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &offer) {
+	want := offer
+	want.Fence = current
+	if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &want) {
 		t.Fatalf("decision detail lost its answer options: %+v", detail)
+	}
+	stored, err := store.Permission(testContext, e.Bot.Key, offer.ID)
+	if err != nil || !reflect.DeepEqual(stored, offer) {
+		t.Fatalf("reading changed the original offer: %+v, %v", stored, err)
 	}
 }
 
