@@ -3328,7 +3328,7 @@ func genDecodeProjectAssistantsGroupSend(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("reply_to_author", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("text", genRule{kind: "string", maxBytes: 32768}) {
+	if !b.genValid("text", genRule{kind: "string", nonEmpty: true, maxBytes: 32768}) {
 		return plan{}, LocalRequest{}, false
 	}
 	p, ok := actionPlan(b, false)

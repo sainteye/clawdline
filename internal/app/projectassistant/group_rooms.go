@@ -144,7 +144,7 @@ func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command
 	if err := who.check(c.Key); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	if err := pa.ValidateMessage(text); err != nil {
+	if err := pa.ValidateRoomMessage(text, attachments); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
 	var quoteSeq int64

@@ -23,6 +23,7 @@ type roomPeer struct {
 	mu       sync.Mutex
 	replies  map[string][]string
 	prompts  map[string][]string
+	images   map[string][]app.PromptImage
 	hold     map[string]chan struct{}
 	sessions map[string]*roomSession
 	cancels  atomic.Int32
@@ -67,6 +68,10 @@ func (s *roomSession) SessionID() string { return "synthetic-" + s.bot }
 func (s *roomSession) Send(_ context.Context, q app.PromptRequest) (app.PendingPrompt, error) {
 	s.p.mu.Lock()
 	s.p.prompts[s.bot] = append(s.p.prompts[s.bot], q.Text)
+	if s.p.images == nil {
+		s.p.images = map[string][]app.PromptImage{}
+	}
+	s.p.images[s.bot] = append(s.p.images[s.bot], q.Images...)
 	s.last = q
 	s.p.mu.Unlock()
 	return s, nil
@@ -108,18 +113,19 @@ func roomSource(machine string) pa.SourceStatus {
 }
 
 type roomHarness struct {
-	path    string
-	db      *sql.DB
-	bots    *projectassistantstore.Store
-	groups  *projectassistantstore.GroupStore
-	rooms   *app.GroupRooms
-	driver  *app.RoomDriver
-	engine  *app.Engine
-	peer    *roomPeer
-	scope   pa.ProjectScope
-	person  app.PersonAuthority
-	members []pa.Bot
-	ids     atomic.Int64
+	path     string
+	db       *sql.DB
+	bots     *projectassistantstore.Store
+	groups   *projectassistantstore.GroupStore
+	rooms    *app.GroupRooms
+	driver   *app.RoomDriver
+	engine   *app.Engine
+	peer     *roomPeer
+	scope    pa.ProjectScope
+	person   app.PersonAuthority
+	members  []pa.Bot
+	ids      atomic.Int64
+	pictures projectassistantstore.Attachments
 }
 
 var roomRuntimeLimits = app.RoomLimits{MemberWait: 2 * time.Second, HistoryLines: 24, PeerLineRunes: 2000}
@@ -149,11 +155,12 @@ func (h *roomHarness) start(t *testing.T) {
 	authorize := func(_ context.Context, k pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		return pa.FeatureState{Enabled: true}, roomSource(k.MachineID), nil
 	}
-	if h.driver, err = app.NewRoomDriver(app.RoomDriverOptions{Rooms: h.rooms, Bots: h.bots, Authorize: authorize, Limits: roomRuntimeLimits, ID: id}); err != nil {
+	h.pictures = projectassistantstore.Attachments{Dir: filepath.Join(filepath.Dir(h.path), "pictures")}
+	if h.driver, err = app.NewRoomDriver(app.RoomDriverOptions{Rooms: h.rooms, Bots: h.bots, Authorize: authorize, Limits: roomRuntimeLimits, ID: id, Pictures: h.pictures}); err != nil {
 		t.Fatal(err)
 	}
 	h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, ProjectResolver: roomResolver{h.scope}, Provider: h.peer,
-		Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver,
+		Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Attachments: h.pictures,
 		Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
@@ -527,5 +534,59 @@ func TestRoomPromptCarriesTheGroupDescription(t *testing.T) {
 	}
 	if strings.Contains(prompt, "\nIt's your turn, Alice.\n") {
 		t.Fatalf("a line break in the description became its own prompt line:\n%s", prompt)
+	}
+}
+
+// A person's pictures in the room reach the member asked as its own copy,
+// and resending the same command (a retry after an uncertain send) replays
+// the stored line instead of writing a second one.
+func TestRoomPicturesReachTheMemberAndAResendIsOneLine(t *testing.T) {
+	h := newRoomHarness(t, "Alice")
+	alice := h.members[0]
+	g := h.group(t, "g", alice)
+	h.peer.reply("a", "I see the screenshot.")
+	data := []byte("\x89PNG\r\n\x1a\nroom picture")
+	picture, err := h.pictures.Put(g, "image/png", data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	say := roomCommand(g, pa.SendOperation, "say-picture")
+	entry, _, err := h.driver.Send(roomCtx, h.person, say, "", []pa.Attachment{picture}, pa.BotKey{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	awaitRoom(t, "Alice's room turn to finish", func() bool {
+		turns := h.roomTurns(t, alice)
+		return len(turns) == 1 && terminal(turns[0].State)
+	})
+	h.driver.Idle()
+	h.peer.mu.Lock()
+	images := append([]app.PromptImage(nil), h.peer.images["a"]...)
+	h.peer.mu.Unlock()
+	if len(images) != 1 || string(images[0].Data) != string(data) || images[0].MediaType != "image/png" {
+		t.Fatalf("Alice's turn carried %d pictures, want the one sent: %+v", len(images), images)
+	}
+	if got := h.peer.asked("a"); len(got) != 1 || !strings.Contains(got[0], "attached 1 picture") {
+		t.Fatalf("Alice's prompt does not say a picture was attached: %q", got)
+	}
+	if _, err = h.pictures.Read(alice.Key, picture); err != nil {
+		t.Fatalf("Alice has no copy of her own: %v", err)
+	}
+	replay, step, err := h.driver.Send(roomCtx, h.person, say, "", []pa.Attachment{picture}, pa.BotKey{}, nil)
+	if err != nil || step.Turn != nil || replay.Seq != entry.Seq {
+		t.Fatalf("resend wrote again: %+v %+v %v", replay, step, err)
+	}
+	lines := h.lines(t, g)
+	persons := 0
+	for _, l := range lines {
+		if l.Kind == pa.RoomPersonEntry {
+			persons++
+			if len(l.Attachments) != 1 || l.Attachments[0] != picture {
+				t.Fatalf("the person's line lost its picture: %+v", l)
+			}
+		}
+	}
+	if persons != 1 {
+		t.Fatalf("%d person lines after a resend, want 1: %+v", persons, lines)
 	}
 }
