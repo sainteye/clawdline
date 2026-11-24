@@ -120,13 +120,45 @@ test("Cloud Bot chat retries before capabilities arrive and reads its exact room
 
   live.apiLevel=115
   await assert.rejects(view(),refusedBeforeSend("pa_offline"))
-  remembered=["project-assistants.list"]
+  snapshots.set("one",{machine:{commands:remembered}})
   await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  snapshots.delete("one")
+  remembered=["project-assistants.list"]
+  await assert.rejects(view(),refusedBeforeSend("pa_unsupported"))
   snapshots.set("one",{machine:{commands:remembered}})
   await assert.rejects(view(),refusedBeforeSend("pa_unsupported"))
   assert.deepEqual(requests,[])
 
   snapshots.set("one",{machine:{commands:[word]}})
+  const opened = await view()
+  assert.deepEqual(opened.head.key,viewRequest.key)
+  assert.deepEqual(requests,[{machine:"one",command:word,fields:viewRequest}])
+})
+
+test("Cloud Bot chat waits for a command list not yet received and reads once it arrives",async()=>{
+  const word = "project-assistants.view"
+  let remembered: string[] | undefined
+  const requests: unknown[] = []
+  const relay = capturedAssistantRelayFetch("one",()=>({
+    orchestratorSnapshots:new Map<string,unknown>(),
+    machineDescriptor:()=>({machine:{commands:remembered}}),
+    async _machineRequest(machine,command,fields){
+      requests.push({machine,command,fields})
+      return viewWire()
+    },
+  }),[word])
+  const live: AssistantGrant = {...grant(),apiLevel:115}
+  const source = new ProjectAssistantSourceClient(live,relay,()=>live)
+  const view = () => source.view(viewRequest,signal())
+  const refusedBeforeSend = (code: string) => (error: unknown) => errorCode(error)===code && notSentEvidence(error)
+
+  await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  // An older client saved only the first 64 words, so that list proves nothing.
+  remembered = Array.from({length:64},(_,index)=>"word-"+index)
+  await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  assert.deepEqual(requests,[])
+
+  remembered = ["project-assistants.list",word]
   const opened = await view()
   assert.deepEqual(opened.head.key,viewRequest.key)
   assert.deepEqual(requests,[{machine:"one",command:word,fields:viewRequest}])
