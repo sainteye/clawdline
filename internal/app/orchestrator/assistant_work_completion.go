@@ -75,18 +75,39 @@ func deliverAssistantWork(ctx context.Context, b *Broker, r Record, sink func(co
 		}
 		return effectResult{deferErr: errors.New("Bot completion host is unavailable")}
 	}
-	err := sink(ctx, AssistantWorkSnapshotOf(r))
+	err := sink(HostContext(ctx), AssistantWorkSnapshotOf(r))
 	if err == nil {
 		return effectResult{state: store.EffectDone, outcome: outcome}
 	}
 	code := pa.Code(err)
+	if AssistantWorkRefused(code) {
+		return effectResult{state: store.EffectFailed, outcome: string(code)}
+	}
+	if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
+		return effectResult{state: store.EffectFailed, outcome: string(code)}
+	}
+	return effectResult{deferErr: err}
+}
+
+// AssistantWorkRefused is whether a host refusal of a Bot work delivery is
+// final: the outbox stops retrying it, so the host tells the person in the
+// chat instead of failing silently.
+func AssistantWorkRefused(code pa.ErrorCode) bool {
 	switch code {
 	case pa.ScopeDenied, pa.Revoked, pa.NotFound, pa.ContextStale, pa.Invalid, pa.IdempotencyConflict, pa.CapacityFull:
-		return effectResult{state: store.EffectFailed, outcome: string(code)}
-	default:
-		if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
-			return effectResult{state: store.EffectFailed, outcome: string(code)}
-		}
-		return effectResult{deferErr: err}
+		return true
 	}
+	return false
 }
+
+// HostContext keeps the cancellation of the request that recorded the
+// effect and drops its values. A child's result arrives on a task-secret
+// route whose gate verdict admits no person; carried into the host, that
+// verdict was revalidated as a person's and refused as pa_revoked, so every
+// review turn queued while a child reported failed. The review turn is the
+// host's notice, never the authority of whoever settled the task.
+func HostContext(ctx context.Context) context.Context { return hostContext{ctx} }
+
+type hostContext struct{ context.Context }
+
+func (hostContext) Value(any) any { return nil }

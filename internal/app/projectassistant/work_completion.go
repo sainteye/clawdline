@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -132,4 +133,41 @@ func checkWorkCompletion(x Export, taskID, quoteID string, requireFinishedOrigin
 		break
 	}
 	return runtimeFailure(pa.NotFound, "work_completion_source")
+}
+
+// RefuseWorkCompletion tells the person in the chat that a task ended but
+// the Bot did not take it over, naming the typed refusal. It shares the
+// task's one receipt key, so it is written once, and a later delivery of the
+// same task finds the receipt and queues no review turn.
+func (r *Engine) RefuseWorkCompletion(ctx context.Context, link pa.WorkLink, refusal error) error {
+	key := link.Fence.Key
+	command := r.command(key, pa.SendOperation, pa.WorkCompletionPrefix+link.TaskID, link.ResultMessageID)
+	if receipt, err := r.o.Repository.Receipt(ctx, command); err != nil || receipt != nil {
+		return err
+	}
+	x, err := r.o.Repository.Export(ctx, key)
+	if err != nil {
+		return err
+	}
+	if x.Bot.ConversationID != link.Fence.ConversationID {
+		return runtimeFailure(pa.ScopeDenied, "work_completion_refusal")
+	}
+	code, field := pa.Code(refusal), ""
+	var f *pa.Failure
+	if errors.As(refusal, &f) {
+		field = f.Field
+	}
+	reason := string(code)
+	if field != "" {
+		reason += " (" + field + ")"
+	}
+	fence := currentFence(x.Bot, x.Conversation)
+	text := fmt.Sprintf("Task %s finished, but the Bot could not take it over: %s. Its result is above; ask the Bot to continue if you want it to. / 任務 %s 已結束，但 Bot 沒能接手：%s。結果在上方，需要的話請直接請 Bot 繼續。", link.TaskID, reason, link.TaskID, reason)
+	message := pa.Message{ID: "work-completion-refused-" + link.TaskID, Fence: fence, TurnID: link.TurnID, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock()}
+	_, err = r.mutate(ctx, x.Bot, Mutation{
+		Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: message.ID},
+		Messages: []pa.Message{message},
+		Events:   []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}},
+	})
+	return err
 }
