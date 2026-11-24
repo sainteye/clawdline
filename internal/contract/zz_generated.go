@@ -4760,7 +4760,11 @@ type ProjectAssistantDecisionRequest struct {
 	// The Bot-to-Bot exchange waiting for the person, when the question came from a
 	// peer request.
 	ExchangeID string `json:"exchange_id,omitempty"`
-	Question   string `json:"question"`
+
+	// The literal short fact a Bot proposed to remember while answering another Bot.
+	// Only the person's Save press writes it to memory.
+	Memory   string `json:"memory,omitempty"`
+	Question string `json:"question"`
 
 	// The requesting Bot's message, shortened to the registered bound.
 	Request     string `json:"request,omitempty"`

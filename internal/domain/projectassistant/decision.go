@@ -43,12 +43,42 @@ type DecisionRequest struct {
 	// worker or the recipient; it is not a turn of the chat showing the card.
 	RequestTurnID string `json:"request_turn_id,omitempty"`
 	AnswerText    string `json:"answer_text,omitempty"`
+	// Memory is the literal short fact a Bot proposed with edit_memory in a
+	// turn answering another Bot. Only the person's MemorySaveOptionID press
+	// on the console's answer route writes it, as the person's own entry.
+	Memory string `json:"memory,omitempty"`
 }
+
+const (
+	// MemorySaveOptionID and MemorySkipOptionID are a memory card's only
+	// replies; they carry DecisionOptionPrefix so they reach the decision
+	// answer route.
+	MemorySaveOptionID = DecisionOptionPrefix + "memory-save"
+	MemorySkipOptionID = DecisionOptionPrefix + "memory-skip"
+	// MemoryProposalQuestion is a memory card's question; the console shows
+	// its own translation beside the proposed fact.
+	MemoryProposalQuestion = "Save this to memory?"
+)
 
 // AskPersonRequest is the ask_person tool's input.
 type AskPersonRequest struct {
 	Question         string   `json:"question"`
 	SuggestedReplies []string `json:"suggested_replies"`
+	// Memory is set only by the host for an edit_memory proposal; a Bot's
+	// ask_person input cannot carry it.
+	Memory string `json:"-"`
+}
+
+// CheckMemoryProposal admits one short fact a Bot proposes to remember.
+func CheckMemoryProposal(text string) error {
+	text = strings.TrimSpace(text)
+	if text == "" || !utf8.ValidString(text) {
+		return fail(Invalid, "memory_proposal")
+	}
+	if len(text) > MaxDecisionQuestionBytes {
+		return fail(CapacityFull, "memory_proposal_bytes")
+	}
+	return ValidateMessage(text)
 }
 
 func CheckAskPerson(q AskPersonRequest) error {

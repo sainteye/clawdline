@@ -140,7 +140,10 @@ func TestCollaborationACPSubprocess(t *testing.T) {
 			}
 			if role == "A" && strings.Contains(string(q.Params), "This is a correlated Bot reply") {
 				log("A reply")
-				call("edit_memory", map[string]any{"idempotency_key": "reply-memory", "append": "Review is a user fact"}, true)
+				// A reply turn's new fact becomes a memory card, never a write.
+				if !strings.Contains(string(call("edit_memory", map[string]any{"idempotency_key": "reply-memory", "append": "Review is a user fact"}, false)), "awaiting_person") {
+					fail(33)
+				}
 				write(q.ID, map[string]string{"stopReason": "end_turn", "text": "The peer review is complete: safe."})
 			} else if role == "A" {
 				log("A input")
