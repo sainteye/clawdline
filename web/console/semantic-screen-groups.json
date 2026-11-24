@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14410,
+  "englishContentKeys": 14412,
   "riskKeys": 6127,
-  "nonRiskCount": 8283,
+  "nonRiskCount": 8285,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 784,
+      "count": 786,
       "sources": [
         null
       ],
@@ -675,6 +675,8 @@
         "capacityRow.botrequest.events_per_card.what",
         "capacityRow.botrequest.label_bytes.full",
         "capacityRow.botrequest.label_bytes.what",
+        "capacityRow.botrequest.merge_hops.full",
+        "capacityRow.botrequest.merge_hops.what",
         "capacityRow.botrequest.note_bytes.full",
         "capacityRow.botrequest.note_bytes.what",
         "capacityRow.botrequest.page_rows.what",
