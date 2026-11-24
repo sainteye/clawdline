@@ -12326,6 +12326,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "dispatch.brief_enter_presses",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.briefEnterLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "dispatch.brief_held_seconds",
+    "Class": "observation",
+    "Unit": "seconds",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "notice"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.briefHeldSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "epic.child_items",
     "Class": "buffer",
     "Unit": "rows",

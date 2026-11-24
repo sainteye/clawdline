@@ -637,6 +637,8 @@
 | `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `dispatch.brief_enter_presses` | 3 | `rows` | `refuse` | `diagnostics, notice` | — |
+| `dispatch.brief_held_seconds` | 120 | `seconds` | `evict_oldest` | `diagnostics, notice` | — |
 | `epic.child_items` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `handoff.pack_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `handoff.patch_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |

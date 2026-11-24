@@ -87,6 +87,12 @@ type Broker struct {
 	Fault func(pass int64)
 	// Type types one line into a terminal and submits it.
 	Type func(ctx context.Context, terminalID, text string) error
+	// SubmitHeld presses Enter, and nothing else, on words a send typed that
+	// are still in a terminal's input line, after checking inside that
+	// terminal's lane that its composer holds them (Actions.SubmitTyped).
+	// typed is the end of those words. Nil: a held briefing is not pressed,
+	// and is reported when its limit passes (stall.go).
+	SubmitHeld func(ctx context.Context, terminalID, typed string) error
 	// TypePrepared is Type with a step of the broker's own run first, inside
 	// the same turn of that terminal's lane (stash.go). An error from prepare
 	// means nothing was typed. Nil leaves a Claude Code root's composer text

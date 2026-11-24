@@ -527,6 +527,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		r.SpawnedAt = spawned.SpawnedAt
 		r.SpawnError = spawned.SpawnError
 		r.Unbriefed = spawned.Unbriefed
+		r.Briefing = spawned.Briefing
 		r.AwaitingDialogSince = spawned.AwaitingDialogSince
 		r.AutoCompactWindow = spawned.AutoCompactWindow
 		// A blank brief may have resolved through the machine-wide default at
@@ -927,7 +928,9 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	// The composer needs the assistant to have drawn one before it can be
 	// typed into. Waiting here rather than in the watch beat keeps the whole
 	// spawn in one place; the beat's own 4-minute clock is the backstop.
-	if err := b.brief(ctx, r, secret); err != nil {
+	err = b.brief(ctx, r, secret)
+	r.Briefing = briefingStages(err, b.now())
+	if err != nil {
 		// A dialog is not a failure to brief yet: the tab stays open for a
 		// person to answer it, and the beat types the briefing once the
 		// composer is up (dialog.go). Nothing was typed.

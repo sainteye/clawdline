@@ -512,6 +512,11 @@ type Record struct {
 	// Stall is the nudge and the report for a child that sat idle after its
 	// briefing without signing for it (stall.go). Nil for every other task.
 	Stall *Stall `json:"stall,omitempty"`
+	// Briefing is how far the briefing's typing got, as the child's own
+	// screen showed it: seen arriving, Enter pressed, still held in the
+	// composer afterwards (stall.go). The third stage, signed, is AcceptedAt.
+	// Nil when nothing was seen arriving.
+	Briefing *Briefing `json:"briefing,omitempty"`
 	// RespawnOf is the spawn_failed task this one retried, and
 	// RespawnGeneration how far down that chain it is: 0 for an original.
 	// The limit is counted over the family, not read from this number — see

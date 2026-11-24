@@ -146,6 +146,13 @@ func newBroker(s *Server) *orchestrator.Broker {
 			_, err := s.actions().Send(ctx, terminalID, text)
 			return err
 		},
+		// A child's briefing still held in its composer is pressed the way a
+		// phone presses Enter on words a send left typed: read first, inside
+		// the same lane, and refused unless the composer holds them.
+		SubmitHeld: func(ctx context.Context, terminalID, typed string) error {
+			_, err := s.actions().SubmitTyped(ctx, terminalID, typed)
+			return err
+		},
 		// The completion notice's way past Claude Code's composer
 		// (orchestrator stash.go): the same send, with a keystroke and a look
 		// first, inside the same lane turn.
