@@ -242,11 +242,11 @@
 .project-assistants .pa-unsent { overflow-wrap:anywhere; }
 .project-assistants .pa-unsent small { display:block;color:var(--pa-dim);margin-top:4px; }
 .project-assistants .pa-unsent-actions { display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin-top:4px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-sending .pa-unsent-actions { justify-content:flex-end; }
 .project-assistants .pa-unsent-actions button { min-height:44px;color:var(--pa-ink); }
 .project-assistants .pa-unsent-actions button[aria-busy="true"] { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim); }
 .project-assistants .pa-unsent-failure { flex:1 1 100%;margin:0;color:var(--pa-ink);font-size:12px; }
 .project-assistants .pa-unsent-failure small { display:inline;margin:0; }
-/* Deleting is the quiet second choice: dim until asked, then an inline confirmation in the row. */
 .project-assistants .pa-unsent-actions .pa-unsent-discard { min-width:44px;padding:0 6px;color:var(--pa-dim);text-decoration:underline;text-underline-offset:3px; }
 /* Delivery status is a quiet circled "!" in the secondary text colour; its 44px target is invisible. */
 .project-assistants .pa-unsent-info-wrap { display:inline-flex; }
