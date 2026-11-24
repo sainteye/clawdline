@@ -2,25 +2,8 @@ import { useEffect, useRef, useState, type MouseEvent } from "react"
 import { isAppleTouchDevice, isStandaloneWebApp } from "../legacy/js/net/cloud-onboarding.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import { bindNativeModalBackdrop } from "../modal-backdrop.js"
+import { markdownWithMentions, type MarkdownMention } from "./mention-markdown"
 import type { Words } from "./words"
-
-/** A run of text to draw as a mention chip; offsets are UTF-16 units of text. */
-export type MarkdownMention = { start: number; end: number; id: string; title?: string }
-
-const escape = (s: string) => s.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`)
-
-// Each run is swapped for a private-use placeholder before Markdown and for
-// its chip after, so the chip covers exactly the source's run.
-function markdownWithMentions(text: string, mentions: readonly MarkdownMention[]): string {
-  if (!mentions.length) return richText(text, { codeCopy: true })
-  let source = "", at = 0
-  mentions.forEach((m, i) => { source += text.slice(at, m.start) + `\uE000${i}\uE001`; at = m.end })
-  source += text.slice(at)
-  return richText(source, { codeCopy: true }).replace(/\uE000(\d+)\uE001/g, (_, i: string) => {
-    const m = mentions[Number(i)]
-    return `<span class="pa-mention-chip" data-mention="${escape(m.id)}"${m.title ? ` title="${escape(m.title)}"` : ""}>${escape(text.slice(m.start, m.end))}</span>`
-  })
-}
 
 export function BotMessageMarkdown({ text, w, mentions = [] }: { text: string; w: Words; mentions?: readonly MarkdownMention[] }) {
   const [original, setOriginal] = useState<HTMLAnchorElement | null>(null)
@@ -51,7 +34,7 @@ export function BotMessageMarkdown({ text, w, mentions = [] }: { text: string; w
 
   const close = () => setOriginal(null)
   return <>
-    <div className="pa-markdown" onClick={chooseGmailDestination} dangerouslySetInnerHTML={{ __html: markdownWithMentions(text, mentions) }} />
+    <div className="pa-markdown" onClick={chooseGmailDestination} dangerouslySetInnerHTML={{ __html: markdownWithMentions(text, mentions, source => richText(source, { codeCopy: true })) }} />
     {original && <dialog ref={dialog} aria-label={w.gmailOpen} className="pa-gmail-link" data-modal-dismiss="true"
       onCancel={event => { event.preventDefault(); close() }}>
       <a className="pa-pill" href={`x-safari-${original.href}`} referrerPolicy="no-referrer">{w.gmailSafari}</a>
