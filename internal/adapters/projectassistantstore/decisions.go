@@ -53,7 +53,12 @@ func (s *Store) OfferDecision(ctx context.Context, fence pa.Fence, turnID string
 	if err != nil {
 		return pa.PermissionOffer{}, err
 	}
-	sum := sha256.Sum256([]byte(turnID + "\x00" + q.Question))
+	if q.Memory != "" {
+		if err = pa.CheckMemoryProposal(q.Memory); err != nil {
+			return pa.PermissionOffer{}, err
+		}
+	}
+	sum := sha256.Sum256([]byte(turnID + "\x00" + q.Question + "\x00" + q.Memory))
 	id := "decision-" + hex.EncodeToString(sum[:12])
 	d := pa.DecisionRequest{Question: q.Question}
 	owner := a
@@ -85,6 +90,11 @@ func (s *Store) OfferDecision(ctx context.Context, fence pa.Fence, turnID string
 	} else if a.Bot.Hidden {
 		return pa.PermissionOffer{}, failure(pa.ScopeDenied, "decision_owner")
 	}
+	if q.Memory != "" {
+		// A memory card never holds the exchange open: the reply goes back
+		// to the requester while the card waits for the person.
+		d.Memory, d.ExchangeID = q.Memory, ""
+	}
 	if old, ok := owner.Permissions[id]; ok {
 		return old, nil
 	}
@@ -105,8 +115,12 @@ func (s *Store) OfferDecision(ctx context.Context, fence pa.Fence, turnID string
 		Fence: exchangeFence(owner), AnchorMessageSeq: owner.Conversation.LastMessageSeq,
 		ExpiresAt: at.Add(pa.DecisionOfferTTL), State: pa.PermissionPending,
 	}
-	for i, r := range q.SuggestedReplies {
-		offer.Options = append(offer.Options, pa.PermissionOption{ID: pa.DecisionOptionPrefix + strconv.Itoa(i+1), Label: r, Kind: pa.AllowOnce})
+	if d.Memory != "" {
+		offer.Options = []pa.PermissionOption{{ID: pa.MemorySaveOptionID, Label: "Save", Kind: pa.AllowOnce}, {ID: pa.MemorySkipOptionID, Label: "Don't save", Kind: pa.RejectOnce}}
+	} else {
+		for i, r := range q.SuggestedReplies {
+			offer.Options = append(offer.Options, pa.PermissionOption{ID: pa.DecisionOptionPrefix + strconv.Itoa(i+1), Label: r, Kind: pa.AllowOnce})
+		}
 	}
 	m := exchangeMutation(owner, id+"-offer", at, nil, nil)
 	m.Permissions = []pa.PermissionOffer{offer}

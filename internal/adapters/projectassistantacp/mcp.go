@@ -902,11 +902,18 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		if err := s.tools.EditMemory(ctx, q.ID, app.MemoryEdit{Append: q.Append, Old: q.Old, New: q.New, Delete: q.Delete, Note: q.Note}); err != nil {
 			return nil, err
 		}
+		if card, ok := s.tools.(interface{ MemoryNeedsPerson() bool }); ok && card.MemoryNeedsPerson() {
+			return map[string]string{"state": "awaiting_person", "idempotency_key": q.ID, "message": memoryCardMessage}, nil
+		}
 		return map[string]string{"state": "saved", "idempotency_key": q.ID}, nil
 	default:
 		return nil, refusal(pa.Unsupported, "mcp_tool")
 	}
 }
+
+// memoryCardMessage tells a Bot answering another Bot that its new fact
+// waits on a card in its main chat, so it neither retries nor claims it saved.
+const memoryCardMessage = "Not saved yet: this turn answers another Bot, so the fact is shown to the user as a memory card in your main chat. It is saved only if the user presses Save. Do not call edit_memory again for it."
 
 func mcpLeadBotTool() map[string]any {
 	return map[string]any{
@@ -1015,7 +1022,7 @@ func mcpTools() []any {
 		mcpMessageWorkTool(),
 		tool("read_memory", "Read your own short facts and topic-note name/summary index, oldest first. Note bodies are omitted. Pass entry_id from that index to read one complete stored entry on demand.", map[string]any{"entry_id": text()}),
 		tool("search_memory", "Search your memory for entries containing every word of the query (case-insensitive).", map[string]any{"query": text()}, "query"),
-		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. For named topic notes use note with title, summary, body and expected_revision from read_memory; entry_id replaces an existing note. note with entry_id, expected_revision and forget=true forgets it. Do not combine note and short-fact fields. After success read_memory returns the new index and revision. Revision conflicts require rereading; unknown responses require the exact same key and payload. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response.",
+		tool("edit_memory", "Change your short-fact memory. Give append to add one short fact as a new entry; old and new to replace text that appears exactly once in those facts; or old with delete to forget the entry holding it. For named topic notes use note with title, summary, body and expected_revision from read_memory; entry_id replaces an existing note. note with entry_id, expected_revision and forget=true forgets it. Do not combine note and short-fact fields. After success read_memory returns the new index and revision. Revision conflicts require rereading; unknown responses require the exact same key and payload. A forgotten entry does not come back unless the user asks. Reuse the idempotency key after an uncertain response. While answering another Bot, only append works: it shows the user a memory card in your main chat and returns state awaiting_person; it is saved only when the user presses Save.",
 			map[string]any{"idempotency_key": text(), "append": text(), "old": text(), "new": map[string]any{"type": "string"}, "delete": map[string]any{"type": "boolean"}, "note": map[string]any{"type": "object", "additionalProperties": false, "properties": map[string]any{"entry_id": text(), "title": text(), "summary": text(), "body": text(), "expected_revision": map[string]any{"type": "integer", "minimum": 1}, "forget": map[string]any{"type": "boolean"}}, "required": []string{"expected_revision"}}}, "idempotency_key"),
 	}
 }
