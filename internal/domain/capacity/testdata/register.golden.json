@@ -1114,6 +1114,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "botrequest.merge_hops",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botrequest.MaxMergeHops"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "botrequest.note_bytes",
     "Class": "buffer",
     "Unit": "bytes",

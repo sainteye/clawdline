@@ -23,6 +23,7 @@ func botRequestBounds() []Entry {
 		row("botrequest.chain_bots", Rows, br.MaxChainBots, "MaxChainBots"),
 		row("botrequest.page_rows", Rows, br.MaxPageRows, "MaxPageRows"),
 		row("botrequest.batch_cards", Rows, br.MaxBatchCards, "MaxBatchCards"),
+		row("botrequest.merge_hops", Rows, br.MaxMergeHops, "MaxMergeHops"),
 		{
 			// The card writes' (actor, idempotency key) receipts. They expire
 			// by time, like board.receipts; a full window refuses a new write

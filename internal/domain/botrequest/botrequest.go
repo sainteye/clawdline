@@ -28,6 +28,9 @@ const (
 	MaxPageRows         = 100
 	MaxReceipts         = 4_096
 	MaxBatchCards       = 16
+	// MaxMergeHops bounds following merged_into from a named card to the
+	// card that absorbed it; past it a dispatch naming the card is refused.
+	MaxMergeHops = 8
 )
 
 // Card states.

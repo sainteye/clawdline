@@ -14403,6 +14403,8 @@
   "capacityRow.botrequest.note_bytes.what": "一則清單備註、審查說明或交接備註的大小。",
   "capacityRow.botrequest.label_bytes.full": "請改用較短的標題或名稱。",
   "capacityRow.botrequest.label_bytes.what": "卡片標題、類型或清單項目名稱的大小。",
+  "capacityRow.botrequest.merge_hops.full": "請改填合併後保留的那張卡。",
+  "capacityRow.botrequest.merge_hops.what": "派工從指定的 Bot 交辦卡追到合併後保留卡時，最多追幾層。",
   "capacityRow.botrequest.chain_bots.full": "請把卡拆開，讓後續的 Bot 在新卡上接手。",
   "capacityRow.botrequest.chain_bots.what": "一張 Bot 交辦卡可以經手的 Bot 數。",
   "capacityRow.botrequest.page_rows.full": "請打開下一頁看更多卡片。",

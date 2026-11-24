@@ -25,10 +25,6 @@ import (
 // already happened, so its handler is not idempotent and an interrupted push
 // is recorded unknown, never sent twice.
 
-// MaxBotRequestCardHops bounds following merged_into from a named card to the
-// card that absorbed it.
-const MaxBotRequestCardHops = 8
-
 // BotRequestNotice is one notice turn for one Bot on this machine.
 type BotRequestNotice struct {
 	Bot     string
@@ -59,7 +55,7 @@ func (b *Broker) botRequestCard(ctx context.Context, id, bot string) (string, er
 	if b.Store == nil {
 		return "", assistantFailure(pa.Unsupported, "bot_request_store")
 	}
-	for range MaxBotRequestCardHops {
+	for range br.MaxMergeHops {
 		c, err := b.Store.BotRequestCard(ctx, id)
 		if errors.Is(err, store.ErrNoBotRequest) {
 			return "", assistantFailure(pa.NotFound, "bot_request_id")

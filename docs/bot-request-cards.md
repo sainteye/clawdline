@@ -608,7 +608,7 @@ Built on 2026-11-24 (second delivery, same API level 118):
 - **`bot_request_id` on tasks and links (§8.1): built.** `Record.BotRequestID`
   (`internal/app/orchestrator/record.go`) is set only by `DispatchAssistant`, after
   `botRequestCard` (`internal/app/orchestrator/bot_request_effects.go`) followed `merged_into` (at most
-  `MaxBotRequestCardHops`) and found the card open with the dispatching Bot in its chain; a task file
+  `botrequest.MaxMergeHops`) and found the card open with the dispatching Bot in its chain; a task file
   that names `bot_request_id` is refused (`draft.go`). It enters `AssistantRequestHash` and the host's
   payload hash only when non-empty, and `WorkLink.BotRequestID` is `omitempty`, so old receipts keep
   their hash. `dispatch_work` and `message_bot` take `bot_request_id`; `message_bot` adds the recipient

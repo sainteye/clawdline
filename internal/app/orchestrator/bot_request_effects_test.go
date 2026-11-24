@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	br "github.com/sainteye/clawdline/internal/domain/botrequest"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -30,7 +31,7 @@ func TestBotRequestIDLeavesOldHashesAndRecordsAlone(t *testing.T) {
 	if got := AssistantRequestHash(q); got != hex.EncodeToString(sum[:]) {
 		t.Fatal("a request naming no card changed the hash of receipts written before cards")
 	}
-	q.BotRequestID = "0c738fa5-40ba-835f-875b-d092d660324d"
+	q.BotRequestID = br.CardID("m", "bot", "c", "msg")
 	if AssistantRequestHash(q) == hex.EncodeToString(sum[:]) {
 		t.Fatal("the card a request names is not part of its hash")
 	}
@@ -51,7 +52,7 @@ func TestATaskFileCannotNameABotRequestCard(t *testing.T) {
 	protocol := Protocol
 	claims := []string{}
 	d := draft{Claims: &claims, Protocol: &protocol, TaskID: "a1111111-1111-4111-8111-111111111111", Kind: "implementation", Assistant: "claude",
-		ProjectDir: t.TempDir(), Title: "T", Instructions: "Do it", BotRequestID: json.RawMessage(`"0c738fa5-40ba-835f-875b-d092d660324d"`)}
+		ProjectDir: t.TempDir(), Title: "T", Instructions: "Do it", BotRequestID: json.RawMessage(`"` + br.CardID("m", "bot", "c", "msg") + `"`)}
 	if _, err := b.admit(d.TaskID, d, false, false); err == nil || !strings.Contains(err.Error(), "bot_request_id") {
 		t.Fatalf("a task file naming a card: %v", err)
 	}

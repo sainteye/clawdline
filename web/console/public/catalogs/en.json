@@ -14403,6 +14403,8 @@
   "capacityRow.botrequest.note_bytes.what": "Size of one checklist note, verdict text or handoff note.",
   "capacityRow.botrequest.label_bytes.full": "Use a shorter title or label.",
   "capacityRow.botrequest.label_bytes.what": "Size of a card title, kind or checklist label.",
+  "capacityRow.botrequest.merge_hops.full": "Name the card the others were merged into.",
+  "capacityRow.botrequest.merge_hops.what": "How many merges a dispatch follows from a named Bot request card to the card that absorbed it.",
   "capacityRow.botrequest.chain_bots.full": "Split the card so the next Bots work on a new one.",
   "capacityRow.botrequest.chain_bots.what": "Bots one Bot request card may reach.",
   "capacityRow.botrequest.page_rows.full": "Open the next page to see more cards.",
