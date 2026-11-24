@@ -132,6 +132,7 @@ export interface CloseTarget {
   machine: string | null
   row: SessionRow
   title: string
+  pinnedFleet: boolean
 }
 
 let host: ConfirmHost = { openId: () => null, writable: () => false, closeDetail: () => {}, refresh: () => {}, closeTarget: () => null }
@@ -781,7 +782,7 @@ function mintRequest(): string {
   return pressKey("close")
 }
 
-function endSession({ id, request, force, closeabilityVersion, target }: Pending): void {
+function endSession({ id, request, force, closeability, closeabilityVersion, target }: Pending): void {
   const current = host.closeTarget(id)
   const title = target?.title ?? id
   if (!target || !current || !host.writable() ||
@@ -790,25 +791,38 @@ function endSession({ id, request, force, closeabilityVersion, target }: Pending
     return
   }
   const key = closingRowKey(target.machine, target.row)
-  if (!beginClosingRow(key, target.machine)) return
+  // A refusal may open a second confirmation. The exact fleet selection can
+  // be the only reader that holds this execution and its closeability version.
+  const waitForReceipt = target.pinnedFleet && !force && closeability !== "safe"
+  if (!beginClosingRow(key, target.machine, !waitForReceipt)) return
   const machine = captureMachineFetch()
   // Dispatch while the Cloud reader still has the exact fleet destination selected.
   const sent = client.close(id, force, request, closeabilityVersion ?? undefined)
-  const leavingDetail = host.openId() === id
   let cancelMotion: (() => void) | undefined
-  try {
-    cancelMotion = playSessionCloseMotion([key, L.selectionKey(target.row) ?? id], leavingDetail)
-  } catch { /* Motion support cannot hold up a close. */ }
-  if (leavingDetail) host.closeDetail()
-  void sent.then(() => {
+  const moveAway = () => {
+    const leavingDetail = host.openId() === id
+    try {
+      cancelMotion = playSessionCloseMotion([key, L.selectionKey(target.row) ?? id], leavingDetail)
+    } catch { /* Motion support cannot hold up a close. */ }
+    if (leavingDetail || waitForReceipt) host.closeDetail()
+  }
+  const closed = () => {
+    if (waitForReceipt && machine.current()) {
+      const selected = host.closeTarget(id)
+      if (selected?.pinnedFleet && closingRowKey(selected.machine, selected.row) === key) moveAway()
+    }
     settleClosingRow(key, true)
     if (machine.current()) host.refresh()
-  }, async (error: unknown) => {
-    const absent = error instanceof RefusalError && error.code === "session_not_found"
-    if (!absent) cancelMotion?.()
-    settleClosingRow(key, absent)
+  }
+  if (!waitForReceipt) moveAway()
+  void sent.then(closed, async (error: unknown) => {
+    if (error instanceof RefusalError && error.code === "session_not_found") {
+      closed()
+      return
+    }
+    cancelMotion?.()
+    settleClosingRow(key, false)
     if (machine.current()) host.refresh()
-    if (absent) return
 
     const canReview = (seen?: ClosingRow) => {
       const row = host.closeTarget(id)

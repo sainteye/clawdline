@@ -72,7 +72,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
       }
     }
   }, [readings, closingRows])
-  const isVisible = (row: ProjectedSession) => !closingRows.has(rowKey(row))
+  const isVisible = (row: ProjectedSession) => !closingRows.get(rowKey(row))?.hidden
   const [filterSlot, setFilterSlot] = useState<HTMLElement | null>(null)
   useEffect(() => { setFilterSlot(document.getElementById("session-state-filter-slot")) }, [])
   useEffect(() => {
