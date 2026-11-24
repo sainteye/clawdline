@@ -511,7 +511,7 @@ func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQ
  THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
  'expires_at',json_extract(p.value,'$.expires_at')) j
  FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending'
- AND ` + viewFenceSQL("p.value", true) + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)
+ AND ` + viewPermissionFenceSQL("p.value") + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)
  ORDER BY p.key COLLATE BINARY LIMIT ?
 ), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY id COLLATE BINARY) spent FROM candidates)
 SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM budget ORDER BY id COLLATE BINARY`
@@ -539,7 +539,7 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		if json.Unmarshal([]byte(raw.String), &offer) != nil || offer.ID != id {
 			return failure(pa.Invalid, "read_view_permission")
 		}
-		if err = viewCheckFence(offer.Fence, out.Head, true); err != nil {
+		if err = viewPermissionFence(&offer, out.Head); err != nil {
 			return err
 		}
 		detail, f := s.cursor(q, out.Head, viewPosition{Collection: "permission", ID: id})
@@ -555,6 +555,20 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		out.Items = append(out.Items, item)
 	}
 	return rows.Err()
+}
+
+// A decision is answered by sending a new message to this conversation.
+// Give that interaction the current fence while retaining the stored offer's
+// original fence for its history. Native approvals still belong to their turn.
+func viewPermissionFence(offer *pa.PermissionOffer, head app.ReadViewHead) error {
+	decision := offer.Kind == pa.DecisionOfferKind
+	if err := viewCheckFence(offer.Fence, head, !decision); err != nil {
+		return err
+	}
+	if decision {
+		offer.Fence = head.CurrentFence
+	}
+	return nil
 }
 
 func traceStepID(t pa.Trace) string {
@@ -627,7 +641,7 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
 	args := []any{out.Head.Key.MachineID, out.Head.Key.BotID}
 	if p.Collection == "permission" {
 		statement = viewAggregateSQL + `SELECT CASE WHEN length(CAST(p.value AS BLOB))<=? THEN p.value END
- FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND p.key=? AND ` + viewFenceSQL("p.value", true)
+ FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND p.key=? AND ` + viewPermissionFenceSQL("p.value")
 		args = append(args, q.ByteLimit, p.ID)
 	} else {
 		// Seek the signed event sequence. Only accumulated text needs earlier
@@ -668,7 +682,7 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
 		if item.Permission.Options == nil {
 			item.Permission.Options = []pa.PermissionOption{}
 		}
-		if err = viewCheckFence(item.Permission.Fence, out.Head, true); err != nil {
+		if err = viewPermissionFence(item.Permission, out.Head); err != nil {
 			return err
 		}
 	} else {
