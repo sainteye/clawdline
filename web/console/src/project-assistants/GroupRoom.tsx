@@ -15,6 +15,11 @@ import { groupMentionOptions, withGroupMention } from "./group-mentions"
 import { GroupMemberOutcome, showGroupMemberOutcome } from "./GroupMemberOutcome"
 import { GroupMessageRow } from "./GroupMessageRow"
 import { useMessageArrivals } from "./message-arrivals"
+import { BotPicture } from "./ChatRows"
+
+// The room carries as many pictures per line as a one-to-one send (MaxRoomPictures).
+const MaxRoomPictures=4
+const readPicture=(file:File)=>new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file)})
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
 const merge=(previous:W.ProjectAssistantRoomEntry[],incoming:W.ProjectAssistantRoomEntry[])=>[...new Map([...previous,...incoming].map(line=>[line.seq,line])).values()].sort((a,b)=>a.seq-b.seq)
@@ -24,6 +29,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const [group,setGroup]=useState(initial),[page,setPage]=useState<W.ProjectAssistantGroupHistoryResponse|null>(null),[lines,setLines]=useState<W.ProjectAssistantRoomEntry[]>([]),[text,setText]=useState(""),[quote,setQuote]=useState<W.ProjectAssistantRoomEntry|null>(null),[error,setError]=useState(""),[busy,setBusy]=useState(false),[unknown,setUnknown]=useState(false),[editing,setEditing]=useState<"edit"|"add"|null>(null),[deleting,setDeleting]=useState(false)
   const [membersOpen,setMembersOpen]=useState(false),[paging,setPaging]=useState(false),[following,setFollowing]=useState(true),[host,setHost]=useState<HTMLElement|null>(null)
   const [sending,setSending]=useState<W.ProjectAssistantGroupSendRequest|null>(null)
+  const [images,setImages]=useState<{id:string;url:string}[]>([]),[pictureError,setPictureError]=useState(""),picker=useRef<HTMLInputElement>(null)
   const [caret,setCaret]=useState(0),[highlight,setHighlight]=useState(0),[dismissed,setDismissed]=useState<string|null>(null)
   const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),w=words(currentCatalogTag()),mentionID=useId(),membersID=useId()
   const membersFocus=useRef<"panel"|"header"|null>(null)
@@ -184,9 +190,18 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     try {await authorized(source,currentRef.current,run,control.current.signal);await refresh.current()}
     catch(e){const code=errorCode(e);setError(code);if(code==="pa_outcome_unknown")setUnknown(true)}finally{setBusy(false)}
   }
+  const attach=(files:readonly File[])=>{
+    const pictures=files.filter(file=>/^image\/(png|jpeg|gif|webp)$/.test(file.type))
+    if(!pictures.length)return
+    if(images.length+pictures.length>MaxRoomPictures){setPictureError(groupWord("groupPicturesLimit").replace("{count}",String(MaxRoomPictures)));return}
+    setPictureError("");pending.current=null
+    void Promise.all(pictures.map(readPicture)).then(urls=>setImages(old=>[...old,...urls.map(url=>({id:crypto.randomUUID(),url}))].slice(0,MaxRoomPictures))).catch(()=>setPictureError(w.pictureUnavailable))
+  }
   async function send(){
-    if(!text.trim()||!writable||busy||unknown)return
-    const request=pending.current??{command:command(group.key,"send"),text,...(quote?{quote:{seq:quote.seq}}:{})}
+    if(!text.trim()&&!images.length||!writable||busy||unknown)return
+    // A failed or uncertain send keeps this exact request, so the retry is
+    // the same command and replays instead of writing a second line.
+    const request=pending.current??{command:command(group.key,"send"),text,...(quote?{quote:{seq:quote.seq}}:{}),...(images.length?{images:images.map(picture=>picture.url)}:{})}
     pending.current=request
     sentAfter.current=linesRef.current.at(-1)?.seq??0
     position.current.following=true;setFollowing(true)
@@ -196,7 +211,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       const answer=await source.sendGroup!(request,signal)
       observing.current=true
       localEntry.current=answer.entry.seq
-      pending.current=null;setText("");setCaret(0);setQuote(null);setDismissed(null)
+      pending.current=null;setText("");setCaret(0);setQuote(null);setDismissed(null);setImages([]);setPictureError("")
       position.current.following=true;restore.current={top:0,following:true}
       const next=merge(linesRef.current,[answer.entry]);linesRef.current=next;setLines(next)
       setSending(null)
@@ -209,7 +224,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const activity=page?.activity??[]
   const working=!!page?.room.running||activity.length>0
   const stopRoom=()=>void effect(signal=>source.stopGroup!({command:command(group.key,"stop")},signal))
-  const showStop=working&&!text.trim()&&!!source.stopGroup
+  const showStop=working&&!text.trim()&&!images.length&&!!source.stopGroup
   const outcomes=readable&&page.group.version>=group.version?page.member_outcomes?.filter(showGroupMemberOutcome)??[]:[]
   const unanswered=!!page&&!working&&!busy&&!error&&!unknown&&outcomes.length===0&&lines.at(-1)?.kind==="person"
   const openEditor=(opener:HTMLElement|null,mode:"edit"|"add"="edit")=>{opener?.focus({preventScroll:true});setEditing(mode)}
@@ -238,13 +253,14 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
           replyLabel={groupWord("groupReply")} onReply={canReply?()=>replyTo(line):undefined} onReactionChanged={()=>void refresh.current()}
           header={!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{shownAuthor}</strong></div>}>
           {line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}
-          <p>{line.text}</p>
+          {(line.attachments?.length??0)>0&&<div className="pa-message-pictures">{line.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={source.attachmentURL?.(group.key,a.id)??null} source={source} botKey={group.key} w={w}/>)}</div>}
+          {line.text&&<p>{line.text}</p>}
         </GroupMessageRow>
       })}
       {outcomes.map(outcome=><GroupMemberOutcome key={outcome.turn_id} outcome={outcome} w={w}/>)}
       {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}
       {sending&&<article key={sending.command.idempotency_key} data-local-entrance className="pa-room-message pa-room-person pa-sending" aria-live="polite">
-        {!lines.some(line=>line.kind==="person"&&line.seq>sentAfter.current&&line.text===sending.text)&&<div className="pa-room-bubble">{sending.text}</div>}
+        {!lines.some(line=>line.kind==="person"&&line.seq>sentAfter.current&&line.text===sending.text)&&<div className="pa-room-bubble">{(sending.images?.length??0)>0&&<div className="pa-message-pictures">{sending.images!.map((url,index)=><img key={index} src={url} alt={w.picture}/>)}</div>}{sending.text}</div>}
         <small><span className="pa-send-spinner" aria-hidden="true"/>{groupWord("groupWorking")}</small>
       </article>}
     </div></div>
@@ -253,12 +269,20 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       {unanswered&&<p className="pa-room-unanswered" role="status">{groupWord("groupNoReply")}</p>}
       {working&&<div className="pa-room-working" role="status">{activity.length?activity.map(turn=>{const bot=botFor(turn.member);return <span key={turn.turn_id} data-working-member={identity(turn.member)} data-working-state={turn.state}>{bot&&<BotAvatar appearance={bot.appearance} size={20} mood={turn.state==="waiting_permission"?"needsInput":turn.state==="running"?"working":"idle"}/>}<span>{author(turn.member)} · {turn.state==="waiting_permission"?w.waiting_permission:turn.state==="running"?w.running:w.queued}</span></span>}):<span>{groupWord("groupRunning")}</span>}</div>}
       {quote&&<div className="pa-room-draft-quote"><div><strong>{groupWord("groupReplyTo")} {author(quote.author)}</strong><p>{quote.text}</p></div><button type="button" aria-label={w.clearQuote} disabled={busy||unknown} onClick={()=>{setQuote(null);pending.current=null;focusComposer()}}>×</button></div>}
+      {images.length>0&&<div className="pa-pictures">{images.map(picture=><span className="pa-picture" key={picture.id}>
+        <span className="pa-picture-preview"><img src={picture.url} alt=""/></span>
+        <button type="button" className="pa-picture-remove" aria-label={w.removePicture} disabled={busy||unknown} onClick={()=>{setImages(old=>old.filter(other=>other.id!==picture.id));pending.current=null}}>×</button>
+      </span>)}</div>}
+      {pictureError&&<p role="alert">{pictureError}</p>}
       <form className="pa-composer pa-room-composer" onSubmit={event=>{event.preventDefault();if(!composing.current)void send()}}>
+        <button type="button" className="pa-attach" aria-label={w.attachPicture} title={w.attachPicture} disabled={!writable||busy||unknown||images.length>=MaxRoomPictures} onMouseDown={event=>event.preventDefault()} onClick={()=>picker.current?.click()}><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg></button>
+        <input ref={picker} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={event=>{attach([...(event.target.files??[])]);event.target.value=""}}/>
         {options.length>0&&<div id={mentionID} className="pa-room-mentions" role="listbox" aria-label={groupWord("groupMembers")}>{options.map((bot,index)=><button id={`${mentionID}-${index}`} key={identity(bot.key)} type="button" role="option" aria-selected={index===picked} onMouseDown={event=>event.preventDefault()} onClick={()=>mention(bot)}><BotAvatar appearance={bot.appearance} size={28}/><span>{bot.name}</span></button>)}</div>}
         <div className="pa-editor"><div className="pa-editor-mirror" aria-hidden="true">{text+"​"}</div><textarea ref={composer} rows={1} enterKeyHint="enter" aria-label={groupWord("groupMessage")} placeholder={`${groupWord("groupMessage")}...`} value={text} disabled={!writable||busy||unknown}
           aria-controls={options.length?mentionID:undefined} aria-expanded={options.length>0} aria-autocomplete="list" aria-activedescendant={options.length?`${mentionID}-${picked}`:undefined}
           onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}}
           onSelect={event=>setCaret(event.currentTarget.selectionStart)}
+          onPaste={event=>{if(event.clipboardData.files.length){event.preventDefault();attach([...event.clipboardData.files])}}}
           onChange={event=>{setText(event.target.value);setCaret(event.target.selectionStart);setHighlight(0);setDismissed(null);pending.current=null}}
           onKeyDown={event=>{
             if(event.nativeEvent.isComposing||composing.current||event.keyCode===229)return
@@ -269,7 +293,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
             }
           }}/></div>
         <button className="pa-send" type={showStop?"button":"submit"} data-stop={showStop||undefined} aria-label={groupWord(showStop?"groupStop":busy?"groupWorking":"groupSend")}
-          title={showStop?groupWord("groupStop"):undefined} onClick={showStop?stopRoom:undefined} disabled={!writable||busy||unknown||!showStop&&!text.trim()}>{showStop?null:"↑"}</button>
+          title={showStop?groupWord("groupStop"):undefined} onClick={showStop?stopRoom:undefined} disabled={!writable||busy||unknown||!showStop&&!text.trim()&&!images.length}>{showStop?null:"↑"}</button>
       </form>
       {deleting&&<div role="alert"><p>{groupWord("groupDeleteHint")}</p><button type="button" disabled={busy||unknown} onClick={()=>setDeleting(false)}>{groupWord("groupCancel")}</button><button type="button" disabled={busy||unknown} onClick={()=>void effect(async signal=>{const result=await source.deleteGroup!({command:command(group.key,"delete"),expected_version:group.version},signal);changedRef.current({...group,deleted:true});return result})}>{groupWord("groupDeleteConfirm")}</button></div>}
       {(error||unknown)&&<p role="alert">{groupWord(unknown?"groupUnknown":"groupUnavailable")} {error&&`(${error})`}</p>}

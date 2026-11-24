@@ -11461,6 +11461,7 @@
   "projectAssistants.groupMembersMissing": "已儲存的部分成員不在載入的 Bot 清單內，請先載入完整清單再變更成員。",
   "projectAssistants.groupMessage": "傳給群組的訊息",
   "projectAssistants.groupName": "群組名稱",
+  "projectAssistants.groupPicturesLimit": "一則訊息最多附 {count} 張圖片。",
   "projectAssistants.groupNoReply": "目前沒有成員回覆。",
   "projectAssistants.groupOlder": "較早的訊息",
   "projectAssistants.groupPerson": "你",
