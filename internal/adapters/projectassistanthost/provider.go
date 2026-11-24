@@ -1092,6 +1092,18 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 				return pa.WorkLink{}, failure(pa.ScopeDenied, "board_item_id")
 			}
 		}
+		if project != "" && turn.Origin == pa.BotRequestOrigin {
+			// Naming its own Project is not a cross-Project dispatch: a Bot
+			// answering another Bot may do read-only work (claims []) there,
+			// such as an acceptance Session that only takes screenshots.
+			// Any other folder, or one that cannot be resolved, falls through
+			// to the refusal below.
+			if folders, ok := h.o.Projects.(app.TeamProjectResolver); ok {
+				if own, err := folders.ResolveTeamFolder(ctx, q.Bot.Key.MachineID, project); err == nil && own.Scope == q.Binding.Fence.Project {
+					project = ""
+				}
+			}
+		}
 		var target pa.ProjectScope
 		if project != "" {
 			if !c.ProjectDispatchAllowed && !c.ProjectDispatchAskable {
