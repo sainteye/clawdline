@@ -2,6 +2,7 @@ package projectassistanthost
 
 import (
 	"context"
+	"encoding/json"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -24,6 +25,14 @@ func (w NativeWork) AskPerson(ctx context.Context, q pa.AskPersonRequest) (pa.Pe
 		return pa.PermissionOffer{}, failure(pa.Disabled, "decision_tools")
 	}
 	return w.askPerson(ctx, q)
+}
+
+// BotRequest runs one Bot request card tool for this turn.
+func (w NativeWork) BotRequest(ctx context.Context, tool string, arguments json.RawMessage) (any, error) {
+	if w.botRequest == nil {
+		return nil, failure(pa.Disabled, "bot_request_tools")
+	}
+	return w.botRequest(ctx, tool, arguments)
 }
 
 func (h *Host) CollaborationUsage(ctx context.Context) (int64, int64, error) {

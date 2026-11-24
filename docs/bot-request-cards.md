@@ -593,6 +593,25 @@ minimal list view is a console surface, so the gate applies to it as well.
 5. **Cloud parity (I: wire words).** *Acceptance:* the phone reads a card through the relay with
    the words advertised and hides the section without them.
 
+**Built so far (2026-11-24).** The record, store and person routes arrive at API 118 (moved from
+117, which Bot settings saves took on `main`). The Bot tools `bot_request_read`, `_create`,
+`_handoff`, `_check` (one card, or `cards` for a batch), `_verdict`, `_wait_person` and `_done` are
+in `mcpBotRequestTools()` (`internal/adapters/projectassistantacp/mcp.go`) and run in
+`internal/adapters/projectassistanthost/bot_request.go` against the daemon store. A card refusal
+reaches the Bot as `{code, field, version}`. Creation finds the person's message by walking a
+`bot_request` turn's exchange chain back to a `user` turn (at most `MaxCollaborationHops`); a turn
+from a host notice, a routine run, a room, the network, a compaction or a Bot reply is refused
+`bot_request_no_person_authority`. The card tools are offered in Bot-to-Bot turns too (§7.2).
+
+Not built yet: `bot_request_id` on broker tasks, work links, `dispatch_work` and `message_bot`
+(§8.1); delivering the `bot_request.handoff` and `bot_request.done` outbox rows (the rows are
+queued once, nothing drains them); the handoff turn's card-scoped dispatch (§7.2); split and merge.
+
+**Relation to the wider Bot-to-Bot tool loss.** A separate report says Bots lose their tools in
+every Bot-to-Bot turn (`pa_disabled` / `bot_request_tools`). The handoff rule in §7.2 deliberately
+grants only card-scoped dispatch in a handoff turn and does not fix that wider defect; if the
+wider fix lands first, the card scope still applies on top of it rather than being replaced.
+
 ## 13. Deferred until needed
 
 Each was specified in an earlier draft (this page's history) and removed on purpose. Enforcement

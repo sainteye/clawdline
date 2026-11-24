@@ -91,6 +91,12 @@ type PersonaDispatchTools interface {
 }
 
 // BoardDispatchTools associates a dispatch with a Board item the person named.
+// BotRequestTools runs the Bot request card tools (docs/bot-request-cards.md §8.2)
+// for the turn that holds the tools.
+type BotRequestTools interface {
+	BotRequest(ctx context.Context, tool string, arguments json.RawMessage) (any, error)
+}
+
 type BoardDispatchTools interface {
 	DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
 }
