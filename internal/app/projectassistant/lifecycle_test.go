@@ -340,3 +340,86 @@ func TestRuntimeNextMessageRechecksRetainedCleanup(t *testing.T) {
 		t.Fatalf("processes=%d, want one per accepted message", f.provider.count())
 	}
 }
+
+// Re-checking forever made a Bot's recovery wait for an unrelated process: a
+// person's app born inside a census gap kept it refusing for hours (Fuse,
+// 2026-11-24). After the bounded slow re-checks it is released without
+// confirmation, the earlier turn stays unknown and is not resent, and the chat
+// says so. Until then every message is refused.
+func TestRuntimeRetainedCleanupDegradesAfterBoundedSlowRechecks(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 1, 20*time.Millisecond, 40*time.Millisecond
+	f.r.o.Limits.CleanupSlowRetries = 2
+	p.closeUnknown.Store(true)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	if u := f.r.Usage(); u.Known || u.Processes != 1 {
+		t.Fatalf("an unconfirmed cleanup was released before degrading: %+v", u)
+	}
+	eventually(t, func() bool { u := f.r.Usage(); return u.Known && u.Processes == 0 })
+	assertReleasedNotice(t, f, first.ResourceID, "degraded")
+	p.closeUnknown.Store(false)
+	second, err := f.submit(t, "two", "two")
+	if err != nil {
+		t.Fatalf("a degraded Bot still refused: %v", err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "two done"}
+	awaitTurn(t, f, second.ResourceID, pa.TurnSucceeded)
+	if f.provider.count() != 2 {
+		t.Fatalf("processes=%d, want one per accepted message", f.provider.count())
+	}
+}
+
+// The person's "release without confirming" frees a retained Bot at once.
+func TestRuntimeReleaseUnconfirmedFreesARetainedBotAtOnce(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries = 0
+	p.closeUnknown.Store(true)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	if _, err = f.submit(t, "early", "early"); pa.Code(err) != pa.CapacityFull {
+		t.Fatalf("an unconfirmed cleanup admitted a message: %v", err)
+	}
+	cmd := pa.Command{Key: f.key, Operation: pa.StopOperation, IdempotencyKey: "release"}
+	if r, err := f.r.Stop(context.Background(), StopRequest{Command: cmd, Fence: pa.Fence{Key: f.key}, ReleaseUnconfirmed: true}); err != nil || r.State != pa.EffectDelivered {
+		t.Fatalf("release=%+v %v", r, err)
+	}
+	if u := f.r.Usage(); !u.Known || u.Processes != 0 {
+		t.Fatalf("the release did not free the Bot at once: %+v", u)
+	}
+	assertReleasedNotice(t, f, first.ResourceID, "person")
+	if _, err := f.submit(t, "two", "two"); err != nil {
+		t.Fatalf("a released Bot still refused: %v", err)
+	}
+}
+
+func assertReleasedNotice(t *testing.T, f *runtimeFixture, turn, cause string) {
+	t.Helper()
+	x, err := f.store.Export(context.Background(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range x.Messages {
+		if m.ID == cleanupReleasedPrefix+turn {
+			if m.Kind != pa.NoticeMessage || m.Notice == nil || m.Notice.Key != pa.NoticeCleanupReleased || m.Notice.Cause != cause {
+				t.Fatalf("notice=%+v", m)
+			}
+			if tx, _ := f.store.Turn(context.Background(), f.key, turn); pa.Code(tx.Failure) != pa.ExecutionEffectUnknown {
+				t.Fatalf("the earlier turn lost its unknown effect: %+v", tx.Failure)
+			}
+			return
+		}
+	}
+	t.Fatal("no notice says the Bot was released without confirmation")
+}

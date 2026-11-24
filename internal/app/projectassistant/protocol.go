@@ -29,6 +29,9 @@ type RuntimeLimits struct {
 	// after CleanupRetries, which keep doubling up to it until cleanup is
 	// confirmed. Zero stops after CleanupRetries.
 	CleanupSlowRetryDelay time.Duration
+	// CleanupSlowRetries is how many slow re-checks run before a retained
+	// Bot is released without confirmation. Zero keeps re-checking.
+	CleanupSlowRetries int
 }
 
 // ControlWindow bounds maintenance and issued work authority independently of

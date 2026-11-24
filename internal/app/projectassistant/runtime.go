@@ -2229,6 +2229,9 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 }
 
 func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, err error) {
+	if q.ReleaseUnconfirmed {
+		return r.ReleaseUnconfirmed(ctx, q)
+	}
 	// Registered before acquire/unlock defers: filesystem cleanup runs only
 	// after every runtime lock is released, including exact receipt replays.
 	defer func() {

@@ -32,6 +32,10 @@ const (
 	// doubling the delay from the last fast retry up to this interval, until
 	// cleanup is confirmed or Clawdline stops. It never gives up on its own.
 	MaximumBotCleanupSlowRetryMilliseconds = 300000
+	// Slow re-checks (32, 64, 128, 256 s, then every 300 s: about 23 min)
+	// before a retained Bot is released without confirmation, so recovery
+	// never waits for an unrelated process to exit.
+	MaximumBotCleanupSlowRetries = 8
 	// A census gap shorter than this is treated like an ordinary survey
 	// interval and is not scanned for strangers. One failed census inside
 	// Close spans at most its own deadline plus the grace wait, under
@@ -253,6 +257,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsCleanupSlowRetryDelay, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupSlowRetryMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotCleanupSlowRetryMilliseconds"}},
+		{Name: BotsCleanupSlowRetries, Class: Buffer, Unit: Rows, Limit: MaximumBotCleanupSlowRetries, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotCleanupSlowRetries"}},
 		{Name: BotsUnscannedCensusGap, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotUnscannedCensusGapMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotUnscannedCensusGapMilliseconds"}},

@@ -85,6 +85,9 @@ type Process struct {
 	// started is when StartProcess began; it bounds a gap that opened
 	// before the first successful census.
 	started time.Time
+	// suspects are the pids the last unsettled gap check could not exclude,
+	// for the log line written when a Bot is released without confirmation.
+	suspects []int
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -298,11 +301,20 @@ func (p *Process) gapSettled(rows []processIdentity) bool {
 		}
 		born, ok := censusStampTime(row.stamp)
 		if !ok {
-			return true
+			// An unreadable start time used to count as born inside the gap,
+			// so one row in an unexpected format kept every gap open. Without
+			// a birth there is no evidence that ties a process to the gap; the
+			// row is logged and only a direct child of ours still counts.
+			if _, ours := p.owned[row.ppid]; ours {
+				return true
+			}
+			log.Printf("project assistant: Agent cleanup gap check could not read the start time of pid=%d ppid=%d; it is not counted", row.pid, row.ppid)
+			return false
 		}
 		return (g.from.IsZero() || !born.Before(g.from.Add(-gapSlack))) && !born.After(g.to.Add(gapSlack))
 	}
 	settled := true
+	p.suspects = p.suspects[:0]
 	for _, row := range rows {
 		if stoppedProcess(row) || !inGap(row) {
 			continue
@@ -320,9 +332,25 @@ func (p *Process) gapSettled(rows []processIdentity) bool {
 		if ours || reaper(top.ppid) || !parentLive {
 			log.Printf("project assistant: Agent cleanup gap %s..%s kept open by pid=%d ppid=%d uid=%d born=%s", g.from.Format(time.RFC3339Nano), g.to.Format(time.RFC3339Nano), row.pid, row.ppid, row.uid, row.stamp)
 			settled = false
+			if len(p.suspects) < p.limits.OwnedDescendants {
+				p.suspects = append(p.suspects, row.pid)
+			}
 		}
 	}
 	return settled
+}
+
+// UnconfirmedProcesses names the pids that keep cleanup unconfirmed: live
+// owned identities and the processes the last gap check could not exclude.
+// It is diagnostic only and authorizes no signal.
+func (p *Process) UnconfirmedProcesses() []int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	out := make([]int, 0, len(p.owned)+len(p.suspects))
+	for pid := range p.owned {
+		out = append(out, pid)
+	}
+	return append(out, p.suspects...)
 }
 
 // orphanReaperIn reports which parents may be the process that adopted an

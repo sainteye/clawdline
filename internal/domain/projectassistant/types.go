@@ -338,11 +338,17 @@ type Message struct {
 // summarized its own context; the token counts are before and after.
 const NoticeCompacted = "compacted"
 
+// NoticeCleanupReleased is the key of the notice that a Bot was released
+// although its earlier Agent processes could not all be confirmed stopped.
+// Cause is "degraded" (bounded re-checks ran out) or "person".
+const NoticeCleanupReleased = "cleanup_released"
+
 // NoticeRef is a language-neutral notice: a key and its values.
 type NoticeRef struct {
 	Key          string `json:"key"`
 	TokensBefore int64  `json:"tokens_before,omitempty"`
 	TokensAfter  int64  `json:"tokens_after,omitempty"`
+	Cause        string `json:"cause,omitempty"`
 }
 type SendMessage struct {
 	Handoff        *HandoffRef  `json:"handoff,omitempty"`

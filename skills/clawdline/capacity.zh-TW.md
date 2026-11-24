@@ -74,6 +74,7 @@
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.cleanup_retries` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_retry_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_slow_retries` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_slow_retry_ms` | 300000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_endpoints` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_frames` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |

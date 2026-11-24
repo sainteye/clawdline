@@ -134,3 +134,11 @@ func (c *Client) updateNativeContext(sessionID, kind string, commands, used, siz
 	}
 	return nil
 }
+
+// UnconfirmedProcesses names the Agent processes that keep this session's
+// cleanup unconfirmed, for the log line of a release without confirmation.
+func (c *Client) UnconfirmedProcesses() []int { return c.p.UnconfirmedProcesses() }
+
+func (s *isolatedNativeSession) UnconfirmedProcesses() []int {
+	return app.UnconfirmedProcessesOf(s.ProviderSession)
+}

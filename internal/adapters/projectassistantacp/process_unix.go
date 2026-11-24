@@ -45,6 +45,9 @@ func psIdentities(ctx context.Context, budget int) ([]processIdentity, error) {
 	// Only identifiers, group, state and start time are read. Arguments/environment may
 	// contain secrets and are deliberately excluded from this census.
 	cmd := exec.CommandContext(ctx, "/bin/ps", "-axo", "pid=,ppid=,pgid=,ruid=,stat=,lstart=")
+	// lstart follows LC_TIME. A localized date would not parse as a start
+	// time, so the census always reads the C locale.
+	cmd.Env = []string{"LC_ALL=C", "PATH=/usr/bin:/bin"}
 	capture := &censusCapture{budget: budget}
 	cmd.Stdout = capture
 	err := cmd.Run()

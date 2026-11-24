@@ -1396,6 +1396,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.cleanup_slow_retries",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotCleanupSlowRetries"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.cleanup_slow_retry_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
