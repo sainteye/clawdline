@@ -690,7 +690,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const dropRefusal=(transfer:DataTransfer)=>{
     if(thread)return w.dropBlockedThread
     if(!canAttach&&!canInput)return w.dropBlockedUnavailable
-    if(data&&data.source.state!=="online")return w.dropBlockedOffline
+    if(reconnecting||error==="pa_offline"||data&&data.source.state==="offline")return w.dropBlockedOffline
     if(!enabled||unknown||legacyBlocked())return w.dropBlockedReadOnly
     if(busy)return w.dropBlockedBusy
     // Browsers expose each dragged file's type before the drop; an empty type is decided by name on drop.
