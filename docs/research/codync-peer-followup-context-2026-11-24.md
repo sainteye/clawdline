@@ -162,6 +162,12 @@ Compared with Codync:
 part of today's incident Codync would not have hit. Then implement **A**. Keep **B** as a separate
 decision for the person, not part of this fix. Reject **C**.
 
+**Decision (2026-11-24):** implement **A** now. If problems appear later, consider Codync's
+current approach next: keep a new thread per request, and start that thread's session as a fork of
+the recipient's main chat (the fork or brief described in direction **B**). Handling every Bot
+request directly in the recipient's main chat is not planned. The per-pair thread (**C**) stays
+rejected.
+
 Interactions:
 
 - **`ask_person`:** a quoted round whose exchange is still waiting for a decision should be refused
