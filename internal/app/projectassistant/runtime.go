@@ -1931,7 +1931,10 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 		return runtimeFailure(pa.StaleVersion, "incoming_turn")
 	}
 	if pa.IsPeerRequest(t.Origin) && (e.Message != "" || e.Output != nil) {
-		return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
+		if t.Origin != pa.BotRequestOrigin || e.Output != nil || e.Permission != nil || e.Trace != nil {
+			return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
+		}
+		return r.postPeerNote(ctx, t, e)
 	}
 	cmd := r.command(a.key, pa.SendOperation, "runtime-event-"+t.ID+"-"+e.ID, e)
 	if rec, err := r.replay(ctx, cmd, pa.SendOperation); err != nil {

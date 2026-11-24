@@ -28,6 +28,18 @@ the person. The `persistent-bot-review` effect copy in English and Taiwan
 Traditional Chinese now states the 32,000-byte reply bound, the marker and the
 diagnostics count. No tool, approval choice or execution path is added.
 
+A Bot handling another Bot's request now tells its own person. Reviewed the
+persistent-bot-review card in English and Taiwan Traditional Chinese against the
+peer-request prompt, the fixed Bot frame for every agent and the request turn's
+`send_message` route. The recipient is told to say briefly in its own chat when
+it cannot do part of the request, a tool is refused, the person must act, or it
+makes a decision affecting the person; `ask_person` stays the only way to ask for
+a decision. `send_message` from a request turn is delivered only to the
+recipient's main chat, prefixed with the requester's name, at most 3 messages of
+2,000 bytes per request; files, artifacts and network requests stay refused. The
+recipient's chat shows the first 160 characters of the reply under the request's
+capsule. Real-agent behavior is not proven by this receipt.
+
 ## Content ownership
 
 The details address menu opens or copies only literal HTTP candidates supplied
