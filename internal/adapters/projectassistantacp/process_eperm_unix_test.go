@@ -335,3 +335,34 @@ func TestOrphanReapersAreInitAndTheDaemonsAncestors(t *testing.T) {
 		}
 	}
 }
+
+// A start time that does not parse (a localized ps lstart, say) used to count
+// as born inside the gap, so one such row kept every long gap open. Without a
+// birth nothing ties a stranger to the gap; it no longer holds cleanup.
+func TestProcessCloseDoesNotHoldAGapOnAnUnreadableStartTime(t *testing.T) {
+	p := reapedCloseFixture(t, gapCensus(syscall.ENOMEM, func() []processIdentity {
+		return []processIdentity{{pid: 4242, ppid: 1, pgid: 4242, uid: os.Getuid(), state: "Ss", stamp: "mar. 24 nov. 09:00:00 2026"}}
+	}))
+	p.limits.UnscannedCensusGap = 0
+	_ = p.Close(context.Background())
+	if err := p.Close(context.Background()); err != nil {
+		t.Fatalf("a stranger with an unreadable start time kept a gap unknown: %v", err)
+	}
+}
+
+// An orphan born in the gap keeps cleanup unconfirmed and is named for the
+// log of a later release without confirmation.
+func TestProcessNamesTheOrphanThatKeepsAGapOpen(t *testing.T) {
+	var p *Process
+	p = reapedCloseFixture(t, gapCensus(syscall.ENOMEM, func() []processIdentity {
+		return []processIdentity{{pid: 4242, ppid: 1, pgid: 4242, uid: os.Getuid(), state: "Ss", stamp: p.started.Add(time.Millisecond).UTC().Format(time.RFC3339Nano)}}
+	}))
+	p.limits.UnscannedCensusGap = 0
+	_ = p.Close(context.Background())
+	if err := p.Close(context.Background()); !errors.Is(err, syscall.ENOMEM) {
+		t.Fatalf("an orphan from the gap was released: %v", err)
+	}
+	if got := p.UnconfirmedProcesses(); len(got) != 1 || got[0] != 4242 {
+		t.Fatalf("unconfirmed=%v, want the orphan", got)
+	}
+}

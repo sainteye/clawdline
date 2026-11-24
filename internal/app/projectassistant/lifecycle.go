@@ -495,7 +495,7 @@ func (r *Engine) writeUnconfirmedNotice(key pa.BotKey, cause string) {
 		}
 	}
 	msg := pa.Message{ID: id, Fence: last.Fence, TurnID: last.ID, Kind: pa.NoticeMessage,
-		Text: "The previous Agent processes could not all be confirmed stopped. The Bot accepts messages again; check Activity Monitor for leftover Agent processes.",
+		Text:   "The previous Agent processes could not all be confirmed stopped. The Bot accepts messages again; check Activity Monitor for leftover Agent processes.",
 		Notice: &pa.NoticeRef{Key: pa.NoticeCleanupReleased, Cause: cause}, At: r.o.Clock()}
 	m := Mutation{Command: r.command(key, pa.SendOperation, id, last.ID), ExpectedVersion: x.Bot.Version, Messages: []pa.Message{msg},
 		Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: id}, Events: []pa.Event{{Fence: last.Fence, Kind: pa.MessageCreated, Message: &msg}}}
