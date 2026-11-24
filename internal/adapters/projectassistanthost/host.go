@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
-	"slices"
 	"sync"
 	"time"
 
@@ -499,7 +498,7 @@ func (h *Host) Enable(ctx context.Context) error {
 		cleanup, cancel := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
 		var err error
 		if pending {
-			err = h.quiesceFor(cleanup, app.RestartField)
+			err = h.quiesce(cleanup)
 		} else {
 			err = h.recoverPermissionWaits(cleanup)
 		}
@@ -584,7 +583,7 @@ func (h *Host) resumeInterrupted(parent context.Context) {
 	}
 	ctx, cancel := context.WithTimeout(parent, h.o.Limits.CleanupTimeout*4)
 	defer cancel()
-	var keys, expiredCalls, replySenders, completionSenders []pa.BotKey
+	var keys, replySenders []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
 	for {
 		page, err := st.List(ctx, query)
@@ -597,15 +596,15 @@ func (h *Host) resumeInterrupted(parent context.Context) {
 				replySenders = append(replySenders, bot.Bot.Key)
 			}
 			pending, err := st.PendingTurns(ctx, bot.Bot.Key)
-			if err == nil && slices.ContainsFunc(pending, pa.QueuedWorkCompletion) {
-				completionSenders = append(completionSenders, bot.Bot.Key)
+			if err != nil {
+				continue
 			}
-			if err == nil && len(pending) == 1 {
-				turn := pending[0]
-				if pa.IsLeadCallTurn(turn) && turn.State != pa.TurnUnknown {
-					expiredCalls = append(expiredCalls, bot.Bot.Key)
-				} else if turn.State == pa.TurnUnknown && turn.Failure != nil && turn.Failure.Field == app.RestartField && !pa.IsLeadCallTurn(turn) {
+			for _, turn := range pending {
+				if turn.State == pa.TurnRunning || turn.State == pa.TurnWaitingPermission || turn.Steering ||
+					turn.State == pa.TurnUnknown || pa.IsLeadCallTurn(turn) ||
+					pa.QueuedChatRestartWork(turn) && turn.Fence.BindingID != "" {
 					keys = append(keys, bot.Bot.Key)
+					break
 				}
 			}
 		}
@@ -614,7 +613,7 @@ func (h *Host) resumeInterrupted(parent context.Context) {
 		}
 		query.Cursor = page.NextCursor
 	}
-	if len(keys) == 0 && len(expiredCalls) == 0 && len(replySenders) == 0 && len(completionSenders) == 0 {
+	if len(keys) == 0 && len(replySenders) == 0 {
 		return
 	}
 	// The runtime is otherwise built on first use; resuming is a use, so it
@@ -624,23 +623,13 @@ func (h *Host) resumeInterrupted(parent context.Context) {
 		log.Printf("bots: interrupted turns were not resumed: %s", pa.Code(err))
 		return
 	}
-	for _, key := range expiredCalls {
-		if err := r.Recover(ctx, key); err != nil {
-			log.Printf("bots: a previous voice greeting did not settle: %s", pa.Code(err))
-		}
-	}
 	for _, key := range keys {
-		if err := r.ResumeInterrupted(ctx, key); err != nil {
-			log.Printf("bots: an interrupted turn was not resumed: %v", err)
+		if err := r.Recover(ctx, key); err != nil {
+			log.Printf("bots: could not recover chat work: %v", err)
 		}
 	}
 	for _, key := range replySenders {
 		r.ResumeExchangeReplies(key)
-	}
-	for _, key := range completionSenders {
-		if err := r.Recover(ctx, key); err != nil {
-			log.Printf("bots: a work completion did not resume: %s", pa.Code(err))
-		}
 	}
 }
 

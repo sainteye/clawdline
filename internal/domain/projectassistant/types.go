@@ -277,10 +277,12 @@ type Fence struct {
 type Turn struct {
 	// QueueEditID identifies a paused, never-started human message. Only an
 	// explicit save, cancel, or turn withdrawal releases this hold.
-	QueueEditID string       `json:"queue_edit_id,omitempty"`
-	Network     *NetworkWork `json:"network,omitempty"`
-	Origin      TurnOrigin   `json:"origin,omitempty"`
-	ExchangeID  string       `json:"exchange_id,omitempty"`
+	QueueEditID string `json:"queue_edit_id,omitempty"`
+	// Steering records a queued message whose Send now has no settled native response.
+	Steering   bool         `json:"steering,omitempty"`
+	Network    *NetworkWork `json:"network,omitempty"`
+	Origin     TurnOrigin   `json:"origin,omitempty"`
+	ExchangeID string       `json:"exchange_id,omitempty"`
 	// DecisionExchangeID marks the person's answer to a decision offer that
 	// a peer request raised; its result is forwarded to the requester.
 	DecisionExchangeID string              `json:"decision_exchange_id,omitempty"`
@@ -365,6 +367,13 @@ type Message struct {
 // NoticeCompacted is the key of the notice for a turn during which the agent
 // summarized its own context; the token counts are before and after.
 const NoticeCompacted = "compacted"
+
+const (
+	NoticeRestartContinuation = "restart_continuation"
+	NoticeWorkReview          = "work_review"
+	NoticeWorkReviewHeld      = "work_review_held"
+	NoticeWorkReviewWaiting   = "work_review_waiting"
+)
 
 // NoticeCleanupReleased is the key of the notice that a Bot was released
 // although its earlier Agent processes could not all be confirmed stopped.

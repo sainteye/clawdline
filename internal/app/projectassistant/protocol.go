@@ -56,6 +56,8 @@ type OpenRequest struct {
 	Binding      pa.ExecutionBinding
 	Directory    string
 	Resume       bool
+	// RestartReadOnly requires the provider to establish the requested restricted mode.
+	RestartReadOnly bool
 	// PersistNativeSession is set only by the source-owned installed provider.
 	// It never arrives through an HTTP command or model argument.
 	PersistNativeSession bool `json:"-"`

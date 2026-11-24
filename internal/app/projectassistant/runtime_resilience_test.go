@@ -124,7 +124,7 @@ func TestRuntimeCapacityFailureKeepsRestartRecoveryMarker(t *testing.T) {
 	receivePrompt(t, f.provider)
 	awaitTurn(t, f, receipt.ResourceID, pa.TurnUnknown)
 	turn, err := f.store.Turn(context.Background(), f.key, receipt.ResourceID)
-	if err != nil || turn.Failure == nil || turn.Failure.Field != RestartField {
+	if err != nil || turn.Failure == nil || turn.Failure.Field != RestartConfirmedField {
 		t.Fatalf("restart recovery marker lost: %+v %v", turn.Failure, err)
 	}
 }

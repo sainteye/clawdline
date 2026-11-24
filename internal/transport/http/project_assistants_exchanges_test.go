@@ -133,6 +133,73 @@ console.log("paired SourceClient -> authenticated TCP HTTP -> real SQLite: exact
 	t.Log(string(log))
 }
 
+func TestServerRestartContinuesOriginalQueueAcrossTwoBoots(t *testing.T) {
+	ctx := t.Context()
+	f := newPAServerFixture(t, true)
+	firstProvider := &paSoakPeer{unknownSent: make(chan struct{})}
+	firstProvider.lose.Store(true)
+	f.s.projectAssistants.provider = func() (app.Provider, error) { return firstProvider, nil }
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+
+	server := httptest.NewServer(f.s.Handler())
+	t.Cleanup(server.Close)
+	client := &paSoakHTTP{fixture: f, server: server}
+	client.reconnect()
+	_, original := client.send(t, "original-request")
+	select {
+	case <-firstProvider.unknownSent:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	case <-time.After(3 * time.Second):
+		t.Fatal("original prompt did not reach the provider")
+	}
+	_, queued := client.send(t, "queued-request")
+	originalChat := client.get(t).Conversation.ID
+
+	for boot := range 2 {
+		if err := f.s.StopProjectAssistants(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.s.store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		restarted, err := New(f.s.cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = restarted.StopProjectAssistants(context.Background()); _ = restarted.store.Close() })
+		f.s, f.h = restarted, restarted.Handler()
+		provider := &paSoakPeer{resume: true}
+		restarted.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+		if err = restarted.StartProjectAssistants(ctx); err != nil {
+			t.Fatal(err)
+		}
+		x := paSoakAwait(t, f, queued.ResourceID, pa.TurnSucceeded)
+		var recoveries, originals, queuedMessages int
+		for _, turn := range x.Turns {
+			if pa.RestartSourceTurn(turn) == original.ResourceID && turn.State == pa.TurnSucceeded {
+				recoveries++
+			}
+			if turn.ID == original.ResourceID && turn.State == pa.TurnFailed && turn.Failure != nil && turn.Failure.Field == pa.RestartResumedField {
+				originals++
+			}
+		}
+		for _, message := range x.Messages {
+			if message.TurnID == queued.ResourceID && message.Kind == pa.UserMessage {
+				queuedMessages++
+			}
+		}
+		wantSends := int32(2)
+		if boot == 1 {
+			wantSends = 0
+		}
+		if x.Conversation.ID != originalChat || recoveries != 1 || originals != 1 || queuedMessages != 1 || provider.sends.Load() != wantSends {
+			t.Fatalf("boot %d: same conversation=%v recoveries=%d originals=%d queued messages=%d sends=%d", boot+1, x.Conversation.ID == originalChat, recoveries, originals, queuedMessages, provider.sends.Load())
+		}
+	}
+}
+
 func TestServerRestartPreservesQueuedBotStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

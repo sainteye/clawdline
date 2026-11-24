@@ -16,8 +16,9 @@ function WorkStep({ label, detail, tone, commit }: {
   </li>
 }
 
-export function WorkResultCard({ work, w, source, onOpen }: {
+export function WorkResultCard({ work, review, w, source, onOpen }: {
   work: ProjectAssistantWorkLink
+  review?: { text?: string; details?: string }
   w: Words
   source?: SourceClient
   onOpen?: (work: ProjectAssistantWorkLink, view?: "session") => void
@@ -85,6 +86,7 @@ export function WorkResultCard({ work, w, source, onOpen }: {
       <strong>{work.title || item?.title || w.sessionTask}</strong>
       {item?.project.label && <small>{item.project.label}</small>}
       {(waiting || unknown) && <p>{w[work.state]}</p>}
+      {review?.text&&<p role="status">{review.text}</p>}
     </header>
     {(completed || verifies) && <ol className="pa-work-task-steps">
       {completed && <WorkStep label={work.delivery_commit ? w.workDeliveryCompleted : w.completed} tone="done" commit={work.delivery_commit} />}
@@ -102,6 +104,7 @@ export function WorkResultCard({ work, w, source, onOpen }: {
       <div className="pa-work-task-reference">
         {boardID && <small>{boardID}</small>}
         <small>{work.task_id}</small>
+        {review?.details&&<small>{review.details}</small>}
         {work.landing_commit && <code>{work.landing_commit}</code>}
         {verifies && round?.candidate_commit && <span>{w.workVerification} <code>{round.candidate_commit}</code></span>}
         {available && reading?.source === source && reading?.id === boardID && !item && <small role="status">{w.workVerificationUnavailable}</small>}

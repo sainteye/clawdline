@@ -15,6 +15,65 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+func TestRestartKeepsACompletedDispatchUntilItsBotCanReview(t *testing.T) {
+	n := startNative(t, nil)
+	f, ctx := n.f, t.Context()
+	fixtureReceive(t, f.p.sessions)
+	link, err := n.tools.DispatchWithCompletion(ctx, "finish-during-restart", "Review the result", "Check the synthetic result.", []string{}, "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.o.NativeWork = nil // The first boot’s registration capture has no reader after restart.
+	f.start(t)
+	f.enable(t)
+	recovery := fixtureReceive(t, f.p.sent)
+	recoverySession := fixtureReceive(t, f.p.sessions)
+	if pa.RestartSourceTurn(recovery.Turn) != n.prompt.Turn.ID || !recoverySession.q.Resume || !recoverySession.q.RestartReadOnly {
+		t.Fatalf("the source turn did not resume in its original session: %+v", recovery)
+	}
+	if _, err = recoverySession.q.Tools.Dispatch(ctx, "new-dispatch", "Should stay read-only", "Try dispatching.", nil); pa.Code(err) != pa.ReadOnly {
+		t.Fatalf("the recovery turn dispatched work: %v", err)
+	}
+
+	broker := f.o.Broker
+	settled, err := broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Synthetic result retained."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := orchestrator.AssistantWorkSnapshotOf(settled)
+	if err = f.h.completeWork(ctx, snapshot); pa.Code(err) != pa.CapacityFull {
+		t.Fatalf("result review did not wait for its source turn: %v", err)
+	}
+	recoverySession.reply <- app.PromptResult{FinalText: "Recovered previous progress."}
+	fixtureEventually(t, func() bool {
+		old, err := f.h.store.Turn(ctx, n.bot.Key, n.prompt.Turn.ID)
+		return err == nil && old.Failure != nil && old.Failure.Field == pa.RestartResumedField
+	})
+	if err = f.h.completeWork(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	review := fixtureReceive(t, f.p.sent)
+	if pa.WorkCompletionTask(review.Turn) != link.TaskID || review.Quote == nil || review.Quote.Text != "Synthetic result retained." {
+		t.Fatalf("review did not quote the existing result: %+v", review)
+	}
+	reviewSession := fixtureReceive(t, f.p.sessions)
+	if err = f.h.completeWork(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	reviewSession.reply <- app.PromptResult{FinalText: "Reviewed."}
+	fixtureEventually(t, func() bool {
+		wakes, results := workTurns(t, n)
+		return wakes == 1 && results == 1 && f.h.Usage().ActiveActors == 0
+	})
+	if f.launcher.calls.Load() != 1 || f.p.opens.Load() != 3 {
+		t.Fatalf("recovered dispatch duplicated work: workers=%d model turns=%d", f.launcher.calls.Load(), f.p.opens.Load())
+	}
+}
+
 func TestDispatchedWorkCompletionWakesBotOnce(t *testing.T) {
 	n := startNative(t, nil)
 	f, ctx := n.f, context.Background()

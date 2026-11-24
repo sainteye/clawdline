@@ -174,9 +174,11 @@ func QuiesceHistory(ctx context.Context, repo Repository, clock func() time.Time
 	return QuiesceHistoryFor(ctx, repo, clock, id, key, "execution")
 }
 
-// RestartField marks a turn the daemon's own shutdown cut off, which a later
-// start may resume (ResumeInterrupted); "execution" marks any other stop.
+// RestartField identifies a restart without proof of native cleanup.
 const RestartField = "restart"
+
+// RestartConfirmedField identifies an interruption after native cleanup finished.
+const RestartConfirmedField = "restart_confirmed"
 
 // QuiesceHistoryFor is QuiesceHistory recording why an active turn stopped.
 func QuiesceHistoryFor(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey, field string) error {
@@ -226,7 +228,7 @@ pendingTurns:
 		// A planned restart retains only the original queue identity whose
 		// execution has not started, or whose no-effect refusal was durably
 		// proved and cleaned up. Running/unknown work never takes this path.
-		if field == RestartField && (unstartedExchangeReply(t) || pa.QueuedWorkCompletion(t)) {
+		if field == RestartField && (unstartedExchangeReply(t) || pa.QueuedChatRestartWork(t)) {
 			continue
 		}
 		if field == RestartField && t.State == pa.TurnQueued && t.QueueEditID != "" {
@@ -243,11 +245,15 @@ pendingTurns:
 			continue
 		}
 		state := pa.TurnCancelled
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering {
 			state = pa.TurnUnknown
 		}
-		t.State, t.QueueEditID = state, ""
-		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: field}
+		failureField := field
+		if t.Steering {
+			failureField = pa.SteerUnknownField
+		}
+		t.State, t.QueueEditID, t.Steering = state, "", false
+		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: failureField}
 		conversation := x.Conversation
 		if conversation.ActiveTurnID == t.ID {
 			conversation.ActiveTurnID = ""

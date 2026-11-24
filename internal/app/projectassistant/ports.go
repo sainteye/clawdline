@@ -30,8 +30,10 @@ type Submission struct {
 	// Notice marks a message Clawdline itself sends the agent, such as the
 	// resume prompt after a restart; it is shown as a notice, not as the
 	// person's words.
-	Notice   bool
-	LeadCall bool
+	Notice bool
+	// RestartSource is the original turn this host-only notice continues.
+	RestartSource string
+	LeadCall      bool
 	// Decision is the person's answer to a decision offer, resolved in the
 	// same commit as their message so an offer is answered at most once.
 	Decision *pa.PermissionOffer

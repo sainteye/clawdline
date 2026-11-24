@@ -31,8 +31,8 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
   return out
 }
 /** Keep the paused message and the queue it blocks in the tray even when the Bot becomes idle. */
-export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state"|"queue_edit_id">[]) {
-  const waiting = turns.some(t=>t.state==="running" || t.state==="waiting_permission" || t.state==="queued" && t.queue_edit_id)
+export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly Pick<W.ProjectAssistantReadTurnSummary,"message_id"|"state"|"queue_edit_id"|"failure_field">[]) {
+  const waiting = turns.some(t=>t.state==="running" || t.state==="waiting_permission" || t.state==="queued" && t.queue_edit_id || t.state==="unknown" && (t.failure_field==="restart"||t.failure_field==="restart_confirmed"))
   const queuedIDs = new Set(waiting ? turns.filter(t=>t.state==="queued" || t.state==="accepted").map(t=>t.message_id) : [])
   return { queued: messages.filter(m=>m.kind==="user" && queuedIDs.has(m.id)), chat: messages.filter(m=>(!queuedIDs.has(m.id) || m.kind!=="user") && !(m.kind==="notice"&&m.id.startsWith("lead-call-"))) }
 }

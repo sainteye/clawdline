@@ -27,13 +27,16 @@ import (
 // configuration in this fixture. The opt-in changes duration, never authority.
 type paSoakPeer struct {
 	sends, opens, closes atomic.Int32
+	resume               bool
 	lose                 atomic.Bool
 	lostResponse         chan struct{}
 	unknownSent          chan struct{}
 }
 
-func (*paSoakPeer) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
-	return paServerCaps(b), nil
+func (p *paSoakPeer) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
+	caps := paServerCaps(b)
+	caps.Resume = p.resume
+	return caps, nil
 }
 func (p *paSoakPeer) Open(context.Context, app.OpenRequest, func(context.Context, app.ProtocolEvent) error) (app.ProviderSession, error) {
 	p.opens.Add(1)
@@ -335,7 +338,7 @@ func paRunHTTPDurableSoak(t *testing.T, count int, duration time.Duration) {
 	}
 	h.client.CloseIdleConnections()
 	h.server.Close()
-	// Orderly source cleanup cancels the unsent queue but keeps unknown facts.
+	// Orderly shutdown keeps the unsent queue and its unknown predecessor.
 	if err := f.s.store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -372,8 +375,8 @@ func paRunHTTPDurableSoak(t *testing.T, count int, duration time.Duration) {
 	if p.sends.Load() != int32(count+1) {
 		t.Fatal("reopen replayed provider")
 	}
-	if err := reopened.StopProjectAssistants(context.Background()); err != nil {
-		t.Fatal(err)
+	if status := h.request(t, "POST", "/v1/settings/project-assistants", map[string]bool{"enabled": false}, nil); status != 200 {
+		t.Fatalf("explicit disable: HTTP %d", status)
 	}
 	cleaned, err := featurestore.New(reopened.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
 	if err != nil {

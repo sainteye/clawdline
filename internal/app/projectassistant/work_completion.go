@@ -32,6 +32,12 @@ func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, featu
 	}
 	x, err := check(ctx)
 	if err != nil {
+		var refusal *pa.Failure
+		if errors.As(err, &refusal) && refusal.Field == "work_completion_restart" {
+			if noteErr := r.recordWorkReviewWaiting(ctx, x, link); noteErr != nil {
+				return noteErr
+			}
+		}
 		return err
 	}
 	if workCompletionChain(x, link) >= pa.MaxRoutineFollowUpChain {
@@ -44,6 +50,20 @@ func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, featu
 			Fence: currentFence(x.Bot, x.Conversation), QuoteMessageID: link.ResultMessageID,
 			Text: WorkCompletionPrompt(link),
 		},
+	})
+	return err
+}
+
+func (r *Engine) recordWorkReviewWaiting(ctx context.Context, x Export, link pa.WorkLink) error {
+	command := r.command(link.Fence.Key, pa.SendOperation, "work-review-waiting-"+link.TaskID, link.ResultMessageID)
+	fence := link.Fence
+	message := pa.Message{ID: "work-review-waiting-" + link.TaskID, Fence: fence, TurnID: link.TurnID,
+		Kind: pa.NoticeMessage, Text: "Result received. Review will wait for the previous turn to recover.", At: r.o.Clock(),
+		Notice: &pa.NoticeRef{Key: pa.NoticeWorkReviewWaiting, Cause: link.TaskID}}
+	_, err := r.mutate(ctx, x.Bot, Mutation{
+		Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: message.ID},
+		Messages: []pa.Message{message},
+		Events:   []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}},
 	})
 	return err
 }
@@ -95,9 +115,10 @@ func workCompletionChain(x Export, link pa.WorkLink) int {
 // At the chain limit the person is told in the chat, under the same receipt
 // key, so the refusal is written once and the task is never woken later.
 func (r *Engine) refuseWorkCompletionChain(ctx context.Context, x Export, command pa.Command, link pa.WorkLink) error {
-	fence := currentFence(x.Bot, x.Conversation)
+	fence := link.Fence
 	text := fmt.Sprintf("Task %s finished, but the Bot did not take it over: %d review turns in a row reached the limit. Ask the Bot to continue if you want it to. / 任務 %s 已結束，但連續 %d 次接手已達上限，Bot 沒有再接手。需要的話請直接請 Bot 繼續。", link.TaskID, pa.MaxRoutineFollowUpChain, link.TaskID, pa.MaxRoutineFollowUpChain)
-	message := pa.Message{ID: "work-completion-limit-" + link.TaskID, Fence: fence, TurnID: link.TurnID, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock()}
+	message := pa.Message{ID: "work-completion-limit-" + link.TaskID, Fence: fence, TurnID: link.TurnID, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock(),
+		Notice: &pa.NoticeRef{Key: pa.NoticeWorkReviewHeld, Cause: link.TaskID}}
 	_, err := r.mutate(ctx, x.Bot, Mutation{
 		Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: message.ID},
 		Messages: []pa.Message{message},
@@ -124,8 +145,16 @@ func checkWorkCompletion(x Export, taskID, quoteID string, requireFinishedOrigin
 			if turn.ID != link.TurnID || !sameSessionOwner(turn.Fence, link.Fence) {
 				continue
 			}
-			if turn.MemoryRevision < x.Memory.ForgottenThrough ||
-				turn.State != pa.TurnSucceeded && (requireFinishedOrigin || turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
+			if turn.MemoryRevision < x.Memory.ForgottenThrough {
+				return runtimeFailure(pa.ContextStale, "work_completion_origin")
+			}
+			recovered := turn.State == pa.TurnFailed && turn.Failure != nil && turn.Failure.Field == pa.RestartResumedField
+			if !requireFinishedOrigin && restartInterrupted(turn) && link.ResultMessageID != "" {
+				// The result is already in chat. Keep the existing outbox
+				// pending until the original conversation is recovered.
+				return runtimeFailure(pa.CapacityFull, "work_completion_restart")
+			}
+			if turn.State != pa.TurnSucceeded && !recovered && (requireFinishedOrigin || turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
 				return runtimeFailure(pa.ContextStale, "work_completion_origin")
 			}
 			return nil
@@ -161,9 +190,10 @@ func (r *Engine) RefuseWorkCompletion(ctx context.Context, link pa.WorkLink, ref
 	if field != "" {
 		reason += " (" + field + ")"
 	}
-	fence := currentFence(x.Bot, x.Conversation)
+	fence := link.Fence
 	text := fmt.Sprintf("Task %s finished, but the Bot could not take it over: %s. Its result is above; ask the Bot to continue if you want it to. / 任務 %s 已結束，但 Bot 沒能接手：%s。結果在上方，需要的話請直接請 Bot 繼續。", link.TaskID, reason, link.TaskID, reason)
-	message := pa.Message{ID: "work-completion-refused-" + link.TaskID, Fence: fence, TurnID: link.TurnID, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock()}
+	message := pa.Message{ID: "work-completion-refused-" + link.TaskID, Fence: fence, TurnID: link.TurnID, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock(),
+		Notice: &pa.NoticeRef{Key: pa.NoticeWorkReviewHeld, Cause: link.TaskID}}
 	_, err = r.mutate(ctx, x.Bot, Mutation{
 		Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: message.ID},
 		Messages: []pa.Message{message},
