@@ -82,11 +82,16 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 			return out, err
 		}
 	}
-	if err = viewOwnChatHead(ctx, tx, &out.Head); err != nil {
+	chatHead := botreadtrace.Measure(ctx, "sqlite_chat_head")
+	err = viewOwnChatHead(ctx, tx, &out.Head)
+	chatHead()
+	if err != nil {
 		return out, err
 	}
 	if q.Request.Mode == pa.ReadViewSnapshot || q.Request.Mode == pa.ReadViewEvents {
+		background := botreadtrace.Measure(ctx, "sqlite_background_tasks")
 		out.Head.BackgroundTasks, err = backgroundTaskSummaries(ctx, tx, h.Key)
+		background()
 		if err != nil {
 			return out, err
 		}
@@ -128,9 +133,11 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 	if err != nil {
 		return app.ReadView{}, err
 	}
+	reactions := botreadtrace.Measure(ctx, "sqlite_reactions")
 	if out.Snapshot != nil {
 		for i := range out.Snapshot.QueuedMessages {
 			if err = messageReactions(ctx, tx, &out.Snapshot.QueuedMessages[i]); err != nil {
+				reactions()
 				return app.ReadView{}, err
 			}
 		}
@@ -138,11 +145,16 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 	for i := range out.Items {
 		if m := out.Items[i].Message; m != nil {
 			if err = messageReactions(ctx, tx, m); err != nil {
+				reactions()
 				return app.ReadView{}, err
 			}
 		}
 	}
-	if err = tx.Commit(); err != nil {
+	reactions()
+	commit := botreadtrace.Measure(ctx, "sqlite_commit")
+	err = tx.Commit()
+	commit()
+	if err != nil {
 		return app.ReadView{}, err
 	}
 	return out, nil
@@ -208,14 +220,17 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	// Leave room for navigation, recent transcript and result metadata even
 	// when queued work occupies most of the persisted conversation.
 	queueBudget := q.ByteLimit / 2
+	pending := botreadtrace.Measure(ctx, "sqlite_pending_turns")
 	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, queueBudget, queueBudget)
 	if err != nil {
+		pending()
 		return nil, err
 	}
 	for rows.Next() {
 		var raw, message sql.NullString
 		if err = rows.Scan(&raw, &message); err != nil {
 			rows.Close()
+			pending()
 			return nil, err
 		}
 		if !raw.Valid {
@@ -223,6 +238,7 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 		}
 		if !message.Valid {
 			rows.Close()
+			pending()
 			return nil, failure(pa.Invalid, "read_view_turn_message")
 		}
 		summary, e := viewTurn(raw.String, h)
@@ -235,6 +251,7 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 		}
 		if e != nil || m.ID != summary.MessageID || m.Kind != pa.UserMessage && m.Kind != pa.NoticeMessage || m.TurnID != summary.ID {
 			rows.Close()
+			pending()
 			return nil, failure(pa.Invalid, "read_view_turn_message")
 		}
 		out.PendingTurns = append(out.PendingTurns, summary)
@@ -243,6 +260,7 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	}
 	err = rows.Err()
 	rows.Close()
+	pending()
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +281,9 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 )
 SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_extract(j,'$.state') IN ('succeeded','failed','cancelled','unknown')`
 	var last sql.NullString
+	lastTurn := botreadtrace.Measure(ctx, "sqlite_last_turn")
 	err = tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, q.ByteLimit-*rawBytes).Scan(&last)
+	lastTurn()
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, nil
 	}
@@ -286,6 +306,7 @@ func viewRowFailure() app.ReadViewItem {
 }
 
 func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
+	defer botreadtrace.Measure(ctx, "sqlite_timeline")()
 	rows, err := tx.QueryContext(ctx, viewTimelineSQL(), out.Head.Key.MachineID, out.Head.Key.BotID,
 		q.Request.TeamCards, p.ID != "", p.Anchor, p.Kind, p.ID, q.Request.PageSize+1,
 		out.Head.Key.MachineID, out.Head.Key.BotID, out.Head.Key.BotID, q.ByteLimit, q.ByteLimit, q.ByteLimit, q.ByteLimit)

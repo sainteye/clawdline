@@ -67,6 +67,14 @@ func capacityServer(t *testing.T) *Server {
 func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 	s := capacityServer(t)
 	measures := s.capacityMeasures()
+	browserReadBounds := map[string]bool{
+		"console.quota_read_wait_milliseconds":        true,
+		"console.schedule_read_wait_milliseconds":     true,
+		"console.schedule_retry_first_milliseconds":   true,
+		"console.schedule_retry_ceiling_milliseconds": true,
+		"console.reads_out_per_target":                true,
+		"console.held_read_lost_milliseconds":         true,
+	}
 	for _, e := range capacity.Register() {
 		m := measures[e.Name]
 		if m == nil {
@@ -74,7 +82,7 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 			continue
 		}
 		r := m()
-		if e.Name == "bots.archive_bytes" || e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes || e.Name == capacity.BotsRosterClientRows || e.Name == capacity.BotsGroupPreviewAvatars || e.Name == capacity.BotsDispatchedStripRows ||
+		if browserReadBounds[e.Name] || e.Name == "bots.archive_bytes" || e.Name == capacity.BrowserCloseReceipts || e.Name == capacity.BrowserCloseReceiptBytes || e.Name == capacity.BotsRosterClientRows || e.Name == capacity.BotsGroupPreviewAvatars || e.Name == capacity.BotsDispatchedStripRows ||
 			strings.HasPrefix(e.Name, "console.view_plugin_") || strings.HasPrefix(e.Name, "console.transcript_quiet_") || e.Name == "console.transcript_slow_milliseconds" ||
 			e.Name == "console.copilot_session_report_batch" || e.Name == "console.copilot_session_report_refs" || e.Name == "console.copilot_session_report_sessions" {
 			if r.Known || r.Err == "" {

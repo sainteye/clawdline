@@ -49,12 +49,14 @@ func renderMeasures(t *testing.T) []byte {
 			continue
 		}
 		r := m()
+		// Keep the disk reading's shape pinned without depending on free space.
+		failing := r.Failing && name != capacity.MachineDiskLow
 		shapes = append(shapes, measureShape{
 			Name: name, Known: r.Known, Err: r.Err != "", Note: r.Note != "",
 			HasDiskFree:     r.HasDiskFree,
 			WindowSeconds:   r.WindowSeconds != 0,
 			DurableCounters: r.DurableCounters,
-			Failing:         r.Failing,
+			Failing:         failing,
 		})
 	}
 	sort.Slice(shapes, func(i, j int) bool { return shapes[i].Name < shapes[j].Name })
