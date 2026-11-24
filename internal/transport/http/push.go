@@ -52,36 +52,35 @@ const (
 // Per directory rather than per Server for the reason gate.go gives: the
 // authority behind it is the only writer of that directory's files, and a
 // second one would be a second writer.
+//
+// Only an opened store is kept. A failed open is not: until 2026-11-24 the
+// error was held for the life of the daemon, so one transient read or mkdir
+// failure refused every /v1/push/ route and stopped phone notifications until a
+// restart. The next caller opens it again, under pushMu, so concurrent callers
+// never race two opens of one directory.
 var (
-	pushStores sync.Map // dir -> *pushHold
+	pushStores sync.Map // dir -> *adapterpush.Store
 	pushMu     sync.Mutex
 )
 
-type pushHold struct {
-	store *adapterpush.Store
-	err   error
-}
-
 func (s *Server) push() (*adapterpush.Store, error) {
 	if held, ok := pushStores.Load(s.cfg.Dir); ok {
-		h := held.(*pushHold)
-		return h.store, h.err
+		return held.(*adapterpush.Store), nil
 	}
 	pushMu.Lock()
 	defer pushMu.Unlock()
 	if held, ok := pushStores.Load(s.cfg.Dir); ok {
-		h := held.(*pushHold)
-		return h.store, h.err
+		return held.(*adapterpush.Store), nil
 	}
 	store, err := adapterpush.Open(s.cfg.Dir, swiftDirs()...)
 	if err != nil {
-		log.Printf("push: the store at %s could not be opened: %v", s.cfg.Dir, err)
-	} else {
-		// A new subscription is refused at the register's limit.
-		store.SetLimit(CapacityLimit(capacity.PushSubscriptions))
+		log.Printf("push: the store at %s could not be opened; the next request tries again: %v", s.cfg.Dir, err)
+		return nil, err
 	}
-	pushStores.Store(s.cfg.Dir, &pushHold{store: store, err: err})
-	return store, err
+	// A new subscription is refused at the register's limit.
+	store.SetLimit(CapacityLimit(capacity.PushSubscriptions))
+	pushStores.Store(s.cfg.Dir, store)
+	return store, nil
 }
 
 // pushRoute is every /v1/push/ path. One handler rather than four
