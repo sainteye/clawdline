@@ -49,7 +49,7 @@ func TestBotRequestRoutesReadAndThePersonActs(t *testing.T) {
 	if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &page) != nil || len(page.Cards) != 1 {
 		t.Fatalf("list %d %s", rec.Code, rec.Body)
 	}
-	if v := page.Cards[0]; v.Done != 0 || v.Total != 3 || v.ProgressState != br.ProgressInProgress || v.UpdatedAt.IsZero() {
+	if v := page.Cards[0]; v.Done != 0 || v.Total != 3 || v.ProgressState != br.ProgressInProgress || v.UpdatedAt == "" {
 		t.Fatalf("row %+v", v)
 	}
 

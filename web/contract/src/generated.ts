@@ -442,6 +442,177 @@ export interface BoardWriteResult {
 }
 
 /**
+ * The person's message a card roots in.
+ */
+export interface BotRequestAuthority {
+  bot: string
+  conversation_id: string
+  message_id: string
+  turn_id: string
+}
+
+/**
+ * The card's one holder: `bot` is the holder Bot's id, `role` maker, reviewer or
+ * integrator.
+ */
+export interface BotRequestBaton {
+  bot: string
+  role: string
+}
+
+/**
+ * One checklist entry. `state` is open, done or not_needed.
+ */
+export interface BotRequestEntry {
+  key: string
+  label: string
+  note?: string
+
+  /**
+   * RFC 3339; absent while the entry is open.
+   */
+  reported_at?: string
+  reported_by?: string
+  state: string
+}
+
+/**
+ * One row of a card's history, oldest first.
+ */
+export interface BotRequestEvent {
+  /**
+   * `person` or `bot:<id>`.
+   */
+  actor: string
+  at: string
+  detail?: string
+  id: number
+  kind: string
+  version: number
+}
+
+/**
+ * One checklist mark in a check: `state` done or not_needed with a `note`; a label
+ * not on the card adds an entry.
+ */
+export interface BotRequestMark {
+  label: string
+  note?: string
+  state?: string
+}
+
+/**
+ * GET /v1/bot-request/cards?bot=&project=&state=&cursor=: at most 100 cards, most
+ * recently updated first.
+ */
+export interface BotRequestPage {
+  cards: BotRequestView[]
+  next_cursor?: string
+}
+
+/**
+ * The body of a person's POST, with an Idempotency-Key header. handoff takes
+ * to_bot, role and note; check takes entries; complete, cancel and reopen take an
+ * optional reason.
+ */
+export interface BotRequestPersonWrite {
+  entries?: BotRequestMark[]
+  expected_version: number
+  note?: string
+  reason?: string
+  role?: string
+  to_bot?: string
+}
+
+/**
+ * A refused card read or write. `error` is a bot_request_* code, `detail` the field
+ * it is about, and `version` the card's current version on
+ * bot_request_version_conflict.
+ */
+export interface BotRequestRefusal {
+  detail: string
+  error: string
+  version?: number
+}
+
+/**
+ * One reviewer Bot's recorded verdict (pass, conditional_pass, reject). Never
+ * edited.
+ */
+export interface BotRequestVerdict {
+  at: string
+  commit?: string
+  id: string
+  reviewer_bot: string
+  text?: string
+  verdict: string
+}
+
+/**
+ * One card as the console reads it. `done` of `total` checklist entries are done or
+ * not_needed; `progress_state` is the card's light. `events` is present only on a
+ * single-card read and a write's answer.
+ */
+export interface BotRequestView {
+  authority: BotRequestAuthority[]
+  baton: BotRequestBaton
+  board_item_id?: string
+
+  /**
+   * Every Bot the card has reached, in order.
+   */
+  chain: string[]
+  checklist: BotRequestEntry[]
+  closed_at?: string
+  created_at: string
+  created_by: string
+
+  /**
+   * 1 for the first completion, one more after each reopen.
+   */
+  cycle: number
+  description?: string
+  done: number
+  events?: BotRequestEvent[]
+  id: string
+  kind?: string
+  merged_into?: string
+  progress_state: string
+  project_id: string
+  project_path: string
+  split_from?: string
+
+  /**
+   * open, done, cancelled or merged.
+   */
+  state: string
+  title: string
+  total: number
+
+  /**
+   * The time of the card's last event.
+   */
+  updated_at: string
+  verdicts?: BotRequestVerdict[]
+  version: number
+
+  /**
+   * The ask_person question id the holder waits on, when it waits.
+   */
+  waiting?: string
+}
+
+/**
+ * A person's write: the card as it now stands. `replayed` when the Idempotency-Key
+ * answered an earlier write and nothing was written.
+ */
+export interface BotRequestWriteResult {
+  card: BotRequestView
+  changed: boolean
+  replayed?: boolean
+}
+
+/**
  * The answer to POST /complete: the outcome was recorded. Deliberately bare —
  * what the task did belongs in its result, which the broker already holds.
  */

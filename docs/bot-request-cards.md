@@ -603,9 +603,38 @@ reaches the Bot as `{code, field, version}`. Creation finds the person's message
 from a host notice, a routine run, a room, the network, a compaction or a Bot reply is refused
 `bot_request_no_person_authority`. The card tools are offered in Bot-to-Bot turns too (§7.2).
 
-Not built yet: `bot_request_id` on broker tasks, work links, `dispatch_work` and `message_bot`
-(§8.1); delivering the `bot_request.handoff` and `bot_request.done` outbox rows (the rows are
-queued once, nothing drains them); the handoff turn's card-scoped dispatch (§7.2); split and merge.
+Built on 2026-11-24 (second delivery, same API level 118):
+
+- **`bot_request_id` on tasks and links (§8.1): built.** `Record.BotRequestID`
+  (`internal/app/orchestrator/record.go`) is set only by `DispatchAssistant`, after
+  `botRequestCard` (`internal/app/orchestrator/bot_request_effects.go`) followed `merged_into` (at most
+  `MaxBotRequestCardHops`) and found the card open with the dispatching Bot in its chain; a task file
+  that names `bot_request_id` is refused (`draft.go`). It enters `AssistantRequestHash` and the host's
+  payload hash only when non-empty, and `WorkLink.BotRequestID` is `omitempty`, so old receipts keep
+  their hash. `dispatch_work` and `message_bot` take `bot_request_id`; `message_bot` adds the recipient
+  to the card's chain first (`Store.JoinBotRequestChain`).
+- **Handoff notice delivery: built.** The `bot_request.handoff` row is drained by
+  `runBotRequestHandoff` into one host-notice turn for the holder through
+  `Engine.WakeBotRequest` (`internal/app/projectassistant/bot_request_notice.go`), keyed
+  `pa.BotRequestHandoffKey(card, version)`: the runtime receipt for that key makes a retry, a restart
+  or a second drain queue nothing. A full Bot is retried until `pa.CompletionWakeRetryWindow`, as work
+  completions are; a handoff that was superseded or a closed card ends the row.
+- **Handoff can start work: built for the handoff-notice turn.** In a turn whose key names a card
+  (`pa.BotRequestHandoffCard`), `dispatch_work` and `message_bot` are accepted only when they name that
+  card and `br.HandoffDispatch` holds (open, person authority, this Bot holds it); anything else is
+  `bot_request_handoff_scope`. Other turns keep today's refusals.
+- **Completion delivery: built.** A completion queues two rows under the cycle's key:
+  `bot_request.done` pushes the person once (not idempotent, so an interrupted push is recorded unknown
+  and never resent) and `bot_request.done.notice` wakes each asking Bot once (idempotent through the
+  runtime receipt). A reopen starts a new cycle and so a new pair.
+- **Contract types: built.** `api/v1/bot-request.schema.json` generates `BotRequestView`,
+  `BotRequestPage`, `BotRequestEntry`, `BotRequestEvent`, `BotRequestVerdict`, `BotRequestBaton`,
+  `BotRequestAuthority`, `BotRequestPersonWrite`, `BotRequestMark`, `BotRequestWriteResult` and
+  `BotRequestRefusal` for Go and TypeScript; the HTTP handlers write those shapes.
+
+Not built yet: a Bot-to-Bot request turn whose exchange names a card (the recipient of a
+`message_bot` with `bot_request_id`) still cannot dispatch for it: the exchange does not record the
+card, and such turns keep their `peer_dispatch` / `bot_request_tools` refusals. Split and merge.
 
 **Relation to the wider Bot-to-Bot tool loss.** A separate report says Bots lose their tools in
 every Bot-to-Bot turn (`pa_disabled` / `bot_request_tools`). The handoff rule in §7.2 deliberately

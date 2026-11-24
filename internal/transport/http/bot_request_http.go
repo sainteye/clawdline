@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/contract"
 	br "github.com/sainteye/clawdline/internal/domain/botrequest"
 )
 
@@ -24,27 +25,44 @@ import (
 // Refusals carry the card's typed code (bot_request_*) and, on a version
 // conflict, the current version. The Bots' own routes are not here yet.
 
-// BotRequestView is one card as the console reads it.
-type BotRequestView struct {
-	br.Card
-	Done          int                     `json:"done"`
-	Total         int                     `json:"total"`
-	ProgressState string                  `json:"progress_state"`
-	Events        []store.BotRequestEvent `json:"events,omitempty"`
-}
+// The wire shapes are generated from api/v1/bot-request.schema.json, so the
+// console's TypeScript and these handlers cannot drift apart.
+type (
+	BotRequestView    = contract.BotRequestView
+	BotRequestPage    = contract.BotRequestPage
+	botRequestRefusal = contract.BotRequestRefusal
+)
 
-// BotRequestPage is one page of cards.
-type BotRequestPage struct {
-	Cards      []BotRequestView `json:"cards"`
-	NextCursor string           `json:"next_cursor,omitempty"`
+func botRequestTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339Nano)
 }
 
 func botRequestView(c br.Card, events []store.BotRequestEvent) BotRequestView {
 	done, total := c.Progress()
-	if c.Checklist == nil {
-		c.Checklist = []br.Entry{}
+	v := BotRequestView{
+		ID: c.ID, ProjectID: c.ProjectID, ProjectPath: c.ProjectPath, Kind: c.Kind, Title: c.Title, Description: c.Description,
+		CreatedBy: c.CreatedBy, Baton: contract.BotRequestBaton{Role: c.Baton.Role, Bot: c.Baton.Bot}, Chain: append([]string{}, c.Chain...),
+		BoardItemID: c.BoardItemID, State: c.State, Waiting: c.Waiting, MergedInto: c.MergedInto, SplitFrom: c.SplitFrom,
+		Cycle: c.Cycle, Version: c.Version, CreatedAt: botRequestTime(c.CreatedAt), UpdatedAt: botRequestTime(c.UpdatedAt),
+		ClosedAt: botRequestTime(c.ClosedAt), Done: int64(done), Total: int64(total), ProgressState: c.ProgressState(),
+		Authority: []contract.BotRequestAuthority{}, Checklist: []contract.BotRequestEntry{},
 	}
-	return BotRequestView{Card: c, Done: done, Total: total, ProgressState: c.ProgressState(), Events: events}
+	for _, a := range c.Authorities {
+		v.Authority = append(v.Authority, contract.BotRequestAuthority{Bot: a.Bot, ConversationID: a.ConversationID, TurnID: a.TurnID, MessageID: a.MessageID})
+	}
+	for _, e := range c.Checklist {
+		v.Checklist = append(v.Checklist, contract.BotRequestEntry{Key: e.Key, Label: e.Label, State: e.State, Note: e.Note, ReportedBy: e.ReportedBy, ReportedAt: botRequestTime(e.ReportedAt)})
+	}
+	for _, x := range c.Verdicts {
+		v.Verdicts = append(v.Verdicts, contract.BotRequestVerdict{ID: x.ID, Commit: x.Commit, Verdict: x.Verdict, Text: x.Text, ReviewerBot: x.ReviewerBot, At: botRequestTime(x.At)})
+	}
+	for _, e := range events {
+		v.Events = append(v.Events, contract.BotRequestEvent{ID: e.ID, Kind: e.Kind, Actor: e.Actor, Detail: e.Detail, Version: e.Version, At: botRequestTime(e.At)})
+	}
+	return v
 }
 
 func (s *Server) botRequestRoute(w http.ResponseWriter, r *http.Request) {
@@ -180,19 +198,7 @@ func (s *Server) botRequestPersonWrite(w http.ResponseWriter, r *http.Request, i
 		s.writeBotRequestError(w, err)
 		return
 	}
-	writeJSON(w, struct {
-		Card     BotRequestView `json:"card"`
-		Changed  bool           `json:"changed"`
-		Replayed bool           `json:"replayed,omitempty"`
-	}{botRequestView(res.Card, events), res.Changed, res.Replayed})
-}
-
-// botRequestRefusal is a card refusal on the wire: the shared refusal shape
-// plus the card's current version on a conflict.
-type botRequestRefusal struct {
-	Error   string `json:"error"`
-	Detail  string `json:"detail"`
-	Version int64  `json:"version,omitempty"`
+	writeJSON(w, contract.BotRequestWriteResult{Card: botRequestView(res.Card, events), Changed: res.Changed, Replayed: res.Replayed})
 }
 
 func (s *Server) writeBotRequestError(w http.ResponseWriter, err error) {

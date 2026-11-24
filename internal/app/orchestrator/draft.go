@@ -244,6 +244,9 @@ func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error
 // Every other field meets the same checks a caller's brief meets, so a template
 // asking for something this broker does not do is refused by name.
 func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, error) {
+	if len(d.BotRequestID) > 0 && string(d.BotRequestID) != "null" {
+		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", "bot_request_id is set by the Bot dispatch door only; dispatch without it")
+	}
 	return b.admitOwned(id, d, scheduled, detached, false)
 }
 
@@ -354,9 +357,6 @@ func (b *Broker) admitOwned(id string, d draft, scheduled, detached, assistant b
 		if len(raw) > 0 && string(raw) != "null" {
 			return badRaw(name + " is not supported by this broker yet; dispatch without it")
 		}
-	}
-	if len(d.BotRequestID) > 0 && string(d.BotRequestID) != "null" {
-		return badRaw("bot_request_id is set by the Bot dispatch door only; dispatch without it")
 	}
 	model := strings.TrimSpace(d.Model)
 	if model != "" && !modelName(model) {
