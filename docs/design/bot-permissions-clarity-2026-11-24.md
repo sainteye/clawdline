@@ -1,7 +1,7 @@
 # Bot permissions: clear copy and an overview of every Bot (design, 2026-11-24)
 
 Status: design only. No product code changes in this record. Base commit `f49bf1dfc`.
-The Bots settings modal this builds on is task 2c62d733 (branch head `ff848ed99`, not merged).
+The Bots settings modal this builds on is not merged yet (branch head `ff848ed99`).
 
 ## Why
 
