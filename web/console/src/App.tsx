@@ -527,7 +527,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   const closingRows = useClosingRows()
   const closeScope = fleetReaderMachine ?? null
   const rows = useMemo(() => closingRows.size
-    ? unfilteredRows.filter((row) => !closingRows.has(closingRowKey(closeScope, row)))
+    ? unfilteredRows.filter((row) => !closingRows.get(closingRowKey(closeScope, row))?.hidden)
     : unfilteredRows, [unfilteredRows, closeScope, closingRows])
   useEffect(() => {
     if (!fleetList && fleet.snapshot?.scan.complete && closingRows.size) {
@@ -817,7 +817,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
     const row = unfilteredRows.find((row) => row.id === id &&
       (!fleetTarget || row.execution_generation === fleetTarget.executionGeneration) &&
       (!("machine" in row) || row.machine === closeScope))
-    return row ? { machine: closeScope, row, title: detailSessionName(row) } : null
+    return row ? { machine: closeScope, row, title: detailSessionName(row), pinnedFleet: !!fleetList && !!fleetTarget } : null
   }
   const layoutRef = useRef({ closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
   layoutRef.current = { closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }

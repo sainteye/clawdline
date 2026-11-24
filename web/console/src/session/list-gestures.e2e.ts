@@ -41,6 +41,8 @@ const pane = (n: number) => "%" + n
 const SAFE = pane(701)
 const BLOCKED = pane(702)
 const UNKNOWN = pane(703)
+const FLEET_UNKNOWN = "owned:acp:fixture"
+const FLEET_EXECUTION = "a".repeat(32)
 const SPARE = pane(704)
 const NEEDS_ATTESTATION = pane(705)
 const RETAINED = pane(706)
@@ -67,6 +69,7 @@ type ReadingScenario =
   | "unnamed-bound-codex"
   | "unstarted-claude-refresh"
   | "session-gap"
+  | "fleet-close"
   | "callback-owner"
 let readingScenario: ReadingScenario = "normal"
 let callbackDone = false
@@ -191,6 +194,7 @@ const MOVED = { safe: 300, needsAttestation: 250, unknown: 200, spare: 100, spar
 let spareMoved = MOVED.spare
 
 function rows(): Row[] {
+  if (readingScenario === "fleet-close") return []
   if (boardTreeFixture) return [
     row(NEEDS_ATTESTATION, boardReviewerTitle, needsAttestationCloseability(), 500, { persona: "clawdline.persona.test-reviewer" }),
     row(SAFE, "Lead", safeCloseability(), 350, { icon: { accent: "#715546", cells: [["#715546"]] } }),
@@ -971,6 +975,9 @@ function daemon(): Server {
             detail: "still owed: landing",
             reasons: blockedCloseability().reasons,
           })
+        }
+        if (decodeURIComponent(closing[1]) === FLEET_UNKNOWN && force !== true) {
+          return json(res, 409, { error: "close_blocked", detail: "unreadable work" })
         }
         if (decodeURIComponent(closing[1]) === UNKNOWN && force !== true) {
           return json(res, 409, { error: "closeability_unknown", detail: "unreadable work" })
@@ -4973,6 +4980,87 @@ test("an unreadable close reopens a modal and only an explicit second press forc
     assert.equal(closes[1].version, closes[0].version)
     assert.notEqual(closes[1].key, closes[0].key)
   }))
+
+test("the Cloud fleet keeps its Grok close target through a refusal and an explicit override", async () => {
+  readingScenario = "fleet-close"
+  const { createServer: createViteServer } = await import("vite")
+  const fixturePage = "/fleet-close-fixture.html"
+  const fixtureEntry = "/fleet-close-fixture.js"
+  const fixtureID = "\0fleet-close-fixture.js"
+  // This row has arrived through the exact fleet projection. The rich replay
+  // has not caught up, so dropping the selection also drops the only reading.
+  const targetRow = row(FLEET_UNKNOWN, "Fixture Grok worker", unknownCloseability(), 200, {
+    backend: "owned", assistant: "grok", isClaude: false, state: "unknown", identity: "protocol",
+    execution_generation: FLEET_EXECUTION,
+  })
+  const vite = await createViteServer({
+    root: resolve(here, "../.."),
+    server: { host: "127.0.0.1", port: 0, proxy: { "/v1": { target: origin } } },
+    plugins: [{
+      name: "fleet-close-fixture",
+      resolveId(id) { if (id === fixtureEntry) return fixtureID },
+      load(id) {
+        if (id !== fixtureID) return
+        return `
+          import { createElement, useState } from "react"
+          import { createRoot } from "react-dom/client"
+          import App from "/src/App.tsx"
+          import { bootCatalog } from "/src/catalog.ts"
+          const target = { machineID: "fixture-machine", sessionID: ${JSON.stringify(FLEET_UNKNOWN)},
+            executionGeneration: ${JSON.stringify(FLEET_EXECUTION)} }
+          function Fixture() {
+            const [selected, setSelected] = useState(target)
+            return createElement(App, {
+              focusCloudSessions: true, fleetList: () => null,
+              fleetReaderMachine: target.machineID, fleetTarget: selected,
+              fleetTargetRow: selected ? ${JSON.stringify(targetRow)} : null,
+              onFleetClose: () => setSelected(null),
+            })
+          }
+          localStorage.setItem("ui_language", "zh-Hant")
+          void bootCatalog(() => "/v1/strings").then(() => createRoot(document.getElementById("root")).render(createElement(Fixture)))
+        `
+      },
+      configureServer(server) {
+        server.middlewares.use(fixturePage, async (_req, res) => {
+          const html = '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="root"></div><script type="module" src="' + fixtureEntry + '"></script>'
+          res.writeHead(200, { "content-type": "text/html" })
+          res.end(await server.transformIndexHtml(fixturePage, html))
+        })
+      },
+    }],
+  })
+  try {
+    await vite.listen()
+    const tab = await Tab.open(browser, vite.resolvedUrls!.local[0].replace(/\/$/, ""))
+    try {
+      await tab.go(fixturePage)
+      await tab.until("the pinned Grok detail opens", (s) => s.detailName?.includes("Fixture Grok worker") === true)
+      await tab.press("#detail-actions-trigger")
+      await tab.press("#session-end")
+      await tab.until("work has been checked", (s) => s.confirmDisabled === false)
+      await tab.press("#action-confirm-go")
+      const warning = await tab.until("the fleet presents the force-close question after the refusal", (s) =>
+        s.sheet !== null && (s.sheetSay ?? "").includes("是否要強制關閉"))
+      assert.equal(warning.focused, "action-confirm-cancel")
+      const first = closes.filter(({ id }) => id === FLEET_UNKNOWN)
+      assert.equal(first.length, 1)
+      assert.notEqual(first[0].force, true)
+      await tab.press("#action-confirm-go")
+      await tab.until("the successful close returns to the fleet list", (s) => s.sheet === null && !s.detailName)
+      const attempts = closes.filter(({ id }) => id === FLEET_UNKNOWN)
+      assert.equal(attempts.length, 2)
+      assert.equal(attempts[1].force, true)
+      assert.equal(attempts[1].version, attempts[0].version)
+      assert.notEqual(attempts[1].key, attempts[0].key)
+    } finally {
+      await tab.close()
+    }
+  } finally {
+    readingScenario = "normal"
+    await vite.close()
+  }
+})
 
 test("a phone names a pending callback and clears it when its result arrives", () =>
   inTab(async (tab) => {
