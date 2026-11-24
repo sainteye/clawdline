@@ -1133,6 +1133,8 @@
   "capacityRow.bots.memory_search_results.what": "Matches one Bot memory search returns.",
   "capacityRow.bots.message_bytes.full": "The tool message is refused before acceptance.",
   "capacityRow.bots.message_bytes.what": "Size of one Bot tool message in UTF-8 bytes.",
+  "capacityRow.bots.room_pictures.full": "A room message with more pictures is refused before it is sent.",
+  "capacityRow.bots.room_pictures.what": "Pictures one group chat message carries.",
   "capacityRow.bots.work_message_bytes.full": "The message to the work Session is refused before acceptance; nothing is typed.",
   "capacityRow.bots.work_message_bytes.what": "Size of one Bot message to its own work Session in UTF-8 bytes.",
   "capacityRow.bots.name_runes.full": "The name is refused before saving. Shorten it; the existing Bot and its conversation stay available.",

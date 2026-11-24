@@ -3334,6 +3334,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.room_pictures",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoomPictures"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.roster_check_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

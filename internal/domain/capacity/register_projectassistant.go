@@ -292,5 +292,8 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsAttachmentBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxAttachmentBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxAttachmentBytes"}},
+		{Name: BotsRoomPictures, Class: Buffer, Unit: Rows, Limit: pa.MaxRoomPictures, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxRoomPictures"}},
 	}...)
 }

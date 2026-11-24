@@ -1133,6 +1133,8 @@
   "capacityRow.bots.memory_search_results.what": "一次 Bot 記憶搜尋回傳的結果數。",
   "capacityRow.bots.message_bytes.full": "超過上限的工具訊息不會被接受。",
   "capacityRow.bots.message_bytes.what": "單則 Bot 工具訊息的 UTF-8 位元組數。",
+  "capacityRow.bots.room_pictures.full": "超過張數的群組訊息在送出前就被拒絕。",
+  "capacityRow.bots.room_pictures.what": "一則群組聊天訊息可附的圖片張數。",
   "capacityRow.bots.work_message_bytes.full": "超過上限時拒絕這則給工作階段的訊息，不會打進終端機。",
   "capacityRow.bots.work_message_bytes.what": "單則 Bot 傳給自己派出工作階段的訊息 UTF-8 位元組數。",
   "capacityRow.bots.name_runes.full": "名稱超過上限時不會儲存。請縮短名稱；原有 Bot 與對話仍保留。",

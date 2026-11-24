@@ -791,6 +791,7 @@ const (
 	BotsOutputChunkBytes      = "bots.output_chunk_bytes"
 	BotsInlineImageBytes      = "bots.inline_image_bytes"
 	BotsAttachmentBytes       = "bots.attachment_bytes"
+	BotsRoomPictures          = "bots.room_pictures"
 	BotsMemoryEntries         = "bots.memory_entries"
 	BotsMemorySearchResults   = "bots.memory_search_results"
 	BotsSteerAnswer           = "bots.steer_answer_ms"
