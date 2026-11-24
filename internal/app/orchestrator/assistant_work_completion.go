@@ -75,15 +75,16 @@ func deliverAssistantWork(ctx context.Context, b *Broker, r Record, sink func(co
 		}
 		return effectResult{deferErr: errors.New("Bot completion host is unavailable")}
 	}
-	err := sink(HostContext(ctx), AssistantWorkSnapshotOf(r))
+	// The window is read once, so the host and the outbox agree on whether
+	// this attempt is the last one.
+	snapshot := AssistantWorkSnapshotOf(r)
+	snapshot.LastAttempt = b.now().Sub(since) >= pa.CompletionWakeRetryWindow
+	err := sink(HostContext(ctx), snapshot)
 	if err == nil {
 		return effectResult{state: store.EffectDone, outcome: outcome}
 	}
 	code := pa.Code(err)
-	if AssistantWorkRefused(code) {
-		return effectResult{state: store.EffectFailed, outcome: string(code)}
-	}
-	if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
+	if AssistantWorkRefused(code) || snapshot.LastAttempt {
 		return effectResult{state: store.EffectFailed, outcome: string(code)}
 	}
 	return effectResult{deferErr: err}
@@ -91,13 +92,22 @@ func deliverAssistantWork(ctx context.Context, b *Broker, r Record, sink func(co
 
 // AssistantWorkRefused is whether a host refusal of a Bot work delivery is
 // final: the outbox stops retrying it, so the host tells the person in the
-// chat instead of failing silently.
+// chat instead of failing silently. A full Bot (pa.CapacityFull, such as
+// active_bots or owned_cleanup) is transient and retries until the window
+// ends.
 func AssistantWorkRefused(code pa.ErrorCode) bool {
 	switch code {
-	case pa.ScopeDenied, pa.Revoked, pa.NotFound, pa.ContextStale, pa.Invalid, pa.IdempotencyConflict, pa.CapacityFull:
+	case pa.ScopeDenied, pa.Revoked, pa.NotFound, pa.ContextStale, pa.Invalid, pa.IdempotencyConflict:
 		return true
 	}
 	return false
+}
+
+// AssistantWorkGivenUp is whether the host should tell the person that this
+// delivery ends without a review turn: a final refusal, or a full Bot on the
+// last attempt of the retry window.
+func AssistantWorkGivenUp(s AssistantWorkSnapshot, code pa.ErrorCode) bool {
+	return AssistantWorkRefused(code) || (code == pa.CapacityFull && s.LastAttempt)
 }
 
 // HostContext keeps the cancellation of the request that recorded the

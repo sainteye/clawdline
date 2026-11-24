@@ -5612,7 +5612,7 @@
     "internal/app/orchestrator/owned_child.go": "40fa15e1b28ec67434b23a55373b43996a2bda27972ae355feebef938456293f",
     "internal/app/orchestrator/policy.go": "f165e3bbc9b3c96b60a9a14de6b7cbd942eed6146771a4cd59ae2c7a4385624f",
     "internal/app/orchestrator/policy_projection.go": "964d5d2db030ae7a489bfc00d393c68c74d8aaef05be70c3dd489cf45191d925",
-    "internal/app/orchestrator/project_assistant_actor.go": "4b653d6efbe88f02bfa503fdefeb0298a679950e8dd7aa2e6db6fae60ebe16e3",
+    "internal/app/orchestrator/project_assistant_actor.go": "aeee55c53069e398ab626f6f1801dcfa82d7debedc81b2db8e1e79fb539cc5fe",
     "internal/app/orchestrator/project_assistant_message.go": "020e300ef73fc3cc5076bc36dec4edc5f3385d455555adedd2dfa08e11f1717c",
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",

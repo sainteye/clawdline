@@ -141,6 +141,7 @@ type hostFixture struct {
 	launcher                *fixtureLauncher
 	seq, factories          atomic.Int64
 	revoked, projectChanged atomic.Bool
+	capacityFull            atomic.Bool
 }
 
 func fixtureGit(t *testing.T, dir string, args ...string) string {
@@ -189,6 +190,9 @@ func newHostFixture(t *testing.T) *hostFixture {
 			s := pa.SourceStatus{MachineID: "source", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
 			if f.revoked.Load() {
 				s.State = pa.SourceRevoked
+			}
+			if f.capacityFull.Load() {
+				return s, &pa.Failure{Code: pa.CapacityFull, Field: "active_bots"}
 			}
 			return s, nil
 		},
