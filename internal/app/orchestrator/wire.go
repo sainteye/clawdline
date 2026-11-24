@@ -99,9 +99,13 @@ func InventoryPayload(inv Inventory) map[string]any {
 			"branch":        nullable(row.Branch),
 			"path":          path,
 			"branch_exists": row.Branched,
-			"why":           row.Why,
-			"age_seconds":   row.Age,
-			"do":            row.Do,
+			// The landing state that made the delivery finished: landed,
+			// incorporated, nothing_to_land or abandoned; null for a legacy
+			// row with no landing record.
+			"settlement":  nullable(string(row.Landing)),
+			"why":         row.Why,
+			"age_seconds": row.Age,
+			"do":          row.Do,
 		})
 	}
 	return map[string]any{

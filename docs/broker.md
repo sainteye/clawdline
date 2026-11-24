@@ -89,6 +89,19 @@ Landing 是 task 的終止狀態以外、唯一回答「這份交付後來怎麼
 | `nothing_to_land` | task 沒有寫出要落地的東西 | 只有 orchestrator token | branch 與 checkout 的既有證據都沒有顯示寫入 |
 | `abandoned` | 這份交付不採用 | task secret 或 orchestrator token | 這是處置決定，不冒充 Git 證明 |
 
+**What each settled word lets the inventory offer (2026-11-25).** A finished task's clean checkout
+is listed under `droppable` (`do: dispose`) only when the checkout holds nothing the branch and the
+record do not, and its owner is provably gone. Each droppable row names the landing state as
+`settlement`. `landed`, and any settled word whose branch is on its recorded target, gives
+`merged_and_clean` or `branch_empty`. `nothing_to_land` and `abandoned` give `branch_empty` when the
+branch has no commit past its base; an abandoned branch that did commit keeps its checkout, because
+"not wanted" is a disposition, not evidence. `incorporated` gives `carried_by_landing` while the
+carrier's record is still `landed` on the same target and commit, that commit is still on the
+target, and the branch has nothing past the delivery head the incorporation proved. Any failed read,
+a dirty checkout or a live owner offers nothing. Branches are never removed by this advice.
+Before this, only the merged case was offered, so every incorporated, nothing-to-land and abandoned
+checkout fell out of the inventory and `tools/check-worktrees.sh` called it `unknown`.
+
 **`landed` the broker records by itself (`landing_detect.go`, 2026-09-25).** A landing used to be settled only when
 somebody asked: a root that forgot, or a root refused `409 close_blocked` when it tried to close. In the root transcripts
 read that day one root was refused 16 times, the person pressed close six times, settling took 48 calls, and the code
