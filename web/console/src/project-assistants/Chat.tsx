@@ -558,11 +558,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
   // A changed roster row for this Bot runs the existing single-flight cursor read.
   const pushSignal=chatPushSignal(summary)
-  const lastPushSignal=useRef(pushSignal)
+  const lastPushSignal=useRef(pushSignal),lastPushed=useRef(pushed)
   useEffect(()=>{
-    if(lastPushSignal.current===pushSignal)return
+    // Losing the stream replaces the slow fallback timer with a catch-up read,
+    // after which the ordinary cadence resumes.
+    const lost=lastPushed.current&&!pushed
+    lastPushed.current=pushed
+    if(lastPushSignal.current===pushSignal&&!lost)return
     lastPushSignal.current=pushSignal
-    if(!pushed||!currentData.current||recovery.current||document.visibilityState==="hidden")return
+    if(!pushed&&!lost||!currentData.current||recovery.current||document.visibilityState==="hidden")return
     if(timer.current){clearTimeout(timer.current);timer.current=null}
     void refresh(false)
   },[pushSignal,pushed,refresh])
