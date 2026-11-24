@@ -10,7 +10,7 @@ export function closingRowKey(machine: string | null, row: ClosingRow): string {
   return JSON.stringify([machine, row.id, row.execution_generation ?? row.sessionId ?? null])
 }
 
-type Close = { machine: string | null; confirmed: boolean; hidden: boolean }
+type Close = { machine: string | null; confirmed: boolean }
 let rows: ReadonlyMap<string, Close> = new Map()
 const listeners = new Set<() => void>()
 
@@ -28,9 +28,9 @@ function subscribe(listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
-export function beginClosingRow(key: string, machine: string | null, hideWhilePending: boolean): boolean {
+export function beginClosingRow(key: string, machine: string | null): boolean {
   if (rows.has(key)) return false
-  publish(new Map(rows).set(key, { machine, confirmed: false, hidden: hideWhilePending }))
+  publish(new Map(rows).set(key, { machine, confirmed: false }))
   return true
 }
 
@@ -38,7 +38,7 @@ export function settleClosingRow(key: string, confirmed: boolean): void {
   const close = rows.get(key)
   if (!close) return
   const next = new Map(rows)
-  if (confirmed) next.set(key, { ...close, confirmed, hidden: true })
+  if (confirmed) next.set(key, { ...close, confirmed })
   else next.delete(key)
   publish(next)
 }
