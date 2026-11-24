@@ -201,6 +201,30 @@ type EditBot struct {
 	// reset it; only the person's edit reaches this field.
 	ManageTeam        *bool `json:"manage_team,omitempty"`
 	BackgroundThreads int   `json:"background_threads,omitempty"`
+	// Base is the settings the editor started from. With it, a save conflicts
+	// only on a field both this edit and another writer changed; without it
+	// (older clients) ExpectedVersion must equal the Bot's version.
+	Base *EditBase `json:"base,omitempty"`
+	// OverwriteConflicts keeps this edit's value for every conflicting field.
+	OverwriteConflicts bool `json:"overwrite_conflicts,omitempty"`
+}
+
+// EditBase holds the editable settings as the editor read them, in stored form.
+type EditBase struct {
+	Name              string
+	Appearance        Appearance
+	Instructions      string
+	Agent             Agent
+	PermissionPolicy  PermissionPolicy
+	Mode              string
+	RuntimeSettings   RuntimeSettings
+	LoginProfile      string
+	Extensions        ExtensionSelection
+	FallbackAgents    []Agent
+	FallbackSteps     []FallbackStep
+	Notify            string
+	BackgroundThreads int
+	ManageTeam        bool
 }
 
 // ContextSample is the last provider-reported usage after a successful turn.

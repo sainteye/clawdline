@@ -18,6 +18,10 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
   w:Words
 }) {
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[own,setOwn]=useState(false),[draft,setDraft]=useState("")
+  // The reply the person pressed, kept from the press until the server's
+  // state replaces it: "sending" before the answer is accepted, "sent" once
+  // it is, "failed" when it was not. A reload shows the server's answer.
+  const [choice,setChoice]=useState<{option:string|null;text:string;phase:"sending"|"sent"|"failed"}|null>(null)
   const pending=useRef(false),requested=useRef("")
   const state=permissionState(summary)
   const decision=offer?.decision
@@ -29,31 +33,52 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
   const send=async(option:W.ProjectAssistantPermissionOption|null,text?:string)=>{
     if(!offer||!enabled||pending.current||state!=="pending")return
     pending.current=true;setBusy(true);setError("")
-    try{await onAnswer(offer,option,text);setOwn(false);setDraft("")}catch(e){setError(errorCode(e))}
+    setChoice({option:option?.id??null,text:option?.label??text??"",phase:"sending"})
+    try{await onAnswer(offer,option,text);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
+    catch(e){setError(errorCode(e));setChoice(c=>c&&{...c,phase:"failed"});if(!option)setOwn(true)}
     finally{pending.current=false;setBusy(false)}
   }
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
+  const sent=state==="pending"&&choice?.phase==="sent"
+  const locked=busy||sent
   const status=state==="answered"?(answered?w.decisionAnswered.replace("{text}",answered):""):state==="expired"?w.decisionExpired:state==="pending"?"":w.decisionWithdrawn
-  return <section className="pa-card pa-permission pa-decision" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state} aria-label={w.decisionTitle} aria-busy={busy||undefined}>
-    <h3>{w.decisionTitle}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>
+  const optionState=(id:string|null)=>choice&&choice.option===id&&choice.phase!=="failed"?"chosen":choice&&choice.phase!=="failed"?"other":undefined
+  return <section className="pa-card pa-permission pa-decision" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state} data-reply={state==="pending"?choice?.phase:undefined} aria-label={w.decisionTitle} aria-busy={busy||undefined}>
+    <h3>{w.decisionTitle}{state==="pending"&&!sent&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>
     <p className="pa-decision-question">{decision?.question??summary.title}</p>
     {decision?.request&&<details className="pa-decision-context">
       <summary>{w.decisionContext.replace("{name}",requesterName||decision.source_bot_id||"")}</summary>
       <p>{decision.request}</p>
     </details>}
     {status&&<p className="pa-permission-state" role="status">{status}</p>}
-    {offer&&state==="pending"&&<>
+    {sent&&choice&&<p className="pa-permission-state pa-decision-sent" role="status">
+      <span>{w.decisionAnswered.replace("{text}",choice.text)}</span>
+      <span className="pa-decision-working"><span className="pa-decision-spinner" aria-hidden="true"/>{w.decisionSentWorking.replace("{name}",askerName)}</span>
+    </p>}
+    {offer&&state==="pending"&&!sent&&<>
       <small className="pa-decision-note">{w.decisionSuggested} · {w.decisionSendsAs}</small>
       <div className="pa-permission-options">
-        {offer.options.map(option=><button key={option.id} type="button" data-option-kind="decision" disabled={!enabled||busy} onClick={()=>void send(option)}><span>{option.label}</span></button>)}
-        {!own&&<button type="button" className="pa-decision-own" disabled={!enabled||busy} onClick={()=>setOwn(true)}><span>{w.decisionOwn}</span></button>}
+        {offer.options.map(option=>{const mark=optionState(option.id)
+          return <button key={option.id} type="button" data-option-kind="decision" data-choice={mark} aria-pressed={mark==="chosen"||undefined} disabled={!enabled||locked} onClick={()=>void send(option)}>
+            <span className="pa-decision-mark" aria-hidden="true">{mark==="chosen"?(busy?<span className="pa-decision-spinner"/>:"✓"):null}</span>
+            <span>{option.label}</span>
+            {mark==="chosen"&&busy&&<span className="pa-visually-hidden">{w.decisionSending}</span>}
+          </button>})}
+        {!own&&<button type="button" className="pa-decision-own" data-choice={choice&&choice.phase!=="failed"?"other":undefined} disabled={!enabled||locked} onClick={()=>setOwn(true)}><span>{w.decisionOwn}</span></button>}
+        <button type="button" className="pa-decision-own pa-decision-dismiss" data-choice={choice&&choice.phase!=="failed"?"other":undefined} disabled={!enabled||locked} title={w.decisionDismissText} onClick={()=>void send(null,w.decisionDismissText)}><span>{w.decisionDismiss}</span></button>
       </div>
       {own&&<form className="pa-decision-form" onSubmit={e=>{e.preventDefault();const text=draft.trim();if(text)void send(null,text)}}>
-        <textarea value={draft} autoFocus rows={2} maxLength={2000} disabled={!enabled||busy} aria-label={w.decisionOwnPlaceholder.replace("{name}",askerName)} placeholder={w.decisionOwnPlaceholder.replace("{name}",askerName)} onChange={e=>setDraft(e.target.value)}/>
-        <button type="submit" className="pa-pill" disabled={!enabled||busy||!draft.trim()}>{w.decisionSend}</button>
+        <textarea value={draft} autoFocus rows={2} maxLength={2000} disabled={!enabled||locked} aria-label={w.decisionOwnPlaceholder.replace("{name}",askerName)} placeholder={w.decisionOwnPlaceholder.replace("{name}",askerName)} onChange={e=>setDraft(e.target.value)}/>
+        <button type="submit" className="pa-pill" data-choice={optionState(null)} disabled={!enabled||locked||!draft.trim()}>
+          {choice?.option===null&&busy&&<span className="pa-decision-spinner" aria-hidden="true"/>}
+          {choice?.option===null&&busy?w.decisionSending:w.decisionSend}
+        </button>
       </form>}
     </>}
-    {error&&<p role="alert">{w.permissionAnswerFailed} ({error})</p>}
+    {error&&state==="pending"&&<div className="pa-decision-failed" role="alert">
+      <p>{w.decisionSendFailed} ({error})</p>
+      {choice&&choice.option!==null&&<button type="button" className="pa-pill" disabled={!enabled||busy} onClick={()=>{const o=offer?.options.find(x=>x.id===choice.option);if(o)void send(o)}}>{w.decisionRetry}</button>}
+    </div>}
   </section>
 }
 

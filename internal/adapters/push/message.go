@@ -18,6 +18,19 @@ func WithBotDestination(ctx context.Context, bot, conversation string) context.C
 	return context.WithValue(ctx, botDestinationKey{}, botDestination{bot, conversation})
 }
 
+type botDecisionKey struct{}
+
+// WithBotDecision names the question a Bot notification is about, so the tap
+// opens the chat at that card.
+func WithBotDecision(ctx context.Context, permission string) context.Context {
+	return context.WithValue(ctx, botDecisionKey{}, permission)
+}
+
+func BotDecisionFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(botDecisionKey{}).(string)
+	return id
+}
+
 func BotDestinationFromContext(ctx context.Context) (string, string) {
 	target, _ := ctx.Value(botDestinationKey{}).(botDestination)
 	return target.bot, target.conversation

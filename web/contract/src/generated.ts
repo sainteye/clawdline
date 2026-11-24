@@ -5664,6 +5664,26 @@ export interface ProjectAssistantDispatchedWork {
   running: number
 }
 
+/**
+ * Editable Bot settings as the editor read them, copied from the Bot.
+ */
+export interface ProjectAssistantEditBase {
+  agent?: ProjectAssistantAgent
+  appearance: ProjectAssistantAppearance
+  background_threads?: number
+  extensions?: ProjectAssistantExtensionSelection
+  fallback_agents?: ProjectAssistantAgent[]
+  fallback_steps?: ProjectAssistantFallbackStep[]
+  instructions: string
+  login_profile?: string
+  manage_team?: boolean
+  mode?: string
+  name: string
+  notify?: string
+  permission_policy?: ProjectAssistantPermissionPolicy
+  runtime_settings?: ProjectAssistantRuntimeSettings
+}
+
 export interface ProjectAssistantEditRequest {
   command: ProjectAssistantCommand
   settings: ProjectAssistantEditSettings
@@ -5682,6 +5702,14 @@ export interface ProjectAssistantEditSettings {
    * Maximum simultaneous background threads selected for this Bot.
    */
   background_threads?: number
+
+  /**
+   * The settings the editor started from. With it, a save is refused only for a
+   * field both this edit and another writer changed; fields this edit left alone
+   * take their current values, and unrelated Bot activity never conflicts. Without
+   * it expected_version must match.
+   */
+  base?: ProjectAssistantEditBase
   expected_version: number
   extensions?: ProjectAssistantExtensionSelection
 
@@ -5702,6 +5730,11 @@ export interface ProjectAssistantEditSettings {
   mode?: string
   name: string
   notify?: string
+
+  /**
+   * Keep this edit's value for every field that conflicts with base.
+   */
+  overwrite_conflicts?: boolean
 
   /**
    * Empty leaves the permission setting unchanged (API level 65).

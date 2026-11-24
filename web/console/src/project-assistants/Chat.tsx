@@ -548,7 +548,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [images,setImages]=useState<MarkupPicture[]>([])
   const editBot=async(settings:W.ProjectAssistantEditSettings,original?:W.ProjectAssistantBot)=>{
     const result=await mutate(({bot:fresh},signal)=>{
-      if(original&&fresh.version!==original.version){
+      // A save that names its base is rebased by the source, field by field.
+      if(original&&!settings.base&&fresh.version!==original.version){
         if(!sameEditableSettings(original,fresh))throw failure("pa_stale_version")
         settings={...settings,expected_version:fresh.version}
       }

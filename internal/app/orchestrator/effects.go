@@ -220,6 +220,7 @@ var effectHandlers = map[string]effectHandler{
 	EffectCapacityPush:          {idempotent: false, run: runCapacityPush},
 	EffectWaitingPush:           {idempotent: false, run: runWaitingPush},
 	EffectBotCompletedPush:      {idempotent: false, run: runBotCompletedPush},
+	EffectBotDecisionPush:       {idempotent: false, run: runBotDecisionPush},
 	EffectWorkItemCompletedPush: {idempotent: false, run: runWorkItemCompletedPush},
 	EffectSessionDeliveryPush:   {idempotent: false, run: runCompletionPush},
 	EffectFanoutCompletedPush:   {idempotent: false, run: runCompletionPush},

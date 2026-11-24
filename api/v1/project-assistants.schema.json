@@ -606,6 +606,28 @@
         "role_snapshot_ref"
       ]
     },
+    "ProjectAssistantEditBase": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Editable Bot settings as the editor read them, copied from the Bot.",
+      "properties": {
+        "name": { "type": "string" },
+        "appearance": { "$ref": "#/$defs/ProjectAssistantAppearance" },
+        "instructions": { "type": "string" },
+        "agent": { "$ref": "#/$defs/ProjectAssistantAgent" },
+        "permission_policy": { "$ref": "#/$defs/ProjectAssistantPermissionPolicy" },
+        "mode": { "type": "string" },
+        "runtime_settings": { "$ref": "#/$defs/ProjectAssistantRuntimeSettings" },
+        "login_profile": { "type": "string" },
+        "extensions": { "$ref": "#/$defs/ProjectAssistantExtensionSelection" },
+        "fallback_agents": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/ProjectAssistantAgent" } },
+        "fallback_steps": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/ProjectAssistantFallbackStep" } },
+        "notify": { "type": "string" },
+        "background_threads": { "type": "integer" },
+        "manage_team": { "type": "boolean" }
+      },
+      "required": ["name", "appearance", "instructions"]
+    },
     "ProjectAssistantEditSettings": {
       "type": "object",
       "additionalProperties": false,
@@ -613,6 +635,14 @@
       "properties": {
         "roster": {
           "$ref": "#/$defs/ProjectAssistantRosterEdit"
+        },
+        "base": {
+          "$ref": "#/$defs/ProjectAssistantEditBase",
+          "description": "The settings the editor started from. With it, a save is refused only for a field both this edit and another writer changed; fields this edit left alone take their current values, and unrelated Bot activity never conflicts. Without it expected_version must match."
+        },
+        "overwrite_conflicts": {
+          "type": "boolean",
+          "description": "Keep this edit's value for every field that conflicts with base."
         },
         "expected_version": {
           "type": "integer"

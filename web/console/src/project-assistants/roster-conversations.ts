@@ -13,7 +13,7 @@ import {projectKey,pinnedGroupKey} from "./roster-groups.ts"
 export type RosterRoom = W.ProjectAssistantGroup & {last_entry?:W.ProjectAssistantRoomEntry & {at?:string};room?:W.ProjectAssistantRoomState}
 export type GroupRosterEntry = {source:SourceClient;group:RosterRoom;status:W.ProjectAssistantSourceStatus}
 export type RosterConversation = {kind:"bot";key:string;machineID:string;projectID:string;item:W.ProjectAssistantBotSummary}|{kind:"group";key:string;machineID:string;projectID:string;entry:GroupRosterEntry}
-export type ConversationSection = {key:string;kind:"lead"|"pinned"|"project"|"custom"|"unread"|"working"|"machine";name?:string;machineID:string;items:RosterConversation[]}
+export type ConversationSection = {key:string;kind:"lead"|"pinned"|"project"|"custom"|"needsYou"|"unread"|"working"|"machine";name?:string;machineID:string;items:RosterConversation[]}
 // A group and a Bot may have the same source-qualified ID without sharing preferences.
 export const groupConversationKey=(key:W.ProjectAssistantBotKey)=>JSON.stringify(["group",key.machine_id,key.bot_id])
 export const personalRosterProject = "personal"
@@ -65,12 +65,14 @@ export function orderedConversationSections(sections:ConversationSection[],order
   if(order==="default"||!sections.length)return sections
   const rows=sections.flatMap(section=>section.items)
   if(order==="unread"){
-    // Unread first, then working: a Bot's own work, then Bots waiting on the
-    // Sessions they dispatched. A Bot that is both appears once, under unread.
-    const unread=rows.filter(row=>row.kind==="bot"&&row.item.unread_count>0)
+    // Bots waiting for the person's answer first, then unread, then working:
+    // a Bot's own work, then Bots waiting on the Sessions they dispatched.
+    // A Bot appears once, in the first of these that applies.
+    const needsYou=rows.filter(row=>row.kind==="bot"&&stateOf(row.item)==="needsInput")
+    const unread=rows.filter(row=>row.kind==="bot"&&!needsYou.includes(row)&&row.item.unread_count>0)
     const busy=(state:string)=>rows.filter(row=>row.kind==="bot"&&!(row.item.unread_count>0)&&stateOf(row.item)===state)
     const working=[...busy("working"),...busy("waitingOnWork")]
-    const lifted:ConversationSection[]=[{key:"unread-section",kind:"unread",machineID:"",items:unread},{key:"working-section",kind:"working",machineID:"",items:working}]
+    const lifted:ConversationSection[]=[{key:"needs-you-section",kind:"needsYou",machineID:"",items:needsYou},{key:"unread-section",kind:"unread",machineID:"",items:unread},{key:"working-section",kind:"working",machineID:"",items:working}]
     return [...lifted.filter(section=>section.items.length),...sections]
   }
   const machines=new Map<string,ConversationSection>()

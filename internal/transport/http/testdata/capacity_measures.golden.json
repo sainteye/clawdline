@@ -1007,6 +1007,11 @@
     "Note": true
   },
   {
+    "Name": "bots.settings_rebase_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.shared_memory_entries",
     "Known": true,
     "Note": true
@@ -3254,6 +3259,11 @@
   {
     "Name": "notification.rules_rows",
     "Known": true
+  },
+  {
+    "Name": "orchestrator.bot_decision_push_runes",
+    "Known": true,
+    "Note": true
   },
   {
     "Name": "orchestrator.delivery_bytes",

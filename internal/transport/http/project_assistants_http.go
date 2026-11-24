@@ -633,7 +633,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, BackgroundThreads: int(settings.BackgroundThreads), Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, WorkReview: settings.WorkReview, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, BackgroundThreads: int(settings.BackgroundThreads), Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, WorkReview: settings.WorkReview, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Base: paDomainEditBase(settings.Base), OverwriteConflicts: settings.OverwriteConflicts})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
@@ -1026,4 +1026,20 @@ func paWriteHTTPFailure(w http.ResponseWriter, err error) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	writeJSON(w, contract.ProjectAssistantErrorResponse{ContractVersion: pa.ContractVersion, Error: paWireFailure(failure)})
+}
+
+// paDomainEditBase converts the editor's starting settings; nil keeps the
+// older expected_version check.
+func paDomainEditBase(v *contract.ProjectAssistantEditBase) *pa.EditBase {
+	if v == nil {
+		return nil
+	}
+	out := pa.EditBase{Name: v.Name, Appearance: paDomainAppearance(v.Appearance), Instructions: v.Instructions, Agent: pa.Agent(v.Agent), PermissionPolicy: pa.PermissionPolicy(v.PermissionPolicy), Mode: v.Mode, LoginProfile: v.LoginProfile, FallbackAgents: paDomainAgents(v.FallbackAgents), FallbackSteps: paDomainFallbackSteps(v.FallbackSteps), Notify: v.Notify, BackgroundThreads: int(v.BackgroundThreads), ManageTeam: v.ManageTeam}
+	if r := paDomainRuntimeSettings(v.RuntimeSettings); r != nil {
+		out.RuntimeSettings = *r
+	}
+	if e := paDomainExtensions(v.Extensions); e != nil {
+		out.Extensions = *e
+	}
+	return &out
 }

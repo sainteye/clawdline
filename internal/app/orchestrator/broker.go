@@ -26,6 +26,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/lane"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -192,6 +193,9 @@ type Broker struct {
 	// both agent notification routes answer 409 agent_notify_disabled before
 	// judging anything else. Nil is on, the setting's default.
 	NotifyEnabled func() bool
+	// BotPermission reads one Bot permission or question as it stands now, so a
+	// push owed for a question that closed meanwhile is dropped.
+	BotPermission func(context.Context, pa.BotKey, string) (pa.PermissionOffer, error)
 	// PushEnabled reads a named event preference at the moment its outbox effect runs.
 	// Nil preserves the default behavior of brokers without a settings file.
 	PushEnabled func(key string) bool

@@ -6,6 +6,7 @@ import { browserBotVoiceAvailable } from "../project-assistants/BotVoicePanel"
 import { botCallAudioAvailable } from "../project-assistants/bot-call-audio.js"
 import { BotOrb } from "../project-assistants/BotOrb.js"
 import { canRead } from "../project-assistants/view-state.js"
+import { useDispatchedWorkShown } from "../project-assistants/dispatched-work-preference.js"
 import { ProjectAssistantRegistry, assistantBadge, PROJECT_ASSISTANTS_API_LEVEL } from "../cloud/project-assistants.js"
 import type { PageModule } from "./types.js"
 import { assistantHistoryBackSteps, assistantWorkTarget } from "../page-route.js"
@@ -148,7 +149,8 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const readableRef = useRef(readableItems)
   readableRef.current = readableItems
   useEffect(() => publishBotDirectory(readableItems))
-  const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources)
+  const showDispatched = useDispatchedWorkShown()
+  const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources,showDispatched)
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.
   const [closing,setClosing] = useState(false)

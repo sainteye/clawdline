@@ -69,6 +69,21 @@ test("unread first prepends unread Bots and preserves every default section",()=
   assert.equal(orderedConversationSections(sections,"default"),sections)
 })
 
+test("unread first puts Bots waiting for the person above unread under their own heading",()=>{
+  const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
+  const asks={...bot("Asks"),status:"needsInput",activity:"Asks: Ship today?",pending_permissions:1,unread_count:2} as W.ProjectAssistantBotSummary
+  const unread={...bot("Unread"),unread_count:3}
+  const working={...bot("Working"),status:"working"} as W.ProjectAssistantBotSummary
+  const sections=conversationSections(conversations([unread,working,asks],[]),emptyRosterState())
+  const ordered=orderedConversationSections(sections,"unread")
+  assert.deepEqual(ordered.slice(0,3).map(section=>[section.kind,section.items.map(name)]),[["needsYou",["Asks"]],["unread",["Unread"]],["working",["Working"]]])
+  // Waiting on a dispatched Session needs the person too, when it is shown.
+  const dispatched={...bot("Dispatched"),dispatched_work:{running:0,needs_you:1,delivered:0}} as unknown as W.ProjectAssistantBotSummary
+  const both=conversationSections(conversations([dispatched],[]),emptyRosterState())
+  assert.deepEqual(orderedConversationSections(both,"unread").map(section=>section.kind),["needsYou","project"])
+  assert.deepEqual(orderedConversationSections(both,"unread",(item:W.ProjectAssistantBotSummary)=>rosterShownState(item,false)).map(section=>section.kind),["project"])
+})
+
 test("unread first lists unread Bots, then working Bots, then every default section",()=>{
   const name=(row:ReturnType<typeof conversations>[number])=>row.kind==="bot"?row.item.bot.name:row.entry.group.name
   const working={...bot("Working"),status:"working"} as W.ProjectAssistantBotSummary

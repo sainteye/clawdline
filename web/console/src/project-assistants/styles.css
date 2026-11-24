@@ -940,3 +940,20 @@
 @media (prefers-reduced-motion:reduce) { .project-assistants .pa-drop-target { animation:none; } }
 /* Consecutive Bot exchange capsules keep the chat's message rhythm instead of touching. */
 .project-assistants .pa-chat-content > .pa-exchange-attribution { margin:4px 0 12px; }
+
+/* A pressed decision reply shows at once which one was chosen; the others
+   step back. The mark keeps its width in every state so nothing shifts. */
+.project-assistants .pa-decision .pa-permission-options button { flex-direction:row;align-items:center;gap:8px; }
+.project-assistants .pa-decision-mark { display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none; }
+.project-assistants .pa-decision-mark:empty { display:none; }
+.project-assistants .pa-decision button[data-choice="chosen"] { box-shadow:inset 0 0 0 2px var(--accent,currentColor);font-weight:600;opacity:1; }
+.project-assistants .pa-decision button[data-choice="chosen"]:disabled { opacity:1; }
+.project-assistants .pa-decision button[data-choice="other"] { opacity:.45; }
+.project-assistants .pa-decision-spinner { display:inline-block;width:14px;height:14px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:pa-decision-spin .8s linear infinite;flex:none; }
+.project-assistants .pa-decision-sent { display:flex;flex-direction:column;gap:4px; }
+.project-assistants .pa-decision-working { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim); }
+.project-assistants .pa-decision-failed { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px; }
+.project-assistants .pa-decision-failed p { margin:0;flex:1 1 200px; }
+.project-assistants .pa-decision-failed button { min-height:44px; }
+@keyframes pa-decision-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-decision-spinner { animation:none;border-right-color:currentColor;opacity:.6; } }

@@ -19,6 +19,9 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 		"orchestrator.delivery_commits": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
 		},
+		"orchestrator.bot_decision_push_runes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-push guard on the question line; no retained buffer"}
+		},
 		capacity.DispatchAlsoWorkIDs: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-dispatch guard"} },
 		capacity.HandoffWorktrees:    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.HandoffPatchBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },

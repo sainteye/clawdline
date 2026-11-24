@@ -5,6 +5,7 @@ package capacity
 // handoff and coordination rows.
 func brokerBounds() []Entry {
 	return []Entry{
+		{Name: "orchestrator.bot_decision_push_runes", Class: Buffer, Unit: Characters, Limit: 120, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/orchestrator.MaxBotDecisionPushRunes"}},
 		{Name: "orchestrator.delivery_bytes", Class: Buffer, Unit: Bytes, Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceBytesLimit"}},
 		// The other tasks one result.json may say it carried; a longer
 		// list is refused whole by the child's own validator.

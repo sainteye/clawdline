@@ -199,7 +199,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			u := pa.CollaborationReplyUsage()
 			return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Truncated}, Note: "largest stored Bot reply since start; refused counts replies whose tail was cut and marked for the requester"}
 		},
-		capacity.BotsFallbacks: pure,
+		capacity.BotsFallbacks:              pure,
+		capacity.BotsSettingsRebaseAttempts: pure,
 		capacity.BotsAgentRestSeconds: func() capacity.Reading {
 			p := &s.projectAssistants
 			p.mu.RLock()

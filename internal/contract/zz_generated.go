@@ -4831,6 +4831,24 @@ type ProjectAssistantDispatchedWork struct {
 	Running int64 `json:"running"`
 }
 
+// Editable Bot settings as the editor read them, copied from the Bot.
+type ProjectAssistantEditBase struct {
+	Agent             ProjectAssistantAgent               `json:"agent,omitempty"`
+	Appearance        ProjectAssistantAppearance          `json:"appearance"`
+	BackgroundThreads int64                               `json:"background_threads,omitempty"`
+	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
+	FallbackAgents    []ProjectAssistantAgent             `json:"fallback_agents,omitempty"`
+	FallbackSteps     []ProjectAssistantFallbackStep      `json:"fallback_steps,omitempty"`
+	Instructions      string                              `json:"instructions"`
+	LoginProfile      string                              `json:"login_profile,omitempty"`
+	ManageTeam        bool                                `json:"manage_team,omitempty"`
+	Mode              string                              `json:"mode,omitempty"`
+	Name              string                              `json:"name"`
+	Notify            string                              `json:"notify,omitempty"`
+	PermissionPolicy  ProjectAssistantPermissionPolicy    `json:"permission_policy,omitempty"`
+	RuntimeSettings   *ProjectAssistantRuntimeSettings    `json:"runtime_settings,omitempty"`
+}
+
 type ProjectAssistantEditRequest struct {
 	Command  ProjectAssistantCommand      `json:"command"`
 	Settings ProjectAssistantEditSettings `json:"settings"`
@@ -4844,9 +4862,15 @@ type ProjectAssistantEditSettings struct {
 	Appearance ProjectAssistantAppearance `json:"appearance"`
 
 	// Maximum simultaneous background threads selected for this Bot.
-	BackgroundThreads int64                               `json:"background_threads,omitempty"`
-	ExpectedVersion   int64                               `json:"expected_version"`
-	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
+	BackgroundThreads int64 `json:"background_threads,omitempty"`
+
+	// The settings the editor started from. With it, a save is refused only for a
+	// field both this edit and another writer changed; fields this edit left alone
+	// take their current values, and unrelated Bot activity never conflicts. Without
+	// it expected_version must match.
+	Base            *ProjectAssistantEditBase           `json:"base,omitempty"`
+	ExpectedVersion int64                               `json:"expected_version"`
+	Extensions      *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
 	// Ordered unique default login identities. Omitted edits preserve saved settings;
 	// an explicit empty array clears them.
@@ -4861,6 +4885,9 @@ type ProjectAssistantEditSettings struct {
 	Mode   string `json:"mode,omitempty"`
 	Name   string `json:"name"`
 	Notify string `json:"notify,omitempty"`
+
+	// Keep this edit's value for every field that conflicts with base.
+	OverwriteConflicts bool `json:"overwrite_conflicts,omitempty"`
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`

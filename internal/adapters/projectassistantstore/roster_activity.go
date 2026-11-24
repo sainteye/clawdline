@@ -2,6 +2,7 @@ package projectassistantstore
 
 import (
 	"strings"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -21,7 +22,33 @@ func rememberRosterTrace(a *aggregate, event pa.Event) {
 	}
 }
 
+// An open question the Bot asked takes precedence over its turn state: it
+// belongs to no turn, and until the person answers it is what they must do.
 func projectRosterActivity(a aggregate, out *pa.BotSummary) {
+	projectTurnActivity(a, out)
+	if out.Status == "needsInput" {
+		return
+	}
+	// The newest question is the one the person's next message answers.
+	now := time.Now()
+	var selected string
+	for id, p := range a.Permissions {
+		if p.Kind == pa.DecisionOfferKind && openPermission(p, now) && (selected == "" || p.AnchorMessageSeq > a.Permissions[selected].AnchorMessageSeq || p.AnchorMessageSeq == a.Permissions[selected].AnchorMessageSeq && id < selected) {
+			selected = id
+		}
+	}
+	if selected == "" {
+		return
+	}
+	out.Status, out.Activity, out.Failure = "needsInput", "", nil
+	if d := a.Permissions[selected].Decision; d != nil {
+		if q := strings.TrimSpace(strings.SplitN(d.Question, "\n", 2)[0]); q != "" {
+			out.Activity = "Asks: " + q
+		}
+	}
+}
+
+func projectTurnActivity(a aggregate, out *pa.BotSummary) {
 	if a.Completion != nil && a.Completion.ConversationID == a.Conversation.ID {
 		out.CompletedTurnID = a.Completion.TurnID
 	}
