@@ -5604,6 +5604,7 @@ export interface ProjectAssistantDevServer {
   ports_known: boolean
   revision: number
   state: string
+  unconfirmed?: boolean
 }
 
 /**

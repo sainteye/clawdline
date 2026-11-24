@@ -48,6 +48,21 @@ type Record struct {
 	Version  int64
 	State    State
 	Failure  string
+	// Mark is the launched root's kernel identity, recorded with Running so a
+	// later Host can adopt the same process instead of losing its owner.
+	Mark Mark
+}
+
+// Mark names one process by PID and kernel start second. A PID alone can be
+// reused; both must match before a later Host treats the process as its own.
+type Mark struct {
+	PID     int
+	Started int64
+}
+
+// MarkedProcess is optional. A process without a mark is never adopted.
+type MarkedProcess interface {
+	Mark() (Mark, bool)
 }
 
 func (r Record) Validate() error {
@@ -151,7 +166,12 @@ func (o *Owner) Snapshot() Record {
 // save holds mu. Retain a possible committed intent on every journal error;
 // neither a caller retry nor reopening this attempt can launch it again.
 func (o *Owner) save(ctx context.Context, state State, reason string) error {
+	return o.saveMark(ctx, state, reason, o.record.Mark)
+}
+
+func (o *Owner) saveMark(ctx context.Context, state State, reason string, mark Mark) error {
 	next := o.record
+	next.Mark = mark
 	next.Version++
 	if next.Version <= o.record.Version {
 		return failure(pa.CapacityFull, "server_revision")
@@ -237,10 +257,51 @@ func (o *Owner) run() {
 		if o.sealed || o.ctx.Err() != nil || o.record.State != Accepted {
 			stopping = true
 		} else {
-			err = o.save(o.ctx, Running, "")
+			var mark Mark
+			if marked, ok := p.(MarkedProcess); ok {
+				if m, ok := marked.Mark(); ok && m.PID > 0 && m.Started > 0 {
+					mark = m
+				}
+			}
+			err = o.saveMark(o.ctx, Running, "", mark)
 		}
 		o.mu.Unlock()
 	}
+	o.settle(p, err, stopping)
+}
+
+// Adopt takes ownership of an attempt a previous Host left running, after the
+// caller has proved the process is the one its Mark names. It launches
+// nothing and saves nothing until the process exits or is stopped.
+func Adopt(ctx context.Context, o Options, p Process) (*Owner, error) {
+	if p == nil {
+		return nil, failure(pa.Invalid, "server_adopt")
+	}
+	i := o.Identity
+	if i.Validate() != nil || o.Lifetime == nil || o.Journal == nil || o.Check == nil || o.CleanupTimeout <= 0 {
+		return nil, failure(pa.Invalid, "server_owner")
+	}
+	r, err := o.Journal.Load(ctx, i)
+	if err != nil {
+		return nil, err
+	}
+	if r.Version <= 0 || r.Identity != i || r.State != Running || r.Mark.PID <= 0 {
+		return nil, failure(pa.StaleGeneration, "server_adopt")
+	}
+	if o.Launch == nil {
+		o.Launch = func(context.Context) (Process, error) { return nil, failure(pa.Invalid, "server_adopt") }
+	}
+	lifetime, cancel := context.WithCancel(o.Lifetime)
+	owner := &Owner{o: o, ctx: lifetime, cancel: cancel, record: r, p: p, worker: true, done: make(chan struct{})}
+	go func() {
+		defer owner.once.Do(func() { close(owner.done) })
+		owner.settle(p, nil, false)
+	}()
+	return owner, nil
+}
+
+// settle waits for a running process, cleans it up and records the outcome.
+func (o *Owner) settle(p Process, err error, stopping bool) {
 	var exit error
 	if err == nil && !stopping {
 		exit = p.WaitExit(o.ctx)

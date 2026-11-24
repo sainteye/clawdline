@@ -5095,6 +5095,9 @@
         "failure": {
           "type": "string"
         },
+        "unconfirmed": {
+          "type": "boolean"
+        },
         "fingerprint": {
           "type": "string"
         },

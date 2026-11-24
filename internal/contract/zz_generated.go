@@ -4781,6 +4781,7 @@ type ProjectAssistantDevServer struct {
 	PortsKnown  bool                            `json:"ports_known"`
 	Revision    int64                           `json:"revision"`
 	State       string                          `json:"state"`
+	Unconfirmed bool                            `json:"unconfirmed,omitempty"`
 }
 
 // API90 human controls name an existing server, exact fingerprint and observed

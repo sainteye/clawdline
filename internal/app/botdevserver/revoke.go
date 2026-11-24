@@ -64,10 +64,18 @@ func (r *Registry) Reconcile(ctx context.Context, check func(context.Context, Sp
 		}
 		if err == nil || !AuthoritativeDenial(err) {
 			r.mu.Lock()
+			now := r.o.Clock()
 			if err == nil {
-				e.unconfirmedSince = time.Time{}
+				if e.noticed {
+					r.o.Logf("bots: dev server authority confirmed again: %s", e.saved.ID)
+				}
+				e.unconfirmedSince, e.noticed = time.Time{}, false
 			} else if e.unconfirmedSince.IsZero() {
-				e.unconfirmedSince = r.o.Clock()
+				e.unconfirmedSince = now
+			}
+			if err != nil && !e.noticed && now.Sub(e.unconfirmedSince) >= capacity.BotServerUnconfirmedNotice {
+				e.noticed = true
+				r.o.Logf("bots: dev server authority cannot be confirmed; it keeps running: %s: %s", e.saved.ID, pa.Code(err))
 			}
 			r.mu.Unlock()
 			result = errors.Join(result, err)
@@ -159,7 +167,7 @@ func (r *Registry) ReleaseExpected(ctx context.Context, expected SavedServer) er
 	}
 	r.mu.Lock()
 	owner := e.owner
-	e.owner, e.saved.Attempt, e.unconfirmedSince = nil, next, time.Time{}
+	e.owner, e.saved.Attempt, e.unconfirmedSince, e.noticed = nil, next, time.Time{}, false
 	if e.reserved {
 		e.reserved = false
 		r.active--

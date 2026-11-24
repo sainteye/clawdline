@@ -29,6 +29,49 @@ const attempts = `CREATE TABLE bot_devserver_attempts (
  state TEXT NOT NULL CHECK(state IN ('accepted','running','stopping','stopped','failed','unknown')),
  failure TEXT NOT NULL)`
 
+// processes is additive: a Host without it ignores the table, and a ledger
+// without it simply has no Mark to adopt. Install creates it in place.
+const processes = `CREATE TABLE IF NOT EXISTS bot_devserver_processes (
+ attempt_key TEXT NOT NULL PRIMARY KEY,
+ pid INTEGER NOT NULL CHECK(pid>0), started INTEGER NOT NULL CHECK(started>0))`
+
+func hasProcesses(ctx context.Context, tx *sql.Tx) (bool, error) {
+	var count int
+	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_master WHERE type='table' AND name='bot_devserver_processes'`).Scan(&count)
+	return count == 1, err
+}
+
+func readMark(ctx context.Context, tx *sql.Tx, attemptKey string) (servers.Mark, error) {
+	present, err := hasProcesses(ctx, tx)
+	if err != nil || !present {
+		return servers.Mark{}, err
+	}
+	var m servers.Mark
+	err = tx.QueryRowContext(ctx, `SELECT pid,started FROM bot_devserver_processes WHERE attempt_key=?`, attemptKey).Scan(&m.PID, &m.Started)
+	if errors.Is(err, sql.ErrNoRows) {
+		return servers.Mark{}, nil
+	}
+	return m, err
+}
+
+func writeMark(ctx context.Context, tx *sql.Tx, attemptKey string, m servers.Mark) error {
+	if m == (servers.Mark{}) {
+		return nil
+	}
+	if m.PID <= 0 || m.Started <= 0 {
+		return refusal(pa.Invalid, "server_mark")
+	}
+	present, err := hasProcesses(ctx, tx)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return refusal(pa.Disabled, "server_mark_absent")
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO bot_devserver_processes(attempt_key,pid,started) VALUES(?,?,?) ON CONFLICT(attempt_key) DO UPDATE SET pid=excluded.pid, started=excluded.started`, attemptKey, m.PID, m.Started)
+	return err
+}
+
 func refusal(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
 
 func schema(ctx context.Context, tx *sql.Tx) (bool, error) {
@@ -105,9 +148,12 @@ func Install(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if present {
-		return nil
+		if _, err = tx.ExecContext(ctx, processes); err != nil {
+			return err
+		}
+		return tx.Commit()
 	}
-	for _, statement := range []string{marker, attempts, `INSERT INTO bot_devserver_schema(id,version) VALUES(1,1)`} {
+	for _, statement := range []string{marker, attempts, `INSERT INTO bot_devserver_schema(id,version) VALUES(1,1)`, processes} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
 			return err
 		}
@@ -172,6 +218,9 @@ func recordAt(ctx context.Context, tx *sql.Tx, attemptKey string) (servers.Recor
 	}
 	if key(r.Identity) != attemptKey {
 		return servers.Record{}, refusal(pa.Invalid, "server_attempt_key")
+	}
+	if r.Mark, err = readMark(ctx, tx, attemptKey); err != nil {
+		return servers.Record{}, err
 	}
 	return r, nil
 }
@@ -278,6 +327,9 @@ func saveAttempt(ctx context.Context, tx *sql.Tx, expected int64, r servers.Reco
 		return err
 	} else if n != 1 {
 		return refusal(pa.StaleVersion, "server_revision")
+	}
+	if r.Mark != prior.Mark {
+		return writeMark(ctx, tx, key(r.Identity), r.Mark)
 	}
 	return nil
 }
