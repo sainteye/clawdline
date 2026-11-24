@@ -92,7 +92,10 @@ func TestMemoryIsolationAndStaleWrites(t *testing.T) {
 	if _, err = s.Save(testContext, w); err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Save(testContext, memoryWrite(b, 1, "stale", "message", "text"))
+	// A note rewritten since the editor's read is a real conflict.
+	stale := memoryWrite(b, 1, "fact", "message", "other text")
+	stale.Command = command(b.Key, pa.MemorySaveOperation, "stale-fact")
+	_, err = s.Save(testContext, stale)
 	requireCode(t, err, pa.StaleVersion)
 	_, err = s.Forget(testContext, app.ForgetRequest{Command: command(b.Key, pa.ForgetOperation, "foreign"), Project: other.Project, ExpectedRevision: 2, SourceIDs: []string{"message"}})
 	if err == nil { // Same canonical scope is valid for both Bots; the command key still fences writes.
@@ -218,4 +221,38 @@ func TestMemoryEntriesStopAtTheirBound(t *testing.T) {
 	if _, err = s.Save(testContext, more); err != nil {
 		t.Fatal("forgetting did not make room", err)
 	}
+}
+
+// The Bot saving its own memory advances the index revision; a person's note
+// edit or Forget opened before that write still saves unless that very note
+// changed in between.
+func TestMemoryEditsCompareTheEditedNoteNotTheIndex(t *testing.T) {
+	_, s, _ := testDB(t)
+	b := seed(t, s, "one")
+	if _, err := s.Save(testContext, memoryWrite(b, 1, "keep-note", "message", "older")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Save(testContext, memoryWrite(b, 2, "person-note", "manual:person-note", "first")); err != nil {
+		t.Fatal(err)
+	}
+	opened := int64(3) // the editor read the index here
+	if _, err := s.Save(testContext, memoryWrite(b, 3, "bot-note", "message", "the Bot remembered this")); err != nil {
+		t.Fatal(err)
+	}
+	edit := memoryWrite(b, opened, "person-note", "manual:person-note", "second")
+	edit.Command = command(b.Key, pa.MemorySaveOperation, "edit-second")
+	edited, err := s.Save(testContext, edit)
+	if err != nil || edited.Revision != 5 {
+		t.Fatalf("person edit after the Bot's write: %+v %v", edited, err)
+	}
+	conflict := memoryWrite(b, opened, "person-note", "manual:person-note", "conflicting")
+	conflict.Command = command(b.Key, pa.MemorySaveOperation, "edit-conflicting")
+	_, err = s.Save(testContext, conflict)
+	requireCode(t, err, pa.StaleVersion)
+	forgot, err := s.Forget(testContext, app.ForgetRequest{Command: command(b.Key, pa.ForgetOperation, "forget-keep-note"), Project: b.Project, ExpectedRevision: opened, SourceIDs: []string{"keep-note"}})
+	if err != nil || forgot.Revision != 6 {
+		t.Fatalf("Forget of an unchanged note after other writes: %+v %v", forgot, err)
+	}
+	_, err = s.Forget(testContext, app.ForgetRequest{Command: command(b.Key, pa.ForgetOperation, "forget-changed"), Project: b.Project, ExpectedRevision: opened, SourceIDs: []string{"person-note"}})
+	requireCode(t, err, pa.StaleVersion)
 }
