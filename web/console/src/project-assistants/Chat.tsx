@@ -1273,7 +1273,7 @@ ${currentDraft}`:submitted)
     const trace=source.beginReadObservation?.("history",performance.now())
     let adopted=false
     try{
-      const page=await read(request("history",cursor),control.signal,trace)
+      const page=await read(request("history",cursor,source.browserRemote?chatInitialPageRows:undefined),control.signal,trace)
       if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||recovery.current)return
       if(page.has_more&&historyCursors.current.has(page.next_cursor))throw failure("pa_invalid")
       if(!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return

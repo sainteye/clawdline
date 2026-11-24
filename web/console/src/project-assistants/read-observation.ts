@@ -8,6 +8,7 @@ export class BotReadObservation {
   private readonly stages: Partial<Record<`${BotReadStage}_ms`, number>> = {}
   private sequence?: number
   private responseSequence?: number
+  private responseCiphertextBytes?: number
   private finished = false
 
   private readonly mode: BotReadMode
@@ -23,7 +24,7 @@ export class BotReadObservation {
     this.mark("started")
   }
 
-  mark = (stage: BotReadStage, at = performance.now(), sequence?: number) => {
+  mark = (stage: BotReadStage, at = performance.now(), sequence?: number, ciphertextBytes?: number) => {
     if (this.finished) return
     this.stages[`${stage}_ms`] = Math.max(0, Math.round(at - this.start))
     if (stage === "sealed") {
@@ -32,7 +33,10 @@ export class BotReadObservation {
       delete this.stages.relay_ack_ms
       delete this.stages.relay_refused_ms
     }
-    if (stage === "response_frame") this.responseSequence = sequence
+    if (stage === "response_frame") {
+      this.responseSequence = sequence
+      this.responseCiphertextBytes = ciphertextBytes
+    }
   }
 
   finish(outcome: Outcome, code?: string) {
@@ -41,6 +45,7 @@ export class BotReadObservation {
     this.report({
       trace_id: this.id, interaction_id: this.interactionID, mode: this.mode, outcome, sequence: this.sequence, response_sequence: this.responseSequence,
       total_ms: Math.max(0, Math.round(performance.now() - this.start)),
+      ...(this.responseCiphertextBytes === undefined ? {} : { response_ciphertext_base64_bytes: this.responseCiphertextBytes }),
       ...this.stages, ...(code ? { code } : {}),
     })
   }

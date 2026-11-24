@@ -1746,7 +1746,8 @@ export class CloudClient {
             // else's answer, and `image.<id>` names bytes that never change, so those still settle.
             if (!realign || /^(read|action):/.test(answer.read) || /^image\./.test(answer.read)) {
                 var observeBotRead = this.readWaiters.get(settles)?.observeBotRead;
-                observeBotRead?.("response_frame", receivedAt, envelope.seq);
+                observeBotRead?.("response_frame", receivedAt, envelope.seq,
+                    typeof envelope.ct === "string" ? envelope.ct.length : undefined);
                 observeBotRead?.("response_open_started", openingAt);
                 observeBotRead?.("response_open");
                 this._settleRead(settles, answer.body, answer.error);

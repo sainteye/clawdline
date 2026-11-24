@@ -781,6 +781,8 @@ HTTP router. The handler checks access, reads the bounded SQLite view, optionall
 the active turn's native context, encodes the answer, and checks current publication
 authority. The source queues the sealed answer for the relay. The console opens and
 validates the answer, merges it into the timeline, and commits that timeline to the DOM.
+The hosted console requests older history in the same page size as the opening window.
+Each explicit history action continues from the source cursor in the previous page.
 
 For the opening snapshot and explicitly requested older history, start with
 `event=cloud.bots.read` in the viewer event log. The existing `diagnostics.events` outbox
@@ -796,6 +798,8 @@ focused tab, after commit. Hidden or unfocused tabs record the commit without wa
 an animation frame. Blur, page hide or closing the chat records the stages already reached.
 Stages without evidence are absent. Periodic event polls and auxiliary collections do
 not emit these opening and history records.
+`response_ciphertext_base64_bytes` records the received ciphertext field's encoded
+size without copying or logging its contents.
 
 Find `cloud: bot_view` on the source with the same `trace_id` and request `sequence`.
 Its `stages_ms` are source-local durations, some nested inside the bridge or view totals.

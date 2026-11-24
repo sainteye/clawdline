@@ -15,6 +15,22 @@ import { CloudClient } from "../legacy/js/net/cloud-client.js"
 import { CARRIED } from "./carry-generated.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { RosterStreamFailure } from "../project-assistants/roster-stream.ts"
+// @ts-expect-error -- Node executes source extensions.
+import { BotReadObservation } from "../project-assistants/read-observation.ts"
+
+test("Bot read diagnostics report the received response size with its sequence", () => {
+  const rows: Record<string, unknown>[] = []
+  const start = performance.now()
+  const trace = new BotReadObservation("history", start, row => rows.push(row))
+  trace.mark("response_frame", start + 100, 51, 800)
+  trace.finish("committed")
+  const refused = new BotReadObservation("history", start, row => rows.push(row))
+  refused.finish("refused", "pa_offline")
+  assert.equal(rows[0].response_sequence, 51)
+  assert.equal(rows[0].response_ciphertext_base64_bytes, 800)
+  assert.equal(rows[0].response_frame_ms, 100)
+  assert.equal(rows[1].response_ciphertext_base64_bytes, undefined)
+})
 
 test("local roster crosses a real Node HTTP SSE connection and cancels cleanly", async () => {
   let closed!: () => void
