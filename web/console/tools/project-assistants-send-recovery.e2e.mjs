@@ -58,7 +58,8 @@ export function mountFixture() {
   const legacy = new URLSearchParams(location.search).has("legacy")
   if (legacy) fixture.seedPending(0, 1)
   const turns = [], receipts = new Map()
-  const readFaults = []
+  let readFault = ""
+  let delayedMessage = ""
   const persisted = (() => { try { return JSON.parse(sessionStorage.getItem("send-recovery.synthetic-source") ?? "null") } catch { return null } })()
   const state = { mode: "normal", sends: 0, transported: [], exports: 0, revokeSend: false, admitted: [], pending: null, ...(persisted ?? {}) }
   const persist = () => sessionStorage.setItem("send-recovery.synthetic-source", JSON.stringify({ mode: state.mode, sends: state.sends, transported: state.transported, exports: state.exports, admitted: state.admitted, pending: state.pending }))
@@ -85,11 +86,16 @@ export function mountFixture() {
       const bot = decodeURIComponent(match[1]), tail = match[2], key = { machine_id: "studio", bot_id: bot }
       if (bot === "status") return json(await fixture.status(signal))
       if (method === "GET" && tail === "/view") {
-        if (q.mode === "snapshot" && readFaults.length) {
-          const code = readFaults.shift()
+        if (readFault && (q.mode === "snapshot" || q.mode === "events")) {
+          const code = readFault
+          readFault = "pa_offline"
           return json({contract_version:"project-assistants.v1",error:{code,field:"synthetic_read",retry_after_seconds:0}},code==="pa_cursor_expired"?410:503)
         }
         const answer = await fixture.view({ key, conversation_id: q.conversation_id, mode: q.mode, source_epoch: q.source_epoch, cursor: q.cursor, after_seq: Number(q.after_seq), page_size: Number(q.page_size) }, signal)
+        if (delayedMessage && (q.mode === "snapshot" || q.mode === "events")) {
+          answer.items = answer.items.filter(row => row.message?.id !== delayedMessage && row.event?.message?.id !== delayedMessage)
+          if (q.mode === "events") answer.next_seq = answer.items.at(-1)?.observed_event_seq ?? Number(q.after_seq)
+        }
         return json(answer)
       }
       if (method === "GET" && tail === "/send-receipt") {
@@ -117,7 +123,8 @@ export function mountFixture() {
         const answer = await admit(request, signal)
         state.admitted.push(request); persist()
         if (mode === "lose") lose()
-        if (mode === "recover-read") readFaults.push("pa_cursor_expired","pa_offline","pa_offline")
+        if (mode === "delay-observation") delayedMessage = answer.receipt.id
+        if (mode === "recover-read") readFault = "pa_cursor_expired"
         return json(answer)
       }
       if (method === "POST" && tail === "/read") return json(await fixture.markRead(JSON.parse(init.body), signal))
@@ -156,6 +163,9 @@ export function mountFixture() {
       }),
       !legacy && button("Test: lose next response", mode("lose")),
       !legacy && button("Test: interrupt reads after an accepted send", mode("recover-read")),
+      !legacy && button("Test: resume conversation reads", () => { readFault = "" }),
+      !legacy && button("Test: delay observation of the next send", mode("delay-observation")),
+      !legacy && button("Test: publish the delayed message", () => { delayedMessage = "" }),
       !legacy && button("Test: refuse next send before transport", () => { state.revokeSend = true; paint() }),
       !legacy && button("Test: next send leaves no receipt", mode("missing")),
       !legacy && button("Test: refuse next send without admitting it", mode("refuse")),
@@ -246,7 +256,7 @@ if (readRecovery) {
     const module=process.env.PLAYWRIGHT_MODULE
     if (!module) throw new Error("Set PLAYWRIGHT_MODULE for the isolated mobile read recovery case")
     const {chromium}=await import(pathToFileURL(module).href)
-    const engine=await chromium.launch({headless:true,args:["--disable-features=OmniboxEverywhere"]})
+    const engine=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:["--disable-features=OmniboxEverywhere"]})
     try {
       const context=await engine.newContext({viewport:{width:390,height:740},isMobile:true,hasTouch:true})
       await context.route("**/*",route=>new URL(route.request().url()).origin===origin?route.continue():route.abort())
@@ -258,21 +268,51 @@ if (readRecovery) {
       const text="Synthetic send during a read interruption"
       await draft.fill(text);await send.click()
       const reconnect=page.getByText("Syncing the conversation…",{exact:true})
-      try{await reconnect.waitFor({timeout:5000})}
-      catch(error){throw new Error("expected automatic recovery after one admitted send: "+await page.locator(".pa-chat-error").innerText(),{cause:error})}
-      const followUp="A fresh draft during recovery"
+      await reconnect.waitFor({timeout:8000})
+      const quote=page.locator('[data-message-id="bot-0-reply"]')
+      await quote.getByRole("button",{name:"Message actions"}).click()
+      await page.getByRole("menuitem",{name:"Reply"}).click()
+      const followUp="A quoted reply during recovery"
       await draft.fill(followUp)
-      assert.equal(await send.isEnabled(),true,"a new message can reach the source while reads recover")
+      assert.equal(await send.isEnabled(),true,"a quoted reply can reach the source while reads recover")
       await send.click()
       await page.waitForFunction(()=>window.sendRecovery.state.sends===2)
+      await page.getByRole("button",{name:"Test: resume conversation reads"}).click()
       await reconnect.waitFor({state:"hidden",timeout:12000})
       await page.locator(".pa-chat-content").getByText(text,{exact:true}).waitFor()
       assert.equal(await draft.inputValue(),"")
       await page.locator(".pa-chat-content").getByText(followUp,{exact:true}).waitFor()
       const state=await page.evaluate(()=>({sends:window.sendRecovery.state.sends,exports:window.sendRecovery.state.exports}))
       assert.deepEqual(state,{sends:2,exports:0},"both explicit sends are admitted once while automatic recovery only reads")
+      const quoteID=await page.evaluate(()=>window.sendRecovery.state.admitted.at(-1).quote_message_id)
+      assert.equal(quoteID,"bot-0-reply","the host receives the exact quote")
       await page.screenshot({path:path.join(artifacts,"read-recovery.png")})
-      record("accepted send recovers from cursor expiry and offline without resending",state)
+      record("a quoted reply is admitted during read recovery",state)
+
+      await page.getByRole("button",{name:"Test: delay observation of the next send"}).click()
+      const delayed="Accepted while the conversation projection lags"
+      await draft.fill(delayed);await send.click()
+      const provisional=page.locator(".pa-sending").filter({hasText:delayed})
+      await provisional.getByText("Received by the Bot’s computer",{exact:true}).waitFor()
+      await page.getByRole("button",{name:"Test: attach picture"}).click()
+      await page.waitForFunction(()=>document.querySelector(".pa-pictures img")?.naturalWidth===8)
+      const withPicture="Follow-up with a picture"
+      await draft.fill(withPicture)
+      assert.equal(await send.isEnabled(),true,"a host receipt is enough to send another message with a picture")
+      await send.click()
+      await page.waitForFunction(()=>window.sendRecovery.state.admitted.length===4)
+      await page.getByRole("button",{name:"Test: publish the delayed message"}).click()
+      // Reopening reads a new snapshot even if the event poll passed the hidden row.
+      await page.getByRole("button",{name:"Test: leave chat"}).click()
+      await page.getByRole("button",{name:"Test: reopen chat"}).click()
+      const posted=page.locator(".pa-chat-content [data-message-id]")
+      await posted.getByText(delayed,{exact:true}).waitFor()
+      await posted.getByText(withPicture,{exact:true}).waitFor()
+      const admitted=await page.evaluate(()=>window.sendRecovery.state.admitted.slice(2))
+      assert.equal(admitted[1].images.length,1)
+      assert.notEqual(admitted[0].command.idempotency_key,admitted[1].command.idempotency_key)
+      assert.equal(await page.evaluate(()=>window.sendRecovery.state.sends),4)
+      record("an accepted but unobserved message allows a new picture send",{sends:4})
     } finally { await engine.close() }
   } finally { if (server.listening) await new Promise(resolve=>server.close(resolve)) }
 } else if (process.env.PLAYWRIGHT_MODULE && !legacy) {

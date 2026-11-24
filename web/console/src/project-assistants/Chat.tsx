@@ -733,7 +733,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     clearPendingAttachments(held)
     setSending(null);setUnknown(false);repaintJournal()
   },[timeline,receipt,view,draftKey])
-  const textOnlyDraft=images.length===0&&files.length===0&&!quote&&handoff.card?.state!=="draft"
+  // The host resolves quotes within the conversation and checks memory access
+  // when it admits the message, even while this view is catching up.
+  const textOnlyDraft=images.length===0&&files.length===0&&handoff.card?.state!=="draft"
   const sendAuthorityLost=["pa_revoked","pa_unpaired","pa_scope_denied","pa_unsupported","pa_disabled"].includes(error)
   const canTryText=textOnlyDraft&&!thread&&!unknown&&!legacyBlocked()&&!sendAuthorityLost
   const sendInFlight=useRef(false)
@@ -747,7 +749,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       ||handoff.error||(!plain&&!currentData.current))return refused
     const earlier=view.heldOutcomes.get(draftKey)
     if(earlier){
-      if(!plain||!admittedReceipt(earlier.receipt))return refused
+      if(earlier.intent.command.operation!=="send"||!admittedReceipt(earlier.receipt))return refused
       view.heldOutcomes.setAside(draftKey)
     }
     const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
@@ -1778,7 +1780,7 @@ ${currentDraft}`:submitted)
       {leadSetup.show&&leadSetupBot&&<LeadSetup setup={leadSetup} w={w} choose={agent=>editBot({
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
       })}/>}
-      <Composer key={draftKey} mentions={mentions} plain={!!thread} call={callStart.canStart?{label:callStart.label,disabled:!callStart.ready,start:callStart.start}:undefined} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error||(!canTryText&&sendingAccepted)} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
+      <Composer key={draftKey} mentions={mentions} plain={!!thread} call={callStart.canStart?{label:callStart.label,disabled:!callStart.ready,start:callStart.start}:undefined} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
         onReplaceImage={(id,url)=>setImages(old=>old.map(picture=>picture.id===id?{...picture,url}:picture))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>
     </div>
