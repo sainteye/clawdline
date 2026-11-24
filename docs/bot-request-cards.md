@@ -1,6 +1,6 @@
 # Bot request cards
 
-Status: design approved by the person on 2026-11-24; not implemented.
+Status: design approved by the person on 2026-11-24; phases 1 and 2 (backend) are being implemented.
 
 No schema, wire word or tool name in this page exists yet unless it is cited with a `file:line` as
 current behaviour. The names it reserves are listed once, in §4.1.
@@ -22,6 +22,12 @@ changes nothing else: the two names (§2, §3.1), the holder marking an entry "n
 merging cards that came from different messages (§6), and mockups before the console phase (§12).
 The reserved identifiers follow the new name (§4.1), and this page moved from `bot-work-cards.md`.
 There are no open questions left.
+
+Revision 6 records the person's choice of 2026-11-24 to implement with the coordinating Bot's
+additions: Design canvas direction A for the console (§9.1), no approve or reject buttons on a card
+in v1 (§9.1), a "last updated" time on every card (§4), a batch tick across cards (§5), a handoff
+that lets the new holder start work for that card (§7.2), and the checklist as an unordered to-do
+list (§5).
 
 ## 1. Problem
 
@@ -194,7 +200,7 @@ Tables (names reserved in §4.1, not created), in the same store as `work_v2_pro
 | `waiting` | empty, or the id of an `ask_person` question the holder is waiting on |
 | `split_from`, `merged_into` | set by §6 |
 | `version` | optimistic version; every write names the version it read |
-| `created_at`, `updated_at`, `closed_at` | timestamps |
+| `created_at`, `updated_at`, `closed_at` | timestamps. `updated_at` is the time of the card's last event and every read shows it as "last updated", so a stalled handoff is visible. It is a read-model field, not a timer |
 
 There is no phase machine. The stage shown — making, in review, integrating — is the baton's role.
 
@@ -227,11 +233,12 @@ words are irreversible once shipped (§12).
 | Tables | `bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist` |
 | Field on the broker task, the work link, `dispatch_work` and `message_bot` | `bot_request_id` (Go: `WorkLink.BotRequestID`) |
 | Bot tools | `bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`, `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`, `bot_request_done` |
-| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict` |
+| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope` |
+| Turn origin | `bot_request_handoff` |
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
 | Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
 | Outbox effect key | `bot-request-done-<card id>-<cycle>` |
-| Capacity names | `bot_request.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts` (§10) |
+| Capacity names | `bot_request.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts`, `.batch_cards` (§10) |
 
 Unchanged by this design: the existing `WorkResultCard` component, `WorkLink`, `work_id` and
 `board_item_id`. Event names (`card.created`, `baton.handed`, …) are values inside
@@ -246,7 +253,11 @@ a handoff, stop the card being marked done, or reach any push or deploy. A rejec
 followed by a handoff back to the maker, and that is the Bots' practice, not a rule the record
 enforces.
 
-**Checklist.** A new card starts with the default entries for its kind (§3.3), or with the entries
+**Checklist.** The checklist is a to-do list: unordered, and the card's progress ("n/m ✓") is
+derived from it. A request with several goals has several entries. Goals that are unrelated, or
+that different Bots will carry, are separate cards (split, §6), not entries on one.
+
+A new card starts with the default entries for its kind (§3.3), or with the entries
 the creating Bot names; it has at least one. The creating Bot may add more when it creates the card
 or later (for example `dev`, `cloud`, "checked on the live site"); the holder or the person may add
 one too. The holder marks an entry `done` with a note, or `not_needed` with a
@@ -261,6 +272,12 @@ on a card that has a `main` entry, when an attached task's work link says the Br
 `landing_target` beside the `main` entry, labelled as the Broker's record. It does not mark the
 entry: with several tasks on one card, whether "it is on main" is the holder's call. Nothing else
 is read: no fetch, no build stamp, no timer.
+
+**Batch tick.** `bot_request_check` may name several cards in one call with the same entries — for
+example seven cards, `main` and `GitHub` done, note "<commit>". Each card is its own transaction,
+all-or-nothing on that card; the answer lists one result per card (`ok`, `unchanged`, or a typed
+refusal). Marking an entry with the state and note it already has is `unchanged`, so a retried
+batch writes nothing. A call names at most `bot_request.batch_cards` cards (§10).
 
 **Done.** The holder calls `bot_request_done` once every entry is `done` or `not_needed`; the daemon
 refuses it otherwise (`bot_request_checklist_open`). The person can complete, cancel or reopen any
@@ -365,8 +382,24 @@ replaces that", "landed together with that card". It is prose on the card instea
 chat, and that is all this version claims for it.
 
 A Bot answering another Bot's request cannot call `message_bot`
-(`collaboration.go:125`); the card tools are allowed in such a turn, so a reviewer reached that way
-can still record its verdict and hand the baton on.
+(`collaboration.go:125`) and has no dispatch (`native_work` is disabled for that turn); the card
+tools are allowed in such a turn, so a reviewer reached that way can still record its verdict and
+hand the baton on.
+
+**The handoff notice can start work (decided 2026-11-24).** The host notice that wakes the new
+holder is a turn of origin `bot_request_handoff` that carries the card id and the handoff event's
+version. Its authority roots in the card's authority — the person's original message — not in the
+Bot that handed it over. In that turn, and only there, `dispatch_work` and `message_bot` are
+accepted when all three hold:
+
+1. the card's state is `open` and it has an authority from a person's message (§7.1);
+2. the card's holder is the Bot running the turn (`baton.bot`), at the version the notice named or
+   a later one in which that Bot still holds it; and
+3. the call names that card in `bot_request_id`.
+
+A call that names no card, or another card, is refused `bot_request_handoff_scope`. The turn
+grants nothing outside that card: no Board writes, no settings, no other card's writes, and the
+usual hop and follow-up bounds (`MaxCollaborationHops`, `bots.follow_up_chain`) still apply.
 
 ### 7.3 Authority
 
@@ -427,6 +460,25 @@ as `/v1/work/v2/` and `/v1/work/v2/agent/`.
 
 ## 9. Console
 
+### 9.1 Chosen design: direction A
+
+Design canvas direction A, chosen by the person on 2026-11-24.
+
+- **Bot chat.** The request card sits in the Bot's chat above its existing work result cards.
+- **Board → "Bot work"**, with a show/hide switch, shown by default. Each row shows the holder
+  Bot's real avatar and name (no role category as the primary label), the title, a progress-state
+  label — 進行中 (in progress), 等你 (waiting for you), 已完成 (done) — "n/m ✓" checklist progress,
+  and "last updated".
+- **Opening a card** shows the holder, the handoff history one line per handoff, the checklist (✓
+  done, an empty box open, struck through with its reason when not needed; each with its note and
+  "reported by <Bot>, <time>"), the linked Board item, and the actions 取消 (cancel), 交給其他 Bot
+  (hand to another Bot) and 完成 (complete).
+- Completed entries are ticks; dots or lights express progress state only.
+- **No approve or reject buttons on the card in v1.** "等你" opens the Bot's chat, where the person
+  replies.
+
+The list below is the earlier outline; where it differs, §9.1 wins.
+
 - **Board → "Bot work" section**, shown by default, with its own switch and a Bot filter. Rows:
   title, Project, holder Bot and role, and the lights. Never counted in Board totals or columns,
   and never placed in *Needs attention*.
@@ -467,6 +519,7 @@ Bounds to register in `internal/domain/capacity` before code, each refusing at i
 | `bot_request.merged_cards` | 16 absorbed per card |
 | `bot_request.page_rows` | 100 |
 | `bot_request.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
+| `bot_request.batch_cards` | 16 cards per batch tick |
 
 Every write is one transaction: read the card, check actor, chain and version, write the next
 state, the event and any outbox effect. No Git or network I/O happens in a card write except
@@ -503,10 +556,8 @@ commits.
 
 Irreversible items are marked **(I)**.
 
-**Gate: mockups before the console (decided 2026-11-24).** Phase 4 starts only after the person has
-chosen from the design mockups. They are produced separately, at
-`docs/mockups/bot-request-cards.html`; this page does not define them. Phases 1 to 3 touch no
-console surface and do not wait for the choice.
+**Gate: mockups before the console (decided 2026-11-24).** Met: the person chose Design canvas
+direction A on 2026-11-24 (§9.1). Phases 1 to 3 touch no console surface.
 
 **Suggested order.** Phases 1 and 2 first, together with a minimal list view (phase 4a), so the
 record is useful as soon as Bots can write it. Split and merge (phase 3), the rest of the console
