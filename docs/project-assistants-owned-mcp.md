@@ -202,6 +202,23 @@ an offer (`TestBotToolsCanAskThePersonButNeverAnswer`).
 - When that turn ends, `ForwardDecision` completes the exchange with the
   turn's final text and queues the usual correlated `bot_reply` turn to the
   requester.
+- Every stored peer reply — a local exchange completion, a forwarded
+  decision and both network receipts — passes through
+  `projectassistant.CollaborationReply`, bounded by `bots.review_reply_bytes`
+  (32,000 bytes, the same as a request). Until 2026-11-24 the bound was 4,000
+  bytes and the reply was cut without a word, so a requester read half a
+  review as its conclusion. A reply over the bound now keeps its beginning
+  and ends with `[Clawdline: reply truncated: original N bytes, first M bytes
+  kept. …]`; the stored exchange, the console and the receipt all show that
+  line. The correlated-reply prompt adds that the reply is not the complete
+  answer and the requester should ask for the rest or tell the person.
+  Diagnostics reads the largest stored reply and counts each truncation as
+  `refused` (`TestOverLimitPeerReplyIsMarkedForTheRequester`,
+  `TestOverLimitDecisionAnswerIsMarkedForTheRequester`,
+  `TestOverLimitNetworkReplyIsMarkedInTheReceipt`). The full text is not kept
+  elsewhere: the recipient's own transcript holds it, and the requester gets
+  the rest by asking. A single chat message is separately bounded by
+  `MaxMessageBytes` (32 KiB).
 - Every agent is told when to use it. Claude Code, Codex, Grok and Gemini all
   receive the same "Decisions for the user" paragraph in the fixed Bot frame
   (`systemPrompt`), in English and Taiwan Traditional Chinese: ask with

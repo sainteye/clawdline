@@ -6,6 +6,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"time"
 )
 
@@ -191,8 +192,11 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsReviewPerSender:        reviews(true),
 		capacity.BotsReviewHops:             pure,
 		capacity.BotsReviewRequest:          pure,
-		capacity.BotsReviewReply:            pure,
-		capacity.BotsFallbacks:              pure,
+		capacity.BotsReviewReply: func() capacity.Reading {
+			u := pa.CollaborationReplyUsage()
+			return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Truncated}, Note: "largest stored Bot reply since start; refused counts replies whose tail was cut and marked for the requester"}
+		},
+		capacity.BotsFallbacks: pure,
 		capacity.BotsAgentRestSeconds: func() capacity.Reading {
 			p := &s.projectAssistants
 			p.mu.RLock()

@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -26,9 +27,15 @@ func TestCollaborationRequestPolicyAndReplyBoundary(t *testing.T) {
 	if err := CheckCollaborationRequest(q, BotReplyOrigin, MaxCollaborationHops-1); err != nil {
 		t.Fatal(err)
 	}
-	s := CollaborationReply(strings.Repeat("界", MaxCollaborationReplyBytes))
-	if !utf8.ValidString(s) || len(s) > MaxCollaborationReplyBytes {
-		t.Fatal("invalid reply boundary")
+	whole := strings.Repeat("a", MaxCollaborationReplyBytes)
+	if CollaborationReply(whole) != whole || ReplyTruncated(whole) {
+		t.Fatal("a reply at the bound was changed")
+	}
+	long := strings.Repeat("界", MaxCollaborationReplyBytes)
+	s := CollaborationReply(long)
+	if !utf8.ValidString(s) || len(s) > MaxCollaborationReplyBytes || !ReplyTruncated(s) ||
+		!strings.Contains(s, "original "+strconv.Itoa(len(long))+" bytes") || !strings.HasPrefix(long, s[:strings.Index(s, "\n\n"+ReplyTruncatedMarker)]) {
+		t.Fatalf("invalid reply boundary: %d bytes, tail %q", len(s), s[len(s)-120:])
 	}
 	raw, _ := json.Marshal(Turn{})
 	for _, key := range []string{`"origin"`, `"exchange_id"`, `"hops"`} {
