@@ -181,11 +181,7 @@ func (n NetworkHost) Result(ctx context.Context, r network.Receipt) (network.Rec
 			switch t.State {
 			case pa.TurnSucceeded:
 				r.State = "reply_stored"
-				for _, m := range x.Messages {
-					if m.TurnID == t.ID && m.Kind == pa.AssistantMessage {
-						r.Reply = pa.CollaborationReply(m.Text)
-					}
-				}
+				r.Reply = networkTurnReply(x.Messages, t.ID)
 			case pa.TurnUnknown:
 				r.State = "unknown"
 				r.Failure = t.Failure
@@ -232,4 +228,16 @@ func (w NativeWork) NetworkBot(ctx context.Context, q app.NetworkToolRequest) (n
 		return network.Response{}, failure(pa.Unsupported, "network_unconfigured")
 	}
 	return w.network(ctx, q)
+}
+
+// networkTurnReply is the bounded reply a network receipt carries for a
+// finished turn: its last assistant message, marked when it was truncated.
+func networkTurnReply(messages []pa.Message, turnID string) string {
+	reply := ""
+	for _, m := range messages {
+		if m.TurnID == turnID && m.Kind == pa.AssistantMessage {
+			reply = pa.CollaborationReply(m.Text)
+		}
+	}
+	return reply
 }

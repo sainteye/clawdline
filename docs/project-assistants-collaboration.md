@@ -84,6 +84,9 @@ The inspected read-only upstream HEAD was
 * `host/src/chat/team.rs:23-28`: global 64 outstanding requests, request 32000
   bytes and stored notice reply 4000 bytes. This increment retains the complete
   request and therefore adds no separate request-quote truncation bound.
+  Clawdline raised its stored reply to 32000 bytes on 2026-11-24 and marks a
+  truncated reply with its original length
+  ([project-assistants-owned-mcp.md](project-assistants-owned-mcp.md)).
 * `host/src/chat/team/requests.rs:10-48`: hops 8, per-sender outstanding 16,
   and request-turn recursion refusal.
 * `host/src/chat/team/directory.rs:12-13,42-58,135-149`: visibility, paging and

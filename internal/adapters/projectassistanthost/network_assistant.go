@@ -82,11 +82,7 @@ func (n NetworkHost) ResultAssistant(ctx context.Context, r network.AssistantRec
 			switch t.State {
 			case pa.TurnSucceeded:
 				r.State = "reply_stored"
-				for _, m := range x.Messages {
-					if m.TurnID == t.ID && m.Kind == pa.AssistantMessage {
-						r.Reply = pa.CollaborationReply(m.Text)
-					}
-				}
+				r.Reply = networkTurnReply(x.Messages, t.ID)
 			case pa.TurnUnknown:
 				r.State = "unknown"
 				r.Failure = t.Failure

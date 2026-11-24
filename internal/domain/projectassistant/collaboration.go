@@ -1,7 +1,9 @@
 package projectassistant
 
 import (
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"unicode/utf8"
 )
 
@@ -20,7 +22,7 @@ const (
 	MaxCollaborationPerSender               = 16
 	MaxCollaborationHops                    = 8
 	MaxCollaborationRequestBytes            = 32000
-	MaxCollaborationReplyBytes              = 4000
+	MaxCollaborationReplyBytes              = 32000
 )
 
 type ExchangeOutcome string
@@ -136,17 +138,59 @@ func CheckCollaborationRequest(q BotMessageRequest, origin TurnOrigin, hops int)
 
 func (x Exchange) Outstanding() bool { return x.Outcome == ExchangeQueued || x.Outcome == ExchangeSent }
 
-// Stored replies are bounded at a UTF-8 boundary; unknown diagnostic evidence
-// is not passed through this function or silently shortened.
+// ReplyTruncatedMarker begins the line CollaborationReply appends when it had
+// to cut a reply, so every reader — the stored exchange, the requester's
+// prompt, the console and a network receipt — sees that the text is partial.
+const ReplyTruncatedMarker = "[Clawdline: reply truncated"
+
+// ReplyUsage is what the reply bound has done since this process started:
+// the largest reply it stored and how many replies it had to cut.
+type ReplyUsage struct{ Largest, Truncated int64 }
+
+var replyLargest, replyTruncated atomic.Int64
+
+// CollaborationReplyUsage is the diagnostics reading for bots.review_reply_bytes.
+func CollaborationReplyUsage() ReplyUsage {
+	return ReplyUsage{Largest: replyLargest.Load(), Truncated: replyTruncated.Load()}
+}
+
+func noteReply(n int) {
+	for {
+		old := replyLargest.Load()
+		if int64(n) <= old || replyLargest.CompareAndSwap(old, int64(n)) {
+			return
+		}
+	}
+}
+
+// CollaborationReply bounds a stored reply at a UTF-8 boundary. A reply over
+// the bound keeps its beginning and ends with a marker naming the original and
+// kept lengths, so nobody mistakes the kept part for the whole answer.
 func CollaborationReply(text string) string {
 	if len(text) <= MaxCollaborationReplyBytes {
+		noteReply(len(text))
 		return text
 	}
-	text = text[:MaxCollaborationReplyBytes]
-	for !utf8.ValidString(text) {
-		text = text[:len(text)-1]
+	original := strconv.Itoa(len(text))
+	// The marker's own digits are at most those of the original length.
+	room := MaxCollaborationReplyBytes - len(replyTruncatedLine(original, original))
+	kept := text[:room]
+	for !utf8.ValidString(kept) {
+		kept = kept[:len(kept)-1]
 	}
-	return text
+	out := kept + replyTruncatedLine(original, strconv.Itoa(len(kept)))
+	replyTruncated.Add(1)
+	noteReply(len(out))
+	return out
+}
+
+func replyTruncatedLine(original, kept string) string {
+	return "\n\n" + ReplyTruncatedMarker + ": original " + original + " bytes, first " + kept + " bytes kept. The rest was not stored or delivered.]"
+}
+
+// ReplyTruncated reports whether a stored reply carries the truncation marker.
+func ReplyTruncated(reply string) bool {
+	return strings.Contains(reply, "\n\n"+ReplyTruncatedMarker+": original ")
 }
 
 func ValidateTurnOrigin(t Turn) error {

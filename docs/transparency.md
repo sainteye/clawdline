@@ -21,6 +21,13 @@ only the question and reply's scope. Claude Code's allowed owned tools gain
 choice or execution path is added; the real-agent behavior is not proven by
 this receipt.
 
+A truncated Bot reply now says so. The correlated-reply prompt gains one
+sentence when the stored reply ends with Clawdline's truncation line: the
+reply is not the complete answer, and the requester asks for the rest or tells
+the person. The `persistent-bot-review` effect copy in English and Taiwan
+Traditional Chinese now states the 32,000-byte reply bound, the marker and the
+diagnostics count. No tool, approval choice or execution path is added.
+
 ## Content ownership
 
 The details address menu opens or copies only literal HTTP candidates supplied

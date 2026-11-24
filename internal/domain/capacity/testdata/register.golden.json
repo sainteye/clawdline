@@ -3258,9 +3258,9 @@
     "Name": "bots.review_reply_bytes",
     "Class": "buffer",
     "Unit": "bytes",
-    "Limit": 4000,
+    "Limit": 32000,
     "WarnAt": 0,
-    "AtLimit": "coalesce",
+    "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics",
