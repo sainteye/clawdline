@@ -8,6 +8,8 @@
 .project-assistants .pa-server-name small { color:var(--pa-dim);flex:none;font-size:12px; }
 .project-assistants .pa-dev-server[data-failed] .pa-server-name small { color:var(--danger,#f87171); }
 .project-assistants .pa-dev-server .pa-server-menu { width:36px;min-height:36px;border:0;background:transparent;padding:0; }
+/* On touch the menu answers a 44px square; it has no border or fill, so its "⋯" looks the same. */
+@media (pointer: coarse) { .project-assistants .pa-dev-server .pa-server-menu { width:44px;min-height:44px; } }
 @media(hover:hover) { .project-assistants .pa-server-menu:not([aria-expanded="true"]) { opacity:0; } .project-assistants .pa-dev-server:hover .pa-server-menu,.project-assistants .pa-dev-server:focus-within .pa-server-menu { opacity:1; } }
 .project-assistants.pa-server-logs { width:min(760px,calc(100% - 24px));max-height:calc(100dvh - 24px);padding:20px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-bg);overflow:auto; }
 .pa-server-logs::backdrop { background:#0009; }
