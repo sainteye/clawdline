@@ -11,6 +11,7 @@ const compact = new Intl.NumberFormat("en", {notation: "compact", maximumFractio
 export function compactedNoticeText(message: Pick<W.ProjectAssistantMessage, "id" | "kind" | "text" | "notice">, w: Words): string | null {
   if (message.kind !== "notice") return null
   const ref = message.notice
+  if (ref?.key === "cleanup_released") return ref.cause === "person" ? w.cleanupReleasedPerson : w.cleanupReleasedDegraded
   if (ref?.key === "compacted") {
     const before = ref.tokens_before ?? 0, after = ref.tokens_after ?? 0
     return before > 0 && after > 0 && after < before

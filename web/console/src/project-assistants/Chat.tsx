@@ -1008,6 +1008,19 @@ ${currentDraft}`:submitted)
     }finally{stopping.current=false;if(valid())setBusy(false)}
   }
 
+  const releaseRiskID=`pa-release-risk-${key.bot_id}`
+  // Releases a Bot whose earlier Agent cleanup is unconfirmed; the earlier
+  // turn keeps its unknown outcome and nothing is sent again.
+  const releaseUnconfirmed=async()=>{
+    if(busy||!valid()||recovery.current)return
+    setBusy(true)
+    try{
+      await mutate((d,s)=>source.stop({command:command(key,"stop"),fence:fence(d),turn_id:"",release_unconfirmed:true},s))
+      if(valid()){setError("");setErrorField(undefined);void refresh()}
+    }catch(e){if(valid())fail(e)}
+    finally{if(valid())setBusy(false)}
+  }
+
   const editQueued=async(action:"begin"|"save"|"cancel",turnID:string,editID:string,text:string)=>{
     if(!source.editQueue||queueInFlight.current||busy||!valid()||recovery.current)return
     queueInFlight.current=true
@@ -1592,6 +1605,8 @@ ${currentDraft}`:submitted)
     {(reconnecting||error)&&<div className="pa-chat-error" role={reconnecting?"status":"alert"} data-reconnecting={reconnecting||undefined}>
       <span>{reconnecting?w.chatReconnecting:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
+      {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
+      {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
     </div>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
     {!thread&&<BotCallBar call={call} state={callState} name={bot.name} language={language} realtime={realtimeCall}/>}

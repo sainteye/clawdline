@@ -21,3 +21,6 @@ func (p *Process) signalOwned(context.Context, []processIdentity, bool) error {
 func (p *Process) identities(context.Context) ([]processIdentity, error) {
 	return nil, refusal(pa.SandboxUnavailable, "process_supervisor")
 }
+
+// No census runs here, so nothing is ever attributed to a reaper.
+const orphansGoToInit = false

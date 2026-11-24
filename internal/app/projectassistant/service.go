@@ -647,9 +647,10 @@ func (s *Service) Stop(ctx context.Context, request StopRequest) (pa.Receipt, er
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "stop_key")
 	}
 	request.Command, err = canonicalCommand(request.Command, pa.StopOperation, a.PrincipalID, struct {
-		Fence  pa.Fence
-		TurnID string
-	}{request.Fence, request.TurnID})
+		Fence   pa.Fence
+		TurnID  string
+		Release bool `json:",omitempty"`
+	}{request.Fence, request.TurnID, request.ReleaseUnconfirmed})
 	if err != nil {
 		return pa.Receipt{}, err
 	}

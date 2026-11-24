@@ -335,6 +335,16 @@
     "Note": true
   },
   {
+    "Name": "bots.cleanup_slow_retries",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.cleanup_slow_retry_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.cloud_endpoints",
     "Known": true,
     "Note": true
@@ -679,6 +689,11 @@
   },
   {
     "Name": "bots.login_secret_targets",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.login_status_milliseconds",
     "Known": true,
     "Note": true
   },
@@ -1088,6 +1103,11 @@
   },
   {
     "Name": "bots.turn_control_window_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.unscanned_census_gap_ms",
     "Known": true,
     "Note": true
   },

@@ -45,8 +45,9 @@ func (r *Engine) retain(a *runtimeActor, err error) {
 	}
 }
 
-// retryRetained re-attempts an unconfirmed cleanup a bounded number of times
-// with a doubling delay, so a Bot whose Agent process stopped a moment after
+// retryRetained re-attempts an unconfirmed cleanup CleanupRetries times with a
+// doubling delay, then keeps re-checking with the delay capped at
+// CleanupSlowRetryDelay until cleanup is confirmed or the Engine closes, so a Bot whose Agent process stopped a moment after
 // the first check no longer refuses every message until Clawdline restarts
 // (Beacon and Lens, 2026-11-23). Each attempt is the same verified
 // retryCleanup that shutdown uses: the owner is released only when Close
@@ -56,8 +57,21 @@ func (r *Engine) retryRetained(a *runtimeActor) {
 	delay := r.o.Limits.CleanupRetryDelay
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
-	for attempt := 1; attempt <= r.o.Limits.CleanupRetries; attempt++ {
+	slow := r.o.Limits.CleanupSlowRetryDelay
+	for attempt := 1; attempt <= r.o.Limits.CleanupRetries || slow > 0; attempt++ {
 		<-timer.C
+		// Re-checking forever made recovery wait for an unrelated event: on a
+		// busy machine a person's app born inside a census gap kept the Bot
+		// refusing for hours (Fuse, 2026-11-24). After the bounded slow
+		// re-checks the Bot is released without confirmation and says so.
+		if degrade := r.o.Limits.CleanupSlowRetries; slow > 0 && degrade > 0 && attempt > r.o.Limits.CleanupRetries+degrade {
+			if r.releaseUnconfirmed(a, "degraded") {
+				r.mu.Lock()
+				a.retrying = false
+				r.mu.Unlock()
+				return
+			}
+		}
 		r.mu.Lock()
 		if r.closed || !a.retained {
 			a.retrying = false
@@ -79,7 +93,13 @@ func (r *Engine) retryRetained(a *runtimeActor) {
 			}
 		}
 		r.mu.Unlock()
+		if attempt == r.o.Limits.CleanupRetries && slow > 0 {
+			log.Printf("project assistant: Agent process cleanup still unconfirmed after %d quick retries; bot=%s keeps re-checking at most every %s", attempt, a.key.BotID, slow)
+		}
 		delay *= 2
+		if attempt >= r.o.Limits.CleanupRetries && slow > 0 && delay > slow {
+			delay = slow
+		}
 		timer.Reset(delay)
 	}
 	r.mu.Lock()
@@ -395,7 +415,117 @@ func (r *Engine) shutdown(ctx context.Context, project *pa.ProjectSelection) err
 	}
 }
 
-func (r *Engine) retryCleanup(a *runtimeActor) {
+func (r *Engine) retryCleanup(a *runtimeActor) { r.retryCleanupWith(a, false) }
+
+// UnconfirmedProcessReader is an optional ProviderSession capability naming
+// the processes that keep its cleanup unconfirmed. It is diagnostic only.
+type UnconfirmedProcessReader interface{ UnconfirmedProcesses() []int }
+
+// UnconfirmedProcessesOf lets a wrapping session forward the capability.
+func UnconfirmedProcessesOf(s ProviderSession) []int {
+	if reader, ok := s.(UnconfirmedProcessReader); ok {
+		return reader.UnconfirmedProcesses()
+	}
+	return nil
+}
+
+// releaseUnconfirmed gives a retained Bot back without confirming that its
+// Agent processes stopped: after the bounded re-checks (cause "degraded") or
+// when the person chooses it (cause "person"). The earlier turn keeps its
+// unknown outcome and is never resent; the processes that could not be
+// confirmed are logged by pid and a notice in the chat says what happened.
+// It reports whether the Bot was released; an owner still holding the actor
+// keeps it retained.
+func (r *Engine) releaseUnconfirmed(a *runtimeActor, cause string) bool {
+	r.mu.Lock()
+	if r.closed || !a.retained || a.users != 0 {
+		r.mu.Unlock()
+		return false
+	}
+	a.users++
+	cleanupErr := a.cleanupErr
+	r.mu.Unlock()
+	a.mu.Lock()
+	session := a.session
+	a.mu.Unlock()
+	var pids []int
+	if session != nil {
+		pids = UnconfirmedProcessesOf(session)
+	}
+	log.Printf("project assistant: Agent process cleanup released without confirmation (%s); bot=%s unconfirmed pids=%v: %v", cause, a.key.BotID, pids, cleanupErr)
+	r.retryCleanupWith(a, true)
+	r.mu.Lock()
+	released := !a.retained
+	r.mu.Unlock()
+	if released {
+		r.writeUnconfirmedNotice(a.key, cause)
+	}
+	return released
+}
+
+// cleanupReleasedPrefix names the chat notice of a release without
+// confirmation; one per earlier turn, so the ID is stable.
+const cleanupReleasedPrefix = "cleanup-released-"
+
+func (r *Engine) writeUnconfirmedNotice(key pa.BotKey, cause string) {
+	ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)
+	defer cancel()
+	x, err := r.o.Repository.Export(ctx, key)
+	if err != nil {
+		log.Printf("project assistant: notice of a release without confirmation not written; bot=%s: %v", key.BotID, err)
+		return
+	}
+	var last *pa.Turn
+	for i := range x.Turns {
+		t := &x.Turns[i]
+		if t.State != pa.TurnUnknown || t.Room != nil || t.StartedAt == nil {
+			continue
+		}
+		if last == nil || t.StartedAt.After(*last.StartedAt) {
+			last = t
+		}
+	}
+	if last == nil {
+		return
+	}
+	id := cleanupReleasedPrefix + last.ID
+	for _, m := range x.Messages {
+		if m.ID == id {
+			return
+		}
+	}
+	msg := pa.Message{ID: id, Fence: last.Fence, TurnID: last.ID, Kind: pa.NoticeMessage,
+		Text:   "The previous Agent processes could not all be confirmed stopped. The Bot accepts messages again; check Activity Monitor for leftover Agent processes.",
+		Notice: &pa.NoticeRef{Key: pa.NoticeCleanupReleased, Cause: cause}, At: r.o.Clock()}
+	m := Mutation{Command: r.command(key, pa.SendOperation, id, last.ID), ExpectedVersion: x.Bot.Version, Messages: []pa.Message{msg},
+		Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: id}, Events: []pa.Event{{Fence: last.Fence, Kind: pa.MessageCreated, Message: &msg}}}
+	if _, err := r.mutate(ctx, x.Bot, m); err != nil {
+		log.Printf("project assistant: notice of a release without confirmation not written; bot=%s: %v", key.BotID, err)
+	}
+}
+
+// ReleaseUnconfirmed is the person's "release without confirming" for a Bot
+// whose earlier Agent cleanup is unconfirmed. Releasing a Bot that is not
+// retained delivers nothing and succeeds.
+func (r *Engine) ReleaseUnconfirmed(ctx context.Context, q StopRequest) (pa.Receipt, error) {
+	bot, err := r.o.Repository.Bot(ctx, q.Command.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if err := r.authorized(ctx, q.Command.Key, bot.Project); err != nil {
+		return pa.Receipt{}, err
+	}
+	r.mu.Lock()
+	a := r.actors[q.Command.Key]
+	retained := a != nil && a.retained
+	r.mu.Unlock()
+	if retained && !r.releaseUnconfirmed(a, "person") {
+		return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "owned_cleanup_busy")
+	}
+	return pa.Receipt{Command: q.Command, ID: r.o.ID(), State: pa.EffectDelivered, ResourceID: q.TurnID}, nil
+}
+
+func (r *Engine) retryCleanupWith(a *runtimeActor, force bool) {
 	defer r.release(a)
 	a.mu.Lock()
 	session := a.session
@@ -410,8 +540,14 @@ func (r *Engine) retryCleanup(a *runtimeActor) {
 		return
 	}
 	if session != nil {
-		if err := r.closeSession(a, session); err != nil {
+		if err := r.closeSession(a, session); err != nil && !force {
 			return
+		} else if err != nil {
+			// Released without confirmation: the handle is abandoned, never
+			// reused, and its unknown processes are not signalled again.
+			a.mu.Lock()
+			a.session = nil
+			a.mu.Unlock()
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), r.o.Limits.CleanupTimeout)

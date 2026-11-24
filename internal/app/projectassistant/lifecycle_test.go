@@ -278,3 +278,148 @@ func TestRuntimeRetainedCleanupRetriesStayBounded(t *testing.T) {
 		t.Fatalf("an unconfirmed cleanup admitted a message: %v", err)
 	}
 }
+
+// Quick retries used to be the last word: once they ran out a Bot refused
+// every message until Clawdline restarted (Fuse, 2026-11-24). The re-checks
+// now continue at a capped interval and release once cleanup is confirmed.
+func TestRuntimeRetainedCleanupKeepsRecheckingAfterQuickRetries(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 2, time.Millisecond, 3*time.Millisecond
+	p.closeFailures.Store(6)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	eventually(t, func() bool { u := f.r.Usage(); return u.Known && u.Processes == 0 && u.ActiveActors == 0 })
+	if got := p.closes.Load(); got != 7 {
+		t.Fatalf("closes=%d, want the failed close, two quick retries, three slow failures and one confirmed check", got)
+	}
+	if x, _ := f.store.Turn(context.Background(), f.key, first.ResourceID); x.State != pa.TurnUnknown {
+		t.Fatalf("a cleanup retry rewrote the earlier turn to %v", x.State)
+	}
+	if f.provider.count() != 1 {
+		t.Fatal("a cleanup retry sent the earlier prompt again")
+	}
+}
+
+// With every background retry spent, the next message re-checks cleanup
+// itself and is accepted once cleanup is confirmed, without a restart. The
+// earlier turn keeps its unknown outcome and is never sent again.
+func TestRuntimeNextMessageRechecksRetainedCleanup(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 2, time.Millisecond, 0
+	p.closeFailures.Store(3)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	eventually(t, func() bool { return p.closes.Load() == 3 })
+	eventually(t, func() bool {
+		f.r.mu.Lock()
+		defer f.r.mu.Unlock()
+		a := f.r.actors[f.key]
+		return a != nil && !a.retrying
+	})
+	second, err := f.submit(t, "two", "two")
+	if err != nil {
+		t.Fatalf("the next message did not re-check the retained cleanup: %v", err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "two done"}
+	awaitTurn(t, f, second.ResourceID, pa.TurnSucceeded)
+	if x, _ := f.store.Turn(context.Background(), f.key, first.ResourceID); pa.Code(x.Failure) != pa.ExecutionEffectUnknown {
+		t.Fatalf("the earlier turn lost its unknown effect: %+v", x.Failure)
+	}
+	if f.provider.count() != 2 {
+		t.Fatalf("processes=%d, want one per accepted message", f.provider.count())
+	}
+}
+
+// Re-checking forever made a Bot's recovery wait for an unrelated process: a
+// person's app born inside a census gap kept it refusing for hours (Fuse,
+// 2026-11-24). After the bounded slow re-checks it is released without
+// confirmation, the earlier turn stays unknown and is not resent, and the chat
+// says so. Until then every message is refused.
+func TestRuntimeRetainedCleanupDegradesAfterBoundedSlowRechecks(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 1, 20*time.Millisecond, 40*time.Millisecond
+	f.r.o.Limits.CleanupSlowRetries = 2
+	p.closeUnknown.Store(true)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	if u := f.r.Usage(); u.Known || u.Processes != 1 {
+		t.Fatalf("an unconfirmed cleanup was released before degrading: %+v", u)
+	}
+	eventually(t, func() bool { u := f.r.Usage(); return u.Known && u.Processes == 0 })
+	assertReleasedNotice(t, f, first.ResourceID, "degraded")
+	p.closeUnknown.Store(false)
+	second, err := f.submit(t, "two", "two")
+	if err != nil {
+		t.Fatalf("a degraded Bot still refused: %v", err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "two done"}
+	awaitTurn(t, f, second.ResourceID, pa.TurnSucceeded)
+	if f.provider.count() != 2 {
+		t.Fatalf("processes=%d, want one per accepted message", f.provider.count())
+	}
+}
+
+// The person's "release without confirming" frees a retained Bot at once.
+func TestRuntimeReleaseUnconfirmedFreesARetainedBotAtOnce(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries = 0
+	p.closeUnknown.Store(true)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	if _, err = f.submit(t, "early", "early"); pa.Code(err) != pa.CapacityFull {
+		t.Fatalf("an unconfirmed cleanup admitted a message: %v", err)
+	}
+	cmd := pa.Command{Key: f.key, Operation: pa.StopOperation, IdempotencyKey: "release"}
+	if r, err := f.r.Stop(context.Background(), StopRequest{Command: cmd, Fence: pa.Fence{Key: f.key}, ReleaseUnconfirmed: true}); err != nil || r.State != pa.EffectDelivered {
+		t.Fatalf("release=%+v %v", r, err)
+	}
+	if u := f.r.Usage(); !u.Known || u.Processes != 0 {
+		t.Fatalf("the release did not free the Bot at once: %+v", u)
+	}
+	assertReleasedNotice(t, f, first.ResourceID, "person")
+	if _, err := f.submit(t, "two", "two"); err != nil {
+		t.Fatalf("a released Bot still refused: %v", err)
+	}
+}
+
+func assertReleasedNotice(t *testing.T, f *runtimeFixture, turn, cause string) {
+	t.Helper()
+	x, err := f.store.Export(context.Background(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range x.Messages {
+		if m.ID == cleanupReleasedPrefix+turn {
+			if m.Kind != pa.NoticeMessage || m.Notice == nil || m.Notice.Key != pa.NoticeCleanupReleased || m.Notice.Cause != cause {
+				t.Fatalf("notice=%+v", m)
+			}
+			if tx, _ := f.store.Turn(context.Background(), f.key, turn); pa.Code(tx.Failure) != pa.ExecutionEffectUnknown {
+				t.Fatalf("the earlier turn lost its unknown effect: %+v", tx.Failure)
+			}
+			return
+		}
+	}
+	t.Fatal("no notice says the Bot was released without confirmation")
+}

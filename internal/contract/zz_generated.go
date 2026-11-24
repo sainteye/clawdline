@@ -5811,6 +5811,9 @@ type ProjectAssistantNetworkSettingsView struct {
 // A notice Clawdline wrote, as a key and its values; each console renders it in
 // its own language. text stays an English fallback.
 type ProjectAssistantNoticeRef struct {
+	// For cleanup_released: degraded when the bounded re-checks ran out, person when
+	// the person released the Bot.
+	Cause        string `json:"cause,omitempty"`
 	Key          string `json:"key"`
 	TokensAfter  int64  `json:"tokens_after,omitempty"`
 	TokensBefore int64  `json:"tokens_before,omitempty"`
@@ -6714,7 +6717,11 @@ type ProjectAssistantSourcesResponse struct {
 type ProjectAssistantStopRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 	Fence   ProjectAssistantFence   `json:"fence"`
-	TurnID  string                  `json:"turn_id"`
+
+	// Releases a Bot whose earlier Agent cleanup is unconfirmed without confirming it;
+	// turn_id is ignored and no turn is cancelled.
+	ReleaseUnconfirmed bool   `json:"release_unconfirmed,omitempty"`
+	TurnID             string `json:"turn_id"`
 }
 
 type ProjectAssistantTeamAnswerRequest struct {

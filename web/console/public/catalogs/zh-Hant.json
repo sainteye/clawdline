@@ -11351,6 +11351,10 @@
   "projectAssistants.failBotsOff": "那台機器沒有開啟 Bots。",
   "projectAssistants.failCleanup": "Clawdline 在收尾時無法確認這一輪的 Agent 已關閉。",
   "projectAssistants.sendCleanupPending": "這則訊息保留在輸入框。Clawdline 會再次確認上一輪的 Agent 是否已停止。等 Bot 可以接收新訊息後，就能送出。",
+  "projectAssistants.releaseUnconfirmed": "不確認，直接釋放",
+  "projectAssistants.releaseUnconfirmedRisk": "如果上一輪的 Agent 還在執行，可能會繼續改檔案或占用資源。上一輪的結果維持未知，不會重送。",
+  "projectAssistants.cleanupReleasedDegraded": "上一輪的程序無法完全確認已停止。Clawdline 已釋放這個 Bot，可以再接收訊息；請到「活動監視器」檢查有沒有殘留的 Agent 程序。",
+  "projectAssistants.cleanupReleasedPerson": "已在未確認上一輪程序停止的情況下釋放。請到「活動監視器」檢查有沒有殘留的 Agent 程序。",
   "projectAssistants.failCloudOff": "那台機器關閉了從 Clawdline Cloud 操作。",
   "projectAssistants.failConnection": "尚未收到結果，與 Agent 的連線就已結束。",
   "projectAssistants.failCredits": "Agent 回報餘額不足。",
@@ -14323,5 +14327,11 @@
   "capacityRow.cloud.line_open_retry_first_seconds.what": "這台機器的 Cloud 連線啟動失敗後，要等多久才再試一次。之後每失敗一次，等待時間加倍，直到下一項上限。",
   "capacityRow.cloud.line_open_retry_first_seconds.full": "重試成功前，手機和 app.clawdline.com 連不到這台機器，Cloud 設定會寫明原因。短暫的檔案或磁碟問題會自己恢復，你不用做任何事。",
   "capacityRow.cloud.line_open_retry_max_seconds.what": "Cloud 連線一直啟動失敗時，兩次嘗試之間最長等多久。機器不會放棄，至少每隔這麼久就再試一次。",
-  "capacityRow.cloud.line_open_retry_max_seconds.full": "持續失敗期間，Cloud 設定會顯示原因。如果這台機器已登出或被移出帳號，就會停止重試，等你重新登入。"
+  "capacityRow.cloud.line_open_retry_max_seconds.full": "持續失敗期間，Cloud 設定會顯示原因。如果這台機器已登出或被移出帳號，就會停止重試，等你重新登入。",
+  "capacityRow.bots.cleanup_slow_retries.what": "上一輪 Agent 清理未確認時，Bot 在放行前最多做幾次慢速重新確認。",
+  "capacityRow.bots.cleanup_slow_retries.full": "超過後 Bot 會重新接收訊息，聊天裡會說明上一輪的程序無法完全確認已停止，上一輪結果維持未知。",
+  "capacityRow.bots.cleanup_slow_retry_ms.full": "快速重新確認用完後，Bot 會繼續重新確認，等待時間每次加倍，最多到這個間隔，直到確認清理完成。",
+  "capacityRow.bots.cleanup_slow_retry_ms.what": "Bot 之後重新確認 Agent 程序清理時，兩次之間最長的等待時間。",
+  "capacityRow.bots.unscanned_census_gap_ms.full": "程序盤點中斷的時間比這個短，就當成一般的檢查間隔；比這個長，才會搜尋你這個使用者留下的程序。",
+  "capacityRow.bots.unscanned_census_gap_ms.what": "Bot 不搜尋殘留程序就接受的最長程序盤點空窗。"
 }
