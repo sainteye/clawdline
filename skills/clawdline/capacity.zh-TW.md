@@ -144,6 +144,7 @@
 | `bots.login_probe_backoff_milliseconds` | 400 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_status_milliseconds` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

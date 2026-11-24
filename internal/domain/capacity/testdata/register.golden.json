@@ -2774,6 +2774,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.login_status_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 10000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginStatusMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.manager_approval_seconds",
     "Class": "buffer",
     "Unit": "seconds",

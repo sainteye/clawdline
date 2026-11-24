@@ -11,13 +11,13 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-// A restart during a credential write or a held execution leaves the
-// credential unknown. Entering it again is the explicit way out: the new
+// A restart during a credential write, or after an execution's uncertain
+// cleanup quarantined it, leaves the credential unknown. Entering it again is the explicit way out: the new
 // revision revokes every earlier capture, and the connector works again
 // without another restart. A read that is interrupted is not cached.
 func TestRestartUnknownConnectorCredentialRecoversWithAReplacement(t *testing.T) {
 	ctx := context.Background()
-	for _, restart := range []string{"accepted write", "held execution", "uncertain removal"} {
+	for _, restart := range []string{"accepted write", "quarantined execution", "uncertain removal"} {
 		f := newFixture(t)
 		f.store(t, []byte("SYNTHETIC_FIRST_VALUE"))
 		var oldRevision int64
@@ -27,11 +27,14 @@ func TestRestartUnknownConnectorCredentialRecoversWithAReplacement(t *testing.T)
 				t.Fatal(err)
 			}
 		default:
-			value, revision, _, _, err := f.r.Acquire(ctx, f.scope)
+			value, revision, _, quarantine, err := f.r.Acquire(ctx, f.scope)
 			if err != nil {
 				t.Fatal(err)
 			}
 			botprofilevault.Wipe(value)
+			if err = quarantine(ctx); err != nil {
+				t.Fatal(err)
+			}
 			oldRevision = revision
 		}
 		reopened, err := New(ctx, f.db, f.state, "synthetic-account", "machine")
