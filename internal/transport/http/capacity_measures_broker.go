@@ -35,9 +35,15 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
 		},
 		capacity.DispatchAlsoWorkIDs: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-dispatch guard"} },
-		capacity.HandoffWorktrees:    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
-		capacity.HandoffPatchBytes:   func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
-		capacity.HandoffPackBytes:    func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.DispatchBriefEnterPresses: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-task press count, kept on the task record; no retained buffer"}
+		},
+		capacity.DispatchBriefHeldSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-task age ceiling; the held time persists on the task record; no retained buffer"}
+		},
+		capacity.HandoffWorktrees:  func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPatchBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPackBytes:  func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.OpeningStuckSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row age ceiling; the row's updated time persists; no retained buffer"}
 		},

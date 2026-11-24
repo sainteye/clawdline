@@ -129,6 +129,7 @@ func (b *Broker) tendDialog(ctx context.Context, rd reading, r Record, p *Pulse)
 			return errUnchanged
 		}
 		t.AwaitingDialogSince = time.Time{}
+		t.Briefing = briefingStages(err, b.now())
 		if err != nil {
 			t.SpawnError = err.Error()
 		}

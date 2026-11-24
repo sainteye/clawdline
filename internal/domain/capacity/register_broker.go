@@ -73,6 +73,25 @@ func brokerBounds() []Entry {
 			Sources: []string{"internal/app/orchestrator.OpeningStuckSecondsLimit"},
 		},
 		{
+			// Enters the beat presses on a child's briefing that is still
+			// held in its composer after the send's own presses (task
+			// bb9f44d8). Past it nothing more is pressed; the task ends at
+			// dispatch.brief_held_seconds with a task_stalled notice.
+			Name: DispatchBriefEnterPresses, Class: Buffer, Unit: Rows,
+			Limit: 3, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.briefEnterLimit"},
+		},
+		{
+			// How long after a briefing was first seen held in the child's
+			// composer an unsigned task stays spawning. At the limit it ends
+			// spawn_failed and its root is told with a task_stalled notice.
+			Name: DispatchBriefHeldSeconds, Class: Observation, Unit: Seconds,
+			Limit: 120, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.briefHeldSecondsLimit"},
+		},
+		{
 			// The items one child carries beside its work_id: one branch and
 			// one landing for all of them. A dispatch naming more is refused
 			// whole with bad_task, never trimmed, because a dropped item is

@@ -2,12 +2,14 @@ package orchestrator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -128,6 +130,11 @@ func (b *Broker) tendStall(ctx context.Context, rd reading, r Record, p *Pulse) 
 	if r.Stalled() {
 		return b.reportStall(ctx, rd, r, p)
 	}
+	if b.briefingHeld(ctx, rd, r) {
+		// Held text is not idle, and not a child at work either.
+		b.stalls.forget(r.ID)
+		return b.tendHeld(ctx, rd, r, p)
+	}
 	now := b.now()
 	since, idle := b.stalls.since(r.ID, b.childIdle(ctx, rd, r), now)
 	if !idle {
@@ -145,9 +152,17 @@ func (b *Broker) tendStall(ctx context.Context, rd reading, r Record, p *Pulse) 
 	if now.Sub(since) < stallReportLimit {
 		return false
 	}
+	return b.markStalled(ctx, rd, r, now, p)
+}
+
+// markStalled records the decision to tell the root, then settles it.
+func (b *Broker) markStalled(ctx context.Context, rd reading, r Record, now time.Time, p *Pulse) bool {
 	marked, err := b.mutate(ctx, r.ID, "task.stalled", func(t *Record) error {
-		if !stallCandidate(*t) || t.Stall == nil || t.Stalled() {
+		if !stallCandidate(*t) || t.Stalled() {
 			return errUnchanged
+		}
+		if t.Stall == nil {
+			t.Stall = &Stall{}
 		}
 		t.Stall.ReportedAt = now
 		return nil
@@ -234,6 +249,15 @@ func (b *Broker) reportStall(ctx context.Context, rd reading, r Record, p *Pulse
 
 // stalledVerdict is the sentence the task ends with.
 func stalledVerdict(r Record) string {
+	if br := r.Briefing; br != nil && !br.HeldSince.IsZero() && (r.Stall == nil || r.Stall.NudgedAt.IsZero()) {
+		why := ""
+		if br.EnterError != "" {
+			why = " (the last press failed: " + br.EnterError + ")"
+		}
+		return fmt.Sprintf("The child stalled: its briefing was typed into its composer and never submitted. Enter "+
+			"was pressed on it %d more times%s, and it was still held there, unsigned, %d seconds after it was first "+
+			"seen held. Respawn it, or dispatch it again.", br.Enters, why, briefHeldSecondsLimit)
+	}
 	nudge := "was nudged once"
 	if r.Stall != nil && r.Stall.NudgeError != "" {
 		nudge = "could not be nudged (" + r.Stall.NudgeError + ")"
@@ -249,4 +273,144 @@ func NoticeKind(r Record) string {
 		return "task_stalled"
 	}
 	return "task_finished"
+}
+
+// A briefing that was typed and is still sitting in the child's composer.
+//
+// Task bb9f44d8, 2026-11-24: the briefing was seen arriving and Enter was
+// pressed, but Claude Code was redrawing its composer as auto mode started and
+// the Enter did nothing. The whole briefing stayed in the input line, the
+// task stayed `spawning`, and the watch above never fired: a composer with
+// text in it is not idle, so every reading started its interval again. Lens
+// pressed Enter by hand and the child started at once.
+//
+// So a reading that finds the child's own composer still holding its
+// briefing — framed, no dialog, the task's id in the input line, as
+// terminal.HoldsTyped reads it — is answered with Enter alone, never with the
+// line typed again, at most briefEnterLimit times briefEnterEvery apart. Each
+// press is recorded on the task before it is made (`task.brief.enter`), so a
+// restart never presses past the bound. If the briefing is still held and
+// unsigned briefHeldSecondsLimit after it was first seen held, the task ends
+// as a stalled one does: `spawn_failed` and a `task_stalled` notice.
+
+const (
+	// briefEnterLimit is how many times the beat presses Enter on a held
+	// briefing. The send itself already pressed it up to four times in a
+	// second; these are spread over a minute and a half, past a redraw.
+	briefEnterLimit = 3
+	// briefHeldSecondsLimit is how long after a briefing was first seen held
+	// an unsigned task is ended. It leaves room for every press and a beat to
+	// see what the last one did.
+	briefHeldSecondsLimit = 120
+	// briefEnterEvery is the least time between two presses, and between the
+	// first held reading and the first press.
+	briefEnterEvery = 20 * time.Second
+)
+
+// Briefing is how far typing the briefing got, as the child's screen showed.
+type Briefing struct {
+	// ShownAt is when the briefing was seen arriving in the input line.
+	ShownAt time.Time `json:"shown_at,omitempty"`
+	// EnteredAt is when the send pressed Enter on it.
+	EnteredAt time.Time `json:"entered_at,omitempty"`
+	// HeldSince is when the composer was first seen still holding it after
+	// Enter: by the send itself, or by a beat's reading.
+	HeldSince time.Time `json:"held_since,omitempty"`
+	// Enters is how many times the beat pressed Enter on it, LastEnterAt
+	// when it last did, and EnterError why the last press failed.
+	Enters      int       `json:"enters,omitempty"`
+	LastEnterAt time.Time `json:"last_enter_at,omitempty"`
+	EnterError  string    `json:"enter_error,omitempty"`
+}
+
+// briefingStages is what typing the briefing answered, as stages: nil when
+// the send never saw it arrive (terminal.Unsubmitted, or any other failure),
+// shown and entered when it was submitted, and held as well when the composer
+// kept it through every Enter (terminal.HeldAfterEnter).
+func briefingStages(err error, now time.Time) *Briefing {
+	var held terminal.HeldAfterEnter
+	switch {
+	case err == nil:
+		return &Briefing{ShownAt: now, EnteredAt: now}
+	case errors.As(err, &held):
+		return &Briefing{ShownAt: now, EnteredAt: now, HeldSince: now}
+	}
+	return nil
+}
+
+// briefingHeld is one reading of the child's own screen: true only on
+// positive evidence that its composer still holds this task's briefing — the
+// tab is in the reading, its screen answered, no dialog is up, and the input
+// line is a composer an Enter submits to that holds the task's id or a paste
+// placeholder (terminal.HoldsTyped). Anything else is not held.
+func (b *Broker) briefingHeld(ctx context.Context, rd reading, r Record) bool {
+	if _, present := rd.session(r.ChildTerminalID); !present || b.Screen == nil {
+		return false
+	}
+	screen, ok := b.Screen(ctx, r.ChildTerminalID)
+	if !ok || Choosing(screen, session.Assistant(r.Assistant)) {
+		return false
+	}
+	return terminal.HoldsTyped(screen, r.ID)
+}
+
+// tendHeld is the beat's answer to a held briefing: record when it was first
+// seen held, end the task once briefHeldSecondsLimit has passed since, and
+// until then press Enter, recorded first, at most briefEnterLimit times. It
+// answers true when the task became terminal.
+func (b *Broker) tendHeld(ctx context.Context, rd reading, r Record, p *Pulse) bool {
+	now := b.now()
+	if r.Briefing == nil || r.Briefing.HeldSince.IsZero() {
+		marked, err := b.mutate(ctx, r.ID, "task.brief.held", func(t *Record) error {
+			if !stallCandidate(*t) || (t.Briefing != nil && !t.Briefing.HeldSince.IsZero()) {
+				return errUnchanged
+			}
+			if t.Briefing == nil {
+				t.Briefing = &Briefing{}
+			}
+			t.Briefing.HeldSince = now
+			return nil
+		})
+		if err != nil || marked.Briefing == nil {
+			return false
+		}
+		r = marked
+	}
+	br := *r.Briefing
+	if now.Sub(br.HeldSince) >= briefHeldSecondsLimit*time.Second {
+		return b.markStalled(ctx, rd, r, now, p)
+	}
+	last := br.HeldSince
+	if br.LastEnterAt.After(last) {
+		last = br.LastEnterAt
+	}
+	if b.SubmitHeld == nil || br.Enters >= briefEnterLimit || now.Sub(last) < briefEnterEvery {
+		return false
+	}
+	recorded := false
+	_, err := b.mutate(ctx, r.ID, "task.brief.enter", func(t *Record) error {
+		recorded = false
+		if !stallCandidate(*t) || t.Briefing == nil || t.Briefing.Enters >= briefEnterLimit ||
+			now.Sub(t.Briefing.LastEnterAt) < briefEnterEvery {
+			return errUnchanged
+		}
+		t.Briefing.Enters++
+		t.Briefing.LastEnterAt = now
+		t.Briefing.EnterError = ""
+		recorded = true
+		return nil
+	})
+	if err != nil || !recorded {
+		return false
+	}
+	if err := b.SubmitHeld(ctx, r.ChildTerminalID, r.ID); err != nil {
+		_, _ = b.mutate(ctx, r.ID, "task.brief.enter.failed", func(t *Record) error {
+			if t.Briefing == nil {
+				return errUnchanged
+			}
+			t.Briefing.EnterError = truncate(err.Error(), 300)
+			return nil
+		})
+	}
+	return false
 }

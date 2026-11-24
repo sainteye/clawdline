@@ -190,7 +190,9 @@ func sameAntigravityChoices(a, b session.Menu) bool {
 //     whatever that program shows next.
 //  4. After the Enter, the input line is looked at again, and another Enter
 //     is sent only while it is a framed composer still showing exactly what
-//     step 2 confirmed.
+//     step 2 confirmed, or still holding the end of the text after a redraw
+//     (heldInComposer). One look follows the last of those Enters; a composer
+//     holding the text even then answers HeldAfterEnter, never success.
 
 // needleRunes is how much of the end of the text is looked for on screen,
 // with whitespace removed so a wrapped line still matches. A briefing ends in
@@ -518,13 +520,21 @@ func submit(ctx context.Context, in input, text string, window time.Duration) er
 	if err != nil {
 		return err
 	}
-	for _, pause := range nudgePauses {
+	enters := 1
+	for look := 0; ; look++ {
+		pause := nudgePauses[min(look, len(nudgePauses)-1)]
 		if !rest(ctx, pause) {
 			return nil
 		}
 		now, ok := in.screen(ctx)
-		if !ok || !stillHolds(confirmed, now) {
+		if !ok || !(stillHolds(confirmed, now) || heldInComposer(now, text)) {
 			return nil
+		}
+		if look >= len(nudgePauses) {
+			// Every bounded Enter was pressed and the composer still holds the
+			// text: it was not submitted, and saying nil would have the caller
+			// count it delivered (task bb9f44d8, 2026-11-24).
+			return HeldAfterEnter{Enters: enters}
 		}
 		// The first Enter went; a nudge that fails is only logged, because
 		// reporting the send as failed would have it typed a second time.
@@ -532,9 +542,19 @@ func submit(ctx context.Context, in input, text string, window time.Duration) er
 			log.Printf("terminal: a second Enter was not sent: %v", err)
 			return nil
 		}
+		enters++
 		confirmed = now
 	}
-	return nil
+}
+
+// heldInComposer is whether a screen is still a framed composer — Claude
+// Code's, a rule above and below — holding the end of text or a paste
+// placeholder after an Enter. Unlike stillHolds it allows the composer to have
+// been redrawn: Claude Code redraws it while auto mode starts, and the Enter
+// that redraw swallowed was the briefing's only one (task bb9f44d8). Codex's
+// unframed "›" and a shell's caret keep stillHolds' rule.
+func heldInComposer(screen, text string) bool {
+	return inputLine(screen).framed && HoldsTyped(screen, text)
 }
 
 // awaitShown reads the screen until it shows the paste arriving, and answers
@@ -724,3 +744,14 @@ func bufferName() string {
 	rand.Read(b[:])
 	return "clawdline-send-" + hex.EncodeToString(b[:])
 }
+
+// HeldAfterEnter is a send whose text was seen arriving, was pressed Enter on,
+// and was still held in the assistant's composer after every bounded press.
+type HeldAfterEnter struct{ Enters int }
+
+func (h HeldAfterEnter) Error() string {
+	return fmt.Sprintf("the text arrived in the composer and Enter was pressed %d times, but the composer still holds it", h.Enters)
+}
+
+// Unwrap makes it Unsubmitted as well: the words are in the input line.
+func (h HeldAfterEnter) Unwrap() error { return Unsubmitted{Why: h.Error()} }
