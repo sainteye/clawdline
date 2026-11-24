@@ -354,6 +354,22 @@ func TestACPTestPeer(t *testing.T) {
 				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
 				continue
 			}
+			if mode == "split-answer" {
+				// 2026-11-24: after a send_message call, Claude Code streamed
+				// one final answer under three message ids with no tool call
+				// between them; only the last part reached the requester.
+				chunk := func(id, text string) {
+					send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "messageId": id, "content": map[string]string{"type": "text", "text": text}}})})
+				}
+				chunk("m1", "Let me check the card.")
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "tool_call", "toolCallId": "call-1", "title": "send_message", "kind": "other", "status": "pending"}})})
+				chunk("m2", "ANSWER-BODY nothing to do.\n\n- fc7c9993 is live.")
+				chunk("m3", "✅ GitHub: on origin/main.\n\n❔ app.clawdline.com: not re-checked.")
+				send(frame{Method: "session/update", Params: raw(map[string]any{"sessionId": "scripted-session", "update": map[string]any{"sessionUpdate": "agent_thought_chunk", "content": map[string]string{"type": "text", "text": "wrap up"}}})})
+				chunk("m3", "❔ dev: not re-checked.")
+				send(frame{ID: f.ID, Result: raw(map[string]string{"stopReason": "end_turn"})})
+				continue
+			}
 			if mode == "explicit" {
 				send(frame{ID: raw("message-rpc"), Method: "clawdline/send_message", Params: raw(map[string]string{"sessionId": "scripted-session", "messageId": "one", "text": "explicit"})})
 			}
@@ -761,6 +777,24 @@ func TestReplySegmentsAreSeparatedAndToolMarkupIsDropped(t *testing.T) {
 	want := "RESUME-CHECK-77 done, see <invoke name=\"x\"></invoke> above"
 	if err != nil || result.FinalText != want {
 		t.Fatalf("reply=%q %v", result.FinalText, err)
+	}
+}
+
+// A correlated Bot reply carries the whole answer after the last tool call,
+// even when the agent streams it under several message ids or between
+// thoughts; the chat's fallback stays the last segment.
+func TestTheAnswerAfterTheLastToolCallKeepsEverySegment(t *testing.T) {
+	c, _ := openTestClient(t, "split-answer", func(context.Context, app.ProtocolEvent) error { return nil })
+	result, err := sendTestPrompt(t, c).Wait(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "ANSWER-BODY nothing to do.\n\n- fc7c9993 is live.\n\n✅ GitHub: on origin/main.\n\n❔ app.clawdline.com: not re-checked.\n\n❔ dev: not re-checked."
+	if result.AnswerText != want {
+		t.Fatalf("answer=%q", result.AnswerText)
+	}
+	if result.FinalText != "❔ dev: not re-checked." {
+		t.Fatalf("fallback=%q", result.FinalText)
 	}
 }
 

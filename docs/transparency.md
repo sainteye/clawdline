@@ -37,6 +37,15 @@ dispatch or browse. Another Project, Board items, completion callbacks and
 requests from another machine stay refused at the Host. Only the provider
 source receipt is refreshed; this review does not deploy the public website.
 
+A Bot's reply to another Bot's request, and a decision answer forwarded to the
+requester, now carry all the text after the turn's last tool call instead of
+only its last text segment. Reviewed the persistent-bot-review card in English
+and Taiwan Traditional Chinese: its prompts and tools are unchanged, and the
+reply stays data inside the existing correlated-reply frame under the same
+reply limit. The chat's fallback reply is still the last segment. Only the
+ACP client, compaction and runtime source receipts are refreshed; this review
+does not deploy the public website.
+
 Bots are now told when to use `ask_person`. Reviewed the persistent-bot-review
 card in English and Taiwan Traditional Chinese against the fixed Bot frame,
 the peer-request and correlated-reply prompts and the `message_bot`

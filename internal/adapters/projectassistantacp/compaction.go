@@ -141,6 +141,7 @@ func (c *Client) sendCompact(ctx context.Context, q app.PromptRequest) (app.Pend
 	c.turnID = q.Turn.ID
 	c.promptDeadline = deadline
 	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
+	c.answerStart, c.toolSinceText = 0, false
 	c.traceSegment, c.traceTools = pa.Trace{}, nil
 	sid := c.sessionID
 	c.mu.Unlock()
