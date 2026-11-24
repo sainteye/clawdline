@@ -12,6 +12,7 @@ import (
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 // What a running task says about itself, and what settles it afterwards.
@@ -476,6 +477,9 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 		// What the proof read of the branch is the delivery now (G17).
 		if head.known && head.commit != "" && now.Worktree != nil && now.Worktree.Branch == head.branch {
 			now.Worktree.Head = head.commit
+		}
+		if now.AssistantOwner != nil && pa.SettledLanding(string(next.State)) {
+			return []store.Effect{{Kind: EffectAssistantWorkLanding, Subject: id}}, nil
 		}
 		return nil, nil
 	})

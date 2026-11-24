@@ -3,7 +3,7 @@
   "englishKeys": 14388,
   "counts": {
     "negation": 3667,
-    "state": 2444,
+    "state": 2445,
     "permission": 865,
     "deletion": 336,
     "uncertainty": 576
@@ -5997,6 +5997,7 @@
       "transparency.card.persistent-bot-team.condition",
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",
+      "transparency.card.persistent-bot-work-completion.effect",
       "transparency.card.persistent-bot-work-completion.how",
       "transparency.card.persistent-bot-work-completion.summary",
       "transparency.card.persistent-bot-work-message.condition",

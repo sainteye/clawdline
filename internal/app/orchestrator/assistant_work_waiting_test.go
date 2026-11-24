@@ -3,6 +3,7 @@ package orchestrator
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -61,5 +62,37 @@ func TestBotWorkWaitingForAPersonReachesTheHostOnce(t *testing.T) {
 	}
 	if got := wait(2); len(got) != 2 || got[1] != pa.WorkFailed {
 		t.Fatalf("host deliveries %v, want one waiting and one terminal", got)
+	}
+}
+
+func TestBotLandingRetriesProjectionWithoutAnotherReview(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	now := b.now()
+	b.Clock = func() time.Time { return now }
+	id := "b0a10001-0000-4000-8000-000000000002"
+	r := Record{Protocol: Protocol, ID: id, Assistant: "claude", Title: "Synthetic result", State: StateSuccess,
+		CreatedAt: now, FinishedAt: now, Claims: []string{}, TimeoutMinutes: 60, Landing: &Landing{State: LandingPending},
+		AssistantOwner: &AssistantOwner{Fence: pa.Fence{Key: pa.BotKey{MachineID: "m", BotID: "b"}}, TurnID: "turn"}}
+	if err := b.save(ctx, r, HashSecret("s"), "task.finished"); err != nil {
+		t.Fatal(err)
+	}
+	var deliveries, reviews atomic.Int32
+	b.AssistantWorkChanged = func(_ context.Context, snapshot AssistantWorkSnapshot) error {
+		if snapshot.Link.Landing != string(LandingAbandoned) {
+			t.Errorf("landing projection = %s", snapshot.Link.Landing)
+		}
+		if deliveries.Add(1) == 1 {
+			return &pa.Failure{Code: pa.StaleVersion, Field: "version"}
+		}
+		return nil
+	}
+	b.AssistantWorkCompleted = func(context.Context, AssistantWorkSnapshot) error { reviews.Add(1); return nil }
+	if _, err := b.Land(ctx, id, LandingRequest{State: string(LandingAbandoned), Note: "Superseded fixture", Machine: true}); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(unattendedPending + time.Second)
+	b.RecoverEffects(ctx)
+	if deliveries.Load() != 2 || reviews.Load() != 0 {
+		t.Fatalf("deliveries=%d reviews=%d", deliveries.Load(), reviews.Load())
 	}
 }

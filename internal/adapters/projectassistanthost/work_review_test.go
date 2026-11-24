@@ -349,3 +349,50 @@ func TestAFullBotAtTheEndOfTheRetryWindowTellsThePerson(t *testing.T) {
 		t.Fatalf("last-attempt notices=%d, want 1", notices)
 	}
 }
+
+func TestHostRepairsPreviouslySettledWorkWithoutReview(t *testing.T) {
+	n := startNative(t, nil)
+	f := n.f
+	ctx := t.Context()
+	setWorkReview(t, f, n.bot.Key, "off")
+	link := dispatchUnrequested(t, n, "settled-before-restart")
+	r, _, err := f.o.Broker.Record(ctx, link.TaskID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureGit(t, r.Worktree.Path, "commit", "--allow-empty", "-qm", "Synthetic delivered change")
+	if _, err = f.o.Broker.Settle(ctx, r.ID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "One retained result."}); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int64 {
+		page, err := f.h.store.List(ctx, pa.ListBots{MachineID: n.bot.Key.MachineID, PageSize: pa.MaxPageRows})
+		if err != nil || len(page.Items) != 1 {
+			t.Fatalf("Bot list: %d, %v", len(page.Items), err)
+		}
+		if page.Items[0].DispatchedWork == nil {
+			return 0
+		}
+		return page.Items[0].DispatchedWork.Delivered
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("before settlement: %d pending deliveries", got)
+	}
+	if err = f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker.AssistantWorkChanged = nil
+	if _, err = f.o.Broker.Land(ctx, r.ID, orchestrator.LandingRequest{State: "abandoned", Note: "Superseded fixture", Machine: true}); err != nil {
+		t.Fatal(err)
+	}
+	if got := count(); got != 1 {
+		t.Fatalf("missed projection: %d pending deliveries", got)
+	}
+
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	fixtureEventually(t, func() bool { return count() == 0 })
+	if wakes, results := workTurns(t, n); wakes != 0 || results != 1 {
+		t.Fatalf("landing replayed work or its review: wakes=%d, results=%d", wakes, results)
+	}
+}

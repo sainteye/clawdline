@@ -111,10 +111,26 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
+  if(scenario==="interrupted-exchange"){
+    await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
+    await until(sessionId,"!!document.querySelector('.pa-exchange-entry[data-failed]')")
+    const chat=await capture(sessionId,"interrupted-exchange")
+    assert.match(chat.text,/先前回合的結果無法確認/)
+    assert.doesNotMatch(chat.text,/不確定有沒有成功/)
+    await evaluate(sessionId,"document.querySelector('.pa-exchange-entry[data-failed]').click()")
+    await until(sessionId,"document.querySelector('.pa-exchange-panel')?.innerText.includes('已停止傳遞回覆')")
+    const status=await capture(sessionId,"interrupted-exchange-details")
+    assert.match(status.text,/請求狀態 · 結果不明/)
+    assert.match(status.text,/Clawdline 重新啟動，導致這回合中斷/)
+    assert.match(status.text,/回覆送達狀態 · 已停止傳遞回覆/)
+    assert.doesNotMatch(status.text,/execution_effect_unknown/)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,0)
+    results.push({scenario,requestAndDeliveryVisible:true,sends:0})
+  }else{
   await evaluate(sessionId,"document.querySelector('[data-bot-key]').click()")
   await until(sessionId,"!!document.querySelector('.pa-composer textarea:not(:disabled)')")
   if(scenario==="busy"){
@@ -280,6 +296,7 @@ try{
   await new Promise(r=>setTimeout(r,3300))
   assert.equal(traffic.filter(p=>p.word==='project-assistants.view').length,readCount,"hidden periodic reads continued after the owned turn completed")
   results.push({scenario,accepted:true,complete:true,hidden:complete.visibility==="hidden",sends:1,duplicateMessages:0,phases:complete.phases})
+  }
   }
   }
   }
