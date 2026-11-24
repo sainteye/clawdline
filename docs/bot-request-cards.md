@@ -1,10 +1,11 @@
-# Bot work cards
+# Bot request cards
 
-Status: proposal, revision 4, awaiting the person's review. Nothing here is implemented. No schema,
-wire word or tool name in this page exists yet unless it is cited with a `file:line` as current
-behaviour.
+Status: design approved by the person on 2026-11-24; not implemented.
 
-The person's summary in Traditional Chinese is [`bot-work-cards.zh-TW.md`](bot-work-cards.zh-TW.md).
+No schema, wire word or tool name in this page exists yet unless it is cited with a `file:line` as
+current behaviour. The names it reserves are listed once, in §4.1.
+
+The person's summary in Traditional Chinese is [`bot-request-cards.zh-TW.md`](bot-request-cards.zh-TW.md).
 
 Revision 3 is a simplification, on the person's instruction after reading the first draft: do not
 over-design, stay flexible, and change things only when a real problem appears. Deployment state is
@@ -15,6 +16,12 @@ Revision 4 records three decisions of 2026-11-24 and adds nothing else: the card
 that are not development (§3.3), a card is for a task with a longer flow (§3.2), and the Bot
 decides when to open one (§7.1). It removes the automatic creation revision 3 had, and every place
 where the record assumed a commit, a repository landing, a verdict or a dispatch.
+
+Revision 5 is the approved design. It records the person's last four decisions of 2026-11-24 and
+changes nothing else: the two names (§2, §3.1), the holder marking an entry "not needed" (§5),
+merging cards that came from different messages (§6), and mockups before the console phase (§12).
+The reserved identifiers follow the new name (§4.1), and this page moved from `bot-work-cards.md`.
+There are no open questions left.
 
 ## 1. Problem
 
@@ -35,8 +42,9 @@ outside the chat.
 
 What exists today:
 
-- **The chat work result card** (`web/console/src/project-assistants/WorkResultCard.tsx`, shipped
-  in `523e059d7`) shows **one dispatched Session's** result in the Bot's chat: its delivery commit,
+- **The work result card／派工結果卡** (`web/console/src/project-assistants/WorkResultCard.tsx`,
+  shipped in `523e059d7`, whose subject calls it a "Bot work card") shows **one dispatched
+  Session's** result in the Bot's chat: its delivery commit,
   target branch and Broker landing, read from the task's work link
   (`WorkLink`, `internal/domain/projectassistant/types.go:466-490`), plus the linked Board item's
   independent verification, and it opens the worker Session
@@ -75,10 +83,18 @@ Decided on 2026-11-24:
   none (§3.2).
 - **The Bot decides, by judgment, and asks the person when unsure** (§7.1). The person adjusts the
   habit through the Bot's standing instructions and memory.
+- **Names.** The existing chat card for one dispatched Session is the **work result card／
+  派工結果卡**. The new record in this page is the **Bot request card／Bot 交辦卡**. The Board section
+  that lists Bot request cards keeps its label, **"Bot work"／「Bot 工作」**.
+- **The holding Bot may mark a checklist entry "not needed" itself**, with its reason shown (§5).
+- **Cards that came from different messages of the person may be merged**, within one Project
+  (§6).
+- **Design mockups come before the console phase** (§12).
 
-## 3. What a card is
+## 3. What a Bot request card is
 
-One card is **one request from the person, across Bots**. It answers:
+One Bot request card — "card" from here on, where no other card is meant — is **one request from
+the person, across Bots**. It answers:
 
 1. Which message of the person authorized it?
 2. Which Bot holds it now, as maker, reviewer or integrator?
@@ -98,14 +114,14 @@ card without them simply does not show them.
 
 | Record | Scope | What it is to a card |
 |---|---|---|
-| **Chat work result card** (`WorkResultCard`, from a `WorkLink`) | one dispatched Session | the card's **execution detail**. Each attached task's existing chat card appears under the card, unchanged. The card defines no delivery or landing facts of its own: it displays the work link's (`delivery_commit`, `landing`, `landing_commit`, `landing_target`, `types.go:474-487`) |
-| Broker task | one dispatch | attaches to a card through `bot_work_id` on the task (§8.1); a card may have none |
-| Board v2 item | the person's work | optional `board_item_id` link when the person's message named it; the card never edits or moves the item. The linked item's independent verification keeps showing on the chat work result card as it does now |
+| **Work result card** (`WorkResultCard`, from a `WorkLink`) | one dispatched Session | the card's **execution detail**. Each attached task's work result card appears under the Bot request card, unchanged. The card defines no delivery or landing facts of its own: it displays the work link's (`delivery_commit`, `landing`, `landing_commit`, `landing_target`, `types.go:474-487`) |
+| Broker task | one dispatch | attaches to a card through `bot_request_id` on the task (§8.1); a card may have none |
+| Board v2 item | the person's work | optional `board_item_id` link when the person's message named it; the card never edits or moves the item. The linked item's independent verification keeps showing on the work result card as it does now |
 | Agent proposal, Quick Session to-do | — | unrelated |
-| Bot exchange (`message_bot`) | one Bot-to-Bot request | carries `bot_work_id` so the recipient's work attaches to the same card |
+| Bot exchange (`message_bot`) | one Bot-to-Bot request | carries `bot_request_id` so the recipient's work attaches to the same card |
 
-The split in one line: the existing chat card is **one Session's result**; the new record is **one
-request's custody** — who holds it, what review said, which steps have been reported finished.
+The split in one line: the work result card is **one Session's result**; the Bot request card is
+**one request's custody** — who holds it, what review said, which steps have been reported finished.
 
 ### 3.2 Which tasks get a card
 
@@ -157,11 +173,11 @@ already can ask, and templates beyond one default checklist per kind of work.
 
 ## 4. Record shape
 
-Tables (names reserved, not created), in the same store as `work_v2_proposals`
+Tables (names reserved in §4.1, not created), in the same store as `work_v2_proposals`
 (`internal/adapters/store/work_v2.go:170`) and never joined into Board counts:
-`bot_work_cards`, `bot_work_events`, `bot_work_verdicts`, `bot_work_checklist`.
+`bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist`.
 
-`bot_work_cards`:
+`bot_request_cards`:
 
 | Field | Meaning |
 |---|---|
@@ -182,22 +198,44 @@ Tables (names reserved, not created), in the same store as `work_v2_proposals`
 
 There is no phase machine. The stage shown — making, in review, integrating — is the baton's role.
 
-`bot_work_checklist`: `{card_id, key, label, state, note, reported_by, reported_at}` with `state` ∈
+`bot_request_checklist`: `{card_id, key, label, state, note, reported_by, reported_at}` with `state` ∈
 `open`, `done`, `not_needed`. `label` is free-form text chosen by whoever adds the entry; `key` is
 derived from it and means nothing to the daemon. `note` is free text and is the entry's evidence: a
 commit, a version, a URL, or the name of a published artifact. The daemon does not check it; the
 console shows a URL in a note as a link.
 
-`bot_work_verdicts`: `{id, card_id, commit, verdict, text, reviewer_bot, at}` with `verdict` ∈
+`bot_request_verdicts`: `{id, card_id, commit, verdict, text, reviewer_bot, at}` with `verdict` ∈
 `pass`, `conditional_pass` (conditions in `text`, required), `reject` (reason in `text`, required).
 A card needs no verdict. `commit` is optional: a verdict on a draft or a document names what it
 reviewed in `text`. When a commit is given it is resolved to a full object id, and one that does
 not resolve in the Project is refused. A verdict is never edited; a later verdict is a new row.
 
-`bot_work_events` is append-only, one row per accepted write, with actor, versions and time:
+`bot_request_events` is append-only, one row per accepted write, with actor, versions and time:
 `card.created`, `baton.handed`, `verdict.recorded`, `checklist.added`, `checklist.marked`,
 `waiting.set`, `waiting.cleared`, `card.split`, `card.merged`, `card.done`, `notified`,
 `card.cancelled`, `card.reopened`.
+
+### 4.1 Reserved names
+
+Every identifier this design reserves, stated once. None exists yet. Tables, tool names and wire
+words are irreversible once shipped (§12).
+
+| What | Reserved names |
+|---|---|
+| Person-facing name | Bot request card／Bot 交辦卡 |
+| Board section label | Bot work／Bot 工作 |
+| Tables | `bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist` |
+| Field on the broker task, the work link, `dispatch_work` and `message_bot` | `bot_request_id` (Go: `WorkLink.BotRequestID`) |
+| Bot tools | `bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`, `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`, `bot_request_done` |
+| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict` |
+| HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
+| Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
+| Outbox effect key | `bot-request-done-<card id>-<cycle>` |
+| Capacity names | `bot_request.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts` (§10) |
+
+Unchanged by this design: the existing `WorkResultCard` component, `WorkLink`, `work_id` and
+`board_item_id`. Event names (`card.created`, `baton.handed`, …) are values inside
+`bot_request_events`, not separate identifiers.
 
 ## 5. Review, checklist and completion
 
@@ -212,7 +250,10 @@ enforces.
 the creating Bot names; it has at least one. The creating Bot may add more when it creates the card
 or later (for example `dev`, `cloud`, "checked on the live site"); the holder or the person may add
 one too. The holder marks an entry `done` with a note, or `not_needed` with a
-reason. Every entry is shown as **reported by** that Bot at that time.
+reason. **The holding Bot may mark an entry `not_needed` itself** (decided 2026-11-24): it needs
+nobody's approval, the reason is required, and it is shown on the card with the Bot and the time,
+so the person can see what was dropped and why. Every entry is shown as **reported by** that Bot at
+that time.
 
 One entry has evidence that already exists, and the card reuses it instead of asking for a report:
 on a card that has a `main` entry, when an attached task's work link says the Broker recorded its landing (`landing` is `landed` or
@@ -221,12 +262,12 @@ on a card that has a `main` entry, when an attached task's work link says the Br
 entry: with several tasks on one card, whether "it is on main" is the holder's call. Nothing else
 is read: no fetch, no build stamp, no timer.
 
-**Done.** The holder calls `bot_work_done` once every entry is `done` or `not_needed`; the daemon
-refuses it otherwise (`bot_work_checklist_open`). The person can complete, cancel or reopen any
+**Done.** The holder calls `bot_request_done` once every entry is `done` or `not_needed`; the daemon
+refuses it otherwise (`bot_request_checklist_open`). The person can complete, cancel or reopen any
 card at any time, with a reason.
 
 **Notification.** `card.done` is written in one transaction with one outbox effect, keyed
-`bot-work-done-<card id>-<cycle>` (`cycle` counts reopens), which delivers:
+`bot-request-done-<card id>-<cycle>` (`cycle` counts reopens), which delivers:
 
 - one notification to the person (assumption: over the daemon's existing notification channel;
   which call carries it was not read for this page), and
@@ -240,9 +281,11 @@ A retry or a daemon restart delivers neither twice; `notified` records the recei
 ## 6. Split and merge
 
 Who may: the person, the card's authority or creating Bot, and its current holder. For a merge, the
-caller must have that standing on **every** card named. All cards must be in one Project.
+caller must have that standing on **every** card named. All cards must be in one Project. **Cards
+that came from different messages of the person may be merged** (decided 2026-11-24): a merge does
+not require a common origin or an earlier split, only the one Project.
 
-**Split** — `bot_work_split {card_id, expected_version, new: [{title, description}],
+**Split** — `bot_request_split {card_id, expected_version, new: [{title, description}],
 idempotency_key}`.
 
 - Creates one new card per entry. Each inherits the source's authority, chain, Project, `kind` and
@@ -251,11 +294,11 @@ idempotency_key}`.
 - New ids are derived from `(source id, idempotency_key, index)`, so a retry returns the same cards.
 - The source keeps its own events and gains one `card.split` naming the new cards; each new card
   starts with `card.created`. No event is copied or moved.
-- **Attached tasks stay on the source.** A task's `bot_work_id` is fixed when it is dispatched
+- **Attached tasks stay on the source.** A task's `bot_request_id` is fixed when it is dispatched
   (§8.1). The new cards start with none and link back to the source; later dispatches name the card
   they belong to.
 
-**Merge** — `bot_work_merge {into, from: [card ids], expected_versions, idempotency_key}`.
+**Merge** — `bot_request_merge {into, from: [card ids], expected_versions, idempotency_key}`.
 
 - Each `from` card becomes `merged` with `merged_into` set and is closed; nothing is deleted. Its
   events and verdicts stay on it and are shown on the surviving card under "merged from".
@@ -267,7 +310,7 @@ idempotency_key}`.
   card whose `merged_into` is it. If the survivor is itself merged later, those rows are repointed
   in the same transaction, so the lookup is always one step.
 - Repeating a merge with the same key, or into the same card, is a no-op. A card already merged
-  elsewhere is refused (`bot_work_already_merged`). There is no unmerge: split the survivor.
+  elsewhere is refused (`bot_request_already_merged`). There is no unmerge: split the survivor.
 
 Splitting and merging produce no notification; the Board section and chat strip simply show the
 new shape.
@@ -276,7 +319,7 @@ new shape.
 
 ### 7.1 Creation: the Bot decides
 
-**The Bot opens the card itself**, with `bot_work_create {title, description, kind, checklist,
+**The Bot opens the card itself**, with `bot_request_create {title, description, kind, checklist,
 idempotency_key}`, when it takes on a task with a longer flow (§3.2). This is the Bot's judgment,
 and it covers tasks with no dispatch at all. The daemon never parses the person's message to infer
 scope and never opens a card on its own.
@@ -287,7 +330,7 @@ person shapes the habit in words — "always open a card for release notes", "ne
 kept in the Bot's standing instructions (`docs/bots.md:90`) or memory (`docs/bots.md:71-75`). There
 is no setting, rule table or per-kind switch for it.
 
-**A card needs a person's message behind it.** `bot_work_create` is accepted in a turn that roots
+**A card needs a person's message behind it.** `bot_request_create` is accepted in a turn that roots
 in a person:
 
 - the turn's origin is `user`, or
@@ -298,13 +341,13 @@ in a person:
 A routine, a host notice or a webhook turn cannot open one.
 
 **Idempotency: one card per request of the person, unless split.** The card id is derived from
-`(machine, root bot, root conversation, root message id)`. A second `bot_work_create` that roots in
+`(machine, root bot, root conversation, root message id)`. A second `bot_request_create` that roots in
 the same message — a retry, a later turn, or another Bot the request was passed to — returns the
 existing card unchanged and adds that Bot to its chain. Several cards from one message come from a
 split (§6), never from a second create.
 
 **Work attaches by naming the card.** `dispatch_work` and `message_bot` take an optional
-`bot_work_id`; the daemon checks the Bot is in the card's chain and follows `merged_into`. A
+`bot_request_id`; the daemon checks the Bot is in the card's chain and follows `merged_into`. A
 dispatch that names no card attaches to none.
 
 **The automatic creation of revision 3 is dropped**, not kept as a safety net. It only fired on a
@@ -315,7 +358,7 @@ the first response.
 
 ### 7.2 Handoff
 
-`bot_work_handoff {card_id, expected_version, to_bot, role, note, idempotency_key}` moves the
+`bot_request_handoff {card_id, expected_version, to_bot, role, note, idempotency_key}` moves the
 baton, appends `baton.handed` and queues **one** host notice for the new holder, keyed by card and
 version. The note is where a Bot says what it is handing over — the commit to review, "this
 replaces that", "landed together with that card". It is prose on the card instead of prose in a
@@ -349,34 +392,34 @@ Sessions only read. A dispatched child's work attaches through its task; it cann
 
 ### 8.1 Broker task field
 
-`bot_work_id` on the broker task record, beside `work_id`
+`bot_request_id` on the broker task record, beside `work_id`
 (`internal/app/orchestrator/draft.go:68`), set only by the Bot dispatch door from the resolved
 card. It enters the assistant request hash only when non-empty, like `board_item_id`.
 `AssistantWorkSnapshotOf` (`internal/app/orchestrator/project_assistant_actor.go:436`) copies it
-into `WorkLink.BotWorkID` (`json:"bot_work_id,omitempty"`), next to the fields `523e059d7` added.
+into `WorkLink.BotRequestID` (`json:"bot_request_id,omitempty"`), next to the fields `523e059d7` added.
 
 ### 8.2 Bot tools
 
 Added to `mcpTools()` (`internal/adapters/projectassistantacp/mcp.go:962`):
-`bot_work_read`, `bot_work_create`, `bot_work_handoff`, `bot_work_verdict`, `bot_work_check`
-(add or mark a checklist entry), `bot_work_wait_person`, `bot_work_split`, `bot_work_merge`,
-`bot_work_done`. Every writing tool takes `idempotency_key` and `expected_version`; a stale version
-answers `bot_work_version_conflict` with the current one.
+`bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`
+(add or mark a checklist entry), `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`,
+`bot_request_done`. Every writing tool takes `idempotency_key` and `expected_version`; a stale version
+answers `bot_request_version_conflict` with the current one.
 
-`bot_work_create` takes `title`, `description`, optional `kind` and optional `checklist` (a list of
-labels); with neither a known kind nor a checklist it is refused (`bot_work_checklist_empty`).
+`bot_request_create` takes `title`, `description`, optional `kind` and optional `checklist` (a list of
+labels); with neither a known kind nor a checklist it is refused (`bot_request_checklist_empty`).
 
-`dispatch_work` and `message_bot` gain an optional `bot_work_id` (§7.1). For `message_bot` the
+`dispatch_work` and `message_bot` gain an optional `bot_request_id` (§7.1). For `message_bot` the
 daemon checks the sender is in the chain, adds the recipient to it, and names the card in the
 recipient's turn.
 
 ### 8.3 HTTP routes
 
 ```text
-GET  /v1/bot-work/cards?bot=&project=&state=&cursor=
-GET  /v1/bot-work/cards/<id>
-POST /v1/bot-work/cards/<id>/handoff|check|split|merge|complete|cancel|reopen   person
-POST /v1/bot-work/agent/...                                                      the tools' backing routes
+GET  /v1/bot-request/cards?bot=&project=&state=&cursor=
+GET  /v1/bot-request/cards/<id>
+POST /v1/bot-request/cards/<id>/handoff|check|split|merge|complete|cancel|reopen   person
+POST /v1/bot-request/agent/...                                                      the tools' backing routes
 ```
 
 Person routes are device-authenticated; agent routes take the Bot host's credential, the same split
@@ -398,11 +441,11 @@ as `/v1/work/v2/` and `/v1/work/v2/agent/`.
     link has one, labelled as the Broker's.
 - **Waiting for you.** Cards with `waiting` set are pinned at the top of the section; the question
   also appears in the Bot's chat and as a notification, as `ask_person` does now.
-- **Bot chat.** The dispatched strip (`docs/bots.md:325-340`) and the chat work result cards are
-  grouped under their card when `bot_work_id` is present, with the card's lights in one line.
+- **Bot chat.** The dispatched strip (`docs/bots.md:325-340`) and the work result cards are
+  grouped under their Bot request card when `bot_request_id` is present, with the card's lights in one line.
   Without a card nothing changes.
 - **Phone and Cloud.** The same section in the phone layout. Cloud carries new advertised read
-  words `bot.work.cards` and `bot.work.card` and one send-capability word for the person's actions,
+  words `bot.request.cards` and `bot.request.card` and one send-capability word for the person's actions,
   following `work.v2.cards` (`internal/app/cloudops/ops_work_reads.go:28`); a machine that does not
   advertise them leaves the section hidden.
 
@@ -412,25 +455,25 @@ Bounds to register in `internal/domain/capacity` before code, each refusing at i
 
 | Name | Proposed limit |
 |---|---|
-| `bot_work.open_cards` | 500 per machine |
-| `bot_work.description_bytes` | 16 KiB |
-| `bot_work.events_per_card` | 2,000 |
-| `bot_work.verdicts_per_card` | 64 |
-| `bot_work.checklist_entries` | 12 per card |
-| `bot_work.note_bytes` | 1 KiB (checklist note, verdict text, handoff note) |
-| `bot_work.label_bytes` | 120 (title, kind, checklist label) |
-| `bot_work.chain_bots` | 16 |
-| `bot_work.split_cards` | 8 per call |
-| `bot_work.merged_cards` | 16 absorbed per card |
-| `bot_work.page_rows` | 100 |
-| `bot_work.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
+| `bot_request.open_cards` | 500 per machine |
+| `bot_request.description_bytes` | 16 KiB |
+| `bot_request.events_per_card` | 2,000 |
+| `bot_request.verdicts_per_card` | 64 |
+| `bot_request.checklist_entries` | 12 per card |
+| `bot_request.note_bytes` | 1 KiB (checklist note, verdict text, handoff note) |
+| `bot_request.label_bytes` | 120 (title, kind, checklist label) |
+| `bot_request.chain_bots` | 16 |
+| `bot_request.split_cards` | 8 per call |
+| `bot_request.merged_cards` | 16 absorbed per card |
+| `bot_request.page_rows` | 100 |
+| `bot_request.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
 
 Every write is one transaction: read the card, check actor, chain and version, write the next
 state, the event and any outbox effect. No Git or network I/O happens in a card write except
 resolving a verdict's commit when it names one, which runs before the transaction. Two writers at once: one wins, the
-other gets `bot_work_version_conflict`.
+other gets `bot_request_version_conflict`.
 
-Migration: none. Old tasks have no `bot_work_id` and do not appear on cards.
+Migration: none. Old tasks have no `bot_request_id` and do not appear on cards.
 
 Privacy: this repository is public. Docs, tests and fixtures use invented role names and synthetic
 commits.
@@ -441,7 +484,7 @@ commits.
 |---|---|---|---|---|
 | Record type | **A. new tables (the person's)** | no exception to Board rules | a second list | schema irreversible once shipped |
 | | B. Board item kind | one list | breaks the person-only rules | — |
-| | C. extend the chat work result card only | nothing new | it is per Session; custody across Bots has nowhere to live | — |
+| | C. extend the work result card only | nothing new | it is per Session; custody across Bots has nowhere to live | — |
 | Non-development tasks | **A. the same card, another default checklist (the person's)** | one record, one place to look | role and light names read as development words on a publishing card | reversible |
 | | B. a second record type per kind of work | each fits its work exactly | two lists and two sets of tools for the same custody question | — |
 | Who opens a card | **A. the Bot, by judgment; asks when unsure (the person's)** | covers work with no dispatch; small tasks get no card | a Bot can forget, and then nothing records it | reversible |
@@ -460,8 +503,18 @@ commits.
 
 Irreversible items are marked **(I)**.
 
+**Gate: mockups before the console (decided 2026-11-24).** Phase 4 starts only after the person has
+chosen from the design mockups. They are produced separately, at
+`docs/mockups/bot-request-cards.html`; this page does not define them. Phases 1 to 3 touch no
+console surface and do not wait for the choice.
+
+**Suggested order.** Phases 1 and 2 first, together with a minimal list view (phase 4a), so the
+record is useful as soon as Bots can write it. Split and merge (phase 3), the rest of the console
+(phase 4b) and Cloud (phase 5) come later. The numbers below are identifiers, not the order. The
+minimal list view is a console surface, so the gate applies to it as well.
+
 1. **Record and custody (I: tables, tool names).** Domain rules, store, capacity rows; create,
-   read, handoff; `bot_work_id` on tasks and work links.
+   read, handoff; `bot_request_id` on tasks and work links.
    *Acceptance:* `go test` covers each row of §7.3 refusing the wrong actor;
    `TestEveryBoundIsRegistered` fails before the rows are added and passes after; two creates that
    root in one person message through two Bots yield one card, and two dispatches naming it both
@@ -476,10 +529,16 @@ Irreversible items are marked **(I)**.
 3. **Split and merge.** *Acceptance:* a retried split returns the same cards; tasks remain on the
    source; after a merge the survivor's read lists the absorbed card's tasks and verdicts, its done
    notice reaches both authorities, and no broker task record changed (compared byte for byte).
-4. **Console, desktop and phone.** *Acceptance:* console tests for each light state, including a
-   card with no build or review light; a browser
-   check that Board counts and *Needs attention* are identical with the section on and off, and
-   that existing chat work result cards render unchanged under a card.
+4. **Console, desktop and phone.** Gated on the person's choice from the mockups. In two parts:
+   - **4a. Minimal list view.** The "Bot work" section as a read-only list in the chosen design:
+     title, holder and lights, with *Waiting for you* on top.
+     *Acceptance:* console tests for each light state, including a card with no build or review
+     light; a browser check that Board counts and *Needs attention* are identical with the section
+     on and off.
+   - **4b. The rest of §9.** The person's actions, the Bot filter, split and merge lineage,
+     grouping in the Bot chat, and the phone layout.
+     *Acceptance:* a browser check that existing work result cards render unchanged under a Bot
+     request card, on desktop and at phone width.
 5. **Cloud parity (I: wire words).** *Acceptance:* the phone reads a card through the relay with
    the words advertised and hides the section without them.
 
@@ -536,27 +595,7 @@ in particular was considered and deferred until the problem recurs.
 - Editing Board items from cards, or showing cards in Board counts or *Needs attention*.
 - Root Sessions writing cards for the person.
 - **A Board-item "hand to Bot" action.** Suggested by the owner of the Session that shipped the
-  chat work result card; a possible later step, not part of this proposal. It would coexist
+  work result card; a possible later step, not part of this proposal. It would coexist
   without change here: the person's action on the item would be the card's authority in place of a
   chat message and would set `board_item_id`; the item stays the person's and is never moved by
   the Bot, while the card tracks the Bots' custody.
-
-## 16. Open questions for the person
-
-- **Q1. Names.** Commit `523e059d7` already calls the chat card for one dispatched Session a "Bot
-  work card". Two things need two names. Recommended: keep the chat card as the **work result
-  card／派工結果卡** (its component is already `WorkResultCard`), and call the new record a **Bot
-  request card／Bot 交辦卡**. Is that right, or do you prefer other names?
-  Checked against non-development work: "request" and 「交辦」 say only that you handed something
-  over, so they fit a post as well as a feature; "work result" and 「派工結果」 stay accurate for the
-  chat card, which exists only for a dispatched Session. The section name "Bot work"／「Bot 工作」
-  is equally neutral. The role word `integrator`／「整合」 is the one development word left; it is
-  shown only when a card is handed to an integrator Bot.
-
-Q2 and Q3 ask about defaults this page already wrote down (§5: the holder may; §6: any cards in one
-Project may), so either answer is a small change.
-
-- **Q2.** May the Bot holding a card mark a checklist entry "not needed" itself, with its reason
-  shown — or should dropping an entry be yours only?
-- **Q3.** May cards that came from different messages of yours be merged into one, or only cards
-  that were split from the same message?
