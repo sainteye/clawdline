@@ -3109,6 +3109,16 @@
     "Note": true
   },
   {
+    "Name": "dispatch.brief_enter_presses",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "dispatch.brief_held_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "epic.child_items",
     "Known": true,
     "Note": true
