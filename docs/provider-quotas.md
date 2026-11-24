@@ -72,8 +72,8 @@ refresh asynchronously, one in flight per provider, with a 15-minute minimum int
 all browsers on that daemon. A complete refresh has a ten-second deadline, no automatic retries,
 and respects a longer `Retry-After`. The native reader replaces the legacy credential/API path when configured.
 Both refresh buttons use `GET /v1/provider-quotas/refresh` (`provider-quotas-refresh` over Cloud,
-API level 115). It rereads local records immediately, allows Claude's native check even with a
-fresh status-line record and respects each provider's cooldown. Codex updates when its CLI writes
+API level 115). It rereads local records immediately and lets each provider check run when its
+cooldown permits. Codex updates when its CLI writes
 a new reading. While a manual check is in progress the browser polls the ordinary snapshot more
 frequently and reports when it sees a newer observation, a failed check or unchanged readings.
 On older daemons the buttons reread the ordinary snapshot and explain the version requirement.
@@ -87,16 +87,16 @@ represents `credit_usage_percent` as optional. This does not reinterpret an expl
 Computable monthly budgets stay monthly. Quota percentages that have passed
 their reset time remain marked outdated until the next usable observation.
 
-## Claude without a status line
-
-Claude Code passes plan windows only to a configured `statusLine.command`, so a machine with no
-status line used to show no Claude reading at all.
+## Claude account readings
 
 There is one Claude reading per machine: `limits.Reader.Quota`. Dispatch availability, the
-assistants route, Session info and its Status Line corner, Cloud's assistant choice and this
-footer all read it, so they cannot disagree. When `rate-limits.json` has no fresh window
-(missing, empty, every window reset, or past its freshness line), that reader answers from the
-last reply Claude Code itself gave and, in the background, asks again: the daemon starts the installed `claude` in print mode with stream-json input and output, writes one
+assistants route, Session info and its Status Line corner, Cloud's assistant choice and the
+footer all use it. A status line can rewrite `rate-limits.json` with data an open Session
+already holds, including data from before a plan upgrade. A newer file timestamp therefore
+does not give it priority over a direct account response. The status-line file is the fallback
+while no direct response has a live window.
+
+For active reads, the daemon starts the installed `claude` in print mode with stream-json input and output, writes one
 experimental `get_usage` control request with `skip_behaviors`, reads the one matching reply, and
 stops the process. It never sends a prompt, so no model request is made and no quota is spent.
 
@@ -107,14 +107,14 @@ skips the keychain where Claude Code keeps its sign-in. Clawdline never reads th
 
 A reading never waits for an ask. Asks run one at a time, at most once every 15 minutes
 (`claudeusage.RefreshSecondsLimit`), each stopped after ten seconds and 1 MiB of output; all
-three are registered capacity rows. Any reader may start one; Doctor's inspection reads with
-`Observe`, which never does. A fresh status-line reading suppresses automatic asks. A manual refresh can ask anyway, and the
-shared reader picks the newest observation. The answer ages by the same freshness line
-as the record. When it answers, the footer names the native CLI as the source and Session info's
+three are registered capacity rows. Any active reader may start one. Doctor's inspection uses
+`Observe` and starts no checks. Active reads recheck at this interval even when the status-line
+file looks recent. The direct answer ages by the same freshness line as the file. When it answers, the footer names the native CLI as the source and Session info's
 sentence ends "asked Claude Code". When it cannot, the reason stays the record's (`no_record`,
 for example) and the sentence adds what the ask found: no Claude Code installed, no plan windows
 (an API key, Bedrock, Vertex or signed out), or no answer (an older Claude Code without
-`get_usage`). A failed ask keeps the last good answer, which then ages. Only 5h and 7d are
+`get_usage`). A failed check keeps the last good answer, which then ages. A response confirming
+no plan clears the previous direct answer. Only 5h and 7d are
 carried; the model-scoped Fable weekly window is not.
 
 Measured on 2026-11-02 with Claude Code 2.1.316: an answer in 0.06–0.65 s and about 2 s of

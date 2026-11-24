@@ -1352,8 +1352,8 @@ var (
 func quotaReader() *limits.Reader {
 	limitsOnce.Do(func() {
 		home, _ := os.UserHomeDir()
-		// One Claude reading for every consumer: when the status line has no
-		// fresh window, the reader asks the installed Claude Code itself.
+		// All consumers share Claude Code's direct account reading and its
+		// status-line fallback.
 		limitsReader = limits.NewReader(home, nil).WithClaudeCode(
 			func(ctx context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
 				return claudeusage.Ask(ctx, transcript.ClaudeExecutable(home))

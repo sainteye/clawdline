@@ -101,36 +101,88 @@ func TestWithoutAStatusLineEveryReaderSeesClaudeCodesAnswer(t *testing.T) {
 	}
 }
 
-func TestAFreshStatusLineIsNeitherReplacedNorAsked(t *testing.T) {
+func TestFreshStatusLineIsAvailableWhileDirectClaudeCheckIsPending(t *testing.T) {
 	now := time.Now()
 	reset := strconv.FormatInt(now.Add(time.Hour).Unix(), 10)
 	r, calls, release := askingReader(t, `{"at":`+strconv.FormatInt(now.Unix(), 10)+
 		`,"rate_limits":{"five_hour":{"used_percentage":2,"resets_at":`+reset+`},"seven_day":{"used_percentage":65,"resets_at":`+reset+`}}}`)
 	defer close(release)
+	if q := r.Observe("claude", now); q.Updating || calls.Load() != 0 {
+		t.Fatalf("inspection started a Claude check: %+v", q)
+	}
 	q := r.Quota("claude", now)
-	if calls.Load() != 0 || q.FromClaudeCode || strings.Join(percents(q), ",") != "5h=2,7d=65" {
-		t.Fatalf("fresh status line replaced: %+v calls=%d", q, calls.Load())
+	if !q.Updating || q.FromClaudeCode || strings.Join(percents(q), ",") != "5h=2,7d=65" {
+		t.Fatalf("fresh status line did not cover the pending check: %+v", q)
 	}
 }
 
-func TestFailedManualClaudeCheckKeepsTheStatusLineReading(t *testing.T) {
+func TestClaudeAnswerSurvivesLaterStatusLineWritesAndRefreshes(t *testing.T) {
 	now := time.Now()
-	at := strconv.FormatInt(now.Add(-time.Minute).Unix(), 10)
-	reset := strconv.FormatInt(now.Add(time.Hour).Unix(), 10)
-	r, _, release := askingReader(t, `{"at":`+at+
-		`,"rate_limits":{"seven_day":{"used_percentage":81,"resets_at":`+reset+`}}}`)
-	close(release)
-	r.WithClaudeCode(func(context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
-		return nil, claudeusage.Failed
-	})
-	if q := r.Refresh("claude", now); !q.Updating {
-		t.Fatalf("manual check was not started: %+v", q)
+	home := t.TempDir()
+	path := filepath.Join(home, ".claude", "statusline-cache", "rate-limits.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		t.Fatal(err)
 	}
+	reset := strconv.FormatInt(now.Add(48*time.Hour).Unix(), 10)
+	writeStatus := func(at time.Time) {
+		t.Helper()
+		record := `{"at":` + strconv.FormatInt(at.Unix(), 10) +
+			`,"rate_limits":{"seven_day":{"used_percentage":87,"resets_at":` + reset + `}}}`
+		if err := os.WriteFile(path, []byte(record), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeStatus(now.Add(-time.Minute))
+	var calls atomic.Int32
+	r := NewReader(home, nil).WithClaudeCode(func(context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+		calls.Add(1)
+		return []claudeusage.Window{{Name: "7d", UsedPercent: 5}}, ""
+	})
+	r.Refresh("claude", now)
 	askSettled(t, r)
-	q := r.Quota("claude", now)
-	if q.CheckProblem != "unavailable" || q.Updating || q.Availability != OK ||
-		q.FromClaudeCode || strings.Join(percents(q), ",") != "7d=81" {
-		t.Fatalf("failed check displaced the status-line reading: %+v", q)
+	later := now.Add(time.Minute)
+	writeStatus(later)
+	if q := r.Quota("claude", later); !q.FromClaudeCode || strings.Join(percents(q), ",") != "7d=5" {
+		t.Fatalf("a later status-line write displaced the direct answer: %+v", q)
+	}
+	next := now.Add(claudeusage.RefreshSecondsLimit * time.Second)
+	writeStatus(next)
+	r.Quota("claude", next)
+	askSettled(t, r)
+	if calls.Load() != 2 {
+		t.Fatalf("active reads did not refresh the direct answer after the cooldown: %d calls", calls.Load())
+	}
+}
+
+func TestFailedClaudeCheckKeepsTheStatusLineReading(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		read    func(*Reader, string, time.Time) Quota
+		problem string
+	}{
+		{"automatic", (*Reader).Quota, ""},
+		{"manual", (*Reader).Refresh, "unavailable"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			now := time.Now()
+			at := strconv.FormatInt(now.Add(-time.Minute).Unix(), 10)
+			reset := strconv.FormatInt(now.Add(time.Hour).Unix(), 10)
+			r, _, release := askingReader(t, `{"at":`+at+
+				`,"rate_limits":{"seven_day":{"used_percentage":81,"resets_at":`+reset+`}}}`)
+			close(release)
+			r.WithClaudeCode(func(context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+				return nil, claudeusage.Failed
+			})
+			if q := test.read(r, "claude", now); !q.Updating {
+				t.Fatalf("check was not started: %+v", q)
+			}
+			askSettled(t, r)
+			q := r.Quota("claude", now)
+			if q.CheckProblem != test.problem || q.Updating || q.Availability != OK ||
+				q.FromClaudeCode || strings.Join(percents(q), ",") != "7d=81" {
+				t.Fatalf("failed check displaced the status-line reading: %+v", q)
+			}
+		})
 	}
 }
 

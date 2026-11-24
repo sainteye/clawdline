@@ -89,7 +89,7 @@ func TestManualProviderQuotaRefreshChecksClaudeDespiteAFreshStatusLine(t *testin
 		}
 		return got
 	}
-	initial := read("/v1/provider-quotas")
+	initial := s.providerQuotaReader().Inspect(now)
 	if initial.Updating || initial.Providers[0].Windows[0].UsedPercent != 81 {
 		t.Fatalf("initial reading: %+v", initial)
 	}

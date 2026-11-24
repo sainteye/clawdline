@@ -90,13 +90,12 @@ clawdline assistants
 For each of Claude Code and Codex: whether it is installed, its availability (`ok`, `low`,
 `exhausted` or `unknown`), when its quota window resets, and how old the reading is.
 
-### Claude's 5h and 7d come from your status line, or from Claude Code itself
+### Claude's 5h and 7d come from Claude Code
 
-You no longer need a status line for them. When none has written a fresh reading, Clawdline
-asks the installed Claude Code for its plan windows, at most once every 15 minutes, without
-sending a prompt or spending quota ([provider-quotas.md](../provider-quotas.md)). The Status
-Line corner, **Session info**, dispatch and the quota footer all read that one answer. A
-status line that does write the file is still read first, and is fresher while a session runs.
+Clawdline asks the installed Claude Code for its own account windows every 15 minutes
+while they are being read, without sending a prompt or spending quota
+([provider-quotas.md](../provider-quotas.md)). All Clawdline surfaces share that answer.
+The status-line file provides a fallback while Claude Code has no usable direct reading.
 
 #### The status line's file
 

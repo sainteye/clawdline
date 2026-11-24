@@ -21,8 +21,9 @@ background provider polling, chat prompt, automatic token refresh or paid infere
 request is introduced. Doctor itself uses `Inspect`, which neither reads provider
 credentials nor initiates a metadata refresh.
 
-Claude's source remains its status-line cache and Codex's source remains rollout
-quota keys. The report cannot establish whether Claude's upstream usage request
+Doctor groups Claude's direct CLI and status-line observations under the historical
+`claude_statusline` label. The quota detail shows which source supplied the current
+reading. Codex's source is rollout quota keys. The report cannot establish whether Claude's upstream usage request
 returned 401, whether a credential changed after login, or whether the browser
 actually rendered a footer. These are explicit evidence gaps, never inferred
 authentication failures. A CLI version is the executable found on the daemon's
