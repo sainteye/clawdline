@@ -1636,7 +1636,7 @@ ${currentDraft}`:submitted)
         card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
       }}>{w.teamReviewJump}</button>}
     <div className="pa-chat-footer">{!thread&&(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
-      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
+      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
       {parts.queued.length>0&&<div className="pa-queue">{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null

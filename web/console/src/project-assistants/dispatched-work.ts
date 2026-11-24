@@ -49,6 +49,24 @@ export function dispatchedCounts(rows: readonly DispatchedRow[]) {
   }
 }
 
+export type DispatchedCounts = ReturnType<typeof dispatchedCounts>
+
+/** The strip's line and list. The counts are the roster row's own
+ * dispatched_work, which the daemon counts over every work link the Bot holds
+ * (countDispatchedWork); the chat has loaded only a page of its own-chat links,
+ * so it lists what it has and says how many more there are. An older source
+ * without dispatched_work falls back to the loaded links. */
+export function dispatchedStrip(links: readonly W.ProjectAssistantWorkLink[], work: W.ProjectAssistantDispatchedWork | undefined) {
+  const all = dispatchedRows(links)
+  const n = (v: unknown) => typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : 0
+  const counts: DispatchedCounts = work
+    ? {running: n(work.running), needsYou: n(work.needs_you), delivered: n(work.delivered)}
+    : dispatchedCounts(all)
+  const total = counts.running + counts.needsYou + counts.delivered
+  const rows = total > 0 ? all.slice(0, Math.min(DispatchedStripRows, total)) : []
+  return {counts, rows, more: Math.max(0, total - rows.length)}
+}
+
 /** What a listed row waits for, in plain words, from the task record and its
  * landing state only. A delivery without a landing record says so instead of
  * guessing who it waits for. */

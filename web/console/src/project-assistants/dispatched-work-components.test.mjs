@@ -42,6 +42,10 @@ test("the chat strip takes no space without work, keeps the background capsule, 
   assert.match(html,/class="capsule"/)
   assert.match(html,/aria-expanded="false"/)
   assert.match(html,/2 個工作在跑/)
+  // With the roster's count, the strip says what the roster row says.
+  const counted=render(DispatchedWorkStrip,{links:[{id:"r",task_id:"r",state:"executing"},{id:"d",task_id:"d",state:"completed",landing:"pending"}],work:{running:1,needs_you:0,delivered:14},w})
+  assert.match(counted,/1 個工作在跑/)
+  assert.match(counted,/14 個待整合/)
   const calls=[]
   const open=(link,view)=>calls.push([link.id,view])
   openDispatchedSession({id:"linked",worker_terminal:"trm_a&b",worker_session:"conversation-a"},open)
