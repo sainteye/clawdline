@@ -26,3 +26,8 @@ test("other notices are shown as stored", () => {
   assert.equal(compactedNoticeText(notice("Daily review", undefined, "routine-1"), words("zh-Hant")), null)
   assert.equal(compactedNoticeText({...notice("x"), kind: "assistant" as const}, words("zh-Hant")), null)
 })
+
+test("a release without confirmation reads in the reader's language", () => {
+  assert.equal(compactedNoticeText(notice("x", {key: "cleanup_released", cause: "degraded"}), words("zh-Hant")), words("zh-Hant").cleanupReleasedDegraded)
+  assert.equal(compactedNoticeText(notice("x", {key: "cleanup_released", cause: "person"}), words("en")), words("en").cleanupReleasedPerson)
+})
