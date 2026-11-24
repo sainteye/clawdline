@@ -660,3 +660,16 @@ func TestDeselectingALiveConnectorPreventsItsNextNativeCall(t *testing.T) {
 		t.Fatal("deselected live connector executed", e)
 	}
 }
+
+// Chat activity advances Bot.Version between the read and the action; the
+// fence, authority and profile revision still guard it, so it succeeds.
+func TestLoginProfileActionSurvivesBotActivity(t *testing.T) {
+	f, _ := loginCapabilitiesFixture(t)
+	g := f.get(t, f.local)
+	q := loginAction(f, g, "create", contract.ProjectAssistantLoginProfile{}, "Synthetic busy")
+	q.ExpectedVersion--
+	created := loginAct(t, f, q)
+	if created.ID == "" {
+		t.Fatal(created)
+	}
+}

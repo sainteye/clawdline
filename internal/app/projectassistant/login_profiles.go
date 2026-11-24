@@ -103,9 +103,8 @@ func (s *Service) loginProfileAction(ctx context.Context, q pa.LoginProfileActio
 		if e != nil {
 			return e
 		}
-		if current.Version != q.ExpectedVersion {
-			return serviceFailure(pa.StaleVersion, "bot")
-		}
+		// Bot.Version moves with chat activity; the fence, authority epoch
+		// and source checks are what this action depends on.
 		c, e := s.opts.Repository.Conversation(ctx, b.Key, b.ConversationID)
 		if e != nil {
 			return e

@@ -97,9 +97,8 @@ func (s *Service) ConnectorCredential(ctx context.Context, q pa.ConnectorCredent
 		if e != nil {
 			return e
 		}
-		if current.Version != q.ExpectedVersion {
-			return serviceFailure(pa.StaleVersion, "bot")
-		}
+		// Bot.Version moves with chat activity; the fence, authority epoch
+		// and source checks are what this action depends on.
 		conversation, e := s.opts.Repository.Conversation(ctx, b.Key, b.ConversationID)
 		if e != nil {
 			return e
