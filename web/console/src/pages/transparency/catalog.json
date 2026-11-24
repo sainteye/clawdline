@@ -4509,6 +4509,7 @@
         "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is the one message the room sees. Keep it short and conversational. After this round, only the participants someone @-mentions answer again: @-mention another participant when you need their answer or action, and only then. If you have nothing new worth adding, reply exactly %q. Never reveal private one-on-one context.\n",
         "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
         "[Clawdline: this replies to %s: %q] %s",
+        "%s [Clawdline: the user attached %d picture(s) to this message; they are included with this turn.]",
         "It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.\n"
       ],
       "locations": [
@@ -5550,7 +5551,7 @@
     "internal/adapters/projectassistanthost/devservers.go": "c45d9c98aeb493d55c8fb1100dfe3558b22ff1554e307b857d8969c30b0c6a5d",
     "internal/adapters/projectassistanthost/devservers_human.go": "98ca0d12513320db1b7e24d685d26c2b64aef399bf1b623d05c1918e798d925b",
     "internal/adapters/projectassistanthost/devservers_ports.go": "371bc4e39137e097aa4ff0e2cc7856e7527a203bc90aa2be363bdd6fe2a4f96a",
-    "internal/adapters/projectassistanthost/host.go": "e2bec9cf98de2ff0c9b5cd31dc15fa79bdd2eb0aaee16f9b471958783d629da6",
+    "internal/adapters/projectassistanthost/host.go": "b8a2f9d23e05f37bd2f8a0cc25243aab901b59d420e4a162415236bdbe634a58",
     "internal/adapters/projectassistanthost/lead.go": "e33b998121310d910a84a3f1493d9b737646bf9051d256ed17d2b8740484393e",
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
@@ -5564,7 +5565,7 @@
     "internal/adapters/projectassistantstore/collaboration.go": "dd4a153bad97a0d4d6b3c4cf46cb948038cd61ee5ff7bbcc74a231809036785a",
     "internal/adapters/projectassistantstore/fallback.go": "aa7f1cd40905992cce640e6ab6460e8d374785fffd95a33b7b8554f5146d80bd",
     "internal/adapters/projectassistantstore/group_views.go": "1343eed4283b871a7bfb4c58200dd26117f915e58046a091bc1d5727f3d1c850",
-    "internal/adapters/projectassistantstore/groups.go": "ce67f70200d1f45dd5f1ca35a9ce76e5070f0f96cdb7ab84aff14e95808a28b5",
+    "internal/adapters/projectassistantstore/groups.go": "cc29704431be7a3af2fbca24901718466511ebaf25a74f5982c451088fc03b6a",
     "internal/adapters/projectassistantstore/handoff_card.go": "a2a6255ecc2b91db47a211914322b03ea8a0e4f4e3f5aad0f5717aec05073d59",
     "internal/adapters/projectassistantstore/inputs.go": "490f982024fa679da1f8813531a64ed5715c58b2ee22b5842665056b0503c1b0",
     "internal/adapters/projectassistantstore/lead.go": "d2b71c6011c22f6437f1e6f789552d955b03da19828df631c58ec326f4b1f8f5",
@@ -5624,7 +5625,7 @@
     "internal/app/projectassistant/extensions.go": "ade658b4d4fc1e821879449ccd2c2b2734b61f190875f6e8c4e2c43e7f095c4c",
     "internal/app/projectassistant/fallback.go": "35ef8d81a19ec9ef0811ae740948e65356f6b99d481147f4035ddfc4841d3819",
     "internal/app/projectassistant/fallback_ledger.go": "38990dc5ebe047ce808f29f575497c2b5264a98ea370b2282304992e04b67746",
-    "internal/app/projectassistant/group_rooms.go": "244cae7e7d55081e54604220a4154ab6c7a37aa0da1d20732c4e9d68e691a4cc",
+    "internal/app/projectassistant/group_rooms.go": "363332ce4594f8c9aee51cf7faa6cb86c60834a7c2c1a298327b28d92023e733",
     "internal/app/projectassistant/handoff_card.go": "226fbd47b11d4b24c06a7172ed317cdc07f2ae08671740042400b5379815a477",
     "internal/app/projectassistant/inputs.go": "42d237758dbfc3aeb23098e0f90513532e6ed1191e0cc49525d8d585c50e79e7",
     "internal/app/projectassistant/lifecycle.go": "b1535bdcb8c6b85fde29582b5301602451c328f9a4d44ad058ef93050a0cbc28",
@@ -5638,7 +5639,7 @@
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "b763f26a85a3ebf28f52d45ed9f4b6b9760ea5cb2f11697c2c95dccf5d228ffb",
-    "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
+    "internal/app/projectassistant/runtime_groups.go": "ce78782f60daca4a9fb9a858cd9c8cd372b25a3668cf316be6e4e9614ef7226a",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
     "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",
@@ -5727,7 +5728,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "5972694cdee2dc428af6db1e7f8962c30d67eb2527a02bd856ba14ceed192e05",
+    "web/console/src/cloud/project-assistants.ts": "c384491f04f24942c10cadc5d146c062f5a8386ee582f844a9c2613e757c6413",
     "web/console/src/cloud/relay-writer.ts": "9e13ed3493954116d110ca44608f2264a26dc6d3c9bf718847adfcb7792b015d",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
@@ -5739,7 +5740,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "ea55fd666b5d0510114d9fa4ada1a7fc712f51bbf3b63dee73430cf2324d8090",
-    "web/console/src/project-assistants/ChatRows.tsx": "a43ba79a0e9ccf08fd3939ec92796135e5107ce7ea00c0b541c4d1dc9e7c08a6",
+    "web/console/src/project-assistants/ChatRows.tsx": "04e9cecd6fb65e476bf7f0ecf9c55b59544ef57eff280c89848ceb9435dac482",
     "web/console/src/project-assistants/DevServers.tsx": "788e9abd6e14dbc90746a12d889e8f7f7709bea0b18c811d12f09c1276b6a344",
     "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
@@ -5794,7 +5795,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "8a986076222b47009b31047ca74e8617dfc8d645cb5514707d3220a843250630",
-    "zh-Hant": "18c29250f65932420add7ac2120aa46e7a789597a3a22b7085118d6c89546fa2"
+    "en": "27641a4fcd4d27dabe0cce0bc2a452288e8904c1ca496e7cea4e01a179210013",
+    "zh-Hant": "233117d633199eb849466cd52add2916ce99523d09e7eda9c3ebaef24c7ee64c"
   }
 }
