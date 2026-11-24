@@ -3943,14 +3943,6 @@
         {
           "path": "internal/adapters/projectassistantacp/compaction.go",
           "line": 103
-        },
-        {
-          "path": "internal/app/projectassistant/restart.go",
-          "line": 10
-        },
-        {
-          "path": "internal/app/projectassistant/send_now.go",
-          "line": 88
         }
       ],
       "original": [
@@ -4008,8 +4000,7 @@
         "Grok Build uses the native ACP agent, with cached personal sign-in before it opens a Bot session.\n",
         "params[\"_meta\"] = map[string]string{\"rules\": systemPrompt(q)}\n",
         "After the agent compacted its own context, the next turn's prompt starts once with: <context_restored>\nYour earlier context was summarized to make room. Your memory is repeated here so the summary does not lose it.\n</context_restored>\n<memory_update>…all of the Bot's current filtered memory…</memory_update>",
-        "When the person chooses Compact now on an idle Claude Code or Codex Bot, that turn's whole prompt is the agent's own command. Claude Code: /compact Keep verbatim: the latest request, and every instruction not to do something. Keep exact paths, URLs and ids, decisions with their reasons, and open tasks. Codex: /compact",
-        "Continue from the verified conversation already loaded. First inspect what finished. Do not repeat a write, send, dispatch or other external action from the previous turn."
+        "When the person chooses Compact now on an idle Claude Code or Codex Bot, that turn's whole prompt is the agent's own command. Claude Code: /compact Keep verbatim: the latest request, and every instruction not to do something. Keep exact paths, URLs and ids, decisions with their reasons, and open tasks. Codex: /compact"
       ],
       "locations": [
         "Source-machine persistent Bot turn snapshot",
@@ -5453,10 +5444,6 @@
         {
           "path": "internal/app/projectassistant/work_completion.go",
           "line": 11
-        },
-        {
-          "path": "web/console/src/project-assistants/WorkResultCard.tsx",
-          "line": 83
         }
       ],
       "original": [
@@ -5653,13 +5640,11 @@
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
     "internal/app/projectassistant/provider_failure.go": "5db159084d21b5b0924bbaa4fa624236388e4debcf82f9abaeec8000f539cb78",
     "internal/app/projectassistant/queue_edit.go": "e5c38f755ed206faaf166670e98e526786141b982c14ac7c0b6290f52b37c45e",
-    "internal/app/projectassistant/restart.go": "5a275281025d683e1ffc516553cd9644c427bf70b71793c3ebc9a42d1bc177fa",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "e8d3ea8e8d25f9cc3314d54d914193dd6c965f55e975a45e0624f6b888e314fe",
     "internal/app/projectassistant/runtime_groups.go": "98e658e5bd8f1fceb250c10f3d3a4eaa2547b47433205caf7f77a6aa86dc37cc",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
-    "internal/app/projectassistant/send_now.go": "b49400b1ce394ac4d8fe1ea0c17aa3c8ff64fc73cd8ecfb413b32f54e8b2ddc2",
     "internal/app/projectassistant/service_routines.go": "47b4f2ab953551938f828229ff837d77c8361bed25aafdaa653c5be943a3eed3",
     "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
@@ -5758,7 +5743,7 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "42b2703ad01240f9a327e34acc09272b1cf546120dbe282bdf158fad32c939ed",
+    "web/console/src/project-assistants/Chat.tsx": "d261b20131cb37be9677d8abfda1b1eec6284923b0a6eef9378ce4cb27da4383",
     "web/console/src/project-assistants/ChatRows.tsx": "6c4de5381a535ac9c9c7f27ca70f3b516ec8c553b488b3f0d4264f44615f3354",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
@@ -5771,7 +5756,6 @@
     "web/console/src/project-assistants/OutputViewer.tsx": "b8a5ba2bc833b04c88531edbdc0cb3d27e36d632ba95fdad7eed03f639104249",
     "web/console/src/project-assistants/RoutineHook.tsx": "639a909c7848a768e23cd4958289e9174e226e88c14908c364475fce79640f6e",
     "web/console/src/project-assistants/Routines.tsx": "56367267cdc033cd6f375dc38d32cd7d1153a221f1bcbfecbdd77e3edaa4ac94",
-    "web/console/src/project-assistants/WorkResultCard.tsx": "5c38a3cfc59ed829ca827dfb36c5dafc42d92981e66f0529e67cc386f0aa308c",
     "web/console/src/project-assistants/bot-voice-tools.ts": "375b4d62ebb8f4a645146e7cdfe63ba1213feea541d5118944fe0522095c57d0",
     "web/console/src/project-assistants/dev-server-observation.ts": "994d3629c3040b9f3cf64acf3b553935530c431fafb87f8f45c3cd8d1b8e6f25",
     "web/console/src/project-assistants/exchanges.ts": "ee3394c9d76679ab8f1e47d06fb00c9dfeb8b3c92fe969a128fdae07ceaa4718",
@@ -5815,7 +5799,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "d3ffe18d9de6f3fffa29f96363fe78fde712558b8f67ac19f18b1a4e1d8607c1",
-    "zh-Hant": "25bc56a839ce2c25293a6d05aefb6c23dfacd75f33f6bffea69e2bcdde078361"
+    "en": "500df3c35df25940aa6554d4e148e7f591801b44b6cf11d837b8b8e5fd8b9f73",
+    "zh-Hant": "dd28592c69fa38c2741bfb7e77d26d54f1eb328e50dfedebf9e0c284e2378beb"
   }
 }
