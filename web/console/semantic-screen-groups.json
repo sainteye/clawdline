@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14339,
-  "riskKeys": 6091,
-  "nonRiskCount": 8248,
+  "englishContentKeys": 14348,
+  "riskKeys": 6096,
+  "nonRiskCount": 8252,
   "groups": [
     {
       "name": "acp / other",
@@ -615,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 762,
+      "count": 764,
       "sources": [
         null
       ],
@@ -1130,6 +1130,8 @@
         "capacityRow.notification.rule_wait_seconds.what",
         "capacityRow.orchestrator.bot_decision_push_runes.full",
         "capacityRow.orchestrator.bot_decision_push_runes.what",
+        "capacityRow.orchestrator.bot_viewing_chats.what",
+        "capacityRow.orchestrator.bot_viewing_hold_seconds.what",
         "capacityRow.orchestrator.delivery_bytes.what",
         "capacityRow.orchestrator.result_carries.what",
         "capacityRow.personas.text_bytes.what",
@@ -6282,7 +6284,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 640,
+      "count": 642,
       "sources": [
         null
       ],
@@ -6377,6 +6379,8 @@
         "projectAssistants.decisionChosen",
         "projectAssistants.decisionContext",
         "projectAssistants.decisionGo",
+        "projectAssistants.decisionHandled",
+        "projectAssistants.decisionHandledDismiss",
         "projectAssistants.decisionOwn",
         "projectAssistants.decisionOwnPlaceholder",
         "projectAssistants.decisionRetry",

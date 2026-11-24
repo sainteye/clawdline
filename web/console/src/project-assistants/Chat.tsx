@@ -10,6 +10,8 @@ import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, same
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
+import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
+import {hostedConsole} from "../pages/terminal/api"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
@@ -46,6 +48,7 @@ import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
+import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -109,10 +112,12 @@ export interface ChatProps {
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
   showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
+  /** The decision a push notification opened this chat at, and the call that consumes it. */
+  focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -154,6 +159,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[browserOpener])
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
+  // The push-opened decision: consumed once the permissions say where it is.
+  const [focusTarget,setFocusTarget]=useState(focusDecision??""),[focusedDecision,setFocusedDecision]=useState(""),[decisionHandled,setDecisionHandled]=useState(false)
+  const [permissionsRead,setPermissionsRead]=useState(false)
+  // Each decision answered from this page and the turn its reply started.
+  const [decisionTurns,setDecisionTurns]=useState<Record<string,string>>({}),decisionProgress=useRef<Record<string,DecisionFollowUp|undefined>>({})
+  useEffect(()=>{if(focusDecision)setFocusTarget(focusDecision)},[focusDecision])
+  // A question this chat already shows is not also pushed while it is on
+  // screen. Only the console served by this machine reports it.
+  useEffect(()=>hostedConsole()?undefined:watchBotViewing(key.bot_id,scope.conversation_id,browserViewingPage(),localViewingReport),[key.bot_id,scope.conversation_id])
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
   const [permissionTick,setPermissionTick]=useState(0)
   const permissionRows=useRef(permissions)
@@ -344,7 +358,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       adoptHead(page)
       if(mode==="permissions"){
         const added=page.items.map(row=>row.permission_summary!)
-        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor)
+        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor);setPermissionsRead(true)
       }else{
         const added=page.items.map(row=>row.trace_summary!)
         const base=cursor?traceRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];traceRows.current=rows;setTraceSummaries(rows);setTraceMore(page.next_cursor)
@@ -1151,6 +1165,8 @@ ${currentDraft}`:submitted)
         setReceipt(result.receipt)
         const next={...detailRows.current,[offer.id]:{...offer,state:result.receipt.state==="unknown"?"unknown" as const:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
         detailRows.current=next;setDetails(next)
+        const turnID=result.receipt.resource_id
+        if(offer.kind==="decision"&&turnID&&result.receipt.state!=="unknown")setDecisionTurns(old=>({...old,[offer.id]:turnID}))
       }
     }catch(e){
       const code=errorCode(e)
@@ -1285,6 +1301,27 @@ ${currentDraft}`:submitted)
   const exchangeDecisions=decisionsUnderCapsules(permissionCards,messages,inlinePermissionIds)
   const exchangeDecisionIds=new Set([...exchangeDecisions.values()].map(card=>card.summary.id))
   const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id)&&!exchangeDecisionIds.has(summary.id))
+  const focusOutcome=focusTarget?decisionFocus(focusTarget,permissionCards,permissionsRead&&!!data):"wait"
+  useEffect(()=>{
+    if(!focusTarget||focusOutcome==="wait")return
+    setFocusTarget("");onDecisionFocused?.()
+    if(focusOutcome==="handled")setDecisionHandled(true)
+    else setFocusedDecision(focusTarget)
+  },[focusTarget,focusOutcome])
+  useEffect(()=>{
+    if(!focusedDecision)return
+    const id=focusedDecision
+    // The card renders with data-focused this frame; scroll once it is laid out.
+    const frame=requestAnimationFrame(()=>{
+      const card=scroll.current?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
+      if(!card){setFocusedDecision("");setDecisionHandled(true);return}
+      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      card.scrollIntoView({block:"center",behavior:still?"auto":"smooth"})
+      card.focus({preventScroll:true})
+    })
+    const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
+    return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
+  },[focusedDecision])
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{
@@ -1556,7 +1593,8 @@ ${currentDraft}`:submitted)
 
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
-  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} enabled={enabled&&!unknown&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&!unknown&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
@@ -1593,6 +1631,8 @@ ${currentDraft}`:submitted)
       <span>{reconnecting?w.chatReconnecting:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
     </div>}
+    {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
+      <button type="button" className="pa-pill" onClick={()=>setDecisionHandled(false)}>{w.decisionHandledDismiss}</button></div>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
     {!thread&&<BotCallBar call={call} state={callState} name={bot.name} language={language} realtime={realtimeCall}/>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>

@@ -13,6 +13,9 @@
  *     prints the URL and keeps serving. Open it in a 390px-wide tab:
  *       ?scene=beacon   the asked Bot's chat, decision pending
  *       ?scene=atlas    the asking Bot's chat, waiting for the person
+ *       ?scene=working  answered, the Bot still working on the reply
+ *       ?scene=done     answered, the Bot's turn finished
+ *       ?scene=focus    the card a push opened, highlighted
  *       ?scene=check    presses the real buttons and prints PASS/FAIL lines
  *     add &lang=zh-Hant for Taiwan Traditional Chinese.
  *   DECISION_CARD_SOURCE=<other web/console/src> ... runs against another tree.
@@ -59,8 +62,8 @@ window.__decision = { log, release: null }
 
 // The card's answer goes through the console's answer path; here it is held
 // until released so the waiting state stays on screen.
-function Beacon({ hold }) {
-  const [offer, setOffer] = useState(pendingOffer)
+function Beacon({ hold, followUp, highlight, answered }) {
+  const [offer, setOffer] = useState(answered ? { ...pendingOffer, state: "answered", selected_option_id: "ship", decision: { ...pendingOffer.decision, answer_text: options[0].label } } : pendingOffer)
   const onAnswer = async (o, option, text) => {
     log.push({ answer: option ? option.id : null, text: text ?? null })
     if (hold) await new Promise(resolve => { window.__decision.release = resolve })
@@ -68,7 +71,7 @@ function Beacon({ hold }) {
   }
   const timeline = rows([message(beacon, "notice", "", { exchange: exchange("needs_person") }), message(beacon, "assistant", zh ? "我需要你決定 Release 1.8 什麼時候發。" : "I need your call on when release 1.8 ships.")])
   return <ChatRows timeline={timeline} w={w} language={language} source={source} botKey={beacon} roster={roster}
-    renderExchangeDecision={id => id === "x1" ? <DecisionCard summary={summaryOf(offer)} offer={offer} enabled onAnswer={onAnswer} askerName="Beacon" requesterName="Atlas" w={w}/> : null}/>
+    renderExchangeDecision={id => id === "x1" ? <DecisionCard summary={summaryOf(offer)} offer={offer} enabled onAnswer={onAnswer} askerName="Beacon" requesterName="Atlas" followUp={followUp} highlight={highlight} w={w}/> : null}/>
 }
 function Atlas() {
   const timeline = rows([message(atlas, "user", zh ? "請 Beacon 確認能不能今天發版。" : "Ask Beacon whether we can ship today."), message(atlas, "notice", "", { exchange: exchange("needs_person") }), message(atlas, "assistant", zh ? "Beacon 需要你的決定，我會等你回覆。" : "Beacon needs your decision; I'll wait for your reply.")])
@@ -115,6 +118,28 @@ async function check(out) {
     await until(() => host.textContent.includes("Ship after the smoke test"), "answered text")
     root.unmount(); host.remove()
   })
+  await step("an answered card shows the Bot working, then finished, and claims neither without a turn", async () => {
+    for (const [followUp, shown, hidden] of [["working", w.decisionSentWorking, w.decisionDone], ["done", w.decisionDone, w.decisionSentWorking]]) {
+      const { host, root } = mount(<Beacon answered followUp={followUp}/>)
+      await until(() => host.querySelector(".pa-decision"), "card")
+      if (!host.textContent.includes(shown.replace("{name}", "Beacon"))) throw new Error(followUp + ": missing " + shown)
+      if (host.textContent.includes(hidden.replace("{name}", "Beacon"))) throw new Error(followUp + ": also shows " + hidden)
+      if (host.querySelectorAll(".pa-decision button").length) throw new Error("answered card still offers choices")
+      root.unmount(); host.remove()
+    }
+    const { host, root } = mount(<Beacon answered/>)
+    await until(() => host.querySelector(".pa-decision"), "card")
+    if (host.textContent.includes(w.decisionDone.replace("{name}", "Beacon")) || host.querySelector(".pa-decision-working")) throw new Error("claims progress without a turn")
+    root.unmount(); host.remove()
+  })
+  await step("the card a push opened is highlighted and can take focus", async () => {
+    const { host, root } = mount(<div className="project-assistants"><Beacon highlight/></div>)
+    await until(() => host.querySelector(".pa-decision[data-focused]"), "focused card")
+    const card = host.querySelector("#pa-decision-d1"); card.focus()
+    if (document.activeElement !== card) throw new Error("card cannot take focus")
+    if (getComputedStyle(card).animationName !== "pa-decision-focus" && !matchMedia("(prefers-reduced-motion: reduce)").matches) throw new Error("no highlight animation")
+    root.unmount(); host.remove()
+  })
   await step("the asking Bot shows it is waiting for the person, and the shortcut opens the asked Bot", async () => {
     log.length = 0; const { host, root } = mount(<Atlas/>)
     await until(() => host.querySelector(".pa-decision-pointer"), "pointer")
@@ -130,7 +155,11 @@ export function mountFixture() {
   const scene = params.get("scene") ?? "beacon"
   const root = createRoot(document.getElementById("fixture"))
   if (scene === "check") { root.render(<pre id="results" style={{ color: "#fafafa", whiteSpace: "pre-wrap", padding: 12 }}>running…</pre>); setTimeout(() => void check(document.getElementById("results")), 50); return }
-  root.render(scene === "atlas" ? <Phone title="Atlas"><Atlas/></Phone> : <Phone title="Beacon"><Beacon hold/></Phone>)
+  root.render(scene === "atlas" ? <Phone title="Atlas"><Atlas/></Phone>
+    : scene === "working" ? <Phone title="Beacon"><Beacon answered followUp="working"/></Phone>
+    : scene === "done" ? <Phone title="Beacon"><Beacon answered followUp="done"/></Phone>
+    : scene === "focus" ? <Phone title="Beacon"><Beacon hold highlight/></Phone>
+    : <Phone title="Beacon"><Beacon hold/></Phone>)
 }
 `
 

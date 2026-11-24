@@ -12209,6 +12209,9 @@
   "projectAssistants.decisionSentWorking": "{name} 處理中…",
   "projectAssistants.decisionSendFailed": "回覆沒有送出。請確認連線後再試一次。",
   "projectAssistants.decisionRetry": "重試",
+  "projectAssistants.decisionDone": "{name} 已完成",
+  "projectAssistants.decisionHandled": "這個決定已經處理過了。",
+  "projectAssistants.decisionHandledDismiss": "知道了",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",
@@ -14339,5 +14342,11 @@
   "capacityRow.cloud.line_open_retry_max_seconds.what": "Cloud 連線一直啟動失敗時，兩次嘗試之間最長等多久。機器不會放棄，至少每隔這麼久就再試一次。",
   "capacityRow.cloud.line_open_retry_max_seconds.full": "持續失敗期間，Cloud 設定會顯示原因。如果這台機器已登出或被移出帳號，就會停止重試，等你重新登入。",
   "capacityRow.orchestrator.bot_decision_push_runes.what": "Bot 的問題在推播通知裡顯示多少字。",
-  "capacityRow.orchestrator.bot_decision_push_runes.full": "超過的問題在通知裡會截短；對話裡的決定卡片仍顯示完整問題。"
+  "capacityRow.orchestrator.bot_decision_push_runes.full": "超過的問題在通知裡會截短；對話裡的決定卡片仍顯示完整問題。",
+  "capacityRow.orchestrator.bot_viewing_seconds.what": "一次「這個 Bot 對話正在畫面上」的回報有效多久。對話開著且在前景時，主控台會持續回報。",
+  "capacityRow.orchestrator.bot_viewing_seconds.full": "超過時就不再算正在看，等待中的決定通知會送出。",
+  "capacityRow.orchestrator.bot_viewing_hold_seconds.what": "因為對話看起來正在畫面上，決定通知最多延後多久。",
+  "capacityRow.orchestrator.bot_viewing_hold_seconds.full": "超過時即使對話還開著也會送出通知；畫面忘了關只會延後，不會漏掉。",
+  "capacityRow.orchestrator.bot_viewing_chats.what": "這台機器記得幾個正在畫面上的 Bot 對話。",
+  "capacityRow.orchestrator.bot_viewing_chats.full": "再多一個對話的回報會被忽略，那個對話的決定通知直接送出、不等待。"
 }

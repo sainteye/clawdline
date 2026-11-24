@@ -956,4 +956,13 @@
 .project-assistants .pa-decision-failed p { margin:0;flex:1 1 200px; }
 .project-assistants .pa-decision-failed button { min-height:44px; }
 @keyframes pa-decision-spin { to { transform:rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .project-assistants .pa-decision-spinner { animation:none;border-right-color:currentColor;opacity:.6; } }
+.project-assistants .pa-decision-done { display:inline-flex;align-items:center;gap:6px;color:var(--pa-text); }
+.project-assistants .pa-decision-done .pa-decision-mark { display:inline-flex; }
+/* The card a push opened: a ring that fades, outlasting no reading of the card. */
+.project-assistants .pa-decision[data-focused] { animation:pa-decision-focus 2.4s ease-out 1;scroll-margin:16px; }
+.project-assistants .pa-decision[data-focused]:focus { outline:none; }
+@keyframes pa-decision-focus { 0%,40% { box-shadow:0 0 0 3px var(--accent,#e39567); } 100% { box-shadow:0 0 0 3px transparent; } }
+.project-assistants .pa-decision-handled { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 12px 0;padding:8px 12px;border-radius:12px;border:1px solid var(--pa-line);color:var(--pa-text);font-size:14px; }
+.project-assistants .pa-decision-handled span { flex:1 1 200px; }
+.project-assistants .pa-decision-handled button { min-height:44px; }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-decision-spinner { animation:none;border-right-color:currentColor;opacity:.6; } .project-assistants .pa-decision[data-focused] { animation:none;box-shadow:0 0 0 3px var(--accent,#e39567); } }

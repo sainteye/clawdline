@@ -12209,6 +12209,9 @@
   "projectAssistants.decisionSentWorking": "{name} is working on it…",
   "projectAssistants.decisionSendFailed": "Your reply was not sent. Check the connection, then try again.",
   "projectAssistants.decisionRetry": "Try again",
+  "projectAssistants.decisionDone": "{name} finished",
+  "projectAssistants.decisionHandled": "This decision was already handled.",
+  "projectAssistants.decisionHandledDismiss": "Dismiss",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
@@ -14339,5 +14342,11 @@
   "capacityRow.cloud.line_open_retry_max_seconds.what": "The longest wait between two attempts to start a Cloud connection that keeps failing. The machine never gives up; it keeps trying at least this often.",
   "capacityRow.cloud.line_open_retry_max_seconds.full": "While it keeps failing, the Cloud settings show the reason. If this machine was signed out or removed from the account, it stops retrying until you sign in again.",
   "capacityRow.orchestrator.bot_decision_push_runes.what": "How much of a Bot's question is shown in its push notification.",
-  "capacityRow.orchestrator.bot_decision_push_runes.full": "Longer questions are cut short in the notification; the chat card shows the whole question."
+  "capacityRow.orchestrator.bot_decision_push_runes.full": "Longer questions are cut short in the notification; the chat card shows the whole question.",
+  "capacityRow.orchestrator.bot_viewing_seconds.what": "How long one report that a Bot chat is on screen counts. The console repeats it while the chat is open and in focus.",
+  "capacityRow.orchestrator.bot_viewing_seconds.full": "After it, the chat no longer counts as on screen and a waiting decision notification is sent.",
+  "capacityRow.orchestrator.bot_viewing_hold_seconds.what": "The longest a decision notification waits because its chat seems to be on screen.",
+  "capacityRow.orchestrator.bot_viewing_hold_seconds.full": "After it, the notification is sent even if the chat is still open, so a screen left on delays it but never loses it.",
+  "capacityRow.orchestrator.bot_viewing_chats.what": "How many Bot chats this machine remembers as on screen.",
+  "capacityRow.orchestrator.bot_viewing_chats.full": "A report for one more chat is ignored, and that chat's decision notifications are sent without waiting."
 }
