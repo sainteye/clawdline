@@ -2,8 +2,10 @@ package projectassistanthost
 
 import (
 	"context"
+	"errors"
 
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
 // The outbox may run after a failed projection or a daemon restart. Reconcile
@@ -24,13 +26,20 @@ func (h *Host) completeWork(ctx context.Context, completion orchestrator.Assista
 			return nil
 		}
 	}
-	feature, source, err := h.background(ctx, key, true)
-	if err != nil {
-		return err
-	}
 	runtime, err := h.runtime()
 	if err != nil {
 		return err
 	}
-	return runtime.WakeWorkCompletion(ctx, completion.Link, feature, source)
+	feature, source, err := h.background(ctx, key, true)
+	if err == nil {
+		err = runtime.WakeWorkCompletion(ctx, completion.Link, feature, source)
+	}
+	// A refusal ends the outbox row for good. The person reads why in the
+	// chat instead of finding a result nobody took over.
+	if err != nil && orchestrator.AssistantWorkRefused(pa.Code(err)) {
+		if e := runtime.RefuseWorkCompletion(ctx, completion.Link, err); e != nil {
+			return errors.Join(err, e)
+		}
+	}
+	return err
 }
