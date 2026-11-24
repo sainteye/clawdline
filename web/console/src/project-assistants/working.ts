@@ -1,6 +1,8 @@
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import { botFailureText } from "./source-errors.ts"
+// @ts-expect-error Node executes source extensions.
+import { sessionReportLine } from "./session-report.ts"
 
 export type BotMood = "idle" | "working" | "needsInput" | "waitingOnWork"
 export function liveActivity(source:W.ProjectAssistantSourceStatus):boolean {
@@ -61,7 +63,7 @@ export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<str
   const state = item.status || (item.pending_permissions > 0 || item.activity === "waiting_permission" ? "needsInput"
     : ["running","accepted","queued"].includes(item.activity) ? "working" : "idle")
   const shown = live ? state : "idle"
-  let caption = item.latest_message
+  let caption = item.latest_message_kind === "work" && item.latest_message ? w.sessionReportPreview.replace("{summary}", sessionReportLine(item.latest_message)) : item.latest_message
   if (shown === "needsInput") {
     const activity=item.activity
     caption=activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))

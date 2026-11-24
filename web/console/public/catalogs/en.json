@@ -11788,6 +11788,7 @@
   "projectAssistants.serverUnknown": "Status unconfirmed",
   "projectAssistants.serversTitle": "Dev servers",
   "projectAssistants.sessionReport": "Session report",
+  "projectAssistants.sessionReportPreview": "Session report: {summary}",
   "projectAssistants.sessionTask": "Session task",
   "projectAssistants.sessions": "Back to Sessions",
   "projectAssistants.settings": "Bot settings",

@@ -26,6 +26,7 @@ import { exchangeBot, exchangeEntries, exchangePeer, loadExchangeBot } from "./e
 import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
+import { sessionReportLine } from "./session-report"
 export function ChatRows({onOpenBot,renderExchangeDecision,timeline,onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,roster,artifactComposer,mentions}: {mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode}) {
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   const byID=new Map(messages.map(m=>[m.id,m]))
@@ -98,7 +99,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,onQuote,onOp
     <div className="pa-message-bubble">{source&&item.message.files?.map(file=><InputCard key={file.id} message={item.message} file={file} source={source} w={w}/>)}{item.message.quote_message_id&&<blockquote>{byID.get(item.message.quote_message_id)?.text??w.quoteMissing}</blockquote>}{(item.message.attachments?.length??0)>0&&<div className="pa-message-pictures">{item.message.attachments!.map(a=><BotPicture key={a.id} id={a.id} localURL={attachmentURL?.(a.id)??null} source={source} botKey={botKey} w={w}/>)}</div>}{item.message.output&&source&&<OutputCard artifactComposer={artifactComposer} message={item.message.output.artifact_id?(artifacts.get(item.message.output.artifact_id)??item.message):item.message} source={source} w={w}/>}
       {item.message.text&&!item.message.output&&(
         item.message.kind==="work"?<details>
-          <summary>{w.sessionReport}<ChevronIcon direction="right"/></summary>
+          <summary><span className="pa-session-report-head"><span>{w.sessionReport}</span>{sessionReportLine(item.message.text)&&<span className="pa-session-report-line">{sessionReportLine(item.message.text)}</span>}</span><ChevronIcon direction="right"/></summary>
           <p>{item.message.text}</p>
         </details>:item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:
           <p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:compactedNoticeText(item.message,w)??<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
