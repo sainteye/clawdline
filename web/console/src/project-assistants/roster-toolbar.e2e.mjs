@@ -19,16 +19,19 @@ const server=createServer((req,res)=>{
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`
 const failures=[]
+// The desktop tower HUD blinks forever, so waiting for every animation never ends.
+// Reduced motion removes the CSS loops; only animations that can finish are awaited.
+const settled=page=>page.evaluate(()=>Promise.all(document.getAnimations().filter(animation=>Number.isFinite(animation.effect?.getComputedTiming().iterations??Infinity)).map(animation=>animation.finished.catch(()=>{}))))
 try{
  for(const engine of (process.env.BOTS_ENGINES??"chromium,webkit").split(",")){
   const browser=await pw[engine].launch({headless:true,...(engine==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})})
   try{for(const [width,height] of [[390,844],[1280,800]]){
-   const context=await browser.newContext({viewport:{width,height},hasTouch:width===390}),page=await context.newPage()
+   const context=await browser.newContext({viewport:{width,height},hasTouch:width===390,reducedMotion:"reduce"}),page=await context.newPage()
    await page.goto(`${origin}/?actions&lang=zh-Hant`)
    const toolbar=page.locator(".pa-roster .pa-toolbar")
    await toolbar.waitFor()
    await page.getByRole("button",{name:/大樓檢視|Tower view/}).first().waitFor()
-   await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))))
+   await settled(page)
    const box=await toolbar.evaluate(bar=>{
     const outer=bar.getBoundingClientRect(),style=getComputedStyle(bar)
     const buttons=[...bar.querySelectorAll("button")].filter(button=>!button.closest(".pa-menu-list")&&button.getClientRects().length).map(button=>{const r=button.getBoundingClientRect();return {name:button.getAttribute("aria-label")??button.textContent,left:r.left,right:r.right,width:r.width,height:r.height}})
@@ -51,7 +54,7 @@ try{
     const settings=page.getByRole("menuitem",{name:/^(Bots 設定|Bots settings)$/})
     await settings.waitFor({timeout:2000}).catch(()=>{throw Error(`${label}: Bots settings is an item in the options menu`)})
     assert.equal(await settings.getAttribute("aria-haspopup"),"dialog",`${label}: the settings item says it opens a dialog`)
-    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))))
+    await settled(page)
     await page.screenshot({path:path.join(artifacts,`toolbar-menu-${engine}-${width}.png`),clip:{x:0,y:0,width,height:Math.min(height,400)}})
     await settings.click()
     const dialog=page.getByRole("dialog",{name:/Bots 設定|Bots settings/})
