@@ -186,6 +186,14 @@ func paWireRoomEntry(e pa.RoomEntry) contract.ProjectAssistantRoomEntry {
 		}
 		out.Quote = q
 	}
+	for _, m := range e.Mentions {
+		wire := contract.ProjectAssistantRoomMention{Start: int64(m.Start), End: int64(m.End), Everyone: m.Everyone}
+		if m.Member != (pa.BotKey{}) {
+			k := paWireBotKey(m.Member)
+			wire.Member = &k
+		}
+		out.Mentions = append(out.Mentions, wire)
+	}
 	return out
 }
 

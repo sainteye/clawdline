@@ -1,0 +1,19 @@
+{
+  "comment": "Shared by groups_mentions_test.go and the console's group-mentions.test.ts: what the room marks is who it asks.",
+  "members": [
+    {"id": "alice", "name": "alice"},
+    {"id": "fuse", "name": "Fuse｜可靠性 QA 主管"},
+    {"id": "ming", "name": "小明"}
+  ],
+  "cases": [
+    {"name": "a shorter Latin handle is not the member", "text": "@al 幫忙看一下", "marks": [], "asked": []},
+    {"name": "a Latin name followed by more of a word is not the member", "text": "@alice_x 你好", "marks": [], "asked": []},
+    {"name": "a Latin name followed by punctuation", "text": "請 @Alice, 看一下", "marks": [["@Alice", "alice"]], "asked": ["alice"]},
+    {"name": "a Chinese name followed straight by the message", "text": "@小明幫我看這段", "marks": [["@小明", "ming"]], "asked": ["ming"]},
+    {"name": "a name with spaces and a full-width bar", "text": "@Fuse｜可靠性 QA 主管 請檢查 **這裡**", "marks": [["@Fuse｜可靠性 QA 主管", "fuse"]], "asked": ["fuse"]},
+    {"name": "the first word of a name", "text": "@fuse｜可靠性 你看", "marks": [["@fuse｜可靠性", "fuse"]], "asked": ["fuse"]},
+    {"name": "everyone", "text": "@all 大家好", "marks": [["@all", "*"]], "asked": ["alice", "fuse", "ming"]},
+    {"name": "a member does not ask itself", "author": "alice", "text": "@alice 和 @小明 一起", "marks": [["@小明", "ming"]], "asked": ["ming"]},
+    {"name": "an astral character before the mention", "text": "😀@alice", "marks": [["@alice", "alice"]], "asked": ["alice"]}
+  ]
+}
