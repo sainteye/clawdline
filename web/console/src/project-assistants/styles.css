@@ -108,7 +108,13 @@
 .project-assistants .pa-trace-detail-btn:hover, .project-assistants .pa-trace-more-btn:hover { color:var(--pa-ink);border-color:var(--pa-faint); }
 .project-assistants pre { white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace; }
 .project-assistants .pa-chat-footer { padding:8px 24px max(24px,env(safe-area-inset-bottom));width:100%;max-width:864px;margin:auto; }
-.project-assistants .pa-chat-footer>.pa-dispatched { margin-bottom:8px; }
+/* Background and dispatched work close the conversation; the footer holds only what belongs to the composer. */
+.project-assistants .pa-chat-work { display:flex;flex-direction:column;gap:8px;margin-top:8px; }
+.project-assistants .pa-chat-work:empty { display:none; }
+.project-assistants .pa-chat-work .pa-background-capsule { margin-bottom:0; }
+.project-assistants .pa-chat-work>.pa-turn { margin:0; }
+.project-assistants .pa-jump-working { display:inline-flex;align-items:center;gap:6px;padding-inline-start:8px;border-inline-start:1px solid var(--pa-line,#33333c);color:var(--pa-ink,var(--ink)); }
+.project-assistants .pa-jump-working .pa-background-mark { width:7px;height:7px; }
 .project-assistants .pa-chat-footer>p,.project-assistants .pa-turn { font-size:11px;color:var(--pa-dim);margin:5px 0; }
 .project-assistants .pa-turn[role="status"] { font-size:13px;line-height:1.6;color:var(--pa-text);margin:12px 0; }
 .project-assistants .pa-turn[role="status"] small { color:var(--pa-dim);font-size:11px; }

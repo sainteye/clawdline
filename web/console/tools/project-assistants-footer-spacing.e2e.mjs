@@ -1,4 +1,4 @@
-/** The dispatched-work capsule keeps the same gap above the composer while a Chat loads and after its model row appears. */
+/** The dispatched-work capsule scrolls with the conversation while a Chat loads and after it: it never sits on the composer, and the model row does not push it. */
 import assert from 'node:assert/strict'
 import {createServer} from 'node:http'
 import {mkdir,writeFile} from 'node:fs/promises'
@@ -24,7 +24,9 @@ const measure=page=>page.evaluate(()=>{
  const metadata=document.querySelector('.pa-chat-metadata')
  return {stripBottom:strip.bottom,composerTop:composer.top,gap:composer.top-strip.bottom,metadata:!!metadata,
   // The gap the capsule itself keeps: to the model row when it shows, else to the composer.
-  below:(metadata?metadata.getBoundingClientRect().top:composer.top)-strip.bottom}
+  below:(metadata?metadata.getBoundingClientRect().top:composer.top)-strip.bottom,
+  inScroll:document.querySelector('.pa-chat-scroll').contains(document.querySelector('.pa-dispatched')),
+  footer:document.querySelector('.pa-chat-footer').getBoundingClientRect().height}
 })
 const pw=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href),results=[],failures=[]
 try{for(const engine of ['chromium','webkit']){
@@ -49,7 +51,7 @@ try{for(const engine of ['chromium','webkit']){
   const check=(ok,message)=>{if(!ok)failures.push(`${name}: ${message}`)}
   check(loading.gap>=8,`while loading, the capsule is ${loading.gap}px above the composer`)
   check(ready.below>=8,`after loading, the capsule is ${ready.below}px above the model row`)
-  check(Math.abs(loading.below-ready.below)<0.5,`the capsule's own gap changes from ${loading.below}px to ${ready.below}px`)
+  check(loading.inScroll&&ready.inScroll,`the capsule is outside the scroll area (loading ${loading.inScroll}, loaded ${ready.inScroll})`)
   check(errors.length===0,`page errors ${errors.join('; ')}`)
   await page.close()
  }}finally{await browser.close()}

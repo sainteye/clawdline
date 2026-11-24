@@ -12205,6 +12205,7 @@
   "projectAssistants.serverUnconfirmedRisk": "Clawdline 已無法確認這個伺服器的狀態（例如重新啟動之後）。移除只會停止追蹤；指令如果還在執行，請自行停止。",
   "projectAssistants.serverAuthorityUnconfirmed": "無法確認",
   "projectAssistants.serverAuthorityUnconfirmedNext": "Clawdline 暫時無法確認這個 Bot 是否仍可執行這個伺服器。它會繼續執行，每秒重新確認一次；不需要的話可以停止它。",
+  "projectAssistants.jumpWorking": "工作中",
   "projectFiles.antigravityInstructions": "Antigravity 規則",
   "projectFiles.applicability": "檔案適用範圍；Session 實際脈絡可能不同。",
   "projectFiles.sharedInstructions": "共用規則",

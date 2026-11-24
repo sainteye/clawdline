@@ -12205,6 +12205,7 @@
   "projectAssistants.serverUnconfirmedRisk": "Clawdline lost track of this server, for example after a restart. Removing it stops tracking only: if the command is still running, stop it yourself.",
   "projectAssistants.serverAuthorityUnconfirmed": "Can't confirm",
   "projectAssistants.serverAuthorityUnconfirmedNext": "Clawdline can't confirm this Bot may still run this server. It keeps running and is checked again every second; stop it if you no longer want it.",
+  "projectAssistants.jumpWorking": "Working",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

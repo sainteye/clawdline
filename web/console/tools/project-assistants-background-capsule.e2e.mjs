@@ -1,4 +1,4 @@
-/** A long background activity stays inside the Chat footer on a phone and a desktop. */
+/** A long background activity stays inside the conversation column, at the end of the scroll area, on a phone and a desktop. */
 import assert from 'node:assert/strict'
 import {createServer} from 'node:http'
 import {mkdir,writeFile} from 'node:fs/promises'
@@ -46,13 +46,15 @@ try{for(const engine of ['chromium','webkit']){
    const inside=[...capsule.querySelectorAll('*')].map(node=>node.getBoundingClientRect()).filter(r=>r.width>0)
    return {capsule:rect('.pa-background-capsule'),footer:rect('.pa-chat-footer'),metadata:rect('.pa-chat-metadata'),
     childRight:Math.max(...inside.map(r=>r.right)),childBottom:Math.max(...inside.map(r=>r.bottom)),
-    footerInner:(()=>{const f=document.querySelector('.pa-chat-footer'),s=getComputedStyle(f),r=f.getBoundingClientRect();return r.right-parseFloat(s.paddingRight)})(),
+    footerInner:(()=>{const f=document.querySelector('.pa-chat-content'),s=getComputedStyle(f),r=f.getBoundingClientRect();return r.right-parseFloat(s.paddingRight)})(),
+    inScroll:document.querySelector('.pa-chat-scroll').contains(capsule)&&!document.querySelector('.pa-chat-footer').contains(capsule),
     text:capsule.textContent,viewport:innerWidth,scroll:document.documentElement.scrollWidth}
   })
   await page.screenshot({path:path.join(artifacts,`${label}-${engine}-${language}-${width}x${height}-${kind}.png`)})
-  assert.ok(box.capsule.right<=box.footerInner+0.5,`${engine} ${width} ${kind}: capsule right ${box.capsule.right} exceeds footer content ${box.footerInner}`)
+  assert.ok(box.capsule.right<=box.footerInner+0.5,`${engine} ${width} ${kind}: capsule right ${box.capsule.right} exceeds the conversation column ${box.footerInner}`)
   assert.ok(box.childRight<=box.capsule.right+0.5,`${engine} ${width} ${kind}: capsule content right ${box.childRight} exceeds capsule ${box.capsule.right}`)
-  assert.ok(box.childBottom<=box.metadata.top+0.5&&box.capsule.bottom<=box.metadata.top+0.5,`${engine} ${width} ${kind}: capsule bottom ${Math.max(box.childBottom,box.capsule.bottom)} overlaps metadata top ${box.metadata.top}`)
+  assert.ok(box.inScroll,`${engine} ${width} ${kind}: the capsule is not in the scroll area`)
+  assert.ok(box.childBottom<=box.capsule.bottom+0.5,`${engine} ${width} ${kind}: capsule content bottom ${box.childBottom} exceeds capsule ${box.capsule.bottom}`)
   assert.ok(box.scroll<=box.viewport,`${engine} ${width} ${kind}: page scrolls sideways`)
   assert.ok(!box.text.includes('/Users/'),`${engine} ${width} ${kind}: the capsule shows the home directory: ${box.text}`)
   for(const kept of [language==='en'?'Background':'背景','Check the notes'])assert.ok(box.text.includes(kept),`${engine} ${width} ${kind}: lost ${kept}`)

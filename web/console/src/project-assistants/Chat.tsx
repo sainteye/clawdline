@@ -504,6 +504,16 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(!restored.current){const saved=view.position.get(draftKey);el.scrollTop=saved?.following===false?saved.top:el.scrollHeight;followingRef.current=saved?.following??true;setFollowing(followingRef.current);restored.current=true}
     else if(followingRef.current)el.scrollTop=el.scrollHeight
   },[messages,timeline,turns,queueEditor,data,draftKey,view])
+  // The end of the conversation also grows without a new message: background work starting or
+  // ending, the dispatched-work list opening. A reader at the newest end stays there; one who
+  // scrolled up keeps their place, because content added below the viewport does not move it.
+  useEffect(()=>{
+    const el=scroll.current,content=el?.firstElementChild
+    if(!el||!content||typeof ResizeObserver==="undefined")return
+    const observer=new ResizeObserver(()=>{if(restored.current&&followingRef.current)el.scrollTop=el.scrollHeight})
+    observer.observe(content)
+    return()=>observer.disconnect()
+  },[!!data])
   const markVisible=()=>{
     if(thread)return
     const el=scroll.current,d=currentData.current
@@ -1521,6 +1531,7 @@ ${currentDraft}`:submitted)
   }
   const taskRows=head?.background_tasks
   const tasks=thread||recoveryRequired?[]:taskRows??[]
+  const backgroundRunning=tasks.some(liveBackgroundTask)
   const openTask=(task:BackgroundTask,button:HTMLButtonElement)=>{
     taskOpener.current=button
     if(task.worker)setSelectedTask(task.id)
@@ -1744,13 +1755,18 @@ ${currentDraft}`:submitted)
         {enabled&&legacyProblem!=="unreadable"&&view.unverifiedDrafts.active(draftKey,scope)&&
           <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}
       </div>}
+      {/* Background and dispatched work are the latest facts of the conversation: they scroll at its end instead of sitting over the composer. */}
+      {!thread&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
+        return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       {/* Hidden while a queued message is edited, so it never covers the message being edited. */}
       <div className="tx-jump pa-jump" data-end="bottom" data-shown={following||queueEditorOpen?"off":"on"} data-fresh="off">
-        <button type="button" className="tx-jump-go" tabIndex={following||queueEditorOpen?-1:0} aria-hidden={following||queueEditorOpen?true:undefined} title={w.jump} onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>
+        <button type="button" className="tx-jump-go" tabIndex={following||queueEditorOpen?-1:0} aria-hidden={following||queueEditorOpen?true:undefined} title={w.jump} aria-label={backgroundRunning?`${w.jump} · ${w.jumpWorking}`:undefined} onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>
           <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
           <span>{w.jump}</span>
+          {/* The stop control now scrolls with the conversation; while reading earlier messages, the way back says work is running. */}
+          {backgroundRunning&&<span className="pa-jump-working"><span className="pa-background-mark" data-active="" aria-hidden="true"/>{w.jumpWorking}</span>}
         </button>
       </div>
     </div>
@@ -1758,8 +1774,7 @@ ${currentDraft}`:submitted)
         const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
         card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
       }}>{w.teamReviewJump}</button>}
-    <div className="pa-chat-footer">{!thread&&(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
-      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
+    <div className="pa-chat-footer">
       {!heldSend&&receipt&&(receipt.state==="failed"||receipt.state==="unknown"&&!unknown)&&<p role="status">{w[receipt.state]}</p>}
       {(queuePaused||unknownCount>shownUnknown)&&<div className="pa-chat-error" role="status">
         <span>{(queuePaused?w.queuePausedUnknown:w.previousTurnUnknown).replace("{count}",String(queuePaused?queuedCount:unknownCount))}</span>
