@@ -12239,6 +12239,7 @@
   "projectAssistants.workFailure_dialog_unanswered": "A dialog in the Session's tab was never answered, so it did not start.",
   "projectAssistants.workFailure_restarted": "Clawdline restarted before the instructions were delivered.",
   "projectAssistants.workFailure_briefing_not_submitted": "The instructions stayed in the input box and were never sent.",
+  "projectAssistants.leadSetupStale": "This Bot's settings changed somewhere else. Choose again to apply your choice to the latest settings.",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",
