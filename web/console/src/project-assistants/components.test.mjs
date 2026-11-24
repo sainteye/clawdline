@@ -434,7 +434,7 @@ test("an unsent message can always be cleared: deleted when the source certainly
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:false}),"delete")
   assert.equal(unsentDiscardKind(row({}),{accepted:false,transporting:false}),"remove")
   assert.equal(unsentDiscardKind(row({receipt:{state:"unknown"}}),{accepted:false,transporting:false}),"remove")
-  assert.equal(unsentDiscardKind(row({}),{accepted:true,transporting:false}),null,"an accepted message clears itself when it appears")
+  assert.equal(unsentDiscardKind(row({}),{accepted:true,transporting:false}),"hide","a retained admission status can be dismissed")
   assert.equal(unsentDiscardKind(row({needsEdit:true}),{accepted:false,transporting:true}),null,"nothing is removed while its request is open")
 })
 test("pressing Clear clears an unsent message at once, with no confirmation or explanation, whether or not it may have arrived",()=>{

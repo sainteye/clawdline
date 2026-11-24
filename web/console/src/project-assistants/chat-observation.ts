@@ -30,7 +30,7 @@ export class ChatObservation {
   constructor(receipt?:W.ProjectAssistantReceipt|null){if(receipt)this.accept(receipt)}
   accept(receipt:W.ProjectAssistantReceipt) {if(receipt.command.operation==="send"&&admittedReceipt(receipt)){this.turn=receipt.resource_id;this.admittedAt=receipt.event_seq;this.finalSnapshot=false}}
   get active(){return !!this.turn}
-  stop(){this.turn="";this.finalSnapshot=false}
+  stop(turn=this.turn){if(turn===this.turn){this.turn="";this.finalSnapshot=false}}
   apply(page:W.ProjectAssistantReadViewResponse) {
     if(!this.turn)return
     if(page.snapshot){
