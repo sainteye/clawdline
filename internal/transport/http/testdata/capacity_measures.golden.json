@@ -315,6 +315,11 @@
     "Note": true
   },
   {
+    "Name": "bots.chat_initial_page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.cleanup_ms",
     "Known": true,
     "Note": true
@@ -734,6 +739,11 @@
   },
   {
     "Name": "bots.permission_action_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.process_census_attempts",
     "Known": true,
     "Note": true
   },
