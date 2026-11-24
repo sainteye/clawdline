@@ -44,11 +44,12 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     if(write&&access!=="interactive")throw failure("pa_read_only")
   }
   const find=(key:W.ProjectAssistantBotKey)=>{const bot=bots.find(b=>sameBot(b.key,key));if(!bot)throw failure("pa_not_found");return bot}
-  let decisionTurn=""
+  let decisionTurn="",decisionQuestion=""
   const receive=(cmd:W.ProjectAssistantCommand):W.ProjectAssistantReceipt=>{let r=receipts.get(cmd.idempotency_key);if(!r){r={id:crypto.randomUUID(),command:cmd,state:"accepted",event_seq:seq,resource_id:cmd.key.bot_id};receipts.set(cmd.idempotency_key,r)}return r}
   const summary=(bot:W.ProjectAssistantBot):W.ProjectAssistantBotSummary=>{
     const rows=messages.get(bot.key.bot_id),seq=readSequences.get(bot.conversation_id)??(bot.key.bot_id==="bot-0"?0:rows?.length??0)
-    return {bot,source:status(),activity:bot.key.bot_id==="bot-2"?"Working through the interface flow…":"",activity_at:at,latest_message:rows?.at(-1)?.text??"",latest_message_kind:rows?.at(-1)?.kind,unread_count:Math.max(0,(rows?.length??0)-seq),pending_permissions:bot.key.bot_id==="bot-1"?1:0,read_cursor:{key:bot.key,conversation_id:bot.conversation_id,reader_id:"fixture",message_seq:seq},version:bot.version}
+    const question=bot.key.bot_id==="bot-0"?decisionQuestion:""
+    return {bot,source:status(),activity:question?"Asks: "+question:bot.key.bot_id==="bot-2"?"Working through the interface flow…":"",activity_at:at,latest_message:rows?.at(-1)?.text??"",latest_message_kind:rows?.at(-1)?.kind,unread_count:Math.max(0,(rows?.length??0)-seq),pending_permissions:question||bot.key.bot_id==="bot-1"?1:0,read_cursor:{key:bot.key,conversation_id:bot.conversation_id,reader_id:"fixture",message_seq:seq},version:bot.version}
   }
   const push=(event:W.ProjectAssistantEvent)=>{events.push({...event,seq:++seq,id:event.id||crypto.randomUUID()})}
   const permissionBot=bots[1]
@@ -168,7 +169,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       if(stopReply)receipt.state=await stopReply
       return {contract_version:contractVersion,receipt}
     },
-    async answer(r,s){check("answer",r,s,true);const receipt=receive(r.command);if(decisionTurn)receipt.resource_id=decisionTurn;return{contract_version:contractVersion,receipt}},
+    async answer(r,s){check("answer",r,s,true);const receipt=receive(r.command);if(decisionTurn)receipt.resource_id=decisionTurn;if(r.offer_id==="decision-7")decisionQuestion="";return{contract_version:contractVersion,receipt}},
     async markRead(r,s){
       check("markRead",r,s)
       const {cursor}=r,bot=find(r.command.key)
@@ -314,12 +315,17 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     // A long chat whose pending ask_person question sits above the fold, for
     // the push link that opens the chat at it; its reply starts "turn-1".
-    decisionFixture(count=30){
+    decisionFixture(count=30,includeOlderQuestion=false){
       this.seedHistory(count)
       const bot=bots[0],f=fence(bot)
+      decisionQuestion="Merge and deploy this release now?"
       push({id:"decision-event",seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:"decision-7",fence:f,turn_id:"",native_request_id:"",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",kind:"decision",anchor_message_seq:4,
         options:[{id:"ship",kind:"allow_once",label:"Ship it now",allow:true,read_only:true},{id:"wait",kind:"reject_once",label:"Wait until tomorrow",allow:false,read_only:true}],
-        decision:{question:"Merge and deploy this release now?"}} as W.ProjectAssistantPermissionOffer})
+        decision:{question:decisionQuestion}} as W.ProjectAssistantPermissionOffer})
+      if(includeOlderQuestion){
+        const older={...events.at(-1)!.permission!,id:"decision-8",anchor_message_seq:2,decision:{question:"Which report should I finish first?"}}
+        push({id:"older-decision-event",seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:older})
+      }
       decisionTurn="turn-1"
     },
     workTurn(state:W.ProjectAssistantTurnState){
