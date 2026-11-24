@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from "react"
+import {routineEditBase} from "./routine-edit-base"
 import { BotMentionText, useBotMentions, type BotMentionCandidate } from "./BotMentionField"
 import { botMentionSegments, botMentionToken } from "./bot-mentions"
 import type * as W from "@clawdline/contract"
@@ -378,7 +379,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
       setError("routine_event_fields")
       return
     }
-    void run({action:"save",request:{command:command(bot.key,"edit"),fence:page.fence,id:editing?.id??"",expected_revision:editing?.version??0,name,instruction,triggers:wire,timeout_seconds:timeout,enabled:active}})
+    void run({action:"save",request:{command:command(bot.key,"edit"),fence:page.fence,id:editing?.id??"",expected_revision:routineEditBase(editing,page.definitions),name,instruction,triggers:wire,timeout_seconds:timeout,enabled:active}})
   }
   const refresh=async()=>{setBusy(true);try{await load();if(history)await load(history.id);setError("")}catch(e){setError(errorCode(e))}finally{setBusy(false)}}
   const editError=error&&!journalBlocked?error==="routine_event_fields"?tr("invalidEvent"):error==="resume_unsupported"?w.routineResumeUnsupported:error==="pa_outcome_unknown"?w.unknown:w.unavailable:""
