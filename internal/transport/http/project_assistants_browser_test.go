@@ -406,7 +406,7 @@ func (h *scriptedNativeHost) serve(ctx context.Context, t *testing.T) {
 			h.mu.Unlock()
 			tab := c.Tab
 			result := browserbridge.Result{ID: c.ID, OK: true, Tab: tab, Value: json.RawMessage(`{"ok":true}`)}
-			var a struct{ Label, Text, Key, URL string }
+			var a struct{ Target, Text, Key, URL string }
 			_ = json.Unmarshal(c.Args, &a)
 			after := func() {}
 			switch c.Op {
@@ -415,8 +415,9 @@ func (h *scriptedNativeHost) serve(ctx context.Context, t *testing.T) {
 				result.Tab = 40 + h.next
 				result.URL = a.URL
 			case "click":
-				if a.Label == "Missing" {
-					result = browserbridge.Result{ID: c.ID, Tab: tab, Error: "no element labelled Missing"}
+				// A Bot's args.label reaches the extension as its target.
+				if a.Target == "Missing" {
+					result = browserbridge.Result{ID: c.ID, Tab: tab, Error: `no visible element matches "Missing"; read the page for the exact labels`}
 				} else {
 					h.clicks++
 				}
@@ -722,12 +723,12 @@ func TestBotBrowserRunsEndToEndThroughACPAndOwnedMCP(t *testing.T) {
 	for _, l := range lines {
 		if l.Turn == "control" {
 			order = append(order, l.Op+map[bool]string{true: "!" + l.Code, false: ""}[l.IsError])
-			if l.Code == "browser_page_error" && l.Message != "no element labelled Missing" {
+			if l.Code == "browser_element_not_found" && l.Message != `label: no visible element matches "Missing"; read the page for the exact labels` {
 				t.Fatalf("page error message = %q", l.Message)
 			}
 		}
 	}
-	want = "open,click!browser_page_error,open!browser_disabled,key,read!browser_person_controlling,read,key,read!browser_stopped,read!browser_tab_closing,close"
+	want = "open,click!browser_element_not_found,open!browser_disabled,key,read!browser_person_controlling,read,key,read!browser_stopped,read!browser_tab_closing,close"
 	if strings.Join(order, ",") != want {
 		t.Fatalf("control results = %v\nwant %s", order, want)
 	}

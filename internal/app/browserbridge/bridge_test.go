@@ -488,7 +488,7 @@ func TestTakeoverDropsQueuedAgentInput(t *testing.T) {
 	b.owner[1] = "c1"
 	b.current["c1"] = 1
 	done := make(chan error, 1)
-	go func() { _, err := b.Do(ctx, "c1", "click", nil); done <- err }()
+	go func() { _, err := b.Do(ctx, "c1", "click", json.RawMessage(`{"x":1,"y":1}`)); done <- err }()
 	for b.Status().Pending == 0 {
 		time.Sleep(time.Millisecond)
 	}
