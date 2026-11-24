@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -120,9 +121,11 @@ SELECT version,valid AND json_type(j)='object'
 	var version int64
 	var valid bool
 	var bot, conversation, memory sql.NullString
+	meta := botreadtrace.Measure(ctx, "sqlite_metadata")
 	err := tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID,
 		q.Request.Mode == pa.ReadViewSnapshot, q.ByteLimit, q.ByteLimit, q.ByteLimit, q.Request.Key.MachineID).
 		Scan(&version, &valid, &bot, &conversation, &memory, &h.EventFrontier)
+	meta()
 	if errors.Is(err, sql.ErrNoRows) {
 		return h, b, failure(pa.NotFound, "bot")
 	}
@@ -167,7 +170,10 @@ SELECT version,valid AND json_type(j)='object'
 		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Bindings') b
  WHERE CASE WHEN b.type!='object' THEN 0 ELSE b.key=a.binding_id AND ` + viewFenceSQL("b.value", true) + ` END)`
 		var current bool
-		if err = tx.QueryRowContext(ctx, statement, b.Key.MachineID, b.Key.BotID).Scan(&current); err != nil {
+		binding := botreadtrace.Measure(ctx, "sqlite_binding")
+		err = tx.QueryRowContext(ctx, statement, b.Key.MachineID, b.Key.BotID).Scan(&current)
+		binding()
+		if err != nil {
 			return h, b, err
 		}
 		if !current {
@@ -216,7 +222,10 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  AND json_extract(w.value,'$.state') IN ('accepted','executing','failed','completed','landed','unknown')
  AND ` + viewFenceSQL("w.value", false) + `),0) END)`
 	var valid bool
-	if err := tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID).Scan(&valid); err != nil {
+	facts := botreadtrace.Measure(ctx, "sqlite_fact_shape")
+	err := tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID).Scan(&valid)
+	facts()
+	if err != nil {
 		return err
 	}
 	if !valid {
@@ -249,7 +258,10 @@ func viewValidateFacts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery) err
  AND NOT EXISTS(SELECT 1 FROM a,jsonb_each(a.j,'$.WorkLinks') w LEFT JOIN turns t ON t.id=json_extract(w.value,'$.turn_id')
  WHERE w.type='object' AND (t.id IS NULL OR json_extract(w.value,'$.fence.binding_id')!=t.binding_id
  OR json_extract(w.value,'$.fence.generation')!=t.generation))`
-	if err := tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID).Scan(&valid); err != nil {
+	relations := botreadtrace.Measure(ctx, "sqlite_fact_relations")
+	err = tx.QueryRowContext(ctx, statement, q.Request.Key.MachineID, q.Request.Key.BotID).Scan(&valid)
+	relations()
+	if err != nil {
 		return err
 	}
 	if !valid {
@@ -336,7 +348,10 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
  (SELECT count(*) FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
  AND json_extract(t.value,'$.state') IN ('accepted','queued') AND ` + ownChatTurnSQL("t.key") + `),
  (SELECT count(*) FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `)`
-	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount); err != nil {
+	counts := botreadtrace.Measure(ctx, "sqlite_turn_counts")
+	err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount)
+	counts()
+	if err != nil {
 		return err
 	}
 	if q.Request.DeferTraceCount && q.Request.Mode != pa.ReadViewTraces {
@@ -369,7 +384,10 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 ) SELECT (SELECT count(*) FROM steps),coalesce(sum(CASE WHEN valid
  AND (turn_id,binding_id,generation) IN (SELECT id,binding_id,generation FROM trace_turns)
  THEN 0 ELSE 1 END),0) FROM traces`
-	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, h.Key.MachineID, h.Key.BotID).Scan(&h.TraceCategoryCount, &bad); err != nil {
+	traces := botreadtrace.Measure(ctx, "sqlite_trace_count")
+	err = tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, h.Key.MachineID, h.Key.BotID).Scan(&h.TraceCategoryCount, &bad)
+	traces()
+	if err != nil {
 		return err
 	}
 	if bad != 0 {

@@ -801,7 +801,11 @@ Find `cloud: bot_view` on the source with the same `trace_id` and request `seque
 Its `stages_ms` are source-local durations, some nested inside the bridge or view totals.
 The row separates frame verification/open, ingress and worker queue wait, access and
 revalidation, SQLite acquisition and transaction work, optional native context, encoding,
-publication authority, and response reserve/seal/spool. A busy reply leaves a typed refusal
+publication authority, and response reserve/seal/spool. The SQLite timings separate the
+metadata and event frontier statement, binding check, fact shape and relationships, chat
+head, background tasks, turn and trace counts, pending and last turns, timeline, reactions,
+and commit. Timeline, pending-turn and reaction timings include scanning and decoding the
+returned rows. A busy reply leaves a typed refusal
 with only the stages it reached. `publish_accepted` means the outbound transport accepted
 the answer for delivery. The returned envelope's sequence and the source's
 `connection_operation` let an operator follow its spool drain in connection health.
