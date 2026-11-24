@@ -10,9 +10,9 @@ import (
 
 // While the live roster stream is connected, a Bot chat reads its events when
 // that stream reports a change and keeps only a slow fallback timer. The
-// fallback interval lives in Chat.tsx and must match the registered bound.
+// fallback interval lives in chat-push.ts and must match the registered bound.
 func TestBotChatPushedFallbackIsRegistered(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "web/console/src/project-assistants/Chat.tsx"))
+	raw, err := os.ReadFile(filepath.Join(moduleRoot(t), "web/console/src/project-assistants/chat-push.ts"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,7 @@ import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
 import {hostedConsole} from "../pages/terminal/api"
 import {serialSnapshotRefresh} from "./snapshot-roster"
+import {chatEventDelay,chatPushSignal} from "./chat-push"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
@@ -73,9 +74,7 @@ import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, 
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
 import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
-export const EventRefreshMs = 3000
-/** While the live roster stream reports this Bot's changes, the timer is only a fallback. */
-export const PushedEventFallbackMs = 15000
+export {EventRefreshMs,PushedEventFallbackMs} from "./chat-push"
 
 function transientChatRead(error:unknown) {
   const code=errorCode(error)
@@ -450,7 +449,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // it into an immediate loop; the existing cadence still owns later reads.
     if(manual)observation.finalSnapshot=false
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current
-    let snapshotValidated=false,nextReadDelay=pushedRef.current&&!observation.active?PushedEventFallbackMs:EventRefreshMs
+    let snapshotValidated=false,nextReadDelay=chatEventDelay(pushedRef.current,observation.active)
     eventControl.current=control
     const settleCollections=async(modes:("permissions"|"traces")[])=>{
       // A projection failing at an older fence is retried on the next poll.
@@ -557,9 +556,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show);window.addEventListener("online",visibility)
     return()=>{alive.current=false;observation.stop();uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show);window.removeEventListener("online",visibility)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
-  // The roster frame only says when to read; the events read still decides what
-  // changed, so a repeated or reordered frame coalesces into one cursor read.
-  const pushSignal=JSON.stringify([summary.version,summary.activity_at,summary.unread_count,summary.latest_message,summary.status,summary.activity,summary.pending_permissions])
+  // A changed roster row for this Bot runs the existing single-flight cursor read.
+  const pushSignal=chatPushSignal(summary)
   const lastPushSignal=useRef(pushSignal)
   useEffect(()=>{
     if(lastPushSignal.current===pushSignal)return
