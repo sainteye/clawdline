@@ -77,6 +77,7 @@ type NativeWork struct {
 	listBots      func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
 	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
 	askPerson     func(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
+	botRequest    func(context.Context, string, json.RawMessage) (any, error)
 	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send          func(context.Context, string, string) error
 	dispatch      func(context.Context, string, string, string, []string, string, string, string, bool) (pa.WorkLink, error)
@@ -762,6 +763,23 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			return pa.PermissionOffer{}, e
 		}
 		return r.AskPerson(ctx, q.Binding.Fence, turnID, request)
+	}
+	// The card tools stay available in a Bot-to-Bot request (§7.2): a
+	// reviewer reached by message_bot can still record its verdict and hand
+	// the baton on. Creation checks its own person authority.
+	tools.botRequest = func(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
+		if h.o.Broker == nil || h.o.Broker.Store == nil {
+			return nil, failure(pa.Unsupported, "bot_request_store")
+		}
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return nil, e
+		}
+		defer cancel()
+		if e = journal(ctx, "botRequest"); e != nil {
+			return nil, e
+		}
+		return botRequestTool(ctx, h.o.Broker.Store, h.store, botRequestTurn{Bot: q.Bot, Conversation: q.Binding.Fence.ConversationID, Turn: turn}, q.Bot.Key.MachineID, h.o.ID(), h.o.Clock(), name, arguments)
 	}
 	tools.routines = func(ctx context.Context, request app.RoutineRequest) (app.RoutineResult, error) {
 		if pa.IsPeerRequest(turn.Origin) && request.Action != "list" {

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	br "github.com/sainteye/clawdline/internal/domain/botrequest"
 	"io"
 	"log"
 	"mime"
@@ -483,6 +484,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if lead, ok := s.tools.(app.LeadBotTools); ok && lead.LeadBotAvailable(ctx) == nil {
 			list = append(list, mcpLeadBotTool())
 		}
+		if _, ok := s.tools.(app.BotRequestTools); ok {
+			list = append(list, mcpBotRequestTools()...)
+		}
 		return map[string]any{"tools": list}, nil
 	case "tools/call":
 		var q struct {
@@ -497,6 +501,11 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 			return s.browserTool(ctx, q.Name, q.Arguments), nil
 		}
 		value, err := s.tool(ctx, q.Name, q.Arguments)
+		var cardRefusal *br.Refusal
+		if err != nil && errors.As(err, &cardRefusal) {
+			// A card refusal keeps its own code, field and current version.
+			return mcpToolResult(cardRefusal, true), nil
+		}
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
 			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" {
@@ -634,6 +643,12 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return nil, refusal(pa.Invalid, "bot_directory_arguments")
 		}
 		return tools.ListBots(ctx, q)
+	case "bot_request_read", "bot_request_create", "bot_request_handoff", "bot_request_check", "bot_request_verdict", "bot_request_wait_person", "bot_request_done":
+		tools, ok := s.tools.(app.BotRequestTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "bot_request_tools")
+		}
+		return tools.BotRequest(ctx, name, mcpEmpty(arguments))
 	case "ask_person":
 		tools, ok := s.tools.(app.DecisionTools)
 		if !ok {
@@ -956,6 +971,33 @@ func mcpBackgroundTool() map[string]any {
 			},
 			"required": []string{"idempotency_key", "title", "brief"},
 		},
+	}
+}
+
+// mcpBotRequestTools are the Bot request card tools (docs/bot-request-cards.md §8.2).
+func mcpBotRequestTools() []any {
+	tool := func(name, description string, properties map[string]any, required ...string) any {
+		return map[string]any{"name": name, "description": description, "inputSchema": map[string]any{"type": "object", "properties": properties, "required": required, "additionalProperties": false}}
+	}
+	text := func() any { return map[string]any{"type": "string", "minLength": 1} }
+	version := map[string]any{"type": "integer", "minimum": 1}
+	marks := map[string]any{"type": "array", "maxItems": br.MaxChecklistEntries, "items": map[string]any{"type": "object", "properties": map[string]any{
+		"label": text(), "state": map[string]any{"type": "string", "enum": []string{br.EntryDone, br.EntryNotNeeded, br.EntryOpen}}, "note": map[string]any{"type": "string"},
+	}, "required": []string{"label"}, "additionalProperties": false}}
+	return []any{
+		tool("bot_request_read", "Read one Bot request card: its holder, chain, checklist with progress, verdicts and version. 讀取一張 Bot 交辦卡：目前持棒者、參與的 Bot、檢查清單與進度、審查結論與版本。", map[string]any{"card_id": text()}, "card_id"),
+		tool("bot_request_create", "Open a Bot request card for a task with a longer flow, in a turn that comes from the person's message (directly, or through Bots that message reached). A second create for the same message answers the existing card and adds you to its chain. Give a kind (development or publishing) or a checklist. Reuse the idempotency key on retry. 為較長流程的任務開一張 Bot 交辦卡；只能在源自使用者訊息的回合開（直接或經其他 Bot 轉來）。同一則訊息再開一次會回傳同一張卡並把你加入。需提供 kind 或 checklist；重試沿用冪等鍵。",
+			map[string]any{"idempotency_key": text(), "title": text(), "description": map[string]any{"type": "string"}, "kind": text(), "checklist": map[string]any{"type": "array", "maxItems": br.MaxChecklistEntries, "items": text()}}, "idempotency_key", "title"),
+		tool("bot_request_handoff", "Hand the card's baton to another Bot with a role (maker, reviewer, integrator) and a note saying what you hand over. The new holder is woken once with a notice in which it may dispatch work or message Bots for this card only. 把交辦卡的棒子交給另一個 Bot，附角色與交接說明；新持棒者會收到一次通知，該回合只能為這張卡派工或聯絡 Bot。",
+			map[string]any{"idempotency_key": text(), "card_id": text(), "expected_version": version, "to_bot": text(), "role": map[string]any{"type": "string", "enum": []string{br.RoleMaker, br.RoleReviewer, br.RoleIntegrator}}, "note": map[string]any{"type": "string"}}, "idempotency_key", "card_id", "expected_version", "to_bot", "role"),
+		tool("bot_request_check", "Add or mark checklist entries as the holder: done with a note, or not_needed with a reason. Name card_id and expected_version for one card, or cards for the same entries on several cards; each card answers ok, unchanged or a refusal on its own. 以持棒者身分新增或勾選檢查項目：done 附說明，not_needed 附理由。單張卡用 card_id，多張卡用 cards 一次勾選；每張卡各自回覆。",
+			map[string]any{"idempotency_key": text(), "card_id": text(), "expected_version": version, "entries": marks, "cards": map[string]any{"type": "array", "maxItems": br.MaxBatchCards, "items": map[string]any{"type": "object", "properties": map[string]any{"card_id": text(), "expected_version": version}, "required": []string{"card_id", "expected_version"}, "additionalProperties": false}}}, "idempotency_key", "entries"),
+		tool("bot_request_verdict", "Record your review verdict (pass, conditional_pass, reject) on a card you hold as reviewer, on a commit when there is one. It changes nothing else; hand the baton back after a reject. 以審查者持棒時記錄審查結論（pass、conditional_pass、reject），可附 commit；不改變其他狀態，退回後請自行交棒。",
+			map[string]any{"idempotency_key": text(), "card_id": text(), "expected_version": version, "verdict": map[string]any{"type": "string", "enum": []string{br.VerdictPass, br.VerdictConditionalPass, br.VerdictReject}}, "commit": text(), "text": map[string]any{"type": "string"}}, "idempotency_key", "card_id", "expected_version", "verdict"),
+		tool("bot_request_wait_person", "Mark the card you hold as waiting for the person, naming the ask_person question id; an empty id clears it. 把持有的交辦卡標成等待使用者，填 ask_person 的問題 id；空白則清除。",
+			map[string]any{"idempotency_key": text(), "card_id": text(), "expected_version": version, "question_id": map[string]any{"type": "string"}}, "idempotency_key", "card_id", "expected_version"),
+		tool("bot_request_done", "Mark the card you hold done once every checklist entry is done or not_needed. The person and the asking Bots are told once. 所有檢查項目都是 done 或 not_needed 後，把持有的交辦卡標成完成；使用者與交辦的 Bot 各會收到一次通知。",
+			map[string]any{"idempotency_key": text(), "card_id": text(), "expected_version": version}, "idempotency_key", "card_id", "expected_version"),
 	}
 }
 
