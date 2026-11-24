@@ -84,6 +84,97 @@ func TestRuntimeSQLiteFreshContinuation(t *testing.T) {
 	}
 }
 
+func TestRuntimeSQLiteBindDuringWorkCompletion(t *testing.T) {
+	for _, changeInstructions := range []bool{false, true} {
+		t.Run(fmt.Sprintf("changeInstructions=%t", changeInstructions), func(t *testing.T) {
+			_, s, _ := testDB(t)
+			b := seed(t, s, "binding-race")
+			oldFence := populate(t, s, b, pa.EffectAccepted)
+			prior, err := s.Turn(testContext, b.Key, "turn")
+			if err != nil {
+				t.Fatal(err)
+			}
+			chat, err := s.Conversation(testContext, b.Key, b.ConversationID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			prior.State, chat.ActiveTurnID = pa.TurnSucceeded, ""
+			if _, err = s.Commit(testContext, app.Mutation{
+				Command: command(b.Key, pa.SendOperation, "finish-prior"), ExpectedVersion: 2,
+				Turn: &prior, Conversation: &chat, Receipt: pa.Receipt{ID: "finish-prior", State: pa.EffectDelivered},
+			}); err != nil {
+				t.Fatal(err)
+			}
+			peer := &recoveryPeer{sent: make(chan app.PromptRequest, 2), result: make(chan app.PromptResult, 1)}
+			var projected atomic.Bool
+			repo := bindingRaceStore{Store: s, beforeBind: func(ctx context.Context, m app.Mutation) error {
+				if !projected.CompareAndSwap(false, true) {
+					return nil
+				}
+				bot := *m.Bot
+				if changeInstructions {
+					bot.Instructions.Revision++
+					bot.Instructions.Text = "Changed instructions"
+				}
+				link := pa.WorkLink{ID: "work", Fence: oldFence, TurnID: prior.ID, TaskID: "task", State: pa.WorkCompleted, ResultMessageID: "work-result"}
+				message := pa.Message{ID: link.ResultMessageID, Fence: oldFence, TurnID: prior.ID, Kind: pa.WorkMessage, Text: "Dispatched work finished", At: time.Now()}
+				_, err := s.Commit(ctx, app.Mutation{
+					Command: command(b.Key, pa.DispatchOperation, "late-work"), ExpectedVersion: m.ExpectedVersion, Bot: &bot,
+					WorkLinks: []pa.WorkLink{link}, Messages: []pa.Message{message},
+					Receipt: pa.Receipt{ID: "late-work", State: pa.EffectDelivered},
+				})
+				return err
+			}}
+			engine := recoveryEngineWithRepository(t, s, repo, b, peer)
+			submission := recoverySubmission(t, s, b, "while-work-finishes")
+			receipt, err := engine.Submit(testContext, submission)
+			if err != nil {
+				t.Fatal(err)
+			}
+			peer.result <- app.PromptResult{FinalText: "Finished the new turn"}
+			var actual pa.Turn
+			recoveryAwait(t, func() bool {
+				actual, _ = s.Turn(testContext, b.Key, receipt.ResourceID)
+				return actual.State == pa.TurnSucceeded || actual.State == pa.TurnUnknown || actual.State == pa.TurnFailed
+			})
+			x, err := s.Export(testContext, b.Key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(x.WorkLinks) != 1 || x.WorkLinks[0].State != pa.WorkCompleted || len(x.Messages) < 3 || x.Messages[2].ID != "work-result" {
+				t.Fatal("the concurrent work result was not preserved")
+			}
+			if changeInstructions {
+				if actual.State != pa.TurnUnknown || actual.Failure == nil || actual.Failure.Code != pa.StaleVersion ||
+					peer.sends.Load() != 0 || x.Bot.Instructions.Text != "Changed instructions" {
+					t.Fatalf("changed instructions were overwritten or stale prompt was sent: turn=%+v sends=%d", actual, peer.sends.Load())
+				}
+				return
+			}
+			if actual.State != pa.TurnSucceeded || peer.opens.Load() != 1 || peer.sends.Load() != 1 {
+				t.Fatalf("unrelated work result stopped the new turn: state=%s failure=%+v opens=%d sends=%d", actual.State, actual.Failure, peer.opens.Load(), peer.sends.Load())
+			}
+			if prompt := <-peer.sent; prompt.Turn.ID != actual.ID {
+				t.Fatalf("different turn sent: %s", prompt.Turn.ID)
+			}
+		})
+	}
+}
+
+type bindingRaceStore struct {
+	*Store
+	beforeBind func(context.Context, app.Mutation) error
+}
+
+func (s bindingRaceStore) Commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) {
+	if strings.HasPrefix(m.Command.IdempotencyKey, "runtime-bound-") {
+		if err := s.beforeBind(ctx, m); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
+	return s.Store.Commit(ctx, m)
+}
+
 // This peer never starts a vendor adapter or makes a model request.
 type recoveryPeer struct {
 	app.WorkBridge
@@ -133,8 +224,13 @@ func (r recoveryResolver) Resolve(context.Context, pa.ProjectSelection) (pa.Proj
 
 func recoveryEngine(t *testing.T, s *Store, b pa.Bot, peer *recoveryPeer) *app.Engine {
 	t.Helper()
+	return recoveryEngineWithRepository(t, s, s, b, peer)
+}
+
+func recoveryEngineWithRepository(t *testing.T, s *Store, repo app.Repository, b pa.Bot, peer *recoveryPeer) *app.Engine {
+	t.Helper()
 	var sequence atomic.Int64
-	r, err := app.NewRuntime(app.RuntimeOptions{Repository: s, Memory: s, WorkBridge: peer, ProjectResolver: recoveryResolver{b.Project}, Provider: peer,
+	r, err := app.NewRuntime(app.RuntimeOptions{Repository: repo, Memory: s, WorkBridge: peer, ProjectResolver: recoveryResolver{b.Project}, Provider: peer,
 		Clock: time.Now, ID: func() string { return fmt.Sprintf("recovery-%d-%d", time.Now().UnixNano(), sequence.Add(1)) },
 		Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 			return pa.FeatureState{Enabled: true}, recoverySource(b.Key), nil

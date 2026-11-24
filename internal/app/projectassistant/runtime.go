@@ -1397,14 +1397,25 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return runtimeFailure(pa.ExecutionEffectUnknown, "stopped_before_send")
 	}
-	bot, err = r.o.Repository.Bot(ctx, a.key)
-	if err == nil {
-		err = r.authorized(ctx, a.key, bot.Project)
-	}
-	if err == nil {
-		binding.NativeSessionID = session.SessionID()
-		cmd = r.command(a.key, pa.SendOperation, "runtime-bound-"+t.ID+"-"+binding.Fence.BindingID, binding)
+	binding.NativeSessionID = session.SessionID()
+	cmd = r.command(a.key, pa.SendOperation, "runtime-bound-"+t.ID+"-"+binding.Fence.BindingID, binding)
+	for {
+		bot, _, err = r.currentForStart(ctx, a.key, preparedBot, c)
+		if err != nil {
+			break
+		}
+		if err = r.authorized(ctx, a.key, bot.Project); err != nil {
+			break
+		}
 		_, err = r.mutate(ctx, bot, Mutation{Command: cmd, Binding: &binding, Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID}})
+		if !collaborationAggregateConflict(err) {
+			break
+		}
+		// A work result can advance the aggregate while the session opens.
+		// Retry only the uncommitted binding after checking its owner again.
+		if err = ctx.Err(); err != nil {
+			break
+		}
 	}
 	a.mu.Unlock()
 	if err != nil {
