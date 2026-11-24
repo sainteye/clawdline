@@ -483,3 +483,60 @@ func TestWithoutFaintDropsOnlyFaintText(t *testing.T) {
 		}
 	}
 }
+
+// Fault injection: the first Enter is lost while Claude Code redraws its
+// composer, as it does when auto mode starts. The screen after the Enter is
+// not the one that confirmed the paste — the same briefing drawn as a
+// placeholder, then in full — but the briefing is still in the composer, so
+// it is pressed again until the composer lets go (task bb9f44d8, 2026-11-24).
+func TestSubmitPressesAgainWhenARedrawnComposerStillHoldsTheText(t *testing.T) {
+	fastSubmit(t)
+	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	shown, redrawn := composerScreen(text), composerScreen("[Pasted text #1]")
+	in := &fakeInput{screens: []string{composerScreen(""), shown, redrawn, shown, composerScreen("")}}
+	if err := submit(context.Background(), in, text, time.Second); err != nil {
+		t.Fatalf("a briefing the composer let go of answered %v", err)
+	}
+	if n := strings.Count(strings.Join(in.events, "|"), "enter"); n != 3 {
+		t.Fatalf("a redrawn composer still holding the text got %d Enter(s), want 3: %v", n, in.events)
+	}
+}
+
+// Fault injection: every Enter is lost. The presses stop at their bound, and
+// the send is not reported as submitted: it answers HeldAfterEnter, which is
+// also Unsubmitted, so no caller types the words a second time.
+func TestSubmitWhoseComposerNeverLetsGoIsHeldAfterEnter(t *testing.T) {
+	fastSubmit(t)
+	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	in := &fakeInput{screens: []string{composerScreen(""), composerScreen(text)}}
+	err := submit(context.Background(), in, text, time.Second)
+	var held HeldAfterEnter
+	var unsubmitted Unsubmitted
+	if !errors.As(err, &held) || !errors.As(err, &unsubmitted) {
+		t.Fatalf("a composer that kept the text through every Enter answered %T %v, want HeldAfterEnter", err, err)
+	}
+	if want := 1 + len(nudgePauses); held.Enters != want || strings.Count(strings.Join(in.events, "|"), "enter") != want {
+		t.Fatalf("pressed %d Enter(s) (reported %d), want the bound %d: %v",
+			strings.Count(strings.Join(in.events, "|"), "enter"), held.Enters, want, in.events)
+	}
+}
+
+// A screen that is not a composer holding the text is never pressed again:
+// a chooser that came up, or a composer holding other words.
+func TestSubmitDoesNotPressAScreenThatNoLongerHoldsTheText(t *testing.T) {
+	fastSubmit(t)
+	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	for name, after := range map[string]string{
+		"a chooser":         "❯ No, exit\n  Yes, I trust this folder\nEnter to confirm",
+		"other words":       composerScreen("something the person is typing"),
+		"an unframed caret": "❯ " + text,
+	} {
+		in := &fakeInput{screens: []string{composerScreen(""), composerScreen(text), after}}
+		if err := submit(context.Background(), in, text, time.Second); err != nil {
+			t.Errorf("%s: answered %v", name, err)
+		}
+		if n := strings.Count(strings.Join(in.events, "|"), "enter"); n != 1 {
+			t.Errorf("%s: got %d Enter(s), want only the first: %v", name, n, in.events)
+		}
+	}
+}
