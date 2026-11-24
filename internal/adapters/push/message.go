@@ -26,6 +26,17 @@ func WithBotDecision(ctx context.Context, permission string) context.Context {
 	return context.WithValue(ctx, botDecisionKey{}, permission)
 }
 
+type quietKey struct{}
+
+// WithQuiet marks a notification that replaces an earlier one under the same
+// tag without sounding again: a question that no longer needs the person.
+func WithQuiet(ctx context.Context) context.Context { return context.WithValue(ctx, quietKey{}, true) }
+
+func QuietFromContext(ctx context.Context) bool {
+	quiet, _ := ctx.Value(quietKey{}).(bool)
+	return quiet
+}
+
 func BotDecisionFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(botDecisionKey{}).(string)
 	return id
@@ -72,6 +83,10 @@ type Notification struct {
 	Tag   string
 	Icon  string
 	At    time.Time
+	// Silent replaces an earlier notification with this tag without a sound
+	// or a vibration. Web Push has no portable way to take a notification
+	// away; a quiet replacement is the closest every platform honours.
+	Silent bool
 }
 
 // Message is one subscription's bytes and the content type that describes them.
@@ -211,6 +226,9 @@ func legacy(n Notification, at time.Time) ([]byte, bool, bool) {
 	if n.Icon != "" {
 		fields["icon"] = n.Icon
 	}
+	if n.Silent {
+		fields["silent"] = true
+	}
 	return fit(fields, "body", n.Body, "icon")
 }
 
@@ -228,6 +246,9 @@ func declarative(n Notification, destination, base string, at time.Time) ([]byte
 		if absolute, ok := sameOriginURL(n.Icon, base); ok {
 			notification["icon"] = absolute
 		}
+	}
+	if n.Silent {
+		notification["silent"] = true
 	}
 	// `fit` shortens the body inside the object it was handed, and the
 	// declarative envelope wraps that object — so it is given the inner one and

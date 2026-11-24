@@ -309,7 +309,7 @@ func (s *Server) PushSend(ctx context.Context, title, body, sessionID, tag, icon
 	url := s.pushDestinationURL(ctx, sessionID)
 	sender := &adapterpush.Sender{Store: store, Cloud: s.pushCourier()}
 	return sender.Send(ctx, adapterpush.Notification{
-		Title: title, Body: body, URL: url, Tag: tag, Icon: icon,
+		Title: title, Body: body, URL: url, Tag: tag, Icon: icon, Silent: adapterpush.QuietFromContext(ctx),
 	}, "")
 }
 

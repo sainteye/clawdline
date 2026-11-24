@@ -6,6 +6,9 @@ package capacity
 func brokerBounds() []Entry {
 	return []Entry{
 		{Name: "orchestrator.bot_decision_push_runes", Class: Buffer, Unit: Characters, Limit: 120, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/app/orchestrator.MaxBotDecisionPushRunes"}},
+		{Name: "orchestrator.bot_viewing_seconds", Class: Cache, Unit: Seconds, Limit: 45, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/app/orchestrator.BotViewingSeconds"}},
+		{Name: "orchestrator.bot_viewing_hold_seconds", Class: Buffer, Unit: Seconds, Limit: 300, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/app/orchestrator.BotViewingHoldSeconds"}},
+		{Name: "orchestrator.bot_viewing_chats", Class: Cache, Unit: Rows, Limit: 256, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/app/orchestrator.BotViewingChats"}},
 		{Name: "orchestrator.delivery_bytes", Class: Buffer, Unit: Bytes, Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceBytesLimit"}},
 		// The other tasks one result.json may say it carried; a longer
 		// list is refused whole by the child's own validator.

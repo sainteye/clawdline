@@ -33,6 +33,9 @@ type projectAssistantHTTPOptions struct {
 	Attachments projectassistantstore.Attachments
 	Outputs     projectassistantstore.Outputs
 	Inputs      projectassistantstore.Inputs
+	// Viewing records that a console has a Bot chat on screen, or no longer
+	// has; a decision push waits while it does. Nil ignores the reports.
+	Viewing func(bot, conversation string, viewing bool)
 	// Private deterministic fixture barrier; production leaves it nil.
 	BeforeViewPublish    func()
 	BeforeRosterSnapshot func()
@@ -256,7 +259,7 @@ func paRoute(r *http.Request) (paHTTPRoute, error) {
 					switch parts[1] {
 					case "messages":
 						return paHTTPRoute{bot: bot, action: "send"}, nil
-					case "stop", "read", "observed", "memory", "send-now", "queue-edit", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react", "handoff-card":
+					case "stop", "read", "observed", "viewing", "memory", "send-now", "queue-edit", "visibility", "delete", "upload", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings", "react", "handoff-card":
 						return paHTTPRoute{bot: bot, action: parts[1]}, nil
 					}
 				}
@@ -388,7 +391,7 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 		return nil, err
 	}
 	if r.Method != http.MethodGet {
-		if route.action == "read" || route.action == "observed" {
+		if route.action == "read" || route.action == "observed" || route.action == "viewing" {
 			// These acknowledge this principal's own view, without authorizing
 			// content or native effects on a read-only/history-only source.
 			if source.State != pa.SourceOnline || !source.Fresh {
@@ -402,6 +405,9 @@ func (h *projectAssistantHTTP) handle(w http.ResponseWriter, r *http.Request) (a
 	}
 	if route.action == "handoff-card" {
 		return h.handoffCard(w, r, route)
+	}
+	if route.action == "viewing" {
+		return h.viewing(w, r, route)
 	}
 	if route.action == "react" {
 		return h.react(w, r, route)

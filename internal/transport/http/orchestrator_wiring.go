@@ -273,6 +273,7 @@ func newBroker(s *Server) *orchestrator.Broker {
 		// unreadable is the setting's default, on.
 		NotifyEnabled: s.agentNotifyEnabled,
 		PushEnabled:   s.notificationEnabled,
+		BotPresence:   &orchestrator.BotPresence{},
 		ProcessStart:  ownrecords.ProcessStart,
 		LeaseLine:     int(CapacityLimit(capacity.LeasesQueue)),
 		OpenWaits:     int(CapacityLimit(capacity.WaitsOpen)),

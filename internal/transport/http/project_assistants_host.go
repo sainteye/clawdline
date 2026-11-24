@@ -493,7 +493,7 @@ func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) 
 		paWriteHTTPFailure(w, err)
 		return
 	}
-	newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{HookPublicURL: s.botRoutineHookPublicURL, Service: service, NativeContext: h.NativeContext, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
+	newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{HookPublicURL: s.botRoutineHookPublicURL, Viewing: s.reportBotViewing, Service: service, NativeContext: h.NativeContext, MachineID: i.MachineID, Attachments: s.projectAssistantAttachments(), Inputs: projectassistantstore.Inputs{Dir: s.projectAssistantAttachments().Dir}, Outputs: projectassistantstore.Outputs{Dir: s.projectAssistantAttachments().Dir}, BeforeViewPublish: p.beforeViewPublish,
 		Status: func(ctx context.Context) (pa.SourceStatus, error) {
 			a, err := s.projectAssistantAuthority(ctx, pa.BotKey{MachineID: i.MachineID}, false)
 			return a.Source, err

@@ -33,6 +33,8 @@ var notices = map[string][9]string{
 	"bot.completed.body":         {"{name} has finished a task. Open Bots to read the reply.", "{name} 已完成任務，到 Bots 查看回覆。"},
 	"bot.decision.title":         {"{name} needs your decision", "{name} 需要你決定"},
 	"bot.decision.body":          {"{question}", "{question}"},
+	"bot.decision.closed.title":  {"{name} no longer needs your decision", "{name} 不需要你決定了"},
+	"bot.decision.closed.body":   {"Nothing more is needed here.", "這則不需要再處理。"},
 	"bot.decision.permission":    {"{name} is waiting for your permission. Open the chat to answer.", "{name} 在等你允許，打開對話回覆。"},
 	"browser.bot_new_site.title": {"Bot {label} is using a new site", "Bot {label} 開始操作新網站"},
 	"browser.bot_new_site.body":  {"{site}. Open {label}'s chat in Bots to watch or take over.", "{site}。到 Bots 打開 {label} 的對話，即可查看畫面或接手。"},

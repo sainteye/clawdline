@@ -12996,6 +12996,63 @@
   },
   {
     "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_chats",
+    "Class": "cache",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.BotViewingChats"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_hold_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.BotViewingHoldSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 45,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.BotViewingSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "orchestrator.delivery_bytes",
     "Class": "buffer",
     "Unit": "bytes",

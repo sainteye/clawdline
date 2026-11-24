@@ -196,6 +196,9 @@ type Broker struct {
 	// BotPermission reads one Bot permission or question as it stands now, so a
 	// push owed for a question that closed meanwhile is dropped.
 	BotPermission func(context.Context, pa.BotKey, string) (pa.PermissionOffer, error)
+	// BotPresence holds a decision push while a console reports its chat on
+	// screen. Nil never holds.
+	BotPresence *BotPresence
 	// PushEnabled reads a named event preference at the moment its outbox effect runs.
 	// Nil preserves the default behavior of brokers without a settings file.
 	PushEnabled func(key string) bool

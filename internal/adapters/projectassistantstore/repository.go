@@ -24,7 +24,8 @@ type Store struct {
 	// CompletionIntent adds only database writes to this Bot transaction. It must not perform external IO.
 	CompletionIntent func(context.Context, *sql.Tx, pa.Bot, pa.Turn) error
 	// DecisionIntent is told, inside the same transaction, of each permission
-	// or question this commit first makes pending. Database writes only.
+	// or question this commit first makes pending, and of each pending one it
+	// closes (answered, withdrawn, written past). Database writes only.
 	DecisionIntent func(context.Context, *sql.Tx, pa.Bot, string, pa.PermissionOffer) error
 	db             *sql.DB
 	reader         *sql.DB
@@ -344,7 +345,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	previousBackgroundTurn := a.backgroundTurnState()
 	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	closeDecisionsThePersonAnswered(a, &m)
-	opened := newlyPendingPermissions(a, m)
+	opened := append(newlyPendingPermissions(a, m), newlyClosedPermissions(a, m)...)
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -1369,6 +1370,26 @@ func newlyPendingPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
 			continue
 		}
 		if before, ok := a.Permissions[p.ID]; ok && before.State == pa.PermissionPending {
+			continue
+		}
+		seen[p.ID] = true
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// newlyClosedPermissions is every stored pending permission or question this
+// mutation moves out of pending, in id order, so its notification can be
+// taken back once.
+func newlyClosedPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
+	var out []pa.PermissionOffer
+	seen := map[string]bool{}
+	for _, p := range m.Permissions {
+		if p.State == pa.PermissionPending || seen[p.ID] {
+			continue
+		}
+		if before, ok := a.Permissions[p.ID]; !ok || before.State != pa.PermissionPending {
 			continue
 		}
 		seen[p.ID] = true
