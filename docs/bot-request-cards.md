@@ -238,7 +238,7 @@ words are irreversible once shipped (§12).
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
 | Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
 | Outbox effect key | `bot-request-done-<card id>-<cycle>` |
-| Capacity names | `bot_request.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts`, `.batch_cards` (§10) |
+| Capacity names | `botrequest.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts`, `.batch_cards` (§10). The register's names allow no underscore in the area, so the area is `botrequest`, not `bot_request` |
 
 Unchanged by this design: the existing `WorkResultCard` component, `WorkLink`, `work_id` and
 `board_item_id`. Event names (`card.created`, `baton.handed`, …) are values inside
@@ -277,7 +277,7 @@ is read: no fetch, no build stamp, no timer.
 example seven cards, `main` and `GitHub` done, note "<commit>". Each card is its own transaction,
 all-or-nothing on that card; the answer lists one result per card (`ok`, `unchanged`, or a typed
 refusal). Marking an entry with the state and note it already has is `unchanged`, so a retried
-batch writes nothing. A call names at most `bot_request.batch_cards` cards (§10).
+batch writes nothing. A call names at most `botrequest.batch_cards` cards (§10).
 
 **Done.** The holder calls `bot_request_done` once every entry is `done` or `not_needed`; the daemon
 refuses it otherwise (`bot_request_checklist_open`). The person can complete, cancel or reopen any
@@ -507,19 +507,19 @@ Bounds to register in `internal/domain/capacity` before code, each refusing at i
 
 | Name | Proposed limit |
 |---|---|
-| `bot_request.open_cards` | 500 per machine |
-| `bot_request.description_bytes` | 16 KiB |
-| `bot_request.events_per_card` | 2,000 |
-| `bot_request.verdicts_per_card` | 64 |
-| `bot_request.checklist_entries` | 12 per card |
-| `bot_request.note_bytes` | 1 KiB (checklist note, verdict text, handoff note) |
-| `bot_request.label_bytes` | 120 (title, kind, checklist label) |
-| `bot_request.chain_bots` | 16 |
-| `bot_request.split_cards` | 8 per call |
-| `bot_request.merged_cards` | 16 absorbed per card |
-| `bot_request.page_rows` | 100 |
-| `bot_request.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
-| `bot_request.batch_cards` | 16 cards per batch tick |
+| `botrequest.open_cards` | 500 per machine |
+| `botrequest.description_bytes` | 16 KiB |
+| `botrequest.events_per_card` | 2,000 |
+| `botrequest.verdicts_per_card` | 64 |
+| `botrequest.checklist_entries` | 12 per card |
+| `botrequest.note_bytes` | 1 KiB (checklist note, verdict text, handoff note) |
+| `botrequest.label_bytes` | 120 (title, kind, checklist label) |
+| `botrequest.chain_bots` | 16 |
+| `botrequest.split_cards` | 8 per call |
+| `botrequest.merged_cards` | 16 absorbed per card |
+| `botrequest.page_rows` | 100 |
+| `botrequest.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
+| `botrequest.batch_cards` | 16 cards per batch tick |
 
 Every write is one transaction: read the card, check actor, chain and version, write the next
 state, the event and any outbox effect. No Git or network I/O happens in a card write except
