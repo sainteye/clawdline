@@ -329,7 +329,7 @@ func NoticeKind(r Record) string {
 
 // A briefing that was typed and is still sitting in the child's composer.
 //
-// Task bb9f44d8, 2026-11-24: the briefing was seen arriving and Enter was
+// On 2026-11-24 the briefing was seen arriving and Enter was
 // pressed, but Claude Code was redrawing its composer as auto mode started and
 // the Enter did nothing. The whole briefing stayed in the input line, the
 // task stayed `spawning`, and the watch above never fired: a composer with

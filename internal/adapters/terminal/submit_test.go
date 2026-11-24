@@ -488,10 +488,10 @@ func TestWithoutFaintDropsOnlyFaintText(t *testing.T) {
 // composer, as it does when auto mode starts. The screen after the Enter is
 // not the one that confirmed the paste — the same briefing drawn as a
 // placeholder, then in full — but the briefing is still in the composer, so
-// it is pressed again until the composer lets go (task bb9f44d8, 2026-11-24).
+// it is pressed again until the composer lets go (2026-11-24).
 func TestSubmitPressesAgainWhenARedrawnComposerStillHoldsTheText(t *testing.T) {
 	fastSubmit(t)
-	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	text := "You are a Clawdline CHILD agent for task aaaaaaaa. TASK_SECRET=0123456789abcdef0123456789abcdef"
 	shown, redrawn := composerScreen(text), composerScreen("[Pasted text #1]")
 	in := &fakeInput{screens: []string{composerScreen(""), shown, redrawn, shown, composerScreen("")}}
 	if err := submit(context.Background(), in, text, time.Second); err != nil {
@@ -507,7 +507,7 @@ func TestSubmitPressesAgainWhenARedrawnComposerStillHoldsTheText(t *testing.T) {
 // also Unsubmitted, so no caller types the words a second time.
 func TestSubmitWhoseComposerNeverLetsGoIsHeldAfterEnter(t *testing.T) {
 	fastSubmit(t)
-	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	text := "You are a Clawdline CHILD agent for task aaaaaaaa. TASK_SECRET=0123456789abcdef0123456789abcdef"
 	in := &fakeInput{screens: []string{composerScreen(""), composerScreen(text)}}
 	err := submit(context.Background(), in, text, time.Second)
 	var held HeldAfterEnter
@@ -525,7 +525,7 @@ func TestSubmitWhoseComposerNeverLetsGoIsHeldAfterEnter(t *testing.T) {
 // a chooser that came up, or a composer holding other words.
 func TestSubmitDoesNotPressAScreenThatNoLongerHoldsTheText(t *testing.T) {
 	fastSubmit(t)
-	text := "You are a Clawdline CHILD agent for task bb9f44d8. TASK_SECRET=0123456789abcdef0123456789abcdef"
+	text := "You are a Clawdline CHILD agent for task aaaaaaaa. TASK_SECRET=0123456789abcdef0123456789abcdef"
 	for name, after := range map[string]string{
 		"a chooser":         "❯ No, exit\n  Yes, I trust this folder\nEnter to confirm",
 		"other words":       composerScreen("something the person is typing"),
