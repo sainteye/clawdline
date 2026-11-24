@@ -1,0 +1,9 @@
+/* Board → Bot work: a list outside the Board's columns and counts. */
+.bot-work { margin-top: 16px; margin-bottom: 8px; }
+.bot-work-head { align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.bot-work-switch { min-height: 36px; }
+.bot-work-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bot-work-rows > li { min-width: 0; }
+.bot-work-loading { min-height: 48px; box-sizing: border-box; }
+.bot-work-item { max-width: 100%; justify-self: start; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 640px) { .bot-work-switch { min-height: 44px; } }

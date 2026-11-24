@@ -61,7 +61,8 @@ import (
 // Explicit provider quota refresh arrives at API 115.
 // Machine-named Bots shared settings, carried over Cloud, arrive at API 116.
 // Bot settings saves that name their base, and field conflicts, arrive at API 117.
-const APILevel = 117
+// Bot request card reads, the person's card actions and the Bot card tools arrive at API 118.
+const APILevel = 118
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
