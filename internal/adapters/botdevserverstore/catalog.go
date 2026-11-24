@@ -168,6 +168,9 @@ func InstallCatalog(ctx context.Context, db *sql.DB) error {
 			}
 		}
 	}
+	if _, err := tx.ExecContext(ctx, processes); err != nil {
+		return err
+	}
 	if err := catalogReady(ctx, tx); err != nil {
 		return err
 	}

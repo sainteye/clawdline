@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log"
 	"sort"
 	"sync"
 	"time"
@@ -48,6 +49,11 @@ type RegistryOptions struct {
 	CleanupTimeout   time.Duration
 	// Clock times how long Reconcile has been unable to confirm authority.
 	Clock func() time.Time
+	// Adopt returns a handle for the process a Mark names only when it is
+	// still alive with the same start time; otherwise nil. Optional.
+	Adopt func(context.Context, Spec, Mark) (Process, error)
+	// Logf records diagnostics without command text; defaults to log.Printf.
+	Logf func(string, ...any)
 }
 
 type registered struct {
@@ -58,6 +64,8 @@ type registered struct {
 	// unconfirmedSince is when Reconcile last began failing to read this
 	// definition's authority without an authoritative denial; zero when known.
 	unconfirmedSince time.Time
+	// noticed is set once the unconfirmed notice has been logged.
+	noticed bool
 }
 
 type Registry struct {
@@ -88,6 +96,9 @@ func OpenRegistry(ctx context.Context, o RegistryOptions) (*Registry, error) {
 	if o.Clock == nil {
 		o.Clock = time.Now
 	}
+	if o.Logf == nil {
+		o.Logf = log.Printf
+	}
 	lifetime, cancel := context.WithCancel(o.Lifetime)
 	r := &Registry{o: o, ctx: lifetime, cancel: cancel, rows: map[string]*registered{}, bySpec: map[string]string{}}
 	for _, saved := range rows {
@@ -105,9 +116,11 @@ func OpenRegistry(ctx context.Context, o RegistryOptions) (*Registry, error) {
 				return nil, failure(pa.ScopeDenied, "server_catalog")
 			}
 			if activeState(saved.Attempt.State) {
-				e.saved.Attempt.State, e.saved.Attempt.Failure = Unknown, "owner_lost"
 				e.reserved = true
 				r.active++
+				if !r.adopt(ctx, e) {
+					e.saved.Attempt.State, e.saved.Attempt.Failure = Unknown, "owner_lost"
+				}
 			}
 		} else if saved.Attempt != (Record{}) {
 			cancel()
@@ -116,6 +129,39 @@ func OpenRegistry(ctx context.Context, o RegistryOptions) (*Registry, error) {
 		r.rows[saved.ID], r.bySpec[fingerprint] = e, saved.ID
 	}
 	return r, nil
+}
+
+// adopt reclaims a running attempt whose journalled Mark still names a live
+// process with the same start time. Anything else stays owner_lost.
+func (r *Registry) adopt(ctx context.Context, e *registered) bool {
+	saved := e.saved
+	if r.o.Adopt == nil || saved.Attempt.State != Running || saved.Attempt.Mark.PID <= 0 {
+		return false
+	}
+	p, err := r.o.Adopt(ctx, saved.Spec, saved.Attempt.Mark)
+	if err != nil || p == nil {
+		return false
+	}
+	journal, err := r.o.Catalog.Journal(ctx, saved, saved.Attempt.Identity)
+	if err == nil {
+		var owner *Owner
+		owner, err = Adopt(ctx, Options{Identity: saved.Attempt.Identity, Lifetime: r.ctx, Journal: journal, CleanupTimeout: r.o.CleanupTimeout,
+			Check: func(ctx context.Context) error { return r.o.CheckControl(ctx, saved.Spec) }}, p)
+		if err == nil {
+			e.owner = owner
+			go func() {
+				<-owner.done
+				if owner.Snapshot().State != Unknown {
+					r.release(e, owner)
+				}
+			}()
+			r.o.Logf("bots: adopted a running dev server after restart: %s", saved.ID)
+			return true
+		}
+	}
+	// The process is alive but cannot be owned; leave it for the person.
+	r.o.Logf("bots: could not adopt a running dev server: %s: %s", saved.ID, pa.Code(err))
+	return false
 }
 
 func activeState(s State) bool { return s == Accepted || s == Running || s == Stopping || s == Unknown }

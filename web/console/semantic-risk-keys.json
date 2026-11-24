@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14321,
+  "englishKeys": 14323,
   "counts": {
-    "negation": 3639,
-    "state": 2425,
+    "negation": 3641,
+    "state": 2426,
     "permission": 862,
     "deletion": 336,
     "uncertainty": 572
   },
-  "unionCount": 6087,
+  "unionCount": 6089,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3196,6 +3196,8 @@
       "projectAssistants.ruleDeny",
       "projectAssistants.rulesEmpty",
       "projectAssistants.searchEmpty",
+      "projectAssistants.serverAuthorityUnconfirmed",
+      "projectAssistants.serverAuthorityUnconfirmedNext",
       "projectAssistants.serverCopyFailed",
       "projectAssistants.serverInspect",
       "projectAssistants.serverLogEmpty",
@@ -5741,6 +5743,7 @@
       "projectAssistants.rulesHint",
       "projectAssistants.savedMemory",
       "projectAssistants.sendCleanupPending",
+      "projectAssistants.serverAuthorityUnconfirmedNext",
       "projectAssistants.serverFailed",
       "projectAssistants.serverOpen",
       "projectAssistants.serverRemoveUnconfirmed",
@@ -13135,6 +13138,8 @@
     "projectAssistants.searchEmpty",
     "projectAssistants.sendCleanupPending",
     "projectAssistants.sendUnconfirmed",
+    "projectAssistants.serverAuthorityUnconfirmed",
+    "projectAssistants.serverAuthorityUnconfirmedNext",
     "projectAssistants.serverCopyFailed",
     "projectAssistants.serverFailed",
     "projectAssistants.serverInspect",

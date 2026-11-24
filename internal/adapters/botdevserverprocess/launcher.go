@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	acp "github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	servers "github.com/sainteye/clawdline/internal/app/botdevserver"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -134,5 +135,22 @@ func (l *Launcher) Start(ctx context.Context, spec servers.Spec, project pa.Proj
 	if p == nil {
 		return nil, err // Do not return a non-nil interface holding a nil handle.
 	}
-	return p, err // Even a failed startup retains every acquired handle.
+	return &launched{Process: p, mark: markOf(p.PID())}, err // Even a failed startup retains every acquired handle.
+}
+
+// launched keeps every acp.Process method and adds the identity a later Host
+// needs to adopt this process after a crash.
+type launched struct {
+	*acp.Process
+	mark servers.Mark
+}
+
+func (l *launched) Mark() (servers.Mark, bool) { return l.mark, l.mark.PID > 0 && l.mark.Started > 0 }
+
+func markOf(pid int) servers.Mark {
+	started := ownrecords.ProcessStart(pid)
+	if pid <= 0 || started.IsZero() {
+		return servers.Mark{}
+	}
+	return servers.Mark{PID: pid, Started: started.Unix()}
 }

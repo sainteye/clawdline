@@ -133,7 +133,7 @@ export function ServerRow({server,w,active,localSource,canRead,addressesAvailabl
   const unconfirmed=server.state==="unknown"
   const labels:Record<Action,string>={start:w.serverStart,restart:w.serverRestart,stop:w.serverStop,remove:unconfirmed?w.serverRemoveUnconfirmed:w.serverRemove}
   return <li className="pa-dev-server" data-failed={server.state==="failed"||undefined}>
-    <button className="pa-server-name" type="button" title={addresses.length&&readable?w.serverOpen:w.serverLogs} onClick={()=>{if(addresses.length&&readable)openAddress(addresses[0]);else onLogs()}}><strong>{server.name||server.command}</strong><small>{serverState(server,w)}{summary&&" · "+summary}</small></button>
+    <button className="pa-server-name" type="button" title={addresses.length&&readable?w.serverOpen:w.serverLogs} onClick={()=>{if(addresses.length&&readable)openAddress(addresses[0]);else onLogs()}}><strong>{server.name||server.command}</strong><small>{serverState(server,w)}{server.unconfirmed===true&&" · "+w.serverAuthorityUnconfirmed}{summary&&" · "+summary}</small></button>
     <button ref={anchor} className="pa-server-menu" type="button" aria-label={w.serverActions.replace("{name}",server.name||server.command)} aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(!open)}>⋯</button>
     <MessageMenu open={open} anchor={anchor} label={w.serverActions.replace("{name}",server.name||server.command)} onClose={close}>
       {addresses.map(address=><div key={address} className="pa-server-address-choice" role="group" aria-label={address}>
@@ -145,6 +145,7 @@ export function ServerRow({server,w,active,localSource,canRead,addressesAvailabl
       <button type="button" role="menuitem" onClick={()=>{close(true);onLogs()}}>{w.serverLogs}</button>
       {serverActions(server).map(action=><button key={action} type="button" role="menuitem" disabled={disabled} onClick={()=>{close(true);onControl(action)}}>{labels[action]}</button>)}
     </MessageMenu>
+    {server.unconfirmed===true&&<p className="pa-server-unconfirmed" role="status">{w.serverAuthorityUnconfirmedNext}</p>}
     {feedback&&<span className="pa-server-copy-status" role="status">{feedback}</span>}
   </li>
 }
