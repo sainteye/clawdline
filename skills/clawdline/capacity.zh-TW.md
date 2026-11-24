@@ -140,6 +140,8 @@
 | `bots.input_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.input_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.instruction_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_probe_attempts` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_probe_backoff_milliseconds` | 400 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |

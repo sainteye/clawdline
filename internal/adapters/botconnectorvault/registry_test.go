@@ -276,14 +276,14 @@ func TestConnectorVaultUnknownAcceptedWriteAndPrivateDirectory(t *testing.T) {
 	if err != nil || status.State != "unknown" {
 		t.Fatal("restart forgot accepted effect", status, err)
 	}
-	if _, err = reopened.Apply(ctx, f.scope, f.action("prepare", ""), nil, false, allow); pa.Code(err) != pa.OutcomeUnknown {
-		t.Fatal("unknown effect reopened", err)
+	if _, _, err = reopened.Get(ctx, f.scope); pa.Code(err) != pa.OutcomeUnknown {
+		t.Fatal("unknown effect lent its bytes", err)
 	}
 	removed, err := reopened.Apply(ctx, f.scope, f.action("remove", ""), nil, false, allow)
 	if err != nil || removed.State != "cleanup_unknown" {
 		t.Fatal("unknown cleanup bytes became reusable", removed, err)
 	}
-	if _, err = reopened.Apply(ctx, f.scope, f.action("prepare", ""), nil, false, allow); pa.Code(err) != pa.OutcomeUnknown {
+	if _, _, err = reopened.Get(ctx, f.scope); pa.Code(err) != pa.OutcomeUnknown {
 		t.Fatal("remove bypassed unknown cleanup barrier", err)
 	}
 

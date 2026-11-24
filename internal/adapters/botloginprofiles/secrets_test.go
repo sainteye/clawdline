@@ -91,12 +91,14 @@ func TestKeyTargetsKeepScopeRevocationAndInFlightCredentialAuthority(t *testing.
 	if e = os.Remove(filepath.Join(r.root, "key-vault-v1", p.ID+".sealed")); e != nil {
 		t.Fatal(e)
 	}
-	if _, _, e = r.Acquire(ctx, b); pa.Code(e) != pa.AuthProbeUnknown {
+	if _, _, e = r.Acquire(ctx, b); pa.Code(e) != pa.AuthRequired {
 		t.Fatal("missing vault record did not refuse native acquisition", e)
 	}
+	// A record that is definitely gone is the authoritative answer: the
+	// profile is signed out and asks for a key, not unknown forever.
 	p, e = r.get(ctx, p.ID)
-	if e != nil || p.State != "unknown" {
-		t.Fatal("lost key authority retained a signed-in claim", e)
+	if e != nil || p.State != "signed_out" {
+		t.Fatal("lost key authority retained a signed-in claim", p.State, e)
 	}
 	for _, revokeAt := range []int{2, 3} {
 		p = create()
