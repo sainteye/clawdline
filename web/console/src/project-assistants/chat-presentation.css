@@ -113,6 +113,12 @@
 .project-assistants .pa-chat-surface .pa-session-report summary::-webkit-details-marker { display:none; }
 .project-assistants .pa-chat-surface .pa-session-report summary:focus-visible { outline:2px solid #e39567;outline-offset:2px; }
 .project-assistants .pa-chat-surface .pa-session-report summary .control-chevron { flex:none; }
+.project-assistants .pa-chat-surface .pa-session-report-head { display:flex;flex-direction:column;gap:2px;min-width:0;padding:8px 0; }
+.project-assistants .pa-chat-surface .pa-session-report-line {
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere;
+  font-size:14px;line-height:1.4;font-weight:400;color:var(--pa-text,inherit);
+}
+.project-assistants .pa-chat-surface .pa-session-report details[open] .pa-session-report-line { display:none; }
 .project-assistants .pa-chat-surface .pa-session-report details[open] summary .control-chevron { transform:rotate(90deg); }
 .project-assistants .pa-chat-surface .pa-session-report details>p {
   margin:0;padding:10px 12px 12px;border-top:1px solid var(--pa-line);white-space:pre-wrap;

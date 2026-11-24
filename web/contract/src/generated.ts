@@ -5397,6 +5397,12 @@ export interface ProjectAssistantBotSummary {
   dispatched_work?: ProjectAssistantDispatchedWork
   failure?: ProjectAssistantFailure
   latest_message: string
+
+  /**
+   * The kind of the message latest_message came from, such as work for a Session
+   * report. Empty or absent on older sources.
+   */
+  latest_message_kind?: string
   pending_permissions: number
   read_cursor: ProjectAssistantReadCursor
   source: ProjectAssistantSourceStatus

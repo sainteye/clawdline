@@ -8,6 +8,8 @@ import { botIdentity, canRead } from "./view-state"
 import type { Words } from "./words"
 import { botRosterActivity, dispatchedCount } from "./working"
 import {ThinkingOrb} from "./ThinkingOrb"
+import { plainPreview } from "./session-report"
+export { plainPreview } from "./session-report"
 export function BotRow({item,selected,onSelect,w,language,now,projectName,projectIcon,machineName,grouped=false,showDispatched=false}: {item:ProjectAssistantBotSummary;grouped?:boolean;showDispatched?:boolean;selected:boolean;onSelect:()=>void;w:Words;language:string;now:number;projectName?:string;projectIcon?:Icon;machineName?:string}) {
   const {bot}=item, activity=botRosterActivity(item,w,showDispatched),clones=showDispatched&&activity.live?dispatchedCount(item):0,preview=plainPreview(activity.caption),waiting=activity.state==="needsInput",working=activity.state==="working",overseeing=activity.state==="waitingOnWork"
   const relative=lastActivityRelative(Date.parse(item.activity_at)/1000,now,language),project=projectName||w.unnamedProject
@@ -24,7 +26,3 @@ export function CloneMark(){
   return <svg className="pa-clone-mark" width="13" height="11" viewBox="0 0 13 11" aria-hidden="true" focusable="false"><rect x="4.5" y="0.75" width="7.75" height="6.5" rx="2.4" fill="none" stroke="currentColor" strokeWidth="1.1" opacity=".55"/><rect x="0.75" y="3.75" width="7.75" height="6.5" rx="2.4" fill="var(--pa-panel,#fff)" stroke="currentColor" strokeWidth="1.3"/></svg>
 }
 
-/** A reply's first words as a one-line preview: Markdown marks are dropped, not shown. */
-export function plainPreview(text:string){
-  return text.replace(/\[([^\]]*)\]\([^)]*\)/g,"$1").replace(/^\s*(?:[-*+]|\d+\.|#{1,6}|>)\s+/gm,"").replace(/(\*\*|__|`)/g,"").replace(/\s+/g," ").trim()
-}

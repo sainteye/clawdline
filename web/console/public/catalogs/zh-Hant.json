@@ -11794,6 +11794,7 @@
   "projectAssistants.serverUnknown": "狀態未確認",
   "projectAssistants.serversTitle": "開發伺服器",
   "projectAssistants.sessionReport": "Session 回報",
+  "projectAssistants.sessionReportPreview": "Session 回報：{summary}",
   "projectAssistants.sessionTask": "Session 任務",
   "projectAssistants.sessions": "返回 Sessions",
   "projectAssistants.settings": "Bot 設定",

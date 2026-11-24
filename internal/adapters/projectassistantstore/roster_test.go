@@ -333,3 +333,20 @@ func TestRosterMemoryAndRestoreCommitWakeups(t *testing.T) {
 		t.Fatal("drained memory subscriber lagged")
 	}
 }
+
+func TestRosterProjectionNamesTheLatestMessageKind(t *testing.T) {
+	e, _, _ := viewFixture(t, 2, 0, false)
+	e.Messages[1].Kind, e.Messages[1].TurnID = pa.WorkMessage, "t1"
+	e.Messages[1].Text = "Four fixes are merged on the task branch."
+	e.Events[1].Message = &e.Messages[1]
+	_, s, views, _ := restoreViews(t, e)
+	q := rosterQuery()
+	got := rosterRead(t, views, q)
+	want, err := s.ListForReader(testContext, pa.ListBots{MachineID: "machine", PageSize: 1}, q.ReaderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Frame.Changes) != 1 || got.Frame.Changes[0].Summary.LatestMessage != e.Messages[1].Text || got.Frame.Changes[0].Summary.LatestMessageKind != pa.WorkMessage || !reflect.DeepEqual(*got.Frame.Changes[0].Summary, want.Items[0]) {
+		t.Fatalf("a Session report preview must say it is one: got %+v; want %+v", got.Frame.Changes, want.Items)
+	}
+}

@@ -10,6 +10,14 @@ English and Taiwan Traditional Chinese `voice-work` explanations confirms that
 model context, tools, consent and execution behavior are unchanged. Only that
 source receipt is refreshed; this review does not deploy the public website.
 
+A Session report now shows its first sentence before it is opened, and the
+Bots list says when its preview comes from one. Reviewed the persistent-bot-lead
+and persistent-bot-review cards in English and Taiwan Traditional Chinese: the
+roster projection only adds the latest message's kind, and the chat change only
+affects the closed Session report card. Model context, tools, approvals and
+execution are unchanged. Only those source receipts are refreshed; this review
+does not deploy the public website.
+
 Bots are now told when to use `ask_person`. Reviewed the persistent-bot-review
 card in English and Taiwan Traditional Chinese against the fixed Bot frame,
 the peer-request and correlated-reply prompts and the `message_bot`
