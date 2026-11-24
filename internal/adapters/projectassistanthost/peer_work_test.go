@@ -155,3 +155,67 @@ func TestPeerRequestTurnReachesOnlyItsOwnBotsDispatchedWork(t *testing.T) {
 	}
 	worker.reply <- app.PromptResult{FinalText: "Passed the spec to my running task."}
 }
+
+// A Bot answering another Bot's message_bot does the requested work itself:
+// it dispatches into its own Project and drives tabs it opened in that turn.
+// Another Project still needs the person, who cannot be asked in a peer turn.
+func TestPeerRequestTurnDispatchesAndUsesItsOwnBrowser(t *testing.T) {
+	ctx := context.Background()
+	f, _, chrome := browserFixture(t)
+	f.o.Limits.MaxBots, f.o.Limits.MaxProcesses = 4, 3
+	f.start(t)
+	f.enable(t)
+	atlas, lens := f.create(t, "atlas"), f.create(t, "lens")
+
+	if _, err := f.send(t, lens, "ask"); err != nil {
+		t.Fatal(err)
+	}
+	asker := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	lensTools := asker.q.Tools.(peerWorkTools)
+	x, err := lensTools.MessageBot(ctx, pa.BotMessageRequest{TargetBotID: atlas.Key.BotID, Text: "Please dispatch the fix and take a 390px screenshot.", IdempotencyKey: "fix"})
+	if err != nil || x.RequestWorkerID == "" {
+		t.Fatalf("request was not assigned to Atlas's thread worker: %+v, %v", x, err)
+	}
+	asker.reply <- app.PromptResult{FinalText: "Asked Atlas."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, lens.Key, x.SourceTurnID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	f.h.tickBackgroundTasks(ctx)
+	worker := fixtureReceive(t, f.p.sessions)
+	request := fixtureReceive(t, f.p.sent)
+	if request.Turn.Origin != pa.BotRequestOrigin || worker.q.Bot.Key == atlas.Key {
+		t.Fatalf("not a peer-request worker turn: %+v", request.Turn)
+	}
+	peer := worker.q.Tools.(peerWorkTools)
+
+	link, err := peer.Dispatch(ctx, "peer-work", "Fix the peer-turn tools", "Change only a.go in the isolated worktree.", []string{"a.go"})
+	if err != nil || link.TaskID == "" {
+		t.Fatalf("dispatch_work from the peer-request turn: %+v, %v", link, err)
+	}
+	var refused *pa.Failure
+	other := worker.q.Tools.(interface {
+		DispatchToProject(context.Context, string, string, string, []string, string) (pa.WorkLink, error)
+	})
+	if _, err = other.DispatchToProject(ctx, "peer-other", "Elsewhere", "Change only a.go.", []string{"a.go"}, "elsewhere"); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "dispatch_project_direct" {
+		t.Fatalf("a peer-request turn dispatched into another Project: %v", err)
+	}
+
+	tools := browserToolsOf(t, worker)
+	if r := chrome.run(t, tools, "open", `{"url":"http://127.0.0.1:9/page"}`); r.err != nil {
+		t.Fatalf("browser open from the peer-request turn: %v", r.err)
+	}
+	if r := chrome.run(t, tools, "screenshot", ""); r.err != nil {
+		t.Fatalf("browser screenshot from the peer-request turn: %v", r.err)
+	}
+	owner := BrowserOwner(worker.q.Binding.Fence, worker.q.Binding.ForgottenThrough)
+	if got := chrome.b.OwnerOf(31); got != owner {
+		t.Fatalf("tab owner = %q, want the worker's own %q", got, owner)
+	}
+	status, err := tools.BrowserStatus(ctx)
+	if err != nil || len(status.Tabs) != 1 || status.Tabs[0].Tab != 31 {
+		t.Fatalf("browser_status from the peer-request turn: %+v, %v", status, err)
+	}
+	worker.reply <- app.PromptResult{FinalText: "Dispatched and captured."}
+}

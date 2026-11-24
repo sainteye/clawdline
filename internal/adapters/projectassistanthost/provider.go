@@ -1055,7 +1055,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
-		if pa.IsPeerRequest(turn.Origin) {
+		// A Bot answering another Bot's message_bot may dispatch into its own
+		// Project: the requester delegated the work so the person need not
+		// repeat it in this Bot's chat. Another Project still needs the
+		// person (dispatch_project_direct below). A request from another
+		// machine stays refused.
+		if turn.Origin == pa.NetworkRequestOrigin {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
 		if continueOnCompletion && !directUserTurn(turn) {
@@ -1181,7 +1186,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	}
 	if taskOwner.BotID != "" {
 		tools.routines = nil
-		tools.dispatch = nil
+		if turn.Origin != pa.BotRequestOrigin {
+			tools.dispatch = nil
+		}
 		if !pa.IsPeerRequest(turn.Origin) {
 			// A thread answering another Bot reaches its owner's work through
 			// the broker's resolved owner; other background threads do not.
