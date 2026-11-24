@@ -61,7 +61,7 @@ try{
    assert.ok(shown&&!shown.refused,"ready overlay")
    assert.match(shown.text,/Drop images to attach/)
   })
-  await page.screenshot({path:path.join(artifacts,`drop-ready-${width}.png`)})
+  await page.waitForTimeout(250);await page.screenshot({path:path.join(artifacts,`drop-ready-${width}.png`)})
   await check(`${width}: moving between children keeps the overlay without a flicker`,async()=>{
    await page.evaluate(()=>{window.__removed=0;new MutationObserver(list=>{for(const m of list)for(const n of m.removedNodes)if(n.classList?.contains("pa-drop-target"))window.__removed++}).observe(document.body,{childList:true,subtree:true})})
    await gesture(page,[["dragenter",field,scroll],["dragleave",scroll,field],["dragover",field],["dragenter",scroll,field],["dragleave",field,scroll]])
@@ -87,7 +87,7 @@ try{
    const shown=await overlay(page)
    assert.ok(shown?.refused,"refused overlay");assert.match(shown.text,/takes images only/)
   })
-  await page.screenshot({path:path.join(artifacts,`drop-refused-${width}.png`)})
+  await page.waitForTimeout(250);await page.screenshot({path:path.join(artifacts,`drop-refused-${width}.png`)})
   await gesture(page,[["dragleave",scroll]],{files:[{name:"notes.pdf",type:"application/pdf"}]})
   await check(`${width}: dropping an image attaches it and clears the overlay`,async()=>{
    await gesture(page,[["dragenter",scroll],["dragover",scroll],["drop",scroll]])
@@ -118,7 +118,7 @@ try{
    await gesture(page,[["dragenter",scroll],["dragover",scroll]])
    const shown=await overlay(page);assert.ok(shown?.refused,"refused overlay");assert.match(shown.text,reason)
   })
-  await page.screenshot({path:path.join(artifacts,`drop-${state}-1280.png`)})
+  await page.waitForTimeout(250);await page.screenshot({path:path.join(artifacts,`drop-${state}-1280.png`)})
   await context.close()
  }
 }finally{await browser.close();server.close()}
