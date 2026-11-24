@@ -3119,7 +3119,7 @@
     "Note": true
   },
   {
-    "Name": "dispatch.brief_held_seconds",
+    "Name": "dispatch.brief_held_grace_seconds",
     "Known": true,
     "Note": true
   },

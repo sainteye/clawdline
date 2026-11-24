@@ -12366,10 +12366,10 @@
   },
   {
     "Register": "daemon",
-    "Name": "dispatch.brief_held_seconds",
+    "Name": "dispatch.brief_held_grace_seconds",
     "Class": "observation",
     "Unit": "seconds",
-    "Limit": 120,
+    "Limit": 60,
     "WarnAt": 0,
     "AtLimit": "evict_oldest",
     "Deviation": "",
@@ -12381,7 +12381,7 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/app/orchestrator.briefHeldSecondsLimit"
+      "internal/app/orchestrator.briefHeldGraceSecondsLimit"
     ]
   },
   {

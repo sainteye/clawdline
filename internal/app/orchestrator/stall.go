@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -125,16 +126,26 @@ func stallCandidate(r Record) bool {
 func (b *Broker) tendStall(ctx context.Context, rd reading, r Record, p *Pulse) bool {
 	if !stallCandidate(r) {
 		b.stalls.forget(r.ID)
+		b.heldBriefs.drop(r.ID)
 		return false
 	}
 	if r.Stalled() {
 		return b.reportStall(ctx, rd, r, p)
 	}
-	if b.briefingHeld(ctx, rd, r) {
+	switch b.briefingHeld(ctx, rd, r) {
+	case heldInComposer:
 		// Held text is not idle, and not a child at work either.
 		b.stalls.forget(r.ID)
 		return b.tendHeld(ctx, rd, r, p)
+	case heldCovered:
+		// A dialog over a held briefing is no time the briefing was given:
+		// its grace starts again once the dialog goes.
+		b.heldBriefs.forget(r.ID)
+		b.markCovered(ctx, r)
+		b.stalls.forget(r.ID)
+		return false
 	}
+	b.heldBriefs.forget(r.ID)
 	now := b.now()
 	since, idle := b.stalls.since(r.ID, b.childIdle(ctx, rd, r), now)
 	if !idle {
@@ -237,6 +248,7 @@ func (b *Broker) reportStall(ctx context.Context, rd reading, r Record, p *Pulse
 		return false
 	}
 	b.stalls.forget(r.ID)
+	b.heldBriefs.drop(r.ID)
 	p.Stalled++
 	p.SpawnFail++
 	for _, res := range b.runRecorded(ctx, ids) {
@@ -250,13 +262,7 @@ func (b *Broker) reportStall(ctx context.Context, rd reading, r Record, p *Pulse
 // stalledVerdict is the sentence the task ends with.
 func stalledVerdict(r Record) string {
 	if br := r.Briefing; br != nil && !br.HeldSince.IsZero() && (r.Stall == nil || r.Stall.NudgedAt.IsZero()) {
-		why := ""
-		if br.EnterError != "" {
-			why = " (the last press failed: " + br.EnterError + ")"
-		}
-		return fmt.Sprintf("The child stalled: its briefing was typed into its composer and never submitted. Enter "+
-			"was pressed on it %d more times%s, and it was still held there, unsigned, %d seconds after it was first "+
-			"seen held. Respawn it, or dispatch it again.", br.Enters, why, briefHeldSecondsLimit)
+		return heldVerdict(*br)
 	}
 	nudge := "was nudged once"
 	if r.Stall != nil && r.Stall.NudgeError != "" {
@@ -265,6 +271,52 @@ func stalledVerdict(r Record) string {
 	return fmt.Sprintf("The child stalled: its briefing was typed, it never signed for it, and its tab sat idle at an "+
 		"empty prompt for %d minutes, %s, and stayed idle %d minutes more. Respawn it, or dispatch it again.",
 		int(stallIdleLimit/time.Minute), nudge, int(stallReportLimit/time.Minute))
+}
+
+// heldVerdict says what happened to a briefing that never left the composer:
+// how many times the beat pressed Enter on it and whether the last press
+// failed, whether a dialog covered it for a while, and whether the daemon was
+// not running for part of the time it was held.
+func heldVerdict(br Briefing) string {
+	presses := fmt.Sprintf("the broker pressed Enter on it %d %s", br.Enters, plural(br.Enters, "time", "times"))
+	if br.Enters == 0 {
+		presses = "the broker could not press Enter on it"
+	}
+	if br.EnterError != "" {
+		presses += " (the last press failed: " + br.EnterError + ")"
+	}
+	var also []string
+	if !br.CoveredAt.IsZero() {
+		also = append(also, "a dialog covered it for a while, and those minutes were not counted")
+	}
+	if !br.ResumedAt.IsZero() {
+		also = append(also, "the daemon was not running for part of the time it was held, and that time was not counted")
+	}
+	extra := ""
+	if len(also) > 0 {
+		extra = " Meanwhile " + strings.Join(also, "; ") + "."
+	}
+	return fmt.Sprintf("The child stalled: its briefing was typed into its composer and never submitted. After the "+
+		"send's own presses, %s, and %d seconds after the last press it was still held there, unsigned.%s "+
+		"Respawn it, or dispatch it again.", presses, briefHeldGraceSecondsLimit, extra)
+}
+
+// latestHeld is the last time the record shows the briefing held.
+func latestHeld(br Briefing) time.Time {
+	at := br.HeldSince
+	for _, t := range []time.Time{br.LastEnterAt, br.CoveredAt, br.ResumedAt} {
+		if t.After(at) {
+			at = t
+		}
+	}
+	return at
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // NoticeKind is the `kind` a task's notice is typed and listed with.
@@ -290,18 +342,27 @@ func NoticeKind(r Record) string {
 // line typed again, at most briefEnterLimit times briefEnterEvery apart. Each
 // press is recorded on the task before it is made (`task.brief.enter`), so a
 // restart never presses past the bound. If the briefing is still held and
-// unsigned briefHeldSecondsLimit after it was first seen held, the task ends
-// as a stalled one does: `spawn_failed` and a `task_stalled` notice.
+// held and unsigned once every press was made and briefHeldGraceSecondsLimit
+// has passed since the last one, the task ends as a stalled one does:
+// `spawn_failed` and a `task_stalled` notice.
+//
+// Fuse's fault injection on 5293ea02a: the first version ended the task 120
+// seconds after it was first seen held, whatever had been pressed. A trust
+// dialog over the briefing for five minutes, or a daemon stopped for three
+// (a dev install's restart), ended a recoverable task with no press made.
+// So the grace is counted only while this process reads the briefing held:
+// a reading that is not held — a dialog, a screen that could not be read —
+// starts it again, as does a daemon that restarted.
 
 const (
 	// briefEnterLimit is how many times the beat presses Enter on a held
 	// briefing. The send itself already pressed it up to four times in a
 	// second; these are spread over a minute and a half, past a redraw.
 	briefEnterLimit = 3
-	// briefHeldSecondsLimit is how long after a briefing was first seen held
-	// an unsigned task is ended. It leaves room for every press and a beat to
-	// see what the last one did.
-	briefHeldSecondsLimit = 120
+	// briefHeldGraceSecondsLimit is how long after the last press — read
+	// held, continuously, by this process — an unsigned task is ended. It
+	// gives the last press time to show what it did.
+	briefHeldGraceSecondsLimit = 60
 	// briefEnterEvery is the least time between two presses, and between the
 	// first held reading and the first press.
 	briefEnterEvery = 20 * time.Second
@@ -321,6 +382,24 @@ type Briefing struct {
 	Enters      int       `json:"enters,omitempty"`
 	LastEnterAt time.Time `json:"last_enter_at,omitempty"`
 	EnterError  string    `json:"enter_error,omitempty"`
+	// CoveredAt is when a dialog was first seen over the held briefing, and
+	// ResumedAt when a daemon that started after it was held first read it
+	// held. Both only explain the verdict; neither ends anything.
+	CoveredAt time.Time `json:"covered_at,omitempty"`
+	ResumedAt time.Time `json:"resumed_at,omitempty"`
+}
+
+// spawnErrorOf is what a failed briefing writes as the task's SpawnError.
+// A briefing held in the composer after Enter (terminal.HeldAfterEnter) is
+// no failure to open the child: Briefing.HeldSince records it and the beat
+// presses it, and a SpawnError left behind would outlive a child that then
+// signs, read as its failure reason (detached_pairing.go, schedules.go).
+func spawnErrorOf(err error) string {
+	var held terminal.HeldAfterEnter
+	if errors.As(err, &held) {
+		return ""
+	}
+	return err.Error()
 }
 
 // briefingStages is what typing the briefing answered, as stages: nil when
@@ -338,28 +417,134 @@ func briefingStages(err error, now time.Time) *Briefing {
 	return nil
 }
 
-// briefingHeld is one reading of the child's own screen: true only on
-// positive evidence that its composer still holds this task's briefing — the
-// tab is in the reading, its screen answered, no dialog is up, and the input
-// line is a composer an Enter submits to that holds the task's id or a paste
-// placeholder (terminal.HoldsTyped). Anything else is not held.
-func (b *Broker) briefingHeld(ctx context.Context, rd reading, r Record) bool {
+// heldReading is one reading of a child's screen as a held briefing.
+type heldReading int
+
+const (
+	heldNot        heldReading = iota // no evidence the composer holds it
+	heldInComposer                    // the composer holds this task's briefing
+	heldCovered                       // a dialog is up over a briefing already seen held
+)
+
+// briefingHeld is one reading of the child's own screen: heldInComposer only
+// on positive evidence that its composer still holds this task's briefing —
+// the tab is in the reading, its screen answered, no dialog is up, and the
+// input line is a composer an Enter submits to that holds the task's id or a
+// paste placeholder (terminal.HoldsTyped). A dialog over a briefing the
+// record already holds is heldCovered. Anything else is heldNot.
+func (b *Broker) briefingHeld(ctx context.Context, rd reading, r Record) heldReading {
 	if _, present := rd.session(r.ChildTerminalID); !present || b.Screen == nil {
-		return false
+		return heldNot
 	}
 	screen, ok := b.Screen(ctx, r.ChildTerminalID)
-	if !ok || Choosing(screen, session.Assistant(r.Assistant)) {
-		return false
+	if !ok {
+		return heldNot
 	}
-	return terminal.HoldsTyped(screen, r.ID)
+	if Choosing(screen, session.Assistant(r.Assistant)) {
+		if r.Briefing != nil && !r.Briefing.HeldSince.IsZero() {
+			return heldCovered
+		}
+		return heldNot
+	}
+	if terminal.HoldsTyped(screen, r.ID) {
+		return heldInComposer
+	}
+	return heldNot
+}
+
+// markCovered records, once, that a dialog was seen over a held briefing.
+func (b *Broker) markCovered(ctx context.Context, r Record) {
+	if r.Briefing == nil || !r.Briefing.CoveredAt.IsZero() {
+		return
+	}
+	now := b.now()
+	_, _ = b.mutate(ctx, r.ID, "task.brief.covered", func(t *Record) error {
+		if !stallCandidate(*t) || t.Briefing == nil || t.Briefing.HeldSince.IsZero() || !t.Briefing.CoveredAt.IsZero() {
+			return errUnchanged
+		}
+		t.Briefing.CoveredAt = now
+		return nil
+	})
+}
+
+// heldWatch is this process's memory of its held briefings: since when each
+// has read held without a break, which it has read held at all, and when the
+// process first passed. In memory on purpose, as stallWatch is: a restart
+// forgets it, and the grace starts again, which only ever waits longer.
+type heldWatch struct {
+	mu   sync.Mutex
+	born time.Time
+	held map[string]time.Time
+	seen map[string]bool
+}
+
+// boot records when this process first passed.
+func (w *heldWatch) boot(now time.Time) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.born.IsZero() {
+		w.born = now
+	}
+}
+
+// read records one held reading. It answers since when the task has read
+// held without a break, when this process began, and whether this is the
+// first held reading of the task by this process.
+func (w *heldWatch) read(id string, now time.Time) (since, born time.Time, first bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.held == nil {
+		w.held, w.seen = map[string]time.Time{}, map[string]bool{}
+	}
+	if w.born.IsZero() {
+		w.born = now
+	}
+	at, ok := w.held[id]
+	if !ok {
+		w.held[id], at = now, now
+	}
+	first = !w.seen[id]
+	w.seen[id] = true
+	return at, w.born, first
+}
+
+// forget ends a run of held readings; the task stays seen.
+func (w *heldWatch) forget(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.held, id)
+}
+
+// drop lets go of a task that is no longer a candidate.
+func (w *heldWatch) drop(id string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	delete(w.held, id)
+	delete(w.seen, id)
 }
 
 // tendHeld is the beat's answer to a held briefing: record when it was first
-// seen held, end the task once briefHeldSecondsLimit has passed since, and
-// until then press Enter, recorded first, at most briefEnterLimit times. It
-// answers true when the task became terminal.
+// seen held, press Enter, recorded first, at most briefEnterLimit times, and
+// end the task only once every press was made and it has read held for
+// briefHeldGraceSecondsLimit since the last one. It answers true when the
+// task became terminal.
 func (b *Broker) tendHeld(ctx context.Context, rd reading, r Record, p *Pulse) bool {
 	now := b.now()
+	watched, born, first := b.heldBriefs.read(r.ID, now)
+	if first && r.Briefing != nil && !r.Briefing.HeldSince.IsZero() && r.Briefing.ResumedAt.IsZero() &&
+		born.Sub(latestHeld(*r.Briefing)) > briefEnterEvery {
+		// Held before this process began: the daemon was not running for
+		// part of it. Recorded for the verdict; the grace starts again anyway.
+		if marked, err := b.mutate(ctx, r.ID, "task.brief.resumed", func(t *Record) error {
+			if !stallCandidate(*t) || t.Briefing == nil || !t.Briefing.ResumedAt.IsZero() {
+				return errUnchanged
+			}
+			t.Briefing.ResumedAt = now
+			return nil
+		}); err == nil && marked.Briefing != nil {
+			r = marked
+		}
+	}
 	if r.Briefing == nil || r.Briefing.HeldSince.IsZero() {
 		marked, err := b.mutate(ctx, r.ID, "task.brief.held", func(t *Record) error {
 			if !stallCandidate(*t) || (t.Briefing != nil && !t.Briefing.HeldSince.IsZero()) {
@@ -377,14 +562,21 @@ func (b *Broker) tendHeld(ctx context.Context, rd reading, r Record, p *Pulse) b
 		r = marked
 	}
 	br := *r.Briefing
-	if now.Sub(br.HeldSince) >= briefHeldSecondsLimit*time.Second {
-		return b.markStalled(ctx, rd, r, now, p)
-	}
 	last := br.HeldSince
 	if br.LastEnterAt.After(last) {
 		last = br.LastEnterAt
 	}
-	if b.SubmitHeld == nil || br.Enters >= briefEnterLimit || now.Sub(last) < briefEnterEvery {
+	if b.SubmitHeld == nil || br.Enters >= briefEnterLimit {
+		graceFrom := last
+		if watched.After(graceFrom) {
+			graceFrom = watched
+		}
+		if now.Sub(graceFrom) >= briefHeldGraceSecondsLimit*time.Second {
+			return b.markStalled(ctx, rd, r, now, p)
+		}
+		return false
+	}
+	if now.Sub(last) < briefEnterEvery {
 		return false
 	}
 	recorded := false

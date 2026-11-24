@@ -943,7 +943,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		// keystrokes may be in the child, and the beat decides that with
 		// evidence. One that was never typed — never tried, or refused before
 		// its first byte every time — is decided already: Dispatch settles it.
-		r.SpawnError = err.Error()
+		r.SpawnError = spawnErrorOf(err)
 		var never unbriefed
 		r.Unbriefed = errors.As(err, &never)
 	}

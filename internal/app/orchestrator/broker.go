@@ -326,6 +326,9 @@ type Broker struct {
 	// stalls is since when each briefed, unsigned child has read idle — in
 	// memory, like observed, and forgotten by a restart (stall.go).
 	stalls stallWatch
+	// heldBriefs is since when each held briefing has read held, and when
+	// this process first passed — in memory, forgotten by a restart (stall.go).
+	heldBriefs heldWatch
 	// progress carries each accepted note to whoever is streaming.
 	progress progressBus
 	// reclaim is the sweep's own memory, and lingerStarted when this process

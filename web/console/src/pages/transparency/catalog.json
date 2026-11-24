@@ -5603,7 +5603,7 @@
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "1d50836d4ffbbd7ba465e33dfb6cb14482c824aa62a2468466f5d8e85420f270",
+    "internal/app/orchestrator/dispatch.go": "176b6312de7384aeea7f5fb0b654df81336f63bcea4b1860be5be0cb4a0df9f8",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "e3d2c18486a12abfb7139edb28549c3387b750eab46bd3fd92098aaa6247a8a6",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
