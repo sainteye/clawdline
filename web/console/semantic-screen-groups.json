@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14319,
-  "riskKeys": 6085,
-  "nonRiskCount": 8234,
+  "englishContentKeys": 14323,
+  "riskKeys": 6087,
+  "nonRiskCount": 8236,
   "groups": [
     {
       "name": "acp / other",
@@ -615,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 760,
+      "count": 762,
       "sources": [
         null
       ],
@@ -758,6 +758,8 @@
         "capacityRow.bots.review_hops.what",
         "capacityRow.bots.review_pending.what",
         "capacityRow.bots.review_per_sender.what",
+        "capacityRow.bots.review_quote_bytes.what",
+        "capacityRow.bots.review_quote_rounds.full",
         "capacityRow.bots.review_reply_bytes.what",
         "capacityRow.bots.review_request_bytes.what",
         "capacityRow.bots.roster_check_ms.what",

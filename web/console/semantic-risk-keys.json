@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14319,
+  "englishKeys": 14323,
   "counts": {
-    "negation": 3638,
+    "negation": 3639,
     "state": 2424,
-    "permission": 861,
+    "permission": 862,
     "deletion": 336,
     "uncertainty": 572
   },
-  "unionCount": 6085,
+  "unionCount": 6087,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -236,6 +236,7 @@
       "capacityRow.bots.processes.full",
       "capacityRow.bots.read_view_cursor_bytes.full",
       "capacityRow.bots.read_view_cursor_bytes.what",
+      "capacityRow.bots.review_quote_bytes.full",
       "capacityRow.bots.review_reply_bytes.full",
       "capacityRow.bots.review_request_bytes.full",
       "capacityRow.bots.roster_check_ms.full",
@@ -6164,6 +6165,7 @@
       "capacityRow.bots.network_grants.what",
       "capacityRow.bots.permission_action_bytes.what",
       "capacityRow.bots.review_hops.full",
+      "capacityRow.bots.review_quote_rounds.what",
       "capacityRow.bots.roster_check_ms.full",
       "capacityRow.bots.rules_file_bytes.full",
       "capacityRow.browser.profile_state_bytes.full",
@@ -8321,6 +8323,8 @@
     "capacityRow.bots.review_hops.full",
     "capacityRow.bots.review_pending.full",
     "capacityRow.bots.review_per_sender.full",
+    "capacityRow.bots.review_quote_bytes.full",
+    "capacityRow.bots.review_quote_rounds.what",
     "capacityRow.bots.review_reply_bytes.full",
     "capacityRow.bots.review_request_bytes.full",
     "capacityRow.bots.roster_check_ms.full",

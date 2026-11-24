@@ -14319,5 +14319,9 @@
   "capacityRow.cloud.line_open_retry_first_seconds.what": "這台機器的 Cloud 連線啟動失敗後，要等多久才再試一次。之後每失敗一次，等待時間加倍，直到下一項上限。",
   "capacityRow.cloud.line_open_retry_first_seconds.full": "重試成功前，手機和 app.clawdline.com 連不到這台機器，Cloud 設定會寫明原因。短暫的檔案或磁碟問題會自己恢復，你不用做任何事。",
   "capacityRow.cloud.line_open_retry_max_seconds.what": "Cloud 連線一直啟動失敗時，兩次嘗試之間最長等多久。機器不會放棄，至少每隔這麼久就再試一次。",
-  "capacityRow.cloud.line_open_retry_max_seconds.full": "持續失敗期間，Cloud 設定會顯示原因。如果這台機器已登出或被移出帳號，就會停止重試，等你重新登入。"
+  "capacityRow.cloud.line_open_retry_max_seconds.full": "持續失敗期間，Cloud 設定會顯示原因。如果這台機器已登出或被移出帳號，就會停止重試，等你重新登入。",
+  "capacityRow.bots.review_quote_bytes.full": "引用的請求與回覆合計超過 96000 位元組時，不再引用更早的往來，提示會寫明有省略；至少一定放得下一輪。",
+  "capacityRow.bots.review_quote_bytes.what": "Bot 追問另一個 Bot 時，從先前往來引用的請求與回覆位元組數。",
+  "capacityRow.bots.review_quote_rounds.full": "最多引用 4 輪先前往來，最新的在前；提示會寫明更早的有省略。",
+  "capacityRow.bots.review_quote_rounds.what": "Bot 追問另一個 Bot 時，引用同一對 Bot 先前往來的輪數。"
 }

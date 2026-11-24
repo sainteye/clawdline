@@ -14319,5 +14319,9 @@
   "capacityRow.cloud.line_open_retry_first_seconds.what": "After the Cloud connection fails to start on this machine, how long before it tries again. Each further failure doubles the wait, up to the next limit.",
   "capacityRow.cloud.line_open_retry_first_seconds.full": "Until the retry succeeds, your phone and app.clawdline.com cannot reach this machine, and the Cloud settings say why. A brief file or disk problem clears by itself; nothing for you to do.",
   "capacityRow.cloud.line_open_retry_max_seconds.what": "The longest wait between two attempts to start a Cloud connection that keeps failing. The machine never gives up; it keeps trying at least this often.",
-  "capacityRow.cloud.line_open_retry_max_seconds.full": "While it keeps failing, the Cloud settings show the reason. If this machine was signed out or removed from the account, it stops retrying until you sign in again."
+  "capacityRow.cloud.line_open_retry_max_seconds.full": "While it keeps failing, the Cloud settings show the reason. If this machine was signed out or removed from the account, it stops retrying until you sign in again.",
+  "capacityRow.bots.review_quote_bytes.full": "Older linked rounds are not quoted once the request and reply bytes would exceed 96000; the prompt says older rounds were left out. One round always fits.",
+  "capacityRow.bots.review_quote_bytes.what": "Request and reply bytes quoted from earlier rounds when one Bot follows up another.",
+  "capacityRow.bots.review_quote_rounds.full": "At most 4 earlier rounds are quoted, newest first; the prompt says older rounds were left out.",
+  "capacityRow.bots.review_quote_rounds.what": "Earlier rounds of the same pair quoted when one Bot follows up another."
 }
