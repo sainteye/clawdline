@@ -38,7 +38,8 @@ export function ContextMenu({usage, w, language, compactBlock, compacting, onCom
     : compactBlock === "agent" ? w.compactAgent : compactBlock === "readOnly" ? w.compactReadOnly : ""
   return <span className="pa-context-control">
     <button ref={opener} type="button" className="pa-context-button" aria-haspopup="menu" aria-expanded={open}
-      aria-label={w.contextMenu} onClick={() => open ? close() : setOpen(true)}>
+      aria-label={w.contextMenu} aria-busy={compacting} onClick={() => open ? close() : setOpen(true)}>
+      {compacting && <span className="pa-send-spinner" aria-hidden="true"/>}
       <ContextUsage usage={usage} w={w} language={language}/>
     </button>
     {open && <>

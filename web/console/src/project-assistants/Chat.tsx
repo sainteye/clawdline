@@ -1,4 +1,6 @@
 import { ContextMenu, type CompactBlock } from "./ContextMenu"
+import { CompactStatusRow } from "./CompactStatusRow"
+import { compactRefusalCode, followCompaction, type CompactStatus } from "./compact-status"
 import { ChatModel } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
@@ -1266,21 +1268,33 @@ ${currentDraft}`:submitted)
     const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
     return()=>clearTimeout(timer)
   },[nextDeadline,permissionTick])
-  const [compacting,setCompacting]=useState(false),[compactError,setCompactError]=useState("")
+  const [compactRequest,setCompactRequest]=useState<CompactStatus|null>(null)
   // "Compact now" is one idle turn on the source; the agent's own /compact
-  // runs there and the chat then shows the summarized notice.
+  // runs there and the chat then shows the summarized notice. The status row
+  // follows that turn from the press to its notice or failure.
+  const compact=followCompaction(compactRequest,turns,messages,w)
+  const compacting=compact?.state==="sending"||compact?.state==="running"
+  useEffect(()=>{if(compact!==compactRequest)setCompactRequest(compact)},[compact,compactRequest])
+  useEffect(()=>{
+    if(compact?.state!=="done")return
+    const timer=setTimeout(()=>setCompactRequest(current=>current===compact?null:current),8000)
+    return()=>clearTimeout(timer)
+  },[compact])
   const compactNow=async()=>{
     if(compacting)return
-    setCompacting(true);setCompactError("")
+    setCompactRequest({state:"sending"})
+    let turnID=""
     try{
       await mutate(async(d,s,page)=>{
         if(d.conversation.active_turn_id||page.snapshot!.queued_messages.length||page.head.queued_turn_count||page.head.unknown_turn_count)throw failure("pa_capacity_full")
         const intent:W.ProjectAssistantSendRequest={command:command(key,"send",`compact-${crypto.randomUUID()}`),fence:page.head.current_fence,text:"",quote_message_id:"",compact:true}
         const result=await source.send(intent,s)
-        if(!sendAcknowledgement(result,intent))throw failure("pa_outcome_unknown")
+        if(!sendAcknowledgement(result,intent)||!result.receipt.resource_id)throw failure("pa_outcome_unknown")
+        turnID=result.receipt.resource_id
       })
-    }catch(e){if(valid())setCompactError(errorCode(e))}
-    finally{if(valid()){setCompacting(false);void refresh(true)}}
+      if(valid())setCompactRequest({state:"running",turnID})
+    }catch(e){if(valid())setCompactRequest({state:"failed",code:compactRefusalCode(e)})}
+    finally{if(valid())void refresh(true)}
   }
   const callObservation=():BotVoiceObservation|null=>{
     const d=currentData.current,h=headRef.current
@@ -1701,11 +1715,11 @@ ${currentDraft}`:submitted)
       {filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
+      {!thread&&compact&&<CompactStatusRow status={compact} w={w} onRetry={()=>void compactNow()} onDismiss={()=>setCompactRequest(null)}/>}
       {!thread&&data&&<div className="pa-chat-metadata">
         {live&&head?.context_usage&&<ContextMenu usage={head.context_usage} w={w} language={language} compacting={compacting}
           compactBlock={compactBlockFor(enabled,bot.agent,!!head.conversation.active_turn_id||!!head.queued_turn_count||!!head.unknown_turn_count||turns.some(turn=>turn.state==="queued"||turn.state==="accepted"),!!head.current_fence.binding_id)}
           onCompact={()=>void compactNow()} onNewSession={onNewSession}/>}
-        {compactError&&<p role="alert">{w.compactFailed} ({compactError})</p>}
         <ChatModel bot={bot} source={source} enabled={enabled} activeTurn={!!head?.conversation.active_turn_id}
           reported={live?head?.active_model?.name:undefined} save={saveModel} w={w}/>
       </div>}
