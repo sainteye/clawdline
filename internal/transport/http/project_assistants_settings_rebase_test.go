@@ -76,3 +76,26 @@ func TestSettingsRebaseBrowser(t *testing.T) {
 		t.Fatalf("browser: %v\n%s", err, log)
 	}
 }
+
+// TestModelRebaseBrowser drives the production chat model dialog against the
+// real handler and store while a synthetic Bot turn advances the version.
+// MODEL_REBASE_LABEL and MODEL_REBASE_DIALOG pass through to the script.
+func TestModelRebaseBrowser(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_MODEL_REBASE_BROWSER_DIR")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_MODEL_REBASE_BROWSER_DIR for the real synthetic browser")
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := memorySettingsFixture(t)
+	server := httptest.NewServer(f.h)
+	defer server.Close()
+	cmd := exec.Command("node", "../../../web/console/tools/project-assistants-model-rebase.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_MACHINE="+f.key.MachineID, "BOTS_BOT="+f.key.BotID, "BOTS_ARTIFACTS="+dir)
+	log, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(dir, "model-browser.log"), log, 0600)
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, log)
+	}
+}

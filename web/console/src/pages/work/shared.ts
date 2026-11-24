@@ -31,6 +31,7 @@ export function failureWords(e: unknown): string {
   if (e instanceof RefusalError) {
     if (e.code === "cloud_not_carried") return nextWord("cloudNotCarried")
     if (e.code === "version_conflict") return workWord("failedConflict")
+    if (e.code === "field_conflict") return workWord("editConflict", { fields: workWord("editConflictSomeFields") })
     if (e.code === "images_full") return catalogWord("literal", "c93791de6596")
     if (e.code === "image_too_large" || e.code === "body_too_large") return catalogWord("literal", "5ee0423efcee")
     if (e.code === "unsupported_image") return catalogWord("literal", "b32c94186fd8")

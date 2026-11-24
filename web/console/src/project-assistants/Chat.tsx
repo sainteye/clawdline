@@ -1,5 +1,5 @@
 import { ContextMenu, type CompactBlock } from "./ContextMenu"
-import { ChatModel } from "./ChatModel"
+import { ChatModel, modelEdit } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
@@ -582,8 +582,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     onBotChanged(fresh)
     return fresh
   }
-  const saveModel=(original:W.ProjectAssistantBot,model:string)=>editBot({expected_version:original.version,
-    name:original.name,appearance:original.appearance,instructions:original.instructions.text,runtime_settings:{model,options:{}}})
+  const saveModel=(original:W.ProjectAssistantBot,model:string,overwrite=false)=>editBot(modelEdit(original,model,source.canSettingsBase?.()===true,overwrite),original)
   const marker="clawdline.bot-inputs."+draftKey
   const [files,setFiles]=useState<DraftInput[]>([]),[filesLost,setFilesLost]=useState(()=>{try{return localStorage.getItem(marker)==="selected"}catch{return true}})
   const [uploading,setUploading]=useState(""),[fileError,setFileError]=useState("")

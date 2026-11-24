@@ -728,6 +728,102 @@ type EditWorkV2 struct {
 	// RevisionRun is a daemon-issued message from the person to the owning
 	// Root. Only the dedicated acceptance revision route sets it.
 	RevisionRun *work.Run
+	// Base is what the person's editor started from. With it, the item
+	// version no longer decides: an agent's step, document, phase or gate
+	// write never refuses the person's title or description edit, and only a
+	// field the edit changed that also changed elsewhere, to a different
+	// value, is a field_conflict. Without it the version check is unchanged.
+	Base *EditWorkV2Base
+	// OverwriteConflicts keeps the edit's value for every conflicting field.
+	OverwriteConflicts bool
+}
+
+// EditWorkV2Base holds the editable values a person's edit was made against.
+// A nil field is unknown: if the edit patches it and the item moved on, that
+// field conflicts rather than being guessed.
+type EditWorkV2Base struct {
+	Title              *string
+	Description        *string
+	AcceptanceCriteria *string
+	ReviewRequired     *bool
+}
+
+// The fields a Board field_conflict can name, in the order they are reported.
+const (
+	WorkV2FieldTitle          = "title"
+	WorkV2FieldDescription    = "description"
+	WorkV2FieldAcceptance     = "acceptance_criteria"
+	WorkV2FieldReviewRequired = "review_required"
+)
+
+// rebaseWorkV2Edit decides a based edit against the item as it is now. A
+// patched field the edit left at its base value is dropped, so a change saved
+// elsewhere is never written back; a changed one is kept unless the item
+// changed it too, to a different value. Condition, user action and decision
+// are not part of the base and still need the exact version.
+func rebaseWorkV2Edit(prev work.ItemV2, c EditWorkV2) (EditWorkV2, error) {
+	if prev.Version == c.ExpectedVersion {
+		return c, nil
+	}
+	if c.Condition != nil || c.UserAction != nil || c.DecisionID != nil || c.AcceptanceCriteria != nil && c.RevisionRun != nil {
+		return c, store.ErrConflict
+	}
+	var conflicts []string
+	text := func(field string, edit **string, base *string, now string) {
+		if *edit == nil {
+			return
+		}
+		mine := strings.TrimSpace(**edit)
+		if base == nil {
+			if mine != now && !c.OverwriteConflicts {
+				conflicts = append(conflicts, field)
+			}
+			return
+		}
+		was := strings.TrimSpace(*base)
+		switch {
+		case mine == was:
+			*edit = nil
+		case now != was && now != mine && !c.OverwriteConflicts:
+			conflicts = append(conflicts, field)
+		}
+	}
+	text(WorkV2FieldTitle, &c.Title, c.Base.Title, prev.Title)
+	text(WorkV2FieldDescription, &c.Description, c.Base.Description, prev.Description)
+	if c.AcceptanceCriteria != nil {
+		mine, now := *c.AcceptanceCriteria, prev.AcceptanceCriteria
+		switch {
+		case c.Base.AcceptanceCriteria == nil:
+			if mine != now && !c.OverwriteConflicts {
+				conflicts = append(conflicts, WorkV2FieldAcceptance)
+			}
+		case mine == *c.Base.AcceptanceCriteria:
+			c.AcceptanceCriteria = nil
+		case now != *c.Base.AcceptanceCriteria && now != mine && !c.OverwriteConflicts:
+			conflicts = append(conflicts, WorkV2FieldAcceptance)
+		}
+	}
+	if c.ReviewRequired != nil {
+		mine, now := *c.ReviewRequired, prev.ReviewRequired
+		switch {
+		case c.Base.ReviewRequired == nil:
+			if mine != now && !c.OverwriteConflicts {
+				conflicts = append(conflicts, WorkV2FieldReviewRequired)
+			}
+		case mine == *c.Base.ReviewRequired:
+			c.ReviewRequired = nil
+		case now != *c.Base.ReviewRequired && now != mine && !c.OverwriteConflicts:
+			conflicts = append(conflicts, WorkV2FieldReviewRequired)
+		}
+	}
+	if len(conflicts) > 0 {
+		return c, &WorkError{Status: http.StatusConflict, Code: "field_conflict",
+			Message: "While you were editing, these fields changed elsewhere: " + strings.Join(conflicts, ", ") +
+				". Send overwrite_conflicts to keep yours, or reread the item and edit again.",
+			RawMessage: true, Fields: conflicts}
+	}
+	c.ExpectedVersion = prev.Version
+	return c, nil
 }
 
 func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file WorkV2Filer) (WorkV2View, error) {
@@ -736,6 +832,14 @@ func (w *WorkSystemV2) Edit(ctx context.Context, id string, c EditWorkV2, file W
 		prev, err := tx.Item(id)
 		if err != nil {
 			return err
+		}
+		if c.Base != nil {
+			if !c.Person {
+				return workV2Error(http.StatusBadRequest, "base_person_only", "Only the person's editor sends a base; a Session edits by version.")
+			}
+			if c, err = rebaseWorkV2Edit(prev, c); err != nil {
+				return err
+			}
 		}
 		if !VersionHolds(c.ExpectedVersion, prev.Version) {
 			return store.ErrConflict

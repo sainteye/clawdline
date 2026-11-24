@@ -4,13 +4,20 @@ import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { errorCode, type SourceClient } from "./client"
 import { AgentModelSelect } from "./AgentModelPicker"
 import { settingsSaveFailure } from "./BotSettings"
+import { settingsBase, settingsConflicts } from "./settings-conflicts"
 import { SelectChevron } from "./PaSelect"
 import { nativeDefault, resolvedDefault } from "./agent-model-summary"
 import { configurationError, useModelCatalog } from "./RuntimeSettings"
 import { retryableSourceError } from "./source-errors"
 import type { Words } from "./words"
 
-type SaveModel = (bot: W.ProjectAssistantBot, model: string) => Promise<void>
+/** A model change as a settings edit. With a base, Bot activity during the edit never refuses it; only a model changed elsewhere conflicts. */
+export function modelEdit(original:W.ProjectAssistantBot, model:string, rebased:boolean, overwrite=false):W.ProjectAssistantEditSettings {
+  return {expected_version:original.version, name:original.name, appearance:original.appearance, instructions:original.instructions.text,
+    runtime_settings:{model,options:{}}, ...(rebased?{base:settingsBase(original),...(overwrite?{overwrite_conflicts:true}:{})}:{})}
+}
+
+type SaveModel = (bot: W.ProjectAssistantBot, model: string, overwrite?: boolean) => Promise<void>
 
 export function ChatModel({bot, source, enabled, activeTurn, reported, save, w}: {
   bot: W.ProjectAssistantBot; source: SourceClient; enabled: boolean; activeTurn: boolean;
@@ -32,7 +39,8 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
   bot: W.ProjectAssistantBot; source: SourceClient; opener: HTMLButtonElement|null; enabled: boolean;
   w: Words; save: SaveModel; onClose: ()=>void
 }) {
-  const baseline = useRef(bot).current
+  // The Bot as the dialog opened, or as last loaded; other Bot activity does not replace it.
+  const [baseline, setBaseline] = useState(bot)
   const original = baseline.runtime_settings?.model ?? ""
   const [choice, setChoice] = useState(original)
   const [saving, setSaving] = useState(false)
@@ -45,9 +53,11 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
   const model = catalog?.options.find(option=>option.category==="model")
   const defaultName = model && resolvedDefault(model)
   const changed = choice!==original && (choice!=="" || !model || nativeDefault(model)?.value!==original)
-  const stale = baseline.version !== bot.version
-  const blocked = stale || error?.code==="pa_outcome_unknown" || error?.code==="pa_stale_version" || error?.code==="pa_stale_generation"
-  const saveError = stale&&error?.code!=="pa_outcome_unknown" ? {code:"pa_stale_version"} : error
+  // A turn, memory write or routine while the dialog is open does not block saving; the source decides by field.
+  const conflict = error?.code==="pa_stale_version"
+  const blocked = conflict || error?.code==="pa_outcome_unknown" || error?.code==="pa_stale_generation"
+  const rebased = source.canSettingsBase?.()===true
+  const conflictText = w.settingsSaveConflict.replace("{fields}", settingsConflicts(error).length ? w.model : w.settings)
   useLayoutEffect(()=>{
     const node = dialog.current!
     bindNativeModalBackdrop(node)
@@ -57,13 +67,13 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
       if(opener?.isConnected)opener.focus({preventScroll:true})
     }
   },[opener])
-  const saveChoice = async()=>{
-    if(!enabled || busy.current || saved || blocked || !model || !changed) return
+  const saveChoice = async(overwrite=false)=>{
+    if(!enabled || busy.current || saved || (blocked && !(overwrite && conflict)) || !model || !changed) return
     busy.current = true
     setSaving(true)
     setError(undefined)
     try {
-      await save(baseline, choice)
+      await save(baseline, choice, overwrite)
       setSaved(true)
     }catch(e){
       setError({code:errorCode(e),field:(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field})
@@ -71,6 +81,13 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
       busy.current = false
       setSaving(false)
     }
+  }
+  // The newest Bot this view holds becomes the base; the choice follows it.
+  const loadLatest = ()=>{
+    if(busy.current) return
+    setBaseline(bot)
+    setChoice(bot.runtime_settings?.model ?? "")
+    setError(undefined)
   }
   return <dialog ref={dialog} className="pa-roster-confirm pa-chat-model-dialog" aria-label={w.changeModel}
     data-modal-dismiss={String(!saving)} onCancel={event=>{event.preventDefault();if(!busy.current)onClose()}}>
@@ -84,7 +101,11 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
           defaultLabel={defaultName?w.nativeDefaultCurrent.replace("{name}",defaultName):w.nativeDefault}/>
           : <p role="status">{w.nativeNoModels}</p>}
       <p className="pa-approval-detail">{w.nativeNextTurn}</p>
-      {saveError&&<p role="alert">{settingsSaveFailure(saveError,w)}</p>}
+      {error&&<p role="alert">{settingsSaveFailure(error,w,conflictText)}</p>}
+      {conflict&&<div className="pa-settings-conflict-actions">
+        {rebased&&<button type="button" disabled={saving} onClick={()=>void saveChoice(true)}>{w.settingsConflictKeepMine}</button>}
+        <button type="button" disabled={saving} onClick={loadLatest}>{w.settingsConflictLoadLatest}</button>
+      </div>}
     </>}
     <div className="pa-actions">
       <button type="button" disabled={saving} onClick={onClose}>{saved?w.close:w.cancel}</button>
