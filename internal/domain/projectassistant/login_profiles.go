@@ -12,6 +12,17 @@ const MaxLoginProfiles = 32
 // Pending targets contain scope metadata only and expire with Secret Handoff.
 const MaxLoginSecretTargets = 128
 
+// A sign-in check reads native status or the key vault at most this many times
+// before it reports the outcome as unknown. A failed read never changes the
+// stored state, so the next check that reads successfully settles it.
+const MaxLoginProbeAttempts = 3
+
+// LoginProbeBackoff is the wait before the second read; each later wait doubles.
+const LoginProbeBackoff = 200 * time.Millisecond
+
+// MaxLoginProbeBackoffMilliseconds is the longest single wait between reads.
+const MaxLoginProbeBackoffMilliseconds = 400
+
 var loginProfileID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func ValidLoginProfileID(id string) bool { return id == "" || loginProfileID.MatchString(id) }

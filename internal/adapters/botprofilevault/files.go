@@ -15,6 +15,11 @@ import (
 )
 
 var ErrUnavailable = errors.New("bot_profile_vault_unavailable")
+
+// ErrMissing is the definite answer that no sealed record exists for an id
+// while the vault key itself is readable. Every other failure stays
+// ErrUnavailable, which says nothing about whether the record exists.
+var ErrMissing = errors.New("bot_profile_vault_missing")
 var opaque = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 type Files struct {
@@ -183,6 +188,9 @@ func (f *Files) Get(id string, aad []byte, max int) ([]byte, error) {
 	a, e := f.cipher(false)
 	if e != nil {
 		return nil, e
+	}
+	if _, e := os.Lstat(filepath.Join(f.dir, id+".sealed")); os.IsNotExist(e) {
+		return nil, ErrMissing
 	}
 	raw, e := read(filepath.Join(f.dir, id+".sealed"), max+a.NonceSize()+a.Overhead())
 	if e != nil || len(raw) < a.NonceSize()+a.Overhead() {

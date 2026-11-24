@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"github.com/sainteye/clawdline/internal/adapters/botprofilevault"
 	secrets "github.com/sainteye/clawdline/internal/app"
 	"os"
@@ -32,7 +33,9 @@ type Registry struct {
 	targets               map[string]secretTarget
 	vault                 *botprofilevault.Files
 	Now                   func() time.Time
-	workers               sync.WaitGroup
+	// ProbeBackoff is the first wait between check reads; tests set it to zero.
+	ProbeBackoff time.Duration
+	workers      sync.WaitGroup
 }
 
 func fail(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -55,7 +58,7 @@ func New(ctx context.Context, db *sql.DB, state, account, machine string, native
 		return nil, fail(pa.Invalid, "login_profile_state")
 	}
 	source := sha256.Sum256([]byte(account + "\x00" + machine))
-	r := &Registry{db: db, root: filepath.Join(resolved, "project-assistants", "login-profiles", hex.EncodeToString(source[:])), source: hex.EncodeToString(source[:]), machine: machine, native: native, running: map[string]app.LoginProcess{}, targets: map[string]secretTarget{}, Now: time.Now}
+	r := &Registry{db: db, root: filepath.Join(resolved, "project-assistants", "login-profiles", hex.EncodeToString(source[:])), source: hex.EncodeToString(source[:]), machine: machine, native: native, running: map[string]app.LoginProcess{}, targets: map[string]secretTarget{}, Now: time.Now, ProbeBackoff: pa.LoginProbeBackoff}
 	r.vault = botprofilevault.New(r.root)
 	// Schema installation is owned by the Bot store, not this constructor.
 	_, e = db.ExecContext(ctx, `UPDATE project_assistant_login_profiles SET state='unknown',revision=revision+1 WHERE source=? AND state IN ('accepted','running','removing')`, r.source)
@@ -166,6 +169,9 @@ func (r *Registry) profileEnvironment(p pa.LoginProfile, withKey bool) ([]string
 	}
 	if p.Kind == "api_key" && withKey {
 		value, e := r.vault.Get(p.ID, r.aad(p), secrets.MaxSecretHandoffBytes)
+		if errors.Is(e, botprofilevault.ErrMissing) {
+			return nil, fail(pa.AuthRequired, "login_profile_key_missing")
+		}
 		if e != nil {
 			return nil, fail(pa.AuthProbeUnknown, "login_profile_vault")
 		}
@@ -226,11 +232,15 @@ func (r *Registry) Acquire(ctx context.Context, b pa.Bot) ([]string, func(), err
 	if p.State != "signed_in" {
 		return nil, none, fail(pa.AuthRejected, "login_profile_signed_out")
 	}
+	// A failed key read says nothing about the stored key. It is reported and
+	// not written down, so the next execution reads the vault again.
+	// A definitely missing key is the authoritative refusal: the profile is
+	// signed out and the next step is entering a key.
 	env, e := r.environment(p)
+	if pa.Code(e) == pa.AuthRequired {
+		r.state(p, "signed_out")
+	}
 	if e != nil {
-		if p.Kind == "api_key" {
-			r.state(p, "unknown")
-		}
 		return nil, none, e
 	}
 	lease := id()
@@ -346,7 +356,10 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		if (q.Action == "start") != (p.Kind == "account") {
 			return p, fail(pa.Invalid, "login_profile_kind")
 		}
-		if p.State == "accepted" || p.State == "running" || p.State == "unknown" {
+		// An unknown key profile accepts a replacement key: the person's new key
+		// is the explicit way out. An unknown account still needs a check first,
+		// because an earlier native sign-in may still be writing its slot.
+		if p.State == "accepted" || p.State == "running" || p.State == "unknown" && p.Kind == "account" {
 			return p, fail(pa.OutcomeUnknown, "login_profile_state")
 		}
 		// A selected profile is an immutable credential identity. Changing its
@@ -395,7 +408,10 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 			return p, fail(pa.OutcomeUnknown, "login_profile_process")
 		}
 	case "check":
-		if r.running[p.ID] != nil || p.State == "unknown" {
+		// Check is the way out of unknown: it never borrows the old receipt and
+		// settles only from a fresh read. A sign-in this daemon is running is
+		// still settled by that sign-in finishing.
+		if r.running[p.ID] != nil {
 			return p, fail(pa.OutcomeUnknown, "login_profile_state")
 		}
 	case "remove":
@@ -408,7 +424,10 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		if e != nil {
 			return p, e
 		}
-		if references != 0 || holds != 0 || r.running[p.ID] != nil || p.State == "unknown" || p.State == "running" || p.State == "accepted" {
+		// An unknown key profile has no native process: with no execution hold
+		// its key and slot can be removed. An unknown account may still have a
+		// native sign-in writing its slot and must be checked first.
+		if references != 0 || holds != 0 || r.running[p.ID] != nil || p.State == "unknown" && p.Kind == "account" || p.State == "running" || p.State == "accepted" {
 			return p, fail(pa.ScopeDenied, "login_profile_in_use")
 		}
 		removed = true
@@ -445,6 +464,9 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 	if q.Action == "rename" {
 		return p, nil
 	}
+	if q.Action == "check" {
+		return r.check(ctx, p, admit)
+	}
 	if q.Action == "prepare-key" {
 		r.targets[p.Handoff.ID] = secretTarget{key: q.Command.Key, fence: q.Fence, profile: p.ID, revision: p.Revision, authority: q.Authority, agent: p.Agent, expires: p.Handoff.Expires}
 		return p, nil
@@ -469,7 +491,7 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		r.state(p, "signed_in")
 		return p, nil
 	}
-	if p.Kind == "api_key" && (q.Action == "create" || q.Action == "remove" || q.Action == "check") {
+	if p.Kind == "api_key" && (q.Action == "create" || q.Action == "remove") {
 		if q.Action == "remove" {
 			if e = r.vault.Remove(p.ID); e != nil {
 				r.state(p, "cleanup_unknown")
@@ -481,12 +503,8 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 				return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 			}
 			r.state(p, "removed")
-		} else if q.Action == "create" {
-			_, e = r.profileEnvironment(p, false)
 		} else {
-			var raw []byte
-			raw, e = r.vault.Get(p.ID, r.aad(p), secrets.MaxSecretHandoffBytes)
-			botprofilevault.Wipe(raw)
+			_, e = r.profileEnvironment(p, false)
 		}
 		if e != nil {
 			r.state(p, "unknown")
@@ -534,18 +552,68 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 			r.state(p, "unknown")
 			return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 		}
-	case "check":
-		state, e := r.native.Status(ctx, p.Agent, env)
-		if e != nil {
-			r.state(p, "unknown")
-			return p, fail(pa.AuthProbeUnknown, "login_profile_status")
-		}
-		r.state(p, state)
 	}
 	// Return the durable acceptance snapshot. Replays return these exact bytes;
 	// GET observes subsequent running/signed-in facts, never an invented success.
 	return p, nil
 }
+
+// check settles a profile from one fresh read, retried a bounded number of
+// times. Only an answer changes the stored state: signed in (a readable key or
+// a native signed-in status) or the native signed-out status, which is the
+// authoritative refusal. An interrupted or timed-out read leaves the previous
+// state in place, so a failure is never cached and the next check can settle.
+func (r *Registry) check(ctx context.Context, p pa.LoginProfile, admit func(context.Context) error) (pa.LoginProfile, error) {
+	if e := admit(ctx); e != nil {
+		return p, e
+	}
+	field := "login_profile_status"
+	var env []string
+	if p.Kind == "api_key" {
+		field = "login_profile_vault"
+	} else {
+		var e error
+		if env, e = r.profileEnvironment(p, false); e != nil {
+			return p, e
+		}
+	}
+	settled := ""
+	wait := r.ProbeBackoff
+	for attempt := 1; ; attempt++ {
+		var e error
+		if p.Kind == "api_key" {
+			var raw []byte
+			raw, e = r.vault.Get(p.ID, r.aad(p), secrets.MaxSecretHandoffBytes)
+			botprofilevault.Wipe(raw)
+			if e == nil {
+				settled = "signed_in"
+			} else if errors.Is(e, botprofilevault.ErrMissing) {
+				settled, e = "signed_out", nil
+			}
+		} else {
+			settled, e = r.native.Status(ctx, p.Agent, env)
+		}
+		if e == nil && (settled == "signed_in" || settled == "signed_out") {
+			break
+		}
+		if attempt >= pa.MaxLoginProbeAttempts || ctx.Err() != nil {
+			return p, fail(pa.AuthProbeUnknown, field)
+		}
+		if wait > 0 {
+			timer := time.NewTimer(wait)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return p, fail(pa.AuthProbeUnknown, field)
+			case <-timer.C:
+			}
+			wait = min(2*wait, pa.MaxLoginProbeBackoffMilliseconds*time.Millisecond)
+		}
+	}
+	r.state(p, settled)
+	return p, nil
+}
+
 func (r *Registry) state(p pa.LoginProfile, state string) {
 	_, _ = r.db.ExecContext(context.Background(), `UPDATE project_assistant_login_profiles SET state=?,revision=revision+1 WHERE source=? AND id=?`, state, r.source, p.ID)
 }
