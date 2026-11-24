@@ -14388,5 +14388,17 @@
   "capacityRow.orchestrator.bot_viewing_hold_seconds.what": "因為對話看起來正在畫面上，決定通知最多延後多久。",
   "capacityRow.orchestrator.bot_viewing_hold_seconds.full": "超過時即使對話還開著也會送出通知；畫面忘了關只會延後，不會漏掉。",
   "capacityRow.orchestrator.bot_viewing_chats.what": "這台機器記得幾個正在畫面上的 Bot 對話。",
-  "capacityRow.orchestrator.bot_viewing_chats.full": "再多一個對話的回報會被忽略，那個對話的決定通知直接送出、不等待。"
+  "capacityRow.orchestrator.bot_viewing_chats.full": "再多一個對話的回報會被忽略，那個對話的決定通知直接送出、不等待。",
+  "capacityRow.console.quota_read_wait_milliseconds.what": "用量列向機器讀一次用量，最多等多久沒回應就顯示讀不到。沒有這個時限，機器不回應時用量列會一直顯示讀取中。",
+  "capacityRow.console.quota_read_wait_milliseconds.full": "等 20 秒後用量列顯示讀不到，並保留上一次的讀數。這次請求不會取消：機器晚一點回應，回來的讀數照樣顯示。",
+  "capacityRow.console.schedule_read_wait_milliseconds.what": "排程清單向一台機器讀取，最多等多久沒回應，那台機器的分組就顯示讀不到。沒有這個時限，不回應的機器會讓它的分組一直顯示載入中。",
+  "capacityRow.console.schedule_read_wait_milliseconds.full": "等 20 秒後那台機器的分組顯示讀不到，其他機器的分組照常顯示。這次請求不會取消：機器晚一點回應，它的排程照樣出現。",
+  "capacityRow.console.schedule_retry_first_milliseconds.what": "排程清單讀取失敗後，隔多久再讀一次。連續失敗時每次等待加倍，不會對沒回應的機器一直重問。",
+  "capacityRow.console.schedule_retry_first_milliseconds.full": "5 秒後不必重新整理頁面就會再讀一次。還是失敗的話，接下來依序隔 10 秒、20 秒、40 秒再試。",
+  "capacityRow.console.schedule_retry_ceiling_milliseconds.what": "排程清單連續讀取失敗時，兩次嘗試之間最長等多久。這也是一切正常時清單自己更新的間隔。",
+  "capacityRow.console.schedule_retry_ceiling_milliseconds.full": "等待拉長到 60 秒就不再增加，之後每分鐘試一次，直到機器回應。",
+  "capacityRow.console.reads_out_per_target.what": "同一項讀取，頁面在一台機器上同時最多留幾個還沒回應的請求。沒有這個上限，每次重試都會在已經沒回應的機器上再多掛一個請求。",
+  "capacityRow.console.reads_out_per_target.full": "前一個請求還沒回應時，再問一次會等同一個請求，不另外送出；所以回應偏慢時，答案可能比重新送出一次晚一點出現。",
+  "capacityRow.console.held_read_lost_milliseconds.what": "機器一直沒回應的請求，頁面最多把它當成還在進行多久。這比任何一次請求該花的時間都長；沒有這個時限，一個永遠不結束的請求會讓那項資料再也不會重讀。",
+  "capacityRow.console.held_read_lost_milliseconds.full": "超過 180 秒後頁面放棄那個請求，下次讀取時重新送出一個。舊請求之後才回來的答案不會採用。"
 }

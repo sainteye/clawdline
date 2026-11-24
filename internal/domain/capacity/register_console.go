@@ -508,5 +508,52 @@ func baseConsoleBounds() []Entry {
 			Limit: 60, AtLimit: Expire,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 		},
+		{
+			// The quota footer waits this long on one reading before it says
+			// the reading is unavailable (QUOTA_READ_DEADLINE_MS). The read is
+			// not cancelled; its late answer is still shown.
+			Name: "console.quota_read_wait_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 20000, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// The schedules section waits this long on one machine's read
+			// before its group says it was not read
+			// (SCHEDULE_READ_DEADLINE_MS). The read is not cancelled either.
+			Name: "console.schedule_read_wait_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 20000, AtLimit: Refuse,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A failed schedule read is made again after this long
+			// (SCHEDULE_RETRY_FIRST_MS), then after twice as long each time.
+			Name: "console.schedule_retry_first_milliseconds", Class: Cache, Unit: Milliseconds,
+			Limit: 5000, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// The longest wait in that ladder (SCHEDULE_RETRY_CEILING_MS): the
+			// schedules lane's own pace.
+			Name: "console.schedule_retry_ceiling_milliseconds", Class: Cache, Unit: Milliseconds,
+			Limit: 60000, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// Reads of one target a deadline-bound reader keeps out at once
+			// (READS_OUT_PER_TARGET in web/console/src/poll.ts). Asking again
+			// while one is out waits on that read instead of starting another.
+			Name: "console.reads_out_per_target", Class: Buffer, Unit: Rows,
+			Limit: 1, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
+			// A read still out after this long is taken for lost
+			// (HELD_READ_LOST_MS in web/console/src/poll.ts): the next ask
+			// starts a new read and the old one's answer is dropped. It is
+			// above the relay's own read timeout, asked twice.
+			Name: "console.held_read_lost_milliseconds", Class: Cache, Unit: Milliseconds,
+			Limit: 180000, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
 	}...)
 }
