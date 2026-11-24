@@ -3662,7 +3662,12 @@
       "worktree.originUnknown",
       "worktree.ownerUnknown",
       "worktree.purposeUnknown",
-      "worktree.statusUnreadable"
+      "worktree.statusUnreadable",
+      "projectAssistants.compactFailNoSession",
+      "projectAssistants.compactFailNotReported",
+      "projectAssistants.compactFailOffline",
+      "projectAssistants.compactFailOther",
+      "projectAssistants.compactFailReadOnly"
     ],
     "state": [
       "acp.cancelRequested",
@@ -6095,7 +6100,9 @@
       "worktree.inventoryNotObserved",
       "worktree.lastObserved",
       "worktree.noWorktrees",
-      "worktree.notObserved"
+      "worktree.notObserved",
+      "projectAssistants.compactFailCancelled",
+      "projectAssistants.compactFailReadOnly"
     ],
     "permission": [
       "acp.permissionPending",
@@ -6961,7 +6968,8 @@
       "workflowSettings.saveFailed",
       "workflowSettings.session_auto_discoveryScope",
       "workflowSettings.tab",
-      "worktree.refreshed"
+      "worktree.refreshed",
+      "projectAssistants.compactFailReadOnly"
     ],
     "deletion": [
       "botRoutineControls.removeFilter",
@@ -13982,6 +13990,12 @@
     "worktree.refreshed",
     "worktree.statusUnreadable",
     "worktree.targetUnknown",
-    "worktree.unknown"
+    "worktree.unknown",
+    "projectAssistants.compactFailCancelled",
+    "projectAssistants.compactFailNoSession",
+    "projectAssistants.compactFailNotReported",
+    "projectAssistants.compactFailOffline",
+    "projectAssistants.compactFailOther",
+    "projectAssistants.compactFailReadOnly"
   ]
 }

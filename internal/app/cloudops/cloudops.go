@@ -104,6 +104,10 @@ type Answer struct {
 	// Code is the refusal's code, empty on success. It is not part of the
 	// payload — it is already inside it — but every caller logs it.
 	Code string
+	// Field is a Bot refusal's `error.field`, the part of the request it
+	// named; empty otherwise. Like Code it is already in the payload, and it
+	// is logged so a pa_invalid on this machine says which field it was.
+	Field string
 	// Payload is the JSON object to seal. Empty when Session is empty.
 	Payload []byte
 	// Subject is the session the request was about, whether or not there is a

@@ -912,6 +912,14 @@
 .project-assistants .pa-decision-pointer button { background:transparent;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit; }
 /* Context meter menu: a quiet anchored menu; a bottom sheet on a phone. */
 .project-assistants .pa-context-control { position:relative;display:inline-flex; }
+.project-assistants .pa-context-button[aria-busy="true"] { display:inline-flex;align-items:center;gap:6px; }
+.project-assistants .pa-compact-status { display:flex;align-items:center;gap:10px;margin:0 0 8px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-hover, #ffffff12);font-size:14px;line-height:1.4; }
+.project-assistants .pa-compact-status[data-state="done"] { border-color:#3f7a55; }
+.project-assistants .pa-compact-status[data-state="failed"] { border-color:#a34c4c; }
+.project-assistants .pa-compact-status p { margin:0;flex:1;min-width:0;overflow-wrap:anywhere; }
+.project-assistants .pa-compact-status small { color:var(--pa-dim, #aaa); }
+.project-assistants .pa-compact-status button { flex:none;min-height:32px;padding:0 12px;border:1px solid var(--pa-line);border-radius:999px;background:transparent;color:inherit;font:inherit;cursor:pointer; }
+.project-assistants .pa-compact-status .pa-compact-dismiss { min-width:32px;padding:0; }
 .project-assistants .pa-context-button { all:unset;cursor:pointer;border-radius:8px;padding:2px 4px;margin:-2px -4px;color:inherit; }
 .project-assistants .pa-context-button:hover,.project-assistants .pa-context-button[aria-expanded="true"] { background:var(--pa-hover, #ffffff12); }
 .project-assistants .pa-context-button:focus-visible { outline:2px solid var(--pa-accent, #8ab4f8);outline-offset:1px; }

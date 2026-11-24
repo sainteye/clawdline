@@ -57,6 +57,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   const memory:W.ProjectAssistantMemoryRevision={key:bots[0].key,project,revision:1,forgotten_through:0,forgotten_source_ids:[]}
   let detailFailure:W.ProjectAssistantErrorCode|null=null,detailFenceChange=false
   let snapshotHolds:{release:()=>void;signal:AbortSignal}[]|null=null
+  let compactTurn:W.ProjectAssistantTurn|null=null
   let viewFailure:W.ProjectAssistantErrorCode|null=null,viewInvalid:string|null=null,viewUnsupported=false,legacyForbidden=false,viewOversized=false
   let viewGate:Promise<void>|null=null,releaseView:(()=>void)|null=null,holdMode:W.ProjectAssistantReadViewMode|null=null
   let historyGate:Promise<void>|null=null,releaseHistory:(()=>void)|null=null
@@ -68,7 +69,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const traces=latest(current.flatMap(e=>e.trace?[e.trace]:[]),t=>JSON.stringify([t.turn_id,t.category]))
     const turns=latest(own.flatMap(e=>e.turn?[e.turn]:[]),t=>t.id)
     const pending=turns.filter(t=>["accepted","queued","running","waiting_permission"].includes(t.state))
-    const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",started_at:t.started_at??""})
+    const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",...(t.failure?.field?{failure_field:t.failure.field}:{}),started_at:t.started_at??""})
     const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
     head.conversation.memory_revision=memory.revision
     head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
@@ -155,7 +156,10 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       if(eventGate&&r.mode==="events"&&sameBot(r.key,bots[0].key))await eventGate
       return answer
     },
-    async send(r,s){check("send",r,s,true);if(created.has(r.command.key.bot_id))throw failure("adapter_not_found");const bot=find(r.command.key);const receipt=receive(r.command);if(r.text==="unknown"){receipt.state="unknown";return{contract_version:contractVersion,receipt}}
+    async send(r,s){check("send",r,s,true);if(created.has(r.command.key.bot_id))throw failure("adapter_not_found");const bot=find(r.command.key);const receipt=receive(r.command)
+      // Compact now: the receipt names a running compaction turn that finishCompaction ends.
+      if(r.compact){receipt.resource_id="compact-turn-"+receipt.id;compactTurn={id:receipt.resource_id,fence:fence(bot),message_id:"compact-request",state:"running",started_at:at,idempotency_key:r.command.idempotency_key,memory_revision:1,instructions:{revision:1,role_snapshot_ref:"",text:""}};push({id:"compact-running-"+receipt.id,seq:0,at,version:contractVersion,kind:"turn_updated",fence:fence(bot),turn:compactTurn});return{contract_version:contractVersion,receipt}}
+      if(r.text==="unknown"){receipt.state="unknown";return{contract_version:contractVersion,receipt}}
       const rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:receipt.id,seq:rows.length+1,at,fence:fence(bot),kind:"user",text:r.text,quote_message_id:r.quote_message_id,turn_id:receipt.id};if(!rows.some(m=>m.id===message.id)){messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})}return{contract_version:contractVersion,receipt}},
     async stop(r,s){
       check("stop",r,s,true)
@@ -187,6 +191,15 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       const notice=(id:string,seq:number,text:string,ref?:W.ProjectAssistantNoticeRef):W.ProjectAssistantMessage=>({id,seq,kind:"notice",text,at,fence:fence(bot),turn_id:"turn-1",quote_message_id:"",...(ref?{notice:ref}:{})})
       messages.set(bot.key.bot_id,[rows[0]!,notice("compacted-turn-0",2,"Earlier context was summarized to make room / 已摘要較早的內容，騰出空間：345K → 41K"),notice("compacted-turn-1",3,"Earlier context was summarized to make room: 26.2K → 22.1K",{key:"compacted",tokens_before:26182,tokens_after:22113}),{...rows[1]!,seq:4}])
       contextUsage={bot:bot.key.bot_id,usage:{live:false,turn_id:"turn-1",used_tokens:22024,window_tokens:475000}}
+    },
+    // Ends the running compaction turn: its notice with sizes, or a failure that reported none.
+    finishCompaction(done:boolean){
+      const turn=compactTurn!,bot=bots.find(b=>sameBot(b.key,turn.fence.key))!,rows=messages.get(bot.key.bot_id)??[]
+      if(done){
+        const message:W.ProjectAssistantMessage={id:"compacted-"+turn.id,seq:rows.length+1,kind:"notice",text:"Earlier context was summarized to make room: 694.2K → 41K",at,fence:turn.fence,turn_id:turn.id,quote_message_id:"",notice:{key:"compacted",tokens_before:694200,tokens_after:41000}}
+        messages.set(bot.key.bot_id,[...rows,message]);push({id:"compact-notice-"+turn.id,seq:0,at,version:contractVersion,kind:"message_created",fence:turn.fence,message})
+      }
+      push({id:"compact-finished-"+turn.id,seq:0,at,version:contractVersion,kind:"turn_updated",fence:turn.fence,turn:{...turn,state:done?"succeeded":"failed",...(done?{}:{failure:{code:"pa_unsupported",field:"compaction_not_reported",retry_after_seconds:0}})}})
     },
     headerFixture(owned:boolean,readOnly:boolean){
       const bot=bots[0]
@@ -330,6 +343,7 @@ export function mountFixture() {
     React.createElement("button",{id:"voice-owner",onClick:()=>{},"aria-label":"Existing voice stop control"},"Voice stop")))
   const controls={log,a,b,
     compactionFixture(){a.compactionFixture()},
+    finishCompaction(done:boolean){a.finishCompaction(done)},
     headerFixture(owned:boolean,readOnly:boolean){
       // This fixture exercises the explicit roster observation independently of viewport observations.
       Object.defineProperty(document,"hasFocus",{value:()=>false})

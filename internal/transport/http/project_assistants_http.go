@@ -907,6 +907,16 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 		if steps, ok := inSettings["fallback_steps"].([]any); ok && len(steps) == 0 && outSettings != nil {
 			outSettings["fallback_steps"] = []any{}
 		}
+	case contract.ProjectAssistantSendRequest:
+		// The Cloud relay cannot carry an empty text, so a Compact now or a
+		// call greeting arrives without the field. Its text is empty either
+		// way; the send route still refuses any text riding on either.
+		inObject, _ := input.(map[string]any)
+		_, hasText := inObject["text"]
+		if v := any(value).(contract.ProjectAssistantSendRequest); !hasText && (v.Compact || v.CallStarted) {
+			outObject, _ := expected.(map[string]any)
+			delete(outObject, "text")
+		}
 	}
 	if _, object := input.(map[string]any); !object || !paJSONShape(input, expected) {
 		return value, paHTTPFailure(pa.Invalid, "body")

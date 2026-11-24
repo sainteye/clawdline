@@ -247,7 +247,9 @@ func (b Bridge) answer(cmd Command, p plan, o op, res LocalResponse) Answer {
 	}
 	if o.partial != nil {
 		if body, ok := o.partial(res); ok {
-			return b.settle(p, res.Status, code, body, nil)
+			answer := b.settle(p, res.Status, code, body, nil)
+			answer.Field = refusalField(body)
+			return answer
 		}
 	}
 	detail, _ := base["detail"].(map[string]any)
@@ -663,4 +665,17 @@ func (b Bridge) refuseContentRead(cmd Command, parsed body, word string, refusal
 		p.id = b.MachineID
 	}
 	return b.contentReadAnswer(cmd, p, b.publish(cmd, p, refusal, nil))
+}
+
+// refusalField reads the `error.field` of a typed Bot refusal body.
+func refusalField(body json.RawMessage) string {
+	var failure struct {
+		Error struct {
+			Field string `json:"field"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &failure) != nil {
+		return ""
+	}
+	return failure.Error.Field
 }

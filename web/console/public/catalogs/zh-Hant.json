@@ -14342,5 +14342,16 @@
   "botsSettings.problemDisabled": "這台電腦沒有開啟 Bots。",
   "botsSettings.problemDenied": "這個裝置沒有權限讀取這台電腦的 Bots 設定。",
   "botsSettings.problemReadOnly": "這個裝置只能查看這些設定，不能修改。",
-  "botsSettings.problemUnknownSave": "無法確認設定有沒有存到。請關閉後重新開啟，查看這台電腦上目前的內容。"
+  "botsSettings.problemUnknownSave": "無法確認設定有沒有存到。請關閉後重新開啟，查看這台電腦上目前的內容。",
+  "projectAssistants.compactFailCancelled": "壓縮在完成前被停止了，準備好再試一次。",
+  "projectAssistants.compactDone": "已壓縮",
+  "projectAssistants.compactFailBusy": "Bot 正在工作，等它停下來再試一次。",
+  "projectAssistants.compactFailOffline": "連不到這台機器，或它沒有確認收到。確認連線後再試一次。",
+  "projectAssistants.compactFailOther": "壓縮沒有完成。請重試；一直失敗的話，可以開新 session。",
+  "projectAssistants.compactDismiss": "關閉",
+  "projectAssistants.compactFailNotReported": "Agent 沒有回報壓縮結果，內容可能沒有變。請重試，或開新 session。",
+  "projectAssistants.compactRetry": "重試",
+  "projectAssistants.compactFailAgent": "只有 Claude Code 和 Codex 的 Bot 能壓縮，可以改開新 session。",
+  "projectAssistants.compactFailNoSession": "這個 Bot 還沒有可壓縮的對話，先送一則訊息再試。",
+  "projectAssistants.compactFailReadOnly": "這台裝置無法寫入這個 Bot，請改用有寫入權限的裝置。"
 }

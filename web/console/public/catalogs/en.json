@@ -14342,5 +14342,16 @@
   "botsSettings.problemDisabled": "Bots are turned off on this computer.",
   "botsSettings.problemDenied": "This device is not allowed to read this computer's Bots settings.",
   "botsSettings.problemReadOnly": "This device can read these settings but not change them.",
-  "botsSettings.problemUnknownSave": "Could not confirm whether the settings were saved. Close and open them again to see what this computer has."
+  "botsSettings.problemUnknownSave": "Could not confirm whether the settings were saved. Close and open them again to see what this computer has.",
+  "projectAssistants.compactDone": "Compacted",
+  "projectAssistants.compactFailNotReported": "The agent did not report a compaction, so nothing may have changed. Try again, or start a new session.",
+  "projectAssistants.compactFailOther": "The compaction did not finish. Try again; if it keeps failing, start a new session.",
+  "projectAssistants.compactFailCancelled": "The compaction was stopped before it finished. Try again when ready.",
+  "projectAssistants.compactFailAgent": "Only Claude Code and Codex Bots can compact. Start a new session instead.",
+  "projectAssistants.compactRetry": "Try again",
+  "projectAssistants.compactDismiss": "Dismiss",
+  "projectAssistants.compactFailOffline": "The machine could not be reached or did not confirm. Check the connection, then try again.",
+  "projectAssistants.compactFailReadOnly": "This device cannot write to the Bot. Open it on a device with write access.",
+  "projectAssistants.compactFailBusy": "The Bot is working. Wait until it is idle, then try again.",
+  "projectAssistants.compactFailNoSession": "This Bot has no conversation to compact yet. Send a message first."
 }
