@@ -313,6 +313,20 @@ if (readRecovery) {
       assert.notEqual(admitted[0].command.idempotency_key,admitted[1].command.idempotency_key)
       assert.equal(await page.evaluate(()=>window.sendRecovery.state.sends),4)
       record("an accepted but unobserved message allows a new picture send",{sends:4})
+
+      const message="A host-confirmed message outside the current view"
+      await page.getByRole("button",{name:"Test: delay observation of the next send"}).click()
+      await draft.fill(message);await send.click()
+      const status=page.locator(".pa-sending").filter({hasText:message})
+      await status.getByText("Received by the Bot’s computer",{exact:true}).waitFor()
+      const dismiss=status.getByRole("button",{name:"Dismiss",exact:true})
+      await dismiss.click({timeout:4000})
+      await status.waitFor({state:"hidden"})
+      await page.reload()
+      await posted.getByText(message,{exact:true}).waitFor()
+      assert.equal(await status.count(),0,"a dismissed status does not return after reload")
+      assert.equal(await page.evaluate(()=>window.sendRecovery.state.sends),5,"dismissing does not send the message again")
+      record("an admitted send status can be dismissed without removing the source message",{sends:5})
     } finally { await engine.close() }
   } finally { if (server.listening) await new Promise(resolve=>server.close(resolve)) }
 } else if (process.env.PLAYWRIGHT_MODULE && !legacy) {

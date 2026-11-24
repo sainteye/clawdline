@@ -996,11 +996,14 @@ ${currentDraft}`:submitted)
       }
     }
   }
-  /** Deletes one held send from this device's journal, its only record here; see unsentDiscardKind. */
+  /** Removes one provisional send from this device's journal. */
   const discardSend=(held:HeldOutcome)=>{
     const id=held.intent.command.idempotency_key
     if(retrying===id||view.heldOutcomes.transporting(draftKey,id)||view.heldOutcomes.find(draftKey,id)!==held)return
+    const active=view.heldOutcomes.get(draftKey)===held
     if(!view.heldOutcomes.discard(draftKey,id)){setDiscardFailed(id);repaintJournal();return}
+    if(active){setSending(null);setUnknown(false)}
+    if(admittedReceipt(held.receipt))observation.stop(held.receipt!.resource_id)
     setDiscardFailed("");clearPendingAttachments(held)
     setRetryFailures(rows=>{if(!(id in rows))return rows;const next={...rows};delete next[id];return next})
     repaintJournal()
@@ -1650,7 +1653,13 @@ ${currentDraft}`:submitted)
     return <PermissionCard offer={offer} enabled={enabled&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
   }
   // While a turn runs, a new message waits behind it: it is sent, and then queued, at the end of the conversation.
-  const sendingBubble=sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>
+  const sendingBubble=sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">
+    {!hideProvisionalText&&<p>{sending}</p>}
+    {sendingAccepted&&pendingSend
+      ? <UnsentActions accepted discard={unsentDiscardKind(pendingSend,{accepted:true,transporting:view.heldOutcomes.transporting(draftKey,pendingSend.intent.command.idempotency_key)})}
+          discardFailed={discardFailed===pendingSend.intent.command.idempotency_key} onDiscard={()=>discardSend(pendingSend)} w={w} language={language}/>
+      : <small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small>}
+  </article>
   return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
     {...dragHandlers} data-file-drag={dropTarget?(dropTarget.refusal?"refused":"ready"):undefined}>
     {dropTarget&&<div className="pa-drop-target" data-refused={dropTarget.refusal?true:undefined} role="status" aria-live="polite">

@@ -55,13 +55,13 @@ export function retryFailureText(failure: RetryFailure, w: Words, language: stri
  * text was never delivered. `remove`: the outcome is unknown; removing it stops
  * this device from tracking or retrying it, and a message the source did admit
  * still appears in the transcript from the source's own history. Either way
- * one press of Clear does it, without a confirmation: the person asked for
- * that. Nothing is offered for an accepted send, which clears itself when it
- * appears, or while its request is open.
+ * one press of Clear does it. An admitted message may be outside the loaded
+ * history, so Dismiss hides its local status. An open transport cannot be cleared.
  */
-export type UnsentDiscard = "delete" | "remove"
+export type UnsentDiscard = "delete" | "remove" | "hide"
 export function unsentDiscardKind(row: Pick<HeldOutcome, "needsEdit">, state: { accepted: boolean, transporting: boolean }): UnsentDiscard | null {
-  if (state.accepted || state.transporting) return null
+  if (state.transporting) return null
+  if (state.accepted) return "hide"
   return row.needsEdit ? "delete" : "remove"
 }
 
@@ -71,8 +71,8 @@ export function UnsentStatusNote({ id, w }: { id: string, w: Words }) {
 }
 
 export function UnsentActions({ retrying, accepted, failure, restore, canRestore = true, canRetry, disabled, onRetry, onRestore, discard = null, discardFailed = false, onDiscard, w, language }: {
-  retrying: boolean, accepted: boolean, failure?: RetryFailure, restore: boolean, canRestore?: boolean, canRetry: boolean,
-  disabled: boolean, onRetry: () => void, onRestore: () => void, discard?: UnsentDiscard | null, discardFailed?: boolean, onDiscard?: () => void, w: Words, language: string
+  retrying?: boolean, accepted: boolean, failure?: RetryFailure, restore?: boolean, canRestore?: boolean, canRetry?: boolean,
+  disabled?: boolean, onRetry?: () => void, onRestore?: () => void, discard?: UnsentDiscard | null, discardFailed?: boolean, onDiscard?: () => void, w: Words, language: string
 }) {
   const [explained, setExplained] = useState(false)
   const row = useRef<HTMLDivElement>(null), noteID = useId()
@@ -100,7 +100,7 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
         : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
-    {offer && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={onDiscard}>{w.unsentClear}</button>}
+    {offer && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={onDiscard}>{discard === "hide" ? w.dismissHeldNote : w.unsentClear}</button>}
     {unconfirmed && explained && <UnsentStatusNote id={noteID} w={w}/>}
     {discardFailed && <p className="pa-unsent-failure" role="alert">{w.unsentDiscardFailed}</p>}
   </div>

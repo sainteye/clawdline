@@ -2,9 +2,12 @@ package projectassistanthost
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
+	hoststore "github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -116,9 +119,9 @@ func TestHostReadViewBorrowsReaderAndRebuildExpiresEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if f.o.Reader.Stats().InUse != 0 {
-		t.Fatal("SQL reader retained transaction after returning facts")
-	}
+	// The enabled Host's routine tick and restart recovery read this same pool
+	// concurrently, so its InUse count cannot be attributed to the View. The
+	// transaction-release check runs on a pool only a never-enabled Host uses.
 	if _, err = f.o.Reader.Exec(`CREATE TABLE reader_cannot_write (id INTEGER)`); err == nil {
 		t.Fatal("Host read port bypassed query_only")
 	}
@@ -150,5 +153,44 @@ func TestHostReadViewBorrowsReaderAndRebuildExpiresEpoch(t *testing.T) {
 	}
 	if f.factories.Load() != 0 || f.launcher.calls.Load() != 0 {
 		t.Fatal("history read initialized provider/native work")
+	}
+
+	// Reopen the SQLite store so the next Host borrows fresh pools. That Host is
+	// never enabled, so it starts no background readers, and the earlier Host's
+	// goroutines hold the closed pools, not these. Every connection checked out
+	// of the fresh reader after View returns therefore belongs to View's path.
+	if err = f.h.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var dbSequence int
+	var dbName, dbPath string
+	if err = f.o.Database.QueryRow("PRAGMA database_list").Scan(&dbSequence, &dbName, &dbPath); err != nil || dbName != "main" || dbPath == "" {
+		t.Fatal("fixture database path", err, dbName)
+	}
+	if err = f.st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if f.st, err = hoststore.Open(filepath.Dir(dbPath)); err != nil {
+		t.Fatal(err)
+	}
+	old := f.o.Broker
+	f.o.Database = f.st.ProjectAssistantDatabase()
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.Broker = &orchestrator.Broker{Store: f.st, Tasks: old.Tasks, Git: old.Git, Dir: old.Dir, Launcher: old.Launcher, ScreenReadEvery: old.ScreenReadEvery, Terminal: old.Terminal, Live: old.Live, Type: old.Type, Screen: old.Screen}
+	f.start(t)
+	s, err = f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.Mode, q.SourceEpoch = pa.ReadViewSnapshot, ""
+	isolated, err := s.View(context.Background(), q)
+	if err != nil || isolated.Source.Access != pa.HistoryOnly {
+		t.Fatalf("reopened history unavailable: %+v %v", isolated.Source, err)
+	}
+	if f.o.Reader.Stats().InUse != 0 {
+		t.Fatal("SQL reader retained transaction after returning facts")
+	}
+	if f.factories.Load() != 0 || f.launcher.calls.Load() != 0 {
+		t.Fatal("reopened history read initialized provider/native work")
 	}
 }
