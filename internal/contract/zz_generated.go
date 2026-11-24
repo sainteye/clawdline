@@ -5036,8 +5036,10 @@ type ProjectAssistantExchange struct {
 	Outcome       string                           `json:"outcome"`
 	Project       ProjectAssistantProjectScope     `json:"project"`
 	Reply         string                           `json:"reply,omitempty"`
+	ReplyAt       string                           `json:"reply_at,omitempty"`
 	ReplyTurnID   string                           `json:"reply_turn_id,omitempty"`
 	Request       string                           `json:"request"`
+	RequestAt     string                           `json:"request_at,omitempty"`
 	RequestTurnID string                           `json:"request_turn_id"`
 	Revision      int64                            `json:"revision"`
 	Source        ProjectAssistantExchangeEndpoint `json:"source"`

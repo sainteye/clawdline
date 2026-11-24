@@ -284,6 +284,7 @@ func (s *Store) AdmitExchange(ctx context.Context, q app.ExchangeAdmission) (pa.
 	if sender >= pa.MaxCollaborationPerSender {
 		return x, failure(pa.CapacityFull, "bot_sender_outstanding")
 	}
+	x.RequestAt = q.At
 	var mb app.Mutation
 	if b.Bot.ManageTeam {
 		for _, turn := range b.Turns {
@@ -437,10 +438,14 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			x.RequestWorkerID != "" && (a.BackgroundOwner == nil || *a.BackgroundOwner != x.Target.Key) {
 			return x, failure(pa.StaleVersion, "request_completion")
 		}
+		at := m.Bot.UpdatedAt
 		switch t.State {
 		case pa.TurnSucceeded:
 			x.Outcome = pa.ExchangeCompleted
 			x.Reply = pa.CollaborationReply(text)
+			if x.Reply != "" {
+				x.ReplyAt = at
+			}
 		case pa.TurnUnknown:
 			x.Outcome = pa.ExchangeUnknown
 		case pa.TurnCancelled:
@@ -453,7 +458,6 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 		if t.Failure != nil {
 			x.Detail = string(t.Failure.Code) + ":" + t.Failure.Field
 		}
-		at := m.Bot.UpdatedAt
 		// A question the recipient asked the person keeps the exchange open
 		// for the person instead of replying to the requester; any other
 		// ending withdraws it.

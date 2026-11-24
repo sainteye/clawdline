@@ -92,7 +92,7 @@ func TestCollaborationOrdinaryRecipientKeepsItsActiveChat(t *testing.T) {
 	collaborationActiveSource(t, s, receiver)
 	q := reviewAdmission(t, s, sender, receiver, "background-exchange")
 	x, err := s.AdmitExchange(testContext, q)
-	if err != nil || x.RequestWorkerID == "" || x.Recipient().Key == receiver.Key {
+	if err != nil || x.RequestWorkerID == "" || x.Recipient().Key == receiver.Key || !x.RequestAt.Equal(q.At) || !x.ReplyAt.IsZero() {
 		t.Fatalf("ordinary recipient did not delegate: %+v, %v", x, err)
 	}
 	worker, err := s.StartBackgroundTask(testContext, receiver.Key, time.Now())
@@ -100,8 +100,10 @@ func TestCollaborationOrdinaryRecipientKeepsItsActiveChat(t *testing.T) {
 		t.Fatalf("active chat blocked the peer job: %v, %v", worker, err)
 	}
 	active := reviewStart(t, s, worker, x.RequestTurnID)
-	x, err = s.FinishExchange(testContext, reviewFinish(t, s, worker, active, pa.TurnSucceeded), "Independent answer.")
-	if err != nil || x.Outcome != pa.ExchangeCompleted || x.Delivery != "queued" {
+	finished := reviewFinish(t, s, worker, active, pa.TurnSucceeded)
+	x, err = s.FinishExchange(testContext, finished, "Independent answer.")
+	if err != nil || x.Outcome != pa.ExchangeCompleted || x.Delivery != "queued" ||
+		!x.RequestAt.Equal(q.At) || !x.ReplyAt.Equal(finished.Bot.UpdatedAt) {
 		t.Fatalf("peer result did not return to its sender: %+v, %v", x, err)
 	}
 	owner, err := s.Export(testContext, receiver.Key)
@@ -109,7 +111,8 @@ func TestCollaborationOrdinaryRecipientKeepsItsActiveChat(t *testing.T) {
 		t.Fatalf("peer job changed the user's active conversation: %+v, %v", owner.Conversation, err)
 	}
 	last := owner.Messages[len(owner.Messages)-1]
-	if last.Exchange == nil || last.Exchange.Reply != "Independent answer." || last.Kind != pa.NoticeMessage {
+	if last.Exchange == nil || last.Exchange.Reply != "Independent answer." || last.Kind != pa.NoticeMessage ||
+		!last.Exchange.RequestAt.Equal(q.At) || !last.Exchange.ReplyAt.Equal(finished.Bot.UpdatedAt) {
 		t.Fatalf("recipient did not retain the attributed result: %+v", last)
 	}
 	private, err := s.Export(testContext, worker)

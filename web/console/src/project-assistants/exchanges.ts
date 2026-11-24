@@ -8,7 +8,7 @@ import {sameBot,sameConversation} from "./view-state.ts"
 // @ts-expect-error -- Node's strip-types runner loads source extensions.
 import {readBotMetadata,readSource,readView} from "./read-views.ts"
 
-export type ExchangeEntry = {exchange:W.ProjectAssistantExchange;seq:number;at:string}
+export type ExchangeEntry = {exchange:W.ProjectAssistantExchange;seq:number;requestAt?:string;replyAt?:string}
 export type ExchangeScope = Pick<W.ProjectAssistantFence,"key"|"project"|"conversation_id">
 const text=(v:unknown):v is string=>typeof v==="string"&&v.length>0
 const sameProject=(a:W.ProjectAssistantProjectScope,b:W.ProjectAssistantProjectScope)=>!!a&&!!b&&a.machine_id===b.machine_id&&a.project_id===b.project_id&&a.canonical_id===b.canonical_id&&a.kind===b.kind
@@ -17,7 +17,7 @@ const endpoint=(v:W.ProjectAssistantExchangeEndpoint)=>!!v&&!!v.key&&text(v.key.
 
 /** Validate both participants before any request, reply or diagnostic can be published. */
 export function scopedExchange(x:W.ProjectAssistantExchange,scope:ExchangeScope):W.ProjectAssistantExchange {
-  if(!x||!text(x.id)||!endpoint(x.source)||!endpoint(x.target)||!text(x.source_turn_id)||!text(x.request_turn_id)||typeof x.request!=="string"||typeof x.outcome!=="string"||!Number.isSafeInteger(x.revision)||x.revision<1||!Number.isSafeInteger(x.hops)||x.hops<1||x.hops>8||[x.reply,x.detail,x.delivery,x.reply_turn_id].some(v=>v!==undefined&&typeof v!=="string"))throw failure("pa_invalid")
+  if(!x||!text(x.id)||!endpoint(x.source)||!endpoint(x.target)||!text(x.source_turn_id)||!text(x.request_turn_id)||typeof x.request!=="string"||typeof x.outcome!=="string"||!Number.isSafeInteger(x.revision)||x.revision<1||!Number.isSafeInteger(x.hops)||x.hops<1||x.hops>8||[x.reply,x.detail,x.delivery,x.reply_turn_id,x.request_at,x.reply_at].some(v=>v!==undefined&&typeof v!=="string"))throw failure("pa_invalid")
   const destination = x.target_project ?? x.project
   if(!projectScope(x.project)||!projectScope(destination)||x.project.machine_id!==scope.key.machine_id||destination.machine_id!==scope.key.machine_id||x.source.key.machine_id!==scope.key.machine_id||x.target.key.machine_id!==scope.key.machine_id||sameBot(x.source.key,x.target.key)||
     !(sameConversation({...x.source,project:x.project},scope)||sameConversation({...x.target,project:destination},scope)))throw failure("pa_scope_denied")
@@ -60,8 +60,11 @@ export function mergeExchangeEntries(entries:readonly ExchangeEntry[]):ExchangeE
     const old=merged.get(entry.exchange.id)
     if(!old){merged.set(entry.exchange.id,entry);continue}
     if(!sameExchange(old.exchange,entry.exchange))continue
-    const first=entry.seq<old.seq?entry:old
-    merged.set(entry.exchange.id,{...first,exchange:entry.exchange.revision>=old.exchange.revision?entry.exchange:old.exchange})
+    const [first,later]=entry.seq<old.seq?[entry,old]:[old,entry]
+    const exchange=entry.exchange.revision>=old.exchange.revision?entry.exchange:old.exchange
+    const requestAt=first.requestAt??later.requestAt
+    const replyAt=[first,later].find(row=>row.replyAt&&row.exchange.reply===exchange.reply)?.replyAt
+    merged.set(entry.exchange.id,{seq:first.seq,exchange,requestAt,replyAt})
   }
   return [...merged.values()].sort((a,b)=>a.seq-b.seq)
 }
@@ -70,7 +73,19 @@ export function exchangeEntries(messages:readonly W.ProjectAssistantMessage[],sc
   const entries:ExchangeEntry[]=[]
   for(const message of messages) {
     if(!message.exchange||!sameConversation(message.fence,scope))continue
-    try{entries.push({exchange:scopedExchange(message.exchange,scope),seq:message.seq,at:message.at})}catch{/* Ignore a malformed notice. */}
+    try{
+      const exchange=scopedExchange(message.exchange,scope)
+      const entry:ExchangeEntry={exchange,seq:message.seq}
+      // Older notices before these fields existed record the admission and
+      // completion times. A promoted reply can reuse the original input ID.
+      if(!exchange.request_at&&exchange.revision===1&&exchange.outcome==="queued")entry.requestAt=message.at
+      if(!exchange.reply_at&&exchange.reply&&exchange.outcome==="completed"){
+        const id=exchange.id
+        if(message.id===id+"-result-target"||message.id===id+"-result-source"||message.id===id+"-decided-source"||
+          (message.id===id+"-reply-input"&&exchange.revision===3))entry.replyAt=message.at
+      }
+      entries.push(entry)
+    }catch{/* Ignore a malformed notice. */}
   }
   return mergeExchangeEntries(entries)
 }

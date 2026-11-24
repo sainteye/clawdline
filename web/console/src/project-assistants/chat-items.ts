@@ -3,8 +3,9 @@
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import {mergeTimeline} from "./read-views.ts"
+// @ts-expect-error Node executes source extensions.
+import {chatTimeBreak} from "./chat-time.ts"
 export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink } | {id:string;kind:"permission";offer:W.ProjectAssistantPermissionOffer}
-export const ChatSeparatorGapMs = 3_600_000
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
   for (const message of pages.flat()) byID.set(message.id,message)
@@ -16,17 +17,22 @@ export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatI
 /** Work keeps its source admission position even when its result arrives after newer messages. */
 export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewItem[]):ChatItem[] {
   const out: ChatItem[] = []
-  let lastDate: number | null = null, lastAuthor: string | null = null
+  let lastAt:string|undefined,lastAuthor:string|null=null
   for (const row of mergeTimeline([timeline])) {
     if(row.work){out.push({id:row.work.id,kind:"work",work:row.work});lastAuthor=null;continue}
     if(row.permission){out.push({id:row.permission.id,kind:"permission",offer:row.permission});lastAuthor=null;continue}
     const message=row.message
     if(!message||message.kind==="notice"&&message.id.startsWith("lead-call-"))continue
-    const date = Date.parse(message.at)
-    if (lastDate === null || date-lastDate > ChatSeparatorGapMs) { out.push({id:`sep-${message.id}`,kind:"separator",at:message.at}); lastAuthor=null }
+    const conversational=message.kind==="user"||message.kind==="assistant"
+    if(conversational){
+      if(chatTimeBreak(message.at,lastAt)){
+        out.push({id:`sep-${message.id}`,kind:"separator",at:message.at})
+        lastAuthor=null
+      }
+      lastAt=message.at
+    }
     out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor})
-    lastAuthor=message.kind === "user" || message.kind === "assistant" ? message.kind : null
-    lastDate=date
+    lastAuthor=conversational?message.kind:null
   }
   return out
 }

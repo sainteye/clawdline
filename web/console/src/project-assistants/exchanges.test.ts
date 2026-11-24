@@ -8,7 +8,7 @@ import {renderToStaticMarkup} from "react-dom/server"
 import type * as W from "@clawdline/contract"
 import type {SourceClient} from "./client"
 // @ts-expect-error -- Node loads source extensions.
-import {loadExchangePage,loadExchangeBot,scopedExchange,exchangeOutcome,exchangeDelivery,exchangeEntries} from "./exchanges.ts"
+import {loadExchangePage,loadExchangeBot,scopedExchange,exchangeOutcome,exchangeDelivery,exchangeEntries,mergeExchangeEntries} from "./exchanges.ts"
 // @ts-expect-error -- Node loads source extensions.
 import {errorCode,failure} from "./client.ts"
 
@@ -44,7 +44,7 @@ test("exchange pages preserve full request, reply and detail without requesting 
   f.value.items.push(row(notice({...exchange,id:"other-exchange",target:{key:{...peer,bot_id:"other"},conversation_id:"other-chat"}},2)))
   f.value.items.push(row(notice({...exchange,request_turn_id:"changed",revision:4},3)))
   const first=await loadExchangePage(f.source,scope,exchange,signal())
-  assert.deepEqual(first.entries,[{exchange,seq:1,at}])
+  assert.deepEqual(first.entries,[{exchange,seq:1}])
   assert.equal(first.bot?.name,"Requester")
   assert.deepEqual(first.next,{cursor:"earlier",sourceEpoch:"epoch"})
   Object.assign(f.value,{mode:"history",snapshot:undefined,has_more:false,next_cursor:"",items:[row(notice({...exchange,id:"older",outcome:"completed"},1))]})
@@ -53,6 +53,18 @@ test("exchange pages preserve full request, reply and detail without requesting 
   assert.equal(earlier.next,undefined)
   assert.deepEqual(f.calls.map(({mode,cursor,source_epoch})=>[mode,cursor,source_epoch]),[["snapshot","",""],["history","earlier","epoch"]])
   assert.equal(scopedExchange(exchange,{key:peer,project,conversation_id:"target-chat"}),exchange)
+})
+
+test("old notice pages retain evidence of the actual send and reply times",()=>{
+  const request={...notice({...exchange,outcome:"queued",revision:1,reply:undefined}),id:"exchange-queued"}
+  const replyAt="2026-11-17T01:00:00Z",promotedAt="2026-11-17T02:00:00Z"
+  const completion={...notice({...exchange,outcome:"completed",revision:3},2),id:"exchange-result-source",at:replyAt}
+  const promotion={...notice({...exchange,outcome:"completed",revision:4,delivery:"queued"},3),id:"exchange-reply-input",at:promotedAt}
+  assert.equal(exchangeEntries([promotion],scope)[0].replyAt,undefined)
+  const [entry]=mergeExchangeEntries([promotion,request,completion].flatMap(message=>exchangeEntries([message],scope)))
+  assert.equal(entry.requestAt,at)
+  assert.equal(entry.replyAt,replyAt)
+  assert.equal(entry.exchange.revision,4)
 })
 
 test("exchange pages reject malformed results, foreign scope and unreadable sources",async()=>{

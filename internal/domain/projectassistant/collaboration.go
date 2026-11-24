@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode/utf8"
 )
 
@@ -56,6 +57,8 @@ type Exchange struct {
 	ReplyTurnID     string           `json:"reply_turn_id,omitempty"`
 	Request         string           `json:"request"`
 	Reply           string           `json:"reply,omitempty"`
+	RequestAt       time.Time        `json:"request_at,omitzero"`
+	ReplyAt         time.Time        `json:"reply_at,omitzero"`
 	Detail          string           `json:"detail,omitempty"`
 	Outcome         ExchangeOutcome  `json:"outcome"`
 	Revision        int64            `json:"revision"`

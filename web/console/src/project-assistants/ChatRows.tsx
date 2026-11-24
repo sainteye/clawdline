@@ -18,6 +18,7 @@ import type * as W from "@clawdline/contract"
 import { Fragment, useCallback, useEffect, useState } from "react"
 import type React from "react"
 import { buildTimelineChat } from "./chat-items"
+import { chatTimeFormat } from "./chat-time"
 import { WorkResultCard } from "./WorkResultCard"
 import { ExchangePanel } from "./ExchangePanel"
 import { exchangeWords } from "./exchange-words"
@@ -57,6 +58,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,turns=[],onQ
     }else if(state==="unknown"||state==="failed"||state==="cancelled")reviews.set(notice.task,{text:w.workReviewHeld})
     else reviews.set(notice.task,{details:notice.key==="work_review"?message.text:reviews.get(notice.task)?.details})
   }
+  const timeFormat=chatTimeFormat(language)
   const chat=buildTimelineChat(timeline.filter(item=>{
     const message=item.message
     if(!message)return true
@@ -112,7 +114,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,turns=[],onQ
 
   }
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
-  return <>{chat.map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} review={reviews.get(item.work.task_id)} w={w} source={source} onOpen={onOpenWork}/>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
+  return <>{chat.map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{timeFormat.format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} review={reviews.get(item.work.task_id)} w={w} source={source} onOpen={onOpenWork}/>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)

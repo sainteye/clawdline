@@ -10,7 +10,7 @@ import {BotAvatar} from "./BotAvatar"
 import {BotMessageMarkdown} from "./BotMessageMarkdown"
 import {sameConversation} from "./view-state"
 import {afterSurfaceExit} from "./surface-motion"
-import {ChatSeparatorGapMs} from "./chat-items"
+import {chatTimeBreak,chatTimeFormat} from "./chat-time"
 import type {Words} from "./words"
 import "./ExchangePanel.css"
 
@@ -63,6 +63,13 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
   useLayoutEffect(()=>{
     if(follows.current&&scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight
   },[signature])
+  const timeFormat=chatTimeFormat(language)
+  let previousAt:string|undefined
+  const marker=(at:string|undefined)=>{
+    const show=chatTimeBreak(at,previousAt)
+    previousAt=at
+    return show&&at?<time dateTime={at}>{timeFormat.format(Date.parse(at))}</time>:null
+  }
   const dismiss=()=>setClosing(true)
   return <dialog data-modal-dismiss="true" ref={dialog} className="pa-exchange-panel" data-closing={closing||undefined} inert={closing}
     aria-label={words.title} onCancel={event=>{event.preventDefault();dismiss()}}>
@@ -75,18 +82,15 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
       {loading&&<p className="pa-exchange-note" role="status">{request.next?w.earlierLoading:words.loading}</p>}
       {readable&&!loading&&!error&&pages.next&&<button className="pa-pill" type="button" onClick={()=>{follows.current=false;setRequest({next:pages.next})}}>{w.earlier}</button>}
       {error&&<p className="pa-exchange-note" role="alert">{words.unavailable} ({error}) <button type="button" onClick={()=>setRequest(error==="pa_cursor_expired"?{}:{...request})}>{words.retry}</button></p>}
-      {rows.map(({exchange:x,at},index)=>{
-        const time=Date.parse(at),then=Date.parse(rows[index-1]?.at??"")
+      {rows.map(({exchange:x,requestAt,replyAt})=>{
         const outcome=exchangeOutcome(x.outcome),delivery=exchangeDelivery(x.delivery)
         const pending=outcome==="queued"||outcome==="sent"
         const restarted=outcome==="unknown"&&x.detail==="execution_effect_unknown:restart"
         const showDelivery=delivery!=="unknown"&&(outcome!=="completed"||delivery!=="delivered")
         return <section key={x.id} className="pa-exchange-record">
-          {Number.isFinite(time)&&(!Number.isFinite(then)||time-then>ChatSeparatorGapMs)&&<time dateTime={at}>
-            {new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(time)}
-          </time>}
+          {marker(x.request_at??requestAt)}
           {message(exchangeParticipant(x,"source"),x.request)}
-          {x.reply&&message(exchangeParticipant(x,"target"),x.reply)}
+          {x.reply&&<>{marker(x.reply_at??replyAt)}{message(exchangeParticipant(x,"target"),x.reply)}</>}
           {pending?<p className="pa-exchange-note" role="status">{words.waiting.replace("{name}",nameOf(exchangeParticipant(x,"target")))}</p>:
             x.outcome==="needs_person"?<p className="pa-exchange-note" role="status">{w.decisionWaiting.replace("{name}",nameOf(exchangeParticipant(x,"target")))}</p>:
             outcome!=="completed"?<p className="pa-exchange-note pa-exchange-error">{words.state} · {words[outcome]}{restarted&&` · ${w.failRestart}`}</p>:null}
