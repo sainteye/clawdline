@@ -5727,7 +5727,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "00c65d80f843256153d7d6e096f3abcbdf47447c663568fe93865aef1a7c026d",
+    "web/console/src/cloud/project-assistants.ts": "b880ef3e4e9b2102b1f13262f9529f3f35112f9de47c0e37dac49c7492e95eb2",
     "web/console/src/cloud/relay-writer.ts": "9e13ed3493954116d110ca44608f2264a26dc6d3c9bf718847adfcb7792b015d",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",

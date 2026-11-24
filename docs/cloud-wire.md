@@ -784,7 +784,7 @@ validates the answer, merges it into the timeline, and commits that timeline to 
 
 For the opening snapshot and explicitly requested older history, start with
 `event=cloud.bots.read` in the viewer event log. The existing `diagnostics.events` outbox
-delivers it to an eligible paired machine under its ordinary retention and rate limits.
+prefers the paired machine that served the read and applies its ordinary retention and rate limits.
 The row has the hosted build and a unique `trace_id` per attempt, including retries after
 an opening refusal. Retries for one opening share an `interaction_id`. The row records elapsed
 milliseconds from the Bot selection (or Chat mount

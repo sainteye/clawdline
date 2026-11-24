@@ -119,6 +119,24 @@ export function choosesMachine(f: ScheduleFleet | null = fleet): f is ScheduleFl
   return !!f && f.machines.length > 1
 }
 
+/**
+ * The machine every-machine scope reads through when no Session is open.
+ *
+ * That scope has no machine of its own, but the page's unaddressed reads — the
+ * quota footer among them — still go to one. It was whichever machine the
+ * roster listed first, online or not, and a footer asking a machine that had
+ * stopped reporting in waited on it while an online one sat in the list. The
+ * machine being read is kept while it reports in; otherwise the first one that
+ * does is taken. With none online there is nothing better to read, so it stays.
+ */
+export function fleetReaderMachine(
+  reading: string | null,
+  machines: readonly Pick<ScheduleMachine, "id" | "online">[],
+): string | null {
+  if (machines.some((machine) => machine.id === reading && machine.online)) return reading
+  return machines.find((machine) => machine.online)?.id ?? reading
+}
+
 /** "Studio · macOS": the name and the platform word the switcher shows. */
 export function machineWords(machine: ScheduleMachine): string {
   return machine.platform ? machine.name + " · " + machine.platform : machine.name

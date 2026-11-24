@@ -15,7 +15,8 @@ import { isTriggerOnly, scheduleNextLine, scheduleTimeZone, scheduleWhenFields }
 import { historyRecordFor, shouldOpenHistory } from "../schedule-history-open.js"
 import { CHECK_ICON, COPY_ICON, maskedWebhookURL } from "../schedule-webhook-url.js"
 import { runScheduleWithForce } from "../schedule-force-run.js"
-import { laneOnScreen, laneOwesRead } from "./schedules-lane.js"
+import { laneOnScreen, laneOwesRead, scheduleRetryDelayMs, SCHEDULE_READ_DEADLINE_MS } from "./schedules-lane.js"
+import { HeldReads } from "../poll.js"
 import { ScheduleRecovery, retainScheduleRows } from "./schedules-recovery.js"
 import "../schedule-errors.css"
 import {
@@ -440,6 +441,33 @@ const Schedules = (() => {
    * somebody can see it, and nothing otherwise, so a tick a moment after a
    * read of its own waits for the next one instead of asking twice.
    */
+  // One read per machine is out at a time. A wait that passes its deadline
+  // fails so the section stops saying "loading"; the read stays out, the retry
+  // joins it, and its answer is drawn whenever it comes (`HeldReads`).
+  const scheduleReads = new HeldReads<ScheduleList>({ deadlineMs: SCHEDULE_READ_DEADLINE_MS })
+
+  // Reads that failed in a row, and the one retry waiting on them.
+  let failedReads = 0
+  let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+  /**
+   * A read has settled. One that failed — wholly, or for one machine — is made
+   * again soon, without a reload; an answer ends the run. Nothing is kept from
+   * the failure: the retry is an ordinary read.
+   */
+  function settled(): void {
+    if (retryTimer !== null) { clearTimeout(retryTimer); retryTimer = null }
+    if (readState !== "failed") { failedReads = 0; return }
+    failedReads++
+    retryTimer = setTimeout(() => {
+      retryTimer = null
+      // Hidden or off screen: coming back reads at once (`watchVisibility`).
+      if (readState !== "failed" || pageHidden() || !sectionOnScreen()) { lastRefreshAt = null; return }
+      recovery.begin()
+      refresh()
+    }, scheduleRetryDelayMs(failedReads, LANE_MS))
+  }
+
   function look(): void {
     if (!laneOwesRead({ pageHidden: pageHidden(), lastRefreshAt, now: Date.now(), everyMs: LANE_MS, onScreen: sectionOnScreen })) return
     recovery.begin()
@@ -458,9 +486,11 @@ const Schedules = (() => {
     // One machine on screen asks that machine only. Asked of nobody in
     // particular, the read fans out to every machine on the account, and one
     // offline machine elsewhere made this machine's list "could not be read".
-    scheduleApi
-      .schedules(scheduleFleet()?.current || undefined)
-      .then((data) => {
+    const target = scheduleFleet()?.current || ""
+    // Unaddressed, the read goes to whichever machine the page is on, so it is
+    // the same read only while that has not changed.
+    const sameRead = target || "@" + requestedMachines
+    const answered = (data: ScheduleList): void => {
         if (requestedMachines !== machineKey()) return
         const schedules = (data && data.schedules) || []
         const at = data && data.at
@@ -498,7 +528,17 @@ const Schedules = (() => {
             }), at, unanswered }
           renderSchedules(lastAnswer.schedules, at, unanswered)
         }).catch(() => { /* Optional project labels do not invalidate the schedule inventory. */ })
-      })
+    }
+    // The answer came after its wait had failed and before any later read of
+    // this machine: it is drawn like any other, and ends the run of retries.
+    const late = (data: ScheduleList): void => {
+      if (inFlight || requestedMachines !== machineKey()) return
+      try { answered(data) } catch { return }
+      settled()
+      retryReadyMissing()
+    }
+    scheduleReads.read(sameRead, () => scheduleApi.schedules(target || undefined), late)
+      .then(answered)
       .catch(() => {
         recovery.missed(scheduleFleet()?.current || "")
         // **Nothing is drawn from here, and that is the point.** A refusal —
@@ -516,8 +556,9 @@ const Schedules = (() => {
       })
       .then(() => {
         inFlight = false
-        if (requestedMachines !== machineKey()) refresh()
-        else retryReadyMissing()
+        if (requestedMachines !== machineKey()) { refresh(); return }
+        settled()
+        retryReadyMissing()
       })
   }
 
@@ -559,20 +600,33 @@ const Schedules = (() => {
       paintReadState()
     }
     paint()
+    const answered = (machine: string, data: ScheduleList): void => {
+      const missing = data.unanswered?.find((row) => row.machine === machine)
+      if (missing) throw { code: missing.code || "cloud_read_unavailable" }
+      answers.set(machine, (data.schedules ?? []).filter((row) => row.machine === machine))
+      recovery.answered(machine)
+      at = Math.max(at, data.at ?? 0)
+      // An answer is proof the machine is reachable now; without this, a Mac
+      // that was offline when the page opened and came back would still be
+      // called offline the next time a read times out.
+      noteScheduleMachineAnswered(machine)
+    }
+    // A machine answered after its wait had failed and before any later read
+    // of it: its group is drawn from the answer, and when that was the last
+    // group unread, the run of retries ends.
+    const late = (machine: string, data: ScheduleList): void => {
+      if (inFlight || requestedMachines !== machineKey()) return
+      try { answered(machine, data) } catch { return }
+      failures.delete(machine)
+      paint()
+      if (readState !== "failed") settled()
+    }
     void Promise.all(fleet.machines.map(async (machine) => {
       try {
         void loadClockRows(machine.id).then(paint)
-        const data = await scheduleApi.schedules(machine.id)
+        const data = await scheduleReads.read(machine.id, () => scheduleApi.schedules(machine.id), (value) => late(machine.id, value))
         if (requestedMachines !== machineKey()) return
-        const missing = data.unanswered?.find((row) => row.machine === machine.id)
-        if (missing) throw { code: missing.code || "cloud_read_unavailable" }
-        answers.set(machine.id, (data.schedules ?? []).filter((row) => row.machine === machine.id))
-        recovery.answered(machine.id)
-        at = Math.max(at, data.at ?? 0)
-        // An answer is proof the machine is reachable now; without this, a Mac
-        // that was offline when the page opened and came back would still be
-        // called offline the next time a read times out.
-        noteScheduleMachineAnswered(machine.id)
+        answered(machine.id, data)
       } catch (error) {
         recovery.missed(machine.id)
         failures.set(machine.id, { machine: machine.id,
@@ -597,6 +651,7 @@ const Schedules = (() => {
           renderSchedules(withProjects, lastAnswer.at, lastAnswer.unanswered)
         }).catch(() => {})
       }
+      settled()
       retryReadyMissing()
     })
   }

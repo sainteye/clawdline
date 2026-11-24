@@ -9984,6 +9984,23 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.held_read_lost_milliseconds",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 180000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.local_performance_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -10419,6 +10436,41 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.quota_read_wait_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 20000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.reads_out_per_target",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 1,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.relay_feature_wait_seconds",
     "Class": "cache",
     "Unit": "seconds",
@@ -10440,6 +10492,58 @@
     "Class": "cache",
     "Unit": "seconds",
     "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.schedule_read_wait_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 20000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.schedule_retry_ceiling_milliseconds",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 60000,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.schedule_retry_first_milliseconds",
+    "Class": "cache",
+    "Unit": "milliseconds",
+    "Limit": 5000,
     "WarnAt": 0,
     "AtLimit": "expire",
     "Deviation": "",

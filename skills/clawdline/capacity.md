@@ -509,6 +509,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.health_ui_retry_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
+| `console.held_read_lost_milliseconds` | 180000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.local_performance_body_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.local_performance_points` | 168 | `rows` | `refuse` | `diagnostics` | — |
 | `console.local_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
@@ -534,8 +535,13 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.public_analytics_rows` | 20 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.quota_last_reading_age_seconds` | 86400 | `seconds` | `expire` | `diagnostics` | — |
 | `console.quota_last_reading_machines` | 8 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `console.quota_read_wait_milliseconds` | 20000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.reads_out_per_target` | 1 | `rows` | `coalesce` | `diagnostics` | — |
 | `console.relay_feature_wait_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
 | `console.relay_transcript_expect_reask_seconds` | 4 | `seconds` | `expire` | `diagnostics` | — |
+| `console.schedule_read_wait_milliseconds` | 20000 | `milliseconds` | `refuse` | `sender, diagnostics` | — |
+| `console.schedule_retry_ceiling_milliseconds` | 60000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.schedule_retry_first_milliseconds` | 5000 | `milliseconds` | `expire` | `diagnostics` | — |
 | `console.service_performance_alerts` | 30 | `rows` | `refuse` | `diagnostics` | — |
 | `console.service_performance_body_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.service_performance_deployments` | 100 | `rows` | `refuse` | `diagnostics` | — |
