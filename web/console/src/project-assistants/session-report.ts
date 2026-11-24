@@ -8,7 +8,7 @@ const sessionReportLineLimit=80
  * preview uses the same sentence, so a person finds the line they saw there. */
 export function sessionReportLine(text:string){
   const first=text.split("\n").map(plainPreview).find(Boolean)??""
-  const sentence=/^.*?(?:[。！？]|[.!?](?=\s|$))/u.exec(first)?.[0]??first
+  const sentence=/^.*?(?:[\u3002\uff01\uff1f]|[.!?](?=\s|$))/u.exec(first)?.[0]??first
   const chars=Array.from(sentence)
   return chars.length>sessionReportLineLimit?chars.slice(0,sessionReportLineLimit-1).join("").trimEnd()+"…":sentence
 }

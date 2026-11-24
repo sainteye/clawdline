@@ -47,7 +47,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   const receive=(cmd:W.ProjectAssistantCommand):W.ProjectAssistantReceipt=>{let r=receipts.get(cmd.idempotency_key);if(!r){r={id:crypto.randomUUID(),command:cmd,state:"accepted",event_seq:seq,resource_id:cmd.key.bot_id};receipts.set(cmd.idempotency_key,r)}return r}
   const summary=(bot:W.ProjectAssistantBot):W.ProjectAssistantBotSummary=>{
     const rows=messages.get(bot.key.bot_id),seq=readSequences.get(bot.conversation_id)??(bot.key.bot_id==="bot-0"?0:rows?.length??0)
-    return {bot,source:status(),activity:bot.key.bot_id==="bot-2"?"Working through the interface flow…":"",activity_at:at,latest_message:rows?.at(-1)?.text??"",unread_count:Math.max(0,(rows?.length??0)-seq),pending_permissions:bot.key.bot_id==="bot-1"?1:0,read_cursor:{key:bot.key,conversation_id:bot.conversation_id,reader_id:"fixture",message_seq:seq},version:bot.version}
+    return {bot,source:status(),activity:bot.key.bot_id==="bot-2"?"Working through the interface flow…":"",activity_at:at,latest_message:rows?.at(-1)?.text??"",latest_message_kind:rows?.at(-1)?.kind,unread_count:Math.max(0,(rows?.length??0)-seq),pending_permissions:bot.key.bot_id==="bot-1"?1:0,read_cursor:{key:bot.key,conversation_id:bot.conversation_id,reader_id:"fixture",message_seq:seq},version:bot.version}
   }
   const push=(event:W.ProjectAssistantEvent)=>{events.push({...event,seq:++seq,id:event.id||crypto.randomUUID()})}
   const permissionBot=bots[1]
