@@ -51,7 +51,11 @@ type Broker struct {
 	AssistantAuthority     *AssistantAuthority
 	AssistantWorkChanged   func(context.Context, AssistantWorkSnapshot) error
 	AssistantWorkCompleted func(context.Context, AssistantWorkSnapshot) error
-	assistantMu            sync.Mutex
+	// BotRequestNotice wakes one Bot with a Bot request card notice: the new
+	// holder after a handoff, or an asking Bot after completion
+	// (bot_request_effects.go). The Bot host sets it.
+	BotRequestNotice func(context.Context, BotRequestNotice) error
+	assistantMu      sync.Mutex
 	// SquadActorRequired makes agent dispatch prove the bound launch and root
 	// conversation. Production enables it; isolated broker tests can exercise
 	// legacy protocol behavior without a squad catalog.

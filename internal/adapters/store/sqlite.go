@@ -235,6 +235,9 @@ func Open(dir string) (*Store, error) {
 	if err := openWorkV2(db); err != nil {
 		return nil, err
 	}
+	if err := openBotRequest(db); err != nil {
+		return nil, err
+	}
 	if _, err := db.Exec(voiceWorkSchema); err != nil {
 		return nil, err
 	}

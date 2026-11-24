@@ -452,6 +452,7 @@ func (h *Host) connect() error {
 	h.authority, h.bridge = a, b
 	h.o.Broker.AssistantWorkChanged = b.Sync
 	h.o.Broker.AssistantWorkCompleted = h.completeWork
+	h.o.Broker.BotRequestNotice = h.botRequestNotice
 	return nil
 }
 

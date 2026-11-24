@@ -21,6 +21,7 @@ export function openableBot(items: readonly W.ProjectAssistantBotSummary[], key:
 let directory: ReadonlySet<string> = new Set()
 const listeners = new Set<() => void>()
 export function publishBotDirectory(items: readonly W.ProjectAssistantBotSummary[]): void {
+  publishBots(items)
   const next = new Set(items.filter(item => !item.bot.hidden).map(item => botIdentity(item.bot.key)))
   if (next.size === directory.size && [...next].every(id => directory.has(id))) return
   directory = next
@@ -36,4 +37,24 @@ export function useBotOpenable(key: W.ProjectAssistantBotKey | undefined): boole
 
 export function requestOpenBot(request: OpenBotRequest): void {
   window.dispatchEvent(new CustomEvent<OpenBotRequest>(OPEN_BOT, { detail: request }))
+}
+
+// The same reading with each Bot's name and avatar, for a surface outside the
+// Bots window that names a Bot by its ID (the Board's Bot work section).
+let bots: readonly W.ProjectAssistantBot[] = []
+let botsMark = ""
+const botListeners = new Set<() => void>()
+function publishBots(items: readonly W.ProjectAssistantBotSummary[]): void {
+  const mark = JSON.stringify(items.map(item => [botIdentity(item.bot.key), item.bot.name, item.bot.appearance, !!item.bot.hidden]))
+  if (mark === botsMark) return
+  botsMark = mark
+  bots = items.map(item => item.bot)
+  for (const listener of botListeners) listener()
+}
+const subscribeBots = (listener: () => void) => { botListeners.add(listener); return () => { botListeners.delete(listener) } }
+const botsSnapshot = () => bots
+
+/** Every Bot the host last read, hidden ones included so a card can still name its holder. */
+export function useBotDirectory(): readonly W.ProjectAssistantBot[] {
+  return useSyncExternalStore(subscribeBots, botsSnapshot, botsSnapshot)
 }
