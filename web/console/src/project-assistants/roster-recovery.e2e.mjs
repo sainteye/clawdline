@@ -1,4 +1,4 @@
-/** Roster reads recover on both transports without rendering machine status. */
+/** Roster and chat reads recover without manual refresh. Pass --chat-only to run chat recovery. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
 import {mkdir,readFile,writeFile} from "node:fs/promises"
@@ -14,10 +14,13 @@ const files=new Map(built.outputFiles.map(f=>["/"+path.basename(f.path),f.conten
 const pictures=new Map(await Promise.all(["ramen","skyline","rain","platform","building"].map(async name=>[
   `/${name}.webp`,await readFile(new URL(`./tower/${name}.webp`,import.meta.url)),
 ])))
-let forbidden=0
+const forbidden=[]
 const server=createServer((req,res)=>{
   const url=new URL(req.url,"http://fixture")
-  if(url.pathname.startsWith("/v1/")){forbidden++;res.writeHead(500);res.end("No live API");return}
+  if(req.method==="GET"&&url.pathname==="/v1/settings/copilot"){
+    res.setHeader("Content-Type","application/json");res.end('{"key_set":false}');return
+  }
+  if(url.pathname.startsWith("/v1/")){forbidden.push(url.pathname);res.writeHead(500);res.end("No live API");return}
   if(pictures.has(url.pathname)){res.setHeader("Content-Type","image/webp");res.end(pictures.get(url.pathname));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
   res.setHeader("Content-Type","text/html");res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font:15px system-ui;background:#080808;color:#fafafa}#app{height:100dvh}</style><link rel="stylesheet" href="/roster.css"><div id="app"></div><script type="module" src="/roster.js"></script>')
@@ -72,6 +75,31 @@ async function checkCloudRosterBeforeVersionReplay(page) {
   assert.equal(await rows.count(),6)
 }
 
+async function checkCloudChatBeforeCapabilities(page, language) {
+  for(const supportsChat of [true,false]){
+    await page.goto(origin+"/?chat&lang="+language)
+    await page.locator(".pa-bot-row[data-bot-key]").first().click()
+    const chat = page.locator(".pa-chat")
+    const reconnecting = chat.locator("[data-reconnecting=true]")
+    await reconnecting.waitFor()
+    assert.equal(await page.evaluate(()=>window.cloudChat.snapshotsRead()),0)
+    const editor = chat.locator(".pa-editor textarea")
+    await editor.fill("Draft preserved while reconnecting")
+    await page.evaluate(supported=>window.cloudChat.advertise(supported),supportsChat)
+    if(supportsChat){
+      await page.waitForFunction(()=>window.cloudChat.snapshotsRead()===1)
+      await reconnecting.waitFor({state:"hidden"})
+      assert.equal(await editor.inputValue(),"Draft preserved while reconnecting")
+      assert.equal(await editor.isEnabled(),true)
+      await chat.getByText("Help me plan the next tasks.",{exact:true}).waitFor()
+    }else{
+      await chat.getByRole("alert").filter({hasText:"pa_unsupported"}).waitFor()
+      assert.equal(await page.evaluate(()=>window.cloudChat.snapshotsRead()),0)
+      assert.equal(await editor.isEnabled(),false)
+    }
+  }
+}
+
 async function checkMobileToolbarAndRetry(page,language,width) {
   await page.goto(origin+"/?snapshots&retry&hold&lang="+language)
   const zh=language!=="en"
@@ -121,12 +149,19 @@ async function checkMobileToolbarAndRetry(page,language,width) {
   await page.getByRole("button",{name:zh?"重試":"Try again",exact:true}).click()
   await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6)
 }
+const chatOnly = process.argv.includes("--chat-only")
 try {
   for(const engine of [chromium,webkit])for(const [language,width] of [["zh-Hant",390],["en",1280]]) {
     const browser=await engine.launch({headless:true,...(engine===chromium?{args:["--disable-features=OmniboxEverywhere"]}:{})}),page=await browser.newPage({viewport:{width,height:844}})
     const errors=[];page.on("pageerror",error=>errors.push(error.message))
     const name=`${engine.name()}-${language}-${width}`
     try {
+      await checkCloudChatBeforeCapabilities(page,language)
+      if(chatOnly){
+        assert.deepEqual(errors,[])
+        results.push({name,chatRecovery:true})
+        continue
+      }
       await page.goto(origin+"/?lang="+language)
       const rows=page.locator(".pa-bot-row[data-bot-key]")
       const waitForRows=count=>page.waitForFunction(n=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===n,count)
@@ -179,6 +214,6 @@ try {
     }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)});throw error}
     finally{await browser.close()}
   }
-  assert.equal(forbidden,0)
+  assert.deepEqual(forbidden,[])
 }finally{server.closeAllConnections();await new Promise(r=>server.close(r));await writeFile(path.join(artifacts,"roster-recovery-results.json"),JSON.stringify({results,forbidden},null,2)+"\n")}
 console.log(JSON.stringify({results,forbidden}))

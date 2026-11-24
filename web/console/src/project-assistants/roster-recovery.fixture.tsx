@@ -6,7 +6,7 @@ import {Bots} from "./Bots"
 import {fixtureSource} from "./fixtures"
 import {ViewerEventLog} from "../legacy/js/net/cloud-viewer-events.js"
 import {failure,type SourceClient} from "./client"
-import {capturedAssistantRelayFetch,ProjectAssistantRegistry} from "../cloud/project-assistants"
+import {capturedAssistantRelayFetch,ProjectAssistantRegistry,ProjectAssistantSourceClient,type AssistantGrant} from "../cloud/project-assistants"
 import "./styles.css"
 
 function controlled(machine:string,live:boolean,initial:W.ProjectAssistantErrorCode="pa_offline") {
@@ -64,11 +64,43 @@ function cloudRoster() {
   return registry.getSnapshot()
 }
 
+function cloudChat() {
+  const machineID = "studio"
+  const base = fixtureSource(machineID)
+  const list = "project-assistants.list", view = "project-assistants.view"
+  const snapshots = new Map<string,unknown>()
+  const grant: AssistantGrant = {accountKey:"cloud-chat-fixture",readerID:"fixture",machineID,authorizationRevision:"fixture",
+    apiLevel:undefined,descriptorPending:true,paired:true,online:true,writable:true}
+  let snapshotsRead = 0
+  const connection = {
+    orchestratorSnapshots:snapshots,
+    machineDescriptor:()=>({machine:{commands:[list]}}),
+    async _machineRequest(id:string,command:string,fields:Record<string,unknown>) {
+      if(id!==machineID)throw Error("Unexpected chat destination")
+      const signal = new AbortController().signal
+      if(command===list)return base.list(fields as unknown as W.ProjectAssistantListRequest,signal)
+      if(command!==view)throw Error("Unexpected chat read")
+      if(fields.mode==="snapshot")snapshotsRead++
+      return base.view(fields as unknown as W.ProjectAssistantReadViewRequest,signal)
+    },
+  }
+  const relay = capturedAssistantRelayFetch(machineID,()=>connection,[list,view])
+  Object.assign(window,{cloudChat:{
+    advertise(supportsChat:boolean){
+      grant.apiLevel=115
+      grant.descriptorPending=false
+      snapshots.set(machineID,{machine:{commands:supportsChat?[list,view]:[list]}})
+    },
+    snapshotsRead:()=>snapshotsRead,
+  }})
+  return [new ProjectAssistantSourceClient(grant,relay,()=>grant)]
+}
+
 const params=new URL(location.href).searchParams
 const initial=params.has("retry")?"pa_invalid":"pa_offline"
 const studio=controlled("studio",!params.has("snapshots"),initial),notebook=controlled("notebook",false,initial)
 const language=params.get("lang")??"en"
-const sources=params.has("cloud")?cloudRoster():[studio.source,notebook.source]
+const sources=params.has("chat")?cloudChat():params.has("cloud")?cloudRoster():[studio.source,notebook.source]
 if(params.has("hold")){studio.hold();notebook.hold()}
 const diagnostic = new ViewerEventLog({storage:localStorage,key:"roster-recovery-diagnostic"})
 createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}

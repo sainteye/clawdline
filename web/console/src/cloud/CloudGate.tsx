@@ -90,7 +90,7 @@ import { CloudAccountContext } from "./account-context.js"
 import { machinesByCapability, needsMachinePairing, reportsMachinePresence, watchStoredMachinePairings } from "./machine-access.js"
 import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
-import { RelayReader, machineApp, presentsEvery } from "./relay-reader.js"
+import { RelayReader, machineApp, machineDescribed, presentsEvery } from "./relay-reader.js"
 import { OPENED_ROW_QUIET_MS, openedRowShow } from "./opened-row.js"
 import { FleetSessionList, type MachineToolbarAction } from "./FleetSessionList.js"
 import { CarrierDot } from "./CarrierDot.js"
@@ -625,7 +625,13 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     if (!assistantRegistry || !machines) return
     const account = assistantRegistry.accountKey
     const grants = cloudAssistantGrants(account,machines.filter(machine => !forgotten.includes(machine.id)),
-      id => client.current ? machineApp(client.current,id).api_level : undefined,
+      id => {
+        const connection = client.current
+        return {
+          apiLevel: connection ? machineApp(connection,id).api_level : undefined,
+          descriptorPending: !connection || !machineDescribed(connection,id),
+        }
+      },
       id => JSON.stringify([account,who?.device,id,machines.find(machine => machine.id === id)?.pairing,
         machines.find(machine => machine.id === id)?.operationAllowed]))
     const current = () => client.current?.account === account ? client.current : null
