@@ -85,11 +85,48 @@ export interface PollerOptions<T> {
   visibility?: Visibility
   /** After a failed read, wait this instead of the interval. */
   backoff?: Backoff
+  /**
+   * How long one read may stay out. Past it the read counts as failed
+   * (`ReadDeadlineError`) and the next one is scheduled; what it answers
+   * afterwards is dropped. Without it a read nobody answers left `pending`
+   * true for good, which a screen draws as "loading".
+   */
+  deadlineMs?: number
   classify: (err: unknown) => ReadFailureKind
   onChange: (state: PollState<T>) => void
   now?: () => number
   setTimer?: (fn: () => void, ms: number) => unknown
   clearTimer?: (handle: unknown) => void
+  setDeadline?: (fn: () => void, ms: number) => unknown
+  clearDeadline?: (handle: unknown) => void
+}
+
+/** A read that was still out at its deadline. Nobody answered: not a verdict. */
+export class ReadDeadlineError extends Error {
+  readonly code = "cloud_read_timeout"
+  constructor(ms: number) {
+    super("the read was not answered within " + ms + " ms")
+    this.name = "ReadDeadlineError"
+  }
+}
+
+/**
+ * `read`, or a `ReadDeadlineError` once `ms` has passed without it settling.
+ * The read itself is not cancelled; its late answer goes nowhere.
+ */
+export function readWithDeadline<T>(
+  read: Promise<T>,
+  ms: number,
+  setTimer: (fn: () => void, ms: number) => unknown = (fn, wait) => setTimeout(fn, wait),
+  clearTimer: (handle: unknown) => void = (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimer(() => reject(new ReadDeadlineError(ms)), ms)
+    read.then(
+      (value) => { clearTimer(timer); resolve(value) },
+      (error) => { clearTimer(timer); reject(error) },
+    )
+  })
 }
 
 export function initialPollState<T>(): PollState<T> {
@@ -245,7 +282,9 @@ export class Poller<T> {
     this.set({ reading: true })
     let settled: Partial<PollState<T>>
     try {
-      const data = await this.o.read(why)
+      const read = this.o.read(why)
+      // Real timers, not the pacing slot: `cancelTimer` must not end a deadline.
+      const data = await (this.o.deadlineMs ? readWithDeadline(read, this.o.deadlineMs, this.o.setDeadline, this.o.clearDeadline) : read)
       settled = { data, error: null, failure: null, failureKind: null, failures: 0, failingSince: null }
     } catch (err) {
       settled = {

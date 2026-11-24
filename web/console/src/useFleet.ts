@@ -66,7 +66,7 @@ export function useFleet(client: ClawdlineClient): FleetState & { refresh: () =>
 export function usePoll<T>(
   read: (why: ReadReason) => Promise<T>,
   intervalMs = 5000,
-  options: { backoff?: Backoff } = {},
+  options: { backoff?: Backoff; deadlineMs?: number } = {},
 ): PollState<T> & { retry: () => void; poke: () => void } {
   const [state, setState] = useState<PollState<T>>(initialPollState)
   const [poller, setPoller] = useState<Poller<T> | null>(null)
@@ -77,6 +77,8 @@ export function usePoll<T>(
 
   const backoff = useRef(options.backoff)
   backoff.current = options.backoff
+  const deadline = useRef(options.deadlineMs)
+  deadline.current = options.deadlineMs
 
   useEffect(() => {
     const next = new Poller<T>({
@@ -86,6 +88,7 @@ export function usePoll<T>(
       onChange: setState,
       visibility: documentVisibility(),
       backoff: backoff.current,
+      deadlineMs: deadline.current,
     })
     setPoller(next)
     next.start()

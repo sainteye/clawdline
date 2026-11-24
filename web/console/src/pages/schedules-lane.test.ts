@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error -- a `.ts` path, for node; see session/order.test.ts.
-import { laneOnScreen, laneOwesRead } from "./schedules-lane.ts"
+import { laneOnScreen, laneOwesRead, scheduleRetryDelayMs } from "./schedules-lane.ts"
 
 test("a section with a box and no hidden ancestor is on screen", () => {
   assert.equal(laneOnScreen({ laidOut: true, visibility: "visible" }), true)
@@ -50,4 +50,15 @@ test("the layout is only asked about once the reading is stale", () => {
   assert.equal(asked, 0, "a fresh reading answers without a style or layout read")
   laneOwesRead({ ...onScreen, lastRefreshAt: onScreen.now - 61_000, onScreen: box })
   assert.equal(asked, 1)
+})
+
+test("the lane alone reads again only two ticks after a failed first read", () => {
+  // The first read starts a moment after the lane's interval does, so the
+  // tick one minute in finds the failed read 59.9 s old and leaves it alone.
+  assert.equal(laneOwesRead({ pageHidden: false, lastRefreshAt: 1_000_100, now: 1_060_000, everyMs: 60_000, onScreen: () => true }), false)
+})
+
+test("a failed schedule read is made again after 5, 10, 20, 40 seconds, then at the lane's pace", () => {
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 40].map((n) => scheduleRetryDelayMs(n)), [5_000, 10_000, 20_000, 40_000, 60_000, 60_000, 60_000])
+  assert.equal(scheduleRetryDelayMs(0), 5_000)
 })

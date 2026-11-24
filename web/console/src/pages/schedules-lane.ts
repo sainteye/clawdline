@@ -61,3 +61,16 @@ export function laneOwesRead(o: {
   if (o.lastRefreshAt !== null && o.now - o.lastRefreshAt < o.everyMs) return false
   return o.onScreen()
 }
+
+/** How long one machine's schedule read may stay out before its group says it was not read. */
+export const SCHEDULE_READ_DEADLINE_MS = 20_000
+
+/**
+ * How long to wait before reading again after a read that failed: 5, 10, 20,
+ * 40 seconds, then the lane's own pace. The lane alone asked again only on a
+ * tick at least `everyMs` after the failed read, and a tick lands a moment
+ * short of that, so a first read that failed was next made two minutes later.
+ */
+export function scheduleRetryDelayMs(failures: number, everyMs = 60_000): number {
+  return Math.min(everyMs, 5_000 * 2 ** Math.min(Math.max(failures, 1) - 1, 10))
+}

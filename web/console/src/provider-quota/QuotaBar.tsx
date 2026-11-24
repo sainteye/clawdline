@@ -86,6 +86,13 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   </footer>
 }
 
+/**
+ * How long the footer waits for one reading. A machine that does not answer is
+ * otherwise waited on for the relay's own minute, twice, and the footer said
+ * "reading" for all of it.
+ */
+const QUOTA_READ_DEADLINE_MS = 20_000
+
 type ManualCheck = {
   before: ProviderQuotaSnapshot | null
   supported: boolean
@@ -131,7 +138,18 @@ function QuotaReading({ scope, machineName, offline, mobile, apiLevel }: { scope
       throw error
     }
   }, [])
-  const polling = usePoll<ProviderQuotaSnapshot>(read, refreshing ? 2_000 : 30_000)
+  const polling = usePoll<ProviderQuotaSnapshot>(read, refreshing ? 2_000 : 30_000, { deadlineMs: QUOTA_READ_DEADLINE_MS })
+  // A read ended by its deadline never reaches `read`'s own catch, so the
+  // manual check it carried is released here.
+  useEffect(() => {
+    const check = manual.current
+    if (!polling.error || polling.reading || !check?.started) return
+    manual.current = null
+    const message = nextWord("quotaReadUnavailable")
+    setFeedback(message)
+    setRefreshing(false)
+    if (!dialog.current?.open) toast(message, true)
+  }, [polling.error, polling.reading, polling.failures])
   // A remount starts its poller empty; until it reads, the footer shows the
   // last reading this browser kept for the machine, marked outdated.
   if (polling.data) rememberQuotaReading(scope, polling.data)

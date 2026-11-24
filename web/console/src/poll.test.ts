@@ -204,3 +204,83 @@ test("failed reads back off 2, 4, 8 seconds up to 30, and a success returns to t
   assert.equal(h.waits.at(-1), 2000, "it moves the scheduled read")
   h.poller.stop()
 })
+
+/** A poller with a 20 s read deadline, both of its clocks driven by hand. */
+function deadlineHarness(answers: ((n: number) => Promise<number>)) {
+  let state: PollState<number> | null = null
+  let pace: (() => void) | null = null
+  let deadline: (() => void) | null = null
+  let asked = 0
+  const poller = new Poller<number>({
+    read: () => answers(++asked),
+    intervalMs: 30_000,
+    deadlineMs: 20_000,
+    classify: () => "unknown",
+    onChange: (s) => (state = s),
+    now: () => 1000,
+    setTimer: (fn) => (pace = fn),
+    clearTimer: () => (pace = null),
+    setDeadline: (fn) => (deadline = fn),
+    clearDeadline: () => (deadline = null),
+  })
+  const settle = () => new Promise((r) => setImmediate(r))
+  return { poller, settle, state: () => state!, asked: () => asked,
+    tick: () => { const fn = pace!; pace = null; fn() },
+    expire: () => { const fn = deadline!; deadline = null; fn() } }
+}
+
+test("a first read nobody answers ends at its deadline as unavailable, and the next answer restores it", async () => {
+  // Read 1 never settles: the machine asked is silent. Read 2 answers.
+  const h = deadlineHarness((n) => n === 1 ? new Promise<number>(() => {}) : Promise.resolve(42))
+  h.poller.start()
+  await h.settle()
+  assert.equal(h.state().pending, true, "nothing has settled yet")
+  h.expire()
+  await h.settle()
+  assert.equal(h.state().pending, false, "the deadline settles the first read: no endless loading")
+  assert.equal(h.state().reading, false)
+  assert.match(h.state().error ?? "", /not answered within 20000 ms/)
+  assert.equal(h.state().failures, 1)
+  assert.equal(h.state().data, null, "a failed read is not an empty answer")
+  h.tick()
+  await h.settle()
+  assert.equal(h.asked(), 2)
+  assert.equal(h.state().data, 42, "the next answer is shown without a reload")
+  assert.equal(h.state().error, null)
+  assert.equal(h.state().failures, 0)
+})
+
+test("a first read refused once is restored by the next answer", async () => {
+  const h = deadlineHarness((n) => n === 1 ? Promise.reject(new Error("refused")) : Promise.resolve(7))
+  h.poller.start()
+  await h.settle()
+  assert.equal(h.state().pending, false)
+  assert.equal(h.state().error, "refused")
+  h.tick()
+  await h.settle()
+  assert.equal(h.state().data, 7)
+  assert.equal(h.state().error, null)
+  assert.equal(h.state().failures, 0)
+})
+
+test("control: a read answered inside its deadline is the answer, and a late deadline changes nothing", async () => {
+  const h = deadlineHarness(() => Promise.resolve(5))
+  h.poller.start()
+  await h.settle()
+  assert.equal(h.state().data, 5)
+  assert.equal(h.state().pending, false)
+  assert.equal(h.state().error, null)
+})
+
+test("an answer that arrives after its deadline does not overwrite the failure it was replaced by", async () => {
+  let late: (v: number) => void = () => {}
+  const h = deadlineHarness((n) => n === 1 ? new Promise<number>((resolve) => (late = resolve)) : new Promise<number>(() => {}))
+  h.poller.start()
+  await h.settle()
+  h.expire()
+  await h.settle()
+  late(99)
+  await h.settle()
+  assert.equal(h.state().data, null)
+  assert.equal(h.state().failures, 1)
+})
