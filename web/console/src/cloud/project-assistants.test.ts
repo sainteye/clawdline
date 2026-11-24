@@ -93,6 +93,45 @@ test("bounded view keeps API58 metadata and requires API59 only for its captured
 })
 const key = {machine_id:"one",bot_id:"same/id"}
 
+test("Cloud Bot chat retries before capabilities arrive and reads its exact room once known",async()=>{
+  const word = "project-assistants.view"
+  const snapshots = new Map<string,unknown>()
+  let remembered: string[] | undefined
+  const requests: unknown[] = []
+  const live: AssistantGrant = {...grant(),apiLevel:undefined,descriptorPending:true}
+  const relay = capturedAssistantRelayFetch("one",()=>({
+    orchestratorSnapshots:snapshots,
+    machineDescriptor:()=>({machine:{commands:remembered}}),
+    async _machineRequest(machine,command,fields){
+      requests.push({machine,command,fields})
+      return viewWire()
+    },
+  }),[word])
+  const source = new ProjectAssistantSourceClient(live,relay,()=>live)
+  const view = () => source.view(viewRequest,signal())
+  const refusedBeforeSend = (code: string) => (error: unknown) => errorCode(error)===code && notSentEvidence(error)
+
+  await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  await assert.rejects(source.send(sendRequest("capabilities-pending"),signal()),refusedBeforeSend("pa_unsupported"))
+  live.descriptorPending=false
+  await assert.rejects(view(),refusedBeforeSend("pa_unsupported"))
+  live.apiLevel=60
+  await assert.rejects(view(),refusedBeforeSend("pa_unsupported"))
+
+  live.apiLevel=115
+  await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  remembered=["project-assistants.list"]
+  await assert.rejects(view(),refusedBeforeSend("pa_offline"))
+  snapshots.set("one",{machine:{commands:remembered}})
+  await assert.rejects(view(),refusedBeforeSend("pa_unsupported"))
+  assert.deepEqual(requests,[])
+
+  snapshots.set("one",{machine:{commands:[word]}})
+  const opened = await view()
+  assert.deepEqual(opened.head.key,viewRequest.key)
+  assert.deepEqual(requests,[{machine:"one",command:word,fields:viewRequest}])
+})
+
 test("explicit output reads keep their captured scope and distinct Cloud word behind API69",async()=>{
   const paths:string[]=[],request:W.ProjectAssistantOutputRequest={key,conversation_id:"chat",message_id:"card",id:"file",artifact_id:"",offset:393216}
   const source=make(async path=>{paths.push(path);return Response.json({})},{...grant(),apiLevel:69}).source
@@ -720,7 +759,7 @@ test("a Bot draft is kept in this browser's storage",()=>{
 // not arrived yet is not read-only; only one that turned Cloud operation off is.
 test("a paired phone may change Bots unless the machine turned Cloud operation off",()=>{
   const machine = (operationAllowed: boolean | null) => ({ id: "m", pairing: "paired", freshness: "current", operationAllowed }) as never
-  const grant = (operationAllowed: boolean | null) => cloudAssistantGrants("acct", [machine(operationAllowed)], () => 63, () => "r")[0]
+  const grant = (operationAllowed: boolean | null) => cloudAssistantGrants("acct", [machine(operationAllowed)], () => ({apiLevel:63}), () => "r")[0]
   assert.equal(grant(null).writable, true)
   assert.equal(grant(true).writable, true)
   assert.equal(grant(false).writable, false)

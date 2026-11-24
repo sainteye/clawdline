@@ -73,7 +73,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
-type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster"
+type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
@@ -82,6 +82,7 @@ export interface AssistantGrant {
   machineID: string
   authorizationRevision: string
   apiLevel: number | undefined
+  descriptorPending?: boolean
   paired: boolean
   online: boolean
   writable: boolean
@@ -203,7 +204,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
       live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
-    if (live.apiLevel === undefined ? mode !== "cloud-roster" : live.apiLevel < minimum) throw failure("pa_unsupported")
+    if (live.apiLevel === undefined) {
+      if (mode === "cloud-view" && live.descriptorPending) throw failure("pa_offline")
+      if (mode !== "cloud-roster") throw failure("pa_unsupported")
+    } else if (live.apiLevel < minimum) throw failure("pa_unsupported")
     if (mode === "plain-send") {
       if (!live.writable || this.observedWriteAccess === false) throw failure("pa_read_only")
       return
@@ -247,8 +251,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
       }
       this.recheck(signal,write,content,minimum,error,mode)
       if (sourceFailure(error)) throw error
-      const unsupportedRoster = mode === "cloud-roster" && (error as {code?: unknown} | null)?.code === "unknown_command"
-      throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : unsupportedRoster ? "pa_unsupported" : "pa_offline",error)
+      const unsupportedRead = (mode === "cloud-roster" || mode === "cloud-view") && (error as {code?: unknown} | null)?.code === "unknown_command"
+      throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : unsupportedRead ? "pa_unsupported" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
   }
   /**
@@ -459,11 +463,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
     this.key(r.key);readViewRequest(r)
     const level=r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
+    const mode = this.grant.accountKey === "local" ? "standard" : "cloud-view"
     const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
       machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,
       ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{})
-    }),s,undefined,"GET",true,level)
-    this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL)
+    }),s,undefined,"GET",true,level,mode)
+    this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL,mode)
     if(!answer?.head)throw failure("pa_invalid")
     // The path owns Bot identity. Chat independently checks the captured Project scope.
     readView(answer,r,{key:r.key,project:answer.head.project,conversation_id:r.conversation_id})
@@ -854,6 +859,8 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
         // During reconnect the retained descriptor can lag behind the machine.
         // This named read can use the machine's authenticated reply in its place.
         if (advertised.fromSnapshot && !advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
+      } else if (request.word === "project-assistants.view") {
+        if (!advertised.commands?.includes(request.word)) throw failure(advertised.fromSnapshot ? "pa_unsupported" : "pa_offline")
       } else {
         if (advertised.incomplete) throw failure("pa_offline")
         if (!advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
@@ -934,9 +941,10 @@ export class ProjectAssistantRegistry {
     this.snapshot = [...this.clients.values()]; for (const listener of this.listeners) listener()
   }
 }
-export function cloudAssistantGrants(account: string, machines: readonly CloudMachine[], apiLevel: (id: string) => number | undefined, revisions: (id: string) => string): AssistantGrant[] {
+export function cloudAssistantGrants(account: string, machines: readonly CloudMachine[],
+  capabilities: (id: string) => Pick<AssistantGrant,"apiLevel" | "descriptorPending">, revisions: (id: string) => string): AssistantGrant[] {
   return machines.map(machine => ({accountKey:account,readerID:account,machineID:machine.id,
-    authorizationRevision:revisions(machine.id),apiLevel:apiLevel(machine.id),paired:machine.pairing === "paired",
+    authorizationRevision:revisions(machine.id),...capabilities(machine.id),paired:machine.pairing === "paired",
     // Every paired device may act (the person, 2026-11-14). Only a machine
     // that turned Cloud operation off is read-only here; an operation flag not
     // yet received is not a refusal, and the daemon still checks each write.
