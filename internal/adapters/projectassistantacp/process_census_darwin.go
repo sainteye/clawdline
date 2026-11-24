@@ -56,7 +56,7 @@ func darwinProcessIdentities(ctx context.Context, budget int, read darwinProcess
 			return nil, syscall.EIO
 		}
 		rows = append(rows, processIdentity{
-			pid: pid, ppid: int(p.Eproc.Ppid), pgid: int(p.Eproc.Pgid), state: state,
+			pid: pid, ppid: int(p.Eproc.Ppid), pgid: int(p.Eproc.Pgid), uid: int(p.Eproc.Pcred.P_ruid), state: state,
 			stamp: time.Unix(birth.Sec, int64(birth.Usec)*1000).UTC().Format(time.RFC3339Nano),
 		})
 	}

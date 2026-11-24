@@ -278,3 +278,65 @@ func TestRuntimeRetainedCleanupRetriesStayBounded(t *testing.T) {
 		t.Fatalf("an unconfirmed cleanup admitted a message: %v", err)
 	}
 }
+
+// Quick retries used to be the last word: once they ran out a Bot refused
+// every message until Clawdline restarted (Fuse, 2026-11-24). The re-checks
+// now continue at a capped interval and release once cleanup is confirmed.
+func TestRuntimeRetainedCleanupKeepsRecheckingAfterQuickRetries(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 2, time.Millisecond, 3*time.Millisecond
+	p.closeFailures.Store(6)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	eventually(t, func() bool { u := f.r.Usage(); return u.Known && u.Processes == 0 && u.ActiveActors == 0 })
+	if got := p.closes.Load(); got != 7 {
+		t.Fatalf("closes=%d, want the failed close, two quick retries, three slow failures and one confirmed check", got)
+	}
+	if x, _ := f.store.Turn(context.Background(), f.key, first.ResourceID); x.State != pa.TurnUnknown {
+		t.Fatalf("a cleanup retry rewrote the earlier turn to %v", x.State)
+	}
+	if f.provider.count() != 1 {
+		t.Fatal("a cleanup retry sent the earlier prompt again")
+	}
+}
+
+// With every background retry spent, the next message re-checks cleanup
+// itself and is accepted once cleanup is confirmed, without a restart. The
+// earlier turn keeps its unknown outcome and is never sent again.
+func TestRuntimeNextMessageRechecksRetainedCleanup(t *testing.T) {
+	f, p := lifecycleFixture(t)
+	f.r.o.Limits.CleanupRetries, f.r.o.Limits.CleanupRetryDelay, f.r.o.Limits.CleanupSlowRetryDelay = 2, time.Millisecond, 0
+	p.closeFailures.Store(3)
+	first, err := f.submit(t, "one", "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "done"}
+	awaitTurn(t, f, first.ResourceID, pa.TurnUnknown)
+	eventually(t, func() bool { return p.closes.Load() == 3 })
+	eventually(t, func() bool {
+		f.r.mu.Lock()
+		defer f.r.mu.Unlock()
+		a := f.r.actors[f.key]
+		return a != nil && !a.retrying
+	})
+	second, err := f.submit(t, "two", "two")
+	if err != nil {
+		t.Fatalf("the next message did not re-check the retained cleanup: %v", err)
+	}
+	receivePrompt(t, f.provider)
+	f.provider.session().reply <- PromptResult{FinalText: "two done"}
+	awaitTurn(t, f, second.ResourceID, pa.TurnSucceeded)
+	if x, _ := f.store.Turn(context.Background(), f.key, first.ResourceID); pa.Code(x.Failure) != pa.ExecutionEffectUnknown {
+		t.Fatalf("the earlier turn lost its unknown effect: %+v", x.Failure)
+	}
+	if f.provider.count() != 2 {
+		t.Fatalf("processes=%d, want one per accepted message", f.provider.count())
+	}
+}

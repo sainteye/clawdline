@@ -45,8 +45,9 @@ func (r *Engine) retain(a *runtimeActor, err error) {
 	}
 }
 
-// retryRetained re-attempts an unconfirmed cleanup a bounded number of times
-// with a doubling delay, so a Bot whose Agent process stopped a moment after
+// retryRetained re-attempts an unconfirmed cleanup CleanupRetries times with a
+// doubling delay, then keeps re-checking with the delay capped at
+// CleanupSlowRetryDelay until cleanup is confirmed or the Engine closes, so a Bot whose Agent process stopped a moment after
 // the first check no longer refuses every message until Clawdline restarts
 // (Beacon and Lens, 2026-11-23). Each attempt is the same verified
 // retryCleanup that shutdown uses: the owner is released only when Close
@@ -56,7 +57,8 @@ func (r *Engine) retryRetained(a *runtimeActor) {
 	delay := r.o.Limits.CleanupRetryDelay
 	timer := time.NewTimer(delay)
 	defer timer.Stop()
-	for attempt := 1; attempt <= r.o.Limits.CleanupRetries; attempt++ {
+	slow := r.o.Limits.CleanupSlowRetryDelay
+	for attempt := 1; attempt <= r.o.Limits.CleanupRetries || slow > 0; attempt++ {
 		<-timer.C
 		r.mu.Lock()
 		if r.closed || !a.retained {
@@ -79,7 +81,13 @@ func (r *Engine) retryRetained(a *runtimeActor) {
 			}
 		}
 		r.mu.Unlock()
+		if attempt == r.o.Limits.CleanupRetries && slow > 0 {
+			log.Printf("project assistant: Agent process cleanup still unconfirmed after %d quick retries; bot=%s keeps re-checking at most every %s", attempt, a.key.BotID, slow)
+		}
 		delay *= 2
+		if attempt >= r.o.Limits.CleanupRetries && slow > 0 && delay > slow {
+			delay = slow
+		}
 		timer.Reset(delay)
 	}
 	r.mu.Lock()

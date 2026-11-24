@@ -99,14 +99,15 @@ func TestDarwinGapSuspectsHangFromLaunchdOrFromUs(t *testing.T) {
 	born := now.UTC().Format(time.RFC3339Nano)
 	old := now.Add(-time.Hour).UTC().Format(time.RFC3339Nano)
 	p := &Process{owned: map[int]string{50: old}, gap: &censusGap{from: now.Add(-time.Second), to: now}}
-	stranger := []processIdentity{{pid: 1, stamp: old}, {pid: 70, ppid: 1, stamp: old, state: "Ss"}, {pid: 71, ppid: 70, stamp: born, state: "S"}, {pid: 72, ppid: 71, stamp: born, state: "S"}}
+	me := os.Getuid()
+	stranger := []processIdentity{{pid: 1, stamp: old}, {pid: 70, ppid: 1, stamp: old, uid: me, state: "Ss"}, {pid: 71, ppid: 70, stamp: born, uid: me, state: "S"}, {pid: 72, ppid: 71, stamp: born, uid: me, state: "S"}}
 	if !p.gapSettled(stranger) {
 		t.Fatal("a stranger shell's new children kept cleanup unknown")
 	}
 	for name, rows := range map[string][]processIdentity{
-		"orphan":         append(stranger, processIdentity{pid: 80, ppid: 1, stamp: born, state: "Ss"}),
-		"orphan's child": append(stranger, processIdentity{pid: 80, ppid: 1, stamp: born, state: "Z"}, processIdentity{pid: 81, ppid: 80, stamp: born, state: "S"}),
-		"unadopted":      append(stranger, processIdentity{pid: 50, ppid: 1, stamp: old, state: "S"}, processIdentity{pid: 90, ppid: 50, stamp: born, state: "S"}),
+		"orphan":         append(stranger, processIdentity{pid: 80, ppid: 1, stamp: born, uid: me, state: "Ss"}),
+		"orphan's child": append(stranger, processIdentity{pid: 80, ppid: 1, stamp: born, uid: me, state: "Z"}, processIdentity{pid: 81, ppid: 80, stamp: born, uid: me, state: "S"}),
+		"unadopted":      append(stranger, processIdentity{pid: 50, ppid: 1, stamp: old, uid: me, state: "S"}, processIdentity{pid: 90, ppid: 50, stamp: born, uid: me, state: "S"}),
 	} {
 		if p.gapSettled(rows) {
 			t.Errorf("%s: a possible unseen descendant was settled", name)

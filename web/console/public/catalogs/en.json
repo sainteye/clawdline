@@ -14221,5 +14221,9 @@
   "capacityRow.console.quota_last_reading_machines.what": "How many machines this browser keeps a last quota reading for.",
   "capacityRow.console.quota_last_reading_machines.full": "Past it, the reading saved longest ago is dropped. That machine's footer shows its quota again after its next successful read.",
   "capacityRow.console.quota_last_reading_age_seconds.what": "How long a kept quota reading can be shown while a new one cannot be read.",
-  "capacityRow.console.quota_last_reading_age_seconds.full": "Past it, the kept reading is no longer shown, because its usage windows have reset. The footer says the quota could not be read until a read succeeds."
+  "capacityRow.console.quota_last_reading_age_seconds.full": "Past it, the kept reading is no longer shown, because its usage windows have reset. The footer says the quota could not be read until a read succeeds.",
+  "capacityRow.bots.cleanup_slow_retry_ms.full": "After the quick re-checks, a Bot keeps re-checking with a doubling wait up to this interval until cleanup is confirmed.",
+  "capacityRow.bots.cleanup_slow_retry_ms.what": "Longest wait between a Bot's later re-checks of an unconfirmed Agent process cleanup.",
+  "capacityRow.bots.unscanned_census_gap_ms.full": "A shorter gap in the process census is treated like an ordinary check interval; a longer one is searched for leftover processes of your own user.",
+  "capacityRow.bots.unscanned_census_gap_ms.what": "Longest process census gap a Bot accepts without searching for leftover processes."
 }

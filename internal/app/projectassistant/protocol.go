@@ -25,6 +25,10 @@ type RuntimeLimits struct {
 	// doubling it. Zero leaves retries to an explicit Close.
 	CleanupRetries    int
 	CleanupRetryDelay time.Duration
+	// CleanupSlowRetryDelay caps the delay of the re-checks that continue
+	// after CleanupRetries, which keep doubling up to it until cleanup is
+	// confirmed. Zero stops after CleanupRetries.
+	CleanupSlowRetryDelay time.Duration
 }
 
 // ControlWindow bounds maintenance and issued work authority independently of

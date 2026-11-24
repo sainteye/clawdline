@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
@@ -27,10 +28,14 @@ type Limits struct {
 	CleanupTimeout   time.Duration
 	RPCTimeout       time.Duration
 	DescendantPoll   time.Duration
+	// UnscannedCensusGap is the longest census gap treated like an ordinary
+	// poll interval: shorter gaps release without scanning for strangers.
+	// Zero scans every gap.
+	UnscannedCensusGap time.Duration
 }
 
 func (l Limits) Validate() error {
-	if l.RPCPending < 1 || l.CaptureBytes < 1 || l.FrameBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 {
+	if l.RPCPending < 1 || l.CaptureBytes < 1 || l.FrameBytes < 1 || l.StderrBytes < 1 || l.OwnedDescendants < 1 || l.WriteTimeout <= 0 || l.CleanupTimeout <= 0 || l.RPCTimeout <= 0 || l.DescendantPoll <= 0 || l.UnscannedCensusGap < 0 {
 		return refusal(pa.Invalid, "acp_limits")
 	}
 	return nil
@@ -77,6 +82,9 @@ type Process struct {
 	// widest period since then without one (nil when there was none).
 	lastCensus time.Time
 	gap        *censusGap
+	// started is when StartProcess began; it bounds a gap that opened
+	// before the first successful census.
+	started time.Time
 }
 
 // A completed receipt wins over a simultaneously expired deadline.
@@ -102,6 +110,7 @@ func waitOwnedDone(ctx context.Context, done <-chan struct{}) bool {
 type processIdentity struct {
 	pid, ppid int
 	pgid      int
+	uid       int // real user id; -1 when the census could not read it
 	state     string
 	stamp     string
 }
@@ -240,15 +249,29 @@ func (p *Process) noteCensus(started time.Time, ctx context.Context, err error) 
 		return
 	}
 	if p.gap == nil {
-		p.gap = &censusGap{from: p.lastCensus}
+		// Before the first successful census nothing from before the Agent
+		// started can be its descendant, so its start bounds the gap.
+		from := p.lastCensus
+		if from.IsZero() {
+			from = p.started
+		}
+		p.gap = &censusGap{from: from}
 	}
 	p.gap.open = true
 }
 
 // gapSettled reports, under p.mu, whether a complete census taken after the
-// gap closed shows nothing that might be an unseen descendant from it: a live
-// process outside our ownership record that started within the gap and whose
-// oldest such ancestor hangs from the orphan reaper or from one of ours.
+// gap closed shows nothing that might be an unseen descendant from it.
+//
+// The check is proportional to what the gap could hide. The survey already
+// accepts a blind interval between polls; a gap no longer than
+// Limits.UnscannedCensusGap is treated the same and releases without a scan.
+// A longer gap is scanned for live processes of the daemon's own real user,
+// outside our ownership record, born within the gap, whose oldest such
+// ancestor hangs from one of ours or from a process that could have adopted
+// an orphan of ours. Other users' processes are never ours: an Agent cannot
+// create one without a setuid program, which keeps the real user id. Every
+// process that keeps the gap open is logged by pid.
 func (p *Process) gapSettled(rows []processIdentity) bool {
 	g := p.gap
 	if g == nil {
@@ -257,6 +280,11 @@ func (p *Process) gapSettled(rows []processIdentity) bool {
 	if g.open {
 		return false
 	}
+	if !g.from.IsZero() && g.to.Sub(g.from) < p.limits.UnscannedCensusGap {
+		return true
+	}
+	self := os.Getuid()
+	reaper := orphanReaperIn(rows, os.Getpid(), orphansGoToInit)
 	live := make(map[int]processIdentity, len(rows))
 	for _, row := range rows {
 		live[row.pid] = row
@@ -265,12 +293,16 @@ func (p *Process) gapSettled(rows []processIdentity) bool {
 		if stamp, ours := p.owned[row.pid]; ours && stamp == row.stamp {
 			return false
 		}
+		if row.uid >= 0 && row.uid != self {
+			return false
+		}
 		born, ok := censusStampTime(row.stamp)
 		if !ok {
 			return true
 		}
 		return (g.from.IsZero() || !born.Before(g.from.Add(-gapSlack))) && !born.After(g.to.Add(gapSlack))
 	}
+	settled := true
 	for _, row := range rows {
 		if stoppedProcess(row) || !inGap(row) {
 			continue
@@ -283,21 +315,39 @@ func (p *Process) gapSettled(rows []processIdentity) bool {
 			}
 			top = parent
 		}
-		if _, ours := p.owned[top.ppid]; ours || orphanReaper(top.ppid) {
-			return false
-		}
-		if _, ok := live[top.ppid]; !ok {
-			return false
+		_, ours := p.owned[top.ppid]
+		_, parentLive := live[top.ppid]
+		if ours || reaper(top.ppid) || !parentLive {
+			log.Printf("project assistant: Agent cleanup gap %s..%s kept open by pid=%d ppid=%d uid=%d born=%s", g.from.Format(time.RFC3339Nano), g.to.Format(time.RFC3339Nano), row.pid, row.ppid, row.uid, row.stamp)
+			settled = false
 		}
 	}
-	return true
+	return settled
 }
 
-// orphanReaper reports whether a parent may be the process that adopts
-// orphans. XNU always reparents to launchd (pid 1) and has no subreapers.
-// Elsewhere a subreaper such as systemd --user can adopt them, so any parent
-// may be one.
-func orphanReaper(ppid int) bool { return ppid == 1 || !orphansGoToInit }
+// orphanReaperIn reports which parents may be the process that adopted an
+// orphan of ours. An orphan goes to init or to the nearest subreaper among
+// its ancestors; every Agent descendant descends from the daemon (self), so
+// a subreaper can only be one of the daemon's own ancestors. XNU always
+// reparents to launchd (pid 1) and has no subreapers (initOnly).
+func orphanReaperIn(rows []processIdentity, self int, initOnly bool) func(int) bool {
+	reapers := map[int]bool{1: true}
+	if !initOnly {
+		parent := make(map[int]int, len(rows))
+		for _, row := range rows {
+			parent[row.pid] = row.ppid
+		}
+		for pid, steps := self, 0; steps < len(rows); steps++ {
+			next, ok := parent[pid]
+			if !ok || next <= 0 || reapers[next] {
+				break
+			}
+			reapers[next] = true
+			pid = next
+		}
+	}
+	return func(ppid int) bool { return reapers[ppid] }
+}
 
 // censusStampTime reads a start time in either census format: RFC 3339 from
 // the macOS sysctl census, ps lstart elsewhere.
@@ -417,6 +467,7 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 		cmd.Stderr = outWrite
 	}
 	p := &Process{cmd: cmd, stdin: inWrite, stdout: outRead, stderrReader: errRead, limits: o.Limits, write: make(chan struct{}, 1), done: make(chan struct{}), surveyDone: make(chan struct{}), owned: map[int]string{}}
+	p.started = time.Now()
 	err = cmd.Start()
 	inRead.Close()
 	outWrite.Close()

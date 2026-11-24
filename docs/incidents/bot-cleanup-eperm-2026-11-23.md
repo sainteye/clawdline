@@ -229,31 +229,66 @@ failed; `TestProcessCloseKeepsFinalPhasesLocked` and
 `TestDarwinGapSuspectsHangFromLaunchdOrFromUs` hold the other side. With the
 gap check disabled, the orphan test fails again.
 
-### The survey interval
+### The survey interval stays 50 ms
 
-`bots.survey_ms` was 50 ms from the first Bot runtime commit (91d6f6308,
-2026-11-12), with no measurement recorded. The runtime doc already said it "is
-not a guarantee against unobserved fast reparenting". What it buys is narrow:
-group signals already reach every descendant that stays in the Agent's process
-group, whatever the interval. The survey matters only for a descendant that
-leaves the group (`setsid`) *and* whose parent exits between two censuses. A
-typical daemonizing double fork does both within a few milliseconds, faster
-than either 50 or 250 ms; a long-lived parent is caught by either.
+An earlier draft of this change moved `bots.survey_ms` from 50 to 250 ms on a
+CPU measurement alone (one Agent, about 640 processes: 20 censuses a second at
+1.43% of a core against 4 at 0.46%). Review (Fuse, 2026-11-24) asked for the
+census count per hour before and after, the ENOMEM reproduction rate under the
+same load, and why the longer blind interval is acceptable. The reproduction
+rate was not measured, so the interval stays 50 ms and only the sizing race is
+fixed (`bots.process_census_attempts`). kqueue `NOTE_FORK` was considered and
+not adopted: macOS has no `NOTE_TRACK`, so every new descendant still needs a
+census before it can be watched.
 
-Measured on this machine (about 640 processes), one Agent's survey alone, 10 s
-per row, CPU from `getrusage` including the Go runtime's idle cost:
+### Review: the gap check must not lock a Bot either (Fuse, 2026-11-24)
 
-| Interval | Censuses per second | CPU per census | Share of one core | CPU per hour |
-|---|---|---|---|---|
-| 50 ms (before) | 20 | 0.71 ms | 1.43% | 51 s |
-| 250 ms (now) | 4 | 1.16 ms | 0.46% | 17 s |
-| 1 s | 1 | 2.47 ms | 0.25% | 9 s |
+The first version of the gap check above was itself a lock. On macOS almost
+every XPC service and app hangs from launchd, and this machine had 46 live
+launchd children born in the last ten minutes, 20 of them the person's; with a
+gap of at least about 4.25 s roughly 28% of gaps met one, five quick retries
+then failed, and nothing re-checked afterwards. On Linux every parent counted
+as a possible reaper, so a busy machine almost always locked. A gap opened
+before the first successful census had no lower bound and never settled.
 
-The cost scales with each live Agent, and the census rate is what turned the
-sysctl race into a routine failure. The interval is now 250 ms: five times
-fewer censuses and a third of the CPU, while the window it narrows stays a
-fraction of a second. An event-driven survey was considered and not adopted:
-macOS removed kqueue `NOTE_TRACK`, so `NOTE_FORK` says that a watched process
-forked but not which child, and every new descendant must still be found by a
-census before it can be watched; Linux would need a different mechanism. It
-would not close the escape window, only move it.
+What changed:
+
+- **Proportional check.** A gap shorter than `bots.unscanned_census_gap_ms`
+  (10 s, two cleanup deadlines: one failed census of any kind plus the grace
+  wait) is treated like an ordinary survey interval and releases without a
+  scan; the survey already accepts a blind interval between polls. Only a
+  longer gap is scanned (`gapSettled` in
+  `internal/adapters/projectassistantacp/process.go`).
+- **Own user only.** The census now reads each process's real user id
+  (`Pcred.P_ruid` from sysctl on macOS, `ps -o ruid=` elsewhere). A scan
+  ignores other users' processes: an Agent cannot create one without a setuid
+  program, which keeps the real user id. Every process that keeps a gap open
+  is logged with its pid, parent, user and birth time.
+- **Reapers are ancestors.** An orphan goes to init or to the nearest
+  subreaper among its ancestors, and every Agent descendant descends from the
+  daemon, so `orphanReaperIn` counts only pid 1 and, where subreapers exist,
+  the daemon's own ancestors. Making the daemon itself a subreaper
+  (`PR_SET_CHILD_SUBREAPER`) was not done: the daemon would then have to reap
+  adopted zombies, and a `wait(-1)` loop would steal the exit status of every
+  other `os/exec` child the daemon runs.
+- **Lower bound.** A gap that opens before the first successful census starts
+  at `StartProcess`.
+- **Re-checks never stop.** After `bots.cleanup_retries` quick retries, a
+  retained Bot keeps re-checking with a doubling delay capped at
+  `bots.cleanup_slow_retry_ms` (5 min) until cleanup is confirmed or the
+  daemon stops (`retryRetained` in `internal/app/projectassistant/lifecycle.go`).
+  The next message also re-checks once in `acquire` when nothing else holds
+  the Bot, and is accepted if cleanup is confirmed
+  (`internal/app/projectassistant/runtime.go`). Neither resends the earlier
+  turn, which keeps `execution_effect_unknown`.
+
+Tests: `TestProcessCloseReleasesPastStrangersAfterAShortGap`,
+`TestProcessCloseScansALongGapForOurUserOnly`,
+`TestProcessCloseSettlesAGapOpenedBeforeTheFirstCensus`,
+`TestProcessCloseReleasesStrangersOutsideTheGap`,
+`TestOrphanReapersAreInitAndTheDaemonsAncestors`,
+`TestProcessCloseKeepsAnOrphanFromTheGapUnknown` (birth fixed inside the gap,
+not at the census moment), `TestRuntimeRetainedCleanupKeepsRecheckingAfterQuickRetries`
+and `TestRuntimeNextMessageRechecksRetainedCleanup`. Each failed before the
+change. The Engine tests inject the cleanup failure at the provider session's
+Close, not at the census; the census path is covered by the adapter tests.

@@ -28,18 +28,20 @@ const (
 	// first after MaximumBotCleanupFirstRetryMilliseconds and doubling: 1+2+4+8+16 s.
 	MaximumBotCleanupRetries                = 5
 	MaximumBotCleanupFirstRetryMilliseconds = 1000
-	MaximumBotRPCMilliseconds               = 120000
-	MaximumBotControlWindowMilliseconds     = 600000
-	// The descendant survey's census interval. It only narrows the window in
-	// which a descendant that leaves our process group and loses its parent
-	// goes unseen; it is never a guarantee. 50 ms took about 0.7 ms of CPU
-	// per census (20 a second, 1.4% of a core per Agent) and turned the rare
-	// sysctl estimate race into a routine failure (2026-11-24). Group
-	// signals, which cover every descendant that stays in the group, do not
-	// depend on it. See docs/incidents/bot-cleanup-eperm-2026-11-23.md.
-	MaximumBotSurveyMilliseconds  = 250
-	MaximumBotChatGapMilliseconds = 3600000
-	MaximumBotRefreshMilliseconds = 3000
+	// After those retries a retained Bot keeps re-checking its cleanup,
+	// doubling the delay from the last fast retry up to this interval, until
+	// cleanup is confirmed or Clawdline stops. It never gives up on its own.
+	MaximumBotCleanupSlowRetryMilliseconds = 300000
+	// A census gap shorter than this is treated like an ordinary survey
+	// interval and is not scanned for strangers. One failed census inside
+	// Close spans at most its own deadline plus the grace wait, under
+	// 2 x MaximumBotCleanupMilliseconds; longer gaps are scanned.
+	MaximumBotUnscannedCensusGapMilliseconds = 10000
+	MaximumBotRPCMilliseconds                = 120000
+	MaximumBotControlWindowMilliseconds      = 600000
+	MaximumBotSurveyMilliseconds             = 50
+	MaximumBotChatGapMilliseconds            = 3600000
+	MaximumBotRefreshMilliseconds            = 3000
 	// Live rows and removal revisions retained by one browser source.
 	MaximumBotRosterClientRows = 1000
 	// The longest isolated work one Bot dispatch may start.
@@ -248,6 +250,12 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsCleanupRetryDelay, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupFirstRetryMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotCleanupFirstRetryMilliseconds"}},
+		{Name: BotsCleanupSlowRetryDelay, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotCleanupSlowRetryMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotCleanupSlowRetryMilliseconds"}},
+		{Name: BotsUnscannedCensusGap, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotUnscannedCensusGapMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotUnscannedCensusGapMilliseconds"}},
 		{Name: BotsRPCDeadline, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotRPCMilliseconds, AtLimit: Disconnect,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCMilliseconds"}},

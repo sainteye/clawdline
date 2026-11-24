@@ -74,6 +74,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.cleanup_retries` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_retry_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_slow_retry_ms` | 300000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.unscanned_census_gap_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_endpoints` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_frames` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_lease_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
@@ -204,7 +206,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
-| `bots.survey_ms` | 250 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.survey_ms` | 50 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tool_probe_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.tool_probe_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_floor_project_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |

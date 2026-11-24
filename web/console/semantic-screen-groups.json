@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14221,
-  "riskKeys": 6043,
-  "nonRiskCount": 8178,
+  "englishContentKeys": 14225,
+  "riskKeys": 6045,
+  "nonRiskCount": 8180,
   "groups": [
     {
       "name": "acp / other",
@@ -577,7 +577,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 745,
+      "count": 747,
       "sources": [
         null
       ],
@@ -639,6 +639,7 @@
         "capacityRow.bots.chat_initial_page_rows.what",
         "capacityRow.bots.cleanup_ms.what",
         "capacityRow.bots.cleanup_retry_ms.full",
+        "capacityRow.bots.cleanup_slow_retry_ms.full",
         "capacityRow.bots.cloud_endpoints.what",
         "capacityRow.bots.cloud_lease_seconds.what",
         "capacityRow.bots.config_cache_entries.what",
@@ -760,6 +761,7 @@
         "capacityRow.bots.tower_floors.what",
         "capacityRow.bots.tower_zone_shown.what",
         "capacityRow.bots.turn_control_window_ms.what",
+        "capacityRow.bots.unscanned_census_gap_ms.full",
         "capacityRow.bots.user_message_bytes.what",
         "capacityRow.bots.work_message_bytes.what",
         "capacityRow.browser.activity_picture_bytes.what",

@@ -769,6 +769,8 @@ const (
 	BotsCleanup               = "bots.cleanup_ms"
 	BotsCleanupRetries        = "bots.cleanup_retries"
 	BotsCleanupRetryDelay     = "bots.cleanup_retry_ms"
+	BotsCleanupSlowRetryDelay = "bots.cleanup_slow_retry_ms"
+	BotsUnscannedCensusGap    = "bots.unscanned_census_gap_ms"
 	BotsRPCDeadline           = "bots.rpc_ms"
 	BotsTurnControlWindow     = "bots.turn_control_window_ms"
 	BotsSurvey                = "bots.survey_ms"

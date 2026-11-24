@@ -1396,6 +1396,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.cleanup_slow_retry_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 300000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotCleanupSlowRetryMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.cloud_endpoints",
     "Class": "buffer",
     "Unit": "rows",
@@ -3981,7 +4001,7 @@
     "Name": "bots.survey_ms",
     "Class": "buffer",
     "Unit": "milliseconds",
-    "Limit": 250,
+    "Limit": 50,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
@@ -4133,6 +4153,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/capacity.MaximumBotControlWindowMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.unscanned_census_gap_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 10000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotUnscannedCensusGapMilliseconds"
     ]
   },
   {

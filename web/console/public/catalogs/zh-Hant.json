@@ -14221,5 +14221,9 @@
   "capacityRow.console.quota_last_reading_machines.what": "這個瀏覽器最多為幾台機器保留上一次的額度讀數。",
   "capacityRow.console.quota_last_reading_machines.full": "超過時，最早存下的那筆讀數會被丟掉；那台機器下次讀取成功後，底部額度列會再顯示。",
   "capacityRow.console.quota_last_reading_age_seconds.what": "讀不到新額度時，保留的上一次讀數最多能顯示多久。",
-  "capacityRow.console.quota_last_reading_age_seconds.full": "超過時就不再顯示保留的讀數，因為它的用量區間已經重置；在讀取成功之前，底部額度列會說目前無法讀取額度。"
+  "capacityRow.console.quota_last_reading_age_seconds.full": "超過時就不再顯示保留的讀數，因為它的用量區間已經重置；在讀取成功之前，底部額度列會說目前無法讀取額度。",
+  "capacityRow.bots.cleanup_slow_retry_ms.full": "快速重新確認用完後，Bot 會繼續重新確認，等待時間每次加倍，最多到這個間隔，直到確認清理完成。",
+  "capacityRow.bots.cleanup_slow_retry_ms.what": "Bot 之後重新確認 Agent 程序清理時，兩次之間最長的等待時間。",
+  "capacityRow.bots.unscanned_census_gap_ms.full": "程序盤點中斷的時間比這個短，就當成一般的檢查間隔；比這個長，才會搜尋你這個使用者留下的程序。",
+  "capacityRow.bots.unscanned_census_gap_ms.what": "Bot 不搜尋殘留程序就接受的最長程序盤點空窗。"
 }
