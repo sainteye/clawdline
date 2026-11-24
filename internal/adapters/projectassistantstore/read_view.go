@@ -75,9 +75,9 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 		return out, err
 	}
 	out.Head = h
-	// Events need only source identity/shape, not a materialized aggregate or a
-	// complete pass over message/work relationships.
-	if q.Request.Mode != pa.ReadViewEvents {
+	// Events and progress verify their own source rows. They do not need a
+	// complete pass over message and work relationships.
+	if q.Request.Mode != pa.ReadViewEvents && q.Request.Mode != pa.ReadViewProgress {
 		if err = viewValidateFacts(ctx, tx, q); err != nil {
 			return out, err
 		}
@@ -125,6 +125,8 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 		err = viewEvents(ctx, tx, remaining, &out)
 	case pa.ReadViewPermissions:
 		err = s.permissions(ctx, tx, remaining, &out, position)
+	case pa.ReadViewProgress:
+		err = s.progress(ctx, tx, remaining, &out, position)
 	case pa.ReadViewTraces:
 		err = s.traces(ctx, tx, remaining, &out, position)
 	case pa.ReadViewDetail:

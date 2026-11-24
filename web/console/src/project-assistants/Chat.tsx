@@ -10,7 +10,7 @@ import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
-import { isSendingAdmitted, partitionMessages } from "./chat-items"
+import { isSendingAdmitted, partitionMessages, type ChatProgress } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
@@ -123,6 +123,7 @@ const chatInitialPageRows = 20
 export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
+  const canReadProgress=source.canReadProgress?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
   const grant=useRef(source.authorizationRevision).current
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
@@ -220,6 +221,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const traceRows=useRef(traceSummaries)
   const [traceLoad,setTraceLoad]=useState<TraceLoadState>("idle")
   const traceRequested=useRef(false)
+  const [progressRows,setProgressRows]=useState<W.ProjectAssistantReadViewItem[]>([])
+  const [progressRevision,refreshProgress]=useState(0)
+  const progressWindow=useRef({revision:-1,cursor:"",oldest:Infinity,newest:""})
   const [details,setDetails]=useState<Record<string,W.ProjectAssistantPermissionOffer|W.ProjectAssistantTrace>>({})
   const detailRows=useRef(details)
   const requestedTraceReferences=useRef(new Map<string,string>())
@@ -319,6 +323,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[view,draftKey,scope])
   const lock=useCallback(()=>{
     view.recoveryRequired.add(draftKey);recovery.current=true;setRecoveryRequired(true)
+    setProgressRows([])
+    progressWindow.current={revision:-1,cursor:"",oldest:Infinity,newest:""}
     activeMutations.current.forEach(control=>control.abort());setTurns([]);setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();backgroundTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     for(const control of reads.current)control.abort()
     if(timer.current){clearTimeout(timer.current);timer.current=null}
@@ -391,10 +397,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier;callViewFrontier.current=page.head.event_frontier
     headRef.current=page.head;setHead(page.head);currentData.current=fresh;setData(fresh)
     setMore(page.next_cursor);setError("")
+    if(canReadProgress)refreshProgress(n=>n+1)
     // No receipts in a bounded snapshot means an unknown local intent remains unknown.
     view.recoveryRequired.delete(draftKey);recovery.current=false;setRecoveryRequired(false)
     return page
-  },[read,request,valid,view,draftKey,scope,entryDraft,heldAtMount,archiveLegacyDraft,source,prepareReadDisplay])
+  },[read,request,valid,view,draftKey,scope,entryDraft,heldAtMount,archiveLegacyDraft,source,prepareReadDisplay,canReadProgress])
   const collection=useCallback(async(mode:"permissions"|"traces",cursor="")=>{
     const before=headRef.current,capturedEpoch=epoch.current
     if(!before||recovery.current||!valid()||collectionBusy.current.has(mode))return
@@ -504,6 +511,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           const modes=new Set(collectionsToRetry.current)
           if(before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission))modes.add("permissions")
           const traceChanged=page.items.some(row=>row.event?.trace)
+          if(canReadProgress&&page.items.some(row=>row.event?.trace?.category==="agent_message_chunk"))refreshProgress(n=>n+1)
           if(deferTraceCount?traceRequested.current&&traceChanged:before.trace_category_count!==page.head.trace_category_count||traceChanged)modes.add("traces")
           await settleCollections([...modes])
         }
@@ -1555,6 +1563,72 @@ ${currentDraft}`:submitted)
   const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
   const mood=ownMood==="idle"&&live&&showDispatched&&rosterMood(summary,true)==="waitingOnWork"?"waitingOnWork":ownMood
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
+  const progressStart=chatTimeline.find(row=>row.message)?.message?.at
+  const progressStartTime=progressStart??activeTurn?.started_at
+  const progressThrough=progressStartTime?Date.parse(progressStartTime):null
+  useEffect(()=>{
+    const before=headRef.current,capturedEpoch=epoch.current
+    if(!canReadProgress||!before||progressThrough===null||recoveryRequired)return
+    const control=new AbortController()
+    reads.current.add(control)
+    const load=async()=>{
+      const previous=progressWindow.current
+      let fresh=previous.revision!==progressRevision
+      let overlap=fresh?previous.newest:""
+      let newest=fresh?"":previous.newest
+      let cursor=fresh?"":previous.cursor
+      let oldest=fresh?Infinity:previous.oldest
+      const cursors=new Set<string>()
+      while(fresh||cursor&&oldest>=progressThrough){
+        if(control.signal.aborted||!valid())return
+        const page=await read(request("progress",cursor,chatInitialPageRows),control.signal)
+        if(control.signal.aborted||!valid()||epoch.current!==capturedEpoch||recovery.current||
+          !sameFence(before.current_fence,page.head.current_fence)||!headRef.current||
+          !sameFence(before.current_fence,headRef.current.current_fence))return
+        if(page.next_cursor&&cursors.has(page.next_cursor))throw failure("pa_invalid")
+        cursors.add(page.next_cursor)
+        for(const row of page.items)oldest=Math.min(oldest,Date.parse(row.occurred_at!))
+        setProgressRows(previous=>{
+          const rows=new Map(previous.map(row=>[row.id,row]))
+          for(const item of page.items){
+            const known=rows.get(item.id)
+            if(!known||known.observed_event_seq<=item.observed_event_seq)rows.set(item.id,item)
+          }
+          return [...rows.values()]
+        })
+        newest ||= page.items[0]?.id??""
+        fresh=false
+        cursor=page.next_cursor
+        if(overlap&&page.items.some(row=>row.id===overlap)){
+          // The new head connects to the already loaded history.
+          overlap=""
+          cursor=previous.cursor
+          oldest=Math.min(oldest,previous.oldest)
+        }
+        progressWindow.current={revision:progressRevision,cursor,oldest,newest}
+      }
+    }
+    // A progress failure leaves the same segment available from processing details.
+    void load().catch(()=>{}).finally(()=>reads.current.delete(control))
+    return()=>control.abort()
+  },[canReadProgress,progressThrough,progressRevision,recoveryRequired,valid,read,request])
+  const inlineProgress:ChatProgress[]=[]
+  const projectedSteps=new Set<string>()
+  const replyTexts=new Map<string,Set<string>>()
+  for(const row of chatTimeline){
+    const message=row.message
+    if(message?.kind!=="assistant"||message.output||message.exchange)continue
+    const seen=replyTexts.get(message.turn_id)??new Set<string>()
+    seen.add(message.text.trim())
+    replyTexts.set(message.turn_id,seen)
+  }
+  for(const row of progressRows){
+    const step=row.trace!,at=row.occurred_at!
+    if(progressThrough===null||Date.parse(at)<progressThrough||!visibleTrace(step))continue
+    projectedSteps.add(row.id)
+    if(!replyTexts.get(step.turn_id)?.has(step.text.trim()))
+      inlineProgress.push({id:row.id,text:step.text,at,eventSeq:row.observed_event_seq})
+  }
   const pendingSend=view.heldOutcomes.get(draftKey)
   const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
   const confirmed=sendingAccepted?admittedRow(pendingSend!.intent as W.ProjectAssistantSendRequest,pendingSend!.receipt,messages):undefined
@@ -1598,10 +1672,10 @@ ${currentDraft}`:submitted)
     if(!rows?.length&&!deferred&&(deferTraceCount||!head?.trace_category_count))return
     const more=message.turn_id===moreTraceTurn||!!deferred&&!rows?.length&&!!traceMore
     return <div className="pa-turn-trace" data-trace-turn={message.turn_id}>{rows?.length||deferred?
-      <Trace summaries={rows??[]} incomplete={more} details={details} more={more} onMore={loadMoreTraces}
+      <Trace summaries={(rows??[]).filter(row=>!projectedSteps.has(row.id))} incomplete={more} details={details} more={more} onMore={loadMoreTraces}
         onDetail={readTraceDetail} deferred={deferred} w={w}/>:null}</div>
   }
-  const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
+  const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id)&&!projectedSteps.has(row.id))
   const queueEditorOpen=!!queueEditor&&turns.some(turn=>turn.id===queueEditor.turnID&&turn.queue_edit_id===queueEditor.editID)
   useLayoutEffect(()=>{
     if(!queueEditorOpen)return
@@ -1775,7 +1849,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} progress={inlineProgress} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1804,7 +1878,7 @@ ${currentDraft}`:submitted)
           onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
-        steps={liveSteps.length||deferredTrace?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={!!traceMore&&(liveTraceTurn===moreTraceTurn||!liveSteps.length)} onMore={loadMoreTraces}
+        steps={liveSteps.length||deferredTrace?expanded=><Trace inline expanded={expanded} summaries={liveSteps.filter(row=>!projectedSteps.has(row.id))} details={details} more={!!traceMore&&(liveTraceTurn===moreTraceTurn||!liveSteps.length)} onMore={loadMoreTraces}
           onDetail={readTraceDetail} deferred={deferredTrace} w={w}/>:undefined}/>
       {stopText&&!visibleTurn&&<p className="pa-turn" role="status">{stopText}</p>}
       {queueLimited&&!queuePaused&&<p className="pa-turn" role="status">{w.queueLimited}</p>}

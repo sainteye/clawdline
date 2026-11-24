@@ -77,6 +77,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
+const PROJECT_ASSISTANTS_PROGRESS_API_LEVEL = 118
 const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
 type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
 export type AssistantFetch = (input: string, init?: RequestInit, observation?: BotReadObservation) => Promise<Response>
@@ -121,6 +122,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly machineName?: string
   canTeamCards() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL }
   canDeferTraceCount() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL }
+  canReadProgress() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_PROGRESS_API_LEVEL }
   canSettingsBase() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL }
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
   canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
@@ -476,7 +478,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal,observation?: BotReadObservation) {
     this.key(r.key);readViewRequest(r)
-    const level=r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
+    const level=r.mode==="progress"?PROJECT_ASSISTANTS_PROGRESS_API_LEVEL:r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
     const mode = this.grant.accountKey === "local" ? "standard" : "cloud-view"
     const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
       machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,

@@ -10028,6 +10028,7 @@
               "events",
               "permissions",
               "traces",
+              "progress",
               "detail"
             ]
           },

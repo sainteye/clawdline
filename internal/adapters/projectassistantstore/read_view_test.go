@@ -919,6 +919,38 @@ func TestReadViewKeepsDistinctTraceStepsAndLatestStepContent(t *testing.T) {
 	}
 }
 
+func TestReadViewProgressPagesOnlyNarrationAtItsFirstEvent(t *testing.T) {
+	exported, _, current := viewFixture(t, 1, 0, false)
+	for i, trace := range []pa.Trace{
+		{ID: "first", TurnID: "t1", Category: "agent_message_chunk", Text: "Checking "},
+		{ID: "command", TurnID: "t1", Category: "tool_call", Text: "Run tests"},
+		{ID: "second", TurnID: "t1", Category: "agent_message_chunk", Text: "Tests passed."},
+		{ID: "first", TurnID: "t1", Category: "agent_message_chunk", Text: "the build."},
+		{ID: "thought", TurnID: "t1", Category: "agent_thought_chunk", Text: "Internal deliberation"},
+		{TurnID: "t1", Category: "agent_message_chunk", Text: "Legacy snapshot"},
+		{TurnID: "t1", Category: "agent_message_chunk", Text: "Current legacy snapshot"},
+	} {
+		exported.Events = append(exported.Events, pa.Event{Version: pa.ContractVersion, ID: fmt.Sprintf("progress-%d", i),
+			Seq: int64(i + 2), Fence: current, Kind: pa.TraceUpdated, At: exported.Bot.CreatedAt.Add(time.Duration(i+1) * time.Second), Trace: &trace})
+	}
+	_, _, views, _ := restoreViews(t, exported)
+	q := viewQuery(exported.Bot)
+	snapshot := readView(t, views, q)
+	q.Request.Mode, q.Request.SourceEpoch, q.Request.PageSize = pa.ReadViewProgress, snapshot.SourceEpoch, 1
+	for i, want := range []struct {
+		text    string
+		seconds int
+	}{{"Current legacy snapshot", 7}, {"Tests passed.", 3}, {"Checking the build.", 1}} {
+		page := readView(t, views, q)
+		if len(page.Items) != 1 || page.Items[0].Trace == nil || page.Items[0].Trace.Text != want.text ||
+			!page.Items[0].OccurredAt.Equal(exported.Bot.CreatedAt.Add(time.Duration(want.seconds)*time.Second)) ||
+			page.HasMore != (i < 2) {
+			t.Fatalf("progress page %d: %+v", i, page)
+		}
+		q.Request.Cursor = page.Items[0].AfterCursor
+	}
+}
+
 func TestReadViewTraceCountSeparatesRoomAndChecksSupersededChunks(t *testing.T) {
 	exported, old, current := viewFixture(t, 3, 0, false)
 	roomTurn := exported.Turns[0]

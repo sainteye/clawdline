@@ -131,7 +131,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     if(queued.size)throw failure("pa_invalid")
     if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
   }else if(answer.snapshot!==undefined)throw failure("pa_invalid")
-  const allowed=q.mode==="snapshot"||q.mode==="history"?(q.team_cards?["message","work","permission"]:["message","work"]):q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:["permission","trace"]
+  const allowed=q.mode==="snapshot"||q.mode==="history"?(q.team_cards?["message","work","permission"]:["message","work"]):q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:q.mode==="progress"?["trace"]:["permission","trace"]
   const ids=new Set<string>(),identities=new Set<string>();let seq=q.after_seq
   for(const row of answer.items) {
     if(!row||!text(row.id)||!allowed.includes(row.kind)||!integer(row.anchor_message_seq)||!integer(row.observed_event_seq)||row.observed_event_seq>h.event_frontier)throw failure("pa_invalid")
@@ -159,6 +159,10 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       }
     }
     if(row.trace)trace(row.trace)
+    if(q.mode==="progress"){
+      if(!row.trace||row.trace.category!=="agent_message_chunk"||!date(row.occurred_at)||
+        row.id!==JSON.stringify([row.trace.turn_id,row.trace.id||row.trace.category]))throw failure("pa_invalid")
+    }else if(row.occurred_at!==undefined)throw failure("pa_invalid")
     if(row.event){
       const e=row.event
       if(!text(e.id)||!integer(e.seq,1)||e.seq<=seq||e.seq!==row.observed_event_seq||e.version!=="project-assistants.v1"||!date(e.at)||!oneOf(e.kind,ProjectAssistantEventKindValues))throw failure("pa_invalid")

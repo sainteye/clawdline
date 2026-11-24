@@ -116,6 +116,7 @@ type ReadViewItem struct {
 	Kind              ReadItemKind
 	AnchorMessageSeq  int64
 	ObservedEventSeq  int64
+	OccurredAt        time.Time
 	Message           *pa.Message
 	Work              *pa.WorkLink
 	PermissionSummary *ReadPermissionSummary
