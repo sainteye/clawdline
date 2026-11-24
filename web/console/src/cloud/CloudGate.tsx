@@ -88,7 +88,7 @@ import { openingFor } from "./opening.js"
 import { toolMovesConsole } from "./machine-tool.js"
 import { CloudAccountContext } from "./account-context.js"
 import { machinesByCapability, needsMachinePairing, reportsMachinePresence, watchStoredMachinePairings } from "./machine-access.js"
-import { answerSchedulePresence, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
+import { answerSchedulePresence, fleetReaderMachine, publishScheduleFleet, type ScheduleMachine } from "./schedule-machines.js"
 import { bundledCatalog, catalogURL } from "./strings.js"
 import { RelayReader, machineApp, machineDescribed, presentsEvery } from "./relay-reader.js"
 import { OPENED_ROW_QUIET_MS, openedRowShow } from "./opened-row.js"
@@ -1897,6 +1897,14 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
       return { current, machines }
     })() : null)
   }, [scheduleFleetKey])
+
+  // Every-machine scope reads through an online machine while there is one
+  // (`fleetReaderMachine`). An opened Session names its own machine instead.
+  const fleetReader = fleetScope && !fleetTarget ? fleetReaderMachine(reading, scheduleMachines) : reading
+  useEffect(() => {
+    if (!consoleUp || !fleetScope || fleetTarget || !client.current || !fleetReader || fleetReader === reading) return
+    pointAt(fleetReader, client.current)
+  }, [consoleUp, fleetScope, fleetTarget && destinationKey(fleetTarget), fleetReader, reading, clientEpoch, pointAt])
 
   const switchMachine = (machine: CloudMachine) => {
     if (dashboardPicker) {

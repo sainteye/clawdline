@@ -14388,5 +14388,17 @@
   "capacityRow.orchestrator.bot_viewing_hold_seconds.what": "The longest a decision notification waits because its chat seems to be on screen.",
   "capacityRow.orchestrator.bot_viewing_hold_seconds.full": "After it, the notification is sent even if the chat is still open, so a screen left on delays it but never loses it.",
   "capacityRow.orchestrator.bot_viewing_chats.what": "How many Bot chats this machine remembers as on screen.",
-  "capacityRow.orchestrator.bot_viewing_chats.full": "A report for one more chat is ignored, and that chat's decision notifications are sent without waiting."
+  "capacityRow.orchestrator.bot_viewing_chats.full": "A report for one more chat is ignored, and that chat's decision notifications are sent without waiting.",
+  "capacityRow.console.quota_read_wait_milliseconds.what": "How long the usage footer waits for a machine to answer one reading before it says the reading is unavailable. Without it, the footer said it was reading for as long as a machine stayed silent.",
+  "capacityRow.console.quota_read_wait_milliseconds.full": "After 20 seconds the footer says the reading is unavailable and keeps the last one it has. The request is not cancelled: if the machine answers later, that answer is shown.",
+  "capacityRow.console.schedule_read_wait_milliseconds.what": "How long the schedules list waits for one machine to answer before that machine's group says it could not be read. Without it, a silent machine left its group loading with no end.",
+  "capacityRow.console.schedule_read_wait_milliseconds.full": "After 20 seconds that machine's group says it could not be read and the other machines' groups still show. The request is not cancelled: if the machine answers later, its schedules appear.",
+  "capacityRow.console.schedule_retry_first_milliseconds.what": "How soon the schedules list reads again after a read that failed. Each failure in a row doubles the wait, so a machine that is not answering is not asked over and over.",
+  "capacityRow.console.schedule_retry_first_milliseconds.full": "After 5 seconds the list is read again without reloading the page. If that fails too, the next try comes after 10 seconds, then 20, then 40.",
+  "capacityRow.console.schedule_retry_ceiling_milliseconds.what": "The longest the schedules list waits between tries after reads keep failing. It is the same pace the list is refreshed at when nothing is wrong.",
+  "capacityRow.console.schedule_retry_ceiling_milliseconds.full": "Once the wait reaches 60 seconds it stops growing, and the list is tried once a minute until a machine answers.",
+  "capacityRow.console.reads_out_per_target.what": "How many requests for the same reading the page keeps open on one machine at a time. Without it, every retry added another request to a machine that was already not answering.",
+  "capacityRow.console.reads_out_per_target.full": "While one request is still open, asking again waits for that same request instead of sending another, so a slow answer can arrive a little later than a fresh request would suggest.",
+  "capacityRow.console.held_read_lost_milliseconds.what": "How long the page keeps counting on a request a machine has not answered. It is longer than any request is meant to last, and without it one request that never ended would stop that reading from ever being asked for again.",
+  "capacityRow.console.held_read_lost_milliseconds.full": "After 180 seconds the page gives up on that request and sends a new one the next time it reads. If the old request is answered after that, its answer is not used."
 }

@@ -61,3 +61,24 @@ export function laneOwesRead(o: {
   if (o.lastRefreshAt !== null && o.now - o.lastRefreshAt < o.everyMs) return false
   return o.onScreen()
 }
+
+/**
+ * How long the section waits on one machine's schedule read before its group
+ * says it was not read. The read itself stays out (`HeldReads` in `poll.ts`).
+ */
+export const SCHEDULE_READ_DEADLINE_MS = 20_000
+
+/** The first wait before reading again after a failed read; each later one doubles. */
+export const SCHEDULE_RETRY_FIRST_MS = 5_000
+/** The longest of those waits: the lane's own pace. */
+export const SCHEDULE_RETRY_CEILING_MS = 60_000
+
+/**
+ * How long to wait before reading again after a read that failed: 5, 10, 20,
+ * 40 seconds, then the lane's own pace. The lane alone asked again only on a
+ * tick at least `everyMs` after the failed read, and a tick lands a moment
+ * short of that, so a first read that failed was next made two minutes later.
+ */
+export function scheduleRetryDelayMs(failures: number, everyMs = SCHEDULE_RETRY_CEILING_MS): number {
+  return Math.min(everyMs, SCHEDULE_RETRY_FIRST_MS * 2 ** Math.min(Math.max(failures, 1) - 1, 10))
+}

@@ -86,10 +86,20 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   </footer>
 }
 
+/**
+ * How long the footer waits on one reading before it says the reading is
+ * unavailable. A machine that does not answer is otherwise waited on for the
+ * relay's own minute, twice, and the footer said "reading" for all of it. The
+ * read stays out past this, and what it answers is still shown (`HeldReads`).
+ */
+const QUOTA_READ_DEADLINE_MS = 20_000
+
 type ManualCheck = {
   before: ProviderQuotaSnapshot | null
   supported: boolean
   started: boolean
+  /** The poller's run of failures when the check was pressed. */
+  failuresBefore: number
 }
 
 function QuotaReading({ scope, machineName, offline, mobile, apiLevel }: { scope: string; machineName?: string; offline: boolean; mobile: boolean; apiLevel?: number }) {
@@ -131,7 +141,21 @@ function QuotaReading({ scope, machineName, offline, mobile, apiLevel }: { scope
       throw error
     }
   }, [])
-  const polling = usePoll<ProviderQuotaSnapshot>(read, refreshing ? 2_000 : 30_000)
+  const polling = usePoll<ProviderQuotaSnapshot>(read, refreshing ? 2_000 : 30_000, { deadlineMs: QUOTA_READ_DEADLINE_MS })
+  // A wait ended by its deadline never reaches `read`'s own catch, so the
+  // manual check is released here. One pressed while an earlier read was
+  // still out waited on that read and was never handed to `read` at all; it
+  // is released by the failure that came after the press.
+  useEffect(() => {
+    const check = manual.current
+    if (!polling.error || polling.reading || !check) return
+    if (!check.started && polling.failures <= check.failuresBefore) return
+    manual.current = null
+    const message = nextWord("quotaReadUnavailable")
+    setFeedback(message)
+    setRefreshing(false)
+    if (!dialog.current?.open) toast(message, true)
+  }, [polling.error, polling.reading, polling.failures])
   // A remount starts its poller empty; until it reads, the footer shows the
   // last reading this browser kept for the machine, marked outdated.
   if (polling.data) rememberQuotaReading(scope, polling.data)
@@ -151,7 +175,7 @@ function QuotaReading({ scope, machineName, offline, mobile, apiLevel }: { scope
       toast(nextWord("quotaOfflineNoReading"), true)
       return
     }
-    manual.current = { before: polling.data ?? saved, supported: apiLevel === undefined || apiLevel >= 115, started: false }
+    manual.current = { before: polling.data ?? saved, supported: apiLevel === undefined || apiLevel >= 115, started: false, failuresBefore: polling.failures }
     setFeedback("")
     setRefreshing(true)
     setNow(Math.floor(Date.now() / 1000))
