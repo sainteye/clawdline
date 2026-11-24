@@ -515,7 +515,7 @@ test("generated PA errors survive the actual copied reply reader into the captur
 
 test("every Bot word is carried and read-only metadata retains action refs",async () => {
   const words=Object.keys(CARRIED).filter(word => word.startsWith("project-assistants."))
-  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","send-receipt","status","stop","projects","view","visibility","queue-edit"].map(word => "project-assistants."+word).sort())
+  assert.deepEqual(words.sort(),["dev-servers","dev-server-logs","dev-server-start","dev-server-restart","dev-server-stop","dev-server-remove","handoff-card","handoff-card-write","react","network-settings","network-settings-save","connector-credential","connector-secret","memory-view","configuration","configuration-profile","extensions","login-profiles","login-profile","login-secret","rename-artifact","groups","group-history","group-create","group-edit","group-delete","group-react","group-send","group-stop","team-plans","team-answer","team-settings","tower-floors","tower-floor-save","shared-settings","shared-settings-save","routines","routine-runs","routine-save","routine-enabled","routine-delete","routine-test","routine-hook","routine-preview","input","upload","send-files","answer","attachment","send-pictures","create","delete","edit","events","export","forget","get","history","list","memory","observed","output","read","rule-remove","rules","send","send-now","send-receipt","status","stop","projects","view","visibility","queue-edit"].map(word => "project-assistants."+word).sort())
   const captured: {ref:string;word:string;fields:Record<string,unknown>}[]=[]
   const client={machineDescriptor:()=>({machine:{commands:words}}),async _machineRequestAs(ref:string,_machine:string,word:string,fields:Record<string,unknown>){captured.push({ref,word,fields});return {}}}
   const relay=capturedAssistantRelayFetch("one",() => client,words)
@@ -1279,4 +1279,42 @@ test("handoff routes and send versions require the captured API 93 source", asyn
   const sendForwarded = assistantRelayRequest(writePath.replace(/handoff-card$/, "messages"),
     {method: "POST", body: JSON.stringify(send), headers: {"Idempotency-Key": send.command.idempotency_key}})
   assert.deepEqual(sendForwarded.fields, send)
+})
+
+test("Bots shared settings cross the Cloud relay on the named machine and save with the version read",async () => {
+  const calls:{machine:string;word:string;body:Record<string,unknown>;ref?:string}[]=[]
+  const settings={version:3,rules:[],memory:[{id:"m",text:"Answer first",scope:{all:true}}]}
+  const answer=(machine:string)=>({contract_version:"project-assistants.v1",machine_id:machine,settings,agents:[],limits:{}})
+  const client={
+    machineDescriptor:() => ({machine:{commands:["project-assistants.shared-settings","project-assistants.shared-settings-save"]}}),
+    async _machineRequest(machine:string,word:string,body:Record<string,unknown>) {calls.push({machine,word,body});return answer(machine)},
+    async _machineRequestAs(ref:string,machine:string,word:string,body:Record<string,unknown>) {calls.push({machine,word,body,ref});return answer(machine)},
+  }
+  const g={...grant("two"),apiLevel:115}
+  const source=new ProjectAssistantSourceClient(g,capturedAssistantRelayFetch("two",() => client,Object.keys(CARRIED)),() => g)
+  ;(source as unknown as {lastStatus:unknown}).lastStatus={machine_id:"two",state:"online",fresh:true,readable:true,writable:true,access:"interactive"}
+  ;(source as unknown as {access:string}).access="interactive"
+  const read=await source.sharedSettings(signal())
+  assert.equal(read.machine_id,"two")
+  await source.saveSharedSettings({machine_id:"two",idempotency_key:"stable-save",expected_version:3,settings},signal())
+  assert.deepEqual(calls.map(c => [c.machine,c.word]),[["two","project-assistants.shared-settings"],["two","project-assistants.shared-settings-save"]])
+  assert.deepEqual(calls[0].body,{machine_id:"two"})
+  assert.equal(calls[1].ref,"stable-save");assert.equal(calls[1].body.expected_version,3);assert.deepEqual(calls[1].body.settings,settings)
+  // Another machine's document is never written through this source.
+  await assert.rejects(source.saveSharedSettings({machine_id:"one",idempotency_key:"k",expected_version:3,settings},signal()),error => errorCode(error) === "pa_scope_denied")
+  assert.equal(calls.length,2)
+})
+
+test("an older machine answers Bots shared settings as unsupported before anything is sent",async () => {
+  let sent=0
+  const client={machineDescriptor:() => ({machine:{commands:["project-assistants.status"]}}),async _machineRequest(){sent++;return {}},async _machineRequestAs(){sent++;return {}}}
+  const current={...grant(),apiLevel:115}
+  const source=new ProjectAssistantSourceClient(current,capturedAssistantRelayFetch("one",() => client,Object.keys(CARRIED)),() => current)
+  await assert.rejects(source.sharedSettings(signal()),error => errorCode(error) === "pa_unsupported")
+  const old={...grant(),apiLevel:114}
+  const before=new ProjectAssistantSourceClient(old,capturedAssistantRelayFetch("one",() => client,Object.keys(CARRIED)),() => old)
+  await assert.rejects(before.sharedSettings(signal()),error => errorCode(error) === "pa_unsupported")
+  assert.equal(sent,0)
+  assert.deepEqual(assistantRelayRequest("/v1/project-assistant-shared-settings?machine_id=one"),{word:"project-assistants.shared-settings",kind:"read",fields:{machine_id:"one"},id:""})
+  assert.throws(() => assistantRelayRequest("/v1/project-assistant-shared-settings",{method:"PUT",body:JSON.stringify({machine_id:"one",expected_version:0,settings:{}}),headers:{"Idempotency-Key":"x"}}),error => errorCode(error) === "pa_invalid")
 })

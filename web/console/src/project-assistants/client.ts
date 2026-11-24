@@ -11,6 +11,11 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
   return bot&&conversation?{bot,conversation,machine:fields.get("machine")??""}:null
 }
 
+/** One machine's Bots shared settings (dispatch rules and shared memory), API 115. */
+export type SharedSettingsDocument={version:number;rules:unknown[];memory:unknown[];memory_opt_out?:string[];project_overrides?:unknown}
+export type SharedSettingsAnswer<S=SharedSettingsDocument>={contract_version:"project-assistants.v1";machine_id:string;settings:S;agents:{agent:string;efforts:string[]}[];limits:Record<string,number>}
+export type SharedSettingsWrite<S=SharedSettingsDocument>={machine_id:string;idempotency_key:string;expected_version:number;settings:S}
+
 export type MemoryReadDetail={source_epoch:string;layer:string;entry_id:string;revision:string}
 export type ProjectMemoryPage={page:number;page_size:number}
 
@@ -22,6 +27,9 @@ export interface SourceClient {
  react?(request:W.ProjectAssistantReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
  /** The machine's Bots tower floor placements (API 97). */
  canTowerFloors?():boolean
+ /** The machine's Bots shared settings, read and saved whole with the version read. */
+ sharedSettings?(signal:AbortSignal):Promise<SharedSettingsAnswer>
+ saveSharedSettings?(request:SharedSettingsWrite,signal:AbortSignal):Promise<SharedSettingsAnswer>
  towerFloors?(signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean

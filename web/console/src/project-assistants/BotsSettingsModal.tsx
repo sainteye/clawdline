@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent }
 import { catalogWord } from "../catalog.js"
 import { useModalBackdrop } from "../modal-backdrop.js"
 import { PaSelect } from "./PaSelect"
+import { errorCode, failure, type SharedSettingsAnswer, type SourceClient } from "./client"
 import "./bots-settings.css"
 
 // Machine-wide Bots settings: dispatch rules and memory shared by every Bot.
@@ -14,29 +15,45 @@ export type DispatchRule = { id: string; kind: string; hint?: string; agents: Ru
 export type SharedMemory = { id: string; text: string; scope: SharedScope }
 export type SharedSettings = { version: number; rules: DispatchRule[]; memory: SharedMemory[]; memory_opt_out?: string[]; project_overrides?: unknown }
 export type AgentOption = { agent: string; efforts: string[] }
-export type SharedSettingsReply = { settings: SharedSettings; agents: AgentOption[]; limits: Record<string, number> }
+export type SharedSettingsReply = { machine_id?: string; settings: SharedSettings; agents: AgentOption[]; limits: Record<string, number> }
 export type ProjectChoice = { id: string; name: string }
-
-export const sharedSettingsPath = "/v1/project-assistants/shared-settings"
 
 const word = (key: string) => catalogWord("botsSettings", key)
 const agentName = (agent: string) => agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : agent === "antigravity" ? "Gemini" : agent === "grok" ? "Grok" : agent
 const newID = () => Math.random().toString(36).slice(2, 12)
 
-export async function readSharedSettings(fetcher: typeof fetch = fetch): Promise<SharedSettingsReply> {
-  const response = await fetcher(sharedSettingsPath, { headers: { Accept: "application/json" } })
-  if (!response.ok) throw new Error(String(response.status))
-  return response.json() as Promise<SharedSettingsReply>
+/** Why one machine's settings could not be read or saved, in words a person can act on. */
+export function sharedSettingsProblem(error: unknown, saving: boolean): string {
+  const code = errorCode(error)
+  switch (code) {
+    case "pa_unsupported": return word("problemUnsupported")
+    case "pa_offline": return word("problemOffline")
+    case "pa_unpaired": case "pa_revoked": return word("problemUnpaired")
+    case "pa_disabled": return word("problemDisabled")
+    case "pa_read_only": return saving ? word("problemReadOnly") : word("problemDenied")
+    case "pa_scope_denied": return word("problemDenied")
+    case "pa_stale_version": return word("stale")
+    case "pa_capacity_full": return word("full")
+    case "pa_outcome_unknown": return word("problemUnknownSave")
+    default: return (saving ? word("saveFailed") : word("loadFailed")) + (code !== "unavailable" ? ` (${code})` : "")
+  }
 }
 
-export async function writeSharedSettings(settings: SharedSettings, fetcher: typeof fetch = fetch): Promise<SharedSettingsReply> {
-  const { version, ...rest } = settings
-  const response = await fetcher(sharedSettingsPath, { method: "PUT", headers: { "Content-Type": "application/json", Accept: "application/json" }, body: JSON.stringify({ expected_version: version, settings: { ...rest, version } }) })
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { code?: string; field?: string }
-    throw new Error(body.code === "pa_stale_version" ? word("stale") : body.code === "pa_capacity_full" ? word("full") : word("saveFailed"))
-  }
-  return response.json() as Promise<SharedSettingsReply>
+/** Reads one machine's document through its captured source, never a relative fetch. */
+export async function readSharedSettings(source: SourceClient, signal: AbortSignal = new AbortController().signal): Promise<SharedSettingsReply> {
+  if (typeof source.sharedSettings !== "function") throw failure("pa_unsupported")
+  const answer = await source.sharedSettings(signal) as SharedSettingsAnswer<SharedSettings>
+  if (answer.machine_id !== source.machineID || !answer.settings || !Array.isArray(answer.settings.rules) || !Array.isArray(answer.settings.memory)) throw failure("pa_invalid")
+  return answer
+}
+
+/** Replaces the whole document, naming the version it was read at. */
+export async function writeSharedSettings(source: SourceClient, settings: SharedSettings, signal: AbortSignal = new AbortController().signal): Promise<SharedSettingsReply> {
+  if (typeof source.saveSharedSettings !== "function") throw failure("pa_unsupported")
+  const id = crypto.randomUUID()
+  const answer = await source.saveSharedSettings({ machine_id: source.machineID, idempotency_key: id, expected_version: settings.version, settings }, signal) as SharedSettingsAnswer<SharedSettings>
+  if (answer.machine_id !== source.machineID || !answer.settings) throw failure("pa_invalid")
+  return answer
 }
 
 /** Tab and Shift+Tab stay inside the dialog while it is open. */
@@ -130,20 +147,30 @@ function MemoryRow({ entry, projects, onChange, onDelete }: { entry: SharedMemor
   </li>
 }
 
-export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { projects: readonly ProjectChoice[]; onClose: () => void; fetcher?: typeof fetch }) {
+export type SettingsMachine = { source: SourceClient; name: string }
+
+export function BotsSettingsModal({ projects, onClose, machines, initialMachine }: { projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string }) {
   const panel = useRef<HTMLElement>(null)
   const opener = useRef<Element | null>(typeof document === "undefined" ? null : document.activeElement)
+  const [machine, setMachine] = useState(() => machines.find(m => m.source.machineID === initialMachine)?.source.machineID ?? machines[0]?.source.machineID ?? "")
+  const chosen = machines.find(m => m.source.machineID === machine)
+  const source = chosen?.source
   const [reply, setReply] = useState<SharedSettingsReply>()
   const [draft, setDraft] = useState<SharedSettings>()
+  const [loadError, setLoadError] = useState("")
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
+  const [attempt, setAttempt] = useState(0)
   const close = () => { onClose(); (opener.current as HTMLElement | null)?.focus?.() }
   const backdrop = useModalBackdrop(close)
   useEffect(() => {
-    let live = true
-    readSharedSettings(fetcher).then(r => { if (live) { setReply(r); setDraft(r.settings) } }, () => { if (live) setError(word("loadFailed")) })
-    return () => { live = false }
-  }, [fetcher])
+    const control = new AbortController()
+    setReply(undefined); setDraft(undefined); setLoadError(""); setError("")
+    if (!source) { setLoadError(sharedSettingsProblem(failure("pa_unsupported"), false)); return }
+    readSharedSettings(source, control.signal).then(r => { if (!control.signal.aborted) { setReply(r); setDraft(r.settings) } },
+      e => { if (!control.signal.aborted) setLoadError(sharedSettingsProblem(e, false)) })
+    return () => control.abort()
+  }, [source, attempt])
   useEffect(() => { panel.current?.querySelector<HTMLElement>(".pa-bs-close")?.focus() }, [])
   const closeRef = useRef(close); closeRef.current = close
   useEffect(() => {
@@ -157,13 +184,13 @@ export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { proj
     return () => document.removeEventListener("keydown", keys)
   }, [])
   const save = async () => {
-    if (!draft) return
+    if (!draft || !source) return
     setSaving(true); setError("")
     try {
       const clean = { ...draft, rules: draft.rules.filter(r => r.kind.trim()), memory: draft.memory.filter(m => m.text.trim()) }
-      const next = await writeSharedSettings(clean, fetcher)
+      const next = await writeSharedSettings(source, clean)
       setReply(next); setDraft(next.settings)
-    } catch (e) { setError(e instanceof Error ? e.message : word("saveFailed")) }
+    } catch (e) { setError(sharedSettingsProblem(e, true)) }
     finally { setSaving(false) }
   }
   const agents = reply?.agents ?? []
@@ -177,7 +204,16 @@ export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { proj
         <button type="button" className="pa-bs-icon pa-bs-close" aria-label={word("close")} title={word("close")} onClick={close}><CloseIcon/></button>
       </header>
       <div className="pa-bs-body">
-        {!draft && !error && <p className="pa-bs-note">{word("loading")}</p>}
+        {machines.length > 1 && <div className="pa-bs-machine">
+          <span id="pa-bs-machine-label">{word("machine")}</span>
+          <PaSelect compact ariaLabel={word("machine")} value={machine} disabled={saving} onChange={setMachine}
+            options={machines.map(m => ({ value: m.source.machineID, label: m.name }))}/>
+        </div>}
+        {!draft && !loadError && <p className="pa-bs-note">{word("loading")}</p>}
+        {loadError && <div className="pa-bs-problem" role="alert">
+          <p className="pa-bs-error">{loadError}</p>
+          <button type="button" className="pa-bs-secondary" onClick={() => setAttempt(a => a + 1)}>{word("retry")}</button>
+        </div>}
         {draft && <>
           <section className="pa-bs-group" aria-labelledby="pa-bs-rules">
             <h3 id="pa-bs-rules">{word("rulesTitle")}</h3>
@@ -213,11 +249,11 @@ export function BotsSettingsModal({ projects, onClose, fetcher = fetch }: { proj
 }
 
 /** The per-Bot "use shared memory" switch lives in the same document. */
-export async function setBotUsesSharedMemory(botID: string, use: boolean, fetcher: typeof fetch = fetch): Promise<SharedSettingsReply> {
-  const current = await readSharedSettings(fetcher)
+export async function setBotUsesSharedMemory(source: SourceClient, botID: string, use: boolean): Promise<SharedSettingsReply> {
+  const current = await readSharedSettings(source)
   const optOut = (current.settings.memory_opt_out ?? []).filter(id => id !== botID)
   if (!use) optOut.push(botID)
-  return writeSharedSettings({ ...current.settings, memory_opt_out: optOut }, fetcher)
+  return writeSharedSettings(source, { ...current.settings, memory_opt_out: optOut })
 }
 
 /** Project choices from the roster's [machine, project] name map, one per Project. */
@@ -233,16 +269,18 @@ export function sharedSettingsProjects(names: ReadonlyMap<string, string>, perso
 }
 
 /** The Bot's "use shared memory" switch: on by default, saved at once. */
-export function useSharedMemorySwitch(botID: string, fetcher: typeof fetch = fetch): { use: boolean; available: boolean; set: (use: boolean) => void } {
+export function useSharedMemorySwitch(source: SourceClient | undefined, botID: string): { use: boolean; available: boolean; set: (use: boolean) => void } {
   const [state, setState] = useState<{ use: boolean; available: boolean }>({ use: true, available: false })
   useEffect(() => {
-    let live = true
-    readSharedSettings(fetcher).then(r => { if (live) setState({ use: !(r.settings.memory_opt_out ?? []).includes(botID), available: true }) }, () => {})
-    return () => { live = false }
-  }, [botID, fetcher])
+    const control = new AbortController()
+    setState({ use: true, available: false })
+    if (source) readSharedSettings(source, control.signal).then(r => { if (!control.signal.aborted) setState({ use: !(r.settings.memory_opt_out ?? []).includes(botID), available: true }) }, () => {})
+    return () => control.abort()
+  }, [botID, source])
   const set = (use: boolean) => {
+    if (!source) return
     setState({ use, available: true })
-    setBotUsesSharedMemory(botID, use, fetcher).catch(() => setState({ use: !use, available: true }))
+    setBotUsesSharedMemory(source, botID, use).catch(() => setState({ use: !use, available: true }))
   }
   return { ...state, set }
 }
