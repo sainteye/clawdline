@@ -357,9 +357,10 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 				map[string]any{"field": "target", "stored": prev.Target, "requested": next.Target})
 		}
 	}
-	// A pending landing that was corrected keeps what it was corrected from
-	// until a settled landing replaces it, so the reopened row still shows
-	// the claim that was withdrawn.
+	// A pending landing that was corrected keeps what it was corrected from,
+	// and so does the landing that is proved on it later, so the row still
+	// shows the claim that was withdrawn; a correction of that one replaces
+	// it with its own predecessor, one level as always.
 	if prev != nil && prev.State == LandingPending && prev.CorrectedFrom != nil {
 		next.CorrectedFrom = prev.CorrectedFrom
 	}

@@ -159,8 +159,8 @@ that is neither base's nor head's; on this repository a 42-path delivery took we
 exception: `landed` or `incorporated` may be corrected to `pending`, with the orchestrator token only and a non-empty
 `note` saying why (otherwise `403 forbidden` or `400 bad_request`; a different `target` is `landing_conflict`). It is a
 correction like any other: the replaced landing is kept as `corrected_from`, and a `landing.corrected` event records
-`landing: pending` with `previous_commit`. The pending row keeps that `corrected_from` until a settled landing replaces
-it; a resend with the same note is a replay. A carried delivery that was `incorporated` on a corrected carrier is not
+`landing: pending` with `previous_commit`. The pending row keeps that `corrected_from`, and so does a landing proved on
+it later; a resend with the same note is a replay. A carried delivery that was `incorporated` on a corrected carrier is not
 reopened automatically; correct it the same way. `abandoned` and `nothing_to_land` are a root's decisions, not claims
 about the repository, and stay final.
 
