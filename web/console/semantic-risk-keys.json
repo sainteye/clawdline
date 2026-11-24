@@ -3,8 +3,8 @@
   "englishKeys": 14400,
   "counts": {
     "negation": 3677,
-    "state": 2450,
-    "permission": 865,
+    "state": 2449,
+    "permission": 866,
     "deletion": 336,
     "uncertainty": 578
   },
@@ -6123,7 +6123,6 @@
       "work.usageCardLabel",
       "work.usageMore",
       "work.usageWaitWhy",
-      "workflowSettings.dispatch_full_permissionScope",
       "workflowSettings.gemini_step_explanationsOn",
       "workflowSettings.grok_full_permissionOff",
       "workflowSettings.grok_full_permissionScope",
@@ -6994,6 +6993,7 @@
       "workflowSettings.codexPermission_full",
       "workflowSettings.dispatch_full_permissionOff",
       "workflowSettings.dispatch_full_permissionOn",
+      "workflowSettings.dispatch_full_permissionScope",
       "workflowSettings.dispatch_full_permissionTitle",
       "workflowSettings.grok_full_permissionOff",
       "workflowSettings.grok_full_permissionOn",

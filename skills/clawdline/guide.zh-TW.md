@@ -743,7 +743,7 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 | `instructions` | 必填，最多 16 KiB。內容必須自己就講得清楚：除此之外 child 什麼都不知道。寫進你已經查證過的事實，每一條附 `file:line` 或指令；調查 child 還要有停止條件與 turn 上限 |
 | `claims` | **必填**：最多 32 個 child 可以寫入的相對路徑。`[]` 表示它什麼都不寫，派工會帶一個警告（`claims_missing`） |
 | `isolation` | `none`（預設），或 `worktree`：在自己的 branch 上開一份私有 checkout |
-| `permission_mode` | `ask`、`edits` 或 `full`；省略時依機器設定（初始為 `full`） |
+| `permission_mode` | `ask`、`edits` 或 `full`；省略時依機器設定（初始為 `full`）。Grok 派工一律使用 `full` |
 | `timeout_minutes` | 1–240，預設 30 |
 | `kind`、`deliverables`、`model` | 選填；`model` 只能用 `[a-z0-9._-]`，最多 64 字元 |
 | `work_id` | 選填，這個 task 所服務的看板項目的 UUID |
@@ -759,9 +759,10 @@ writes、deliverables、kind 和 timeout 都在裡面——所以 child 讀到�
 這不授權付費 API 或 AI Credits。
 
 官方 Grok Build worker 使用 `--assistant grok`，沿用相同的自有任務生命週期。
-原生工具從 daemon 發布的對話位址讀取 `root.assistant=grok`。`ask` 以需確認模式啟動；
-`full` 明確啟用原生工具自動核准。`edits` 與明確指定推理強度尚無已驗證的對應方式，
-因此會被拒絕。模型必須是原生提供的選項，或省略以保留原生預設。Grok 使用已快取的
+原生工具從 daemon 發布的對話位址讀取 `root.assistant=grok`。新派出的 Grok worker
+一律以 `full`（`--always-approve`）啟動，派工單指定 `ask` 或 `edits` 時也一樣。
+Grok 的拒絕規則與 hooks 仍然適用。明確指定推理強度會被拒絕，直到驗證原生對應方式。
+模型必須是原生提供的選項，或省略以保留原生預設。Grok 使用已快取的
 互動登入帳號；API 金鑰或無法驗證的認證會被拒絕。Grok 中斷輸入不會自動重播，
 daemon 重啟後也一樣；無活動只代表結果不確定，不代表完成。停止自有 worker 並不
 證明原生脫離程序的工作或外部副作用已停止。支援範圍與驗證限制見 `docs/grok-cli.md`。

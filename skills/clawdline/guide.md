@@ -852,7 +852,7 @@ included — so the task the child reads is the one that was validated, and it d
 | `instructions` | required, at most 16 KiB. They must stand on their own: the child knows nothing else. Carry the facts you already verified, each with its `file:line` or command; an investigation child also gets a stop condition and a turn limit |
 | `claims` | **required**: at most 32 relative paths the child may write. `[]` means it writes nothing and is warned about (`claims_missing`) |
 | `isolation` | `none` (default) or `worktree` for a private checkout on its own branch |
-| `permission_mode` | `ask`, `edits` or `full`; absent follows the machine setting (initially `full`) |
+| `permission_mode` | `ask`, `edits` or `full`; absent follows the machine setting (initially `full`). Grok dispatches always use `full` |
 | `timeout_minutes` | 1–240, default 30 |
 | `kind`, `deliverables`, `model` | optional; `model` is `[a-z0-9._-]`, at most 64 characters |
 | `work_id` | optional UUID of the board item this serves |
@@ -870,9 +870,10 @@ notice is not automatically resent. This does not authorize paid APIs or AI Cred
 
 Official Grok Build workers use `--assistant grok` and the same owned task lifecycle.
 Their native tools resolve `root.assistant=grok` from the daemon-published conversation
-address. `ask` starts supervised; `full` explicitly enables native tool approval.
-`edits` and explicit reasoning effort are refused because no equivalent mapping has
-been verified. Models must be native offers, or omitted for the native default.
+address. Every new Grok dispatch starts with `full` (`--always-approve`), including
+briefs that specify `ask` or `edits`. Grok deny rules and hooks still apply.
+Explicit reasoning effort is refused until its native mapping is verified.
+Models must be native offers, or omitted for the native default.
 Grok uses its cached interactive account login; API-key or unverified auth is refused.
 Interrupted Grok input is never automatically replayed, including after a daemon
 restart. Inactivity is uncertain, not successful completion. Stopping the owned
