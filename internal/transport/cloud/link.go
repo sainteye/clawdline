@@ -281,8 +281,11 @@ type Link struct {
 	lastErr   string
 	lastErrAt time.Time
 	lastKind  adaptercloud.FailureKind
-	answered  int
-	refused   int
+	// openErr is why Open could not finish an enabled line, kept as the
+	// error itself so OpenFailure can tell a refusal from a transient fault.
+	openErr  error
+	answered int
+	refused  int
 	// reading is how many reads are being answered beside the command lane,
 	// at most CloudReadConcurrencyLimit.
 	reading            int
@@ -651,8 +654,7 @@ func Open(opts LinkOptions) (*Link, error) {
 	// Past this line the switch is on, so key material may be opened.
 	keys, err := cloudkeys.Open(opts.Dir, opts.ForeignDirs...)
 	if err != nil {
-		link.fail(err)
-		return link, nil
+		return link.failOpen(err), nil
 	}
 	link.keys = keys
 	identity, found, err := adaptercloud.NewIdentityStore(keys.Dir()).Load()
@@ -661,15 +663,12 @@ func Open(opts LinkOptions) (*Link, error) {
 		// An identity that exists and cannot be read is reported as itself.
 		// Saying "not enrolled" here is how a permission error turns into a
 		// second machine registration.
-		link.fail(err)
-		return link, nil
+		return link.failOpen(err), nil
 	case !found:
-		link.fail(adaptercloud.ErrNoIdentity)
-		return link, nil
+		return link.failOpen(adaptercloud.ErrNoIdentity), nil
 	}
 	if err := adaptercloud.CheckEnvironment(identity, settings); err != nil {
-		link.fail(err)
-		return link, nil
+		return link.failOpen(err), nil
 	}
 	link.identity = identity
 	link.pinned = adaptercloud.NewPinnedStore(keys.Dir())
@@ -720,8 +719,7 @@ func Open(opts LinkOptions) (*Link, error) {
 		return link.pairing.Client.RevokeInvitedBrowser(ctx, identity.MachineCredential, device)
 	}
 	if err := link.wire(); err != nil {
-		link.fail(err)
-		return link, nil
+		return link.failOpen(err), nil
 	}
 	link.state = adaptercloud.StateIdle
 	return link, nil
@@ -1966,6 +1964,26 @@ func (l *Link) fail(err error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.lastErr, l.lastErrAt, l.lastKind = text, l.opts.Now(), failure.Kind
+}
+
+// failOpen records why Open stopped short and hands the link back, so the
+// status route can still say so.
+func (l *Link) failOpen(err error) *Link {
+	l.fail(err)
+	l.mu.Lock()
+	l.openErr = err
+	l.mu.Unlock()
+	return l
+}
+
+// OpenFailure is why Open returned a line that is switched on but has nothing
+// to run, or nil when the line opened or is switched off. Open answers such a
+// line without an error so the status route can explain it; the caller that
+// starts the line uses this to keep retrying instead of treating it as up.
+func (l *Link) OpenFailure() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.openErr
 }
 
 func (l *Link) lastError() string {

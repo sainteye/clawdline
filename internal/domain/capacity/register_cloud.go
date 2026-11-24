@@ -377,6 +377,25 @@ func cloudBounds() []Entry {
 			Sources: []string{"internal/transport/cloud.CloudTerminalRosterRetrySecondsLimit"},
 		},
 		{
+			// The wait before a Cloud line whose Open failed is tried again;
+			// each further failure doubles it up to the next row. An Open
+			// refused for good (no identity, a revoked credential) is not
+			// retried; it waits for a sign-in, which reloads the line.
+			Name: CloudLineOpenRetryFirst, Class: Cache, Unit: Seconds,
+			Limit: 5, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.LineOpenRetryFirstSecondsLimit"},
+		},
+		{
+			// The longest wait between two retries of a failed Cloud line
+			// Open. A line that keeps failing is still tried this often and
+			// is never given up on; the status route says why it is down.
+			Name: CloudLineOpenRetryMax, Class: Cache, Unit: Seconds,
+			Limit: 300, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/cloud.LineOpenRetryMaxSecondsLimit"},
+		},
+		{
 			// A registered connection whose viewer's authority cannot be
 			// verified is paused (no frames, input refused as busy) and retired
 			// without a revocation notice after this long.

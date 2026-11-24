@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14294,
-  "riskKeys": 6073,
-  "nonRiskCount": 8221,
+  "englishContentKeys": 14298,
+  "riskKeys": 6076,
+  "nonRiskCount": 8222,
   "groups": [
     {
       "name": "acp / other",
@@ -615,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 759,
+      "count": 760,
       "sources": [
         null
       ],
@@ -898,6 +898,7 @@
         "capacityRow.cloud.health_upload_step_pages.full",
         "capacityRow.cloud.identity_pairing_decision_bytes.what",
         "capacityRow.cloud.identity_pairing_run_seconds.what",
+        "capacityRow.cloud.line_open_retry_first_seconds.what",
         "capacityRow.cloud.peer_discovery_reply.full",
         "capacityRow.cloud.peer_discovery_reply.what",
         "capacityRow.cloud.peer_frame_bytes.what",

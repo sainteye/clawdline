@@ -27,12 +27,20 @@ func TestCloudUpdateGateResumesAndSharesReloadAdmission(t *testing.T) {
 	ready.Store(true)
 	ticks <- time.Time{}
 	<-opened
-	<-done
+	// An opened line takes no more ticks: nothing reopens it behind the
+	// settings route's back.
+	ticks <- time.Time{}
+	select {
+	case <-opened:
+		t.Fatal("a tick reopened a line that was already up")
+	default:
+	}
 	if err := g.reload(); err != nil {
 		t.Fatal(err)
 	}
 	<-opened
 	cancel()
+	<-done
 	if err := g.reload(); err == nil {
 		t.Fatal("shutdown accepted reload")
 	}

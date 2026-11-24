@@ -5456,7 +5456,7 @@
   ],
   "sourceChecks": {
     "cmd/clawdline/codegraph.go": "6947e20acb264941aa945f69edb6fe2d32592d290ad812f6ecd074cacb8d021e",
-    "cmd/clawdline/main.go": "47bbdff6fce95ada29bc814cd076ff512688454fcd5065da0399d3c354ae6204",
+    "cmd/clawdline/main.go": "8d801a8a470825e3e519589893901498fee5082e9ebbdf6cc858f7692981bfbe",
     "cmd/clawdline/project_assistants.go": "9e48fb58a5b3af695fb520f185fff3f49f611a18b1c9d1bf42c8e0e5f113fc97",
     "cmd/clawdline/project_assistants_archive.go": "bcaa211d7443040cefe342caaa9ee1eb457ec8e490bda3df285b64455e6f62dc",
     "cmd/clawdline/session.go": "5da0de49664b879474852e8f783f40bf01d522f7f41249905b023dc85968a9d3",

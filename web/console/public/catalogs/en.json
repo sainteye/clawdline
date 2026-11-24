@@ -14294,5 +14294,9 @@
   "botsSettings.saving": "Saving…",
   "botsSettings.open": "Bots settings",
   "botsSettings.useShared": "Use memory shared by every Bot",
-  "botsSettings.useSharedHint": "Reads the shared memory from Bots settings before this Bot's own memory."
+  "botsSettings.useSharedHint": "Reads the shared memory from Bots settings before this Bot's own memory.",
+  "capacityRow.cloud.line_open_retry_first_seconds.what": "After the Cloud connection fails to start on this machine, how long before it tries again. Each further failure doubles the wait, up to the next limit.",
+  "capacityRow.cloud.line_open_retry_first_seconds.full": "Until the retry succeeds, your phone and app.clawdline.com cannot reach this machine, and the Cloud settings say why. A brief file or disk problem clears by itself; nothing for you to do.",
+  "capacityRow.cloud.line_open_retry_max_seconds.what": "The longest wait between two attempts to start a Cloud connection that keeps failing. The machine never gives up; it keeps trying at least this often.",
+  "capacityRow.cloud.line_open_retry_max_seconds.full": "While it keeps failing, the Cloud settings show the reason. If this machine was signed out or removed from the account, it stops retrying until you sign in again."
 }

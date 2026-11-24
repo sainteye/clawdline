@@ -341,6 +341,8 @@
 | `cloud.identity_pairing_poll_attempts` | 600 | `rows` | `refuse` | `diagnostics` | — |
 | `cloud.identity_pairing_run_seconds` | 660 | `seconds` | `disconnect` | `diagnostics` | — |
 | `cloud.lane_refusals` | 16 | `rows` | `refuse` | `diagnostics, log` | — |
+| `cloud.line_open_retry_first_seconds` | 5 | `seconds` | `expire` | `diagnostics` | — |
+| `cloud.line_open_retry_max_seconds` | 300 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.peer_body_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, notice, sender` | — |
 | `cloud.peer_discovery_reply` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `cloud.peer_frame_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, log, sender` | — |
