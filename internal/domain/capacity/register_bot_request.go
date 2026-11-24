@@ -2,35 +2,36 @@ package capacity
 
 import br "github.com/sainteye/clawdline/internal/domain/botrequest"
 
-// botRequestBounds is every row named botrequest.*: the Bot request card's
-// limits (docs/bot-request-cards.md §10). Each refuses at its limit with a
-// typed bot_request_* refusal in the answer to the Bot or person writing;
-// nothing already recorded is let go to make room.
+// botRequestBounds is every row named botrequest.* (docs/bot-request-cards.md
+// §10). A card is a few kilobytes of text, so its sizes and counts are
+// deliberately not bounded here: the request body limit every route has is the
+// only size guard, and a cap that refused ordinary work would hurt more than
+// the rows it saves.
 func botRequestBounds() []Entry {
-	row := func(name string, unit Unit, limit int64, source string) Entry {
-		return Entry{Name: name, Class: Buffer, Unit: unit, Limit: limit, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/botrequest." + source}}
-	}
 	return []Entry{
-		row("botrequest.open_cards", Rows, br.MaxOpenCards, "MaxOpenCards"),
-		row("botrequest.description_bytes", Bytes, br.MaxDescriptionBytes, "MaxDescriptionBytes"),
-		row("botrequest.events_per_card", Rows, br.MaxEventsPerCard, "MaxEventsPerCard"),
-		row("botrequest.verdicts_per_card", Rows, br.MaxVerdictsPerCard, "MaxVerdictsPerCard"),
-		row("botrequest.checklist_entries", Rows, br.MaxChecklistEntries, "MaxChecklistEntries"),
-		row("botrequest.note_bytes", Bytes, br.MaxNoteBytes, "MaxNoteBytes"),
-		row("botrequest.label_bytes", Bytes, br.MaxLabelBytes, "MaxLabelBytes"),
-		row("botrequest.chain_bots", Rows, br.MaxChainBots, "MaxChainBots"),
-		row("botrequest.page_rows", Rows, br.MaxPageRows, "MaxPageRows"),
-		row("botrequest.batch_cards", Rows, br.MaxBatchCards, "MaxBatchCards"),
-		row("botrequest.merge_hops", Rows, br.MaxMergeHops, "MaxMergeHops"),
+		{
+			// One page of a card listing; more rows come by cursor, so a
+			// larger request is shortened, never refused.
+			Name: "botrequest.page_rows", Class: Buffer, Unit: Rows,
+			Limit: br.MaxPageRows, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/botrequest.MaxPageRows"},
+		},
+		{
+			// A loop guard on merged_into: past it a dispatch naming the
+			// card is refused rather than followed forever.
+			Name: "botrequest.merge_hops", Class: Buffer, Unit: Rows,
+			Limit: br.MaxMergeHops, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/botrequest.MaxMergeHops"},
+		},
 		{
 			// The card writes' (actor, idempotency key) receipts. They expire
-			// by time, like board.receipts; a full window refuses a new write
-			// rather than evicting a receipt somebody may still retry against.
+			// after a day; when the window is full the oldest expire early,
+			// so a full window never refuses a write.
 			Name: "botrequest.receipts", Class: Idempotency, Unit: Rows,
-			Limit: br.MaxReceipts, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
+			Limit: br.MaxReceipts, AtLimit: Expire,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/botrequest.MaxReceipts"},
 		},
 	}

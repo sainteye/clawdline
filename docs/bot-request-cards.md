@@ -238,7 +238,7 @@ words are irreversible once shipped (§12).
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
 | Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
 | Outbox effect key | `bot-request-done-<card id>-<cycle>` |
-| Capacity names | `botrequest.open_cards`, `.description_bytes`, `.events_per_card`, `.verdicts_per_card`, `.checklist_entries`, `.note_bytes`, `.label_bytes`, `.chain_bots`, `.split_cards`, `.merged_cards`, `.page_rows`, `.receipts`, `.batch_cards` (§10). The register's names allow no underscore in the area, so the area is `botrequest`, not `bot_request` |
+| Capacity names | `botrequest.page_rows`, `.merge_hops`, `.receipts` (§10). The register's names allow no underscore in the area, so the area is `botrequest`, not `bot_request` |
 
 Unchanged by this design: the existing `WorkResultCard` component, `WorkLink`, `work_id` and
 `board_item_id`. Event names (`card.created`, `baton.handed`, …) are values inside
@@ -277,7 +277,7 @@ is read: no fetch, no build stamp, no timer.
 example seven cards, `main` and `GitHub` done, note "<commit>". Each card is its own transaction,
 all-or-nothing on that card; the answer lists one result per card (`ok`, `unchanged`, or a typed
 refusal). Marking an entry with the state and note it already has is `unchanged`, so a retried
-batch writes nothing. A call names at most `botrequest.batch_cards` cards (§10).
+batch writes nothing. A call may name any number of cards (§10).
 
 **Done.** The holder calls `bot_request_done` once every entry is `done` or `not_needed`; the daemon
 refuses it otherwise (`bot_request_checklist_open`). The person can complete, cancel or reopen any
@@ -503,23 +503,23 @@ The list below is the earlier outline; where it differs, §9.1 wins.
 
 ## 10. Capacity, concurrency, migration, privacy
 
-Bounds to register in `internal/domain/capacity` before code, each refusing at its limit:
+Bounds registered in `internal/domain/capacity` (`register_bot_request.go`), each measured from
+the store's current values (`internal/transport/http/capacity_measures_botrequest.go`):
 
-| Name | Proposed limit |
-|---|---|
-| `botrequest.open_cards` | 500 per machine |
-| `botrequest.description_bytes` | 16 KiB |
-| `botrequest.events_per_card` | 2,000 |
-| `botrequest.verdicts_per_card` | 64 |
-| `botrequest.checklist_entries` | 12 per card |
-| `botrequest.note_bytes` | 1 KiB (checklist note, verdict text, handoff note) |
-| `botrequest.label_bytes` | 120 (title, kind, checklist label) |
-| `botrequest.chain_bots` | 16 |
-| `botrequest.split_cards` | 8 per call |
-| `botrequest.merged_cards` | 16 absorbed per card |
-| `botrequest.page_rows` | 100 |
-| `botrequest.receipts` | 4,096, like `board.receipts` (`internal/domain/capacity/register_board.go:13-18`) |
-| `botrequest.batch_cards` | 16 cards per batch tick |
+| Name | Limit | At the limit |
+|---|---|---|
+| `botrequest.page_rows` | 100 | A list answers one page; more rows come by cursor. Never a refusal. |
+| `botrequest.merge_hops` | 8 | Loop guard on `merged_into`: a dispatch naming a card further away is refused. |
+| `botrequest.receipts` | 4,096 | Idempotency window like `board.receipts`. Receipts expire after a day and are dropped before each keyed write; when live receipts still fill the window, the oldest expire early. A write is never refused for it; a retry older than the last 4,096 keyed writes is no longer recognised as one, and its `expected_version` check refuses it then. |
+
+**Limits deliberately not set.** The person decided on 2026-11-24: 「我們大部分的上限最後都會變成石頭
+砸自己的腳，大部分應該都不用去設」 — most limits end up hurting us, and most should not be set. A card is
+a few kilobytes of text, and a cap on it would refuse ordinary work. The earlier proposals
+`botrequest.open_cards`, `.checklist_entries`, `.events_per_card`, `.verdicts_per_card`,
+`.chain_bots`, `.batch_cards`, `.description_bytes`, `.note_bytes` and `.label_bytes` were removed
+with their refusal (`bot_request_full`). The request body limit every route already has is the only
+size guard; there is no per-field replacement. Split and merge (§6) get no count limit either unless
+a measured failure calls for one.
 
 Every write is one transaction: read the card, check actor, chain and version, write the next
 state, the event and any outbox effect. No Git or network I/O happens in a card write except

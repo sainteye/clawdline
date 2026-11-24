@@ -236,23 +236,37 @@ func TestHandoffDispatchIsScopedToTheCard(t *testing.T) {
 	code(t, HandoffDispatch(c, c.ID, "integrator", c.ID), CodeHandoffScope)
 }
 
-func TestBoundsRefuse(t *testing.T) {
-	c := newCard(t, CreateInput{Title: "f", Checklist: []string{"a"}})
+// A card is a few kilobytes of text; its sizes and counts are deliberately
+// not capped (§10, "Limits deliberately not set"), so a long card with many
+// entries, Bots and verdicts is ordinary work, not a refusal.
+func TestALargeCardIsNotRefused(t *testing.T) {
+	c, err := NewCard("x", "p", "/p", "lead", root, CreateInput{
+		Title: strings.Repeat("t", 2_000), Description: strings.Repeat("d", 64<<10), Checklist: []string{"a"}}, t0)
+	if err != nil {
+		t.Fatalf("long title and description: %v", err)
+	}
 	var marks []Mark
-	for i := 0; i < MaxChecklistEntries; i++ {
+	for i := 0; i < 50; i++ {
 		marks = append(marks, Mark{Label: "e" + itoa(int64(i))})
 	}
-	_, err := c.Check(Actor{Bot: "lead"}, marks, t0)
-	code(t, err, CodeFull)
-	_, err = c.Check(Actor{Bot: "lead"}, []Mark{{Label: "a", State: EntryDone, Note: strings.Repeat("x", MaxNoteBytes+1)}}, t0)
-	code(t, err, CodeFull)
-	_, err = NewCard("x", "p", "/p", "lead", root, CreateInput{Title: strings.Repeat("t", MaxLabelBytes+1), Checklist: []string{"a"}}, t0)
-	code(t, err, CodeFull)
-	for i := 1; i < MaxChainBots; i++ {
-		if _, err := c.JoinChain("b" + itoa(int64(i))); err != nil {
-			t.Fatal(err)
+	if _, err := c.Check(Actor{Bot: "lead"}, marks, t0); err != nil || len(c.Checklist) != 51 {
+		t.Fatalf("50 more entries: %v, %d entries", err, len(c.Checklist))
+	}
+	if _, err := c.Check(Actor{Bot: "lead"}, []Mark{{Label: "a", State: EntryDone, Note: strings.Repeat("x", 32<<10)}}, t0); err != nil {
+		t.Fatalf("long note: %v", err)
+	}
+	for i := 0; i < 40; i++ {
+		c.JoinChain("b" + itoa(int64(i)))
+	}
+	if len(c.Chain) != 41 {
+		t.Fatalf("chain %d", len(c.Chain))
+	}
+	if err := c.Handoff(Actor{Bot: "lead"}, "b1", RoleReviewer, ""); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 100; i++ {
+		if err := c.RecordVerdict(Actor{Bot: "b1"}, "v"+itoa(int64(i)), "", VerdictPass, "", t0); err != nil {
+			t.Fatalf("verdict %d: %v", i, err)
 		}
 	}
-	_, err = c.JoinChain("one-too-many")
-	code(t, err, CodeFull)
 }

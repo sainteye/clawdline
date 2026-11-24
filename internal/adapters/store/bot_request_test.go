@@ -206,9 +206,6 @@ func TestBatchTickIsPerCardAndIdempotent(t *testing.T) {
 	if fourth[0].Outcome != "unchanged" {
 		t.Fatalf("same marks with a fresh key %+v", fourth[0])
 	}
-	if _, err := s.CheckBotRequests(ctx, lead, "x", make([]BotRequestCheckTarget, br.MaxBatchCards+1), marks, brT0); br.CodeOf(err) != br.CodeFull {
-		t.Fatalf("oversized batch: %v", err)
-	}
 }
 
 // A retried handoff queues one notice for the new holder.
@@ -253,5 +250,83 @@ func TestRetriedHandoffQueuesOneNotice(t *testing.T) {
 	events, err := s.BotRequestEvents(ctx, c.ID)
 	if err != nil || len(events) != 3 || events[2].Kind != br.EventHanded {
 		t.Fatalf("events %+v %v", events, err)
+	}
+}
+
+// A full receipt window never refuses a write: expired receipts go first, and
+// when the live ones still fill it the oldest expire early. The newest
+// receipts keep answering retries.
+func TestAFullReceiptWindowDoesNotRefuseWrites(t *testing.T) {
+	s, err := Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	c := brCreate(t, s, "lead", "m", br.CreateInput{Title: "f", Checklist: []string{"a"}})
+	db := s.ProjectAssistantDatabase()
+	insert := func(n int, prefix string, at time.Time) {
+		t.Helper()
+		tx, err := db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := 0; i < n; i++ {
+			if _, err := tx.Exec(`INSERT INTO bot_request_receipts (actor, key, card_id, at) VALUES ('bot:other', ?, ?, ?)`,
+				prefix+itoaStore(int64(i)), c.ID, at.Add(time.Duration(i)*time.Millisecond).UnixMilli()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	count := func() int {
+		t.Helper()
+		var n int
+		if err := db.QueryRow(`SELECT COUNT(*) FROM bot_request_receipts`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	lead := br.Actor{Bot: "lead"}
+	now := brT0.Add(time.Hour)
+	mark := func(key, label string) (BotRequestResult, error) {
+		cur, err := s.BotRequestCard(ctx, c.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s.UpdateBotRequest(ctx, BotRequestWrite{CardID: c.ID, Expected: cur.Version, Actor: lead, Key: key, Now: now,
+			Apply: brCheck(lead, br.Mark{Label: label})})
+	}
+
+	// A window full of expired receipts: they are dropped, the write lands.
+	insert(br.MaxReceipts, "old-", now.Add(-48*time.Hour))
+	if res, err := mark("k1", "one"); err != nil || !res.Changed {
+		t.Fatalf("write over an expired full window: %+v %v", res, err)
+	}
+	if n := count(); n != 1 {
+		t.Fatalf("receipts after expiry %d, want 1", n)
+	}
+
+	// A window full of live receipts: the oldest expires early, the write
+	// lands, and the window stays at its bound.
+	insert(br.MaxReceipts-1, "live-", now.Add(-time.Hour))
+	if n := count(); n != br.MaxReceipts {
+		t.Fatalf("setup %d receipts", n)
+	}
+	if res, err := mark("k2", "two"); err != nil || !res.Changed {
+		t.Fatalf("write over a live full window: %+v %v", res, err)
+	}
+	if n := count(); n != br.MaxReceipts {
+		t.Fatalf("receipts %d, want %d", n, br.MaxReceipts)
+	}
+	var oldest int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM bot_request_receipts WHERE key = 'live-0'`).Scan(&oldest); err != nil || oldest != 0 {
+		t.Fatalf("the oldest live receipt was kept: %d %v", oldest, err)
+	}
+	// The newest receipt still answers its retry.
+	if res, err := mark("k2", "two"); err != nil || !res.Replayed {
+		t.Fatalf("retry of the newest write: %+v %v", res, err)
 	}
 }

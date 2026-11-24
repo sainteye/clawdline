@@ -15,19 +15,15 @@ import (
 	"unicode/utf8"
 )
 
-// The bounds of §10. Each is registered in internal/domain/capacity.
+// The bounds of §10. Each is registered in internal/domain/capacity. Nothing
+// else about a card is bounded here: the request body limit every route has is
+// its only size guard (§10, "Limits deliberately not set").
 const (
-	MaxOpenCards        = 500
-	MaxDescriptionBytes = 16 << 10
-	MaxEventsPerCard    = 2_000
-	MaxVerdictsPerCard  = 64
-	MaxChecklistEntries = 12
-	MaxNoteBytes        = 1 << 10
-	MaxLabelBytes       = 120
-	MaxChainBots        = 16
-	MaxPageRows         = 100
-	MaxReceipts         = 4_096
-	MaxBatchCards       = 16
+	// MaxPageRows is one page of a card listing; more rows come by cursor.
+	MaxPageRows = 100
+	// MaxReceipts is the idempotency window. When it is full the oldest
+	// receipt expires early; a write is never refused for it.
+	MaxReceipts = 4_096
 	// MaxMergeHops bounds following merged_into from a named card to the
 	// card that absorbed it; past it a dispatch naming the card is refused.
 	MaxMergeHops = 8
@@ -98,7 +94,6 @@ const (
 	CodeForbidden       = "bot_request_forbidden"
 	CodeInvalid         = "bot_request_invalid"
 	CodeNotFound        = "bot_request_not_found"
-	CodeFull            = "bot_request_full"
 	CodeClosed          = "bot_request_closed"
 	CodeNoAuthority     = "bot_request_no_person_authority"
 )
@@ -328,15 +323,12 @@ func EntryKey(label string) string {
 	return strings.TrimSuffix(b.String(), "-")
 }
 
-func checkText(field, s string, limit int, required bool) error {
+func checkText(field, s string, required bool) error {
 	if !utf8.ValidString(s) {
 		return refuse(CodeInvalid, field)
 	}
 	if required && strings.TrimSpace(s) == "" {
 		return refuse(CodeInvalid, field)
-	}
-	if len(s) > limit {
-		return refuse(CodeFull, field)
 	}
 	return nil
 }
@@ -356,13 +348,13 @@ func NewCard(id, projectID, projectPath, bot string, authority Authority, in Cre
 	if bot == "" || authority.MessageID == "" {
 		return Card{}, refuse(CodeNoAuthority, "authority")
 	}
-	if err := checkText("title", in.Title, MaxLabelBytes, true); err != nil {
+	if err := checkText("title", in.Title, true); err != nil {
 		return Card{}, err
 	}
-	if err := checkText("kind", in.Kind, MaxLabelBytes, false); err != nil {
+	if err := checkText("kind", in.Kind, false); err != nil {
 		return Card{}, err
 	}
-	if err := checkText("description", in.Description, MaxDescriptionBytes, false); err != nil {
+	if err := checkText("description", in.Description, false); err != nil {
 		return Card{}, err
 	}
 	labels := in.Checklist
@@ -389,7 +381,7 @@ func NewCard(id, projectID, projectPath, bot string, authority Authority, in Cre
 }
 
 func (c *Card) addEntry(label string) error {
-	if err := checkText("checklist", label, MaxLabelBytes, true); err != nil {
+	if err := checkText("checklist", label, true); err != nil {
 		return err
 	}
 	key := EntryKey(label)
@@ -401,9 +393,6 @@ func (c *Card) addEntry(label string) error {
 			return nil
 		}
 	}
-	if len(c.Checklist) >= MaxChecklistEntries {
-		return refuse(CodeFull, "checklist")
-	}
 	c.Checklist = append(c.Checklist, Entry{Key: key, Label: strings.TrimSpace(label), State: EntryOpen})
 	return nil
 }
@@ -411,15 +400,12 @@ func (c *Card) addEntry(label string) error {
 // JoinChain adds bot to the card's chain, as a second create rooted in the
 // same message or a message_bot naming the card does. It answers whether the
 // chain changed.
-func (c *Card) JoinChain(bot string) (bool, error) {
+func (c *Card) JoinChain(bot string) bool {
 	if bot == "" || c.InChain(bot) {
-		return false, nil
-	}
-	if len(c.Chain) >= MaxChainBots {
-		return false, refuse(CodeFull, "chain")
+		return false
 	}
 	c.Chain = append(c.Chain, bot)
-	return true, nil
+	return true
 }
 
 func (c Card) requireOpen() error {
@@ -446,7 +432,7 @@ func (c *Card) Handoff(a Actor, toBot, role, note string) error {
 	default:
 		return refuse(CodeInvalid, "role")
 	}
-	if err := checkText("note", note, MaxNoteBytes, false); err != nil {
+	if err := checkText("note", note, false); err != nil {
 		return err
 	}
 	act := ActHandoffChain
@@ -456,9 +442,7 @@ func (c *Card) Handoff(a Actor, toBot, role, note string) error {
 	if err := Authorize(*c, a, act); err != nil {
 		return err
 	}
-	if _, err := c.JoinChain(toBot); err != nil {
-		return err
-	}
+	c.JoinChain(toBot)
 	c.Baton = Baton{Role: role, Bot: toBot}
 	return nil
 }
@@ -512,7 +496,7 @@ func (c *Card) Check(a Actor, marks []Mark, now time.Time) (bool, error) {
 		default:
 			return false, refuse(CodeInvalid, "state")
 		}
-		if err := checkText("note", m.Note, MaxNoteBytes, false); err != nil {
+		if err := checkText("note", m.Note, false); err != nil {
 			return false, err
 		}
 		e := &next.Checklist[idx]
@@ -560,11 +544,8 @@ func (c *Card) RecordVerdict(a Actor, id, commit, verdict, text string, now time
 	default:
 		return refuse(CodeInvalid, "verdict")
 	}
-	if err := checkText("text", text, MaxNoteBytes, false); err != nil {
+	if err := checkText("text", text, false); err != nil {
 		return err
-	}
-	if len(c.Verdicts) >= MaxVerdictsPerCard {
-		return refuse(CodeFull, "verdicts")
 	}
 	c.Verdicts = append(c.Verdicts, Verdict{ID: id, Commit: commit, Verdict: verdict, Text: text, ReviewerBot: a.Bot, At: now})
 	return nil
@@ -581,7 +562,7 @@ func (c *Card) SetWaiting(a Actor, questionID string) (bool, error) {
 			return false, err
 		}
 	}
-	if err := checkText("question_id", questionID, MaxLabelBytes, false); err != nil {
+	if err := checkText("question_id", questionID, false); err != nil {
 		return false, err
 	}
 	if c.Waiting == questionID {

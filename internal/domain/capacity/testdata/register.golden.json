@@ -994,126 +994,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "botrequest.batch_cards",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 16,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxBatchCards"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.chain_bots",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 16,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxChainBots"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.checklist_entries",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 12,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxChecklistEntries"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.description_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 16384,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxDescriptionBytes"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.events_per_card",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 2000,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxEventsPerCard"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.label_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 120,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxLabelBytes"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "botrequest.merge_hops",
     "Class": "buffer",
     "Unit": "rows",
@@ -1134,52 +1014,12 @@
   },
   {
     "Register": "daemon",
-    "Name": "botrequest.note_bytes",
-    "Class": "buffer",
-    "Unit": "bytes",
-    "Limit": 1024,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxNoteBytes"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.open_cards",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 500,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxOpenCards"
-    ]
-  },
-  {
-    "Register": "daemon",
     "Name": "botrequest.page_rows",
     "Class": "buffer",
     "Unit": "rows",
     "Limit": 100,
     "WarnAt": 0,
-    "AtLimit": "refuse",
+    "AtLimit": "coalesce",
     "Deviation": "",
     "Told": [
       "diagnostics",
@@ -1199,37 +1039,16 @@
     "Unit": "rows",
     "Limit": 4096,
     "WarnAt": 0,
-    "AtLimit": "refuse",
+    "AtLimit": "expire",
     "Deviation": "",
     "Told": [
-      "diagnostics",
-      "notice"
+      "diagnostics"
     ],
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/botrequest.MaxReceipts"
-    ]
-  },
-  {
-    "Register": "daemon",
-    "Name": "botrequest.verdicts_per_card",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 64,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics",
-      "sender"
-    ],
-    "EvictedBy": "daemon",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/botrequest.MaxVerdictsPerCard"
     ]
   },
   {

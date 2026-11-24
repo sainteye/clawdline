@@ -141,10 +141,6 @@ func (s *Server) botRequestPersonWrite(w http.ResponseWriter, r *http.Request, i
 		writeRawRefusal(w, http.StatusBadRequest, br.CodeInvalid, "expected_version")
 		return
 	}
-	if len(body.Reason) > br.MaxNoteBytes {
-		writeRawRefusal(w, http.StatusRequestEntityTooLarge, br.CodeFull, "reason")
-		return
-	}
 	person := br.Actor{Person: true}
 	now := time.Now()
 	var apply func(*br.Card) ([]br.Event, error)
@@ -211,8 +207,6 @@ func (s *Server) writeBotRequestError(w http.ResponseWriter, err error) {
 			status = http.StatusForbidden
 		case br.CodeVersionConflict, br.CodeChecklistOpen, br.CodeClosed, br.CodeAlreadyMerged:
 			status = http.StatusConflict
-		case br.CodeFull:
-			status = http.StatusTooManyRequests
 		case br.CodeNotFound:
 			status = http.StatusNotFound
 		}

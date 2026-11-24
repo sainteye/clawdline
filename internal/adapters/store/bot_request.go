@@ -92,6 +92,31 @@ const (
 // botRequestReceiptAge is how long a write's receipt answers a retry.
 const botRequestReceiptAge = 24 * time.Hour
 
+// keepBotRequestReceipt records a write's receipt inside its transaction.
+// Expired receipts go first; when the window is still full the oldest live
+// ones expire early to make room (botrequest.receipts, AtLimit expire). A
+// full window never refuses the write itself: the cost is that a retry older
+// than the last MaxReceipts keyed writes is no longer recognised as one, and
+// its expected_version check is what refuses it then.
+func keepBotRequestReceipt(ctx context.Context, tx *sql.Tx, actor, key, cardID string, now time.Time) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM bot_request_receipts WHERE at <= ?`, now.Add(-botRequestReceiptAge).UnixMilli()); err != nil {
+		return err
+	}
+	var receipts int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_receipts`).Scan(&receipts); err != nil {
+		return err
+	}
+	if over := receipts - br.MaxReceipts + 1; over > 0 {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM bot_request_receipts WHERE rowid IN
+			(SELECT rowid FROM bot_request_receipts ORDER BY at, rowid LIMIT ?)`, over); err != nil {
+			return err
+		}
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO bot_request_receipts (actor, key, card_id, at) VALUES (?, ?, ?, ?)`,
+		actor, key, cardID, now.UnixMilli())
+	return err
+}
+
 var ErrNoBotRequest = errors.New("no such bot request card")
 
 func openBotRequest(db *sql.DB) error {
@@ -141,9 +166,8 @@ func (s *Store) CreateBotRequest(ctx context.Context, c br.Card) (br.Card, bool,
 		existing, err := loadBotRequest(ctx, tx, c.ID)
 		if err == nil {
 			out = existing
-			joined, err := existing.JoinChain(c.CreatedBy)
-			if err != nil || !joined {
-				return 0, err
+			if !existing.JoinChain(c.CreatedBy) {
+				return 0, nil
 			}
 			existing.Version++
 			existing.UpdatedAt = c.CreatedAt
@@ -158,13 +182,6 @@ func (s *Store) CreateBotRequest(ctx context.Context, c br.Card) (br.Card, bool,
 		}
 		if !errors.Is(err, ErrNoBotRequest) {
 			return 0, err
-		}
-		var open int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_cards WHERE state = 'open'`).Scan(&open); err != nil {
-			return 0, err
-		}
-		if open >= br.MaxOpenCards {
-			return 0, &br.Refusal{Code: br.CodeFull, Field: "open_cards"}
 		}
 		if err := insertBotRequest(ctx, tx, c); err != nil {
 			return 0, err
@@ -248,14 +265,6 @@ func (s *Store) UpdateBotRequest(ctx context.Context, w BotRequestWrite) (BotReq
 			res.Card = prev
 			return 0, nil
 		}
-		var count int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_events WHERE card_id = ?`, w.CardID).Scan(&count); err != nil {
-			return 0, err
-		}
-		if count+len(events) > br.MaxEventsPerCard {
-			res.Card = prev
-			return 0, &br.Refusal{Code: br.CodeFull, Field: "events"}
-		}
 		next.Version = prev.Version + 1
 		next.UpdatedAt = w.Now
 		if err := saveBotRequest(ctx, tx, next, prev.Verdicts); err != nil {
@@ -283,19 +292,7 @@ func (s *Store) UpdateBotRequest(ctx context.Context, w BotRequestWrite) (BotReq
 			}
 		}
 		if w.Key != "" {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM bot_request_receipts WHERE at <= ?`, w.Now.Add(-botRequestReceiptAge).UnixMilli()); err != nil {
-				return 0, err
-			}
-			var receipts int
-			if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_receipts`).Scan(&receipts); err != nil {
-				return 0, err
-			}
-			if receipts >= br.MaxReceipts {
-				res.Card = prev
-				return 0, &br.Refusal{Code: br.CodeFull, Field: "receipts"}
-			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO bot_request_receipts (actor, key, card_id, at) VALUES (?, ?, ?, ?)`,
-				actor, w.Key, w.CardID, w.Now.UnixMilli()); err != nil {
+			if err := keepBotRequestReceipt(ctx, tx, actor, w.Key, w.CardID, w.Now); err != nil {
 				return 0, err
 			}
 		}
@@ -373,9 +370,6 @@ type BotRequestCheckResult struct {
 func (s *Store) CheckBotRequests(ctx context.Context, a br.Actor, key string, targets []BotRequestCheckTarget, marks []br.Mark, now time.Time) ([]BotRequestCheckResult, error) {
 	if len(targets) == 0 {
 		return nil, &br.Refusal{Code: br.CodeInvalid, Field: "cards"}
-	}
-	if len(targets) > br.MaxBatchCards {
-		return nil, &br.Refusal{Code: br.CodeFull, Field: "cards"}
 	}
 	out := make([]BotRequestCheckResult, 0, len(targets))
 	for _, t := range targets {
@@ -690,9 +684,8 @@ func (s *Store) JoinBotRequestChain(ctx context.Context, cardID, by, bot string,
 		if !c.InChain(by) {
 			return 0, &br.Refusal{Code: br.CodeForbidden, Field: "chain", Version: c.Version}
 		}
-		joined, err := c.JoinChain(bot)
-		if err != nil || !joined {
-			return 0, err
+		if !c.JoinChain(bot) {
+			return 0, nil
 		}
 		c.Version++
 		c.UpdatedAt = now
@@ -706,4 +699,36 @@ func (s *Store) JoinBotRequestChain(ctx context.Context, cardID, by, bot string,
 		return 1, nil
 	})
 	return out, err
+}
+
+// BotRequestOccupancy is what the capacity rows of botrequest.* read: the
+// stored cards, the receipts still inside their age, and the longest
+// merged_into walk from any merged card to the card that absorbed it.
+type BotRequestOccupancy struct {
+	Cards        int64
+	LiveReceipts int64
+	MergeHops    int64
+}
+
+// BotRequestOccupancy reads the store's current values. The merge walk stops
+// one hop past botrequest.merge_hops, so a cycle cannot make it run forever.
+func (s *Store) BotRequestOccupancy(ctx context.Context, now time.Time) (BotRequestOccupancy, error) {
+	var o BotRequestOccupancy
+	if err := reading(); err != nil {
+		return o, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_cards`).Scan(&o.Cards); err != nil {
+		return o, err
+	}
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_receipts WHERE at > ?`,
+		now.Add(-botRequestReceiptAge).UnixMilli()).Scan(&o.LiveReceipts); err != nil {
+		return o, err
+	}
+	err := s.db.QueryRowContext(ctx, `WITH RECURSIVE walk(next, depth) AS (
+		SELECT merged_into, 1 FROM bot_request_cards WHERE state = 'merged' AND merged_into <> ''
+		UNION ALL
+		SELECT c.merged_into, w.depth + 1 FROM walk w JOIN bot_request_cards c ON c.id = w.next
+		WHERE c.state = 'merged' AND c.merged_into <> '' AND w.depth <= ?
+	) SELECT coalesce(max(depth), 0) FROM walk`, br.MaxMergeHops).Scan(&o.MergeHops)
+	return o, err
 }

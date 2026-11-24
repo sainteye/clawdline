@@ -151,7 +151,6 @@ export function refusalWords(code: string, w: Words): string {
     case "bot_request_forbidden": return w.requestRefusedForbidden
     case "bot_request_not_found": return w.requestRefusedNotFound
     case "bot_request_invalid": return w.requestRefusedInvalid
-    case "bot_request_full": return w.requestRefusedFull
     case "unconfirmed": return w.requestUnconfirmed
   }
   return w.requestRefusedOther
