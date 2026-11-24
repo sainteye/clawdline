@@ -632,6 +632,45 @@ Built on 2026-11-24 (second delivery, same API level 118):
   `BotRequestAuthority`, `BotRequestPersonWrite`, `BotRequestMark`, `BotRequestWriteResult` and
   `BotRequestRefusal` for Go and TypeScript; the HTTP handlers write those shapes.
 
+Built on 2026-11-24 (third delivery, console, phase 4, local daemon only):
+
+- **Board → "Bot work": built.** `BotWorkSection` (`web/console/src/pages/work/BotWorkSection.tsx`)
+  sits above the Board's columns and outside every count. A row shows the holder Bot's avatar and
+  name, the title, the state in words with a dot, "n/m ✓" and the last update; cards waiting for the
+  person come first (`sortBotRequests`). Its switch is shown by default and remembered per browser
+  (`clawdline.board.bot-work`); the existing Board switches are not persisted, so this one follows
+  detail mode's storage instead. A read that fails says so and offers a retry; it is never drawn as
+  an empty list.
+- **Card detail: built.** `BotRequestDetail` (`web/console/src/project-assistants/BotRequestCard.tsx`)
+  is a dialog on desktop and a bottom sheet at phone width. It rereads the card for its history and
+  after every write. Cancel asks first, hand to another Bot takes the Bot, what it should do and a
+  note, and complete asks for a reason while an entry is open. A refusal is shown in plain words by
+  its code; a version conflict or an unanswered write rereads the card. A waiting card has one
+  extra action, which opens the holder's chat. There is no approve or reject.
+- **Bot chat: built.** A card's one line (title, state, "n/m ✓") sits above the first work result
+  card that carries its `bot_request_id`; an open card with no work result in the chat is listed
+  at the chat's end, above the dispatched strip. A chat whose Bot has no card renders as before.
+- **Where the section is hidden.** The console reads cards from the local daemon only. A daemon
+  without the routes answers 404 and the section is not rendered. **Cloud parity (phase 5) is not
+  built:** a machine reached through Cloud has no wire words for cards, so the Board section and
+  the chat line are hidden there, on the phone as well.
+- **Known gaps in what the routes tell the console.** A `baton.handed` event records who handed
+  the card on and the note, not the receiver; the detail names the receiver only when the chain
+  settles it (every Bot after the first arrived by exactly one handoff) and otherwise says only who
+  handed it on. The card read does not list its attached tasks, so the detail lists dispatched
+  Sessions only when opened from a chat that has loaded those work links, never from the Board.
+  The generated `ProjectAssistantWorkLink` does not name `bot_request_id` yet although the daemon
+  sends it; the console reads it as an optional string.
+- **Checks.** `bot-request.test.ts` (read model, routes and refusals), `bot-request-components.test.mjs`
+  (each card state) and `web/console/tools/bot-request-cards.e2e.mjs`, which drives the real Board
+  page in headless Chrome at 1280 and 390 against a fixture that refuses every `/v1` route it does
+  not serve, and asserts the Board's counts are identical without the routes, with the section on
+  and with it off. The chat part of that script renders the card line beside the real work result
+  card in a harness, not inside the whole chat.
+
+Not built in the console: the Bot filter, split and merge lineage, reopening a closed card, and
+ticking entries as the person.
+
 Not built yet: a Bot-to-Bot request turn whose exchange names a card (the recipient of a
 `message_bot` with `bot_request_id`) still cannot dispatch for it: the exchange does not record the
 card, and such turns keep their `peer_dispatch` / `bot_request_tools` refusals. Split and merge.
