@@ -16,6 +16,7 @@ import { GroupMemberOutcome, showGroupMemberOutcome } from "./GroupMemberOutcome
 import { GroupMessageRow } from "./GroupMessageRow"
 import { useMessageArrivals } from "./message-arrivals"
 import { BotPicture } from "./ChatRows"
+import * as L from "../legacy/bridge.js"
 
 // The room carries as many pictures per line as a one-to-one send (MaxRoomPictures).
 const MaxRoomPictures=4
@@ -195,7 +196,7 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
     if(!pictures.length)return
     if(images.length+pictures.length>MaxRoomPictures){setPictureError(groupWord("groupPicturesLimit").replace("{count}",String(MaxRoomPictures)));return}
     setPictureError("");pending.current=null
-    void Promise.all(pictures.map(readPicture)).then(urls=>setImages(old=>[...old,...urls.map(url=>({id:crypto.randomUUID(),url}))].slice(0,MaxRoomPictures))).catch(()=>setPictureError(w.pictureUnavailable))
+    void Promise.all(pictures.map(readPicture)).then(urls=>setImages(old=>[...old,...urls.map(url=>({id:crypto.randomUUID(),url}))].slice(0,MaxRoomPictures))).catch(error=>setPictureError(L.failureSentence(error,w.pictureUnavailable)))
   }
   async function send(){
     if(!text.trim()&&!images.length||!writable||busy||unknown)return
