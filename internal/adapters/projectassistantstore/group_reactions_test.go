@@ -20,7 +20,7 @@ func TestGroupReactionAndReceiptRollBackTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	line, _, _, err := groups.PersonWrote(testContext, groupCmd(draft.Key, pa.SendOperation, "send", "hi"), room.Revision, "hi", nil, pa.BotKey{})
+	line, _, _, err := groups.PersonWrote(testContext, groupCmd(draft.Key, pa.SendOperation, "send", "hi"), room.Revision, "hi", pa.BotKey{})
 	if err != nil {
 		t.Fatal(err)
 	}

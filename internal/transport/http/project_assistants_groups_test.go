@@ -128,7 +128,7 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 		}
 		f.bots = append(f.bots, b)
 	}
-	handler := newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{Service: f.service, MachineID: "machine", Attachments: store.Attachments{Dir: t.TempDir()}, Status: func(ctx context.Context) (pa.SourceStatus, error) {
+	handler := newProjectAssistantGroupsHTTP(projectAssistantHTTPOptions{Service: f.service, MachineID: "machine", Status: func(ctx context.Context) (pa.SourceStatus, error) {
 		a, e := authorize(ctx, pa.BotKey{MachineID: "machine"}, false)
 		return a.Source, e
 	}, BeforeViewPublish: func() {

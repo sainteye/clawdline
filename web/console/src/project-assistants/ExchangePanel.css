@@ -36,7 +36,6 @@
 }
 .pa-exchange-entry > span { flex:none; white-space:nowrap; }
 .pa-exchange-entry strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--pa-ink,#eee); }
-.pa-exchange-summary { margin:2px 0 0; max-width:min(520px,100%); padding:0 8px; color:var(--pa-dim,#aaa); font-size:12px; line-height:1.45; text-align:center; overflow-wrap:anywhere; }
 .pa-exchange-entry:hover { background:var(--pa-card,#1d1d1d); }
 @media (max-width:480px){ .pa-exchange-panel { width:calc(100vw - 16px); height:calc(100dvh - 16px); border-radius:19px; } }
 @media (prefers-reduced-motion:reduce){ .pa-exchange-panel,.pa-exchange-entry { transition:none; } }

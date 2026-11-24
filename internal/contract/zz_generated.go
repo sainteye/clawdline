@@ -5382,11 +5382,6 @@ type ProjectAssistantGroupResponse struct {
 type ProjectAssistantGroupSendRequest struct {
 	Command ProjectAssistantCommand `json:"command"`
 
-	// Pictures as base64 data: URLs, at most four, as a one-to-one send carries them;
-	// each is normalized and stored under the group before the line is accepted. With
-	// pictures the text may be empty. Omission preserves legacy command digests.
-	Images []string `json:"images,omitempty"`
-
 	// Exact original line in this room; the source derives its author and text.
 	// Omission preserves legacy command digests.
 	Quote         *ProjectAssistantRoomQuoteReference `json:"quote,omitempty"`
@@ -6358,10 +6353,7 @@ type ProjectAssistantRoomAttempt struct {
 
 type ProjectAssistantRoomEntry struct {
 	// Source timestamp for new entries; old undated entries omit it.
-	At string `json:"at,omitempty"`
-
-	// Pictures the person sent with this line, read back from the group's own key.
-	Attachments   []ProjectAssistantAttachment    `json:"attachments,omitempty"`
+	At            string                          `json:"at,omitempty"`
 	Author        *ProjectAssistantBotKey         `json:"author,omitempty"`
 	Kind          string                          `json:"kind"`
 	Quote         *ProjectAssistantRoomQuote      `json:"quote,omitempty"`

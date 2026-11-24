@@ -194,8 +194,6 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsReviewPending:          reviews(false),
 		capacity.BotsReviewPerSender:        reviews(true),
 		capacity.BotsReviewHops:             pure,
-		capacity.BotsReviewQuoteRounds:      pure,
-		capacity.BotsReviewQuoteBytes:       pure,
 		capacity.BotsReviewRequest:          pure,
 		capacity.BotsReviewReply: func() capacity.Reading {
 			u := pa.CollaborationReplyUsage()

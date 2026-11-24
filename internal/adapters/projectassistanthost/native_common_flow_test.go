@@ -805,7 +805,7 @@ func commonFlowAgent(t *testing.T, root string, agent pa.Agent, p *commonFlowPro
 		if err != nil {
 			return err
 		}
-		if _, _, err = s.SendGroup(ctx, pa.Command{Key: g.Key, Operation: pa.SendOperation, IdempotencyKey: "room-message"}, "@"+b.Name+" reply exactly "+stem+"-room as final text, without tools; only the addressed Bot replies.", nil, pa.BotKey{}); err != nil {
+		if _, _, err = s.SendGroup(ctx, pa.Command{Key: g.Key, Operation: pa.SendOperation, IdempotencyKey: "room-message"}, "@"+b.Name+" reply exactly "+stem+"-room as final text, without tools; only the addressed Bot replies.", pa.BotKey{}); err != nil {
 			return err
 		}
 		_, err = commonFlowWait(t, f, b, batch, func(x app.Export) (bool, error) {

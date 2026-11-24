@@ -347,7 +347,7 @@ func TestRoomLineIsPublishedAtomicallyWithTheMembersTurn(t *testing.T) {
 	if _, err := groups.CreateGroup(testContext, groupCmd(d.Key, pa.CreateOperation, "create", "a,b"), d, groupLimits, groupTime); err != nil {
 		t.Fatal(err)
 	}
-	person, st, _, err := groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-1"), 0, "hello @Bot a", nil, pa.BotKey{})
+	person, st, _, err := groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-1"), 0, "hello @Bot a", pa.BotKey{})
 	if err != nil || person.Seq != 1 {
 		t.Fatalf("%+v %v", person, err)
 	}
@@ -386,7 +386,7 @@ func TestRoomLineIsPublishedAtomicallyWithTheMembersTurn(t *testing.T) {
 	// turn but the room refuses its line.
 	oldB, _ := pa.TicketFor(g, st, b.Key, false)
 	st, _ = groups.Room(testContext, d.Key)
-	if _, _, _, err = groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-2"), st.Revision, "never mind", nil, pa.BotKey{}); err != nil {
+	if _, _, _, err = groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-2"), st.Revision, "never mind", pa.BotKey{}); err != nil {
 		t.Fatal(err)
 	}
 	pub, err = store.FinishRoomTurn(testContext, finishing(t, store, b, oldB, "t2"), "too late")
@@ -408,7 +408,7 @@ func TestRoomLineIsPublishedAtomicallyWithTheMembersTurn(t *testing.T) {
 		t.Fatal(err)
 	}
 	st, _ = groups.Room(testContext, d.Key)
-	if _, _, _, err = groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-3"), st.Revision, "next topic", nil, pa.BotKey{}); err != nil {
+	if _, _, _, err = groups.PersonWrote(testContext, command(d.Key, pa.SendOperation, "say-3"), st.Revision, "next topic", pa.BotKey{}); err != nil {
 		t.Fatal(err)
 	}
 	pub, err = store.FinishRoomTurn(testContext, finishing(t, store, b, cur, "t3"), "overdue but useful")

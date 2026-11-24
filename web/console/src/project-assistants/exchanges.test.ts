@@ -110,12 +110,6 @@ test("rendered chat offers the exchange action only for its captured Bot; panel 
   assert.match(render(crossProject,key,"en",[{...target,project,name:"Wrong"},target]),/aria-label="Messaged Partner"/)
   const incoming={...crossProject,fence:{...fence,key:peer,conversation_id:"target-chat",project:targetProject}}
   assert.match(render(incoming,peer,"en",[own,target]),/aria-label="Message from Requester"/)
-  // The recipient's chat shows what it replied, so a refusal is visible without opening the exchange.
-  const refused={...incoming,exchange:{...incoming.exchange,outcome:"completed",reply:"I could not save this to memory: edit_memory was refused (pa_scope_denied).\nPlease tell me directly."}}
-  assert.match(render(refused,peer,"en",[own,target]),/class="pa-exchange-summary">I could not save this to memory: edit_memory was refused \(pa_scope_denied\)\. Please tell me directly\.</)
-  const long=render({...refused,exchange:{...refused.exchange,reply:"x".repeat(400)}},peer,"en",[own,target])
-  assert.match(long,new RegExp(`pa-exchange-summary">${"x".repeat(160)}…<`))
-  assert.ok(!render(crossProject,key,"en",[target]).includes("pa-exchange-summary"))
   assert.match(render(message),/aria-label="Messaged Unknown Bot"/)
   assert.match(render(message,key,"zh-Hant-TW"),/aria-label="已傳訊息給 未知的 Bot"/)
   assert.ok(!render(message).includes("Review requested"))

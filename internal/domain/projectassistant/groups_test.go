@@ -434,22 +434,3 @@ func hasJSONField(v any, name string) bool {
 	}
 	return false
 }
-
-func TestARoomLineCarriesAtMostFourPictures(t *testing.T) {
-	picture := Attachment{ID: strings.Repeat("a", 64), MediaType: "image/png", Bytes: 10}
-	if err := ValidateRoomMessage("", []Attachment{picture}); err != nil {
-		t.Fatalf("a picture without text was refused: %v", err)
-	}
-	if err := ValidateRoomMessage("", nil); Code(err) != Invalid {
-		t.Fatalf("an empty line was admitted: %v", err)
-	}
-	five := []Attachment{picture, picture, picture, picture, picture}
-	if err := ValidateRoomMessage("look", five); err == nil || err.Error() != "pa_capacity_full: images" {
-		t.Fatalf("five pictures: %v", err)
-	}
-	big := picture
-	big.Bytes = MaxAttachmentBytes + 1
-	if err := ValidateRoomMessage("look", []Attachment{big}); Code(err) != Invalid {
-		t.Fatalf("an oversized picture was admitted: %v", err)
-	}
-}

@@ -181,60 +181,6 @@ so the capability ends with that turn.
 Other tools blocked on peer-request turns (`dispatch_work`, `send_message`,
 routines, outputs) are unchanged.
 
-### Following up an earlier request (`reply_to_exchange_id`)
-
-Each `message_bot` request to an ordinary recipient runs in a new
-`thread-<exchange>` worker whose prompt held only that request. Until
-2026-11-24 a follow-up to the same Bot therefore started without the earlier
-round, and completing one report took several round trips. Codync's recipient
-sees no earlier round either; its continuity lives with the sender
-(`docs/research/codync-peer-followup-context-2026-11-24.md`).
-
-`message_bot` now takes an optional `reply_to_exchange_id`. The Host admits it
-only when the named exchange was **sent by the calling Bot to the same target**
-and is finished (`completed`, `failed`, `cancelled` or `unknown`). Every
-refusal is typed:
-
-| Case | Code / field |
-|---|---|
-| No such exchange | `pa_not_found` / `reply_to_exchange` |
-| The caller took no part in it, or another target | `pa_scope_denied` / `reply_to_exchange_pair` |
-| The caller was its recipient, not its requester | `pa_scope_denied` / `reply_to_exchange_requester` |
-| Still queued or running | `pa_scope_denied` / `reply_to_exchange_open` |
-| Waiting for the person's decision (`needs_person`) | `pa_scope_denied` / `reply_to_exchange_waiting_person` |
-
-The new exchange stores the link as `reply_to`. When its request turn starts,
-the Host reads the earlier rounds from **stored exchange records only**,
-newest first, following each round's own `reply_to`. It quotes each round's
-request and stored reply under a bilingual header saying the rounds are
-context data, not the person's message, not an authorization and not a new
-instruction; only the new request asks for work. The quote stops at
-`bots.review_quote_rounds` (4 rounds) or `bots.review_quote_bytes` (96,000
-request and reply bytes; one round always fits), at a round of another pair,
-or at a round that cannot be read, and then says older rounds were not
-quoted. A truncated earlier reply stays truncated in the quote.
-
-- Without the parameter nothing earlier is attached: the most recent exchange
-  is never added automatically, so a request must still be self-contained.
-- One worker per exchange is kept; the follow-up is a new exchange with its own
-  reply turn and wake, and the linked exchange is neither merged nor resumed.
-  A follow-up cannot answer or bypass a decision card, because a
-  `needs_person` round is refused until the person has answered.
-- The correlated-reply prompt now shows `Exchange id: <id>`. When the stored
-  reply is truncated, it tells the requester to call `message_bot` with
-  `reply_to_exchange_id <id>` and ask for the part after the kept text, rather
-  than pasting the reply back.
-- The pair history sheet and notices do not yet mark a follow-up; the link is
-  only on the stored exchange.
-
-Tests: `TestFollowUpWorkerSeesTheQuotedEarlierRound`,
-`TestRequestWithoutReplyToCarriesNoEarlierRound`,
-`TestFollowUpIsRefusedOutsideItsOwnFinishedRound` (through the real
-`message_bot` tool and a scripted worker),
-`TestReplyToNeedsTheRequesterOfAFinishedRoundOfThePair`,
-`TestQuotedRoundsStopAtTheirBounds` and
-`TestTruncatedReplyPromptNamesTheExchangeToFollowUp`.
-
 ## Asking the person (`ask_person`)
 
 `ask_person(question, suggested_replies[1..3])` is the one way a Bot puts a
@@ -273,8 +219,7 @@ an offer (`TestBotToolsCanAskThePersonButNeverAnswer`).
   and ends with `[Clawdline: reply truncated: original N bytes, first M bytes
   kept. …]`; the stored exchange, the console and the receipt all show that
   line. The correlated-reply prompt adds that the reply is not the complete
-  answer and the requester should ask for the rest with `reply_to_exchange_id`
-  (see "Following up an earlier request") or tell the person.
+  answer and the requester should ask for the rest or tell the person.
   Diagnostics reads the largest stored reply and counts each truncation as
   `refused` (`TestOverLimitPeerReplyIsMarkedForTheRequester`,
   `TestOverLimitDecisionAnswerIsMarkedForTheRequester`,

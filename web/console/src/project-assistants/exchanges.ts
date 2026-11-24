@@ -111,15 +111,6 @@ export async function loadExchangePage(source:SourceClient,scope:ExchangeScope,r
 }
 
 /** Text content never determines completion or delivery. Unknown future states stay unknown. */
-// The recipient's chat shows a one-paragraph excerpt of what it replied, so the
-// person sees what was done or refused without opening the exchange.
-export const exchangeSummaryRunes=160
-export function exchangeSummary(exchange:W.ProjectAssistantExchange):string {
-  const text=(exchange.reply??"").replace(/\s+/g," ").trim()
-  const runes=Array.from(text)
-  return runes.length>exchangeSummaryRunes?runes.slice(0,exchangeSummaryRunes).join("").trimEnd()+"…":text
-}
-
 export function exchangeOutcome(value:string):"queued"|"sent"|"completed"|"failed"|"cancelled"|"unknown" {
   return value==="queued"||value==="sent"||value==="completed"||value==="failed"||value==="cancelled"?value:"unknown"
 }
