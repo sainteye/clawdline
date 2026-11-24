@@ -126,6 +126,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.server_spec_bytes":      pure,
 		"bots.server_log_bytes":       serverUnobserved,
 		"bots.server_caller_receipts": serverUnobserved,
+		"bots.server_unconfirmed_notice_ms": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "time an individual server's authority can be unknown before a notice is due"}
+		},
 		"bots.server_probe_readers": func() capacity.Reading {
 			return capacity.Reading{Known: true, Used: int64(projectassistantacp.SourceTCPReaders()), Note: "actual active source TCP observations; busy readers refuse without queuing another OS probe"}
 		},
@@ -329,8 +332,14 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.extensions":         s.memorySettingsMeasure(`SELECT coalesce(max(coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.skills'),0)+coalesce(json_array_length(CAST(data AS TEXT),'$.Bot.extensions.connectors'),0)),0) FROM project_assistant_bots`, "largest persisted application extension selection per Bot"),
 		"bots.config_options":     s.memorySettingsMeasure(`SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM project_assistant_bots b,json_each(CAST(b.data AS TEXT),'$.Bot.runtime_settings.options') GROUP BY b.machine,b.bot)`, "largest persisted configuration option count per Bot; discovery catalogs hold no retained allocation"),
 		"bots.config_value_bytes": s.memorySettingsMeasure(`SELECT coalesce(max(max(length(CAST(t.value AS BLOB)),length(CAST(t.key AS BLOB)))),0) FROM project_assistant_bots b,json_tree(CAST(b.data AS TEXT),'$.Bot.runtime_settings') t WHERE t.type='text'`, "largest persisted model, option key or value in UTF-8 bytes per Bot"),
-		"bots.config_choices":     pure,
-		"bots.memory_preview":     pure,
+		"bots.login_probe_attempts": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "attempt limit per login-profile probe, with no shared retry queue"}
+		},
+		"bots.login_probe_backoff_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "maximum wait between attempts inside a login-profile probe"}
+		},
+		"bots.config_choices": pure,
+		"bots.memory_preview": pure,
 		// Shared Bots settings are refused at write; no live surface reads them yet.
 		"bots.dispatch_hint_bytes":        pure,
 		"bots.dispatch_kind_bytes":        pure,

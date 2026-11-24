@@ -105,6 +105,12 @@ func (s *Server) cloudCapacityMeasures() map[string]func() capacity.Reading {
 			}
 			return reading
 		},
+		capacity.CloudLineOpenRetryFirst: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "initial delay after a failed Cloud line open"}
+		},
+		capacity.CloudLineOpenRetryMax: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "maximum backoff between Cloud line open attempts"}
+		},
 		capacity.CloudSessionRowVolatile: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row Cloud re-send window; a held change goes out on the next pass after it"}
 		},

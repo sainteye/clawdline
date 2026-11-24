@@ -663,6 +663,16 @@
     "Note": true
   },
   {
+    "Name": "bots.login_probe_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.login_probe_backoff_milliseconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.login_profiles",
     "Known": true,
     "Note": true
@@ -988,6 +998,11 @@
   },
   {
     "Name": "bots.server_spec_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.server_unconfirmed_notice_ms",
     "Known": true,
     "Note": true
   },
@@ -1644,6 +1659,16 @@
   },
   {
     "Name": "cloud.lane_refusals",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.line_open_retry_first_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cloud.line_open_retry_max_seconds",
     "Known": true,
     "Note": true
   },
