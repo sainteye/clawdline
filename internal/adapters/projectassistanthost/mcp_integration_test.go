@@ -260,6 +260,8 @@ func runOwnedMCPWorkWith(t *testing.T, lead bool, wantPersona string) {
 	} else {
 		b = f.create(t, "native-mcp-bot")
 	}
+	// This peer has one prompt. Review turns are covered by the work review tests.
+	setWorkReview(t, f, b.Key, "off")
 	if _, err = f.send(t, b, "one"); err != nil {
 		t.Fatal(err)
 	}
