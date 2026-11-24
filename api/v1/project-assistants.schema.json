@@ -1041,10 +1041,6 @@
         "answer_text": {
           "type": "string",
           "description": "The person's chosen or typed reply once answered."
-        },
-        "memory": {
-          "type": "string",
-          "description": "The literal short fact a Bot proposed to remember while answering another Bot. Only the person's Save press writes it to memory."
         }
       },
       "required": [
