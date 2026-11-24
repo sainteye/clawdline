@@ -822,8 +822,17 @@ func (b *Bridge) run(ctx context.Context, conversation, op string, args json.Raw
 	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
 		return nil, BadRequest
 	}
-	if op == "viewport" && !validViewport(args) {
-		return nil, BadRequest
+	// The extension receives only checked arguments: a click with a label or
+	// a CSS-pixel point, a viewport preset or size. A refusal names the field.
+	switch op {
+	case "click":
+		if args, err = agentClick(args); err != nil {
+			return nil, err
+		}
+	case "viewport":
+		if args, err = agentViewport(args); err != nil {
+			return nil, err
+		}
 	}
 	tab := a.Tab
 	var recorded Result
@@ -1024,6 +1033,11 @@ func (b *Bridge) run(ctx context.Context, conversation, op string, args json.Raw
 	}
 	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
 		return nil, OtherDebugger
+	}
+	if op == "click" {
+		if missing := clickNotFound(res.Error); missing != nil {
+			return nil, missing
+		}
 	}
 	return nil, &ExtensionError{Message: res.Error}
 }
