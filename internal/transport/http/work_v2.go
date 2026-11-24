@@ -459,6 +459,16 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 func (s *Server) writeWorkV2Error(w http.ResponseWriter, err error) {
 	var we *app.WorkError
 	if errors.As(err, &we) {
+		if len(we.Fields) > 0 {
+			// A field conflict names its fields beside the ordinary refusal.
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(we.Status)
+			_ = json.NewEncoder(w).Encode(struct {
+				contract.Refusal
+				Fields []string `json:"fields"`
+			}{contract.Refusal{Error: we.Code, Detail: we.Message}, we.Fields})
+			return
+		}
 		if we.RawMessage {
 			writeRawRefusal(w, we.Status, we.Code, we.Message)
 		} else {
@@ -1028,6 +1038,15 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 		// Phase is read only to refuse it by name: a Session that reaches
 		// for the edit route to close its item is told where the phase moves.
 		Phase json.RawMessage `json:"phase"`
+		// Base is the values the person's editor started from; with it the
+		// item version no longer refuses an edit of untouched fields.
+		Base *struct {
+			Title              *string `json:"title"`
+			Description        *string `json:"description"`
+			AcceptanceCriteria *string `json:"acceptance_criteria"`
+			ReviewRequired     *bool   `json:"review_required"`
+		} `json:"base"`
+		OverwriteConflicts bool `json:"overwrite_conflicts"`
 	}
 	raw, ok := readWorkV2Body(w, r, &body)
 	if !ok {
@@ -1061,8 +1080,13 @@ func (s *Server) workV2Edit(w http.ResponseWriter, r *http.Request, id string, p
 	if !person {
 		expected = app.AgentExpectedVersion(expected)
 	}
+	var base *app.EditWorkV2Base
+	if body.Base != nil {
+		base = &app.EditWorkV2Base{Title: body.Base.Title, Description: body.Base.Description,
+			AcceptanceCriteria: body.Base.AcceptanceCriteria, ReviewRequired: body.Base.ReviewRequired}
+	}
 	var answer []byte
-	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: expected,
+	_, err := s.workV2().Edit(r.Context(), id, app.EditWorkV2{ExpectedVersion: expected, Base: base, OverwriteConflicts: body.OverwriteConflicts,
 		Title: body.Title, Description: body.Description, AcceptanceCriteria: body.AcceptanceCriteria,
 		Condition: condition, UserAction: body.UserAction, DecisionID: body.DecisionID, ReviewRequired: body.ReviewRequired, Actor: actor,
 		OwnerSession: body.SessionID, Person: person}, func(v app.WorkV2View) (store.ReceiptKey, store.ReceiptAnswer, bool) {

@@ -821,4 +821,5 @@ const (
 	BotsRoutineIntervalSeconds  = "bots.routine_interval_seconds"
 	BotsRoutineTimeoutSeconds   = "bots.routine_timeout_seconds"
 	BotsRoutineFinishedRuns     = "bots.routine_finished_runs"
+	BotsSettingsRebaseAttempts  = "bots.settings_rebase_attempts"
 )

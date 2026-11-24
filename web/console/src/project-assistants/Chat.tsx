@@ -1,7 +1,7 @@
 import { ContextMenu, type CompactBlock } from "./ContextMenu"
 import { CompactStatusRow } from "./CompactStatusRow"
 import { compactRefusalCode, followCompaction, type CompactStatus } from "./compact-status"
-import { ChatModel } from "./ChatModel"
+import { ChatModel, modelEdit } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
@@ -12,6 +12,8 @@ import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, same
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
+import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
+import {hostedConsole} from "../pages/terminal/api"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
@@ -48,6 +50,7 @@ import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
+import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -111,10 +114,12 @@ export interface ChatProps {
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
   showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
+  /** The decision a push notification opened this chat at, and the call that consumes it. */
+  focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -156,6 +161,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[browserOpener])
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
+  // The push-opened decision: consumed once the permissions say where it is.
+  const [focusTarget,setFocusTarget]=useState(focusDecision??""),[focusedDecision,setFocusedDecision]=useState(""),[decisionHandled,setDecisionHandled]=useState(false)
+  const [permissionsRead,setPermissionsRead]=useState(false)
+  // Each decision answered from this page and the turn its reply started.
+  const [decisionTurns,setDecisionTurns]=useState<Record<string,string>>({}),decisionProgress=useRef<Record<string,DecisionFollowUp|undefined>>({})
+  useEffect(()=>{if(focusDecision)setFocusTarget(focusDecision)},[focusDecision])
+  // A question this chat already shows is not also pushed while it is on
+  // screen. Only the console served by this machine reports it.
+  useEffect(()=>hostedConsole()?undefined:watchBotViewing(key.bot_id,scope.conversation_id,browserViewingPage(),localViewingReport),[key.bot_id,scope.conversation_id])
   const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
   const [permissionTick,setPermissionTick]=useState(0)
   const permissionRows=useRef(permissions)
@@ -346,7 +360,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       adoptHead(page)
       if(mode==="permissions"){
         const added=page.items.map(row=>row.permission_summary!)
-        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor)
+        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor);setPermissionsRead(true)
       }else{
         const added=page.items.map(row=>row.trace_summary!)
         const base=cursor?traceRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];traceRows.current=rows;setTraceSummaries(rows);setTraceMore(page.next_cursor)
@@ -503,7 +517,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const el=scroll.current;if(!el||!data)return
     if(!restored.current){const saved=view.position.get(draftKey);el.scrollTop=saved?.following===false?saved.top:el.scrollHeight;followingRef.current=saved?.following??true;setFollowing(followingRef.current);restored.current=true}
     else if(followingRef.current)el.scrollTop=el.scrollHeight
-  },[messages,timeline,data,draftKey,view])
+  },[messages,timeline,turns,queueEditor,data,draftKey,view])
   const markVisible=()=>{
     if(thread)return
     const el=scroll.current,d=currentData.current
@@ -550,7 +564,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [images,setImages]=useState<MarkupPicture[]>([])
   const editBot=async(settings:W.ProjectAssistantEditSettings,original?:W.ProjectAssistantBot)=>{
     const result=await mutate(({bot:fresh},signal)=>{
-      if(original&&fresh.version!==original.version){
+      // A save that names its base is rebased by the source, field by field.
+      if(original&&!settings.base&&fresh.version!==original.version){
         if(!sameEditableSettings(original,fresh))throw failure("pa_stale_version")
         settings={...settings,expected_version:fresh.version}
       }
@@ -583,8 +598,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     onBotChanged(fresh)
     return fresh
   }
-  const saveModel=(original:W.ProjectAssistantBot,model:string)=>editBot({expected_version:original.version,
-    name:original.name,appearance:original.appearance,instructions:original.instructions.text,runtime_settings:{model,options:{}}})
+  const saveModel=(original:W.ProjectAssistantBot,model:string,overwrite=false)=>editBot(modelEdit(original,model,source.canSettingsBase?.()===true,overwrite),original)
   const marker="clawdline.bot-inputs."+draftKey
   const [files,setFiles]=useState<DraftInput[]>([]),[filesLost,setFilesLost]=useState(()=>{try{return localStorage.getItem(marker)==="selected"}catch{return true}})
   const [uploading,setUploading]=useState(""),[fileError,setFileError]=useState("")
@@ -1168,6 +1182,7 @@ ${currentDraft}`:submitted)
           const next={...detailRows.current,[offer.id]:{...offer,state:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
           detailRows.current=next;setDetails(next)
         }
+        if(offer.kind==="decision"&&receipt.state!=="unknown")setDecisionTurns(old=>({...old,[offer.id]:receipt.resource_id}))
         void refresh()
       }
     }catch(e){
@@ -1302,6 +1317,27 @@ ${currentDraft}`:submitted)
   const exchangeDecisions=decisionsUnderCapsules(permissionCards,messages,inlinePermissionIds)
   const exchangeDecisionIds=new Set([...exchangeDecisions.values()].map(card=>card.summary.id))
   const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id)&&!exchangeDecisionIds.has(summary.id))
+  const focusOutcome=focusTarget?decisionFocus(focusTarget,permissionCards,permissionsRead&&!!data):"wait"
+  useEffect(()=>{
+    if(!focusTarget||focusOutcome==="wait")return
+    setFocusTarget("");onDecisionFocused?.()
+    if(focusOutcome==="handled")setDecisionHandled(true)
+    else setFocusedDecision(focusTarget)
+  },[focusTarget,focusOutcome])
+  useEffect(()=>{
+    if(!focusedDecision)return
+    const id=focusedDecision
+    // The card renders with data-focused this frame; scroll once it is laid out.
+    const frame=requestAnimationFrame(()=>{
+      const card=scroll.current?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
+      if(!card){setFocusedDecision("");setDecisionHandled(true);return}
+      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      card.scrollIntoView({block:"center",behavior:still?"auto":"smooth"})
+      card.focus({preventScroll:true})
+    })
+    const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
+    return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
+  },[focusedDecision])
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{
@@ -1438,7 +1474,7 @@ ${currentDraft}`:submitted)
   // visible without drawing two copies of the text or treating it as admitted.
   const hideProvisionalText=isSendingAdmitted(sending,messages,sendBaselineSeq.current)
   const motion=useMessageArrivals({items:messages,ready:!!data&&!recoveryRequired,following,seq:m=>m.seq,id:m=>m.id,
-    deferred:queuedIDs,skip:m=>m.id===confirmed?.id||m.kind==="notice"})
+    skip:m=>queuedIDs.has(m.id)||m.id===confirmed?.id||m.kind==="notice"})
   const traceGroups=new Map<string,W.ProjectAssistantReadTraceSummary[]>()
   for(const row of traceSummaries){
     const rows=traceGroups.get(row.turn_id)??[]
@@ -1480,7 +1516,14 @@ ${currentDraft}`:submitted)
   const orphanTraces=traceSummaries.filter(row=>row.turn_id!==liveTraceTurn&&!turnAnchors.has(row.turn_id))
   const queueEditorOpen=!!queueEditor&&turns.some(turn=>turn.id===queueEditor.turnID&&turn.queue_edit_id===queueEditor.editID)
   useLayoutEffect(()=>{
-    if(queueEditorOpen)queueEditorInput.current?.focus({preventScroll:true})
+    if(!queueEditorOpen)return
+    const input=queueEditorInput.current,viewport=window.visualViewport
+    input?.focus({preventScroll:true})
+    const reveal=()=>input?.closest(".pa-queued")?.scrollIntoView({block:"nearest"})
+    let frame=0
+    const later=()=>{cancelAnimationFrame(frame);frame=requestAnimationFrame(reveal)}
+    reveal();viewport?.addEventListener("resize",later)
+    return()=>{cancelAnimationFrame(frame);viewport?.removeEventListener("resize",later)}
   },[queueEditorOpen])
   const queuedCount=head?.queued_turn_count??0
   const unknownCount=head?.unknown_turn_count??0
@@ -1585,13 +1628,16 @@ ${currentDraft}`:submitted)
 
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
-  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
     const offer=detail&&"fence" in detail&&samePermission(detail,card)&&detail.state!=="pending"?detail:card
     return <PermissionCard offer={offer} enabled={enabled&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
   }
+  // While a turn runs, a new message waits behind it: it is sent, and then queued, at the end of the conversation.
+  const sendingBubble=sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>
   return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
     {...dragHandlers} data-file-drag={dropTarget?(dropTarget.refusal?"refused":"ready"):undefined}>
     {dropTarget&&<div className="pa-drop-target" data-refused={dropTarget.refusal?true:undefined} role="status" aria-live="polite">
@@ -1624,12 +1670,14 @@ ${currentDraft}`:submitted)
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
     </div>}
+    {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
+      <button type="button" className="pa-pill" onClick={()=>setDecisionHandled(false)}>{w.decisionHandledDismiss}</button></div>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
     {!thread&&<BotCallBar call={call} state={callState} name={bot.name} language={language} realtime={realtimeCall}/>}
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">{!hideProvisionalText&&<p>{sending}</p>}<small>{!sendingAccepted&&<span className="pa-send-spinner" aria-hidden="true"/>}{sendingAccepted?w.sendAccepted:w.sending}</small></article>}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1666,50 +1714,14 @@ ${currentDraft}`:submitted)
       {(orphanTraces.length>0||deferredTrace&&!latestTraceAnchor&&!liveTraceTurn&&messages.length>0)&&
         <Trace summaries={orphanTraces} details={details} incomplete={moreOrphanTraces} more={moreOrphanTraces} onMore={loadMoreTraces} onDetail={readTraceDetail}
           deferred={!latestTraceAnchor&&!liveTraceTurn?deferredTrace:undefined} w={w}/>}
-      {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
-        onEdit={(ref,text)=>handoff.update("edit",ref,text)} onKeep={ref=>void handoff.update("keep",ref)}
-        onHistory={viewHandoffHistory} onRefresh={()=>void handoff.refresh()} onEditing={setEditingHandoff}/>}
-      {legacyDrafts.map((draft,i)=><article className="pa-message pa-mine pa-unverified-draft" key={i}>
-        <div className="pa-message-bubble">
-          {draft.quote&&<blockquote>{messages.find(message=>message.id===draft.quote)?.text??w.quoteMissing}</blockquote>}
-          <p>{draft.text}</p>
-        </div>
-        <div className="pa-unverified-action">
-          <small>{w.unverifiedDraft}</small>
-          {"continued" in draft&&draft.continued===true&&<>
-            <button type="button" disabled={!canEditLegacy} onClick={()=>editLegacyDraft(draft)}>{w.unverifiedEdit}</button>
-            <button type="button" onClick={removeLegacyDraft}>{w.unverifiedRemove}</button>
-          </>}
-        </div>
-        {legacyRemoveFailed&&<p role="alert" className="pa-turn">{w.unverifiedRemoveFailed}</p>}
-      </article>)}
-      {(legacyProblem||legacyLocked&&enabled)&&<div className="pa-unverified-save">
-        {legacyProblem&&<p className="pa-turn" role="alert">{w.unverifiedUnsaved}</p>}
-        {enabled&&legacyProblem!=="unreadable"&&view.unverifiedDrafts.active(draftKey,scope)&&
-          <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}
-      </div>}
-      </div>
-      {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
-      <div className="tx-jump pa-jump" data-end="bottom" data-shown={following?"off":"on"} data-fresh="off">
-        <button type="button" className="tx-jump-go" tabIndex={following?-1:0} aria-hidden={following?true:undefined} title={w.jump} onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>
-          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
-          <span>{w.jump}</span>
-        </button>
-      </div>
-    </div>
-      {inlineReview&&!following&&<button type="button" className="pa-pill pa-team-jump" onClick={()=>{
-        const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
-        card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
-      }}>{w.teamReviewJump}</button>}
-    <div className="pa-chat-footer">{!thread&&(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
-      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
-      {parts.queued.length>0&&<div className="pa-queue">{parts.queued.map(message=>{
+      {!!activeTurn&&sendingBubble}
+      {parts.queued.length>0&&<div className="pa-queue" role="list" aria-label={w.queued}>{parts.queued.map(message=>{
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
       const hold=queuedTurn?.queue_edit_id
       const editable=!thread&&message.kind==="user"&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
-      return <div className="pa-queued" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
+      return <div className="pa-queued" role="listitem" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
           <span className="pa-queued-preview"><span className="pa-queued-label">{queuePaused?w.queuePaused:w.queued} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
@@ -1747,6 +1759,44 @@ ${currentDraft}`:submitted)
         </>}</div>
       </div>
     })}</div>}
+      {handoff.available&&<HandoffCard card={handoff.card} language={language} enabled={enabled&&!busy&&!unknown} busy={handoff.busy} error={handoff.error}
+        onEdit={(ref,text)=>handoff.update("edit",ref,text)} onKeep={ref=>void handoff.update("keep",ref)}
+        onHistory={viewHandoffHistory} onRefresh={()=>void handoff.refresh()} onEditing={setEditingHandoff}/>}
+      {legacyDrafts.map((draft,i)=><article className="pa-message pa-mine pa-unverified-draft" key={i}>
+        <div className="pa-message-bubble">
+          {draft.quote&&<blockquote>{messages.find(message=>message.id===draft.quote)?.text??w.quoteMissing}</blockquote>}
+          <p>{draft.text}</p>
+        </div>
+        <div className="pa-unverified-action">
+          <small>{w.unverifiedDraft}</small>
+          {"continued" in draft&&draft.continued===true&&<>
+            <button type="button" disabled={!canEditLegacy} onClick={()=>editLegacyDraft(draft)}>{w.unverifiedEdit}</button>
+            <button type="button" onClick={removeLegacyDraft}>{w.unverifiedRemove}</button>
+          </>}
+        </div>
+        {legacyRemoveFailed&&<p role="alert" className="pa-turn">{w.unverifiedRemoveFailed}</p>}
+      </article>)}
+      {(legacyProblem||legacyLocked&&enabled)&&<div className="pa-unverified-save">
+        {legacyProblem&&<p className="pa-turn" role="alert">{w.unverifiedUnsaved}</p>}
+        {enabled&&legacyProblem!=="unreadable"&&view.unverifiedDrafts.active(draftKey,scope)&&
+          <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}
+      </div>}
+      </div>
+      {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
+      {/* Hidden while a queued message is edited, so it never covers the message being edited. */}
+      <div className="tx-jump pa-jump" data-end="bottom" data-shown={following||queueEditorOpen?"off":"on"} data-fresh="off">
+        <button type="button" className="tx-jump-go" tabIndex={following||queueEditorOpen?-1:0} aria-hidden={following||queueEditorOpen?true:undefined} title={w.jump} onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>
+          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
+          <span>{w.jump}</span>
+        </button>
+      </div>
+    </div>
+      {inlineReview&&!following&&<button type="button" className="pa-pill pa-team-jump" onClick={()=>{
+        const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
+        card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
+      }}>{w.teamReviewJump}</button>}
+    <div className="pa-chat-footer">{!thread&&(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
+      return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p role="status">{w.unavailable} ({backgroundError})</p>}
       {!heldSend&&receipt&&(receipt.state==="failed"||receipt.state==="unknown"&&!unknown)&&<p role="status">{w[receipt.state]}</p>}
       {(queuePaused||unknownCount>shownUnknown)&&<div className="pa-chat-error" role="status">
         <span>{(queuePaused?w.queuePausedUnknown:w.previousTurnUnknown).replace("{count}",String(queuePaused?queuedCount:unknownCount))}</span>

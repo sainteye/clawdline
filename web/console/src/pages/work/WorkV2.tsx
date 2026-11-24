@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
-import { NeedsUpdate } from "../../machine/NeedsUpdate.js"
+import { NeedsUpdate, useMachineVersion } from "../../machine/NeedsUpdate.js"
 import { recordSessionListFailure } from "../../cloud/install.js"
 import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
@@ -63,7 +63,7 @@ import {
   createWorkV2,
   deleteWorkV2,
   deleteWorkV2Image,
-  editWorkV2,
+  editWorkV2, editConflictFields,
   markWorkV2Seen,
   setWorkV2ReviewRequired,
   readDecisions,
@@ -390,7 +390,12 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       if (!refreshInBackground) await load()
       succeeded = true
       return true
-    } catch (e) { setFailure(failureWords(e)); return false } finally {
+    } catch (e) {
+      setFailure(failureWords(e))
+      // A field conflict offers the newest values, so the board reads them now.
+      if (e instanceof RefusalError && e.code === "field_conflict") void load()
+      return false
+    } finally {
       setBusy("")
       if (succeeded && refreshInBackground) void load()
     }
@@ -934,6 +939,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   reportsExpanded?: boolean
   foldDescription?: boolean
 }) {
+  const machine = useMachineVersion()
   const [terminal, setTerminal] = useState("")
   const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
   const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? { id }
@@ -1229,8 +1235,13 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
         aria-label={catalogFormat("template", "e0059ef8ad57", [item.title])}>{catalogWord("inline", "31d7501ec843")} {owner.label || owner.id}<WorkIcon name="open" /></a>
         : item.owner_session && <span>{catalogWord("inline", "6959b4159575")} {item.owner_session.slice(0, 8)}</span>}
     </div>
-    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description) => {
-      void run(`edit-${item.id}`, () => editWorkV2(item, title, description)).then((ok) => { if (ok) setEditing(false) })
+    {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description, base, overwrite, conflicted) => {
+      void run(`edit-${item.id}`, async () => {
+        try { return await editWorkV2(item, title, description, undefined, { base, overwrite, apiLevel: machine.apiLevel }) } catch (e) {
+          if (e instanceof RefusalError && e.code === "field_conflict") conflicted()
+          throw e
+        }
+      }).then((ok) => { if (ok) setEditing(false) })
     }} />}
     {deleting && <DeleteWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setDeleting(false)} onDelete={() => {
       void run(`delete-${item.id}`, () => deleteWorkV2(item)).then((ok) => { if (ok) setDeleting(false) })
@@ -1521,30 +1532,49 @@ function ReviewRequiredField({ id, checked, disabled, busy = false, onChange }: 
   </div>
 }
 
-function EditWorkModal({ item, busy, failure, onClose, onSave }: {
+export function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   item: WorkV2Item
   busy: boolean
   failure: string
   onClose: () => void
-  onSave: (title: string, description: string) => void
+  onSave: (title: string, description: string, base: WorkV2Item, overwrite: boolean, conflicted: () => void) => void
 }) {
+  // The item as the editor opened it, or as last loaded: the source compares
+  // the draft with it field by field, so an agent's step or document meanwhile
+  // never refuses the save.
+  const [base, setBase] = useState(item)
   const [title, setTitle] = useState(item.title)
   const dialog = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => focusModalContainer(dialog.current), [])
   const [description, setDescription] = useState(item.description)
+  const [conflict, setConflict] = useState(false)
   const ready = !!title.trim() && !!description.trim()
-  const backdrop = useModalBackdrop(() => { if (!busy && title === item.title && description === item.description) onClose() })
+  const backdrop = useModalBackdrop(() => { if (!busy && title === base.title && description === base.description) onClose() })
   useModalDismiss(busy, onClose)
+  const save = (overwrite: boolean) => { setConflict(false); onSave(title.trim(), description.trim(), base, overwrite, () => setConflict(true)) }
+  const fields = editConflictFields(base, item, title.trim(), description.trim())
+  const fieldName = (field: "title" | "description") => field === "title" ? catalogWord("inline", "6fe38ed1ee10") : catalogWord("literal", "8561515b8b34")
+  const conflictText = workWord("editConflict", { fields: fields.length ? fields.map(fieldName).join(workWord("editConflictSeparator")) : workWord("editConflictSomeFields") })
+  // Each conflicting field, or both when none is known yet, takes the newest saved value; the other keeps the draft.
+  const loadLatest = () => {
+    const all = fields.length === 0
+    if (all || fields.includes("title")) setTitle(item.title)
+    if (all || fields.includes("description")) setDescription(item.description)
+    setBase(item); setConflict(false)
+  }
   return <div className="session-todo-modal work-edit-modal" ref={dialog} role="dialog" aria-modal="true" aria-labelledby={`work-edit-title-${item.id}`}
     {...backdrop}>
-    <form onSubmit={(event) => { event.preventDefault(); if (ready) onSave(title.trim(), description.trim()) }}>
+    <form onSubmit={(event) => { event.preventDefault(); if (ready && !conflict) save(false) }}>
       <div className="work-modal-head"><div><p className="board-eyebrow">{catalogWord("inline", "308278979452")}</p><h2 id={`work-edit-title-${item.id}`}>{catalogWord("inline", "9293ae04361c")}</h2></div>
         <button className="work-modal-close" type="button" aria-label={catalogWord("inline", "c7fdddf79eaa")} disabled={busy} onClick={onClose}><WorkIcon name="close" /></button></div>
       <label>{catalogWord("inline", "6fe38ed1ee10")}<input className="work-input" value={title} maxLength={240} onChange={(event) => setTitle(event.target.value)} /></label>
       <VoiceTextarea label={catalogWord("literal", "8561515b8b34")} value={description} maxLength={65536} onValue={setDescription} />
-      {failure && <p className="work-note" role="alert">{failure}</p>}
-      <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "21aa64dd7446") : catalogWord("literal", "9a8097d8f563")}</ActionProgress></button>
-        <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>
+      {conflict ? <p className="work-note" role="alert">{conflictText}</p> : failure && <p className="work-note" role="alert">{failure}</p>}
+      {conflict ? <div className="work-actions work-edit-conflict">
+        <button className="chip on" type="button" disabled={busy || !ready} aria-busy={busy} onClick={() => save(true)}>{workWord("editConflictKeepMine")}</button>
+        <button className="chip" type="button" disabled={busy} onClick={loadLatest}>{workWord("editConflictLoadLatest")}</button>
+      </div> : <div className="work-actions"><button className="chip on" type="submit" disabled={busy || !ready} aria-busy={busy}><ActionProgress busy={busy}>{busy ? catalogWord("literal", "21aa64dd7446") : catalogWord("literal", "9a8097d8f563")}</ActionProgress></button>
+        <button className="chip" type="button" disabled={busy} onClick={onClose}>{catalogWord("inline", "2cd0f3be8738")}</button></div>}
     </form>
   </div>
 }

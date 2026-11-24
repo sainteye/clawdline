@@ -95,3 +95,14 @@ test("only a decision whose exchange capsule is loaded moves under it; others st
   assert.equal(decisionsUnderCapsules([loaded],[],new Set()).size,0,"no capsule in the loaded page")
   assert.equal(decisionsUnderCapsules([loaded],[capsule],new Set(["d1"])).size,0,"an inline team card keeps its own place")
 })
+
+test("a pending question offers No need, which the person can press to close it",async()=>{
+  const {DecisionCard,words}=await load()
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language)
+    const html=renderToStaticMarkup(React.createElement(DecisionCard,{summary:summary(),offer:offer(),enabled:true,onAnswer:async()=>{},askerName:"Beacon",w}))
+    assert.match(html,new RegExp(`<button type="button" class="pa-decision-own pa-decision-dismiss" title="${w.decisionDismissText}"><span>${w.decisionDismiss}</span></button>`))
+    const answered=renderToStaticMarkup(React.createElement(DecisionCard,{summary:summary("answered"),offer:offer("answered",w.decisionDismissText),enabled:true,onAnswer:async()=>{},askerName:"Beacon",w}))
+    assert.ok(!answered.includes("pa-decision-dismiss"),"an answered question has nothing to close")
+  }
+})

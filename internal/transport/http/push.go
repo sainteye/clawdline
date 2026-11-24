@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"sync"
 	"time"
 
@@ -308,13 +309,17 @@ func (s *Server) PushSend(ctx context.Context, title, body, sessionID, tag, icon
 	url := s.pushDestinationURL(ctx, sessionID)
 	sender := &adapterpush.Sender{Store: store, Cloud: s.pushCourier()}
 	return sender.Send(ctx, adapterpush.Notification{
-		Title: title, Body: body, URL: url, Tag: tag, Icon: icon,
+		Title: title, Body: body, URL: url, Tag: tag, Icon: icon, Silent: adapterpush.QuietFromContext(ctx),
 	}, "")
 }
 
 func (s *Server) pushDestinationURL(ctx context.Context, sessionID string) string {
 	if bot, conversation := adapterpush.BotDestinationFromContext(ctx); bot != "" && conversation != "" {
-		return adapterpush.BotDestinationURL(bot, conversation, s.executionMachine())
+		url := adapterpush.BotDestinationURL(bot, conversation, s.executionMachine())
+		if decision := adapterpush.BotDecisionFromContext(ctx); decision != "" {
+			url += "&decision=" + neturl.QueryEscape(decision)
+		}
+		return url
 	}
 	return s.pushSessionURL(ctx, sessionID)
 }

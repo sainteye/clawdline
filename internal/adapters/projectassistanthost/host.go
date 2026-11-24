@@ -218,6 +218,11 @@ func (h *Host) makeService() error {
 	h.store = featurestore.New(h.o.Database).WithReader(h.o.Reader)
 	if h.o.Broker.Store != nil {
 		h.store.CompletionIntent = h.o.Broker.BotCompletionIntent
+		h.store.DecisionIntent = h.o.Broker.BotDecisionIntent
+		if h.o.Broker.BotPermission == nil {
+			store := h.store
+			h.o.Broker.BotPermission = store.Permission
+		}
 	}
 	views := h.o.ReadViews
 	if views == nil && h.o.Reader != nil {

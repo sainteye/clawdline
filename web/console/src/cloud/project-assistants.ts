@@ -11,7 +11,7 @@ import { RosterSSEDecoder, validateRosterRequest, RosterStreamFailure } from "..
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { createViewState, canRead } from "../project-assistants/view-state.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
-import { rosterMood, type BotMood } from "../project-assistants/working.ts"
+import { rosterMood, rosterShownState, type BotMood } from "../project-assistants/working.ts"
 import type { CloudClientHandle, CloudMachine } from "./copied.js"
 // @ts-expect-error -- Node executes source extensions.
 import { machineCommands } from "./machine-commands.ts"
@@ -75,6 +75,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
+const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
 type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
 export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
@@ -118,6 +119,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly machineName?: string
   canTeamCards() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL }
   canDeferTraceCount() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL }
+  canSettingsBase() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL }
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
   canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
@@ -980,14 +982,19 @@ export function cloudAssistantGrants(account: string, machines: readonly CloudMa
     online:machine.freshness === "current",writable:machine.operationAllowed !== false,name:machine.name||undefined}))
 }
 
-export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[]) {
+/** The icon counts what the list marks: each row's unread number plus one
+ * for each row showing "!" (waiting for the person), never more questions
+ * than the list can show. */
+export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], authorized: readonly SourceClient[], showDispatched = true) {
   return items.reduce((count,item) => {
     const source=authorized.find(source=>source.machineID===item.bot.key.machine_id)
     if(item.bot.hidden||!source||!canRead(item.source))return count
     // current() also becomes false while offline. Preserve the existing unread
     // badge in that case, but never animate the cached activity.
-    const mood=source.current?.()===false?"idle":rosterMood(item)
-    return {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+item.pending_permissions,
+    const offline=source.current?.()===false
+    const mood=offline?"idle":rosterMood(item)
+    const waiting=!offline&&rosterShownState(item,showDispatched)==="needsInput"?1:0
+    return {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+waiting,
       mood:count.mood==="needsInput"||mood==="needsInput"?"needsInput" as const:count.mood==="working"||mood==="working"?"working" as const:"idle" as const}
   },{unread:0,pendingPermissions:0,mood:"idle" as BotMood})
 }

@@ -13,6 +13,21 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 		"orchestrator.delivery_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
 		},
+		"orchestrator.bot_decision_push_runes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-notification cut; the chat card keeps the whole question"}
+		},
+		"orchestrator.bot_viewing_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-report age ceiling; reports live in memory only"}
+		},
+		"orchestrator.bot_viewing_hold_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-push hold ceiling, read from the outbox row's created time"}
+		},
+		"orchestrator.bot_viewing_chats": func() capacity.Reading {
+			if s.broker == nil {
+				return capacity.Unmeasured("no broker")
+			}
+			return capacity.Reading{Known: true, Used: int64(s.broker.BotPresence.Count())}
+		},
 		"orchestrator.result_carries": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-result admission guard"}
 		},

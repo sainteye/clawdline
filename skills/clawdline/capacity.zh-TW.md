@@ -212,6 +212,7 @@
 | `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_unconfirmed_notice_ms` | 30000 | `milliseconds` | `coalesce` | `diagnostics, sender` | — |
+| `bots.settings_rebase_attempts` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.shared_memory_entries` | 20 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.shared_memory_entry_bytes` | 1024 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.shared_memory_opt_outs` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -672,6 +673,10 @@
 | `notification.rule_label_characters` | 80 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `notification.rule_wait_seconds` | 7200 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `notification.rules_rows` | 16 | `rows` | `refuse` | `diagnostics, health, sender` | — |
+| `orchestrator.bot_decision_push_runes` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `orchestrator.bot_viewing_chats` | 256 | `rows` | `refuse` | `diagnostics` | — |
+| `orchestrator.bot_viewing_hold_seconds` | 300 | `seconds` | `expire` | `diagnostics` | — |
+| `orchestrator.bot_viewing_seconds` | 45 | `seconds` | `expire` | `diagnostics` | — |
 | `orchestrator.delivery_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.delivery_commits` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.opening_stuck_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |

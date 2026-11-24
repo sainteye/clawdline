@@ -145,6 +145,11 @@ const words = {
 
     failed: "Not done.",
     failedConflict: "It changed while you were deciding; nothing was done. The board has been read again.",
+    editConflict: "While you were editing, {fields} changed elsewhere. Your draft is still here. Choose which version to keep.",
+    editConflictKeepMine: "Save my version",
+    editConflictLoadLatest: "Load latest",
+    editConflictSeparator: ", ",
+    editConflictSomeFields: "some fields",
     failedNetwork: "The daemon did not answer; nothing is known to have been done.",
 
     todosTitle: "Session to-dos",
@@ -370,6 +375,11 @@ const words = {
 
     failed: "沒有成功。",
     failedConflict: "在你決定的時候它變了，所以什麼都沒做。看板已經重新讀過。",
+    editConflict: "你編輯的同時，{fields}在別處被改成了不同的內容。草稿仍在，請選擇要保留哪個版本。",
+    editConflictKeepMine: "用我的版本覆蓋",
+    editConflictLoadLatest: "載入最新內容",
+    editConflictSeparator: "、",
+    editConflictSomeFields: "部分欄位",
     failedNetwork: "daemon 沒有回應；不知道有沒有做成。",
 
     todosTitle: "Session 待辦",

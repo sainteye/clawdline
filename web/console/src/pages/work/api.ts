@@ -1,6 +1,7 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { fetchWithDeadline } from "./fetch-deadline.js"
 import { readSessionListWith } from "./session-assignment.js"
+import { editWorkV2Body, type WorkV2EditBase } from "./edit-request.js"
 import type { Assistant, PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
@@ -499,13 +500,22 @@ export const remindWorkV2 = (item: WorkV2Item) =>
     expected_version: item.version,
   })
 
-export const editWorkV2 = (item: WorkV2Item, title: string, description: string, acceptance?: string) =>
-  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
-    expected_version: item.version,
-    title,
-    description,
-    ...(acceptance === undefined ? {} : { acceptance_criteria: acceptance }),
-  }, "PATCH")
+/**
+ * With `base`, the item as the editor opened it, an agent's step, document or
+ * phase write meanwhile does not refuse the edit; only a field changed both
+ * here and elsewhere is a `field_conflict`, and `overwrite` keeps this edit's value.
+ * `base` is sent only to a machine whose API level knows it (edit-request.ts).
+ */
+export const editWorkV2 = (item: WorkV2Item, title: string, description: string, acceptance?: string, based?: WorkV2EditBase) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, editWorkV2Body(item, title, description, acceptance, based), "PATCH")
+
+/** The editable fields a draft changed from its base that the live item also changed, to a different value. */
+export function editConflictFields(base: WorkV2Item, live: WorkV2Item, title: string, description: string): ("title" | "description")[] {
+  const out: ("title" | "description")[] = []
+  if (title !== base.title && live.title !== base.title && live.title !== title) out.push("title")
+  if (description !== base.description && live.description !== base.description && live.description !== description) out.push("description")
+  return out
+}
 
 /** The person's one-press "Needs independent review" choice on a Feature; nothing else on the item changes. */
 export const setWorkV2ReviewRequired = (item: WorkV2Item, required: boolean) =>

@@ -226,6 +226,9 @@ type WorkError struct {
 	RawMessage bool
 	// Current is the item as it is, for a version conflict.
 	Current *WorkView
+	// Fields names the fields a field_conflict refusal found changed both by
+	// this edit and elsewhere, in a stable order.
+	Fields []string
 }
 
 func (e *WorkError) Error() string { return e.Code + ": " + e.Message }

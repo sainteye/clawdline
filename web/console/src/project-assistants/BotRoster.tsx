@@ -199,8 +199,8 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       })()}
       {groups.map(group => {
         // The lead section reads like the pinned one: no Project mark, each row its own Project.
-        const lead=group.kind==="lead", pinned=group.kind==="pinned", byMachine=group.kind==="machine", lifted=group.kind==="unread"||group.kind==="working"
-        const flat=pinned||lead||byMachine||lifted, name=group.kind==="working"?w.rosterWorkingSection:lifted?w.unread:byMachine?named(group.machineID):lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
+        const lead=group.kind==="lead", pinned=group.kind==="pinned", byMachine=group.kind==="machine", lifted=group.kind==="needsYou"||group.kind==="unread"||group.kind==="working"
+        const flat=pinned||lead||byMachine||lifted, name=group.kind==="needsYou"?w.rosterNeedsYouSection:group.kind==="working"?w.rosterWorkingSection:lifted?w.unread:byMachine?named(group.machineID):lead?`★ ${w.rosterLead}`:pinned?w.pinned:group.name||(group.items[0]?.projectID===personalRosterProject?w.personalBots:projectNames.get(group.key))||w.unnamedProject
         const keys = group.items.map(item => item.key)
         return <section className="pa-project-group" key={group.key} aria-label={name} data-roster-project={group.kind==="project"||undefined} {...(!lifted&&targetProps({kind:"project",key:group.key}))}>
           <h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,sections.filter(g=>g.kind==="project").map(g=>g.key))}</h2>

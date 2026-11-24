@@ -4136,6 +4136,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.settings_rebase_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxSettingsRebaseAttempts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.shared_memory_entries",
     "Class": "evidence",
     "Unit": "rows",
@@ -13032,6 +13052,83 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/notificationrule.MaximumRules"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_decision_push_runes",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.MaxBotDecisionPushRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_chats",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 256,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.MaxBotViewingChats"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_hold_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.MaxBotViewingHoldSeconds"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "orchestrator.bot_viewing_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 45,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.MaxBotViewingSeconds"
     ]
   },
   {

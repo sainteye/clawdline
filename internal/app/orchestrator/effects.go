@@ -220,6 +220,8 @@ var effectHandlers = map[string]effectHandler{
 	EffectCapacityPush:          {idempotent: false, run: runCapacityPush},
 	EffectWaitingPush:           {idempotent: false, run: runWaitingPush},
 	EffectBotCompletedPush:      {idempotent: false, run: runBotCompletedPush},
+	EffectBotDecisionPush:       {idempotent: false, run: runBotDecisionPush},
+	EffectBotDecisionRetract:    {idempotent: false, run: runBotDecisionRetract},
 	EffectWorkItemCompletedPush: {idempotent: false, run: runWorkItemCompletedPush},
 	EffectSessionDeliveryPush:   {idempotent: false, run: runCompletionPush},
 	EffectFanoutCompletedPush:   {idempotent: false, run: runCompletionPush},
@@ -345,6 +347,9 @@ func (b *Broker) recoverEffects(ctx context.Context, rd *reading) int {
 				rd = &r
 			}
 			return b.settleDeliveryPush(ctx, e, *rd)
+		}
+		if b.holdBotDecisionPush(e) {
+			return 0 // Left pending; the next beat looks again.
 		}
 		return b.settleEffect(ctx, e, why)
 	}

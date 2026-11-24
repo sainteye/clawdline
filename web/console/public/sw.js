@@ -43,7 +43,9 @@ self.addEventListener("push", function (event) {
     event.waitUntil(self.registration.showNotification(described.title || "Clawdline", {
         body: described.body || "",
         tag: described.tag || "clawdline",
-        renotify: true,
+        // A quiet replacement says a question no longer needs the person.
+        renotify: !described.silent,
+        silent: !!described.silent,
         icon: described.icon || "/icon-192.png",
         data: { url: destination }
     }));

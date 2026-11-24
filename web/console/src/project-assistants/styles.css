@@ -133,8 +133,9 @@
 }
 .project-assistants .pa-reply { display:flex;gap:8px;align-items:center;padding:6px 12px;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-reply>span { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1; }
-.project-assistants .pa-queue { max-block-size:30dvh;overflow:auto;overscroll-behavior:contain; }
-.project-assistants .pa-queued { display:grid;width:fit-content;max-width:min(88%,32rem);margin:5px 0 5px auto;padding:8px 12px 4px;border:1px solid var(--pa-line);border-radius:12px;color:var(--pa-text,#fafafa);font-size:13px;line-height:1.5; }
+/* Waiting messages are the person's own, not yet sent on: they sit at the end of the conversation and scroll with it. */
+.project-assistants .pa-queue { display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin:8px 0 4px; }
+.project-assistants .pa-queued { display:grid;width:fit-content;max-width:75%;padding:10px 16px 4px;border:1px dashed #3d3d42;border-radius:23px;background:#18181a;color:var(--pa-text,#fafafa);font-size:15px;line-height:1.6;scroll-margin:12px 0; }
 .project-assistants .pa-queued-content { min-width:0;display:grid;grid-template-columns:minmax(0,1fr);align-items:start; }
 .project-assistants .pa-queued-preview { grid-area:1/1;white-space:pre-wrap;overflow-wrap:anywhere; }
 .project-assistants .pa-queued-label,.project-assistants .pa-queued-actions { color:var(--pa-dim); }
@@ -247,6 +248,7 @@
   .project-assistants .pa-chat-scroll { padding:12px 20px 24px; }
   .project-assistants .pa-message p { font-size:15px;line-height:1.8; }
   .project-assistants .pa-message.pa-mine { max-width:85%;padding:12px 16px; }
+  .project-assistants .pa-queued { max-width:85%; }
   .project-assistants .pa-chat-footer { padding:8px 16px max(16px,env(safe-area-inset-bottom)); }
   .project-assistants .pa-tabs { left:50%;transform:translateX(-50%);white-space:nowrap; }
   .project-assistants .pa-status-mobile { display:flex;flex-direction:column;position:absolute;inset:0;background:var(--pa-bg);padding-bottom:90px; }
@@ -948,3 +950,29 @@
 @media (prefers-reduced-motion:reduce) { .project-assistants .pa-drop-target { animation:none; } }
 /* Consecutive Bot exchange capsules keep the chat's message rhythm instead of touching. */
 .project-assistants .pa-chat-content > .pa-exchange-attribution { margin:4px 0 12px; }
+
+/* A pressed decision reply shows at once which one was chosen; the others
+   step back. The mark keeps its width in every state so nothing shifts. */
+.project-assistants .pa-decision .pa-permission-options button { flex-direction:row;align-items:center;gap:8px; }
+.project-assistants .pa-decision-mark { display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none; }
+.project-assistants .pa-decision-mark:empty { display:none; }
+.project-assistants .pa-decision button[data-choice="chosen"] { box-shadow:inset 0 0 0 2px var(--accent,currentColor);font-weight:600;opacity:1; }
+.project-assistants .pa-decision button[data-choice="chosen"]:disabled { opacity:1; }
+.project-assistants .pa-decision button[data-choice="other"] { opacity:.45; }
+.project-assistants .pa-decision-spinner { display:inline-block;width:14px;height:14px;box-sizing:border-box;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:pa-decision-spin .8s linear infinite;flex:none; }
+.project-assistants .pa-decision-sent { display:flex;flex-direction:column;gap:4px; }
+.project-assistants .pa-decision-working { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim); }
+.project-assistants .pa-decision-failed { display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px; }
+.project-assistants .pa-decision-failed p { margin:0;flex:1 1 200px; }
+.project-assistants .pa-decision-failed button { min-height:44px; }
+@keyframes pa-decision-spin { to { transform:rotate(360deg); } }
+.project-assistants .pa-decision-done { display:inline-flex;align-items:center;gap:6px;color:var(--pa-text); }
+.project-assistants .pa-decision-done .pa-decision-mark { display:inline-flex; }
+/* The card a push opened: a ring that fades, outlasting no reading of the card. */
+.project-assistants .pa-decision[data-focused] { animation:pa-decision-focus 2.4s ease-out 1;scroll-margin:16px; }
+.project-assistants .pa-decision[data-focused]:focus { outline:none; }
+@keyframes pa-decision-focus { 0%,40% { box-shadow:0 0 0 3px var(--accent,#e39567); } 100% { box-shadow:0 0 0 3px transparent; } }
+.project-assistants .pa-decision-handled { display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin:8px 12px 0;padding:8px 12px;border-radius:12px;border:1px solid var(--pa-line);color:var(--pa-text);font-size:14px; }
+.project-assistants .pa-decision-handled span { flex:1 1 200px; }
+.project-assistants .pa-decision-handled button { min-height:44px; }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-decision-spinner { animation:none;border-right-color:currentColor;opacity:.6; } .project-assistants .pa-decision[data-focused] { animation:none;box-shadow:0 0 0 3px var(--accent,#e39567); } }

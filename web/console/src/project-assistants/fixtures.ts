@@ -44,6 +44,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     if(write&&access!=="interactive")throw failure("pa_read_only")
   }
   const find=(key:W.ProjectAssistantBotKey)=>{const bot=bots.find(b=>sameBot(b.key,key));if(!bot)throw failure("pa_not_found");return bot}
+  let decisionTurn=""
   const receive=(cmd:W.ProjectAssistantCommand):W.ProjectAssistantReceipt=>{let r=receipts.get(cmd.idempotency_key);if(!r){r={id:crypto.randomUUID(),command:cmd,state:"accepted",event_seq:seq,resource_id:cmd.key.bot_id};receipts.set(cmd.idempotency_key,r)}return r}
   const summary=(bot:W.ProjectAssistantBot):W.ProjectAssistantBotSummary=>{
     const rows=messages.get(bot.key.bot_id),seq=readSequences.get(bot.conversation_id)??(bot.key.bot_id==="bot-0"?0:rows?.length??0)
@@ -69,7 +70,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const traces=latest(current.flatMap(e=>e.trace?[e.trace]:[]),t=>JSON.stringify([t.turn_id,t.category]))
     const turns=latest(own.flatMap(e=>e.turn?[e.turn]:[]),t=>t.id)
     const pending=turns.filter(t=>["accepted","queued","running","waiting_permission"].includes(t.state))
-    const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",...(t.failure?.field?{failure_field:t.failure.field}:{}),started_at:t.started_at??""})
+    const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",...(t.failure?.field?{failure_field:t.failure.field}:{}),started_at:t.started_at??"",...(t.queue_edit_id?{queue_edit_id:t.queue_edit_id}:{})})
     const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,pending_permission_count:offers.length,trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
     head.conversation.memory_revision=memory.revision
     head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
@@ -88,7 +89,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       }
     }else if(r.mode==="events"){
       const matching=own.filter(e=>e.seq>r.after_seq);response.items=matching.slice(0,r.page_size).map(event=>({id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:event.seq,event}));response.has_more=matching.length>response.items.length;response.next_seq=response.items.at(-1)?.event?.seq??r.after_seq
-    }else if(r.mode==="permissions")paginate(offers.map(permission=>({id:permission.id,kind:"permission_summary",anchor_message_seq:0,observed_event_seq:seq,permission_summary:{id:permission.id,fence:permission.fence,turn_id:permission.turn_id,state:permission.state,expires_at:permission.expires_at,detail_cursor:ref("permission",permission.id)}})),"permissions")
+    }else if(r.mode==="permissions")paginate(offers.map(permission=>({id:permission.id,kind:"permission_summary",anchor_message_seq:0,observed_event_seq:seq,permission_summary:{id:permission.id,fence:permission.fence,turn_id:permission.turn_id,state:permission.state,expires_at:permission.expires_at,detail_cursor:ref("permission",permission.id),...(permission.kind==="decision"?{tool_kind:"decision",title:permission.decision?.question??""}:{})}})),"permissions")
     else if(r.mode==="traces")paginate(traces.map((trace,i)=>({id:`trace-${trace.turn_id}-${trace.category}`,kind:"trace_summary" as const,anchor_message_seq:0,observed_event_seq:seq,trace_summary:{id:`trace-${trace.turn_id}-${trace.category}`,turn_id:trace.turn_id,category:trace.category,complete:trace.complete,detail_cursor:ref("trace",String(i))}})).reverse(),"traces")
     else{
       const prefix=`${readEpoch}:${generation}:`,parts=r.cursor.slice(prefix.length).split(":")
@@ -167,7 +168,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       if(stopReply)receipt.state=await stopReply
       return {contract_version:contractVersion,receipt}
     },
-    async answer(r,s){check("answer",r,s,true);return{contract_version:contractVersion,receipt:receive(r.command)}},
+    async answer(r,s){check("answer",r,s,true);const receipt=receive(r.command);if(decisionTurn)receipt.resource_id=decisionTurn;return{contract_version:contractVersion,receipt}},
     async markRead(r,s){
       check("markRead",r,s)
       const {cursor}=r,bot=find(r.command.key)
@@ -310,6 +311,16 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       ]
       for(const [category,text] of rows)push({id:"progress-"+category,seq:0,at,version:contractVersion,kind:"trace_updated",fence:f,
         trace:{turn_id:"turn-1",category,text,complete:true}})
+    },
+    // A long chat whose pending ask_person question sits above the fold, for
+    // the push link that opens the chat at it; its reply starts "turn-1".
+    decisionFixture(count=30){
+      this.seedHistory(count)
+      const bot=bots[0],f=fence(bot)
+      push({id:"decision-event",seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:"decision-7",fence:f,turn_id:"",native_request_id:"",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",kind:"decision",anchor_message_seq:4,
+        options:[{id:"ship",kind:"allow_once",label:"Ship it now",allow:true,read_only:true},{id:"wait",kind:"reject_once",label:"Wait until tomorrow",allow:false,read_only:true}],
+        decision:{question:"Merge and deploy this release now?"}} as W.ProjectAssistantPermissionOffer})
+      decisionTurn="turn-1"
     },
     workTurn(state:W.ProjectAssistantTurnState){
       const bot=bots[0],f=fence(bot)

@@ -298,10 +298,6 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 		bot, e := s.opts.Repository.Bot(ctx, c.Key)
 		return bot, *prior, e
 	}
-	bot, err := s.opts.Repository.Bot(ctx, c.Key)
-	if err != nil {
-		return pa.Bot{}, pa.Receipt{}, err
-	}
 	if settings.Roster != nil && settings.Roster.NewSession {
 		if settings.Roster.DesignateLead || settings.Roster.Pinned != nil || settings.Roster.Section != nil {
 			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Invalid, "new_session")
@@ -322,6 +318,36 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 		bot, err := s.opts.Repository.Bot(ctx, c.Key)
 		return bot, r, err
 	}
+	// An edit that names its base is rebased on the Bot read for each attempt;
+	// a turn or memory write that lands between that read and the commit
+	// advances the version only, so the attempt is repeated, a bounded number
+	// of times, against a fresh read. The slow configuration and extension
+	// probes are not repeated when the rebased result still matches what they
+	// accepted, so a retry costs a read and a commit.
+	var validated *pa.Bot
+	for attempt := 1; ; attempt++ {
+		next, r, err := s.editOnce(ctx, c, a, settings, &validated)
+		if err == nil || settings.Base == nil || attempt >= pa.MaxSettingsRebaseAttempts || pa.Code(err) != pa.StaleVersion || pa.SettingsConflicts(err) != nil {
+			return next, r, err
+		}
+	}
+}
+
+// sameProbedSettings reports whether the configuration and extension probes
+// that accepted one result also cover the other.
+func sameProbedSettings(a, b pa.Bot) bool {
+	return a.Agent == b.Agent && a.LoginProfile == b.LoginProfile && pa.SameRuntimeSettings(a.RuntimeSettings, b.RuntimeSettings) && pa.SameExtensions(a.Extensions, b.Extensions)
+}
+
+func (s *Service) editOnce(ctx context.Context, c pa.Command, a Authority, settings pa.EditBot, validated **pa.Bot) (pa.Bot, pa.Receipt, error) {
+	bot, err := s.opts.Repository.Bot(ctx, c.Key)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
+	settings, err = pa.RebaseEdit(bot, settings)
+	if err != nil {
+		return pa.Bot{}, pa.Receipt{}, err
+	}
 	next, err := pa.ApplyEdit(bot, settings)
 	if err != nil {
 		return pa.Bot{}, pa.Receipt{}, err
@@ -341,16 +367,19 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 			return pa.Bot{}, pa.Receipt{}, err
 		}
 	}
-	if settings.RuntimeSettings != nil && !pa.SameRuntimeSettings(next.RuntimeSettings, bot.RuntimeSettings) {
+	probed := *validated != nil && sameProbedSettings(**validated, next)
+	if !probed && settings.RuntimeSettings != nil && !pa.SameRuntimeSettings(next.RuntimeSettings, bot.RuntimeSettings) {
 		if err = s.validateConfiguration(ctx, next); err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}
 	}
-	if settings.Extensions != nil {
+	if !probed && settings.Extensions != nil {
 		if err = s.validateExtensions(ctx, next); err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}
 	}
+	accepted := next
+	*validated = &accepted
 	next.UpdatedAt = s.opts.Clock().UTC()
 	conversation, err := s.opts.Repository.Conversation(ctx, c.Key, bot.ConversationID)
 	if err != nil {

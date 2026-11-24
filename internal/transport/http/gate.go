@@ -668,7 +668,7 @@ func projectAssistantMetadataWrite(method, p string) bool {
 	}
 	parts := strings.Split(strings.TrimPrefix(p, "/v1/project-assistants/"), "/")
 	return len(parts) == 2 && paHTTPSafeBotID(decodeSegment(parts[0])) &&
-		(parts[1] == "read" || parts[1] == "observed")
+		(parts[1] == "read" || parts[1] == "observed" || parts[1] == "viewing")
 }
 
 // crossOriginRefusal is the Host check and the Sec-Fetch-Site check, which

@@ -269,6 +269,20 @@ test("the entry prioritizes live input over work without treating unread as acti
 })
 
 
+test("the icon's number is what the list marks: one per waiting row plus unread",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal
+  const {items}=await source.list({machine_id:source.machineID,cursor:"",query:"",page_size:100},signal)
+  // Three open questions on one Bot show one "!" in the list, not three.
+  const rows=[{...items[0],unread_count:2,pending_permissions:3,status:"needsInput",activity:"Asks: Ship today?"},{...items[1],unread_count:1,pending_permissions:0,status:"idle"},{...items[2],unread_count:0,pending_permissions:0,status:"idle"}]
+  const w=words("en"),now=Date.now()
+  const marks=rows.map(item=>render(BotRow,{item,selected:false,onSelect:()=>{},w,language:"en",now,showDispatched:true})).reduce((sum,html)=>sum+(html.match(/class="pa-attention"/g)||[]).length+[...html.matchAll(/<span class="pa-unread">(\d+)<\/span>/g)].reduce((n,m)=>n+Number(m[1]),0),0)
+  const badge=assistantBadge(rows,[source],true)
+  assert.equal(marks,4)
+  assert.equal(badge.unread+badge.pendingPermissions,marks)
+  const html=render(BotOrb,{onOpen:()=>{},language:"en",...badge})
+  assert.match(html,/class="pa-dock-badge"[^>]*>4</)
+})
+
 test("server controls never carry the displayed executable text or environment",()=>{
   const key={machine_id:"source",bot_id:"bot"},server={id:"known",name:"watch",command:"synthetic-command",folder:"/synthetic/project",attempt:"attempt-one",revision:4,fingerprint:"f".repeat(64),state:"running",environment:{SECRET:"must-not-cross"},pid:123}
   const request=compiled.exports.serverControlRequest(key,server,"human-key")

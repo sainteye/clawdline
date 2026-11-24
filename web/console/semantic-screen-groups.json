@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14354,
-  "riskKeys": 6108,
-  "nonRiskCount": 8246,
+  "englishContentKeys": 14383,
+  "riskKeys": 6119,
+  "nonRiskCount": 8264,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 762,
+      "count": 766,
       "sources": [
         null
       ],
@@ -1134,6 +1134,10 @@
         "capacityRow.naming.context_bytes.what",
         "capacityRow.naming.tail_entries.what",
         "capacityRow.notification.rule_wait_seconds.what",
+        "capacityRow.orchestrator.bot_decision_push_runes.full",
+        "capacityRow.orchestrator.bot_decision_push_runes.what",
+        "capacityRow.orchestrator.bot_viewing_chats.what",
+        "capacityRow.orchestrator.bot_viewing_hold_seconds.what",
         "capacityRow.orchestrator.delivery_bytes.what",
         "capacityRow.orchestrator.result_carries.what",
         "capacityRow.personas.text_bytes.what",
@@ -6286,7 +6290,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 639,
+      "count": 648,
       "sources": [
         null
       ],
@@ -6383,12 +6387,18 @@
         "projectAssistants.decisionActivity",
         "projectAssistants.decisionAnswered",
         "projectAssistants.decisionBadge",
+        "projectAssistants.decisionChosen",
         "projectAssistants.decisionContext",
         "projectAssistants.decisionGo",
+        "projectAssistants.decisionHandled",
+        "projectAssistants.decisionHandledDismiss",
         "projectAssistants.decisionOwn",
         "projectAssistants.decisionOwnPlaceholder",
+        "projectAssistants.decisionRetry",
         "projectAssistants.decisionSend",
+        "projectAssistants.decisionSending",
         "projectAssistants.decisionSendsAs",
+        "projectAssistants.decisionSentWorking",
         "projectAssistants.decisionSuggested",
         "projectAssistants.decisionTitle",
         "projectAssistants.decisionWithdrawn",
@@ -6758,6 +6768,9 @@
         "projectAssistants.settingsAgentHeading",
         "projectAssistants.settingsCheckSuperseded",
         "projectAssistants.settingsCheckUnchanged",
+        "projectAssistants.settingsConflictKeepMine",
+        "projectAssistants.settingsConflictLoadLatest",
+        "projectAssistants.settingsConflictSeparator",
         "projectAssistants.settingsDraftHint",
         "projectAssistants.settingsExtensionsSummary",
         "projectAssistants.settingsFrequent",
@@ -8931,7 +8944,7 @@
     },
     {
       "name": "work / other",
-      "count": 80,
+      "count": 85,
       "sources": [
         "src/pages/work/words.ts"
       ],
@@ -8973,6 +8986,11 @@
         "work.desktopShowProposals",
         "work.detailMode",
         "work.detailModeHint",
+        "work.editConflict",
+        "work.editConflictKeepMine",
+        "work.editConflictLoadLatest",
+        "work.editConflictSeparator",
+        "work.editConflictSomeFields",
         "work.handoverTo",
         "work.lastEvidence",
         "work.launchModelDefault",

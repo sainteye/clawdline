@@ -23,10 +23,14 @@ import (
 type Store struct {
 	// CompletionIntent adds only database writes to this Bot transaction. It must not perform external IO.
 	CompletionIntent func(context.Context, *sql.Tx, pa.Bot, pa.Turn) error
-	db               *sql.DB
-	reader           *sql.DB
-	locks            sync.Map
-	roster           rosterBus
+	// DecisionIntent is told, inside the same transaction, of each permission
+	// or question this commit first makes pending, and of each pending one it
+	// closes (answered, withdrawn, written past). Database writes only.
+	DecisionIntent func(context.Context, *sql.Tx, pa.Bot, string, pa.PermissionOffer) error
+	db             *sql.DB
+	reader         *sql.DB
+	locks          sync.Map
+	roster         rosterBus
 	// groupHook, when set by a test, fails a group write at the named stage
 	// inside a Store transaction (DeleteBot, FinishRoomTurn).
 	groupHook func(stage string) error
@@ -340,6 +344,8 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	}
 	previousBackgroundTurn := a.backgroundTurnState()
 	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
+	closeDecisionsThePersonAnswered(a, &m)
+	opened := append(newlyPendingPermissions(a, m), newlyClosedPermissions(a, m)...)
 	if err = applyMutation(&a, m); err != nil {
 		return pa.Receipt{}, err
 	}
@@ -389,6 +395,13 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 		a.Completion = &pa.BotCompletion{TurnID: m.Turn.ID, ConversationID: m.Turn.Fence.ConversationID}
 		if s.CompletionIntent != nil {
 			if err = s.CompletionIntent(ctx, tx, a.Bot, *m.Turn); err != nil {
+				return pa.Receipt{}, err
+			}
+		}
+	}
+	if s.DecisionIntent != nil {
+		for _, offer := range opened {
+			if err = s.DecisionIntent(ctx, tx, a.Bot, a.Conversation.ID, offer); err != nil {
 				return pa.Receipt{}, err
 			}
 		}
@@ -1009,7 +1022,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 	}
 	out := pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, ActivityAt: a.Bot.CreatedAt, ReadCursor: r}
 	for _, msg := range a.Messages {
-		if !ownChatTurn(a, msg.TurnID) || withdrawnTurn(a.Turns[msg.TurnID]) {
+		if !ownChatTurn(a, msg.TurnID) || withdrawnTurn(a.Turns[msg.TurnID]) || quietMessage(msg) {
 			continue
 		}
 		out.LatestMessage = msg.Text
@@ -1027,8 +1040,9 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			out.UnreadCount++
 		}
 	}
+	now := time.Now()
 	for _, p := range a.Permissions {
-		if p.State == pa.PermissionPending {
+		if openPermission(p, now) {
 			out.PendingPermissions++
 		}
 	}
@@ -1245,4 +1259,143 @@ func inputIDs(files []pa.InputFile) []string {
 		ids = append(ids, f.ID)
 	}
 	return ids
+}
+
+// quietMessage is a publication the roster never shows or counts as news.
+func quietMessage(m pa.Message) bool { return m.Output != nil && m.Output.Quiet }
+
+// personMessage is the person writing in the Bot's own chat: not a peer
+// exchange, not a room, not a queued message they withdrew.
+func personMessage(a aggregate, m pa.Message) bool {
+	return m.Kind == pa.UserMessage && m.Exchange == nil && ownChatTurn(a, m.TurnID) && !withdrawnTurn(a.Turns[m.TurnID]) && !quietMessage(m)
+}
+
+// openPermission is the one definition of "needs the person" behind the
+// icon badge, the roster row and the list. A tool permission is open while
+// pending. A decision belongs to no turn; it stays open until it is
+// answered, closed by the person, withdrawn by its exchange, or expires
+// (rosterOpenDecisionSQL is the same predicate). Chat activity alone never
+// hides it: only closeDecisionsThePersonAnswered closes one, in storage.
+func openPermission(p pa.PermissionOffer, now time.Time) bool {
+	if p.State != pa.PermissionPending {
+		return false
+	}
+	return p.Kind != pa.DecisionOfferKind || p.ExpiresAt.IsZero() || now.Before(p.ExpiresAt)
+}
+
+// closeDecisionsThePersonAnswered closes, in the commit that admits the
+// person's own message, an own-chat question that message answers. A
+// message answers a question when it quotes the Bot message the question
+// was asked at, or when it is the person's first message after the question
+// and that question is the only newest one still open (the Bot did not ask
+// again after it). Anything less certain stays open: an unrelated message
+// must not make a question the person never answered disappear. The
+// decision card's own buttons, including "No need", resolve the rest.
+func closeDecisionsThePersonAnswered(a aggregate, m *app.Mutation) {
+	var msg pa.Message
+	for _, candidate := range m.Messages {
+		turns := a
+		if m.Turn != nil && m.Turn.ID == candidate.TurnID {
+			turns.Turns = map[string]pa.Turn{candidate.TurnID: *m.Turn}
+		}
+		if personMessage(turns, candidate) && candidate.Seq > msg.Seq {
+			msg = candidate
+		}
+	}
+	if msg.Seq == 0 {
+		return
+	}
+	touched := map[string]bool{}
+	for _, p := range m.Permissions {
+		touched[p.ID] = true
+	}
+	quoted := int64(-1)
+	for _, prior := range a.Messages {
+		if msg.QuoteMessageID != "" && prior.ID == msg.QuoteMessageID {
+			quoted = prior.Seq
+		}
+	}
+	var open []pa.PermissionOffer
+	newest := int64(-1)
+	for _, p := range a.Permissions {
+		if !touched[p.ID] && p.Kind == pa.DecisionOfferKind && p.State == pa.PermissionPending && p.Decision != nil && p.Decision.ExchangeID == "" && p.AnchorMessageSeq < msg.Seq {
+			open = append(open, p)
+			newest = max(newest, p.AnchorMessageSeq)
+		}
+	}
+	sort.Slice(open, func(i, j int) bool { return open[i].ID < open[j].ID })
+	atNewest := 0
+	for _, p := range open {
+		if p.AnchorMessageSeq == newest {
+			atNewest++
+		}
+	}
+	for _, p := range open {
+		next := p.AnchorMessageSeq == newest && atNewest == 1 && !personWroteBetween(a, p.AnchorMessageSeq, msg.Seq)
+		if next || quoted >= 0 && quotesDecision(a, p, quoted) {
+			withdrawDecision(m, p, pa.PermissionCancelled, msg.At)
+		}
+	}
+}
+
+// personWroteBetween reports a person's own-chat message after the anchor
+// and before seq: the question already had its "next message".
+func personWroteBetween(a aggregate, anchor, seq int64) bool {
+	for _, prior := range a.Messages {
+		if prior.Seq > anchor && prior.Seq < seq && personMessage(a, prior) {
+			return true
+		}
+	}
+	return false
+}
+
+// quotesDecision reports that the quoted message is the Bot's reply that
+// carried this question: its first own-chat Bot message after the anchor.
+func quotesDecision(a aggregate, p pa.PermissionOffer, quoted int64) bool {
+	for _, prior := range a.Messages {
+		if prior.Seq > p.AnchorMessageSeq && prior.Kind != pa.UserMessage && ownChatTurn(a, prior.TurnID) {
+			return prior.Seq == quoted
+		}
+	}
+	return false
+}
+
+// newlyPendingPermissions is every permission or question this mutation moves
+// into pending from anything else, in id order. A replayed or re-saved
+// pending offer is not new, so each one is announced once.
+func newlyPendingPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
+	var out []pa.PermissionOffer
+	seen := map[string]bool{}
+	for _, p := range m.Permissions {
+		if p.State != pa.PermissionPending || seen[p.ID] {
+			continue
+		}
+		if before, ok := a.Permissions[p.ID]; ok && before.State == pa.PermissionPending {
+			continue
+		}
+		seen[p.ID] = true
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// newlyClosedPermissions is every stored pending permission or question this
+// mutation moves out of pending, in id order, so its notification can be
+// taken back once.
+func newlyClosedPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
+	var out []pa.PermissionOffer
+	seen := map[string]bool{}
+	for _, p := range m.Permissions {
+		if p.State == pa.PermissionPending || seen[p.ID] {
+			continue
+		}
+		if before, ok := a.Permissions[p.ID]; !ok || before.State != pa.PermissionPending {
+			continue
+		}
+		seen[p.ID] = true
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }

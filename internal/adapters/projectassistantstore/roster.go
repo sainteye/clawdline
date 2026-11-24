@@ -252,6 +252,14 @@ func replaceRosterLead(ctx context.Context, tx *sql.Tx, next aggregate) error {
 	return nil
 }
 
+// rosterOpenDecisionSQL is openPermission for one pending offer: a tool
+// permission, or a decision that has not expired. A zero expiry never
+// expires. Chat activity never closes a decision here; storage does.
+func rosterOpenDecisionSQL(v string) string {
+	field := func(path string) string { return "json_extract(" + v + ",'" + path + "')" }
+	return `(coalesce(` + field("$.kind") + `,'')<>'decision' OR coalesce(` + field("$.expires_at") + `,'')='' OR ` + field("$.expires_at") + ` LIKE '0001-01-01T00:00:00%' OR julianday(` + field("$.expires_at") + `)>julianday('now'))`
+}
+
 // JSONB is query-local only. The pinned SQLite supports it; parsing the same
 // large text aggregate inside each correlated scalar would retain the reader
 // snapshot for seconds. Stored bytes and returned projections remain JSON.
@@ -274,7 +282,7 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  SELECT json_object('Bot',json_extract(j,'$.Bot'),'Conversation',json_object('id',json_extract(j,'$.Conversation.id'),'active_turn_id',json_extract(j,'$.Conversation.active_turn_id'),'generation',json_extract(j,'$.Conversation.generation'),'binding_id',json_extract(j,'$.Conversation.binding_id')),
  'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'room',json_extract(t.value,'$.room'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
  'Messages',json((SELECT json_group_array(json(message)) FROM u)),
- 'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')))) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id'))),
+ 'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')),'kind',json_extract(p.value,'$.kind'),'anchor_message_seq',json_extract(p.value,'$.anchor_message_seq'),'expires_at',json_extract(p.value,'$.expires_at'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision' THEN json_object('question',json_extract(p.value,'$.decision.question'),'exchange_id',json_extract(p.value,'$.decision.exchange_id')) END)) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND (json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id') OR json_extract(p.value,'$.kind')='decision' AND ` + rosterOpenDecisionSQL("p.value") + `))),
  'Completion',json_extract(j,'$.Completion'),'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
  coalesce((SELECT value FROM json_each(j,'$.ReadCursors') WHERE key=?),'') read_cursor,
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
@@ -284,7 +292,7 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
    AND NOT (json_extract(value,'$.exchange') IS NOT NULL
      AND json_extract(value,'$.exchange.target.key.machine_id')=json_extract(j,'$.Bot.key.machine_id')
      AND json_extract(value,'$.exchange.target.key.bot_id')=json_extract(j,'$.Bot.key.bot_id'))) unread,
- (SELECT count(*) FROM json_each(j,'$.Permissions') WHERE json_extract(value,'$.state')='pending') pending,
+ (SELECT count(*) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND ` + rosterOpenDecisionSQL("p.value") + `) pending,
  (SELECT count(*) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work,
  coalesce((SELECT json_group_array(json_object('state',json_extract(value,'$.state'),'landing',json_extract(value,'$.landing'))) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + dispatchedWorkLinkStatesSQL + `),'[]') dispatched FROM a
 ), guarded AS MATERIALIZED (

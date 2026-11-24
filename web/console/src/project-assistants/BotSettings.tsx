@@ -15,6 +15,7 @@ import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
 import {botFailureText,providerSetupFailure} from "./source-errors"
+import {settingsBase,settingsConflicts} from "./settings-conflicts"
 import "./bot-settings.css"
 import { useSharedMemorySwitch } from "./BotsSettingsModal"
 
@@ -97,10 +98,12 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     if(agent===original.agent&&JSON.stringify(originalSteps)===JSON.stringify(validSteps))return {}
     return {fallback_steps:validSteps,...(validSteps.length===0?{fallback_agents:[]}: {})}
   }
-  const save=async()=>{
+  const rebased=source?.canSettingsBase?.()===true
+  const save=async(overwrite=false)=>{
     if(!enabled||busy||unknown||check==="diverged"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim())return
     setBusy(true);setError(undefined);setCheck("")
     const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
+        ...(rebased?{base:settingsBase(original),...(overwrite?{overwrite_conflicts:true}:{})}:{}),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
         ...(workReview!==(original.work_review!=="off")?{work_review:workReview?"on" as const:"off" as const}:{}),
@@ -125,6 +128,40 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     else setCheck(sameEditableSettings(original,fresh)?"unchanged":"diverged")
     attempted.current=undefined;setUnknown(false);setError(undefined)
   }
+  const conflicts=settingsConflicts(error)
+  // A refusal for a whole-Bot version (an older source, or activity that kept winning) offers the same two choices.
+  const changedElsewhere=error?.code==="pa_stale_version"&&!unknown
+  const [resolving,setResolving]=useState(false)
+  // Each named field, or every field when the source named none, takes the newest saved value; other edits stay in the draft.
+  const takeLatest=(fresh:W.ProjectAssistantBot,fields:string[])=>{
+    const all=fields.length===0,has=(f:string)=>all||fields.includes(f)
+    if(has("name"))setName(fresh.name)
+    if(has("appearance"))setAppearance(fresh.appearance)
+    if(has("instructions"))setInstructions(fresh.instructions.text)
+    if(has("approval"))setApproval(fresh.mode?{permission_policy:fresh.permission_policy,mode:fresh.mode}:{permission_policy:fresh.permission_policy})
+    if(has("agent"))setAgent(fresh.agent)
+    if(has("runtime_settings")||has("agent"))setRuntime(fresh.runtime_settings??{model:"",options:{}})
+    if(has("login_profile")||has("agent"))setLoginProfile(fresh.login_profile??"")
+    if(has("extensions")||has("agent"))setExtensions(fresh.extensions??{skills:[],connectors:[]})
+    if(has("fallbacks")||has("agent")){setFallbacks(fresh.fallback_agents??[]);setFallbackSteps(fresh.fallback_steps??(fresh.fallback_agents??[]).map(agent=>({agent})))}
+    if(has("notify"))setNotify(fresh.notify!=="off")
+    if(has("background_threads"))setBackgroundThreads(fresh.background_threads??3)
+    if(has("manage_team"))setManageTeam(fresh.manage_team??false)
+  }
+  const resolve=async(keepMine:boolean)=>{
+    if(resolving||busy)return
+    if(keepMine&&rebased){void save(true);return}
+    if(!onCheck)return
+    setResolving(true)
+    try{
+      const fresh=await onCheck()
+      if(!keepMine)takeLatest(fresh,conflicts)
+      setOriginal(fresh);setError(undefined)
+    }catch(e){setError({code:errorCode(e),field:(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field})}
+    finally{setResolving(false)}
+  }
+  const conflictLabel=(field:string)=>({name:w.name,appearance:w.appearance,instructions:w.instructions,agent:w.settingsAgentHeading,approval:w.policy,runtime_settings:w.model,login_profile:w.loginProfile,extensions:w.extensions,fallbacks:w.fallbacks,notify:w.botNotify,background_threads:w.backgroundConcurrency,manage_team:catalogWord("projectAssistants","teamManage")} as Record<string,string>)[field]??w.settings
+  const conflictText=w.settingsSaveConflict.replace("{fields}",conflicts.length?conflicts.map(conflictLabel).join(w.settingsConflictSeparator):w.settings)
   const checkText=check==="confirmed"?w.settingsCheckConfirmed:check==="unchanged"?w.settingsCheckUnchanged:check==="diverged"?w.settingsCheckDiverged:check==="failed"?w.settingsCheckFailed:check==="superseded"?w.settingsCheckSuperseded:""
   const chooseAgent=(next:W.ProjectAssistantAgent)=>{
     setAgent(next);setLoginProfile("");setExtensions({skills:extensions.skills,connectors:[]})
@@ -140,7 +177,11 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     <button type="button" role="switch" className="pa-switch" aria-checked={on} aria-label={title} disabled={disabled} onClick={()=>change(!on)}><span/></button>
   </div>
   const savebar=<footer className="pa-toolbar pa-settings-savebar" hidden={embedded&&!dirty&&!busy&&!error&&!unknown&&!check}>
-    {error&&<p className="pa-settings-save-error" role="alert">{unknown&&onCheck?w.settingsSaveUnknownCheck:settingsSaveFailure(error,w,embedded?w.settingsSaveConflict:undefined)}</p>}
+    {error&&<p className="pa-settings-save-error" role="alert">{unknown&&onCheck?w.settingsSaveUnknownCheck:changedElsewhere&&(rebased||onCheck)?conflictText:settingsSaveFailure(error,w)}</p>}
+    {changedElsewhere&&(rebased||onCheck)&&<div className="pa-settings-conflict-actions">
+      <button type="button" className="pa-settings-save" disabled={busy||resolving||!enabled} onClick={()=>void resolve(true)}>{w.settingsConflictKeepMine}</button>
+      {onCheck&&<button type="button" disabled={busy||resolving} aria-busy={resolving||undefined} onClick={()=>void resolve(false)}>{w.settingsConflictLoadLatest}</button>}
+    </div>}
     {checkText&&<p className={check==="confirmed"?"pa-settings-check-result":"pa-settings-save-error"} role={check==="confirmed"?"status":"alert"}>{checkText}</p>}
     {unknown&&onCheck&&<button type="button" className="pa-settings-check-saved" disabled={check==="checking"} aria-busy={check==="checking"||undefined} onClick={()=>void checkSaved()}>{check==="checking"?w.settingsChecking:w.settingsCheckSaved}</button>}
     {embedded&&<small>{w.settingsDraftHint}</small>}
