@@ -440,6 +440,8 @@ test("one word, one list, and every route names a word the table carries", () =>
     "project-assistants.view": "captured Bot source GET /v1/project-assistants/{key.bot_id}/view",
     "project-assistants.export": "captured Bot source GET /v1/project-assistants/{bot_id}/export",
     "project-assistants.send-receipt": "captured Bot source GET /v1/project-assistants/{bot_id}/send-receipt",
+    "project-assistants.shared-settings": "captured Bot source GET /v1/project-assistant-shared-settings",
+    "project-assistants.shared-settings-save": "captured Bot source PUT /v1/project-assistant-shared-settings",
   } as const
   for (const word of Object.keys(bots) as (keyof typeof bots)[]) {
     assert.equal(CARRIED[word], bots[word], word)
@@ -451,7 +453,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.threads"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 326)
+  assert.equal(Object.keys(CARRIED).length, 328)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {
