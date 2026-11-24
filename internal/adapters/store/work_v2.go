@@ -2293,7 +2293,9 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 			return err
 		}
 		now := time.Now().Unix()
-		res, err := tx.tx.ExecContext(ctx, `UPDATE session_direct_todos SET read_at=?,version=version+1
+		// read_at is a receipt, not an edit: it leaves the version a person's
+		// edit or a delivery is checked against untouched.
+		res, err := tx.tx.ExecContext(ctx, `UPDATE session_direct_todos SET read_at=?
       WHERE session_id=? AND completed_at IS NULL AND read_at IS NULL`, now, session)
 		if err != nil {
 			return err
@@ -2303,7 +2305,6 @@ func (s *Store) DirectTodosV2(ctx context.Context, session string, includeComple
 			for n := range out {
 				if out[n].ReadAt.IsZero() {
 					out[n].ReadAt = time.Unix(now, 0)
-					out[n].Version++
 				}
 			}
 		}
