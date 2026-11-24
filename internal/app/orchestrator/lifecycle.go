@@ -331,7 +331,39 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 	if prev != nil && prev.State == next.State && next.Note == "" {
 		next.Note = prev.Note
 	}
-	if settled {
+	// A landed or incorporated record is a claim git can later show to be
+	// wrong — its delivery reverted on the target, or proved by a broker that
+	// could not yet see a revert — and the one way back from it is to
+	// pending, through the orchestrator token with a sentence saying why. It
+	// is a correction like any other: what it replaced is kept on
+	// corrected_from and in a landing.corrected event. Abandoned and
+	// nothing_to_land are a root's decisions, not claims about the
+	// repository, and stay where they are.
+	reopen := settled && next.State == LandingPending &&
+		(prev.State == LandingLanded || prev.State == LandingIncorporated)
+	if reopen {
+		if !req.Machine {
+			return Record{}, refuse(http.StatusForbidden, "forbidden",
+				"Only the orchestrator token may correct a settled landing back to pending.")
+		}
+		if req.Note == "" {
+			return Record{}, refuse(http.StatusBadRequest, "bad_request",
+				"note is required to correct a landing back to pending; it says why the recorded landing was wrong.")
+		}
+		if next.Target != prev.Target {
+			return Record{}, refuseWith(http.StatusConflict, "landing_conflict",
+				"This obligation is already settled with a different target. A landing aimed somewhere "+
+					"else is another claim rather than a correction of this one; record it against its own task.",
+				map[string]any{"field": "target", "stored": prev.Target, "requested": next.Target})
+		}
+	}
+	// A pending landing that was corrected keeps what it was corrected from
+	// until a settled landing replaces it, so the reopened row still shows
+	// the claim that was withdrawn.
+	if prev != nil && prev.State == LandingPending && prev.CorrectedFrom != nil {
+		next.CorrectedFrom = prev.CorrectedFrom
+	}
+	if settled && !reopen {
 		if prev.State != next.State {
 			return Record{}, refuseRaw(http.StatusConflict, "invalid_transition", fmt.Sprintf(
 				"This landing is already settled as %s, and a settled landing does not move to another state; "+

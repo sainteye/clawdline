@@ -2,6 +2,7 @@ package orchestrator
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -190,6 +191,7 @@ const (
 	UnverifiedDelivery   = "delivery_unknown"
 	UnverifiedNothing    = "nothing_delivered"
 	UnverifiedNotCarried = "not_the_delivery"
+	UnverifiedReverted   = "delivery_reverted"
 
 	UnverifiedCarrierRequired = "carrier_required"
 	UnverifiedCarrierSelf     = "carrier_is_delivery"
@@ -279,8 +281,49 @@ func (b *Broker) proveDelivery(ctx context.Context, r Record, commit, target str
 				"; name the commit on the target that contains the delivery branch.",
 			map[string]any{"reason": UnverifiedNotCarried, "delivery_head": h})
 	}
+	if refused := b.revertedRefusal(ctx, repo, base, h, c, t); refused != nil {
+		return landingProof{}, head, refused
+	}
 	proof.deliveryHead = h
 	return proof, head, nil
+}
+
+// revertedRefusal refuses a delivery the named commit's tree, or the target as
+// it stands, shows backed out: merged and then reverted. Ancestry cannot tell,
+// because every commit after the merge, the revert included, descends from
+// it; on 2026-11-25 four deliveries read landed on the very commit that
+// reverted them, and a fifth incorporated on it because git cherry still
+// found its patches upstream of the revert. Neither the revert's message nor
+// patch-ids are asked: the trees are, path by path (git.DeliveryPresence).
+//
+// Refused only when no path still carries the delivery and at least one is
+// back where it started, so a partial revert, or a delivery whose every line
+// was later rewritten, is not caught here; a git that cannot answer is an
+// unknown, which refuses like every other unknown in a proof.
+func (b *Broker) revertedRefusal(ctx context.Context, repo, base, head, commit, target string) error {
+	trees := []string{commit}
+	if target != "" && target != commit {
+		trees = append(trees, target)
+	}
+	for _, at := range trees {
+		p, err := b.Git.DeliveryPresence(ctx, repo, base, head, at)
+		if err != nil {
+			return refuseRawWith(http.StatusConflict, "unverified_landing",
+				"Git could not compare the delivery "+shortCommit(head)+" with the tree of "+shortCommit(at)+
+					", so it cannot be shown to still be there.",
+				map[string]any{"reason": UnverifiedDelivery, "delivery_head": head})
+		}
+		if p.Gone() {
+			return refuseRawWith(http.StatusConflict, "unverified_landing", fmt.Sprintf(
+				"The tree of %s no longer carries the delivery %s: %d of the paths it changed are back as they "+
+					"were before it and none still holds its change. It was reverted after it reached the "+
+					"target; a reverted delivery stays pending until it lands again.",
+				shortCommit(at), shortCommit(head), p.Reverted),
+				map[string]any{"reason": UnverifiedReverted, "delivery_head": head, "tree": at,
+					"paths_reverted": p.Reverted, "paths_unknown": p.Unknown})
+		}
+	}
+	return nil
 }
 
 // proveIncorporated proves the part of a semantic integration the ledger can
@@ -367,6 +410,22 @@ func (b *Broker) proveIncorporated(ctx context.Context, r Record, carrierID, com
 	} else if carried {
 		return landingProof{}, head, unverified(UnverifiedAlreadyCarried,
 			"The carrier commit already contains the delivery commit by ancestry; record it as landed instead.")
+	}
+	// The original delivery's own paths are not asked of the trees: an
+	// integration may rewrite them, which is the point of incorporated. What
+	// is asked is that the carrier's landing still stands — that the target
+	// has not since backed the carrier's own delivery out — since that
+	// landing is the whole of the evidence here.
+	if carrier.Landing.DeliveryHead != "" && carrier.Landing.Base != "" {
+		targetNow, err := b.Git.ResolveCommit(ctx, repo, "refs/heads/"+target)
+		if err != nil {
+			return landingProof{}, head, unverified(UnverifiedTarget,
+				"The target branch does not resolve in the task's repository.")
+		}
+		if refused := b.revertedRefusal(ctx, repo, carrier.Landing.Base, carrier.Landing.DeliveryHead, c,
+			targetNow); refused != nil {
+			return landingProof{}, head, refused
+		}
 	}
 	return landingProof{commit: c, repo: repo, targetCommit: carrier.Landing.TargetCommit,
 		deliveryHead: resolvedHead, base: base}, head, nil
