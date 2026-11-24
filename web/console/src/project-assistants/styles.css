@@ -108,6 +108,7 @@
 .project-assistants .pa-trace-detail-btn:hover, .project-assistants .pa-trace-more-btn:hover { color:var(--pa-ink);border-color:var(--pa-faint); }
 .project-assistants pre { white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.6 ui-monospace,monospace; }
 .project-assistants .pa-chat-footer { padding:8px 24px max(24px,env(safe-area-inset-bottom));width:100%;max-width:864px;margin:auto; }
+.project-assistants .pa-chat-footer>.pa-dispatched { margin-bottom:8px; }
 .project-assistants .pa-chat-footer>p,.project-assistants .pa-turn { font-size:11px;color:var(--pa-dim);margin:5px 0; }
 .project-assistants .pa-turn[role="status"] { font-size:13px;line-height:1.6;color:var(--pa-text);margin:12px 0; }
 .project-assistants .pa-turn[role="status"] small { color:var(--pa-dim);font-size:11px; }
@@ -151,7 +152,9 @@
 @media(pointer:coarse) {
  .project-assistants .pa-queued-action { width:44px;height:44px; }
 }
-.project-assistants .pa-chat-metadata { display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:0 12px;margin:0 4px 2px; }
+.project-assistants .pa-chat-metadata { display:flex;align-items:center;flex-wrap:wrap;justify-content:space-between;gap:0 12px;margin:0 4px 2px;animation:pa-metadata-in 180ms ease-out; }
+/* The model row grows in on the first load instead of pushing the capsule up at once. */
+@keyframes pa-metadata-in { from { max-height:0;opacity:0;overflow:hidden; } to { max-height:48px;opacity:1;overflow:hidden; } }
 .project-assistants .pa-context-usage { display:inline-flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums; }
 .project-assistants .pa-context-usage bdi { white-space:nowrap; }
 .project-assistants .pa-context-meter {
