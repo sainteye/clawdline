@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 14376,
-  "riskKeys": 6108,
-  "nonRiskCount": 8268,
+  "riskKeys": 6112,
+  "nonRiskCount": 8264,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 784,
+      "count": 780,
       "sources": [
         null
       ],
@@ -677,12 +677,8 @@
         "capacityRow.botrequest.label_bytes.what",
         "capacityRow.botrequest.note_bytes.full",
         "capacityRow.botrequest.note_bytes.what",
-        "capacityRow.botrequest.open_cards.full",
-        "capacityRow.botrequest.open_cards.what",
-        "capacityRow.botrequest.page_rows.full",
         "capacityRow.botrequest.page_rows.what",
         "capacityRow.botrequest.receipts.full",
-        "capacityRow.botrequest.receipts.what",
         "capacityRow.botrequest.verdicts_per_card.full",
         "capacityRow.botrequest.verdicts_per_card.what",
         "capacityRow.bots.actors.what",
