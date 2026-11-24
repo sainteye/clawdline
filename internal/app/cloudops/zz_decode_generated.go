@@ -3313,6 +3313,10 @@ func genDecodeProjectAssistantsGroupSend(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "command", "images", "reply_to_author", "request", "session", "text"},
 		[]string{"type", "command", "images", "quote", "request", "session", "text"},
 		[]string{"type", "command", "images", "quote", "reply_to_author", "request", "session", "text"},
+		[]string{"type", "command", "images", "request", "session"},
+		[]string{"type", "command", "images", "reply_to_author", "request", "session"},
+		[]string{"type", "command", "images", "quote", "request", "session"},
+		[]string{"type", "command", "images", "quote", "reply_to_author", "request", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}

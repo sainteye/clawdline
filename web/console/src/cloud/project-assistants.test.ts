@@ -283,6 +283,10 @@ test("exact group quotes require API88 without disabling plain groups on API76",
   const carried=assistantRelayRequest(sent[0].path,{method:"POST",body:JSON.stringify(quoted),headers:{"Idempotency-Key":quoted.command.idempotency_key}})
   assert.equal(carried.word,"project-assistants.group-send")
   assert.deepEqual(carried.fields,quoted)
+  const pictureOnly={...plain,text:"",images:["data:image/png;base64,cG5n"]}
+  const pictureCarried=assistantRelayRequest(sent[0].path,{method:"POST",body:JSON.stringify(pictureOnly),headers:{"Idempotency-Key":pictureOnly.command.idempotency_key}})
+  assert.deepEqual(pictureCarried.fields,{command:pictureOnly.command,images:pictureOnly.images},"a picture-only room line leaves out the empty text the decoder refuses")
+  assert.deepEqual(assistantRelayRequest(sent[0].path,{method:"POST",body:JSON.stringify({...plain,text:""}),headers:{"Idempotency-Key":plain.command.idempotency_key}}).fields,{...plain,text:""},"an empty line without pictures is left for the machine to refuse")
   for(const seq of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1]){
     await assert.rejects(fresh.sendGroup({...quoted,quote:{seq}},signal()),e=>errorCode(e)==="pa_invalid")
   }

@@ -907,6 +907,16 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 		if steps, ok := inSettings["fallback_steps"].([]any); ok && len(steps) == 0 && outSettings != nil {
 			outSettings["fallback_steps"] = []any{}
 		}
+	case contract.ProjectAssistantGroupSendRequest:
+		// The Cloud relay cannot carry an empty text, so a picture-only room
+		// line arrives without the field. Its text is empty either way; a line
+		// with neither text nor pictures is still refused by the room send.
+		inObject, _ := input.(map[string]any)
+		_, hasText := inObject["text"]
+		if v := any(value).(contract.ProjectAssistantGroupSendRequest); !hasText && len(v.Images) > 0 {
+			outObject, _ := expected.(map[string]any)
+			delete(outObject, "text")
+		}
 	}
 	if _, object := input.(map[string]any); !object || !paJSONShape(input, expected) {
 		return value, paHTTPFailure(pa.Invalid, "body")
