@@ -29,18 +29,17 @@ func dispatchUnrequested(t *testing.T, n *nativeFixture, id string) pa.WorkLink 
 	return link
 }
 
-func setWorkReview(t *testing.T, n *nativeFixture, value string) {
+func setWorkReview(t *testing.T, f *hostFixture, key pa.BotKey, value string) {
 	t.Helper()
 	ctx := context.Background()
-	service, err := n.f.h.Service()
+	service, err := f.h.Service()
 	if err != nil {
 		t.Fatal(err)
 	}
-	x, err := n.f.h.store.Export(ctx, n.bot.Key)
+	b, err := f.h.store.Bot(ctx, key)
 	if err != nil {
 		t.Fatal(err)
 	}
-	b := x.Bot
 	edited, _, err := service.Edit(ctx, pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "work-review-" + value},
 		pa.EditBot{ExpectedVersion: b.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, WorkReview: value})
 	if err != nil || edited.WorkReview != value {
@@ -102,7 +101,7 @@ func TestWorkReviewWakesUnrequestedWorkForEveryEnding(t *testing.T) {
 func TestWorkReviewOffPublishesOnlyUnlessRequested(t *testing.T) {
 	n := startNative(t, nil)
 	ctx := context.Background()
-	setWorkReview(t, n, "off")
+	setWorkReview(t, n.f, n.bot.Key, "off")
 	session := fixtureReceive(t, n.f.p.sessions)
 	quiet, err := n.tools.Dispatch(ctx, "quiet", "Quiet work", "Change only a.go in the isolated worktree.", []string{"a.go"})
 	if err != nil {
