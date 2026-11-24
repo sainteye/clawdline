@@ -3266,6 +3266,20 @@
     "Note": true
   },
   {
+    "Name": "orchestrator.bot_viewing_chats",
+    "Known": true
+  },
+  {
+    "Name": "orchestrator.bot_viewing_hold_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "orchestrator.bot_viewing_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "orchestrator.delivery_bytes",
     "Known": true,
     "Note": true

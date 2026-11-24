@@ -670,6 +670,9 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `notification.rule_wait_seconds` | 7200 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
 | `notification.rules_rows` | 16 | `rows` | `refuse` | `diagnostics, health, sender` | — |
 | `orchestrator.bot_decision_push_runes` | 120 | `characters` | `refuse` | `diagnostics, sender` | — |
+| `orchestrator.bot_viewing_chats` | 256 | `rows` | `refuse` | `diagnostics` | — |
+| `orchestrator.bot_viewing_hold_seconds` | 300 | `seconds` | `expire` | `diagnostics` | — |
+| `orchestrator.bot_viewing_seconds` | 45 | `seconds` | `expire` | `diagnostics` | — |
 | `orchestrator.delivery_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.delivery_commits` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.opening_stuck_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |
