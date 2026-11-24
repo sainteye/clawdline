@@ -315,13 +315,17 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     // A long chat whose pending ask_person question sits above the fold, for
     // the push link that opens the chat at it; its reply starts "turn-1".
-    decisionFixture(count=30){
+    decisionFixture(count=30,includeOlderQuestion=false){
       this.seedHistory(count)
       const bot=bots[0],f=fence(bot)
       decisionQuestion="Merge and deploy this release now?"
       push({id:"decision-event",seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:{id:"decision-7",fence:f,turn_id:"",native_request_id:"",state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",kind:"decision",anchor_message_seq:4,
         options:[{id:"ship",kind:"allow_once",label:"Ship it now",allow:true,read_only:true},{id:"wait",kind:"reject_once",label:"Wait until tomorrow",allow:false,read_only:true}],
         decision:{question:decisionQuestion}} as W.ProjectAssistantPermissionOffer})
+      if(includeOlderQuestion){
+        const older={...events.at(-1)!.permission!,id:"decision-8",anchor_message_seq:2,decision:{question:"Which report should I finish first?"}}
+        push({id:"older-decision-event",seq:0,at,version:contractVersion,kind:"permission_offered",fence:f,permission:older})
+      }
       decisionTurn="turn-1"
     },
     workTurn(state:W.ProjectAssistantTurnState){
