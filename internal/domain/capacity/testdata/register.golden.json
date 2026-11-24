@@ -2594,6 +2594,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.login_probe_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginProbeAttempts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.login_probe_backoff_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 400,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxLoginProbeBackoffMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.login_profiles",
     "Class": "buffer",
     "Unit": "rows",
