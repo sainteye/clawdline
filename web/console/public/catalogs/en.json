@@ -11639,7 +11639,7 @@
   "projectAssistants.outputFailed": "Couldn't open the file",
   "projectAssistants.pending": "Awaiting permission",
   "projectAssistants.permission": "Permission request",
-  "projectAssistants.permissionAnswerFailed": "The answer could not be confirmed. Check the current request before answering again.",
+  "projectAssistants.permissionAnswerFailed": "Could not submit the answer. Check the request before trying again.",
   "projectAssistants.permissionContent": "What it will do",
   "projectAssistants.permissionDelete": "Wants to delete a file",
   "projectAssistants.permissionEdit": "Wants to change a file",

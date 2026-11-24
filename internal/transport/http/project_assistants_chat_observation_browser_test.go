@@ -104,7 +104,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -122,7 +122,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 					Cause:  &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "synthetic_quota"},
 				}
 			}
-			if name == "decision-card" {
+			if name == "decision-card" || name == "decision-recovery" {
 				store := projectassistantstore.New(f.s.store.ProjectAssistantDatabase())
 				var once sync.Once
 				provider.offerDecision = func(ctx context.Context, turn pa.Turn) (err error) {
@@ -130,6 +130,11 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 						_, err = store.OfferDecision(ctx, turn.Fence, turn.ID, pa.AskPersonRequest{
 							Question: "Which synthetic option should I use?", SuggestedReplies: []string{"Use the first option"},
 						}, time.Now())
+						if err == nil && name == "decision-recovery" {
+							_, err = store.OfferDecision(ctx, turn.Fence, turn.ID, pa.AskPersonRequest{
+								Question: "Which second option should I use?", SuggestedReplies: []string{"Use the second option"},
+							}, time.Now())
+						}
 					})
 					return err
 				}

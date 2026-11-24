@@ -100,13 +100,14 @@ test("send recovery journal: a held send survives a full reload with its identit
   assert.equal(createViewState(store).heldOutcomes.has(draftIdentity("other",key)),false,"another account never sees it")
   assert.equal(createViewState(store).heldOutcomes.has(draftIdentity("account",{...key,machine_id:"two"})),false,"another source never sees it")
 })
-test("send recovery journal: a permission answer is never journaled and cannot be set aside",()=>{
+test("send recovery journal: a permission answer on disk is unreadable and stays intact",()=>{
   const {disk,store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)
   const answer:W.ProjectAssistantPermissionAnswerRequest={command:{key,operation:"answer",idempotency_key:"answer-1",content_hash:""},fence,offer_id:"o",turn_id:"t",option_id:"allow"}
-  view.heldOutcomes.set(own,{intent:answer,receipt:null})
-  assert.equal(disk.size,0)
-  assert.equal(view.heldOutcomes.setAside(own),false)
-  assert.equal(view.heldOutcomes.get(own)?.intent,answer)
+  const storageKey=viewStateModule.heldJournalKey(own),raw=JSON.stringify({v:1,active:{intent:answer,receipt:null},aside:[]})
+  disk.set(storageKey,raw)
+  assert.equal(view.heldOutcomes.get(own),undefined)
+  assert.equal(view.heldOutcomes.problem(own),"unreadable")
+  assert.equal(disk.get(storageKey),raw)
 })
 test("send recovery journal: setting a send aside keeps it, with its own identity, across a reload; a new send is a different command",()=>{
   const {store}=memoryStore(),own=draftIdentity("account",key),view=createViewState(store)

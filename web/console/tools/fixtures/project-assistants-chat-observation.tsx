@@ -2,6 +2,7 @@ import React from "react"
 import {createRoot} from "react-dom/client"
 import {Bots} from "../../src/project-assistants/Bots"
 import {ProjectAssistantSourceClient,capturedAssistantRelayFetch} from "../../src/cloud/project-assistants"
+import {failureFromMac} from "../../src/legacy/js/net/cloud-failure.js"
 import {bootCatalog} from "../../src/catalog"
 import "../../src/legacy/tokens.css"
 import "../../src/project-assistants/styles.css"
@@ -19,6 +20,10 @@ async function call(id:string,word:string,fields:object,signal?:AbortSignal){
   const response=await fetch("/relay",{method:"POST",signal,headers:{"Content-Type":"application/json"},body:JSON.stringify({type:word,session:"__clawdline_machine__",request:id,...fields})})
   const result=await response.json(),answer=result.body??{error:result.error??{code:"pa_offline"}}
   phases.push({phase:"returned",word,...fields,receipt:answer.receipt,head:answer.head,pending:answer.snapshot?.pending_turns,lastTurn:answer.snapshot?.last_turn,events:answer.items?.flatMap((row:{event?:{turn?:unknown}})=>row.event?.turn?[row.event.turn]:[]),at:performance.now()})
+  if(word==="project-assistants.answer"){
+    if(result.error)throw failureFromMac(result.error,response.status,null)
+    if(response.status===502)throw new TypeError("Synthetic lost Cloud answer")
+  }
   return answer
 }
 const relay={machineDescriptor:()=>({machine:{commands:carried}}),

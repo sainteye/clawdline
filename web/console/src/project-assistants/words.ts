@@ -159,7 +159,7 @@ export const en = {
   "roomFallbackAttempt": "Fallback attempt",
   "roomFallbackRestReason": "Primary on cooldown ({reason})",
   "roomAttemptFinished": "Provider finished",
-  "permissionAnswerFailed": "The answer could not be confirmed. Check the current request before answering again.",
+  "permissionAnswerFailed": "Could not submit the answer. Check the request before trying again.",
 
   "markAllRead": "Mark all as read",
   "markingRead": "Marking as read…",
@@ -1085,7 +1085,7 @@ export const zhHant: Record<WordKey, string> = {
   "roomFallbackAttempt": "備援嘗試",
   "roomFallbackRestReason": "主要 Agent 冷卻中（{reason}）",
   "roomAttemptFinished": "供應商已完成",
-  "permissionAnswerFailed": "無法確認回答結果。再次回答前，請先核對目前的請求。",
+  "permissionAnswerFailed": "回覆未能送出。請先核對目前的請求再試一次。",
 
   "markAllRead": "全部標為已讀",
   "markingRead": "正在標記已讀…",

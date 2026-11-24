@@ -41,11 +41,11 @@ export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSumma
 
 export interface ReadingPosition { top: number; following: boolean }
 /**
- * One unobserved send or unresolved effect per account/Bot, owned by the host. Never replayed.
+ * One unobserved chat send per account/Bot, owned by the host. Never replayed.
  * A send's open request belongs to this lifetime too, so leaving its Chat keeps its receipt.
  */
 export interface HeldOutcome {
-  intent: W.ProjectAssistantSendRequest | W.ProjectAssistantPermissionAnswerRequest; receipt: W.ProjectAssistantReceipt | null
+  intent: W.ProjectAssistantSendRequest; receipt: W.ProjectAssistantReceipt | null
   /** Pictures this send carried. Their data is never stored, so after a reload only the count remains. */
   pictures?: number
   /** Names of the uploaded files the send referenced by `upload_ids`. */

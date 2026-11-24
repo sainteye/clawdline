@@ -72,7 +72,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
     {offer&&(!team||state==="pending")&&<div className="pa-permission-options">{sortedOptions(offer.options).map(option=>{
       const label=team?(option.allow?(kind==="team_create"?w.teamApproveCreate:w.teamApproveUpdate):w.reject_once):permissionOptionLabel(option,w,kind,title),selected=offer.selected_option_id===option.id
       return <button key={option.id} type="button" data-option-kind={option.kind} data-selected={selected||undefined} disabled={!enabled||busy||state!=="pending"} onClick={async()=>{if(!enabled||pending.current||permissionCardState(value,summary)!=="pending")return;pending.current=true;setBusy(true);setError("");try{await onAnswer(offer,option)}catch(error){setError(errorCode(error))}finally{pending.current=false;setBusy(false)}}}><span>{selected&&<span aria-hidden="true">✓ </span>}{label}</span>{!team&&option.label&&option.label!==label&&<small>{option.label}</small>}</button>
-    })}</div>}{error&&<p role="alert">{w.permissionAnswerFailed} ({error})</p>}</section>
+    })}</div>}{error&&state==="pending"&&<p role="alert">{error==="pa_outcome_unknown"?w.unknown:`${w.permissionAnswerFailed} (${error})`}</p>}</section>
 }
 
 function permissionCardState(value:PermissionStatus,summary?:PermissionStatus) {

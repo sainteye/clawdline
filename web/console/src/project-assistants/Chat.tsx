@@ -6,7 +6,7 @@ import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
+import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
@@ -73,7 +73,7 @@ function transientChatRead(error:unknown) {
   const code=errorCode(error)
   return code==="pa_offline"||code==="pa_cursor_expired"||code==="pa_stale_generation"
 }
-/** Covers every await of a permission attempt, including the second detail preflight. */
+/** Re-read a stale permission view without replaying the answer. */
 export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>boolean,recover:()=>void):Promise<T> {
   try{return await run()}
   catch(error){
@@ -527,17 +527,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   useEffect(()=>{markVisible()},[messages,data])
   useEffect(()=>{identityButton.current?.focus({preventScroll:true})},[identity])
   const onScroll=()=>{const el=scroll.current;if(!el)return;const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;followingRef.current=end;setFollowing(end);view.position.set(draftKey,{top:el.scrollTop,following:end});markVisible()}
-  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal,head:W.ProjectAssistantReadViewResponse)=>Promise<T>):Promise<T>=>{
+  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal,head:W.ProjectAssistantReadViewResponse)=>Promise<T>,{reportReadFailure=true}={}):Promise<T>=>{
     const captured=currentData.current,capturedEpoch=epoch.current
     if(recovery.current||!captured||!canWrite(captured.source)||!valid())throw failure("pa_read_only")
     const control=new AbortController();activeMutations.current.add(control)
     try{return await authorized(source,current,async s=>{
       let page:W.ProjectAssistantReadViewResponse
-      try{page=await read(request("snapshot"),s)}catch(e){if(!s.aborted)readFailed(e);throw e}
+      try{page=await read(request("snapshot"),s)}catch(e){if(reportReadFailure&&!s.aborted)readFailed(e);throw e}
       if(recovery.current||s.aborted||!valid()||epoch.current!==capturedEpoch)throw failure("pa_read_only")
       if(!canWrite(page.source))throw failure("pa_read_only")
       const stale=page.source_epoch!==capturedEpoch?"pa_cursor_expired":!sameFence(fence(captured),page.head.current_fence)?"pa_stale_generation":null
-      if(stale){const error=failure(stale);readFailed(error);throw error}
+      if(stale){const error=failure(stale);if(reportReadFailure)readFailed(error);throw error}
       adoptHead(page)
       const fresh:W.ProjectAssistantGetResponse={contract_version:page.contract_version,bot:page.snapshot!.bot,conversation:page.head.conversation,source:page.source}
       // Preflight cannot replace the visible window or advance replay past unseen facts.
@@ -1141,13 +1141,13 @@ ${currentDraft}`:submitted)
     const displayed=()=>detailRows.current[offer.id]===offer||teamCards&&timelineRef.current.some(row=>row.permission===offer)
     try{
       const result=await withPermissionRecovery(()=>mutate(async(d,s)=>{
-        if(view.heldOutcomes.has(draftKey)||!displayed())throw failure("pa_read_only")
+        if(!displayed())throw failure("pa_read_only")
         const summary=permissionRows.current.find(p=>p.id===offer.id),capturedEpoch=epoch.current
         if(!summary||!samePermission(summary,offer)||!currentPermission(summary,headRef.current)||headRef.current?.pending_permission_count===0)throw failure("pa_stale_generation")
         if(permissionState(offer)==="expired"||permissionState(summary)==="expired")throw failure("pa_expired")
         const page=await read(request("detail",summary.detail_cursor,1),s),live=page.items[0]?.permission
         // The second read also has an effect fence; ignored cancellation grants no action.
-        if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||view.heldOutcomes.has(draftKey)||!displayed())throw failure("pa_read_only")
+        if(!valid()||s.aborted||recovery.current||capturedEpoch!==epoch.current||!displayed())throw failure("pa_read_only")
         if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
         if(!live||!samePermission(live,offer))throw failure("pa_stale_generation")
         if(permissionState(live)==="expired")throw failure("pa_expired")
@@ -1155,22 +1155,24 @@ ${currentDraft}`:submitted)
         // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
         if(option?!live.options.some(o=>o.id===option.id&&o.kind===option.kind):live.kind!=="decision"||!text)throw failure("pa_scope_denied")
         const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option?.id??"",...(text?{text}:{})}
-        attempted=true;view.heldOutcomes.set(draftKey,{intent,receipt:null})
+        attempted=true
         return source.answer(intent,s)
-      }),valid,lock)
-      const held=view.heldOutcomes.get(draftKey)
-      if(result.receipt.state==="unknown"&&held){view.heldOutcomes.set(draftKey,{...held,receipt:result.receipt});if(valid())setUnknown(true)}else view.heldOutcomes.delete(draftKey)
+      },{reportReadFailure:false}),valid,()=>void refresh())
+      const receipt=result?.receipt
+      if(result?.contract_version!=="project-assistants.v1"||!admittedReceipt(receipt)||!receipt?.resource_id||
+        !receipt.command?.key||!sameBot(receipt.command.key,key))throw failure("pa_outcome_unknown")
       if(valid()&&!recovery.current){
-        setReceipt(result.receipt)
-        const next={...detailRows.current,[offer.id]:{...offer,state:result.receipt.state==="unknown"?"unknown" as const:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
-        detailRows.current=next;setDetails(next)
+        if(displayed()){
+          const next={...detailRows.current,[offer.id]:{...offer,state:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
+          detailRows.current=next;setDetails(next)
+        }
+        void refresh()
       }
     }catch(e){
       const code=errorCode(e)
-      if(attempted&&code!=="pa_outcome_unknown"&&code!=="execution_effect_unknown"&&code!=="unavailable"&&code!=="pa_revoked"&&(e as Error)?.name!=="AbortError")view.heldOutcomes.delete(draftKey)
-      if(valid()&&uncertain())setUnknown(true)
-      if(code==="pa_expired")void refresh()
-      else fail(e)
+      if(code==="pa_expired"||code==="pa_stale_version")void refresh()
+      if(attempted&&!provablyNotSent(e)&&(code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError"))
+        throw failure("pa_outcome_unknown")
       throw e
     }
   }
@@ -1569,12 +1571,12 @@ ${currentDraft}`:submitted)
 
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
-  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} enabled={enabled&&!unknown&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
     const offer=detail&&"fence" in detail&&samePermission(detail,card)&&detail.state!=="pending"?detail:card
-    return <PermissionCard offer={offer} enabled={enabled&&!unknown&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
+    return <PermissionCard offer={offer} enabled={enabled&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
   }
   return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
     {...dragHandlers} data-file-drag={dropTarget?(dropTarget.refusal?"refused":"ready"):undefined}>
@@ -1636,7 +1638,7 @@ ${currentDraft}`:submitted)
       })}
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
-      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&!unknown&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
+      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
       {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(turn=>
         <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
           onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}

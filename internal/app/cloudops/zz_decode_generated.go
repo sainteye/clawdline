@@ -2528,6 +2528,7 @@ func genDecodeProjectAntigravityConsentStatus(b body) (plan, LocalRequest, bool)
 func genDecodeProjectAssistantsAnswer(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "command", "fence", "offer_id", "option_id", "request", "session", "turn_id"},
+		[]string{"type", "command", "fence", "offer_id", "option_id", "request", "session", "text", "turn_id"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2543,6 +2544,9 @@ func genDecodeProjectAssistantsAnswer(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("option_id", genRule{kind: "string"}) {
 		return plan{}, LocalRequest{}, false
 	}
+	if !b.genValid("text", genRule{kind: "string"}) {
+		return plan{}, LocalRequest{}, false
+	}
 	if !b.genValid("turn_id", genRule{kind: "string"}) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2556,7 +2560,7 @@ func genDecodeProjectAssistantsAnswer(b body) (plan, LocalRequest, bool) {
 	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "fence": genValue{from: "fence"}, "offer_id": genValue{from: "offer_id"}, "option_id": genValue{from: "option_id"}, "turn_id": genValue{from: "turn_id"}})
+	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "fence": genValue{from: "fence"}, "offer_id": genValue{from: "offer_id"}, "option_id": genValue{from: "option_id"}, "text": genValue{from: "text"}, "turn_id": genValue{from: "turn_id"}})
 	return p, req, true
 }
 

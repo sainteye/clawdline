@@ -11639,7 +11639,7 @@
   "projectAssistants.outputFailed": "無法開啟檔案",
   "projectAssistants.pending": "等待允許",
   "projectAssistants.permission": "權限請求",
-  "projectAssistants.permissionAnswerFailed": "無法確認回答結果。再次回答前，請先核對目前的請求。",
+  "projectAssistants.permissionAnswerFailed": "回覆未能送出。請先核對目前的請求再試一次。",
   "projectAssistants.permissionContent": "要做的內容",
   "projectAssistants.permissionDelete": "想刪除檔案",
   "projectAssistants.permissionEdit": "想修改檔案",

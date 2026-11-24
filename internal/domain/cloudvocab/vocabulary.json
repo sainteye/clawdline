@@ -1764,9 +1764,10 @@
           "binding_id": "binding",
           "generation": 1
         },
-        "offer_id": "offer",
-        "option_id": "allow-once",
-        "turn_id": "turn",
+        "offer_id": "decision-offer",
+        "option_id": "",
+        "text": "Use the custom reply.",
+        "turn_id": "",
         "command": {
           "key": {
             "machine_id": "source-one",
@@ -1796,6 +1797,27 @@
             "fence",
             "offer_id",
             "option_id",
+            "turn_id"
+          ]
+        },
+        {
+          "body": [
+            "command",
+            "fence",
+            "offer_id",
+            "option_id",
+            "request",
+            "session",
+            "text",
+            "turn_id"
+          ],
+          "path": "/v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
+          "local_body": [
+            "command",
+            "fence",
+            "offer_id",
+            "option_id",
+            "text",
             "turn_id"
           ]
         }
@@ -1930,6 +1952,9 @@
           "option_id": {
             "type": "string"
           },
+          "text": {
+            "type": "string"
+          },
           "turn_id": {
             "type": "string"
           }
@@ -1954,6 +1979,9 @@
               },
               "option_id": {
                 "from": "option_id"
+              },
+              "text": {
+                "from": "text"
               },
               "turn_id": {
                 "from": "turn_id"

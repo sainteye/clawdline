@@ -98,15 +98,15 @@ test("101 permission and trace summaries remain separate from complete detail an
     onDetail:()=>assert.fail("closed trace requested a detail"),w:words("zh-Hant")})
   assert.match(traceHTML,/100\+/);assert.match(traceHTML,/查看處理過程/);assert.doesNotMatch(traceHTML,/Complete trace|查看詳細內容/)
 })
-test("a late second permission preflight refusal latches only its current scope and never enters the answer effect",async()=>{
+test("a late second permission preflight refusal refreshes only its current scope and never enters the answer effect",async()=>{
   for(const code of ["pa_cursor_expired","pa_stale_generation","pa_capacity_full"])for(const current of [true,false]){
     const refusal={contract_version:"project-assistants.v1",error:{code,field:"detail",retry_after_seconds:0}}
-    let rejectDetail,locks=0,effects=0,attempts=0
+    let rejectDetail,refreshes=0,effects=0,attempts=0
     const detail=new Promise((_,reject)=>{rejectDetail=reject})
-    const attempt=withPermissionRecovery(async()=>{attempts++;await detail;effects++;return "answered"},()=>current,()=>{locks++})
+    const attempt=withPermissionRecovery(async()=>{attempts++;await detail;effects++;return "answered"},()=>current,()=>{refreshes++})
     rejectDetail(refusal)
     await assert.rejects(attempt,error=>error===refusal)
-    assert.equal(locks,current&&code!=="pa_capacity_full"?1:0,`${code} current=${current}`)
+    assert.equal(refreshes,current&&code!=="pa_capacity_full"?1:0,`${code} current=${current}`)
     assert.equal(effects,0);assert.equal(attempts,1,"no automatic permission replay")
   }
 })

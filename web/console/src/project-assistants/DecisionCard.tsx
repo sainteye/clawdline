@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import {errorCode} from "./client"
-import {permissionState} from "./view-state"
+import {permissionState,samePermission} from "./view-state"
 import type { Words } from "./words"
 
 // A question a Bot asked with ask_person. The suggested replies are the
@@ -19,7 +19,8 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
 }) {
   const [busy,setBusy]=useState(false),[error,setError]=useState(""),[own,setOwn]=useState(false),[draft,setDraft]=useState("")
   const pending=useRef(false),requested=useRef("")
-  const state=permissionState(summary)
+  const summaryState=permissionState(summary)
+  const state=summaryState==="pending"&&offer&&samePermission(summary,offer)?permissionState(offer):summaryState
   const decision=offer?.decision
   useEffect(()=>{
     if(offer||!onDetail||requested.current===summary.detail_cursor)return
@@ -33,7 +34,7 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
     finally{pending.current=false;setBusy(false)}
   }
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
-  const status=state==="answered"?(answered?w.decisionAnswered.replace("{text}",answered):""):state==="expired"?w.decisionExpired:state==="pending"?"":w.decisionWithdrawn
+  const status=state==="answered"?(answered?w.decisionAnswered.replace("{text}",answered):""):state==="expired"?w.decisionExpired:state==="pending"?"":state==="unknown"?w.unknown:w.decisionWithdrawn
   return <section className="pa-card pa-permission pa-decision" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state} aria-label={w.decisionTitle} aria-busy={busy||undefined}>
     <h3>{w.decisionTitle}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>
     <p className="pa-decision-question">{decision?.question??summary.title}</p>
@@ -53,7 +54,7 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
         <button type="submit" className="pa-pill" disabled={!enabled||busy||!draft.trim()}>{w.decisionSend}</button>
       </form>}
     </>}
-    {error&&<p role="alert">{w.permissionAnswerFailed} ({error})</p>}
+    {error&&state==="pending"&&<p role="alert">{error==="pa_outcome_unknown"?w.unknown:`${w.permissionAnswerFailed} (${error})`}</p>}
   </section>
 }
 

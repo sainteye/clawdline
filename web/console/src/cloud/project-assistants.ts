@@ -574,7 +574,15 @@ export class ProjectAssistantSourceClient implements SourceClient {
       endpoint(r.command.key,"/handoff-card"),signal,r,"POST",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
   }
   canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
-  answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST") }
+  async answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) {
+    try {
+      return await this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST")
+    } catch (error) {
+      const refusal = error instanceof AssistantTransportFailure ? error.response as {layer?: string; code?: string; status?: number} | undefined : undefined
+      if (refusal?.layer === "mac_preflight" && refusal.code === "malformed_command" && refusal.status === 400) throw new AssistantTransportFailure("pa_invalid",refusal)
+      throw error
+    }
+  }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }
   events(r: W.ProjectAssistantEventsRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantEventsResponse>(endpoint(r.key,"/events")+query({machine_id:this.machineID,after_seq:r.after_seq,page_size:r.page_size}),s) }

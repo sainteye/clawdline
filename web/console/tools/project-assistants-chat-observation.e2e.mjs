@@ -22,6 +22,7 @@ async function testBrowser(){
   throw Error("No installed headless shell. This harness installs nothing.")
 }
 const files=new Map(),traffic=[],results=[]
+let decisionAttempts=0
 let sent=false,started=false,failReads=scenario==="read-failure",holdNextSnapshot=false,releaseHeld,held=false
 for(const name of ["current"]){
   const contents=(await readFile(fixture,"utf8")).replaceAll('"../../src/',JSON.stringify(path.join(root,"src/")).slice(0,-1))
@@ -45,6 +46,21 @@ const server=createServer(async(req,res)=>{
       const record={word:envelope.type,mode:envelope.mode,acceptedAt:performance.now()};traffic.push(record)
       if(sent&&failReads&&envelope.type==="project-assistants.view"){
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline",field:"fixture_read",retry_after_seconds:0}}}));return
+      }
+      if(scenario==="decision-recovery"&&envelope.type==="project-assistants.answer"){
+        decisionAttempts++
+        if(decisionAttempts===1){
+          record.status=400
+          res.writeHead(400,{"Content-Type":"application/json"})
+          res.end(JSON.stringify({error:{code:"malformed_command",layer:"mac_preflight",message:"Synthetic preflight refusal"}}))
+          return
+        }
+        if(decisionAttempts===2){
+          record.status=502
+          res.writeHead(502,{"Content-Type":"application/json"})
+          res.end("{}")
+          return
+        }
       }
       const answer=await fetch(cloud,{method:"POST",body:raw});let payload=await answer.text()
       // Capture the first post-send read against the admission fence, then
@@ -95,7 +111,7 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -201,7 +217,7 @@ try{
     assert.ok(traffic.slice(beforeRefresh).some(p=>p.word==="project-assistants.view"&&p.mode==="snapshot"&&p.status===200),"refresh fetches a new snapshot")
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1,"a refresh reads without resending the prompt")
     results.push({scenario,closedDetails:true,refreshDoesNotResend:true})
-  }else if(scenario==="decision-card"){
+  }else if(scenario==="decision-card"||scenario==="decision-recovery"){
     await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
     await send("Page.reload",{},sessionId)
     await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -214,10 +230,41 @@ try{
     assert.match(reopened.text,/Synthetic observation message/)
     assert.match(reopened.text,/Synthetic observation final answer/)
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1,"opening the chat does not resend the earlier message")
-    await evaluate(sessionId,`document.querySelector('${reply}').click()`)
-    await until(sessionId,"document.querySelector('.pa-message .pa-message-bubble') && [...document.querySelectorAll('.pa-message-bubble')].some(e=>e.textContent.includes('Use the first option'))")
-    assert.equal(traffic.filter(p=>p.word==="project-assistants.answer"&&p.status===200).length,1)
-    results.push({scenario,historyRetained:true,decisionAnswered:true})
+    if(scenario==="decision-card"){
+      await evaluate(sessionId,`document.querySelector('${reply}').click()`)
+      await until(sessionId,"[...document.querySelectorAll('.pa-message-bubble')].some(e=>e.textContent.includes('Use the first option'))")
+      assert.equal(traffic.filter(p=>p.word==="project-assistants.answer"&&p.status===200).length,1)
+      results.push({scenario,historyRetained:true,decisionAnswered:true})
+    }else{
+      const first="[...document.querySelectorAll('.pa-decision')].find(e=>e.innerText.includes('Which synthetic option'))"
+      const other="[...document.querySelectorAll('.pa-decision')].find(e=>e.innerText.includes('Which second option'))"
+      const draft="保留這句自訂答覆"
+      await until(sessionId,`!!(${other})?.querySelector('button[data-option-kind]:not(:disabled)')`)
+      await evaluate(sessionId,`(${first}).querySelector('.pa-decision-own').click()`)
+      await until(sessionId,`!!(${first})?.querySelector('textarea:focus')`)
+      await send("Input.insertText",{text:draft},sessionId)
+      const submit=`(${first}).querySelector('button[type=submit]')`
+      await evaluate(sessionId,`${submit}.click()`)
+      await until(sessionId,`(${first})?.querySelector('[role=alert]')?.textContent.includes('pa_invalid')`)
+      assert.equal(await evaluate(sessionId,`(${first}).querySelector('textarea').value`),draft)
+      assert.ok(await evaluate(sessionId,`!${submit}.disabled`))
+      await evaluate(sessionId,`${submit}.click()`)
+      await until(sessionId,`(${first})?.querySelector('[role=alert]')?.textContent.includes('結果未知；不會自動重送')`)
+      assert.equal(await evaluate(sessionId,`(${first}).querySelector('textarea').value`),draft)
+      assert.ok(await evaluate(sessionId,`!!(${other}).querySelector('button[data-option-kind]:not(:disabled)')`))
+      await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
+      await send("Input.insertText",{text:"Independently editable chat draft"},sessionId)
+      await until(sessionId,"!!document.querySelector('.pa-composer .pa-send:not(:disabled)')")
+      await capture(sessionId,"permission-unknown-chat-usable")
+      assert.equal(decisionAttempts,2,"neither failure may replay the answer")
+      await evaluate(sessionId,`${submit}.click()`)
+      await until(sessionId,`[...document.querySelectorAll('.pa-message-bubble')].some(e=>e.textContent.includes(${JSON.stringify(draft)}))`)
+      assert.equal(await evaluate(sessionId,`[...document.querySelectorAll('.pa-message-bubble')].filter(e=>e.textContent.includes(${JSON.stringify(draft)})).length`),1)
+      assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),"Independently editable chat draft")
+      assert.deepEqual(traffic.filter(p=>p.word==="project-assistants.answer").map(p=>p.status),[400,502,200])
+      await capture(sessionId,"typed-reply-delivered")
+      results.push({scenario,replyAttempts:decisionAttempts,chatDraftRetained:true,otherCardUsable:true,typedDelivered:true})
+    }
   }else{
   await until(sessionId,"document.body.innerText.includes('Synthetic observation final answer')")
   const complete=await capture(sessionId,"completed")

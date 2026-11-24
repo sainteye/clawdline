@@ -135,5 +135,9 @@ Its legacy drafts predate the journal and have no nonce to reuse.
 - `web/console/src/cloud/project-assistants.test.ts` exercises refusals before
   transport, authority changes, lost responses, and relay refusals.
 
-Held permission answers continue to use the separate host-owned permission
-flow. Browser storage is local to that account and browser on the device.
+Permission answers use the separate host-owned permission flow. A pending
+card keeps its typed draft and shows a refusal or uncertain outcome on the
+card. The chat and other permission cards stay available. A new press reads
+the live offer before attempting a write, and the source accepts an answer
+only while the offer is pending. Browser storage is local to that account
+and browser on the device.
