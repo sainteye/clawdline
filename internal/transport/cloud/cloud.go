@@ -271,9 +271,9 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 			(answer.Subject != cloudops.MachineReplySession || answer.Operation == "start" || answer.Operation == "resume") {
 			s.Acted()
 		}
-		s.logf("cloud: command answered: operation=%s session=%s status=%d code=%s sender=%s seq=%d",
+		s.logf("cloud: command answered: operation=%s session=%s status=%d code=%s%s sender=%s seq=%d",
 			operationOrUnknown(answer.Operation), subjectOrUnknown(answer.Subject), answer.Status,
-			codeOrOK(answer.Code), request.Sender, request.Sequence)
+			codeOrOK(answer.Code), fieldSuffix(answer.Field), request.Sender, request.Sequence)
 		return answer
 	}
 	// A read is frequent — transcripts, status, the Session to-dos a page
@@ -281,8 +281,8 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 	// refused or was slow is the line a person reading their phone's
 	// "loading" needs to find on this machine.
 	if elapsed := s.now().Sub(started); !answer.OK() || elapsed > slowReadAnswer {
-		s.logf("cloud: read answered: operation=%s session=%s status=%d code=%s ms=%d sender=%s seq=%d",
-			operationOrUnknown(answer.Operation), subjectOrUnknown(answer.Subject), answer.Status, codeOrOK(answer.Code),
+		s.logf("cloud: read answered: operation=%s session=%s status=%d code=%s%s ms=%d sender=%s seq=%d",
+			operationOrUnknown(answer.Operation), subjectOrUnknown(answer.Subject), answer.Status, codeOrOK(answer.Code), fieldSuffix(answer.Field),
 			elapsed.Milliseconds(), request.Sender, request.Sequence)
 	}
 	return answer
@@ -300,6 +300,15 @@ func operationOrUnknown(operation string) string {
 		return "unknown"
 	}
 	return operation
+}
+
+// fieldSuffix names the request field a typed refusal blamed, such as
+// `field=body`; the field is a fixed name from this daemon's code, never input.
+func fieldSuffix(field string) string {
+	if field == "" {
+		return ""
+	}
+	return " field=" + field
 }
 
 func codeOrOK(code string) string {
