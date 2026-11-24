@@ -79,6 +79,7 @@ export function WorkResultCard({ work, review, w, source, onOpen }: {
   const status = landed && work.landing_target ? w.workLandedIn.replace("{branch}", work.landing_target)
     : running ? w.workVerification : waiting || decision ? w.rosterBackgroundNeedsYou : unknown ? w.serverUnknown : w[work.state]
   const hasWorker = !!onOpen && !!work.worker_terminal && !!work.worker_session
+  const failure = work.state === "failed" && work.failure_reason ? w[`workFailure_${work.failure_reason}`] : undefined
 
   return <article ref={node} className="pa-work-task" data-state={work.state} data-verifying={running || undefined}>
     <header className="pa-work-task-head">
@@ -86,6 +87,7 @@ export function WorkResultCard({ work, review, w, source, onOpen }: {
       <strong>{work.title || item?.title || w.sessionTask}</strong>
       {item?.project.label && <small>{item.project.label}</small>}
       {(waiting || unknown) && <p>{w[work.state]}</p>}
+      {failure && <p className="pa-work-task-failure">{failure}</p>}
       {review?.text&&<p role="status">{review.text}</p>}
     </header>
     {(completed || verifies) && <ol className="pa-work-task-steps">

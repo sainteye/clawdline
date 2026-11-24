@@ -230,6 +230,8 @@
         "artifacts_expired": { "$ref": "#/$defs/BrokerArtifactsExpired" },
         "summary": { "type": "string" },
         "spawn_error": { "type": "string" },
+        "briefing": { "$ref": "#/$defs/BrokerBriefing" },
+        "spawn_failure_reason": { "$ref": "#/$defs/BrokerSpawnFailureReason" },
         "executor": { "$ref": "#/$defs/BrokerExecutor" },
         "respawn_of": { "description": "The spawn_failed task this one retried.", "type": "string" },
         "respawn_generation": { "type": "integer" },
@@ -248,6 +250,28 @@
         "bytes": { "description": "What the directory held when it was removed, as measured before removal.", "type": "integer" },
         "retention_seconds": { "type": "integer" }
       }
+    },
+    "BrokerBriefing": {
+      "description": "How typing the briefing into the child went, as the child's own screen showed it. Absent when nothing was seen arriving.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attempts"],
+      "properties": {
+        "attempts": { "description": "Enter presses on the briefing: the send's own press, plus every press a beat retried.", "type": "integer" },
+        "last_attempt_at": { "description": "When the last press happened, in Unix seconds. Absent when none did.", "type": "integer" },
+        "blocked": { "$ref": "#/$defs/BrokerBriefingBlock" },
+        "deferred_by_restart": { "description": "A daemon that started after the briefing was held read it still held, so the briefing waited for that restart.", "type": "boolean" }
+      }
+    },
+    "BrokerBriefingBlock": {
+      "description": "What last stood in the briefing's way: `dialog` is a dialog seen over it, `held_in_composer` is the composer still holding it after Enter, `enter_failed` is a retried press that failed. Absent when nothing was seen blocking it.",
+      "type": "string",
+      "enum": ["dialog", "held_in_composer", "enter_failed"]
+    },
+    "BrokerSpawnFailureReason": {
+      "description": "Why a spawn_failed task never started, as a stable code a reader can show in words: `dialog_unanswered` a dialog in the child's tab was never answered, `restarted` a daemon restart lost the briefing, `briefing_not_submitted` the briefing stayed in the composer, `could_not_open` the child could not be opened or briefed for any other reason. Absent on every other state.",
+      "type": "string",
+      "enum": ["could_not_open", "dialog_unanswered", "restarted", "briefing_not_submitted"]
     },
     "BrokerChild": {
       "type": "object",
