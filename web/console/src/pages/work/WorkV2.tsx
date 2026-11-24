@@ -45,6 +45,7 @@ import { VoiceTextarea } from "./VoiceTextarea.js"
 import { ItemUsageCard } from "./TokenBill.js"
 import { arrangeWorkItems, workItemPlaces } from "./board-order.js"
 import { useBoardMotion } from "./board-motion.js"
+import { BotWorkSection } from "./BotWorkSection.js"
 import { DesktopBoard, DesktopBoardSwitches, useDesktopBoard, type DesktopBoardVisibility } from "./DesktopBoard.js"
 import { boardReadStatus } from "./desktop-board.js"
 import { useBoardDetailMode } from "./board-detail-mode.js"
@@ -510,6 +511,7 @@ export function WorkV2Page({ shown }: { shown: boolean }) {
       {!desktop && filterBar}
       <TerminalEntry key={project} project={project} label={places.find((place) => place.id === project)?.label ?? ""} />
       {failure && <p className="work-note" role="alert">{failure}</p>}
+      <BotWorkSection project={project} items={items} onOpenItem={(id) => { void openWorkItemById(id) }} />
       {desktop ? <DesktopBoard items={items} decisions={decisions} visibility={desktopVisibility}
         loading={loading} loadingLabel={L.strings.webLoading} proposalCount={visibleProposals.length}
         proposals={<ProposalQueue column proposals={visibleProposals} items={items} places={places} busy={busy} run={run}
