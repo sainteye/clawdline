@@ -133,8 +133,9 @@
 }
 .project-assistants .pa-reply { display:flex;gap:8px;align-items:center;padding:6px 12px;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-reply>span { white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1; }
-.project-assistants .pa-queue { max-block-size:30dvh;overflow:auto;overscroll-behavior:contain; }
-.project-assistants .pa-queued { display:grid;width:fit-content;max-width:min(88%,32rem);margin:5px 0 5px auto;padding:8px 12px 4px;border:1px solid var(--pa-line);border-radius:12px;color:var(--pa-text,#fafafa);font-size:13px;line-height:1.5; }
+/* Waiting messages are the person's own, not yet sent on: they sit at the end of the conversation and scroll with it. */
+.project-assistants .pa-queue { display:flex;flex-direction:column;align-items:flex-end;gap:6px;margin:8px 0 4px; }
+.project-assistants .pa-queued { display:grid;width:fit-content;max-width:75%;padding:10px 16px 4px;border:1px dashed #3d3d42;border-radius:23px;background:#18181a;color:var(--pa-text,#fafafa);font-size:15px;line-height:1.6;scroll-margin:12px 0; }
 .project-assistants .pa-queued-content { min-width:0;display:grid;grid-template-columns:minmax(0,1fr);align-items:start; }
 .project-assistants .pa-queued-preview { grid-area:1/1;white-space:pre-wrap;overflow-wrap:anywhere; }
 .project-assistants .pa-queued-label,.project-assistants .pa-queued-actions { color:var(--pa-dim); }
@@ -247,6 +248,7 @@
   .project-assistants .pa-chat-scroll { padding:12px 20px 24px; }
   .project-assistants .pa-message p { font-size:15px;line-height:1.8; }
   .project-assistants .pa-message.pa-mine { max-width:85%;padding:12px 16px; }
+  .project-assistants .pa-queued { max-width:85%; }
   .project-assistants .pa-chat-footer { padding:8px 16px max(16px,env(safe-area-inset-bottom)); }
   .project-assistants .pa-tabs { left:50%;transform:translateX(-50%);white-space:nowrap; }
   .project-assistants .pa-status-mobile { display:flex;flex-direction:column;position:absolute;inset:0;background:var(--pa-bg);padding-bottom:90px; }

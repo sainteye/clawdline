@@ -46,9 +46,9 @@ const emit=(kind:W.ProjectAssistantEventKind,value:Partial<W.ProjectAssistantEve
 const author=(turn:string,id:string,kind:W.ProjectAssistantMessageKind,text:string)=>add({kind:"message",turn,id,author:kind,text})
 const activeTurns=new Map<string,W.ProjectAssistantTurnState>()
 for(const fact of data.facts)if(fact.kind==="event"&&fact.event.turn)activeTurns.set(fact.event.turn.id,fact.event.turn.state)
-const turn=(id:string,state:W.ProjectAssistantTurnState,joined_turn_id?:string)=>{
+const turn=(id:string,state:W.ProjectAssistantTurnState,joined_turn_id?:string,queue_edit_id?:string)=>{
   activeTurns.set(id,state)
-  emit("turn_updated",{turn:{id,fence,message_id:"person-"+id,state,started_at:state==="running"?new Date().toISOString():undefined,joined_turn_id,
+  emit("turn_updated",{turn:{id,fence,message_id:"person-"+id,state,started_at:state==="running"?new Date().toISOString():undefined,joined_turn_id,queue_edit_id,
     idempotency_key:data.sends.at(-1)?.command.idempotency_key??"fixture",memory_revision:1,instructions:bot.instructions}})
 }
 const receipt=(command:W.ProjectAssistantCommand,id:string,state:W.ProjectAssistantEffectState):W.ProjectAssistantReceiptResponse=>
@@ -89,6 +89,14 @@ source.unqueue=async request=>{
   turn(request.turn_id,"cancelled")
   return receipt(request.command,request.turn_id,"delivered")
 }
+const queueEdits:W.ProjectAssistantQueueEditRequest[]=[]
+source.canEditQueue=()=>true
+source.editQueue=async request=>{
+  queueEdits.push(request)
+  const edit=request.action==="begin"?"edit-"+queueEdits.length:request.edit_id
+  turn(request.turn_id,"queued",undefined,request.action==="begin"?edit:undefined)
+  return receipt(request.command,edit,"delivered")
+}
 let offer:W.ProjectAssistantPermissionOffer|undefined
 for(const fact of data.facts)if(fact.kind==="event"&&fact.event.permission)offer=fact.event.permission
 source.answer=async request=>{
@@ -113,6 +121,7 @@ const fixture={
   step:(id:string,category:string,text:string)=>emit("trace_updated",{trace:{turn_id:id,category,text,complete:false}}),
   publish:(id:string,text:string)=>author(id,"bot-"+id,"assistant",text),
   finish:(id:string)=>turn(id,"succeeded"),
+  queueElsewhere:(id:string,text:string)=>{author(id,"person-"+id,"user",text);turn(id,"queued")},
   holdDetail:()=>source.holdView("detail"),
   releaseDetail:()=>source.releaseView(),
   failDetail:(value:boolean)=>source.configureViews({detailFailure:value?"pa_offline":null}),
@@ -127,7 +136,7 @@ const fixture={
     emit("permission_offered",{permission:offer})
   },
   releaseQueueAction:()=>{const done=releaseQueue;releaseQueue=undefined;done?.()},
-  data,animations,queueActions,
+  data,animations,queueActions,queueEdits,
 }
 Object.assign(window,{stages:fixture})
 const summary=(await source.list({machine_id:bot.key.machine_id,cursor:"",query:"",page_size:100},signal)).items[0]
