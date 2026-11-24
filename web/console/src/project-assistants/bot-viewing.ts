@@ -1,6 +1,6 @@
 // Tells this machine which Bot chat is on screen, so a question the person can
 // already see is not also pushed to their phone. The daemon counts one report
-// for 45 seconds (orchestrator.BotViewingSeconds); this repeats well inside it
+// for 45 seconds (orchestrator.MaxBotViewingSeconds); this repeats well inside it
 // while the chat is visible and focused, and says "left" as soon as it is not.
 // A lost report only means a push is sent, never that one is missed.
 

@@ -129,7 +129,7 @@ func TestADecisionHeldForAnOpenScreenIsPushedAtTheHoldLimit(t *testing.T) {
 	if len(*sent) != 0 {
 		t.Fatalf("pushed early")
 	}
-	*now = now.Add(BotViewingHoldSeconds * time.Second)
+	*now = now.Add(MaxBotViewingHoldSeconds * time.Second)
 	b.BotPresence.Report("xavia", "chat", true, *now)
 	beat(b, now)
 	if len(*sent) != 1 {
@@ -153,13 +153,13 @@ func TestBotPresenceForgetsAReportAfterItsWindow(t *testing.T) {
 	p := &BotPresence{}
 	at := time.Now()
 	p.Report("b", "c", true, at)
-	if !p.Viewing("b", "c", at.Add(BotViewingSeconds*time.Second-time.Second)) || p.Viewing("b", "c", at.Add(BotViewingSeconds*time.Second)) {
+	if !p.Viewing("b", "c", at.Add(MaxBotViewingSeconds*time.Second-time.Second)) || p.Viewing("b", "c", at.Add(MaxBotViewingSeconds*time.Second)) {
 		t.Fatal("window")
 	}
-	for i := 0; i < BotViewingChats+5; i++ {
+	for i := 0; i < MaxBotViewingChats+5; i++ {
 		p.Report("b", string(rune('a'+i%26))+time.Duration(i).String(), true, at)
 	}
-	if len(p.seen) > BotViewingChats {
+	if len(p.seen) > MaxBotViewingChats {
 		t.Fatalf("remembered %d chats", len(p.seen))
 	}
 }

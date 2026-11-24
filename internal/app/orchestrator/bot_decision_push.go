@@ -134,7 +134,7 @@ func runBotDecisionPush(ctx context.Context, b *Broker, e store.Effect) effectRe
 // holdBotDecisionPush is whether a pending decision push should wait for the
 // next beat because a console reports its chat on screen. A wrong "on screen"
 // (a tab left open on a desk) delays the push by at most
-// BotViewingHoldSeconds; it never drops it.
+// MaxBotViewingHoldSeconds; it never drops it.
 func (b *Broker) holdBotDecisionPush(e store.Effect) bool {
 	if e.Kind != EffectBotDecisionPush || e.State != store.EffectPending || b.BotPresence == nil {
 		return false
@@ -144,7 +144,7 @@ func (b *Broker) holdBotDecisionPush(e store.Effect) bool {
 		return false
 	}
 	now := b.now()
-	if !e.CreatedAt.IsZero() && now.Sub(e.CreatedAt) >= BotViewingHoldSeconds*time.Second {
+	if !e.CreatedAt.IsZero() && now.Sub(e.CreatedAt) >= MaxBotViewingHoldSeconds*time.Second {
 		return false
 	}
 	return b.BotPresence.Viewing(p.Bot, p.Conversation, now)

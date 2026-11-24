@@ -12997,7 +12997,7 @@
   {
     "Register": "daemon",
     "Name": "orchestrator.bot_viewing_chats",
-    "Class": "cache",
+    "Class": "buffer",
     "Unit": "rows",
     "Limit": 256,
     "WarnAt": 0,
@@ -13010,13 +13010,13 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/app/orchestrator.BotViewingChats"
+      "internal/app/orchestrator.MaxBotViewingChats"
     ]
   },
   {
     "Register": "daemon",
     "Name": "orchestrator.bot_viewing_hold_seconds",
-    "Class": "buffer",
+    "Class": "cache",
     "Unit": "seconds",
     "Limit": 300,
     "WarnAt": 0,
@@ -13029,7 +13029,7 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/app/orchestrator.BotViewingHoldSeconds"
+      "internal/app/orchestrator.MaxBotViewingHoldSeconds"
     ]
   },
   {
@@ -13048,7 +13048,7 @@
     "Projects": false,
     "QuietRecovery": false,
     "Sources": [
-      "internal/app/orchestrator.BotViewingSeconds"
+      "internal/app/orchestrator.MaxBotViewingSeconds"
     ]
   },
   {
