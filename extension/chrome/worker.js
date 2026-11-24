@@ -28,7 +28,7 @@ function setState(next) {
 // registered worker after the folder's manifest changes (2026-11-15), so the
 // hello reports the code's version, not the manifest's. A test keeps it equal
 // to manifest.json.
-const WORKER_VERSION = "0.5.0"
+const WORKER_VERSION = "0.5.1"
 
 let loadedFolderKind = "revision"
 
@@ -141,8 +141,17 @@ function waitForNavigation(tabId) {
 
 // The phone layout overrides the user agent and the viewport together; the
 // desktop layout clears both.
-async function applyLayout(tab, mode) {
-  const mobile = mode === "mobile"
+async function applyLayout(tab, mode, size) {
+  const mobile = size ? size.mobile === true : mode === "mobile"
+  if (size) {
+    // An agent's own size in CSS pixels; mobile and touch are its choices.
+    if (mobile) await phoneAgent(tab)
+    else await cdp(tab, "Emulation.setUserAgentOverride", { userAgent: "" })
+    await cdp(tab, "Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: 0, mobile })
+    await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: size.touch === true || mobile })
+    layouts.set(tab, `${size.width}x${size.height}${mobile ? "-mobile" : ""}`)
+    return
+  }
   if (mobile) {
     const userAgent = await evaluate(tab, () => navigator.userAgent)
     await cdp(tab, "Emulation.setUserAgentOverride", {
@@ -156,6 +165,14 @@ async function applyLayout(tab, mode) {
   }
   await cdp(tab, "Emulation.setTouchEmulationEnabled", { enabled: mobile })
   layouts.set(tab, mode)
+}
+
+async function phoneAgent(tab) {
+  const userAgent = await evaluate(tab, () => navigator.userAgent)
+  await cdp(tab, "Emulation.setUserAgentOverride", {
+    userAgent: userAgent.replace(/\([^)]*\)/, "(Linux; Android 13; Mobile)"), platform: "Android",
+    userAgentMetadata: { platform: "Android", platformVersion: "13.0.0", architecture: "", model: "", mobile: true },
+  })
 }
 
 async function reload(tab) {
@@ -233,7 +250,8 @@ const PROBES = [[37, 41], [43, 47]]
 const probeTurn = new Map()
 
 async function inputScale(tabId) {
-  if (layouts.get(tabId) !== "mobile") return [1, 1]
+  const layout = layouts.get(tabId)
+  if (!layout || layout === "desktop") return [1, 1]
   const turn = probeTurn.get(tabId) || 0
   probeTurn.set(tabId, 1 - turn)
   const [px, py] = PROBES[turn]
@@ -261,6 +279,17 @@ async function inputScale(tabId) {
   const sx = seen[0] / px, sy = seen[1] / py
   const sane = (s) => Number.isFinite(s) && s > 0.05 && s < 20
   return [sane(sx) ? sx : 1, sane(sy) ? sy : 1]
+}
+
+// The element under a CSS-pixel point: its tag, role and short label, and
+// the viewport it was measured in. No field value crosses this boundary.
+function pointElement(x, y) {
+  const view = { width: innerWidth, height: innerHeight, scale: devicePixelRatio }
+  const el = document.elementFromPoint(x, y)
+  if (!el) return { found: false, view }
+  const target = el.closest("a[href],button,input,select,textarea,summary,label,[role],[onclick]") || el
+  const label = (target.getAttribute("aria-label") || (target.tagName === "INPUT" || target.tagName === "TEXTAREA" ? target.placeholder : target.innerText) || target.getAttribute("title") || target.getAttribute("alt") || "").replace(/\s+/g, " ").trim().slice(0, 80)
+  return { found: true, tag: target.tagName.toLowerCase(), role: target.getAttribute("role") || undefined, label, view }
 }
 
 async function click(tabId, x, y) {
@@ -341,14 +370,19 @@ async function run(c) {
       return { tab, url: current.url || url.href, value: { tab, url: current.url || url.href, title: current.title || "" } }
     }
     case "viewport": {
-      if (a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mobile or desktop")
-      const changed = (layouts.get(tab) || "desktop") !== a.mode
-      await applyLayout(tab, a.mode)
+      const size = Number.isInteger(a.width) && Number.isInteger(a.height) ? { width: a.width, height: a.height, mobile: a.mobile === true, touch: a.touch === true } : null
+      if (!size && a.mode !== "mobile" && a.mode !== "desktop") throw new Error("use mode mobile or desktop, or width and height")
+      const before = layouts.get(tab) || "desktop"
+      await applyLayout(tab, a.mode, size)
+      const layout = layouts.get(tab)
+      const changed = before !== layout && (before.endsWith("mobile") || layout.endsWith("mobile"))
       // The user agent reaches the server only with a new request: reload so
       // a site that picks its layout on the server shows the chosen one.
       if (changed) await reload(tab)
       else await new Promise((r) => setTimeout(r, 250))
-      return { tab, url: await tabURL(tab), target: a.mode, thumb: c.person ? undefined : await thumb(tab), value: { tab, mode: a.mode } }
+      const m = await cdp(tab, "Page.getLayoutMetrics")
+      const value = size ? { tab, width: m.cssLayoutViewport.clientWidth, height: m.cssLayoutViewport.clientHeight, mobile: size.mobile, touch: size.touch || size.mobile } : { tab, mode: a.mode }
+      return { tab, url: await tabURL(tab), target: size ? layout : a.mode, thumb: c.person ? undefined : await thumb(tab), value }
     }
     case "reload": {
       await reload(tab)
@@ -366,9 +400,13 @@ async function run(c) {
         ;({ x, y, name } = hit)
         await new Promise((r) => setTimeout(r, 150))
       }
+      if (!Number.isFinite(x) || !Number.isFinite(y)) throw new Error("give target (visible text) or x and y in CSS pixels")
+      // What sits under a point, so an agent clicking by coordinates can see
+      // whether it hit what it meant; agents only, never the person's taps.
+      const at = c.person ? undefined : await evaluate(tab, pointElement, x, y)
       await click(tab, x, y)
       await new Promise((r) => setTimeout(r, 300))
-      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y), editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
+      return { tab, url: await tabURL(tab), thumb: c.person ? undefined : await thumb(tab), target: name || `${Math.round(x)},${Math.round(y)}`, value: { tab, clicked: name || null, x: Math.round(x), y: Math.round(y), at, editable: c.person ? await evaluate(tab, focusedEditableKind) : undefined } }
     }
     case "type": {
       // Replace selects the whole focused field first, so the insertion
@@ -410,7 +448,7 @@ async function run(c) {
       const quality = Number.isFinite(a.quality) ? Math.max(20, Math.min(80, a.quality)) : 60
       const shot = await cdp(tab, "Page.captureScreenshot", { format: "jpeg", quality })
       const t = await chrome.tabs.get(tab)
-      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, layout: layouts.get(tab) || "desktop", editables: await evaluate(tab, editableRects, ELEMENT_LIMIT), data: shot.data } }
+      return { tab, url: t.url || "", value: { tab, url: t.url || "", title: t.title || "", width, height, layout: (layouts.get(tab) || "").endsWith("mobile") ? "mobile" : "desktop", editables: await evaluate(tab, editableRects, ELEMENT_LIMIT), data: shot.data } }
     }
   }
   throw new Error(`unknown command ${c.op}`)

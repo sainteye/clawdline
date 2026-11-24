@@ -46,6 +46,10 @@ func (s *Server) projectAssistantBrowser() *projectassistanthost.BrowserAccess {
 
 // browserFailure keeps the engine's typed code for the Bot, as the CLI route does.
 func browserFailure(err error) error {
+	var arg *browserbridge.ArgError
+	if errors.As(err, &arg) {
+		return &app.BrowserFailure{Code: string(arg.Code), Message: arg.Field + ": " + arg.Message}
+	}
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		return &app.BrowserFailure{Code: string(refusal)}
 	}
