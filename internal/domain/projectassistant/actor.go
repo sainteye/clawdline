@@ -64,6 +64,9 @@ type WorkRequest struct {
 	Claims        []string
 	TargetProject ProjectScope
 	BoardItemID   string
+	// BotRequestID names the Bot request card the work attaches to
+	// (docs/bot-request-cards.md §7.1); empty attaches to none.
+	BotRequestID string
 	// ContinueOnCompletion asks the host to queue one turn after the worker settles.
 	ContinueOnCompletion bool
 	// Persona is an optional Session persona id. The broker admits it with

@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	br "github.com/sainteye/clawdline/internal/domain/botrequest"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -25,6 +27,16 @@ type botRequestStore interface {
 	UpdateBotRequest(context.Context, store.BotRequestWrite) (store.BotRequestResult, error)
 	CheckBotRequests(context.Context, br.Actor, string, []store.BotRequestCheckTarget, []br.Mark, time.Time) ([]store.BotRequestCheckResult, error)
 	BotRequestCard(context.Context, string) (br.Card, error)
+	JoinBotRequestChain(ctx context.Context, cardID, by, bot string, now time.Time) (br.Card, error)
+}
+
+// botRequestCards answers the daemon store as the card tools use it, or nil
+// (an untyped nil, so a missing store is never a non-nil interface).
+func (h *Host) botRequestCards() botRequestStore {
+	if h.o.Broker == nil || h.o.Broker.Store == nil {
+		return nil
+	}
+	return h.o.Broker.Store
 }
 
 // botTurnLookup reads the turns and exchanges a creation walks back through.
@@ -241,4 +253,55 @@ func botRequestStoreError(err error) error {
 		return &br.Refusal{Code: br.CodeNotFound, Field: "card_id"}
 	}
 	return err
+}
+
+// botRequestNotice delivers one card notice from the broker's outbox as a
+// host-notice turn in the Bot's main chat (docs/bot-request-cards.md §5, §7.2),
+// through the same runtime and receipt rules a work completion uses.
+func (h *Host) botRequestNotice(ctx context.Context, n orchestrator.BotRequestNotice) error {
+	key := pa.BotKey{MachineID: h.o.MachineID, BotID: n.Bot}
+	runtime, err := h.runtime()
+	if err != nil {
+		return err
+	}
+	feature, source, err := h.background(ctx, key, true)
+	if err != nil {
+		return err
+	}
+	return runtime.WakeBotRequest(ctx, key, app.BotRequestNotice{Key: n.Key, CardID: n.CardID, Version: n.Version, Kind: n.Kind,
+		Title: n.Title, Role: n.Role, Note: n.Note, From: n.From}, feature, source)
+}
+
+// botRequestDispatchScope decides whether a dispatch_work or message_bot call
+// may proceed in turn, and which card it attaches to (§7.1, §7.2).
+//
+//   - In a turn a handoff notice woke, the call must name that card, and the
+//     card must be open, rooted in a person's message and held by this Bot.
+//   - In a Bot-to-Bot request whose exchange names a card, the same holds for
+//     that card; such a turn without a card keeps today's refusal (peer).
+//   - In every other turn a named card only has to be one the broker accepts.
+//
+// peer is true when the turn is a Bot-to-Bot request with no card scope, so
+// the caller keeps its existing refusal.
+func botRequestDispatchScope(ctx context.Context, s botRequestStore, exchangeCard func(context.Context) (string, error), bot string, turn pa.Turn, named string) (scoped bool, err error) {
+	notice, _ := pa.BotRequestHandoffCard(turn)
+	if notice == "" && pa.IsPeerRequest(turn.Origin) && exchangeCard != nil {
+		if notice, err = exchangeCard(ctx); err != nil {
+			return false, err
+		}
+	}
+	if notice == "" {
+		return false, nil
+	}
+	if s == nil {
+		return true, failure(pa.Unsupported, "bot_request_store")
+	}
+	if named == "" || named != notice {
+		return true, &br.Refusal{Code: br.CodeHandoffScope, Field: "bot_request_id"}
+	}
+	c, err := s.BotRequestCard(ctx, notice)
+	if err != nil {
+		return true, botRequestStoreError(err)
+	}
+	return true, br.HandoffDispatch(c, notice, bot, named)
 }

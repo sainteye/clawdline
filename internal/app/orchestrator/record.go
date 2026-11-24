@@ -428,6 +428,10 @@ type Record struct {
 	// task's landing counts for every item it carried. Present only when
 	// the dispatch named WorkID itself.
 	AlsoWorkIDs []string `json:"also_work_ids,omitempty"`
+	// BotRequestID is the Bot request card this task works on
+	// (docs/bot-request-cards.md §8.1), set only by DispatchAssistant from the
+	// card it resolved. Empty for every task no Bot attached to a card.
+	BotRequestID string `json:"bot_request_id,omitempty"`
 	// WorkFrom is how WorkID was decided: named, respawn, graph or dispatch.
 	WorkFrom string `json:"work_from,omitempty"`
 	// Graph is the task graph this task is a node of, `current_node` naming

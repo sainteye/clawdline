@@ -741,6 +741,11 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.ListBots(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.messageBot = func(ctx context.Context, request pa.BotMessageRequest) (pa.Exchange, error) {
+		named := pa.BotRequestFrom(ctx)
+		cards := h.botRequestCards()
+		if _, e := botRequestDispatchScope(ctx, cards, nil, q.Bot.Key.BotID, turn, named); e != nil {
+			return pa.Exchange{}, e
+		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return pa.Exchange{}, e
@@ -748,6 +753,16 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		defer cancel()
 		if e = journal(ctx, "messageBot"); e != nil {
 			return pa.Exchange{}, e
+		}
+		if named != "" {
+			// The recipient joins the card's chain before it is messaged, so
+			// the work it dispatches for the card is accepted (§7.1).
+			if cards == nil {
+				return pa.Exchange{}, failure(pa.Unsupported, "bot_request_store")
+			}
+			if _, e = cards.JoinBotRequestChain(ctx, named, q.Bot.Key.BotID, request.TargetBotID, h.o.Clock()); e != nil {
+				return pa.Exchange{}, botRequestStoreError(e)
+			}
 		}
 		return r.MessageBot(ctx, q.Binding.Fence, turnID, request)
 	}
@@ -1073,6 +1088,10 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
+		botRequestID := pa.BotRequestFrom(ctx)
+		if _, e := botRequestDispatchScope(ctx, h.botRequestCards(), nil, q.Bot.Key.BotID, turn, botRequestID); e != nil {
+			return pa.WorkLink{}, e
+		}
 		if pa.IsPeerRequest(turn.Origin) {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
@@ -1148,10 +1167,11 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 			BoardItemID          string            `json:"board_item_id,omitempty"`
 			ContinueOnCompletion bool              `json:"continue_on_completion,omitempty"`
 			Choice               pa.DispatchChoice `json:"choice,omitzero"`
-		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion, choice})
+			BotRequestID         string            `json:"bot_request_id,omitempty"`
+		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion, choice, botRequestID})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion, Choice: choice})
+		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, BotRequestID: botRequestID, ContinueOnCompletion: continueOnCompletion, Choice: choice})
 	}
 	// One turn gets one observation of a running task. Further observations
 	// belong to the completion callback or a later status question.

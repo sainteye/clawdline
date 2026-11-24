@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS bot_request_receipts (
 const (
 	EffectBotRequestDone    = "bot_request.done"
 	EffectBotRequestHandoff = "bot_request.handoff"
+	// EffectBotRequestDoneNotice is the asking Bots' half of a completion.
+	// It is its own row because a Bot notice can be retried and the person's
+	// push cannot: one interrupted push must not resend the other.
+	EffectBotRequestDoneNotice = "bot_request.done.notice"
 )
 
 // botRequestReceiptAge is how long a write's receipt answers a retry.
@@ -311,7 +315,13 @@ func (s *Store) queueBotRequestDone(ctx context.Context, tx *sql.Tx, c br.Card, 
 	if err != nil {
 		return err
 	}
-	return s.queueOnce(ctx, tx, EffectBotRequestDone, br.NotifyKey(c.ID, c.Cycle), payload)
+	if err := s.queueOnce(ctx, tx, EffectBotRequestDone, br.NotifyKey(c.ID, c.Cycle), payload); err != nil {
+		return err
+	}
+	if len(c.NotifyTargets(by)) == 0 {
+		return nil
+	}
+	return s.queueOnce(ctx, tx, EffectBotRequestDoneNotice, br.NotifyKey(c.ID, c.Cycle), payload)
 }
 
 func (s *Store) queueBotRequestHandoff(ctx context.Context, tx *sql.Tx, c br.Card, from string, events []br.Event) error {
@@ -661,4 +671,39 @@ func appendBotRequestEvent(ctx context.Context, tx *sql.Tx, c br.Card, e br.Even
 func itoaStore(n int64) string {
 	b, _ := json.Marshal(n)
 	return string(b)
+}
+
+// JoinBotRequestChain adds bot to an open card's chain because a Bot in the
+// chain messaged it with the card (docs/bot-request-cards.md §8.2). A Bot
+// already in the chain changes nothing, so a retried message_bot writes once.
+func (s *Store) JoinBotRequestChain(ctx context.Context, cardID, by, bot string, now time.Time) (br.Card, error) {
+	var out br.Card
+	err := s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		c, err := loadBotRequest(ctx, tx, cardID)
+		if err != nil {
+			return 0, err
+		}
+		out = c
+		if c.State != br.StateOpen {
+			return 0, &br.Refusal{Code: br.CodeClosed, Field: "state", Version: c.Version}
+		}
+		if !c.InChain(by) {
+			return 0, &br.Refusal{Code: br.CodeForbidden, Field: "chain", Version: c.Version}
+		}
+		joined, err := c.JoinChain(bot)
+		if err != nil || !joined {
+			return 0, err
+		}
+		c.Version++
+		c.UpdatedAt = now
+		if err := saveBotRequest(ctx, tx, c, c.Verdicts); err != nil {
+			return 0, err
+		}
+		if err := appendBotRequestEvent(ctx, tx, c, br.Event{Kind: br.EventChainJoined, Actor: "bot:" + by, Detail: bot, At: now}); err != nil {
+			return 0, err
+		}
+		out = c
+		return 1, nil
+	})
+	return out, err
 }
