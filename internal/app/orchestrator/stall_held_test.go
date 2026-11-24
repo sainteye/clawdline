@@ -10,6 +10,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // A briefing that was typed and never submitted (stall.go, tendHeld).
@@ -100,7 +101,7 @@ func TestABriefingHeldInTheComposerIsPressedAndTheChildSigns(t *testing.T) {
 func TestABriefingThatNeverLeavesTheComposerEndsSpawnFailed(t *testing.T) {
 	id := "b1e10002-0000-4000-8000-000000000002"
 	x, presses := newHeldRig(t, id)
-	x.run(time.Duration(briefHeldSecondsLimit)*time.Second + 2*time.Minute)
+	x.run(time.Duration(briefHeldGraceSecondsLimit)*time.Second + 3*time.Minute)
 	if presses.count() != briefEnterLimit {
 		t.Fatalf("pressed %d times, want the bound %d", presses.count(), briefEnterLimit)
 	}
@@ -136,7 +137,7 @@ func TestAPressThatFailsIsRecordedAndTheTaskStillEnds(t *testing.T) {
 	id := "b1e10003-0000-4000-8000-000000000003"
 	x, presses := newHeldRig(t, id)
 	presses.err = errors.New("input_moved")
-	x.run(time.Duration(briefHeldSecondsLimit)*time.Second + 2*time.Minute)
+	x.run(time.Duration(briefHeldGraceSecondsLimit)*time.Second + 3*time.Minute)
 	r := x.record()
 	if r.Briefing == nil || !strings.Contains(r.Briefing.EnterError, "input_moved") {
 		t.Fatalf("the failed press is not on the record: %+v", r.Briefing)
@@ -190,7 +191,158 @@ func TestTheHeldBriefingBoundsAreRegistered(t *testing.T) {
 	if got := capacity.Default(capacity.DispatchBriefEnterPresses); got != briefEnterLimit {
 		t.Errorf("%s registers %d, the broker presses %d", capacity.DispatchBriefEnterPresses, got, briefEnterLimit)
 	}
-	if got := capacity.Default(capacity.DispatchBriefHeldSeconds); got != briefHeldSecondsLimit {
-		t.Errorf("%s registers %d, the broker waits %d", capacity.DispatchBriefHeldSeconds, got, briefHeldSecondsLimit)
+	if got := capacity.Default(capacity.DispatchBriefHeldGraceSeconds); got != briefHeldGraceSecondsLimit {
+		t.Errorf("%s registers %d, the broker waits %d", capacity.DispatchBriefHeldGraceSeconds, got, briefHeldGraceSecondsLimit)
+	}
+}
+
+// Fuse's probe (a): the held briefing is covered by Claude Code's trust
+// dialog for five minutes. When somebody answers it the briefing is still in
+// the composer, and it is pressed — the dialog's minutes are not the
+// briefing's, so the task is not ended without a single press.
+func TestABriefingHeldBehindADialogIsStillPressedWhenTheDialogGoes(t *testing.T) {
+	id := "b1e10005-0000-4000-8000-000000000005"
+	x, presses := newHeldRig(t, id)
+	x.run(30 * time.Second) // seen held once
+	x.show(screen(t, "claude-trust"))
+	x.run(5 * time.Minute)
+	if r := x.record(); r.State != StateSpawning {
+		t.Fatalf("a briefing behind a dialog ended %q (%q) before the dialog was answered", r.State, r.Verdict)
+	}
+	x.show(heldScreen(id))
+	presses.after = func(int) { x.show(readingScreen) }
+	x.run(time.Minute)
+	if presses.count() != 1 {
+		t.Fatalf("after the dialog the held briefing was pressed %d times, want 1", presses.count())
+	}
+	if r := x.record(); r.State != StateSpawning {
+		t.Fatalf("the briefing uncovered after a dialog ended %q (%q); want it pressed and left spawning", r.State, r.Verdict)
+	}
+	if _, err := x.b.Accept(x.ctx, x.id, "s"); err != nil {
+		t.Fatal(err)
+	}
+	if r := x.record(); r.State != StateBriefed {
+		t.Fatalf("the pressed child that signed is %q", r.State)
+	}
+}
+
+// Fuse's probe (b): the daemon stops for three minutes right after it first
+// saw the briefing held — a dev install's restart. The restarted daemon
+// presses it; the minutes it was down are not time the briefing was given.
+func TestABriefingHeldAcrossADaemonRestartIsPressedAfterIt(t *testing.T) {
+	id := "b1e10006-0000-4000-8000-000000000006"
+	x, presses := newHeldRig(t, id)
+	x.run(30 * time.Second)
+	if r := x.record(); r.Briefing == nil || r.Briefing.HeldSince.IsZero() {
+		t.Fatalf("the held briefing was not recorded: %+v", r.Briefing)
+	}
+	x.mu.Lock()
+	x.now = x.now.Add(3 * time.Minute) // down: no beat runs
+	x.mu.Unlock()
+	restarted := &Broker{Store: x.b.Store, Tasks: x.b.Tasks, Git: x.b.Git, Dir: x.b.Dir, Live: x.b.Live,
+		SubmitHeld: presses.press}
+	x.wire(restarted)
+	x.b = restarted
+	presses.after = func(int) { x.show(readingScreen) }
+	x.run(time.Minute)
+	r := x.record()
+	if presses.count() != 1 || r.State != StateSpawning {
+		t.Fatalf("after a restart the held briefing was pressed %d times and is %q (%q); want 1 press, still spawning",
+			presses.count(), r.State, r.Verdict)
+	}
+}
+
+// The held task ends only after its last press has had the grace to show
+// what it did, and never before every press was made.
+func TestAHeldBriefingEndsOnlyAGraceAfterItsLastPress(t *testing.T) {
+	id := "b1e10007-0000-4000-8000-000000000007"
+	x, presses := newHeldRig(t, id)
+	for presses.count() < briefEnterLimit {
+		if r := x.record(); r.State != StateSpawning {
+			t.Fatalf("ended %q after %d presses, before the bound %d", r.State, presses.count(), briefEnterLimit)
+		}
+		x.run(30 * time.Second)
+	}
+	last := x.record().Briefing.LastEnterAt
+	for x.now.Before(last.Add(time.Duration(briefHeldGraceSecondsLimit)*time.Second - 30*time.Second)) {
+		x.run(30 * time.Second)
+		if r := x.record(); r.State != StateSpawning {
+			t.Fatalf("ended %v after its last press, inside the %ds grace", x.now.Sub(last), briefHeldGraceSecondsLimit)
+		}
+	}
+	x.run(time.Minute)
+	r := x.record()
+	if r.State != StateSpawnFailed {
+		t.Fatalf("still %q a grace after the last press", r.State)
+	}
+	if !strings.Contains(r.Verdict, "3 times") || strings.Contains(r.Verdict, "0 more times") {
+		t.Errorf("the verdict does not count the presses that were made: %q", r.Verdict)
+	}
+}
+
+// The verdict says what happened: how many presses, a dialog that covered
+// it, a daemon that was down while it was held.
+func TestTheHeldVerdictSaysWhatHappened(t *testing.T) {
+	id := "b1e10008-0000-4000-8000-000000000008"
+	x, _ := newHeldRig(t, id)
+	x.run(30 * time.Second)
+	x.show(screen(t, "claude-trust"))
+	x.run(2 * time.Minute)
+	x.show(heldScreen(id))
+	x.mu.Lock()
+	x.now = x.now.Add(4 * time.Minute) // down: no beat runs
+	x.mu.Unlock()
+	restarted := &Broker{Store: x.b.Store, Tasks: x.b.Tasks, Git: x.b.Git, Dir: x.b.Dir, Live: x.b.Live,
+		SubmitHeld: x.b.SubmitHeld}
+	x.wire(restarted)
+	x.b = restarted
+	x.run(5 * time.Minute)
+	r := x.record()
+	if r.State != StateSpawnFailed {
+		t.Fatalf("state %q", r.State)
+	}
+	for _, want := range []string{"pressed Enter on it 3 times", "dialog", "not running"} {
+		if !strings.Contains(r.Verdict, want) {
+			t.Errorf("the verdict does not say %q: %q", want, r.Verdict)
+		}
+	}
+	if r.Briefing == nil || r.Briefing.CoveredAt.IsZero() || r.Briefing.ResumedAt.IsZero() {
+		t.Errorf("the dialog and the restart are not on the record: %+v", r.Briefing)
+	}
+}
+
+// Item 2: a send that answered HeldAfterEnter is a held briefing on the
+// record, not a spawn error, so a child that is later pressed and signs has
+// no failure reason left behind.
+func TestAHeldSendIsNotASpawnError(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	b.Clock = steppingClock(time.Date(2026, 11, 24, 4, 0, 0, 0, time.UTC), 50*time.Second)
+	b.Launcher = &openingLauncher{pane: "%75"}
+	b.Type = func(context.Context, string, string) error { return terminal.HeldAfterEnter{Enters: 4} }
+	b.Live = func(context.Context) []session.Session {
+		return []session.Session{
+			{ID: "%1", Assistant: session.AssistantClaude, ConversationID: rootConversation},
+			{ID: "%75", Backend: session.BackendTmux, Assistant: session.AssistantClaude},
+		}
+	}
+	out, err := dispatchOne(t, b, ctx, "c8000009-0000-4000-8000-000000000009")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Record.State != StateSpawning || out.Record.Briefing == nil || out.Record.Briefing.HeldSince.IsZero() {
+		t.Fatalf("a held send: state %q briefing %+v", out.Record.State, out.Record.Briefing)
+	}
+	if out.Record.SpawnError != "" {
+		t.Errorf("a held send was recorded as a spawn error: %q", out.Record.SpawnError)
+	}
+	if _, err := b.Accept(ctx, out.Record.ID, w1Secret); err != nil {
+		t.Fatal(err)
+	}
+	r, _, err := b.Record(ctx, out.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.SpawnError != "" {
+		t.Errorf("after the child signed the record still carries %q", r.SpawnError)
 	}
 }

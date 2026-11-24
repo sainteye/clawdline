@@ -300,12 +300,13 @@ const (
 	WorkGateOwnerOfflineGraceSeconds  = "work_gate_owner_offline_grace_seconds"
 	// G6: a Root Assignment or handoff whose opening never finished.
 	OpeningStuckSeconds = "orchestrator.opening_stuck_seconds"
-	// DispatchBriefEnterPresses and DispatchBriefHeldSeconds bound a child's
-	// briefing that was typed and is still held in its composer: the Enters
-	// the beat presses on it, and how long after it was first seen held the
-	// unsigned task ends spawn_failed (orchestrator stall.go).
-	DispatchBriefEnterPresses = "dispatch.brief_enter_presses"
-	DispatchBriefHeldSeconds  = "dispatch.brief_held_seconds"
+	// DispatchBriefEnterPresses and DispatchBriefHeldGraceSeconds bound a
+	// child's briefing that was typed and is still held in its composer: the
+	// Enters the beat presses on it, and how long after the last press, read
+	// held throughout, the unsigned task ends spawn_failed (orchestrator
+	// stall.go).
+	DispatchBriefEnterPresses     = "dispatch.brief_enter_presses"
+	DispatchBriefHeldGraceSeconds = "dispatch.brief_held_grace_seconds"
 	// Whether this machine trails the cloud's latest build (docs/updates.md).
 	UpdateRefreshSeconds      = "update.refresh_seconds"
 	UpdateFetchTimeoutSeconds = "update.fetch_timeout_seconds"

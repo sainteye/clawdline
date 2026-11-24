@@ -38,8 +38,8 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.DispatchBriefEnterPresses: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-task press count, kept on the task record; no retained buffer"}
 		},
-		capacity.DispatchBriefHeldSeconds: func() capacity.Reading {
-			return capacity.Reading{Known: true, Note: "per-task age ceiling; the held time persists on the task record; no retained buffer"}
+		capacity.DispatchBriefHeldGraceSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-task grace after the last press; the press time persists on the task record, the held reading is in memory; no retained buffer"}
 		},
 		capacity.HandoffWorktrees:  func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.HandoffPatchBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },

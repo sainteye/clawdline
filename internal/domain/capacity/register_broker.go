@@ -75,21 +75,25 @@ func brokerBounds() []Entry {
 		{
 			// Enters the beat presses on a child's briefing that is still
 			// held in its composer after the send's own presses (task
-			// bb9f44d8). Past it nothing more is pressed; the task ends at
-			// dispatch.brief_held_seconds with a task_stalled notice.
+			// bb9f44d8). Past it nothing more is pressed; the task ends
+			// dispatch.brief_held_grace_seconds after the last press with a
+			// task_stalled notice.
 			Name: DispatchBriefEnterPresses, Class: Buffer, Unit: Rows,
 			Limit: 3, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.briefEnterLimit"},
 		},
 		{
-			// How long after a briefing was first seen held in the child's
-			// composer an unsigned task stays spawning. At the limit it ends
-			// spawn_failed and its root is told with a task_stalled notice.
-			Name: DispatchBriefHeldSeconds, Class: Observation, Unit: Seconds,
-			Limit: 120, AtLimit: EvictOldest,
+			// How long after the last Enter on a held briefing — every press
+			// made, the composer read held by this process throughout — an
+			// unsigned task stays spawning. A dialog over it, an unreadable
+			// screen or a daemon restart starts it again, so time nobody
+			// could press is never counted. At the limit it ends spawn_failed
+			// and its root is told with a task_stalled notice.
+			Name: DispatchBriefHeldGraceSeconds, Class: Observation, Unit: Seconds,
+			Limit: 60, AtLimit: EvictOldest,
 			Told: []Channel{Diagnostics, Notice}, EvictedBy: Daemon,
-			Sources: []string{"internal/app/orchestrator.briefHeldSecondsLimit"},
+			Sources: []string{"internal/app/orchestrator.briefHeldGraceSecondsLimit"},
 		},
 		{
 			// The items one child carries beside its work_id: one branch and

@@ -111,6 +111,7 @@ func (b *Broker) Watch(ctx context.Context, tick time.Duration, report func(Puls
 // terminal that appeared mid-pass made two tasks in one pass disagree about
 // the same moment.
 func (b *Broker) Pass(ctx context.Context) Pulse {
+	b.heldBriefs.boot(b.now())
 	number := b.beat.begin(b.now())
 	// Recorded as finished only when it finished. A pass that panicked or
 	// exited is not a pass that ended; the supervisor closes it instead
