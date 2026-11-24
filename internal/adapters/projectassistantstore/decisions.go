@@ -162,6 +162,10 @@ func (s *Store) ForwardDecision(ctx context.Context, key pa.BotKey, turn pa.Turn
 	case pa.TurnSucceeded:
 		x.Outcome = pa.ExchangeCompleted
 		x.Reply = pa.CollaborationReply(text)
+		x.ReplyAt = time.Time{}
+		if x.Reply != "" {
+			x.ReplyAt = at
+		}
 	case pa.TurnCancelled:
 		x.Outcome = pa.ExchangeCancelled
 	case pa.TurnUnknown:

@@ -33,7 +33,7 @@ test("two Bots keep their own sides in the exchange panel, whoever starts each e
   const {ExchangePanel,words}=await panel()
   const first=exchange("one",atlas,beacon,"Is CI green?","All green")
   const entries=[first,exchange("two",beacon,atlas,"Which version is deployed?","7388204fb"),exchange("three",atlas,beacon,"Run smoke test")]
-    .map((x,index)=>({exchange:x,seq:index+1,at}))
+    .map((x,index)=>({exchange:x,seq:index+1}))
   const render=(roster:W.ProjectAssistantBot[])=>renderToStaticMarkup(React.createElement(ExchangePanel,{source:{authorizationRevision:"grant"} as never,
     scope:{key:atlas,project,conversation_id:"atlas-chat"},reference:first,entries,roster,language:"en",w:words("en"),onClose:()=>{}}))
   const html=render([bot(atlas,"Atlas"),bot(beacon,"Beacon")])
@@ -43,4 +43,16 @@ test("two Bots keep their own sides in the exchange panel, whoever starts each e
   // A Bot nobody can identify still takes its side and renders.
   const unknown="Unknown Bot"
   assert.deepEqual(speakers(render([bot(atlas,"Atlas")])),["Atlas:left",`${unknown}:right`,`${unknown}:right`,"Atlas:left","Atlas:left"])
+})
+
+test("the exchange shows a delayed reply's own time but skips markers during a burst",async()=>{
+  const {ExchangePanel,words}=await panel()
+  const requestAt="2026-11-23T00:03:00Z",replyAt="2026-11-23T00:38:00Z"
+  const first={...exchange("one",atlas,beacon,"Please review","Reviewed"),request_at:requestAt,reply_at:replyAt}
+  const next={...exchange("two",atlas,beacon,"Anything else?","All clear"),request_at:"2026-11-23T00:39:00Z",reply_at:"2026-11-23T00:40:00Z"}
+  const entries=[{exchange:first,seq:1},{exchange:next,seq:2}]
+  const html=renderToStaticMarkup(React.createElement(ExchangePanel,{source:{authorizationRevision:"grant"} as never,
+    scope:{key:atlas,project,conversation_id:"atlas-chat"},reference:first,entries,language:"zh-Hant-TW",w:words("zh-Hant-TW"),onClose:()=>{}}))
+  assert.deepEqual([...html.matchAll(/<time[^>]* datetime="([^"]+)"/gi)].map(match=>match[1]),[requestAt,replyAt])
+  assert.ok(html.indexOf("Please review")<html.indexOf(replyAt)&&html.indexOf(replyAt)<html.indexOf("Reviewed"))
 })

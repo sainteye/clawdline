@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react"
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
 import type * as W from "@clawdline/contract"
 import { authorized, command, errorCode, type SourceClient } from "./client"
@@ -15,6 +15,7 @@ import { groupMentionOptions, withGroupMention } from "./group-mentions"
 import { GroupMemberOutcome, showGroupMemberOutcome } from "./GroupMemberOutcome"
 import { GroupMessageRow } from "./GroupMessageRow"
 import { useMessageArrivals } from "./message-arrivals"
+import { chatTimeBreak, chatTimeFormat } from "./chat-time"
 
 const identity=(k:W.ProjectAssistantBotKey)=>JSON.stringify([k.machine_id,k.bot_id])
 const merge=(previous:W.ProjectAssistantRoomEntry[],incoming:W.ProjectAssistantRoomEntry[])=>[...new Map([...previous,...incoming].map(line=>[line.seq,line])).values()].sort((a,b)=>a.seq-b.seq)
@@ -25,7 +26,8 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
   const [membersOpen,setMembersOpen]=useState(false),[paging,setPaging]=useState(false),[following,setFollowing]=useState(true),[host,setHost]=useState<HTMLElement|null>(null)
   const [sending,setSending]=useState<W.ProjectAssistantGroupSendRequest|null>(null)
   const [caret,setCaret]=useState(0),[highlight,setHighlight]=useState(0),[dismissed,setDismissed]=useState<string|null>(null)
-  const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),w=words(currentCatalogTag()),mentionID=useId(),membersID=useId()
+  const anchor=useRef<HTMLSpanElement>(null),room=useRef<HTMLElement>(null),composer=useRef<HTMLTextAreaElement>(null),memberToggle=useRef<HTMLButtonElement>(null),membersPanel=useRef<HTMLElement>(null),lastFocus=useRef<HTMLElement|null>(null),composing=useRef(false),mentionID=useId(),membersID=useId()
+  const language=currentCatalogTag(),w=words(language),timeFormat=chatTimeFormat(language)
   const membersFocus=useRef<"panel"|"header"|null>(null)
   const composerFocusFrame=useRef(0)
   const pending=useRef<W.ProjectAssistantGroupSendRequest|null>(null),control=useRef(new AbortController()),refresh=useRef<(earlier?:boolean)=>Promise<void>>(async()=>{})
@@ -230,16 +232,20 @@ export function GroupRoom({source,current,group:initial,bots,projectNames,onClos
       {more?.hasMore&&<button type="button" disabled={paging||busy} onClick={()=>void refresh.current(true)}>{paging?w.earlierLoading:groupWord("groupOlder")}</button>}
       {lines.map((line,index)=>{
         const previous=lines[index-1],member=botFor(line.author),person=line.kind==="person"
-        const continued=previous?.kind===line.kind&&(person||!!line.author&&!!previous.author&&identity(previous.author)===identity(line.author))
+        const separate=chatTimeBreak(line.at,previous?.at)
+        const continued=!separate&&previous?.kind===line.kind&&(person||!!line.author&&!!previous.author&&identity(previous.author)===identity(line.author))
         const shownAuthor=author(line.author),canReply=canQuote&&writable&&!busy&&!unknown
-        return <GroupMessageRow key={line.seq} line={line} group={group} source={source} author={shownAuthor}
-          continued={continued} arriving={motion.arrivals.has(String(line.seq))} onArrivalEnd={()=>motion.finish(String(line.seq))}
-          readable={readable} writable={writable} dismissKey={JSON.stringify([active,readable,membersOpen,editing,deleting])}
-          replyLabel={groupWord("groupReply")} onReply={canReply?()=>replyTo(line):undefined} onReactionChanged={()=>void refresh.current()}
-          header={!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{shownAuthor}</strong></div>}>
-          {line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}
-          <p>{line.text}</p>
-        </GroupMessageRow>
+        return <Fragment key={line.seq}>
+          {separate&&line.at&&<div className="pa-separator"><time dateTime={line.at}>{timeFormat.format(Date.parse(line.at))}</time></div>}
+          <GroupMessageRow line={line} group={group} source={source} author={shownAuthor}
+            continued={continued} arriving={motion.arrivals.has(String(line.seq))} onArrivalEnd={()=>motion.finish(String(line.seq))}
+            readable={readable} writable={writable} dismissKey={JSON.stringify([active,readable,membersOpen,editing,deleting])}
+            replyLabel={groupWord("groupReply")} onReply={canReply?()=>replyTo(line):undefined} onReactionChanged={()=>void refresh.current()}
+            header={!person&&!continued&&<div className="pa-room-author">{member&&<BotAvatar appearance={member.appearance} size={28}/>}<strong style={member?{color:member.appearance.color}:undefined}>{shownAuthor}</strong></div>}>
+            {line.quote?<blockquote data-quote-seq={line.quote.seq}><strong>{author(line.quote.author)}</strong><p>{line.quote.text}{line.quote.truncated?"…":""}</p></blockquote>:line.reply_to_author&&<div className="pa-room-context">{groupWord("groupReplyTo")} {author(line.reply_to_author)}</div>}
+            <p>{line.text}</p>
+          </GroupMessageRow>
+        </Fragment>
       })}
       {outcomes.map(outcome=><GroupMemberOutcome key={outcome.turn_id} outcome={outcome} w={w}/>)}
       {!lines.length&&!sending&&<p role="status">{page?groupWord("groupEmpty"):error?groupWord("groupUnavailable"):w.chatLoading}</p>}

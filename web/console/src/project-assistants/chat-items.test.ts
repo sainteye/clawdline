@@ -50,6 +50,17 @@ test("Codync author grouping resets after a time separator",()=>{
   assert.deepEqual(rows.filter(i=>i.kind==="message").map(i=>i.groupStart),[true,false,true])
   assert.equal(rows.filter(i=>i.kind==="separator").length,2)
 })
+test("chat marks a half-hour pause or a new local day between messages",()=>{
+  const rows=buildChat([
+    message("first",1,"user","2026-11-12T22:50:00"),
+    message("immediate",2,"assistant","2026-11-12T22:51:00"),
+    message("after-pause",3,"assistant","2026-11-12T23:21:00"),
+    message("before-midnight",4,"user","2026-11-12T23:58:00"),
+    message("after-midnight",5,"assistant","2026-11-13T00:02:00"),
+  ])
+  assert.deepEqual(rows.filter(i=>i.kind==="separator").map(i=>i.id),
+    ["sep-first","sep-after-pause","sep-before-midnight","sep-after-midnight"])
+})
 test("work is interleaved at admission, resets author grouping and has its own ID namespace",()=>{
   const a=message("shared",1),b=message("b",2),c=message("c",3,"user","2026-11-12T02:00:00Z")
   const rows=[a,b,c].map(message=>({id:message.id,kind:"message" as const,message,anchor_message_seq:message.seq,observed_event_seq:10}))

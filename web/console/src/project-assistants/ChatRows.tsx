@@ -18,6 +18,7 @@ import type * as W from "@clawdline/contract"
 import { Fragment, useCallback, useEffect, useState } from "react"
 import type React from "react"
 import { buildTimelineChat,type ChatProgress } from "./chat-items"
+import { chatTimeFormat } from "./chat-time"
 import { WorkResultCard } from "./WorkResultCard"
 import { ExchangePanel } from "./ExchangePanel"
 import { exchangeWords } from "./exchange-words"
@@ -32,6 +33,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,progress,onQ
   const byID=new Map(messages.map(m=>[m.id,m]))
   const artifacts=new Map<string,W.ProjectAssistantMessage>();for(const m of messages){if(m.output?.artifact_id)artifacts.set(m.output.artifact_id,m)}
   const chat=buildTimelineChat(timeline.filter(item=>!item.message?.output?.quiet),progress)
+  const timeFormat=chatTimeFormat(language)
   // A reply can follow a publication by several bubbles. Keep the original
   // card in sequence and make its latest version reachable from that reply.
   const lastReplyByTurn=new Map<string,W.ProjectAssistantMessage>()
@@ -82,7 +84,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,progress,onQ
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
   return <>{chat.map(item=>item.kind==="progress"?<div className="pa-progress" key={JSON.stringify([item.kind,item.id])} role="group" aria-label={w.traceNarration} onClick={onArticleClick}>
     <BotMessageMarkdown text={item.progress.text} w={w}/>
-  </div>:item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} source={source} onOpen={onOpenWork}/>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
+  </div>:item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{timeFormat.format(Date.parse(item.at))}</time></div>:item.kind==="work"?<WorkResultCard key={JSON.stringify([item.kind,item.id])} work={item.work} w={w} source={source} onOpen={onOpenWork}/>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)

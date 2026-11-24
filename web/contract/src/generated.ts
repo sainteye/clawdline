@@ -5885,8 +5885,10 @@ export interface ProjectAssistantExchange {
   outcome: string
   project: ProjectAssistantProjectScope
   reply?: string
+  reply_at?: string
   reply_turn_id?: string
   request: string
+  request_at?: string
   request_turn_id: string
   revision: number
   source: ProjectAssistantExchangeEndpoint

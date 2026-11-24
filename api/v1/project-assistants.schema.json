@@ -3670,6 +3670,14 @@
         "reply": {
           "type": "string"
         },
+        "request_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "reply_at": {
+          "type": "string",
+          "format": "date-time"
+        },
         "detail": {
           "type": "string"
         },

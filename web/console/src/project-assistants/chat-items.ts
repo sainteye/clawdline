@@ -3,9 +3,10 @@
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
 import {mergeTimeline} from "./read-views.ts"
+// @ts-expect-error Node executes source extensions.
+import {chatTimeBreak} from "./chat-time.ts"
 export type ChatProgress = { id:string; at:string; text:string; eventSeq:number }
 export type ChatItem = { kind:"progress"; progress:ChatProgress; id:string } | { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink } | {id:string;kind:"permission";offer:W.ProjectAssistantPermissionOffer}
-export const ChatSeparatorGapMs = 3_600_000
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
   for (const message of pages.flat()) byID.set(message.id,message)
@@ -14,15 +15,15 @@ export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessag
 export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatItem[] {
   return buildTimelineChat(messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message})))
 }
-/** Work keeps its source admission position even when its result arrives after newer messages. */
 // Wire timestamps are UTC. Preserve the sub-millisecond digits when Date.parse ties.
 function compareTimes(a:string,b:string) {
   const fraction=(value:string)=>Number((/\.(\d+)Z$/.exec(value)?.[1]??"").padEnd(9,"0"))
   return Date.parse(a)-Date.parse(b)||fraction(a)-fraction(b)
 }
+/** Work keeps its source admission position even when its result arrives after newer messages. */
 export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewItem[],progress:readonly ChatProgress[]=[]):ChatItem[] {
   const out: ChatItem[] = []
-  let lastDate: number | null = null, lastAuthor: string | null = null
+  let lastAt:string|undefined,lastAuthor:string|null=null
   const updates=[...progress].sort((a,b)=>compareTimes(a.at,b.at)||a.eventSeq-b.eventSeq)
   let next=0
   const appendProgress=()=>{
@@ -40,11 +41,16 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
       if(order>0||order===0&&message.kind==="user")break
       appendProgress()
     }
-    const date = Date.parse(message.at)
-    if (lastDate === null || date-lastDate > ChatSeparatorGapMs) { out.push({id:`sep-${message.id}`,kind:"separator",at:message.at}); lastAuthor=null }
+    const conversational=message.kind==="user"||message.kind==="assistant"
+    if(conversational){
+      if(chatTimeBreak(message.at,lastAt)){
+        out.push({id:`sep-${message.id}`,kind:"separator",at:message.at})
+        lastAuthor=null
+      }
+      lastAt=message.at
+    }
     out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor})
-    lastAuthor=message.kind === "user" || message.kind === "assistant" ? message.kind : null
-    lastDate=date
+    lastAuthor=conversational?message.kind:null
   }
   while(next<updates.length)appendProgress()
   return out
