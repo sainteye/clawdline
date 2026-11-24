@@ -175,6 +175,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.review_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_pending` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_per_sender` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_quote_bytes` | 96000 | `bytes` | `coalesce` | `diagnostics` | — |
+| `bots.review_quote_rounds` | 4 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.review_reply_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_request_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.room_pictures` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |

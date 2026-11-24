@@ -3394,6 +3394,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.review_quote_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 96000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationQuoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_quote_rounds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationQuoteRounds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.review_reply_bytes",
     "Class": "buffer",
     "Unit": "bytes",

@@ -1099,7 +1099,8 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return runtimeFailure(pa.ScopeDenied, "queued_message")
 	}
-	if err = collaborationPrompt(t, input); err != nil {
+	earlier, omitted := r.quotedRounds(ctx, t, input)
+	if err = collaborationPrompt(t, input, earlier, omitted); err != nil {
 		a.mu.Unlock()
 		return err
 	}

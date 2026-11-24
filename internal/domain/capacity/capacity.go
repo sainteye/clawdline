@@ -804,6 +804,8 @@ const (
 	BotsReviewHops            = "bots.review_hops"
 	BotsReviewRequest         = "bots.review_request_bytes"
 	BotsReviewReply           = "bots.review_reply_bytes"
+	BotsReviewQuoteRounds     = "bots.review_quote_rounds"
+	BotsReviewQuoteBytes      = "bots.review_quote_bytes"
 	BotsFallbacks             = "bots.fallback_agents"
 	BotsAgentRestSeconds      = "bots.agent_rest_seconds"
 	BotsErrorKindBytes        = "bots.error_kind_bytes"

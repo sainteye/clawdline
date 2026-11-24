@@ -14367,5 +14367,9 @@
   "capacityRow.bots.peer_notes_per_request.full": "Further messages for that request are refused, so the chat is not flooded; the reply to the requesting Bot is unaffected.",
   "capacityRow.bots.peer_notes_per_request.what": "Messages a Bot may send its own chat while handling one request from another Bot.",
   "capacityRow.bots.peer_note_bytes.what": "UTF-8 bytes in one message a Bot sends its own chat while handling another Bot's request.",
-  "capacityRow.bots.peer_note_bytes.full": "A longer message is refused; the Bot sends a shorter one."
+  "capacityRow.bots.peer_note_bytes.full": "A longer message is refused; the Bot sends a shorter one.",
+  "capacityRow.bots.review_quote_rounds.full": "At most 4 earlier rounds are quoted, newest first; the prompt says older rounds were left out.",
+  "capacityRow.bots.review_quote_bytes.full": "Older linked rounds are not quoted once the request and reply bytes would exceed 96000; the prompt says older rounds were left out. One round always fits.",
+  "capacityRow.bots.review_quote_bytes.what": "Request and reply bytes quoted from earlier rounds when one Bot follows up another.",
+  "capacityRow.bots.review_quote_rounds.what": "Earlier rounds of the same pair quoted when one Bot follows up another."
 }

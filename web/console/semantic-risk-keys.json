@@ -3669,7 +3669,8 @@
       "projectAssistants.compactFailOther",
       "projectAssistants.compactFailReadOnly",
       "projectAssistants.memoryCardSkipped",
-      "capacityRow.bots.peer_notes_per_request.full"
+      "capacityRow.bots.peer_notes_per_request.full",
+      "capacityRow.bots.review_quote_bytes.full"
     ],
     "state": [
       "acp.cancelRequested",
@@ -6976,7 +6977,8 @@
       "workflowSettings.session_auto_discoveryScope",
       "workflowSettings.tab",
       "worktree.refreshed",
-      "projectAssistants.compactFailReadOnly"
+      "projectAssistants.compactFailReadOnly",
+      "capacityRow.bots.review_quote_rounds.what"
     ],
     "deletion": [
       "botRoutineControls.removeFilter",
@@ -14009,6 +14011,8 @@
     "projectAssistants.memoryCardSkipped",
     "capacityRow.bots.peer_note_bytes.full",
     "capacityRow.bots.peer_notes_per_request.full",
-    "capacityRow.bots.room_pictures.full"
+    "capacityRow.bots.room_pictures.full",
+    "capacityRow.bots.review_quote_bytes.full",
+    "capacityRow.bots.review_quote_rounds.what"
   ]
 }
