@@ -16,7 +16,7 @@ func TestPeerRequestPromptSendsAuthorizationToACard(t *testing.T) {
 	if err := collaborationPrompt(pa.Turn{Origin: pa.BotRequestOrigin, ExchangeID: "x1", Fence: pa.Fence{Key: key}}, &request); err != nil {
 		t.Fatal(err)
 	}
-	for _, rule := range []string{"call ask_person once", "waiting for the user", "do not ask the requesting Bot to relay", "do not tell the user to paste authorization text", "Please deploy"} {
+	for _, rule := range []string{"call ask_person once", "waiting for the user", "do not ask the requesting Bot to relay", "do not tell the user to paste authorization text", "also tell the user briefly with send_message", "only to your own chat with the user", "Please deploy"} {
 		if !strings.Contains(request.Text, rule) {
 			t.Errorf("peer request prompt does not say %q:\n%s", rule, request.Text)
 		}

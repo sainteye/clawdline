@@ -762,3 +762,62 @@ func repliesToSource(outcome pa.ExchangeOutcome) bool {
 	}
 	return false
 }
+
+// PostPeerNote puts a short message from a Bot handling another Bot's request
+// into that Bot's own main chat. Only the exchange's recipient, during its
+// outstanding request turn, may post; a hidden worker posts into the chat of
+// the Bot that owns it. Nothing reaches the requester or another chat.
+func (s *Store) PostPeerNote(ctx context.Context, q app.PeerNote) (pa.Message, error) {
+	x, err := s.Exchange(ctx, q.Caller.Key, q.ExchangeID)
+	if err != nil {
+		return pa.Message{}, err
+	}
+	u := s.lockExchange(q.Caller.Key, x.Target.Key)
+	defer u()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return pa.Message{}, err
+	}
+	defer tx.Rollback()
+	if x, err = exchangeRead(ctx, tx, q.Caller.Key.MachineID, q.ExchangeID); err != nil {
+		return pa.Message{}, err
+	}
+	if x.RequestTurnID != q.TurnID || !x.Outstanding() || x.Recipient().Key != q.Caller.Key || x.DestinationProject() != q.Caller.Project {
+		return pa.Message{}, failure(pa.ScopeDenied, "peer_note")
+	}
+	if x.RequestWorkerID != "" {
+		w, err := load(ctx, tx, q.Caller.Key)
+		if err != nil {
+			return pa.Message{}, err
+		}
+		if w.BackgroundOwner == nil || *w.BackgroundOwner != x.Target.Key {
+			return pa.Message{}, failure(pa.ScopeDenied, "peer_note")
+		}
+	}
+	owner, err := load(ctx, tx, x.Target.Key)
+	if err != nil {
+		return pa.Message{}, err
+	}
+	if owner.Bot.Project != x.DestinationProject() || owner.Conversation.ID != x.Target.ConversationID {
+		return pa.Message{}, failure(pa.ScopeDenied, "peer_note")
+	}
+	m := exchangeMutation(owner, q.ID, q.At, nil, []pa.Message{{ID: q.ID, Fence: exchangeFence(owner), Kind: pa.AssistantMessage, Text: q.Text, At: q.At}})
+	if p, e := receipt(ctx, tx, m.Command); e != nil {
+		return pa.Message{}, e
+	} else if p != nil {
+		return m.Messages[0], nil
+	}
+	prefix, sent := "peer-note-"+x.ID+"-", 0
+	for _, msg := range owner.Messages {
+		if strings.HasPrefix(msg.ID, prefix) {
+			sent++
+		}
+	}
+	if sent >= pa.MaxPeerNotesPerRequest {
+		return pa.Message{}, failure(pa.CapacityFull, "peer_notes")
+	}
+	if err = exchangeApply(ctx, tx, &owner, m); err != nil {
+		return pa.Message{}, err
+	}
+	return m.Messages[0], s.commitRoster(ctx, tx, x.Project.MachineID)
+}

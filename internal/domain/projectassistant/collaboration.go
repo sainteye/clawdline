@@ -23,6 +23,10 @@ const (
 	MaxCollaborationHops                    = 8
 	MaxCollaborationRequestBytes            = 32000
 	MaxCollaborationReplyBytes              = 32000
+	// A Bot handling another Bot's request may tell its own person a few
+	// short things in its main chat; more is refused so it cannot flood it.
+	MaxPeerNotesPerRequest = 3
+	MaxPeerNoteBytes       = 2000
 )
 
 type ExchangeOutcome string

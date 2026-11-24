@@ -3668,7 +3668,8 @@
       "projectAssistants.compactFailOffline",
       "projectAssistants.compactFailOther",
       "projectAssistants.compactFailReadOnly",
-      "projectAssistants.memoryCardSkipped"
+      "projectAssistants.memoryCardSkipped",
+      "capacityRow.bots.peer_notes_per_request.full"
     ],
     "state": [
       "acp.cancelRequested",
@@ -6105,7 +6106,9 @@
       "projectAssistants.compactFailCancelled",
       "projectAssistants.compactFailReadOnly",
       "projectAssistants.memoryCardSaved",
-      "projectAssistants.memoryCardSkipped"
+      "projectAssistants.memoryCardSkipped",
+      "capacityRow.bots.peer_note_bytes.full",
+      "capacityRow.bots.peer_notes_per_request.full"
     ],
     "permission": [
       "acp.permissionPending",
@@ -14001,6 +14004,8 @@
     "projectAssistants.compactFailOther",
     "projectAssistants.compactFailReadOnly",
     "projectAssistants.memoryCardSaved",
-    "projectAssistants.memoryCardSkipped"
+    "projectAssistants.memoryCardSkipped",
+    "capacityRow.bots.peer_note_bytes.full",
+    "capacityRow.bots.peer_notes_per_request.full"
   ]
 }

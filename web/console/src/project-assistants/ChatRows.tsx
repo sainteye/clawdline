@@ -22,7 +22,7 @@ import { WorkResultCard } from "./WorkResultCard"
 import { ExchangePanel } from "./ExchangePanel"
 import { exchangeWords } from "./exchange-words"
 import { BotAvatar } from "./BotAvatar"
-import { exchangeBot, exchangeEntries, exchangePeer, loadExchangeBot } from "./exchanges"
+import { exchangeBot, exchangeEntries, exchangePeer, exchangeSummary, loadExchangeBot } from "./exchanges"
 import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
@@ -92,6 +92,7 @@ export function ChatRows({onOpenBot,renderExchangeDecision,timeline,onQuote,onOp
         {failed&&<span aria-hidden="true">!</span>}<span>{outgoing?exchangeWord.to:exchangeWord.from}</span>
         {bot&&<BotAvatar appearance={bot.appearance} size={17}/>}<strong>{name}</strong><span aria-hidden="true">›</span>
       </button>
+      {!outgoing&&exchangeSummary(reference)&&<p className="pa-exchange-summary">{exchangeSummary(reference)}</p>}
       {outgoing&&reference.outcome==="needs_person"&&<DecisionPointer name={name} w={w} onOpen={onOpenBot?()=>onOpenBot(reference.target.key):undefined}/>}
       {!outgoing&&renderExchangeDecision?.(reference.id)}
     </div>

@@ -14360,5 +14360,9 @@
   "projectAssistants.compactFailOffline": "The machine could not be reached or did not confirm. Check the connection, then try again.",
   "projectAssistants.compactFailReadOnly": "This device cannot write to the Bot. Open it on a device with write access.",
   "projectAssistants.compactFailBusy": "The Bot is working. Wait until it is idle, then try again.",
-  "projectAssistants.compactFailNoSession": "This Bot has no conversation to compact yet. Send a message first."
+  "projectAssistants.compactFailNoSession": "This Bot has no conversation to compact yet. Send a message first.",
+  "capacityRow.bots.peer_notes_per_request.full": "Further messages for that request are refused, so the chat is not flooded; the reply to the requesting Bot is unaffected.",
+  "capacityRow.bots.peer_notes_per_request.what": "Messages a Bot may send its own chat while handling one request from another Bot.",
+  "capacityRow.bots.peer_note_bytes.what": "UTF-8 bytes in one message a Bot sends its own chat while handling another Bot's request.",
+  "capacityRow.bots.peer_note_bytes.full": "A longer message is refused; the Bot sends a shorter one."
 }

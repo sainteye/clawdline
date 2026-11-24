@@ -14360,5 +14360,9 @@
   "projectAssistants.compactRetry": "重試",
   "projectAssistants.compactFailAgent": "只有 Claude Code 和 Codex 的 Bot 能壓縮，可以改開新 session。",
   "projectAssistants.compactFailNoSession": "這個 Bot 還沒有可壓縮的對話，先送一則訊息再試。",
-  "projectAssistants.compactFailReadOnly": "這台裝置無法寫入這個 Bot，請改用有寫入權限的裝置。"
+  "projectAssistants.compactFailReadOnly": "這台裝置無法寫入這個 Bot，請改用有寫入權限的裝置。",
+  "capacityRow.bots.peer_note_bytes.what": "Bot 處理其他 Bot 的請求時，送到自己聊天的單則訊息 UTF-8 位元組數。",
+  "capacityRow.bots.peer_note_bytes.full": "更長的訊息會被拒絕，Bot 要改送較短的訊息。",
+  "capacityRow.bots.peer_notes_per_request.full": "同一個請求再送的訊息會被拒絕，避免洗版；給發起 Bot 的回覆不受影響。",
+  "capacityRow.bots.peer_notes_per_request.what": "Bot 處理其他 Bot 的單一請求時，可以送到自己聊天的訊息則數。"
 }
