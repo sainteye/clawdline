@@ -172,6 +172,7 @@
 | `bots.review_per_sender` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_reply_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_request_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.room_pictures` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.roster_check_ms` | 250 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_client_rows` | 1000 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |

@@ -225,7 +225,7 @@ func TestRoomTurnRunsEachMemberInItsOwnConversation(t *testing.T) {
 	g := h.group(t, "g", alice, bob, carol)
 	h.peer.reply("a", "I can take it. @Bob please check the tests.")
 	h.peer.reply("b", "(pass)")
-	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-1"), "@Alice can you look at the build?", pa.BotKey{}, nil); err != nil {
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-1"), "@Alice can you look at the build?", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "Bob's room turn to finish", func() bool {
@@ -270,14 +270,14 @@ func TestExactRoomQuoteReachesTheMemberWithoutChangingUserText(t *testing.T) {
 	alice, bob := h.members[0], h.members[1]
 	g := h.group(t, "g", alice, bob)
 	h.peer.reply("a", "Synthetic original finding")
-	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "source"), "@Alice give one finding", pa.BotKey{}, nil); err != nil {
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "source"), "@Alice give one finding", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "source member answer", func() bool { return len(h.lines(t, g)) == 2 })
 	h.driver.Idle()
 	original := h.lines(t, g)[1]
 	h.peer.reply("a", "(pass)")
-	entry, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "quote"), "Please explain this finding", pa.BotKey{}, nil, original.Seq)
+	entry, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "quote"), "Please explain this finding", nil, pa.BotKey{}, nil, original.Seq)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -304,7 +304,7 @@ func TestRoomTicketsRefuseOtherFencesDeletedMembersAndStaleEpochs(t *testing.T) 
 	g := h.group(t, "g", alice, bob)
 	h.peer.reply("a", "(pass)")
 	h.peer.reply("b", "(pass)")
-	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-2"), "hello", pa.BotKey{}, nil); err != nil {
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-2"), "hello", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "the first room turn", func() bool { return len(h.roomTurns(t, bob)) == 1 && terminal(h.roomTurns(t, bob)[0].State) })
@@ -324,7 +324,7 @@ func TestRoomTicketsRefuseOtherFencesDeletedMembersAndStaleEpochs(t *testing.T) 
 	}
 
 	// The person writes again: the earlier epoch is superseded.
-	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-3"), "again", pa.BotKey{}, nil); err != nil {
+	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-3"), "again", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "the second room turn", func() bool { return len(h.roomTurns(t, bob)) == 2 && terminal(h.roomTurns(t, bob)[1].State) })
@@ -359,7 +359,7 @@ func TestRoomTicketsRefuseOtherFencesDeletedMembersAndStaleEpochs(t *testing.T) 
 	}
 	before := len(h.peer.asked("b"))
 	h.peer.reply("a", "(pass)")
-	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-4"), "@all anyone?", pa.BotKey{}, nil); err != nil {
+	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-4"), "@all anyone?", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "Alice's third room turn", func() bool { return len(h.roomTurns(t, alice)) == 3 && terminal(h.roomTurns(t, alice)[2].State) })
@@ -380,7 +380,7 @@ func TestRoomStopAndPermissionCardsBelongToTheMember(t *testing.T) {
 	h.peer.mu.Lock()
 	h.peer.hold["a"] = hold
 	h.peer.mu.Unlock()
-	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-5"), "@Alice deploy?", pa.BotKey{}, nil); err != nil {
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-5"), "@Alice deploy?", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "Alice's prompt", func() bool { return len(h.peer.asked("a")) == 1 })
@@ -408,7 +408,7 @@ func TestRoomStopAndPermissionCardsBelongToTheMember(t *testing.T) {
 	h.peer.mu.Lock()
 	h.peer.hold["b"] = make(chan struct{})
 	h.peer.mu.Unlock()
-	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-6"), "@Bob never mind", pa.BotKey{}, nil); err != nil {
+	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-6"), "@Bob never mind", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	answer := app.AnswerRequest{Command: roomCommand(alice.Key, pa.AnswerOperation, "answer"), Answer: pa.PermissionAnswer{Fence: q.Turn.Fence, TurnID: q.Turn.ID, OfferID: "offer", OptionID: "once"}}
@@ -464,7 +464,7 @@ func TestOwnChatStopKeepsALateRoomTurn(t *testing.T) {
 	}
 	awaitRoom(t, "Alice busy", func() bool { return len(h.peer.asked("a")) == 1 })
 	h.peer.reply("b", "(pass)")
-	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-7"), "@Alice when free", pa.BotKey{}, nil); err != nil {
+	if _, _, err = h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-7"), "@Alice when free", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "Alice's late room turn queued", func() bool {
@@ -515,7 +515,7 @@ func TestRoomPromptCarriesTheGroupDescription(t *testing.T) {
 		t.Fatal(err)
 	}
 	h.peer.reply("a", "(pass)")
-	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(key, pa.SendOperation, "say-described"), "Anything new?", pa.BotKey{}, nil); err != nil {
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(key, pa.SendOperation, "say-described"), "Anything new?", nil, pa.BotKey{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	awaitRoom(t, "Alice's prompt", func() bool { return len(h.peer.asked("a")) == 1 })

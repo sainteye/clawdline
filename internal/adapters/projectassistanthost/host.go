@@ -226,7 +226,7 @@ func (h *Host) makeService() error {
 	if err != nil {
 		return err
 	}
-	rooms, err := app.NewRoomDriver(app.RoomDriverOptions{Rooms: groups, Bots: h.store, Limits: app.DefaultRoomLimits(), ID: h.o.ID, Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
+	rooms, err := app.NewRoomDriver(app.RoomDriverOptions{Rooms: groups, Bots: h.store, Limits: app.DefaultRoomLimits(), ID: h.o.ID, Pictures: roomPictures(h.o), Authorize: func(ctx context.Context, key pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		return h.background(ctx, key, true)
 	}})
 	if err != nil {
@@ -972,4 +972,13 @@ func (f runtimeFacade) CancelRoomTurns(ctx context.Context, group, member pa.Bot
 		return nil
 	}
 	return r.CancelRoomTurns(ctx, group, member, active)
+}
+
+// roomPictures is the picture store when it can also keep a copy, which the
+// production store can; a read-only reader leaves room pictures prompt-only.
+func roomPictures(o Options) app.RoomPictures {
+	if p, ok := o.Attachments.(app.RoomPictures); ok {
+		return p
+	}
+	return nil
 }

@@ -36,7 +36,7 @@ type GroupRoomStore interface {
 	CheckTicket(context.Context, pa.RoomTicket) error
 	// PersonWrote writes the person's line and starts its room turn in one
 	// transaction under the room revision.
-	PersonWrote(context.Context, pa.Command, int64, string, pa.BotKey, ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
+	PersonWrote(context.Context, pa.Command, int64, string, []pa.Attachment, pa.BotKey, ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
 	Lines(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	LinesBefore(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	Groups(context.Context, string) ([]pa.Group, error)
@@ -140,7 +140,7 @@ func (r *GroupRooms) step(ctx context.Context, key pa.BotKey, revision int64, f 
 // Send writes the person's message into the room and starts the room turn it
 // asks for, replacing the one running. replyToAuthor is the stored author of
 // a quoted line, or zero. A replayed command starts nothing (Turn nil).
-func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
+func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command, revision int64, text string, attachments []pa.Attachment, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
 	if err := who.check(c.Key); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
@@ -158,11 +158,14 @@ func (r *GroupRooms) Send(ctx context.Context, who PersonAuthority, c pa.Command
 		Text          string    `json:"text"`
 		ReplyToAuthor pa.BotKey `json:"reply_to_author"`
 		QuoteSeq      int64     `json:"quote_seq,omitempty"`
-	}{text, replyToAuthor, quoteSeq})
+		// Pictures are named by content, so a resent message with the same
+		// pictures replays; omitted when empty to keep older digests.
+		Pictures []string `json:"pictures,omitempty"`
+	}{text, replyToAuthor, quoteSeq, pictureIDs(attachments)})
 	if err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, replyToAuthor, quoted...)
+	e, st, t, err := r.store.PersonWrote(ctx, c, revision, text, attachments, replyToAuthor, quoted...)
 	return e, RoomStep{State: st, Turn: t}, err
 }
 
@@ -315,6 +318,14 @@ func ProjectRoomMemberOutcome(room pa.RoomState, name string, t pa.Turn) pa.Room
 		} else if n == 0 || out.Attempts[n-1].Ordinal < attempt.Ordinal {
 			out.Attempts = append(out.Attempts, attempt)
 		}
+	}
+	return out
+}
+
+func pictureIDs(attachments []pa.Attachment) []string {
+	var out []string
+	for _, a := range attachments {
+		out = append(out, a.ID)
 	}
 	return out
 }
