@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14319,
-  "riskKeys": 6085,
-  "nonRiskCount": 8234,
+  "englishContentKeys": 14322,
+  "riskKeys": 6086,
+  "nonRiskCount": 8236,
   "groups": [
     {
       "name": "acp / other",
@@ -615,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 760,
+      "count": 761,
       "sources": [
         null
       ],
@@ -760,6 +760,7 @@
         "capacityRow.bots.review_per_sender.what",
         "capacityRow.bots.review_reply_bytes.what",
         "capacityRow.bots.review_request_bytes.what",
+        "capacityRow.bots.room_pictures.what",
         "capacityRow.bots.roster_check_ms.what",
         "capacityRow.bots.roster_seconds.what",
         "capacityRow.bots.roster_subs.what",
@@ -6280,7 +6281,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 633,
+      "count": 634,
       "sources": [
         null
       ],
@@ -6479,6 +6480,7 @@
         "projectAssistants.groupOlder",
         "projectAssistants.groupPerson",
         "projectAssistants.groupPersonalWorkspace",
+        "projectAssistants.groupPicturesLimit",
         "projectAssistants.groupProject",
         "projectAssistants.groupReply",
         "projectAssistants.groupReplyTo",

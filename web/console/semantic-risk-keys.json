@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14319,
+  "englishKeys": 14322,
   "counts": {
     "negation": 3638,
-    "state": 2424,
+    "state": 2425,
     "permission": 861,
     "deletion": 336,
     "uncertainty": 572
   },
-  "unionCount": 6085,
+  "unionCount": 6086,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3859,6 +3859,7 @@
       "capacityRow.bots.review_hops.full",
       "capacityRow.bots.review_per_sender.full",
       "capacityRow.bots.review_request_bytes.full",
+      "capacityRow.bots.room_pictures.full",
       "capacityRow.bots.roster_check_ms.full",
       "capacityRow.bots.roster_client_rows.full",
       "capacityRow.bots.roster_seconds.full",
@@ -8323,6 +8324,7 @@
     "capacityRow.bots.review_per_sender.full",
     "capacityRow.bots.review_reply_bytes.full",
     "capacityRow.bots.review_request_bytes.full",
+    "capacityRow.bots.room_pictures.full",
     "capacityRow.bots.roster_check_ms.full",
     "capacityRow.bots.roster_client_rows.full",
     "capacityRow.bots.roster_client_rows.what",
