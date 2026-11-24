@@ -2,7 +2,7 @@ import {createPortal} from "react-dom"
 import {useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode} from "react"
 import {afterSurfaceExit} from "./surface-motion"
 
-export interface PaMenuItem { id:string; label:string; onSelect:()=>void; disabled?:boolean; danger?:boolean; keepOpen?:boolean; submenu?:boolean; icon?:ReactNode }
+export interface PaMenuItem { id:string; label:string; onSelect:()=>void; disabled?:boolean; danger?:boolean; keepOpen?:boolean; submenu?:boolean; dialog?:boolean; icon?:ReactNode }
 
 export interface PaMenuAnchor {
   opener: HTMLElement
@@ -73,7 +73,7 @@ export function PaMenu({label,items,floating=false,triggerIcon,externalAnchor,on
     return()=>{window.removeEventListener("resize",place);window.removeEventListener("scroll",place,true);window.visualViewport?.removeEventListener("resize",place);window.visualViewport?.removeEventListener("scroll",place)}
   },[open,floating,externalAnchor,items.length])
   const choices=<div className="pa-menu-list" role="menu" aria-label={label} ref={menu} inert={!open} data-closing={!open||undefined} style={floating?floatingStyle:undefined}>
-    {items.map((it,i)=><button key={it.id} type="button" role="menuitem" data-index={i} tabIndex={i===active?0:-1} disabled={it.disabled} data-danger={it.danger||undefined} aria-haspopup={it.submenu?"menu":undefined}
+    {items.map((it,i)=><button key={it.id} type="button" role="menuitem" data-index={i} tabIndex={i===active?0:-1} disabled={it.disabled} data-danger={it.danger||undefined} aria-haspopup={it.submenu?"menu":it.dialog?"dialog":undefined}
       onClick={()=>{if(!it.keepOpen)close();else setActive(0);it.onSelect()}}>{it.icon}{it.label}{it.submenu&&<span className="pa-menu-next" aria-hidden="true">›</span>}</button>)}
   </div>
   // Floating menus escape the scrolling list while staying in the Bots window's stacking context.

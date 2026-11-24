@@ -1,4 +1,4 @@
-/** The Bots list toolbar keeps collapse at the start and its other buttons together at the end. No daemon, provider or paid API. */
+/** The Bots list toolbar keeps collapse at the start and its other buttons together at the end, and Bots settings opens from its options menu. No daemon, provider or paid API. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
 import {mkdir} from "node:fs/promises"
@@ -36,16 +36,34 @@ try{
    })
    await page.screenshot({path:path.join(artifacts,`toolbar-${engine}-${width}.png`),clip:{x:0,y:0,width,height:Math.min(height,260)}})
    const [first,...rest]=box.buttons,label=`${engine} ${width}x${height}`
-   try{
-    assert.equal(box.buttons.length,4,`${label}: collapse, tower, create and options are shown`)
-    assert.ok(Math.abs(first.left-box.left)<=1,`${label}: collapse sits at the start (${first.left} vs ${box.left})`)
-    assert.ok(Math.abs(rest.at(-1).right-box.right)<=1,`${label}: the last button touches the end (${rest.at(-1).right} vs ${box.right})`)
-    const gaps=rest.slice(1).map((b,i)=>b.left-rest[i].right)
-    assert.ok(gaps.every(gap=>Math.abs(gap-gaps[0])<=1&&gap>=4&&gap<=12),`${label}: the end buttons share one small gap (${gaps.join(", ")})`)
-    assert.ok(rest[0].left-first.right>gaps[0]+8,`${label}: the end buttons are grouped away from collapse`)
-    for(const b of box.buttons)assert.ok(b.width>=44&&b.height>=44,`${label}: ${b.name} keeps a 44px target (${b.width}x${b.height})`)
-    console.log(`ok ${label}: gaps ${gaps.join(", ")}`)
-   }catch(error){failures.push(error.message);console.log(`not ok ${error.message}`)}
+   const check=async(run)=>{try{await run()}catch(error){failures.push(error.message);console.log(`not ok ${error.message}`)}}
+   await check(async()=>{assert.equal(box.buttons.length,4,`${label}: collapse, tower, create and options are shown`)})
+   await check(async()=>{assert.ok(Math.abs(first.left-box.left)<=1,`${label}: collapse sits at the start (${first.left} vs ${box.left})`)})
+   await check(async()=>{assert.ok(Math.abs(rest.at(-1).right-box.right)<=1,`${label}: the last button touches the end (${rest.at(-1).right} vs ${box.right})`)})
+   const gaps=rest.slice(1).map((b,i)=>b.left-rest[i].right)
+   await check(async()=>{assert.ok(gaps.every(gap=>Math.abs(gap-gaps[0])<=1&&gap>=4&&gap<=12),`${label}: the end buttons share one small gap (${gaps.join(", ")})`)})
+   await check(async()=>{assert.ok(rest[0].left-first.right>gaps[0]+8,`${label}: the end buttons are grouped away from collapse`)})
+   await check(async()=>{for(const b of box.buttons)assert.ok(b.width>=44&&b.height>=44,`${label}: ${b.name} keeps a 44px target (${b.width}x${b.height})`)})
+   await check(async()=>{for(const [i,b] of box.buttons.entries())for(const other of box.buttons.slice(i+1))assert.ok(b.right<=other.left+0.5||other.right<=b.left+0.5,`${label}: ${b.name} and ${other.name} do not overlap`)})
+   await check(async()=>{
+    const options=toolbar.getByRole("button",{name:/^(清單選項|List options)$/})
+    await options.click()
+    const settings=page.getByRole("menuitem",{name:/^(Bots 設定|Bots settings)$/})
+    await settings.waitFor({timeout:2000}).catch(()=>{throw Error(`${label}: Bots settings is an item in the options menu`)})
+    assert.equal(await settings.getAttribute("aria-haspopup"),"dialog",`${label}: the settings item says it opens a dialog`)
+    await page.evaluate(()=>Promise.all(document.getAnimations().map(animation=>animation.finished.catch(()=>{}))))
+    await page.screenshot({path:path.join(artifacts,`toolbar-menu-${engine}-${width}.png`),clip:{x:0,y:0,width,height:Math.min(height,400)}})
+    await settings.click()
+    const dialog=page.getByRole("dialog",{name:/Bots 設定|Bots settings/})
+    await dialog.waitFor({timeout:2000})
+    await page.waitForTimeout(150)
+    await page.screenshot({path:path.join(artifacts,`toolbar-modal-${engine}-${width}.png`)})
+    await page.keyboard.press("Escape")
+    await dialog.waitFor({state:"detached",timeout:2000})
+    assert.ok(await options.evaluate(button=>document.activeElement===button),`${label}: closing settings returns focus to the options button`)
+    console.log(`ok ${label}: settings opens from the options menu`)
+   })
+   console.log(`${label}: gaps ${gaps.join(", ")}`)
    await context.close()
   }}finally{await browser.close()}
  }
