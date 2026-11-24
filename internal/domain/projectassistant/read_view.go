@@ -10,6 +10,7 @@ const (
 	ReadViewEvents      ReadViewMode = "events"
 	ReadViewPermissions ReadViewMode = "permissions"
 	ReadViewTraces      ReadViewMode = "traces"
+	ReadViewProgress    ReadViewMode = "progress"
 	ReadViewDetail      ReadViewMode = "detail"
 	// Cursor bytes bound a stateless signed position/reference, not retained
 	// history. Oversized positions are refused rather than truncated.
@@ -33,7 +34,7 @@ func CheckReadViewRequest(q ReadViewRequest) error {
 		return fail(Invalid, "read_view_key")
 	}
 	switch q.Mode {
-	case ReadViewSnapshot, ReadViewHistory, ReadViewEvents, ReadViewPermissions, ReadViewTraces, ReadViewDetail:
+	case ReadViewSnapshot, ReadViewHistory, ReadViewEvents, ReadViewPermissions, ReadViewTraces, ReadViewProgress, ReadViewDetail:
 	default:
 		return fail(Invalid, "read_view_mode")
 	}

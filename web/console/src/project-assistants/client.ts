@@ -61,6 +61,7 @@ export interface SourceClient {
   canGroups?(): boolean
   canTeamCards?(): boolean
   canDeferTraceCount?(): boolean
+  canReadProgress?(): boolean
   /** The source rebases a settings save on its base and names conflicting fields (API 117). */
   canSettingsBase?(): boolean
   canLeadTeamDefault?(): boolean

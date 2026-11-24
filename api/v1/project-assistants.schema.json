@@ -2582,6 +2582,7 @@
         "events",
         "permissions",
         "traces",
+        "progress",
         "detail"
       ],
       "description": "One optional source-owned read projection; never native authority."
@@ -2957,6 +2958,10 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "description": "Immutable admission message anchor for timeline rows; zero for other collections."
+        },
+        "occurred_at": {
+          "type": "string",
+          "description": "When an inline progress segment started. Present on progress rows."
         },
         "observed_event_seq": {
           "type": "integer",

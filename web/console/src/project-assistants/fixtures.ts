@@ -63,12 +63,15 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   let viewFailure:W.ProjectAssistantErrorCode|null=null,viewInvalid:string|null=null,viewUnsupported=false,legacyForbidden=false,viewOversized=false
   let viewGate:Promise<void>|null=null,releaseView:(()=>void)|null=null,holdMode:W.ProjectAssistantReadViewMode|null=null
   let historyGate:Promise<void>|null=null,releaseHistory:(()=>void)|null=null
+  let progressEnabled=false
+  const traceKey=(t:W.ProjectAssistantTrace)=>JSON.stringify([t.turn_id,t.id||t.category])
   const readEpoch=`${machineID}-epoch-1`
   const latest=<T,>(rows:readonly T[],identity:(row:T)=>string):T[]=>[...new Map(rows.map(row=>[identity(row),row])).values()]
   const readPage=(r:W.ProjectAssistantReadViewRequest):W.ProjectAssistantReadViewResponse=>{
     const bot=find(r.key),f=fence(bot),own=events.filter(e=>sameBot(e.fence.key,r.key)),current=own.filter(e=>sameFence(e.fence,f))
     const offers=latest(current.flatMap(e=>e.permission?[e.permission]:[]),p=>p.id).filter(p=>p.state==="pending")
-    const traces=latest(current.flatMap(e=>e.trace?[e.trace]:[]),t=>JSON.stringify([t.turn_id,t.category]))
+    const traces=latest(current.flatMap(e=>e.trace?[e.trace]:[]),traceKey)
+    const detailID=(trace:W.ProjectAssistantTrace)=>progressEnabled?traceKey(trace):`trace-${trace.turn_id}-${trace.category}`
     const turns=latest(own.flatMap(e=>e.turn?[e.turn]:[]),t=>t.id)
     const pending=turns.filter(t=>["accepted","queued","running","waiting_permission"].includes(t.state))
     const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",...(t.failure?.field?{failure_field:t.failure.field}:{}),started_at:t.started_at??"",...(t.queue_edit_id?{queue_edit_id:t.queue_edit_id}:{})})
@@ -91,16 +94,26 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     }else if(r.mode==="events"){
       const matching=own.filter(e=>e.seq>r.after_seq);response.items=matching.slice(0,r.page_size).map(event=>({id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:event.seq,event}));response.has_more=matching.length>response.items.length;response.next_seq=response.items.at(-1)?.event?.seq??r.after_seq
     }else if(r.mode==="permissions")paginate(offers.map(permission=>({id:permission.id,kind:"permission_summary",anchor_message_seq:0,observed_event_seq:seq,permission_summary:{id:permission.id,fence:permission.fence,turn_id:permission.turn_id,state:permission.state,expires_at:permission.expires_at,detail_cursor:ref("permission",permission.id),...(permission.kind==="decision"?{tool_kind:"decision",title:permission.decision?.question??""}:{})}})),"permissions")
-    else if(r.mode==="traces")paginate(traces.map((trace,i)=>({id:`trace-${trace.turn_id}-${trace.category}`,kind:"trace_summary" as const,anchor_message_seq:0,observed_event_seq:seq,trace_summary:{id:`trace-${trace.turn_id}-${trace.category}`,turn_id:trace.turn_id,category:trace.category,complete:trace.complete,detail_cursor:ref("trace",String(i))}})).reverse(),"traces")
+    else if(r.mode==="progress"){
+      const steps=latest(own.filter(e=>e.trace?.category==="agent_message_chunk"),e=>traceKey(e.trace!))
+      paginate(steps.map(event=>{
+        const trace=event.trace!,id=traceKey(trace)
+        const chunks=trace.id?own.filter(e=>e.trace&&traceKey(e.trace)===id):[event]
+        return {id,kind:"trace" as const,anchor_message_seq:0,observed_event_seq:event.seq,
+          occurred_at:chunks[0].at,trace:{...trace,text:chunks.map(e=>e.trace!.text).join("")}}
+      }).reverse(),"progress")
+    }
+    else if(r.mode==="traces")paginate(traces.map((trace,i)=>({id:detailID(trace),kind:"trace_summary" as const,anchor_message_seq:0,observed_event_seq:seq,trace_summary:{id:detailID(trace),turn_id:trace.turn_id,category:trace.category,complete:trace.complete,detail_cursor:ref("trace",String(i))}})).reverse(),"traces")
     else{
       const prefix=`${readEpoch}:${generation}:`,parts=r.cursor.slice(prefix.length).split(":")
       if(!r.cursor.startsWith(prefix))throw failure("pa_cursor_expired")
       if(parts[0]==="permission"){const permission=offers.find(p=>p.id===decodeURIComponent(parts[1]));if(!permission)throw failure("pa_not_found");response.items=[{id:permission.id,kind:"permission",anchor_message_seq:0,observed_event_seq:seq,permission}]}
-      else{const trace=traces[Number(parts[1])];if(!trace)throw failure("pa_not_found");response.items=[{id:r.cursor,kind:"trace",anchor_message_seq:0,observed_event_seq:seq,trace}]}
+      else{const trace=traces[Number(parts[1])];if(!trace)throw failure("pa_not_found");response.items=[{id:detailID(trace),kind:"trace",anchor_message_seq:0,observed_event_seq:seq,trace}]}
     }
     return structuredClone(response)
   }
   const api:SourceClient={machineID,machineName:machineID,authorizationRevision:`${machineID}-grant-1`,
+    canReadProgress:()=>progressEnabled,
     async status(signal){log.push({method:"status",machine:machineID,request:null});if(signal.aborted)throw new DOMException("Aborted","AbortError");const answer={contract_version:contractVersion,sources:[status()]};if(statusGate)await statusGate;return answer},
     async projects(r,signal){
       check("projects",r,signal)
@@ -240,11 +253,11 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     holdStatus(){statusGate=new Promise(resolve=>{releaseStatus=resolve})},releaseStatus(){releaseStatus?.();statusGate=null;releaseStatus=null},
     holdCreate(){createGate=new Promise(resolve=>{releaseCreate=resolve})},releaseCreate(){releaseCreate?.();createGate=null;releaseCreate=null},
     setState(next:W.ProjectAssistantSourceState,nextAccess=access){state=next;access=nextAccess},push,log,bots,
-    scriptMessage(bot:W.ProjectAssistantBot,id:string,kind:W.ProjectAssistantMessageKind,text:string,turn_id:string){
+    scriptMessage(bot:W.ProjectAssistantBot,id:string,kind:W.ProjectAssistantMessageKind,text:string,turn_id:string,createdAt=at){
       const rows=messages.get(bot.key.bot_id)??[]
-      const message:W.ProjectAssistantMessage={id,seq:rows.length+1,at,fence:fence(bot),kind,text,quote_message_id:"",turn_id}
+      const message:W.ProjectAssistantMessage={id,seq:rows.length+1,at:createdAt,fence:fence(bot),kind,text,quote_message_id:"",turn_id}
       messages.set(bot.key.bot_id,[...rows,message])
-      push({id:"published-"+id,seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})
+      push({id:"published-"+id,seq:0,at:createdAt,version:contractVersion,kind:"message_created",fence:fence(bot),message})
       return message
     },
     expireCursor(mode:"ok"|"pa_offline"|"pa_revoked"|"pa_capacity_full"="ok"){
@@ -288,6 +301,30 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       events.length=0;seq=0
       for(const message of rows)push({id:`journal-${message.id}`,seq:0,at,version:contractVersion,kind:"message_created",fence:message.fence,message})
       for(const message of messages.get(bots[2].key.bot_id)??[])push({id:`other-${message.id}`,seq:0,at,version:contractVersion,kind:"message_created",fence:message.fence,message})
+    },
+    seedInlineProgress(){
+      progressEnabled=true
+      const bot=bots[0]
+      const rows=(messages.get(bot.key.bot_id)??[]).slice(0,1)
+      events.length=0;seq=0
+      messages.set(bot.key.bot_id,rows)
+      this.inlineProgress("earlier","Earlier checkpoint.","2026-11-12T06:20:01Z")
+      for(let i=0;i<19;i++){
+        this.scriptMessage(bot,`progress-filler-${i}`,"assistant",`Earlier reply ${i}`,"history-turn",new Date(Date.parse(at)+(i+2)*1000).toISOString())
+      }
+      this.scriptMessage(bot,"progress-question","user","Check this integration","turn-1","2026-11-12T06:21:00Z")
+      this.inlineProgress("start","Checking the integration.","2026-11-12T06:21:01Z")
+      this.inlineProgress("thought","Private scratch note","2026-11-12T06:21:02Z","agent_thought_chunk")
+      this.inlineProgress("tool","Run the fixture checks","2026-11-12T06:21:03Z","tool_call")
+      this.scriptMessage(bot,"progress-ack","assistant","One check has finished.","turn-1","2026-11-12T06:21:04Z")
+      this.inlineProgress("finding","I found another result.","2026-11-12T06:21:05Z")
+      this.inlineProgress("final","Verified integration.","2026-11-12T06:21:06Z")
+      this.scriptMessage(bot,"progress-final","assistant","Verified integration.","turn-1","2026-11-12T06:21:07Z")
+    },
+    inlineProgress(id:string,text:string,time:string,category="agent_message_chunk"){
+      const f=fence(bots[0])
+      push({id:`inline-${id}-${seq}`,seq:0,at:time,version:contractVersion,kind:"trace_updated",
+        fence:f,trace:{id,turn_id:"turn-1",category,text,complete:false}})
     },
     seedCollections(count:number,withPermissions=true){
       const bot=bots[0],f=fence(bot)
