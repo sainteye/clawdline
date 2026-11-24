@@ -283,9 +283,9 @@ type Link struct {
 	lastKind  adaptercloud.FailureKind
 	// openErr is why Open could not finish an enabled line, kept as the
 	// error itself so OpenFailure can tell a refusal from a transient fault.
-	openErr error
-	answered  int
-	refused   int
+	openErr  error
+	answered int
+	refused  int
 	// reading is how many reads are being answered beside the command lane,
 	// at most CloudReadConcurrencyLimit.
 	reading            int
