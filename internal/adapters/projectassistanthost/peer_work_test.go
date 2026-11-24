@@ -230,6 +230,7 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 	ctx := context.Background()
 	f, _, _ := browserFixture(t)
 	f.o.Limits.MaxBots = 4
+	f.o.ProductLanguage = func() string { return "zh-Hant" }
 	f.start(t)
 	f.enable(t)
 	atlas, lens := f.create(t, "atlas"), f.create(t, "lens")
@@ -277,7 +278,7 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 			notices = append(notices, m)
 		}
 	}
-	if len(notices) != 1 || !strings.Contains(notices[0].Text, "lens") || !strings.Contains(notices[0].Text, "Fix the header") || !strings.Contains(notices[0].Text, "應 Bot lens 的請求") {
+	if len(notices) != 1 || notices[0].Text != "應 Bot lens 的請求派出任務「Fix the header」。" {
 		t.Fatalf("main-chat notice: %+v", notices)
 	}
 	// The worker can still read the work it dispatched for its owner.
@@ -317,5 +318,12 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 	wake := fixtureReceive(t, f.p.sent)
 	if pa.WorkCompletionTask(wake.Turn) != link.TaskID || wake.Turn.Fence.Key != atlas.Key {
 		t.Fatalf("the review turn ran in %s, not Atlas's main chat: %+v", wake.Turn.Fence.Key.BotID, wake.Turn)
+	}
+}
+
+// A Host composed without a language reader writes its notices in English.
+func TestHostWithoutProductLanguageWritesEnglish(t *testing.T) {
+	if got := (&Host{}).productLanguage(); got != "en" {
+		t.Fatalf("productLanguage = %q, want en", got)
 	}
 }

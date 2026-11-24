@@ -94,6 +94,10 @@ type Options struct {
 	Outputs     featurestore.Outputs
 	// Browser is optional; without it the browser tools answer disabled.
 	Browser *BrowserAccess
+	// ProductLanguage is the daemon's product_language setting, resolved by
+	// the same reader as the other daemon notices. Without it notices Host
+	// writes into a chat use English.
+	ProductLanguage func() string
 }
 
 type Host struct {
