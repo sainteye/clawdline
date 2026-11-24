@@ -32,8 +32,12 @@ Chat retains the accepted command and text in the existing journal until a
 user message in the same Bot, Project and conversation names the receipt's
 turn. Another message with identical text cannot replace it. Until then the
 row says **Sent · updating conversation…**; a read failure keeps both that row
-and its typed error, including after reload. The composer may hold the next
-draft, but another send waits until the accepted message is observed.
+and its typed error, including after reload. A new send can proceed after the
+previous admission receipt arrives. Until the corresponding message is visible,
+its receipt stays in the journal. Plain text and quoted text use the known
+conversation during a read interruption. The host resolves the quote and
+checks its scope and memory access at admission. Attachments still require
+their existing upload or execution-fence checks.
 
 An explicit send starts a fresh snapshot read even if the browser reports a
 hidden document. Foreground and explicit demands coalesce behind an active
