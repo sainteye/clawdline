@@ -132,7 +132,13 @@ export type BotRequestAction = "handoff" | "check" | "complete" | "cancel" | "re
 
 /** A typed refusal of a card read or write. `unconfirmed` when no answer came back. */
 export class BotRequestRefused extends Error {
-  constructor(readonly code: string, readonly field = "", readonly version?: number) { super(code) }
+  readonly code: string
+  readonly field: string
+  readonly version?: number
+  constructor(code: string, field = "", version?: number) {
+    super(code)
+    this.code = code; this.field = field; this.version = version
+  }
 }
 
 /** A refusal in plain words. */
