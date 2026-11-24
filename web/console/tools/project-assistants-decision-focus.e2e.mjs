@@ -43,10 +43,13 @@ try{
       await page.evaluate(()=>{window.botsFixture.a.decisionFixture(40);window.botsFixture.open()})
       const card=page.locator("#pa-decision-decision-7")
       await card.waitFor()
-      await page.waitForFunction(()=>document.querySelector("#pa-decision-decision-7")?.hasAttribute("data-focused"))
-      await page.waitForTimeout(400)
-      const box=await card.boundingBox()
-      assert.ok(box&&box.y>=0&&box.y+box.height<=height+1,`card is in view: ${JSON.stringify(box)}`)
+      await page.waitForFunction(()=>{
+        const card=document.querySelector("#pa-decision-decision-7[data-focused]")
+        const scroller=card?.closest(".pa-chat-scroll")
+        if(!scroller||!card.querySelector("button:enabled"))return false
+        const box=card.getBoundingClientRect(),viewport=scroller.getBoundingClientRect()
+        return box.top>=viewport.top&&box.bottom<=viewport.bottom&&document.activeElement===card
+      })
       await shot("opened-from-notification")
       await page.getByRole("button",{name:"Ship it now"}).click()
       await page.locator('#pa-decision-decision-7[data-state="answered"]').getByText("Ship it now",{exact:false}).waitFor()
@@ -58,11 +61,18 @@ try{
       await shot("done")
       await page.goto(origin+"/?lang="+language)
       await page.waitForFunction(()=>!!window.botsFixture)
-      await page.evaluate(()=>{window.botsFixture.a.decisionFixture(40);window.botsFixture.open()})
+      await page.evaluate(()=>{window.botsFixture.a.decisionFixture(40,true);window.botsFixture.open()})
       await page.getByRole("button",{name:/Merge and deploy this release now/}).click()
       const reply=page.locator('#pa-decision-decision-7[data-state="pending"]').getByRole("button",{name:"Ship it now"})
       await reply.waitFor()
-      await page.waitForFunction(()=>{const reply=document.querySelector("#pa-decision-decision-7 button");if(!reply||reply.disabled)return false;const box=reply.getBoundingClientRect();return box.top>=0&&box.bottom<=innerHeight})
+      await page.waitForFunction(()=>{
+        const card=document.querySelector("#pa-decision-decision-7[data-focused]")
+        const scroller=card?.closest(".pa-chat-scroll")
+        if(!scroller||!card.querySelector("button:enabled"))return false
+        const question=card.querySelector(".pa-decision-question").getBoundingClientRect()
+        const viewport=scroller.getBoundingClientRect()
+        return question.top>=viewport.top&&question.bottom<=viewport.bottom&&document.activeElement===card
+      })
       await shot("opened-from-roster")
       const scroll=await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)
       assert.ok(scroll,"no horizontal page scroll")

@@ -161,8 +161,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[browserOpener])
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
-  // The push-opened decision: consumed once the permissions say where it is.
+  // The entry-time question is consumed when the current permission cards arrive.
   const [focusTarget,setFocusTarget]=useState(focusDecision??""),[focusedDecision,setFocusedDecision]=useState(""),[decisionHandled,setDecisionHandled]=useState(false)
+  const [rosterQuestion,setRosterQuestion]=useState(()=>!thread&&summary.activity.startsWith("Asks: ")?summary.activity.slice("Asks: ".length):"")
   const [permissionsRead,setPermissionsRead]=useState(false)
   // Each decision answered from this page and the turn its reply started.
   const [decisionTurns,setDecisionTurns]=useState<Record<string,string>>({}),decisionProgress=useRef<Record<string,DecisionFollowUp|undefined>>({})
@@ -1323,26 +1324,36 @@ ${currentDraft}`:submitted)
   const exchangeDecisionIds=new Set([...exchangeDecisions.values()].map(card=>card.summary.id))
   const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id)&&!exchangeDecisionIds.has(summary.id))
   const focusOutcome=focusTarget?decisionFocus(focusTarget,permissionCards,permissionsRead&&!!data):"wait"
+  const rosterTarget=rosterQuestion?permissionCards.find(({summary})=>summary.tool_kind==="decision"&&currentPermission(summary,head)&&permissionState(summary)==="pending"&&summary.title?.split("\n",1)[0].trim()===rosterQuestion)?.summary.id:undefined
   useEffect(()=>{
-    if(!focusTarget||focusOutcome==="wait")return
-    setFocusTarget("");onDecisionFocused?.()
-    if(focusOutcome==="handled")setDecisionHandled(true)
-    else setFocusedDecision(focusTarget)
-  },[focusTarget,focusOutcome])
+    if(focusTarget){
+      if(focusOutcome==="wait")return
+      setRosterQuestion("");setFocusTarget("");onDecisionFocused?.()
+      if(focusOutcome==="handled")setDecisionHandled(true)
+      else setFocusedDecision(focusTarget)
+    }else if(rosterTarget){
+      setRosterQuestion("");setFocusedDecision(rosterTarget)
+    }
+  },[focusTarget,focusOutcome,rosterTarget])
+  const focusedUnderExchange=exchangeDecisionIds.has(focusedDecision)
+  const focusedOfferLoaded=permissionCards.some(card=>card.summary.id===focusedDecision&&!!card.offer)
   useEffect(()=>{
     if(!focusedDecision)return
     const id=focusedDecision
     // The card renders with data-focused this frame; scroll once it is laid out.
     const frame=requestAnimationFrame(()=>{
-      const card=scroll.current?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
-      if(!card){setFocusedDecision("");setDecisionHandled(true);return}
+      const viewport=scroll.current
+      const card=viewport?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
+      if(!viewport||!card){setFocusedDecision("");setDecisionHandled(true);return}
+      followingRef.current=false;setFollowing(false)
       const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-      card.scrollIntoView({block:"center",behavior:still?"auto":"smooth"})
+      const block=card.offsetHeight>=viewport.clientHeight?"start":"center"
+      card.scrollIntoView({block,behavior:still?"auto":"smooth"})
       card.focus({preventScroll:true})
     })
     const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
     return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
-  },[focusedDecision])
+  },[focusedDecision,focusedUnderExchange,focusedOfferLoaded])
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{
