@@ -3,6 +3,9 @@ package botdevserver
 import (
 	"context"
 	"errors"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -35,8 +38,10 @@ func (r *Registry) RevokeBot(ctx context.Context, key pa.BotKey, remove bool) er
 }
 
 // Reconcile checks every source-owned definition without exposing its content
-// to a model. Authority loss stops the Bot's known processes; there is no auto
-// restart on a later successful check and no inference that an unknown PID died.
+// to a model. Only an authoritative denial (scope lost, Bot removed, Bots
+// disabled, rule or context revoked) stops the Bot's known processes; there is
+// no auto restart after one. Any other check error is a failed read: the
+// server keeps running, is marked unconfirmed, and the next tick checks again.
 func (r *Registry) Reconcile(ctx context.Context, check func(context.Context, Spec) error) error {
 	if check == nil {
 		return failure(pa.Invalid, "server_reconcile")
@@ -53,21 +58,117 @@ func (r *Registry) Reconcile(ctx context.Context, check func(context.Context, Sp
 		if err := ctx.Err(); err != nil {
 			return errors.Join(result, err)
 		}
-		if err := check(ctx, e.saved.Spec); err != nil {
-			if ctx.Err() != nil {
-				return errors.Join(result, ctx.Err())
-			}
-			r.ops.Lock()
-			r.mu.Lock()
-			current := r.rows[e.saved.ID] == e
-			r.mu.Unlock()
-			if current {
-				result = errors.Join(result, r.revokeEntry(ctx, e, false))
-			}
-			r.ops.Unlock()
+		err := check(ctx, e.saved.Spec)
+		if err != nil && ctx.Err() != nil {
+			return errors.Join(result, ctx.Err())
 		}
+		if err == nil || !AuthoritativeDenial(err) {
+			r.mu.Lock()
+			if err == nil {
+				e.unconfirmedSince = time.Time{}
+			} else if e.unconfirmedSince.IsZero() {
+				e.unconfirmedSince = r.o.Clock()
+			}
+			r.mu.Unlock()
+			result = errors.Join(result, err)
+			continue
+		}
+		r.ops.Lock()
+		r.mu.Lock()
+		current := r.rows[e.saved.ID] == e
+		r.mu.Unlock()
+		if current {
+			result = errors.Join(result, r.revokeEntry(ctx, e, false))
+		}
+		r.ops.Unlock()
 	}
 	return result
+}
+
+// AuthoritativeDenial is a refusal that a later successful read cannot undo.
+// Everything else, including a raw file or database error, is only unknown.
+func AuthoritativeDenial(err error) bool {
+	switch pa.Code(err) {
+	case pa.ScopeDenied, pa.NotFound, pa.Disabled, pa.Revoked, pa.Unpaired, pa.ContextStale:
+		return true
+	}
+	return false
+}
+
+// Unconfirmed reports that Reconcile has failed to confirm this definition's
+// authority for at least capacity.BotServerUnconfirmedNotice. The server is
+// left running; the person decides whether to stop it.
+func (r *Registry) Unconfirmed(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	e := r.rows[id]
+	if e == nil || e.unconfirmedSince.IsZero() {
+		return false
+	}
+	return r.o.Clock().Sub(e.unconfirmedSince) >= capacity.BotServerUnconfirmedNotice
+}
+
+// ReleasedUnconfirmed is the terminal failure a person records when they
+// release an attempt whose process Clawdline can no longer prove stopped.
+const ReleasedUnconfirmed = "released_unconfirmed"
+
+// ReleaseExpected is a person's explicit release of an attempt whose owner is
+// lost or whose cleanup could not be confirmed. It signals nothing: the
+// process, if it still runs, is no longer stopped or counted by Clawdline.
+// The attempt becomes failed, its slot is freed and the definition can then
+// be removed. An attempt with a live, confirmed owner must be stopped instead.
+func (r *Registry) ReleaseExpected(ctx context.Context, expected SavedServer) error {
+	ctx, cancel := r.operation(ctx)
+	defer cancel()
+	r.ops.Lock()
+	defer r.ops.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	r.mu.Lock()
+	e := r.rows[expected.ID]
+	r.mu.Unlock()
+	if e == nil {
+		return failure(pa.NotFound, "server")
+	}
+	saved := r.view(e)
+	if saved != expected {
+		return failure(pa.StaleVersion, "server_definition")
+	}
+	if err := r.o.CheckControl(ctx, saved.Spec); err != nil {
+		return err
+	}
+	if saved.Attempt.State != Unknown {
+		return failure(pa.Invalid, "server_release")
+	}
+	journal, err := r.o.Catalog.Journal(ctx, saved, saved.Attempt.Identity)
+	if err != nil {
+		return err
+	}
+	current, err := journal.Load(ctx, saved.Attempt.Identity)
+	if err != nil {
+		return err
+	}
+	next := current
+	if activeState(current.State) {
+		next.Version++
+		next.State, next.Failure = Failed, ReleasedUnconfirmed
+		if err := journal.Save(ctx, current.Version, next); err != nil {
+			return err
+		}
+	}
+	r.mu.Lock()
+	owner := e.owner
+	e.owner, e.saved.Attempt, e.unconfirmedSince = nil, next, time.Time{}
+	if e.reserved {
+		e.reserved = false
+		r.active--
+	}
+	r.mu.Unlock()
+	if owner != nil {
+		owner.cancel()
+	}
+	return nil
 }
 
 // Caller holds ops; a stale definition cannot stop another definition's owner.

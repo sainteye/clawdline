@@ -1,6 +1,15 @@
 package capacity
 
+import "time"
+
+// BotServerUnconfirmedNotice is how long a running Bot server's authority may
+// stay unreadable before the person is shown that it cannot be confirmed.
+// Nothing is stopped at this point; it only changes what is shown.
+const BotServerUnconfirmedNotice = BotServerUnconfirmedNoticeMilliseconds * time.Millisecond
+
 const (
+	// Reconcile ticks once per second; a few failed reads in a row are normal.
+	BotServerUnconfirmedNoticeMilliseconds = 30000
 	// Source-local definitions include stopped entries; people remove them.
 	MaximumBotServerDefinitions = 64
 	// Saved "always allow" Bot-to-Project dispatch rules; people revoke them.
@@ -25,6 +34,7 @@ func botServerBounds() []Entry {
 		{Name: "bots.server_spec_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumBotServerSpecBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotServerSpecBytes"}},
 		{Name: "bots.server_log_bytes", Class: Observation, Unit: Bytes, Limit: MaximumBotServerLogBytes, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerLogBytes"}},
 		{Name: "bots.server_caller_receipts", Class: Buffer, Unit: Rows, Limit: MaximumBotServerCallerReceipts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerCallerReceipts"}},
+		{Name: "bots.server_unconfirmed_notice_ms", Class: Buffer, Unit: Milliseconds, Limit: BotServerUnconfirmedNoticeMilliseconds, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
 		{Name: "bots.server_probe_readers", Class: Buffer, Unit: Rows, Limit: MaximumBotServerProbeReaders, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotServerProbeReaders", "internal/adapters/projectassistantacp.package:chan(capacity.MaximumBotServerProbeReaders)", "internal/adapters/projectassistantacp.tcpReadLimit"}},
 	}
 }

@@ -208,6 +208,7 @@
 | `bots.server_probe_readers` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_unconfirmed_notice_ms` | 30000 | `milliseconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.shared_memory_entries` | 20 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.shared_memory_entry_bytes` | 1024 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.shared_memory_opt_outs` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |

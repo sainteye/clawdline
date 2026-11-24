@@ -4058,6 +4058,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.server_unconfirmed_notice_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.shared_memory_entries",
     "Class": "evidence",
     "Unit": "rows",

@@ -275,9 +275,11 @@ test("server controls never carry the displayed executable text or environment",
   assert.deepEqual(request,{key,id:"known",fingerprint:server.fingerprint,attempt:"attempt-one",revision:4,idempotency_key:"human-key"})
   assert.doesNotMatch(JSON.stringify(request),/synthetic-command|synthetic\/project|SECRET|must-not-cross|pid/)
 })
-test("uncertain or stopping servers offer no new mutation while terminal rows can start or be removed",()=>{
+test("uncertain or stopping servers cannot start while terminal rows can start or be removed",()=>{
   const actions=compiled.exports.serverActions
-  for(const state of ["unknown","stopping","unrecognized"]){assert.deepEqual(actions({state}),[])}
+  for(const state of ["stopping","unrecognized"]){assert.deepEqual(actions({state}),[])}
+  // A lost owner can only be removed, never restarted; the menu states the risk.
+  assert.deepEqual(actions({state:"unknown"}),["remove"])
   assert.equal(compiled.exports.serverState({state:"unrecognized"},words("en")),"Status unconfirmed")
   assert.deepEqual(actions({state:"accepted"}),["stop"])
   assert.deepEqual(actions({state:"running"}),["restart","stop"])
