@@ -21,6 +21,7 @@
 .project-assistants .pa-server-address-choice small { max-width:100%;font-size:11px;color:var(--pa-dim);overflow-wrap:anywhere; }
 .project-assistants .pa-server-address-note { max-width:260px;padding:6px 10px;margin:0;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-server-copy-status { flex-basis:100%;padding-bottom:6px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-server-unconfirmed { flex-basis:100%;margin:0;padding-bottom:6px;color:var(--pa-dim);font-size:12px;line-height:1.4; }
 
 .project-assistants.pa-message-menu-root .pa-server-address-choice>button { min-height:44px;width:100%;border:0;border-radius:8px;background:transparent;text-align:start;padding:8px 12px;font-size:14px; }
 .project-assistants.pa-message-menu-root .pa-server-address-choice>button:hover { background:#ffffff12; }
