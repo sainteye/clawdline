@@ -358,8 +358,7 @@ prompt can coexist with its tool request.
 
 MCP bodies/responses use `Limits.FrameBytes`; HTTP headers use that server
 setting plus Go's standard parser overhead. Existing write/RPC deadlines and
-the existing bounded runtime process slots also bound listeners. No new
-numeric resource policy is introduced.
+the existing per-Bot runtime ownership bound the listeners.
 
 Closing seals tool admission and cancels tool contexts before process cleanup.
 A handler retains its shared slot until it exits, including when a connection

@@ -13,7 +13,7 @@ func TestRuntimeOptionsHaveNoSilentDefaults(t *testing.T) {
 	}
 	f := newRuntimeFixture(t)
 	o := f.r.o
-	o.Limits.MaxProcesses = 0
+	o.Limits.MaxBots = 0
 	if _, err := NewRuntime(o); pa.Code(err) != pa.Invalid {
 		t.Fatal(err)
 	}

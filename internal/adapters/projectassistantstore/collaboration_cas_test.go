@@ -51,7 +51,7 @@ func TestCollaborationSourceCASRebuildsFactsWithoutAnotherSend(t *testing.T) {
 			var ids atomic.Int64
 			r, err := app.NewRuntime(app.RuntimeOptions{Repository: repo, Memory: store, WorkBridge: peer, ProjectResolver: recoveryResolver{a.Project}, Provider: peer, Clock: time.Now, ID: func() string { return fmt.Sprintf("race-%d", ids.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 				return pa.FeatureState{Enabled: true}, recoverySource(a.Key), nil
-			}, Limits: app.RuntimeLimits{MaxBots: 2, MaxProcesses: 1, PromptTimeout: 3 * time.Second, CleanupTimeout: time.Second}})
+			}, Limits: app.RuntimeLimits{MaxBots: 2, PromptTimeout: 3 * time.Second, CleanupTimeout: time.Second}})
 			if err != nil {
 				t.Fatal(err)
 			}

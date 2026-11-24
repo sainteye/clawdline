@@ -33,7 +33,22 @@ func TestProjectAssistantRosterStatusHTTP(t *testing.T) {
 
 func testProjectAssistantRosterStatusHTTP(t *testing.T, cloud bool) {
 	f := newPAServerFixture(t, true)
-	f.enable(t)
+	// The roster fixture supplies its own active turns. Startup recovery
+	// processes the turns of a previous daemon, which this fixture does not model.
+	ctx := context.Background()
+	if _, err := f.s.settingsFile().Set(map[string]any{"project_assistants_enabled": true}); err != nil {
+		t.Fatal(err)
+	}
+	h, err := f.s.ensureProjectAssistantHost(ctx, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Enable(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.s.projectAssistants.mu.Lock()
+	f.s.projectAssistants.allowed = true
+	f.s.projectAssistants.mu.Unlock()
 	st := store.New(f.s.store.ProjectAssistantDatabase())
 	var sequence atomic.Int64
 	change := func(key pa.BotKey, phase string) error {

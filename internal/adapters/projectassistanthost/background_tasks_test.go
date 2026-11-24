@@ -13,7 +13,6 @@ import (
 func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.o.Limits.PromptTimeout = 0
 	f.o.Reader = f.o.Database
 	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
@@ -144,7 +143,7 @@ func TestBackgroundWorkLetsChatContinueAndQuotesItsReport(t *testing.T) {
 func TestCollaborationBackgroundRecipientCanAnswerItsOwnChat(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxBots, f.o.Limits.MaxProcesses = 4, 3
+	f.o.Limits.MaxBots = 4
 	f.start(t)
 	f.enable(t)
 	a, b := f.create(t, "requester"), f.create(t, "recipient")
@@ -202,7 +201,6 @@ func TestCollaborationBackgroundRecipientCanAnswerItsOwnChat(t *testing.T) {
 func TestHostRestartDeliversInterruptedBotRequestStatus(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	a, b := f.create(t, "requester"), f.create(t, "recipient")

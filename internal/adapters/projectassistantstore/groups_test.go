@@ -13,7 +13,7 @@ import (
 )
 
 // Upstream Codync values; MaxMembers is this test's own, since upstream has none.
-var groupLimits = pa.GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
+var groupLimits = pa.GroupLimits{MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
 var groupTime = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 
 func groupDB(t *testing.T) (*sql.DB, *Store, *GroupStore, string) {

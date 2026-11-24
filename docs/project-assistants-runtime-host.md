@@ -140,12 +140,12 @@ native provider has been connected to MCP.
 `Engine.Close` seals new acquisition before canceling actor lifetimes. In-flight
 admission remains owned until it returns and rechecks authorization. Workers
 cancel accepted queue entries, preserve started turns as unknown and finish
-their pending permission offers. Slot waiters never launch after cancellation.
+their pending permission offers. Cancelled workers check their context before starting a native turn.
 
-A process slot covers setup/Open, prompt work and verified provider Close.
+One Bot owns native process setup, prompt work and verified provider Close.
 The worker remains the sole close owner during execution. Late Open retains its
-actor/slot until the returned session is actually cleaned; a timeout does not
-make that owner disappear. A failed Close retains its session, slot and unknown
+actor until the returned session is actually cleaned; a timeout does not
+make that owner disappear. A failed Close retains its session, process ownership and unknown
 counts. An explicit repeated shutdown can retry that same cleanup handle, with
 at most one cleanup owner per existing bounded actor. No name-based process
 kill or containment implementation is added here.
@@ -153,7 +153,7 @@ kill or containment implementation is added here.
 Shutdown waits on state changes under the existing CleanupTimeout, including
 when provider IO holds an actor mutex. It returns typed
 `execution_effect_unknown` at the bound. If Open reports an unknown effect
-without a cleanup handle, the owner/slot stays unresolved; no automatic restart
+without a cleanup handle, the owner stays unresolved; no automatic restart
 can prove that missing resource clean. The composition owner must retain this
 Host and report/escalate that uncertainty, rather than drop it or construct a
 new Host. Host refuses reenable while any prior owner/process is unresolved.
@@ -173,8 +173,8 @@ Enable must successfully repeat the durable cleanup before it can reopen
 admission. Completed Bot mutations are idempotent across partial-scan retries;
 there is no per-page deadline reset, retained cursor registry or background loop.
 
-No new fixed operational bound is introduced. Actors, slots and cleanup retries
-are bounded by the existing host-injected MaxBots/MaxProcesses/CleanupTimeout.
+No new fixed operational bound is introduced. Actors and cleanup retries
+are bounded by the existing host-injected MaxBots/CleanupTimeout.
 The existing per-project disable latch remains fail closed; source-wide Host
 disable uses Close and creates a new Engine only after proven cleanup.
 
@@ -194,7 +194,7 @@ Real temporary host SQLite, feature Installer/Store and Broker tests use their
 own temporary Git repositories/worktrees and fake provider/worker launchers.
 They cover default-off absence of tables/subscriptions/provider, empty-schema
 status, metadata zero-model behavior, first-send lazy execution, reader identity,
-forget isolation/new bindings, permission/queue/slot shutdown, unknown barriers,
+forget isolation/new bindings, permission/queue shutdown, unknown barriers,
 late Open, retained cleanup and continued host database/schedule operations.
 The existing host Session execution generation remains unchanged and admissible
 after disable; this is a durable identity fixture, not a live terminal UI test.

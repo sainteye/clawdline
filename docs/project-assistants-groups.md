@@ -232,11 +232,13 @@ pages and receiving newer lines retain the current reading anchor.
 
 ## Limits
 
-Registered in `internal/domain/capacity` with Codync's values: rounds 3,
-replies 10, late turns 3, member wait 600 s, history lines 24, characters per
-shown line 2000, Bots a manager created 20. Codync has **no member maximum**;
-`DefaultGroupLimits` passes the runtime's actor bound, since a room asks
-members one at a time through runtime actors.
+The first round of a person's message can ask every addressed member. Later
+rounds and turns triggered by late Bot replies count up to 10 automated replies
+per run. A run ends after three rounds or a round without a reply. Membership
+is independent of active runtime workers, since the room asks members in
+order. The existing limits for late turns (3), member wait (600 s), prompt
+history (24 lines), characters per shown line (2000), and Bots created by one
+manager (20) are registered in `internal/domain/capacity`.
 
 Manager approval detail is at most 2000 UTF-16 units, matching JavaScript and
 Codync's `encode_utf16` count. A plan waits at most 270 seconds. Up to the

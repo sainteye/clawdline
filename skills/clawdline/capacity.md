@@ -166,7 +166,6 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.process_census_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
-| `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.reaction_emoji_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

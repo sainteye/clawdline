@@ -19,7 +19,7 @@ type NativeContextFacts struct {
 type NativeContextRead func(context.Context, pa.BotKey, string) (NativeContextFacts, error)
 
 // NativeContext borrows only an existing execution owner. It never opens a
-// provider, acquires a process slot, creates an actor, or retains a last reading.
+// provider, creates an actor, or retains a last reading.
 // A known reading describes this live turn, not eligibility for compaction.
 func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck func() error, readFacts NativeContextRead) (NativeContextState, error) {
 	unknown := NativeContextState{Fence: fence}

@@ -107,7 +107,7 @@ func newGroupHTTPFixture(t *testing.T, providers ...app.Provider) *groupHTTPFixt
 	if len(providers) > 0 {
 		provider = providers[0]
 	}
-	f.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: f.repo, Memory: f.repo, WorkBridge: &paHTTPWork{}, Provider: provider, ProjectResolver: projects, Clock: time.Now, ID: id, Authorize: background, Rooms: f.rooms, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+	f.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: f.repo, Memory: f.repo, WorkBridge: &paHTTPWork{}, Provider: provider, ProjectResolver: projects, Clock: time.Now, ID: id, Authorize: background, Rooms: f.rooms, Limits: app.RuntimeLimits{MaxBots: 8, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}

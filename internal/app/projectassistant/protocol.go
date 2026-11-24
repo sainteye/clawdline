@@ -14,8 +14,7 @@ import (
 // RuntimeLimits are host-owned operational bounds, deliberately without defaults.
 // The host registers its selected values in domain/capacity.
 type RuntimeLimits struct {
-	MaxBots      int
-	MaxProcesses int
+	MaxBots int
 	// PromptTimeout is optional for hosts that explicitly bound ordinary turns.
 	// Production leaves it zero; scheduled routines carry their own deadline.
 	PromptTimeout  time.Duration

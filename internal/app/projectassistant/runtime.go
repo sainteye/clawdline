@@ -50,7 +50,6 @@ type Engine struct {
 	o        RuntimeOptions
 	mu       sync.Mutex
 	actors   map[pa.BotKey]*runtimeActor
-	slots    chan struct{}
 	disabled map[pa.ProjectSelection]bool
 	closed   bool
 	// restarting marks the daemon's own shutdown (CloseForRestart).
@@ -67,24 +66,24 @@ type routineCompletion struct {
 }
 
 type runtimeActor struct {
-	mu         sync.Mutex
-	key        pa.BotKey
-	project    pa.ProjectScope
-	users      int // protected by Engine.mu; includes the worker reference
-	lifetime   context.Context
-	stop       context.CancelFunc
-	slot       bool               // Engine.mu: includes setup and unknown cleanup
-	retained   bool               // Engine.mu: cleanup owner and process slot survive unknown cleanup
-	cleanupErr error              // Engine.mu
-	retrying   bool               // Engine.mu: one bounded cleanup retry loop at a time
-	completion *routineCompletion // actor.mu; persisted before releasing a retained owner
-	opening    bool               // actor.mu
-	compacted  *pa.Message        // actor.mu: the agent's own compaction during the finishing turn
-	closing    bool               // actor.mu: seals live readings before native cleanup
-	working    bool
-	cancel     context.CancelFunc
-	session    ProviderSession
-	turnID     string
+	mu           sync.Mutex
+	key          pa.BotKey
+	project      pa.ProjectScope
+	users        int // protected by Engine.mu; includes the worker reference
+	lifetime     context.Context
+	stop         context.CancelFunc
+	processOwned bool               // Engine.mu: includes setup and unknown cleanup
+	retained     bool               // Engine.mu: cleanup and process ownership survive unknown cleanup
+	cleanupErr   error              // Engine.mu
+	retrying     bool               // Engine.mu: one bounded cleanup retry loop at a time
+	completion   *routineCompletion // actor.mu; persisted before releasing a retained owner
+	opening      bool               // actor.mu
+	compacted    *pa.Message        // actor.mu: the agent's own compaction during the finishing turn
+	closing      bool               // actor.mu: seals live readings before native cleanup
+	working      bool
+	cancel       context.CancelFunc
+	session      ProviderSession
+	turnID       string
 	// Includes only pending offers durably committed for this active turn.
 	pendingPermissions int
 	permissionFence    pa.Fence
@@ -103,14 +102,15 @@ var _ Runtime = (*Engine)(nil)
 
 func (r *Engine) Usage() RuntimeUsage {
 	r.mu.Lock()
-	usage := RuntimeUsage{ActiveActors: len(r.actors), Processes: len(r.slots), Known: true}
+	usage := RuntimeUsage{ActiveActors: len(r.actors), Known: true}
+	var actors []*runtimeActor
 	for _, a := range r.actors {
+		if a.processOwned {
+			usage.Processes++
+		}
 		if a.retained {
 			usage.Known = false
 		}
-	}
-	var actors []*runtimeActor
-	for _, a := range r.actors {
 		a.users++
 		actors = append(actors, a)
 	}
@@ -157,10 +157,10 @@ func notAdmitted(err error) error {
 }
 
 func NewRuntime(o RuntimeOptions) (*Engine, error) {
-	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
+	if o.Repository == nil || o.Memory == nil || o.WorkBridge == nil || o.ProjectResolver == nil || o.Provider == nil || o.Clock == nil || o.ID == nil || o.Authorize == nil || o.Limits.MaxBots < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, runtimeFailure(pa.Invalid, "runtime_options")
 	}
-	return &Engine{o: o, actors: make(map[pa.BotKey]*runtimeActor), slots: make(chan struct{}, o.Limits.MaxProcesses), disabled: make(map[pa.ProjectSelection]bool), changed: make(chan struct{})}, nil
+	return &Engine{o: o, actors: make(map[pa.BotKey]*runtimeActor), disabled: make(map[pa.ProjectSelection]bool), changed: make(chan struct{})}, nil
 }
 
 func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
@@ -786,11 +786,9 @@ func (r *Engine) work(a *runtimeActor) {
 		a.pendingPermissions = 0
 		a.stopped.Store(false)
 		a.mu.Unlock()
-		// Waiting for a process slot remains cancellable and does not launch IO.
-		select {
-		case r.slots <- struct{}{}:
+		if err = ctx.Err(); err == nil {
 			r.mu.Lock()
-			a.slot = true
+			a.processOwned = true
 			r.mu.Unlock()
 			runCtx, end, contextErr := r.turnPromptContext(ctx, *turn)
 			if contextErr == nil {
@@ -800,16 +798,10 @@ func (r *Engine) work(a *runtimeActor) {
 				err = contextErr
 			}
 			r.mu.Lock()
-			retained := a.retained
-			r.mu.Unlock()
-			if !retained {
-				r.mu.Lock()
-				a.slot = false
-				<-r.slots
-				r.mu.Unlock()
+			if !a.retained {
+				a.processOwned = false
 			}
-		case <-ctx.Done():
-			err = ctx.Err()
+			r.mu.Unlock()
 		}
 		cancel()
 		r.wakeExchangeReply(*turn)
@@ -823,7 +815,7 @@ func (r *Engine) work(a *runtimeActor) {
 		// that success in memory. Unknown Open/Close still persists TurnUnknown.
 		if err != nil && a.completion == nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
-			// Shutdown can cancel the worker while it waits for a process slot.
+			// Shutdown can cancel the worker before it starts the turn.
 			preserveQueued := e == nil && (unstartedExchangeReply(latest) || pa.QueuedChatRestartWork(latest)) && a.lifetime.Err() != nil && r.unknownField() == RestartField
 			if e == nil {
 				retried, retryErr := r.retryRoutineNotStartedLocked(context.Background(), a, latest, err)
@@ -1363,7 +1355,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 			return e
 		}
 		// Recursion is bounded by the validated unique configured identities, never
-		// a same-agent retry; ctx and the process slot belong to the logical turn.
+		// a same-agent retry; ctx and the process owner belong to the logical turn.
 		return r.executeAttempt(ctx, a, t, &preparedBot)
 	}
 	a.mu.Lock()

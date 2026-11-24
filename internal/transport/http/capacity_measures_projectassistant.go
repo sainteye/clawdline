@@ -271,7 +271,6 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsEventRows:             pure,
 		"bots.chat_initial_page_rows":      pure,
 		capacity.BotsActors:                count(func(u app.RuntimeUsage) int { return u.ActiveActors }, "actual Host.Usage actors; pending or unknown cleanup is not known zero"),
-		capacity.BotsProcesses:             count(func(u app.RuntimeUsage) int { return u.Processes }, "actual Host.Usage process slots, including unresolved owners; not native readiness"),
 		capacity.BotsRPCPending:            sessions(func(u app.SessionUsage) int { return u.PendingRPC }, "largest occupied owned MCP HTTP request pool"),
 		capacity.BotsFrames:                unobserved,
 		capacity.BotsProcessCensusBytes:    unobserved,

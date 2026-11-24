@@ -80,7 +80,6 @@ func startPeerQuestion(t *testing.T, f *hostFixture) (a, b pa.Bot, x pa.Exchange
 func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.o.Reader = f.st.ProjectAssistantReader()
 	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
 	f.start(t)
@@ -160,7 +159,6 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 func TestPeerQuestionRefusesExpiredHiddenAndOverflowingOffers(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	_, b, _, offer := startPeerQuestion(t, f)

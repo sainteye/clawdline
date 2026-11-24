@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// Upstream values from Codync's group.rs and rooms.rs; MaxMembers is a test
-// value, since upstream has no member maximum.
-var testGroupLimits = GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
+// Room limits use the production scheduler values.
+var testGroupLimits = GroupLimits{MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
 
 var groupAt = time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 
@@ -76,14 +75,9 @@ func TestGroupMembershipFollowsStoredBots(t *testing.T) {
 		{"deleted", []BotKey{key("a"), key("gone")}, NotFound, "group_member"},
 		{"foreign machine", []BotKey{key("a"), foreign}, ScopeDenied, "group_member_machine"},
 		{"same canonical other Project", []BotKey{key("a"), key("x")}, ScopeDenied, "group_member_project"},
-		{"over supplied limit", []BotKey{key("a"), key("b"), key("h")}, CapacityFull, "group_members"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			l := testGroupLimits
-			if c.code == CapacityFull {
-				l.MaxMembers = 2
-			}
-			err := ValidateGroupMembers(key("g"), scope, c.members, cat, l)
+			err := ValidateGroupMembers(key("g"), scope, c.members, cat, testGroupLimits)
 			if Code(err) != c.code {
 				t.Fatalf("code %q, want %q (%v)", Code(err), c.code, err)
 			}
@@ -92,7 +86,7 @@ func TestGroupMembershipFollowsStoredBots(t *testing.T) {
 			}
 		})
 	}
-	if err := ValidateGroupMembers(key("g"), scope, []BotKey{key("a")}, cat, GroupLimits{MaxMembers: 1}); Code(err) != Invalid {
+	if err := ValidateGroupMembers(key("g"), scope, []BotKey{key("a")}, cat, GroupLimits{}); Code(err) != Invalid {
 		t.Fatalf("missing limits accepted: %v", err)
 	}
 	if _, err := NewGroup(GroupDraft{Key: key("a"), Project: scope, ConversationID: "room", Name: "Room", Members: []BotKey{key("b")}}, cat, testGroupLimits, groupAt); Code(err) != Invalid {
@@ -106,11 +100,7 @@ func TestGroupMembershipFollowsStoredBots(t *testing.T) {
 	if len(dedupGroup.Members) != 2 || dedupGroup.Members[0].Key != key("a") || dedupGroup.Members[1].Key != key("b") {
 		t.Fatalf("unexpected dedupGroup members: %+v", dedupGroup.Members)
 	}
-	// Dynamic capacity scaling: limits with MaxMembers <= 0 adopts DefaultMaxGroupMembers
-	dynLimits := GroupLimits{MaxMembers: 0, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
-	if err := ValidateGroupMembers(key("g_dyn"), scope, []BotKey{key("a"), key("b")}, cat, dynLimits); err != nil {
-		t.Fatalf("dynamic limits refused valid members: %v", err)
-	}
+
 }
 
 func TestGroupEditMovesMembershipOnlyForChangedMembers(t *testing.T) {
@@ -315,10 +305,10 @@ func TestRoomSpeakersMentionsAndPassTermination(t *testing.T) {
 		run.Answered(&RoomEntry{Seq: int64(round), Kind: RoomMemberEntry, Author: key("a")}, l)
 		run.EndRound(l)
 	}
-	if run.Round != l.MaxRounds-1 || run.Replies != l.MaxRounds {
+	if run.Round != l.MaxRounds-1 || run.FollowUpReplies != l.MaxRounds-1 {
 		t.Fatalf("rounds %+v", run)
 	}
-	run = RoomRun{}
+	run = RoomRun{Late: true}
 	l.MaxReplies = 2
 	if !run.Answered(&RoomEntry{Author: key("a")}, l) || run.Answered(&RoomEntry{Author: key("b")}, l) {
 		t.Fatal("reply limit")

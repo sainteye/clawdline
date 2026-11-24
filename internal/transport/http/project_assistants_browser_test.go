@@ -556,7 +556,7 @@ func TestBotBrowserRunsEndToEndThroughACPAndOwnedMCP(t *testing.T) {
 		}})
 		return countingProvider{Provider: p, open: func() { counted.Lock(); opens++; counted.Unlock() }, send: func() { counted.Lock(); sends++; counted.Unlock() }}, e
 	}
-	hosted, err := projectassistanthost.New(context.Background(), projectassistanthost.Options{Database: f.s.store.ProjectAssistantDatabase(), Reader: f.s.store.ProjectAssistantReader(), MachineID: f.key.MachineID, Projects: resolver, Broker: f.s.broker, Clock: time.Now, ID: projectAssistantID, Limits: app.RuntimeLimits{MaxBots: 2, MaxProcesses: 2, PromptTimeout: 30 * time.Second, CleanupTimeout: 2 * time.Second}, Authority: f.s.projectAssistantAuthority, Source: f.s.projectAssistantSource, Provider: provider, ReadViewByteLimit: 1 << 20, Browser: f.s.projectAssistantBrowser()})
+	hosted, err := projectassistanthost.New(context.Background(), projectassistanthost.Options{Database: f.s.store.ProjectAssistantDatabase(), Reader: f.s.store.ProjectAssistantReader(), MachineID: f.key.MachineID, Projects: resolver, Broker: f.s.broker, Clock: time.Now, ID: projectAssistantID, Limits: app.RuntimeLimits{MaxBots: 2, PromptTimeout: 30 * time.Second, CleanupTimeout: 2 * time.Second}, Authority: f.s.projectAssistantAuthority, Source: f.s.projectAssistantSource, Provider: provider, ReadViewByteLimit: 1 << 20, Browser: f.s.projectAssistantBrowser()})
 	if err != nil {
 		t.Fatal(err)
 	}

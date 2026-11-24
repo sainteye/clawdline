@@ -82,7 +82,7 @@ func TestProjectAssistantServerLongQueueAndReconnectDoNotRepeatEffects(t *testin
 	f := newPAServerFixture(t, true)
 	var opens atomic.Int32
 	session := &paServerSession{sent: make(chan struct{})}
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Minute, CleanupTimeout: time.Second}
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Minute, CleanupTimeout: time.Second}
 	f.s.projectAssistants.limits = &limits
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
 		return paServerProvider{open: func(context.Context, app.OpenRequest) (app.ProviderSession, error) {
@@ -143,7 +143,7 @@ func TestProjectAssistantServerLateOpenRetainsUnknownCleanupHandle(t *testing.T)
 	started, release := make(chan struct{}), make(chan struct{})
 	session := &paServerSession{sent: make(chan struct{})}
 	session.closeFails.Store(true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Minute, CleanupTimeout: 30 * time.Millisecond}
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Minute, CleanupTimeout: 30 * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
 		return paServerProvider{open: func(context.Context, app.OpenRequest) (app.ProviderSession, error) {

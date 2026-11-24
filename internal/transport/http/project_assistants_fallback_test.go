@@ -100,7 +100,7 @@ func TestProjectAssistantFallbackHTTPKeepsLogicalTurnAndDurableRest(t *testing.T
 				t.Error("ordinary attempts must be cancellable without a prompt deadline")
 			}
 			if len(opens) == 2 && f.s.projectAssistants.host.Usage().Processes != 1 {
-				t.Error("fallback acquired a second process slot")
+				t.Error("fallback counted a second process owner")
 			}
 			s := &fallbackHTTPSession{send: func(p app.PromptRequest) (app.PendingPrompt, error) {
 				mu.Lock()
@@ -547,7 +547,7 @@ func (p fallbackOSPending) Wait(context.Context) (app.PromptResult, error) {
 
 func TestProjectAssistantFallbackHTTPWithOwnedOSProcesses(t *testing.T) {
 	f := newPAServerFixture(t, true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Duration(capacity.MaximumBotControlWindowMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	var primarySends, alternateSends atomic.Int32
 	var primaryClosed, alternateClosed atomic.Bool

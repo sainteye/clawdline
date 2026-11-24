@@ -281,7 +281,7 @@ func (s *Service) PreviewRoutineSchedule(ctx context.Context, q RoutineQuery, tr
 }
 
 // HumanRoutine never forges an active native turn. Metadata changes need no
-// provider or free process slot. The source store owns the atomic CAS/receipt.
+// provider. The source store owns the atomic CAS/receipt.
 func (s *Service) HumanRoutine(ctx context.Context, q HumanRoutineCommand) (pa.Receipt, error) {
 	a, err := s.authorize(ctx, q.Command.Key, true)
 	if err != nil {

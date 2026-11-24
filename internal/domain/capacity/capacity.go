@@ -768,7 +768,6 @@ const (
 
 const (
 	BotsActors                = "bots.actors"
-	BotsProcesses             = "bots.processes"
 	BotsRPCPending            = "bots.rpc_rows"
 	BotsFrames                = "bots.frame_bytes"
 	BotsProcessCensusBytes    = "bots.process_census_bytes"
