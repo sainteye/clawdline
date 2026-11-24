@@ -17,7 +17,7 @@ export function serverState(s:Server,w:Words):string {
   switch(s.state){case "accepted":return w.serverStarting;case "running":return w.serverRunning;case "stopping":return w.serverStopping;case "stopped":return w.serverStopped;case "failed":return w.serverFailed;case "":return w.serverStopped;default:return w.serverUnknown}
 }
 export function serverActions(s:Server):Action[]{
-  switch(s.state){case "running":return ["restart","stop"];case "accepted":return ["stop"];case "stopped":case "failed":case "":return ["start","remove"];default:return []}
+  switch(s.state){case "running":return ["restart","stop"];case "accepted":return ["stop"];case "stopped":case "failed":case "":return ["start","remove"];case "unknown":return ["remove"];default:return []}
 }
 export function serverControlRequest(key:W.ProjectAssistantBotKey,server:Server,idempotencyKey:string):W.ProjectAssistantDevServerControlRequest {
   return {key,id:server.id,fingerprint:server.fingerprint,attempt:server.attempt,revision:server.revision,idempotency_key:idempotencyKey}
@@ -130,7 +130,8 @@ export function ServerRow({server,w,active,localSource,canRead,addressesAvailabl
     if(!readable||!canRead())return
     try{if(!navigator.clipboard)throw new DOMException("Clipboard unavailable","NotSupportedError");await navigator.clipboard.writeText(address);setFeedback(w.serverAddressCopied)}catch(error){setFeedback(serverCopyFailure(error,w))}
   }
-  const labels:Record<Action,string>={start:w.serverStart,restart:w.serverRestart,stop:w.serverStop,remove:w.serverRemove}
+  const unconfirmed=server.state==="unknown"
+  const labels:Record<Action,string>={start:w.serverStart,restart:w.serverRestart,stop:w.serverStop,remove:unconfirmed?w.serverRemoveUnconfirmed:w.serverRemove}
   return <li className="pa-dev-server" data-failed={server.state==="failed"||undefined}>
     <button className="pa-server-name" type="button" title={addresses.length&&readable?w.serverOpen:w.serverLogs} onClick={()=>{if(addresses.length&&readable)openAddress(addresses[0]);else onLogs()}}><strong>{server.name||server.command}</strong><small>{serverState(server,w)}{summary&&" · "+summary}</small></button>
     <button ref={anchor} className="pa-server-menu" type="button" aria-label={w.serverActions.replace("{name}",server.name||server.command)} aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(!open)}>⋯</button>
@@ -140,6 +141,7 @@ export function ServerRow({server,w,active,localSource,canRead,addressesAvailabl
         <button type="button" role="menuitem" disabled={!readable} aria-label={w.serverCopyAddress+" · "+address} onClick={()=>{close(true);void copyAddress(address)}}>{w.serverCopyAddress}</button>
       </div>)}
       {server.state==="running"&&!addresses.length&&<p className="pa-server-address-note">{server.ports_known!==true?w.serverPortsUnknown:!localSource&&serverAddresses(server,true).length?w.serverLocalOnly:w.serverNoPorts}</p>}
+      {unconfirmed&&<p className="pa-server-address-note">{w.serverUnconfirmedRisk}</p>}
       <button type="button" role="menuitem" onClick={()=>{close(true);onLogs()}}>{w.serverLogs}</button>
       {serverActions(server).map(action=><button key={action} type="button" role="menuitem" disabled={disabled} onClick={()=>{close(true);onControl(action)}}>{labels[action]}</button>)}
     </MessageMenu>
