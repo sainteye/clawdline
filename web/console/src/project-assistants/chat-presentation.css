@@ -328,3 +328,4 @@
   color:var(--pa-text,#fafafa);
 }
 .project-assistants .pa-interruption-actions :is(summary,button):hover { color:var(--pa-text,#fafafa); text-decoration:underline; }
+.project-assistants .pa-chat-surface .pa-chat-error .pa-chat-error-risk { flex-basis:100%;color:var(--pa-dim);font-size:12px; }

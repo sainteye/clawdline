@@ -280,6 +280,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsCleanup:               unobserved,
 		capacity.BotsCleanupRetries:        unobserved,
 		capacity.BotsCleanupRetryDelay:     unobserved,
+		capacity.BotsCleanupSlowRetryDelay: unobserved,
+		capacity.BotsUnscannedCensusGap:    unobserved,
+		capacity.BotsCleanupSlowRetries:    unobserved,
 		capacity.BotsRPCDeadline:           unobserved,
 		capacity.BotsTurnControlWindow:     unobserved,
 		capacity.BotsSurvey:                pure,
@@ -337,6 +340,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		},
 		"bots.login_probe_backoff_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "maximum wait between attempts inside a login-profile probe"}
+		},
+		"bots.login_status_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "deadline for one native sign-in status read inside a check; nothing is retained after it"}
 		},
 		"bots.config_choices": pure,
 		"bots.memory_preview": pure,

@@ -59,7 +59,8 @@ import (
 // Deferring the Bot chat trace count arrives at API 113.
 // Machine-wide Bots dispatch rules and shared memory arrive at API 114.
 // Explicit provider quota refresh arrives at API 115.
-const APILevel = 115
+// Machine-named Bots shared settings, carried over Cloud, arrive at API 116.
+const APILevel = 116
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

@@ -26,13 +26,16 @@ type DevServerRequest struct {
 }
 
 type DevServerInfo struct {
-	ID          string          `json:"id"`
-	Name        string          `json:"name"`
-	Command     string          `json:"command"`
-	Folder      string          `json:"folder"`
-	Attempt     string          `json:"attempt"`
-	State       string          `json:"state"`
-	Failure     string          `json:"failure,omitempty"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Command string `json:"command"`
+	Folder  string `json:"folder"`
+	Attempt string `json:"attempt"`
+	State   string `json:"state"`
+	Failure string `json:"failure,omitempty"`
+	// Unconfirmed: the server keeps running but its Bot's authority has not
+	// been readable for capacity.BotServerUnconfirmedNotice.
+	Unconfirmed bool            `json:"unconfirmed,omitempty"`
 	Fingerprint string          `json:"fingerprint"`
 	Revision    int64           `json:"revision"`
 	PortsKnown  bool            `json:"ports_known"`

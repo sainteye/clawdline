@@ -41,6 +41,9 @@ type Options struct {
 	LeadQuotaNear    func(pa.Bot, time.Time) bool
 	// ServerLaunch is an optional owned-process fixture; production uses the source launcher.
 	ServerLaunch func(context.Context, servers.Spec, pa.ProjectResolution) (servers.Process, error)
+	// ServerAdopt is the matching optional fixture for adopting a running
+	// process after a restart; production uses the source launcher's.
+	ServerAdopt func(context.Context, servers.Spec, servers.Mark) (servers.Process, error)
 	// ServerBootID is a trusted composition seam; production reads the OS boot identity.
 	ServerBootID        func(context.Context) (string, error)
 	RoutineWebhookURL   func(ctx context.Context, id, key string, wait bool) string
@@ -91,27 +94,30 @@ type Options struct {
 }
 
 type Host struct {
-	serverRegistry     *servers.Registry
-	serverBoot         string
-	profiles           app.LoginProfiles
-	configurationSlots chan struct{}
-	routineStop        context.CancelFunc
-	routineDone        chan struct{}
-	o                  Options
-	mu                 sync.Mutex
-	transition         sync.Mutex
-	enabled, closed    bool
-	cleanupPending     bool
-	permissionRecovery bool
-	store              *featurestore.Store
-	service            *app.Service
-	engine             *app.Engine
-	groups             *app.GroupRooms
-	rooms              *app.RoomDriver
-	team               *app.TeamCoordinator
-	authority          *orchestrator.AssistantAuthority
-	bridge             *app.BrokerWorkBridge
-	grants             dispatchGrants
+	serverRegistry *servers.Registry
+	serverBoot     string
+	// serverReconcileLogged is the last Reconcile failure written to the log,
+	// so a failure that repeats every tick is logged once.
+	serverReconcileLogged string
+	profiles              app.LoginProfiles
+	configurationSlots    chan struct{}
+	routineStop           context.CancelFunc
+	routineDone           chan struct{}
+	o                     Options
+	mu                    sync.Mutex
+	transition            sync.Mutex
+	enabled, closed       bool
+	cleanupPending        bool
+	permissionRecovery    bool
+	store                 *featurestore.Store
+	service               *app.Service
+	engine                *app.Engine
+	groups                *app.GroupRooms
+	rooms                 *app.RoomDriver
+	team                  *app.TeamCoordinator
+	authority             *orchestrator.AssistantAuthority
+	bridge                *app.BrokerWorkBridge
+	grants                dispatchGrants
 }
 
 // directUserTurn is a turn the person started by talking to this Bot, not a
@@ -894,7 +900,7 @@ func (h *Host) routineTick(ctx context.Context, done chan struct{}) {
 			h.mu.Unlock()
 			if serverRegistry != nil {
 				check, done := context.WithTimeout(ctx, h.o.Limits.CleanupTimeout)
-				_ = serverRegistry.Reconcile(check, h.serverCheck)
+				h.logReconcile(serverRegistry.Reconcile(check, h.serverCheck))
 				done()
 			}
 			query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
@@ -972,4 +978,28 @@ func (f runtimeFacade) CancelRoomTurns(ctx context.Context, group, member pa.Bot
 		return nil
 	}
 	return r.CancelRoomTurns(ctx, group, member, active)
+}
+
+// logReconcile writes a Reconcile failure once per distinct failure, and once
+// when it clears. The codes name no command, folder or Project.
+func (h *Host) logReconcile(err error) {
+	text := ""
+	if err != nil {
+		text = string(pa.Code(err))
+		if text == "" {
+			text = "unclassified"
+		}
+	}
+	h.mu.Lock()
+	changed := text != h.serverReconcileLogged
+	h.serverReconcileLogged = text
+	h.mu.Unlock()
+	if !changed {
+		return
+	}
+	if text == "" {
+		log.Printf("bots: dev server authority checks succeed again")
+		return
+	}
+	log.Printf("bots: dev server authority check failed: %s", text)
 }

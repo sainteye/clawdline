@@ -70,7 +70,9 @@ func opaque() (string, error) {
 // New receives authenticated source identity from composition, never HTTP.
 // Schema creation belongs to the feature installer. A restarted accepted write
 // remains unknown until the person enters a replacement, and in-memory targets
-// cannot survive the source restart.
+// cannot survive the source restart. A ready credential's stored bytes are not
+// changed by a restart, so the restart clears the previous executions' holds
+// on it and it stays ready; an explicitly quarantined one stays unknown.
 func New(ctx context.Context, db *sql.DB, state, account, machine string) (*Registry, error) {
 	if db == nil || account == "" || machine == "" || !filepath.IsAbs(state) {
 		return nil, fail(pa.Invalid, "connector_source")
@@ -86,7 +88,7 @@ func New(ctx context.Context, db *sql.DB, state, account, machine string) (*Regi
 	if _, err = db.ExecContext(ctx, `UPDATE project_assistant_connector_credentials SET state='unknown',revision=revision+1 WHERE source=? AND state='accepted'`, r.source); err != nil {
 		return nil, err
 	}
-	if _, err = db.ExecContext(ctx, `UPDATE project_assistant_connector_credentials SET state='unknown',revision=revision+1 WHERE source=? AND state='ready' AND EXISTS(SELECT 1 FROM project_assistant_connector_holds h WHERE h.source=project_assistant_connector_credentials.source AND h.bot=project_assistant_connector_credentials.bot AND h.connector=project_assistant_connector_credentials.connector AND h.scope=project_assistant_connector_credentials.scope AND h.revision=project_assistant_connector_credentials.revision)`, r.source); err != nil {
+	if _, err = db.ExecContext(ctx, `DELETE FROM project_assistant_connector_holds WHERE source=? AND EXISTS(SELECT 1 FROM project_assistant_connector_credentials c WHERE c.source=project_assistant_connector_holds.source AND c.bot=project_assistant_connector_holds.bot AND c.connector=project_assistant_connector_holds.connector AND c.scope=project_assistant_connector_holds.scope AND c.revision=project_assistant_connector_holds.revision AND c.state='ready')`, r.source); err != nil {
 		return nil, err
 	}
 	return r, nil

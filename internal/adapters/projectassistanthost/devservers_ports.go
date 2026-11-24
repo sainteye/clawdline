@@ -102,6 +102,7 @@ func (h *Host) observedServerInfo(ctx context.Context, r *servers.Registry, save
 	if r == nil {
 		return info
 	}
+	info.Unconfirmed = r.Unconfirmed(saved.ID)
 	rows, err := r.ObserveListeners(ctx, saved)
 	if err != nil {
 		return info

@@ -71,7 +71,7 @@ func reapedCloseFixture(t *testing.T, census func(context.Context) ([]processIde
 	done, surveyed := make(chan struct{}), make(chan struct{})
 	close(done)
 	close(surveyed)
-	return &Process{cmd: cmd, stdin: stdin, stdout: io.NopCloser(strings.NewReader("")), stderrReader: io.NopCloser(strings.NewReader("")), limits: testLimits(), done: done, surveyDone: surveyed, stopSurvey: func() {}, owned: map[int]string{cmd.Process.Pid: "already-reaped-peer"}, rootObserved: true, rootStamp: "already-reaped-peer", censusOverride: census}
+	return &Process{cmd: cmd, stdin: stdin, stdout: io.NopCloser(strings.NewReader("")), stderrReader: io.NopCloser(strings.NewReader("")), limits: testLimits(), done: done, surveyDone: surveyed, stopSurvey: func() {}, owned: map[int]string{cmd.Process.Pid: "already-reaped-peer"}, rootObserved: true, rootStamp: "already-reaped-peer", censusOverride: census, started: time.Now()}
 }
 
 func TestProcessCloseDoesNotReinventoryVerifiedEmptyOwnership(t *testing.T) {

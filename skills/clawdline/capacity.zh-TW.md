@@ -74,6 +74,8 @@
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.cleanup_retries` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cleanup_retry_ms` | 1000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_slow_retries` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.cleanup_slow_retry_ms` | 300000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_endpoints` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_frames` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_lease_seconds` | 60 | `seconds` | `expire` | `diagnostics` | — |
@@ -144,6 +146,7 @@
 | `bots.login_probe_backoff_milliseconds` | 400 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `bots.login_profiles` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.login_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.login_status_milliseconds` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_approval_seconds` | 270 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_card_units` | 2000 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.manager_created` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -226,6 +229,7 @@
 | `bots.tower_floors` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.tower_zone_shown` | 3 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.turn_control_window_ms` | 600000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
+| `bots.unscanned_census_gap_ms` | 10000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.user_message_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.work_message_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.activity_picture_bytes` | 98304 | `bytes` | `refuse` | `diagnostics` | — |

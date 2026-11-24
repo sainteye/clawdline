@@ -348,8 +348,11 @@ func TestConnectorCredentialHoldsSurviveRestartAndOnlyReleaseVerifiedCleanup(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if status, err := reopened.Status(ctx, f.scope); err != nil || status.State != "unknown" {
-		t.Fatal("restart assumed a captured execution had stopped", status, err)
+	if status, err := reopened.Status(ctx, f.scope); err != nil || status.State != "ready" {
+		t.Fatal("restart asked for an unchanged credential again", status, err)
+	}
+	if used, err := reopened.HoldUsage(ctx); err != nil || used != 0 {
+		t.Fatal("restart kept the previous process's hold", used, err)
 	}
 
 	f = newFixture(t)

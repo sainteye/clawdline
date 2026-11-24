@@ -46,6 +46,9 @@ type StopRequest struct {
 	// never calls Stop. Unknown external work is recorded, never replayed.
 	// Naming a turn that is still queued removes only that message (API 63).
 	TurnID string
+	// ReleaseUnconfirmed releases a Bot whose earlier Agent cleanup is
+	// unconfirmed instead of stopping a turn (Engine.ReleaseUnconfirmed).
+	ReleaseUnconfirmed bool
 }
 type AnswerRequest struct {
 	Command pa.Command

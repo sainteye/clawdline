@@ -1849,6 +1849,10 @@
         },
         "turn_id": {
           "type": "string"
+        },
+        "release_unconfirmed": {
+          "type": "boolean",
+          "description": "Releases a Bot whose earlier Agent cleanup is unconfirmed without confirming it; turn_id is ignored and no turn is cancelled."
         }
       },
       "required": [
@@ -3083,6 +3087,10 @@
         },
         "tokens_after": {
           "type": "integer"
+        },
+        "cause": {
+          "type": "string",
+          "description": "For cleanup_released: degraded when the bounded re-checks ran out, person when the person released the Bot."
         }
       },
       "required": [
@@ -5116,6 +5124,9 @@
         },
         "failure": {
           "type": "string"
+        },
+        "unconfirmed": {
+          "type": "boolean"
         },
         "fingerprint": {
           "type": "string"

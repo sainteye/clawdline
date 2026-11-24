@@ -24,3 +24,11 @@ func (p *Process) WaitExit(ctx context.Context) error {
 	defer p.mu.Unlock()
 	return p.waitErr
 }
+
+// PID is the direct child's process ID, which also leads its process group.
+func (p *Process) PID() int {
+	if p == nil || p.cmd == nil || p.cmd.Process == nil {
+		return 0
+	}
+	return p.cmd.Process.Pid
+}

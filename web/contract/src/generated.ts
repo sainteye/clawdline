@@ -5610,6 +5610,7 @@ export interface ProjectAssistantDevServer {
   ports_known: boolean
   revision: number
   state: string
+  unconfirmed?: boolean
 }
 
 /**
@@ -6699,6 +6700,11 @@ export interface ProjectAssistantNetworkSettingsView {
  * own language. text stays an English fallback.
  */
 export interface ProjectAssistantNoticeRef {
+  /**
+   * For cleanup_released: degraded when the bounded re-checks ran out, person when
+   * the person released the Bot.
+   */
+  cause?: string
   key: string
   tokens_after?: number
   tokens_before?: number
@@ -7711,6 +7717,12 @@ export interface ProjectAssistantSourcesResponse {
 export interface ProjectAssistantStopRequest {
   command: ProjectAssistantCommand
   fence: ProjectAssistantFence
+
+  /**
+   * Releases a Bot whose earlier Agent cleanup is unconfirmed without confirming
+   * it; turn_id is ignored and no turn is cancelled.
+   */
+  release_unconfirmed?: boolean
   turn_id: string
 }
 

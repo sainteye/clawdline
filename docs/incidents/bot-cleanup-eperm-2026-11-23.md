@@ -178,3 +178,157 @@ failing a fresh census each time.
   change.
 
 Linux and the BSDs still use `ps`, whose own sysctl loop handles growth.
+
+## Design review: a passing failure must not lock a Bot
+
+Both incidents have the same shape. A safety check met a passing condition
+(an exiting process answering `EPERM`, a census racing new processes into
+`ENOMEM`) and stored it as if the answer could never be known. The safe
+outcome, "do not release, do not resend", was right for that moment; storing it
+forever was not. The hand-written `reverifiablePhases` list made "final" the
+default, so every new phase locked a Bot until someone remembered to add it.
+
+### What changed
+
+`finalCleanupPhases` (`internal/adapters/projectassistantacp/process.go`) is
+now the only list, and it names the phases that stay locked, each with its
+reason. Every other phase, including one added later, makes a later `Close`
+(and so `Engine.retryRetained`) run `reverify` again.
+`TestCleanupPhasesAreReverifiableUnlessMarkedFinal` keeps that default.
+
+| Phase | Class | Why |
+|---|---|---|
+| `descendant_inventory` | re-verifiable | A census failed (`ENOMEM`, `EPERM`, timeout). A later census can succeed; the gap it leaves is checked as below. |
+| `cleanup_survey` | re-verifiable | The survey did not stop before the deadline, meaning a census hung. `reverify` first waits for the survey to return. |
+| `signal_inventory`, `signal_pid_inventory`, `signal_group_inventory` | re-verifiable | A census around a signal failed; ownership was complete, only the signal's effect is unknown. |
+| `signal_pid_live`, `signal_group_live` | re-verifiable | A signal was refused while a census still showed our process. A fresh census and new signals can settle it. |
+| `process_cleanup` | re-verifiable | The direct child was not reaped before the deadline; a later wait can see it reaped. |
+| `root_identity` | final | The root was never seen while unreaped. Once `Wait` reaps it, its start time, and with it our group's identity, can no longer be learned. |
+| `owned_descendants` | final | The Agent made more descendants than the bound records. The bound, not a race, dropped them; a repeated census does not bring them back. |
+
+Re-verification still needs complete evidence: a complete fresh census, new
+signals to any live owned identity, the reaped direct child, no live owned
+identity or group member, and, when a census had failed, a settled gap.
+
+A failed census opens a *census gap* from the start of the last successful
+census to the end of the next one. A gap can hide only a descendant that left
+our process group and lost its parent before any census saw it; such a process
+is reparented to the orphan reaper. The gap settles when a complete census
+shows no live, unowned process born inside the gap (plus 2 s for start-time
+resolution) whose oldest such ancestor hangs from the reaper or from an owned
+process. macOS always reparents to launchd (pid 1). Linux can reparent to a
+subreaper such as `systemd --user`, so there any unowned process born inside
+the gap keeps cleanup unknown until it exits. The window is fixed, so later
+retries see fewer such processes, never more.
+
+Red before, green after (`go test ./internal/adapters/projectassistantacp`):
+`TestProcessCloseReinventoriesAfterATransientCensusFailure` (`ENOMEM`,
+`EPERM`, deadline: the second Close returned the first error),
+`TestProcessCloseKeepsAnOrphanFromTheGapUnknown` and the default-phase guard
+failed; `TestProcessCloseKeepsFinalPhasesLocked` and
+`TestDarwinGapSuspectsHangFromLaunchdOrFromUs` hold the other side. With the
+gap check disabled, the orphan test fails again.
+
+### The survey interval stays 50 ms
+
+An earlier draft of this change moved `bots.survey_ms` from 50 to 250 ms on a
+CPU measurement alone (one Agent, about 640 processes: 20 censuses a second at
+1.43% of a core against 4 at 0.46%). Review (Fuse, 2026-11-24) asked for the
+census count per hour before and after, the ENOMEM reproduction rate under the
+same load, and why the longer blind interval is acceptable. The reproduction
+rate was not measured, so the interval stays 50 ms and only the sizing race is
+fixed (`bots.process_census_attempts`). kqueue `NOTE_FORK` was considered and
+not adopted: macOS has no `NOTE_TRACK`, so every new descendant still needs a
+census before it can be watched.
+
+### Review: the gap check must not lock a Bot either (Fuse, 2026-11-24)
+
+The first version of the gap check above was itself a lock. On macOS almost
+every XPC service and app hangs from launchd, and this machine had 46 live
+launchd children born in the last ten minutes, 20 of them the person's; with a
+gap of at least about 4.25 s roughly 28% of gaps met one, five quick retries
+then failed, and nothing re-checked afterwards. On Linux every parent counted
+as a possible reaper, so a busy machine almost always locked. A gap opened
+before the first successful census had no lower bound and never settled.
+
+What changed:
+
+- **Proportional check.** A gap shorter than `bots.unscanned_census_gap_ms`
+  (10 s, two cleanup deadlines: one failed census of any kind plus the grace
+  wait) is treated like an ordinary survey interval and releases without a
+  scan; the survey already accepts a blind interval between polls. Only a
+  longer gap is scanned (`gapSettled` in
+  `internal/adapters/projectassistantacp/process.go`).
+- **Own user only.** The census now reads each process's real user id
+  (`Pcred.P_ruid` from sysctl on macOS, `ps -o ruid=` elsewhere). A scan
+  ignores other users' processes: an Agent cannot create one without a setuid
+  program, which keeps the real user id. Every process that keeps a gap open
+  is logged with its pid, parent, user and birth time.
+- **Reapers are ancestors.** An orphan goes to init or to the nearest
+  subreaper among its ancestors, and every Agent descendant descends from the
+  daemon, so `orphanReaperIn` counts only pid 1 and, where subreapers exist,
+  the daemon's own ancestors. Making the daemon itself a subreaper
+  (`PR_SET_CHILD_SUBREAPER`) was not done: the daemon would then have to reap
+  adopted zombies, and a `wait(-1)` loop would steal the exit status of every
+  other `os/exec` child the daemon runs.
+- **Lower bound.** A gap that opens before the first successful census starts
+  at `StartProcess`.
+- **Re-checks were meant never to stop** (superseded below). After `bots.cleanup_retries` quick retries, a
+  retained Bot keeps re-checking with a doubling delay capped at
+  `bots.cleanup_slow_retry_ms` (5 min) until cleanup is confirmed or the
+  daemon stops (`retryRetained` in `internal/app/projectassistant/lifecycle.go`).
+  The next message also re-checks once in `acquire` when nothing else holds
+  the Bot, and is accepted if cleanup is confirmed
+  (`internal/app/projectassistant/runtime.go`). Neither resends the earlier
+  turn, which keeps `execution_effect_unknown`.
+
+Tests: `TestProcessCloseReleasesPastStrangersAfterAShortGap`,
+`TestProcessCloseScansALongGapForOurUserOnly`,
+`TestProcessCloseSettlesAGapOpenedBeforeTheFirstCensus`,
+`TestProcessCloseReleasesStrangersOutsideTheGap`,
+`TestOrphanReapersAreInitAndTheDaemonsAncestors`,
+`TestProcessCloseKeepsAnOrphanFromTheGapUnknown` (birth fixed inside the gap,
+not at the census moment), `TestRuntimeRetainedCleanupKeepsRecheckingAfterQuickRetries`
+and `TestRuntimeNextMessageRechecksRetainedCleanup`. Each failed before the
+change. The Engine tests inject the cleanup failure at the provider session's
+Close, not at the census; the census path is covered by the adapter tests.
+
+## Second review: re-checking forever is a lock too (Fuse, 2026-11-24)
+
+A long gap scans live processes of our own user born inside it whose oldest
+such ancestor hangs from pid 1 or a daemon ancestor. On macOS launchd keeps
+starting the person's apps and XPC services with exactly that shape; on Linux
+`systemd --user` and a tmux server are daemon ancestors. Re-checks that never
+stop therefore made recovery wait for an unrelated process to exit, possibly
+for hours.
+
+- **Bounded, then released.** After the quick retries,
+  `bots.cleanup_slow_retries` (8: 32, 64, 128, 256 s, then every 300 s, about
+  23 min) slow re-checks run. Then the Bot is released without confirmation
+  (`releaseUnconfirmed`, cause `degraded`): the daemon log names the pids that
+  kept cleanup unconfirmed (`UnconfirmedProcesses`), the abandoned session is
+  never reused or signalled again, the earlier turn keeps
+  `execution_effect_unknown` and is not resent, and a `cleanup_released`
+  notice in the chat says the previous processes could not all be confirmed
+  stopped and to check Activity Monitor.
+- **Release without confirming.** The refusal line in the Bot chat carries a
+  "Release without confirming" button with its risk written beside it. It
+  sends `stop` with `release_unconfirmed`; the same release runs at once with
+  cause `person`.
+- **Unreadable start times.** `ps` now runs with `LC_ALL=C`, since `lstart`
+  follows `LC_TIME`. Before, a row whose start time did not parse counted as
+  born inside the gap, so one such row kept every long gap open. Now it is
+  logged and counts only when its parent is an owned process.
+- **Narrowing not adopted.** Filtering by executable name (claude, codex,
+  node) is unsound: an Agent can leave any program behind (a shell, python,
+  git), and the census deliberately reads no arguments. Session id and process
+  group are what a `setsid` escape changes, and those escapes are what the gap
+  check exists for. The bounded release covers the remaining false positives.
+- The 250 ms interval in the subject of 6e36cb987 was reverted by 3e3ac8852;
+  the survey polls every 50 ms.
+
+Tests: `TestRuntimeRetainedCleanupDegradesAfterBoundedSlowRechecks`,
+`TestRuntimeReleaseUnconfirmedFreesARetainedBotAtOnce`,
+`TestProcessNamesTheOrphanThatKeepsAGapOpen` (a real orphan keeps cleanup
+refused until the release) and
+`TestProcessCloseDoesNotHoldAGapOnAnUnreadableStartTime`.

@@ -23,6 +23,10 @@ const LoginProbeBackoff = 200 * time.Millisecond
 // MaxLoginProbeBackoffMilliseconds is the longest single wait between reads.
 const MaxLoginProbeBackoffMilliseconds = 400
 
+// MaxLoginStatusMilliseconds bounds one native sign-in status read made by a
+// check. A read that does not answer in time counts as an interrupted read.
+const MaxLoginStatusMilliseconds = 10000
+
 var loginProfileID = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func ValidLoginProfileID(id string) bool { return id == "" || loginProfileID.MatchString(id) }

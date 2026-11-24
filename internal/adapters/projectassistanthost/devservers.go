@@ -81,16 +81,17 @@ func (h *Host) makeServers(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	launch := h.o.ServerLaunch
+	launch, adopt := h.o.ServerLaunch, h.o.ServerAdopt
 	if launch == nil {
 		launcher, err := process.New(acp.SourceProcessLimits(), os.Environ())
 		if err != nil {
 			return err
 		}
-		launch = launcher.Start
+		launch, adopt = launcher.Start, launcher.Adopt
 	}
 	r, err := servers.OpenRegistry(ctx, servers.RegistryOptions{MachineID: h.o.MachineID, Lifetime: context.Background(), Catalog: c, ID: h.o.ID, CleanupTimeout: h.o.Limits.CleanupTimeout,
 		CheckControl: h.serverControl,
+		Adopt:        adopt,
 		Restarts:     c,
 		AuthorizeRestart: func(ctx context.Context, saved servers.SavedServer) (func(context.Context) error, error) {
 			return (servers.Approval{Rules: c, Check: h.serverCheck, Guard: h.serverMemory,
@@ -147,12 +148,16 @@ func (h *Host) makeServers(ctx context.Context) error {
 }
 
 func serverInfo(saved servers.SavedServer) app.DevServerInfo {
+	return serverInfoOf(saved, false)
+}
+
+func serverInfoOf(saved servers.SavedServer, unconfirmed bool) app.DevServerInfo {
 	state := string(saved.Attempt.State)
 	if state == "" {
 		state = string(servers.Stopped)
 	}
 	fingerprint, _ := saved.Spec.Fingerprint()
-	return app.DevServerInfo{Fingerprint: fingerprint, Revision: saved.Attempt.Version, ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure, Ports: []app.DevServerPort{}}
+	return app.DevServerInfo{Fingerprint: fingerprint, Revision: saved.Attempt.Version, ID: saved.ID, Name: saved.Spec.Name, Command: saved.Spec.Command, Folder: saved.Spec.Directory, Attempt: saved.Attempt.Identity.AttemptID, State: state, Failure: saved.Attempt.Failure, Unconfirmed: unconfirmed, Ports: []app.DevServerPort{}}
 }
 
 func (h *Host) bindServerTools(q app.OpenRequest, life *workLifetime, tools *NativeWork, bound func(context.Context) (context.Context, context.CancelFunc, error), journal func(context.Context, string) error) error {

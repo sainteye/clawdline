@@ -169,6 +169,20 @@ func (r *Engine) acquire(key pa.BotKey) (*runtimeActor, error) {
 		return nil, runtimeFailure(pa.Disabled, "runtime")
 	}
 	a := r.actors[key]
+	// A new message re-checks a retained cleanup once instead of repeating
+	// the old answer: the same verified retryCleanup the retry loop uses,
+	// which releases the owner only when Close confirms cleanup. When another
+	// owner holds the actor, the message is refused as before.
+	if a != nil && a.retained && a.users == 0 {
+		a.users++
+		r.mu.Unlock()
+		r.retryCleanup(a)
+		r.mu.Lock()
+		if r.closed {
+			return nil, runtimeFailure(pa.Disabled, "runtime")
+		}
+		a = r.actors[key]
+	}
 	if a != nil && a.retained {
 		return nil, runtimeFailure(pa.ExecutionEffectUnknown, "owned_cleanup")
 	}
@@ -2224,6 +2238,9 @@ func (r *Engine) Answer(ctx context.Context, q AnswerRequest) (pa.Receipt, error
 }
 
 func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, err error) {
+	if q.ReleaseUnconfirmed {
+		return r.ReleaseUnconfirmed(ctx, q)
+	}
 	// Registered before acquire/unlock defers: filesystem cleanup runs only
 	// after every runtime lock is released, including exact receipt replays.
 	defer func() {

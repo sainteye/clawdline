@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14319,
-  "riskKeys": 6085,
-  "nonRiskCount": 8234,
+  "englishContentKeys": 14342,
+  "riskKeys": 6102,
+  "nonRiskCount": 8240,
   "groups": [
     {
       "name": "acp / other",
@@ -528,7 +528,7 @@
     },
     {
       "name": "botsSettings / other",
-      "count": 29,
+      "count": 33,
       "sources": [
         null
       ],
@@ -550,12 +550,16 @@
         "botsSettings.kind",
         "botsSettings.kindPlaceholder",
         "botsSettings.loading",
+        "botsSettings.machine",
         "botsSettings.memoryNote",
         "botsSettings.memoryText",
         "botsSettings.memoryTitle",
         "botsSettings.model",
         "botsSettings.modelDefault",
         "botsSettings.open",
+        "botsSettings.problemDisabled",
+        "botsSettings.problemUnsupported",
+        "botsSettings.retry",
         "botsSettings.rulesTitle",
         "botsSettings.save",
         "botsSettings.saving",
@@ -615,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 760,
+      "count": 762,
       "sources": [
         null
       ],
@@ -677,6 +681,7 @@
         "capacityRow.bots.chat_initial_page_rows.what",
         "capacityRow.bots.cleanup_ms.what",
         "capacityRow.bots.cleanup_retry_ms.full",
+        "capacityRow.bots.cleanup_slow_retry_ms.full",
         "capacityRow.bots.cloud_endpoints.what",
         "capacityRow.bots.cloud_lease_seconds.what",
         "capacityRow.bots.completion_wake_retry_seconds.full",
@@ -811,6 +816,7 @@
         "capacityRow.bots.tower_floors.what",
         "capacityRow.bots.tower_zone_shown.what",
         "capacityRow.bots.turn_control_window_ms.what",
+        "capacityRow.bots.unscanned_census_gap_ms.full",
         "capacityRow.bots.user_message_bytes.what",
         "capacityRow.bots.work_message_bytes.what",
         "capacityRow.browser.activity_picture_bytes.what",

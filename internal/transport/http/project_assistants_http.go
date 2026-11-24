@@ -708,7 +708,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		return paHTTPReceipt(s.Stop(ctx, app.StopRequest{Command: command, Fence: fence, TurnID: request.TurnID}))
+		return paHTTPReceipt(s.Stop(ctx, app.StopRequest{Command: command, Fence: fence, TurnID: request.TurnID, ReleaseUnconfirmed: request.ReleaseUnconfirmed}))
 	case "queue-edit":
 		request, err := paDecodeHTTPLimit[contract.ProjectAssistantQueueEditRequest](w, r, capacity.MaximumBotSendBodyBytes)
 		if err != nil {

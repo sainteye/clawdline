@@ -1270,3 +1270,7 @@ func (h *Host) capturedExtensions(ctx context.Context, q app.OpenRequest) (app.N
 	}
 	return h.o.Extensions.Resolve(ctx, q.Bot, q.Directory)
 }
+
+func (s *ownedSession) UnconfirmedProcesses() []int {
+	return app.UnconfirmedProcessesOf(s.ProviderSession)
+}
