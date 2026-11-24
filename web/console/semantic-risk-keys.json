@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14221,
+  "englishKeys": 14231,
   "counts": {
-    "negation": 3618,
+    "negation": 3620,
     "state": 2406,
-    "permission": 854,
+    "permission": 855,
     "deletion": 326,
     "uncertainty": 566
   },
-  "unionCount": 6043,
+  "unionCount": 6046,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3096,6 +3096,8 @@
       "projectAssistants.connectorStored",
       "projectAssistants.deleteBotConfirm",
       "projectAssistants.draftUnavailable",
+      "projectAssistants.dropBlocked",
+      "projectAssistants.dropBlockedUnavailable",
       "projectAssistants.empty",
       "projectAssistants.emptyLibrary",
       "projectAssistants.emptyMemory",
@@ -6685,6 +6687,7 @@
       "projectAssistants.connectorStored",
       "projectAssistants.dispatchAllowAlways",
       "projectAssistants.dispatchAllowOnce",
+      "projectAssistants.dropBlockedReadOnly",
       "projectAssistants.failSignedOut",
       "projectAssistants.fallbackReason_signed_out",
       "projectAssistants.fixAgent",
@@ -12839,6 +12842,9 @@
     "projectAssistants.dispatchedStateRunning",
     "projectAssistants.dispatchedStripRunning",
     "projectAssistants.draftUnavailable",
+    "projectAssistants.dropBlocked",
+    "projectAssistants.dropBlockedReadOnly",
+    "projectAssistants.dropBlockedUnavailable",
     "projectAssistants.empty",
     "projectAssistants.emptyLibrary",
     "projectAssistants.emptyMemory",

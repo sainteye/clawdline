@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14221,
-  "riskKeys": 6043,
-  "nonRiskCount": 8178,
+  "englishContentKeys": 14231,
+  "riskKeys": 6046,
+  "nonRiskCount": 8185,
   "groups": [
     {
       "name": "acp / other",
@@ -6222,7 +6222,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 625,
+      "count": 632,
       "sources": [
         null
       ],
@@ -6334,6 +6334,13 @@
         "projectAssistants.dispatchedStripMore",
         "projectAssistants.dispatchedStripNeedsYou",
         "projectAssistants.downloadFile",
+        "projectAssistants.dropAttach",
+        "projectAssistants.dropAttachHint",
+        "projectAssistants.dropAttachImages",
+        "projectAssistants.dropBlockedBusy",
+        "projectAssistants.dropBlockedImagesOnly",
+        "projectAssistants.dropBlockedOffline",
+        "projectAssistants.dropBlockedThread",
         "projectAssistants.earlier",
         "projectAssistants.earlierLoading",
         "projectAssistants.editInformation",
