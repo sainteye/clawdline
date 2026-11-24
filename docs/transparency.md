@@ -18,6 +18,15 @@ affects the closed Session report card. Model context, tools, approvals and
 execution are unchanged. Only those source receipts are refreshed; this review
 does not deploy the public website.
 
+A Bot answering another Bot's request on this machine can now call
+`dispatch_work` into its own Project and use browser tabs it opened in that
+turn. Reviewed the persistent-bot-review card in English and Taiwan Traditional
+Chinese: the peer-request prompt, the fixed Bot frame and the tool
+descriptions are unchanged, and none of them said a request turn cannot
+dispatch or browse. Another Project, Board items, completion callbacks and
+requests from another machine stay refused at the Host. Only the provider
+source receipt is refreshed; this review does not deploy the public website.
+
 Bots are now told when to use `ask_person`. Reviewed the persistent-bot-review
 card in English and Taiwan Traditional Chinese against the fixed Bot frame,
 the peer-request and correlated-reply prompts and the `message_bot`
