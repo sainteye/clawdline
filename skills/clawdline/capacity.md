@@ -160,6 +160,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.peer_note_bytes` | 2000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.peer_notes_per_request` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.process_census_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |

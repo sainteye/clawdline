@@ -751,6 +751,8 @@
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
+        "capacityRow.bots.peer_note_bytes.what",
+        "capacityRow.bots.peer_notes_per_request.what",
         "capacityRow.bots.process_census_attempts.what",
         "capacityRow.bots.processes.what",
         "capacityRow.bots.reaction_emoji_bytes.what",
