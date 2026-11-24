@@ -19,7 +19,11 @@ func TestUnconfirmedIsLoggedOnceAcrossRepeatedTicks(t *testing.T) {
 	now := time.Unix(1_800_000_000, 0)
 	o.Clock = func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
 	var lines []string
-	o.Logf = func(format string, args ...any) { mu.Lock(); defer mu.Unlock(); lines = append(lines, fmt.Sprintf(format, args...)) }
+	o.Logf = func(format string, args ...any) {
+		mu.Lock()
+		defer mu.Unlock()
+		lines = append(lines, fmt.Sprintf(format, args...))
+	}
 	r := openRegistry(t, o)
 	saved, err := r.Start(context.Background(), specFixture(), "first")
 	if err != nil {
