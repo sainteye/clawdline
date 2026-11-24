@@ -122,7 +122,8 @@ export interface ConfirmHost {
   openId(): string | null
   writable(): boolean
   /** `closeDetail` (`session/open.js`). */
-  closeDetail(): void
+  closeDetail(holdFleetTarget?: boolean): void
+  releaseFleetClose(key: string): void
   /** Ask the daemon for the list again; the close changed it. */
   refresh(): void
   closeTarget(id: string): CloseTarget | null
@@ -135,7 +136,7 @@ export interface CloseTarget {
   pinnedFleet: boolean
 }
 
-let host: ConfirmHost = { openId: () => null, writable: () => false, closeDetail: () => {}, refresh: () => {}, closeTarget: () => null }
+let host: ConfirmHost = { openId: () => null, writable: () => false, closeDetail: () => {}, releaseFleetClose: () => {}, refresh: () => {}, closeTarget: () => null }
 export function hostConfirm(next: ConfirmHost): void {
   host = next
 }
@@ -572,11 +573,11 @@ export const ActionConfirm = {
    * sheet comes back up carrying them.
    */
   async reopenEndBlocked(id: string, reasons: readonly CloseReason[], kind: CloseKind, attemptedVersion: string | null,
-    asked?: Asked, canReview: (row?: ClosingRow) => boolean = () => true): Promise<boolean> {
+    asked?: Asked, canReview: (row?: ClosingRow) => boolean = () => true, selected?: SessionRow): Promise<boolean> {
     // A forced second decision is only meaningful when the person can see
     // the current reasons and the version it confirms. Cloud can lose the
     // refusal's reasons, so read a newer row when the held row has moved.
-    let row = byId(id) as CloseReading | null
+    let row: CloseReading | null = selected ? { ...selected } : byId(id) as CloseReading | null
     let known = refusedReasons(reasons, row, attemptedVersion)
     let version = attemptedVersion
     if (!version || known.length === 0) {
@@ -671,10 +672,12 @@ export const ActionConfirm = {
     const overlay = node("action-confirm")
     if (!overlay || overlay.hidden || this.busy) return
     const opener = this.pending && this.pending.opener
+    const target = this.pending?.target
     this.pending = null
     this.renderSay("", null, [])
     this.sync()
     overlay.hidden = true
+    if (restore && target?.pinnedFleet) host.releaseFleetClose(closingRowKey(target.machine, target.row))
     if (restore && opener && document.contains(opener)) opener.focus({ preventScroll: true })
   },
 
@@ -782,7 +785,7 @@ function mintRequest(): string {
   return pressKey("close")
 }
 
-function endSession({ id, request, force, closeability, closeabilityVersion, target }: Pending): void {
+function endSession({ id, request, force, closeabilityVersion, target }: Pending): void {
   const current = host.closeTarget(id)
   const title = target?.title ?? id
   if (!target || !current || !host.writable() ||
@@ -791,30 +794,21 @@ function endSession({ id, request, force, closeability, closeabilityVersion, tar
     return
   }
   const key = closingRowKey(target.machine, target.row)
-  // A refusal may open a second confirmation. The exact fleet selection can
-  // be the only reader that holds this execution and its closeability version.
-  const waitForReceipt = target.pinnedFleet && !force && closeability !== "safe"
-  if (!beginClosingRow(key, target.machine, !waitForReceipt)) return
+  if (!beginClosingRow(key, target.machine)) return
   const machine = captureMachineFetch()
   // Dispatch while the Cloud reader still has the exact fleet destination selected.
   const sent = client.close(id, force, request, closeabilityVersion ?? undefined)
+  const leavingDetail = host.openId() === id
   let cancelMotion: (() => void) | undefined
-  const moveAway = () => {
-    const leavingDetail = host.openId() === id
-    try {
-      cancelMotion = playSessionCloseMotion([key, L.selectionKey(target.row) ?? id], leavingDetail)
-    } catch { /* Motion support cannot hold up a close. */ }
-    if (leavingDetail || waitForReceipt) host.closeDetail()
-  }
+  try {
+    cancelMotion = playSessionCloseMotion([key, L.selectionKey(target.row) ?? id], leavingDetail)
+  } catch { /* Motion support cannot hold up a close. */ }
+  if (leavingDetail || target.pinnedFleet) host.closeDetail(target.pinnedFleet)
   const closed = () => {
-    if (waitForReceipt && machine.current()) {
-      const selected = host.closeTarget(id)
-      if (selected?.pinnedFleet && closingRowKey(selected.machine, selected.row) === key) moveAway()
-    }
+    if (target.pinnedFleet) host.releaseFleetClose(key)
     settleClosingRow(key, true)
     if (machine.current()) host.refresh()
   }
-  if (!waitForReceipt) moveAway()
   void sent.then(closed, async (error: unknown) => {
     if (error instanceof RefusalError && error.code === "session_not_found") {
       closed()
@@ -832,11 +826,13 @@ function endSession({ id, request, force, closeability, closeabilityVersion, tar
     const asked: Asked = { subject: title }
     if (error instanceof RefusalError && canReview()) {
       if ((error.code === "close_blocked" || error.code === "closeability_unknown") &&
-          await ActionConfirm.reopenEndBlocked(id, error.reasons, "end", closeabilityVersion, asked, canReview)) return
+          await ActionConfirm.reopenEndBlocked(id, error.reasons, "end", closeabilityVersion, asked, canReview,
+            target.pinnedFleet ? host.closeTarget(id)?.row : undefined)) return
       if (error.code === "close_not_proven" &&
           await ActionConfirm.reopenEndNotProven(id, "end", asked, canReview)) return
       if (error.code === "execution_generation_changed") closeExecutionChanged(id, "end")
     }
+    if (target.pinnedFleet) host.releaseFleetClose(key)
     const reason = error instanceof TransportError || (error instanceof RefusalError && error.code === "request_outcome_unknown")
       ? nextWord("endBackgroundUnknown")
       : error instanceof RefusalError && error.code === "close_release_failed"
