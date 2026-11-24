@@ -490,10 +490,14 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
 		}
 		if s.Notice && strings.HasPrefix(s.Command.IdempotencyKey, pa.WorkCompletionPrefix) {
-			return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "work_completion_unknown_barrier")
+			return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "work_completion_unknown_barrier")
 		}
 	}
-	if len(unknown) > 0 && waiting > 0 {
+	if s.RestartSource != "" && (!s.Notice || s.Command.IdempotencyKey != pa.RestartContinuationPrefix+s.RestartSource ||
+		len(unknown) != 1 || unknown[0].ID != s.RestartSource || !restartInterrupted(unknown[0])) {
+		return pa.Receipt{}, runtimeFailure(pa.ContextStale, "restart_source")
+	}
+	if s.RestartSource == "" && len(unknown) > 0 && waiting > 0 {
 		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 	}
 	if s.Compact {
@@ -539,15 +543,17 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		b := pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, LoginProfile: bot.LoginProfile, MemoryRevision: memory.Revision, ForgottenThrough: memory.ForgottenThrough, InstructionRevision: bot.Instructions.Revision}
 		binding = &b
 	}
-	for _, t := range unknown {
-		t.State = pa.TurnFailed
-		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}
-		cmd := r.command(a.key, pa.SendOperation, "runtime-acknowledge-"+t.ID, t)
-		if _, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}}); err != nil {
-			return pa.Receipt{}, err
-		}
-		if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
-			return pa.Receipt{}, err
+	if s.RestartSource == "" {
+		for _, t := range unknown {
+			t.State = pa.TurnFailed
+			t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}
+			cmd := r.command(a.key, pa.SendOperation, "runtime-acknowledge-"+t.ID, t)
+			if _, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}}); err != nil {
+				return pa.Receipt{}, err
+			}
+			if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
+				return pa.Receipt{}, err
+			}
 		}
 	}
 	if len(files) > 0 {
@@ -598,6 +604,12 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		decisionEvents = []pa.Event{{Fence: answered.Fence, Kind: pa.PermissionAnswered, Permission: &answered}}
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: files}
+	switch {
+	case s.RestartSource != "":
+		message.Notice = &pa.NoticeRef{Key: pa.NoticeRestartContinuation, Cause: pa.WorkCompletionTask(unknown[0])}
+	case pa.WorkCompletionTask(turn) != "":
+		message.Notice = &pa.NoticeRef{Key: pa.NoticeWorkReview, Cause: pa.WorkCompletionTask(turn)}
+	}
 	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Permissions: decisions, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: append([]pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}, decisionEvents...)})
 	if err != nil {
 		return pa.Receipt{}, err
@@ -616,76 +628,20 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	return receipt, nil
 }
 
-// Recover is explicit host startup work. A possibly sent turn becomes unknown;
-// only proven unsent queued turns can execute. It never repeats a prompt.
-// resumePrompt is Codync's (host/src/agent/bot/mod.rs RESUME_PROMPT) for a
-// turn a restart cut off.
-const resumePrompt = "[Clawdline restarted on this computer and interrupted you mid-task. You've been resumed with your conversation intact. Continue exactly where you left off and finish what you were doing. If your previous step already completed an action, do NOT repeat it — just carry on from there.]"
-
-// staleResume is Codync's STALE_RESUME_MS: an older interrupted task is more
-// likely unwanted than awaited, so it stays unknown for the person.
-const staleResume = time.Hour
-
-// Recover marks turns a restart cut off as unknown, as before. As in Codync,
-// one started within the last hour is then resumed: Clawdline sends the
-// resume prompt as a notice, which acknowledges the unknown turn (its receipt
-// stays unknown) and runs in the same native session when it can be loaded.
-// If anything else is still queued, nothing is resumed and the person's next
-// message decides, as before.
+// Recover normalizes interrupted durable work before waking the queue.
 func (r *Engine) Recover(ctx context.Context, key pa.BotKey) error {
-	resumable, err := r.recover(ctx, key)
-	if err != nil {
+	if err := r.recover(ctx, key); err != nil {
 		return err
 	}
-	for _, t := range resumable {
-		if len(t.Attempts) > 0 {
-			continue
-		}
-		if card, e := r.handoffForTurn(ctx, t); e != nil {
-			return e
-		} else if card != nil {
-			continue
-		}
-		_ = r.resumeInterrupted(ctx, key, t)
+	if err := r.ResumeInterrupted(ctx, key); err != nil {
+		return err
 	}
+	r.wakeBot(key)
 	return nil
 }
 
-func (r *Engine) resumeInterrupted(ctx context.Context, key pa.BotKey, t pa.Turn) error {
-	feature, source, err := r.o.Authorize(ctx, key)
-	if err != nil {
-		return err
-	}
-	bot, err := r.o.Repository.Bot(ctx, key)
-	if err != nil {
-		return err
-	}
-	c, err := r.o.Repository.Conversation(ctx, key, bot.ConversationID)
-	if err != nil {
-		return err
-	}
-	// Preserve the original interrupted turn when its native history is
-	// fenced. Even accepting a restart notice would acknowledge the old
-	// turn before the worker could refuse to load it.
-	if r.o.NativeHistory != nil && t.Fence.BindingID != "" {
-		binding, err := r.o.Repository.Binding(ctx, key, t.Fence.BindingID)
-		if err != nil {
-			return err
-		}
-		if err = r.checkNativeHistory(ctx, binding); err != nil {
-			return err
-		}
-	}
-	_, err = r.Submit(ctx, Submission{Command: r.command(key, pa.SendOperation, "runtime-resume-"+t.ID, t.ID),
-		Message: pa.SendMessage{Fence: currentFence(bot, c), Text: resumePrompt}, Feature: feature, Source: source, Notice: true})
-	return err
-}
-
-func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) {
-	var resumable []pa.Turn
-	// A request this restart ended now has a reply queued for its sender;
-	// wake that Bot once this one's lock and actor are released, so the two
-	// never wait on each other or on one actor slot.
+func (r *Engine) recover(ctx context.Context, key pa.BotKey) error {
+	// Reply delivery must wake the sender after releasing the recipient lock.
 	var ended []pa.Turn
 	defer func() {
 		for _, t := range ended {
@@ -694,32 +650,20 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 	}()
 	a, err := r.acquire(key)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer r.release(a)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.working {
-		return nil, nil
+		return nil
 	}
 	// A reply that came back before the restart, waiting for queue space or
 	// queued, is delivered as usual: running it repeats no other Bot's work
 	// (Codync resumes reply turns too). An explicit Stop still drops it.
 	pending, err := r.o.Repository.PendingTurns(ctx, key)
 	if err != nil {
-		return nil, err
-	}
-	var export Export
-	interrupted := 0
-	for _, t := range pending {
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
-			interrupted++
-		}
-	}
-	if interrupted > 0 {
-		if export, err = r.o.Repository.Export(ctx, key); err != nil {
-			return nil, err
-		}
+		return err
 	}
 	for _, t := range pending {
 		if t.Origin == pa.BotRequestOrigin && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
@@ -740,39 +684,19 @@ func (r *Engine) recover(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) 
 			}
 			if t.State != pa.TurnUnknown {
 				if err = r.finishLocked(ctx, a, t, state, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
-					return nil, err
+					return err
 				}
 				ended = append(ended, t)
 			}
 			continue
 		}
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission {
+		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering {
 			if err = r.finishLocked(ctx, a, t, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, "restart")); err != nil {
-				return nil, err
-			}
-			for _, m := range export.Messages {
-				if !pa.IsPeerRequest(t.Origin) && t.Origin != pa.BotReplyOrigin && pa.WorkCompletionTask(t) == "" && t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume && len(pending) == interrupted && !interruptedPermission(t, export.Permissions) {
-					resumable = append(resumable, t)
-				}
+				return err
 			}
 		}
 	}
-	bot, err := r.o.Repository.Bot(ctx, key)
-	if err != nil {
-		return nil, err
-	}
-	r.setProject(a, bot.Project)
-	if len(resumable) > 0 {
-		// The resume notice's own submission starts the worker; one started
-		// now would see the unknown turn, stop, and could miss the notice.
-		return resumable, nil
-	}
-	a.working = true
-	r.mu.Lock()
-	a.users++
-	r.mu.Unlock()
-	go r.work(a)
-	return resumable, nil
+	return nil
 }
 
 func (r *Engine) work(a *runtimeActor) {
@@ -805,12 +729,22 @@ func (r *Engine) work(a *runtimeActor) {
 		blocked := false
 		for i := range pending {
 			t := pending[i]
-			if t.State == pa.TurnUnknown || t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || a.steering[t.ID] {
+			if t.State == pa.TurnUnknown || t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering || a.steering[t.ID] {
 				blocked = true
 				break
 			}
 			if turn == nil && (t.State == pa.TurnQueued || t.State == pa.TurnAccepted) {
 				turn = &t
+			}
+		}
+		if blocked && a.lifetime.Err() == nil {
+			resume, settled, e := r.restartQueueHead(a.lifetime, a.key, pending)
+			if e == nil && settled {
+				a.mu.Unlock()
+				continue
+			}
+			if e == nil && resume != nil {
+				turn, blocked = resume, false
 			}
 		}
 		if blocked || turn == nil || turn.QueueEditID != "" {
@@ -877,7 +811,7 @@ func (r *Engine) work(a *runtimeActor) {
 		if err != nil && a.completion == nil {
 			latest, e := r.o.Repository.Turn(context.Background(), a.key, turn.ID)
 			// Shutdown can cancel the worker while it waits for a process slot.
-			preserveQueued := e == nil && (unstartedExchangeReply(latest) || pa.QueuedWorkCompletion(latest)) && a.lifetime.Err() != nil && r.unknownField() == RestartField
+			preserveQueued := e == nil && (unstartedExchangeReply(latest) || pa.QueuedChatRestartWork(latest)) && a.lifetime.Err() != nil && r.unknownField() == RestartField
 			if e == nil {
 				retried, retryErr := r.retryRoutineNotStartedLocked(context.Background(), a, latest, err)
 				if retried || retryErr != nil {
@@ -1202,6 +1136,18 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	// Every fresh process has a new generation. Unsafe native history is never
 	// loaded, including after forgetting or changing fixed instructions.
 	resume := handoffCard == nil && (len(t.Attempts) == 0 || resumedFrom != "") && !isolatedRoutine && decision == pa.ResumeExisting && binding.InstructionRevision == bot.Instructions.Revision
+	if sourceID := pa.RestartSourceTurn(t); sourceID != "" {
+		if !resume || !matchesRestartBinding(export, sourceID, binding) {
+			a.mu.Unlock()
+			return runtimeFailure(pa.ResumeUnsupported, "restart_history")
+		}
+		effectiveBot.Mode = restartNativeMode(effectiveAgent)
+		if effectiveBot.Mode == "" {
+			a.mu.Unlock()
+			return runtimeFailure(pa.Unsupported, "restart_mode")
+		}
+		effectiveBot.Extensions = pa.ExtensionSelection{}
+	}
 	if t.Origin == pa.CompactOrigin && (!resume || effectiveAgent != bot.Agent) {
 		// Nothing has been sent: the queued turn ends failed and the next
 		// message runs normally. A fresh session has nothing to compact.
@@ -1323,8 +1269,8 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		a.mu.Unlock()
 		return err
 	}
-	session, err := r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: resume}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
-	if session == nil && resume && !isolatedRoutine && t.Origin != pa.CompactOrigin && pa.Code(err) == pa.ResumeUnsupported {
+	session, err := r.o.Provider.Open(ctx, OpenRequest{PrimaryAgent: bot.Agent, Bot: effectiveBot, Binding: binding, Directory: resolution.Directory, Resume: resume, RestartReadOnly: pa.RestartSourceTurn(t) != ""}, func(ctx context.Context, e ProtocolEvent) error { return r.incoming(ctx, a, e) })
+	if session == nil && resume && !isolatedRoutine && t.Origin != pa.CompactOrigin && pa.RestartSourceTurn(t) == "" && pa.Code(err) == pa.ResumeUnsupported {
 		// As in Codync, a native session that cannot be loaded is replaced by
 		// a new one that receives the filtered history and memory; nothing
 		// was sent to the old one, so nothing is repeated.
@@ -1755,16 +1701,26 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 			return err
 		}
 	}
-	t.State, t.QueueEditID = state, ""
+	wasSteering := t.Steering
+	t.State, t.QueueEditID, t.Steering = state, "", false
 	if cause != nil {
 		field := "execution"
 		if state == pa.TurnUnknown {
+			r.mu.Lock()
+			retained := a.retained
+			r.mu.Unlock()
 			field = r.unknownField()
+			if field == RestartField && restartOrigin(t) && !retained && a.session == nil && !a.opening && !wasSteering {
+				field = RestartConfirmedField
+			}
 		}
 		// Preserve a planned restart's recovery marker. Other interruptions
 		// retain allowlisted diagnostics without changing their effect state.
 		if field == "execution" {
 			field = executionFailureField(cause)
+		}
+		if state == pa.TurnUnknown && wasSteering {
+			field = pa.SteerUnknownField
 		}
 		t.Failure = &pa.Failure{Code: pa.Code(cause), Field: field}
 	}
@@ -2027,7 +1983,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	}
 	// As Codync's "Approve automatically", an Approve Bot allows each request
 	// with the agent's allow-once option; AutoRead allows only read-only ones.
-	if e.Permission != nil && (bot.PermissionPolicy == pa.AutoRead || bot.PermissionPolicy == pa.Approve) {
+	if e.Permission != nil && pa.RestartSourceTurn(t) == "" && (bot.PermissionPolicy == pa.AutoRead || bot.PermissionPolicy == pa.Approve) {
 		for _, option := range e.Permission.Options {
 			if option.Allow && option.Kind == pa.AllowOnce && (option.ReadOnly || bot.PermissionPolicy == pa.Approve) {
 				answer := pa.PermissionAnswer{Fence: e.Fence, OfferID: e.Permission.ID, TurnID: e.TurnID, OptionID: option.ID}
@@ -2315,7 +2271,7 @@ func (r *Engine) Stop(ctx context.Context, q StopRequest) (receipt pa.Receipt, e
 			continue
 		}
 		state := pa.TurnCancelled
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.State == pa.TurnUnknown {
+		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering {
 			state = pa.TurnUnknown
 		}
 		if err = r.finishLocked(ctx, a, t, state, "", runtimeFailure(pa.ExecutionEffectUnknown, "stopped")); err != nil {
@@ -2356,7 +2312,7 @@ func (r *Engine) unqueueLocked(ctx context.Context, a *runtimeActor, bot pa.Bot,
 		if t.ID != q.TurnID {
 			continue
 		}
-		if t.State != pa.TurnQueued || a.turnID == t.ID {
+		if t.State != pa.TurnQueued || t.Steering || a.turnID == t.ID {
 			break
 		}
 		if err = r.finishLocked(ctx, a, t, pa.TurnCancelled, "", nil); err != nil {
@@ -2396,36 +2352,6 @@ func (r *Engine) images(key pa.BotKey, attachments []pa.Attachment) ([]PromptIma
 		out = append(out, PromptImage{MediaType: a.MediaType, Data: data})
 	}
 	return out, nil
-}
-
-// ResumeInterrupted resumes, as Recover does, a turn the daemon's own
-// shutdown cut off (RestartField) when it is the Bot's only pending turn and
-// its message is under an hour old. Anything else waits for the person.
-func (r *Engine) ResumeInterrupted(ctx context.Context, key pa.BotKey) error {
-	pending, err := r.o.Repository.PendingTurns(ctx, key)
-	if err != nil || len(pending) != 1 {
-		return err
-	}
-	t := pending[0]
-	if pa.IsLeadCallTurn(t) || pa.IsPeerRequest(t.Origin) || t.Origin == pa.BotReplyOrigin || pa.WorkCompletionTask(t) != "" || len(t.Attempts) > 0 || t.RoutineRunID != "" || t.State != pa.TurnUnknown || t.Failure == nil || t.Failure.Field != RestartField {
-		return nil
-	}
-	x, err := r.o.Repository.Export(ctx, key)
-	if err != nil {
-		return err
-	}
-	if x.Conversation.SessionResetGeneration > 0 && t.Fence.Generation <= x.Conversation.SessionResetGeneration {
-		return nil
-	}
-	if interruptedPermission(t, x.Permissions) {
-		return nil
-	}
-	for _, m := range x.Messages {
-		if t.RoutineRunID == "" && m.ID == t.MessageID && r.o.Clock().Sub(m.At) < staleResume {
-			return r.resumeInterrupted(ctx, key, t)
-		}
-	}
-	return nil
 }
 
 // currentForStart re-reads the Bot and its conversation just before a turn

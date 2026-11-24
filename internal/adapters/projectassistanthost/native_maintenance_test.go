@@ -649,7 +649,7 @@ func TestHostNativeMaintenanceHistoryKeepsInterruptedChatUnacknowledged(t *testi
 		t.Fatal("restricted restart created a replacement notice or opened a provider", err)
 	}
 	turn, err := f.h.store.Turn(ctx, bot.Key, receipt.ResourceID)
-	if err != nil || turn.State != pa.TurnUnknown || turn.Failure == nil || turn.Failure.Field != app.RestartField {
+	if err != nil || turn.State != pa.TurnUnknown || turn.Failure == nil || turn.Failure.Field != app.RestartConfirmedField {
 		t.Fatal("original interrupted chat was acknowledged by the blocked resume", turn, err)
 	}
 }

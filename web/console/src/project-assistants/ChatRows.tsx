@@ -27,11 +27,43 @@ import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
 import { sessionReportLine } from "./session-report"
-export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,timeline,onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,roster,artifactComposer,mentions}: {requestAbove?:(work:W.ProjectAssistantWorkLink)=>React.ReactNode;mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode}) {
+function workReviewNotice(message:W.ProjectAssistantMessage):{task:string;key:string}|undefined {
+  if(message.kind!=="notice")return
+  const notice=message.notice
+  if(notice?.cause&&["work_review","work_review_waiting","work_review_held","restart_continuation"].includes(notice.key))
+    return {task:notice.cause,key:notice.key}
+  const held=/^work-completion-(?:refused|limit)-(.+)$/.exec(message.id)
+  if(held)return {task:held[1],key:"work_review_held"}
+  const review=/^This is a report on work you dispatched, not a new instruction from the user\. Task ([a-z0-9-]+), "/.exec(message.text)
+  if(review)return {task:review[1],key:"work_review"}
+}
+
+export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,timeline,turns=[],onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,roster,artifactComposer,mentions}: {requestAbove?:(work:W.ProjectAssistantWorkLink)=>React.ReactNode;mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];turns?:readonly W.ProjectAssistantReadTurnSummary[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode}) {
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   const byID=new Map(messages.map(m=>[m.id,m]))
   const artifacts=new Map<string,W.ProjectAssistantMessage>();for(const m of messages){if(m.output?.artifact_id)artifacts.set(m.output.artifact_id,m)}
-  const chat=buildTimelineChat(timeline.filter(item=>!item.message?.output?.quiet))
+  const workIDs=new Set(timeline.flatMap(row=>row.work?[row.work.task_id]:[]))
+  const states=new Map(turns.map(turn=>[turn.id,turn.state]))
+  const reviews=new Map<string,{text?:string;details?:string}>()
+  for(const message of messages){
+    const notice=workReviewNotice(message)
+    if(!notice)continue
+    const state=states.get(message.turn_id)
+    if(notice.key==="work_review_held")reviews.set(notice.task,{text:w.workReviewHeld,details:message.text})
+    else if(notice.key==="work_review_waiting")reviews.set(notice.task,{text:w.workReviewQueued})
+    else if(state==="queued"||state==="accepted"||state==="running"||state==="waiting_permission"){
+      const text=notice.key==="restart_continuation"?w.workReviewResuming:state==="queued"||state==="accepted"?w.workReviewQueued:w.workReviewRunning
+      reviews.set(notice.task,{text,details:notice.key==="work_review"?message.text:reviews.get(notice.task)?.details})
+    }else if(state==="unknown"||state==="failed"||state==="cancelled")reviews.set(notice.task,{text:w.workReviewHeld})
+    else reviews.set(notice.task,{details:notice.key==="work_review"?message.text:reviews.get(notice.task)?.details})
+  }
+  const chat=buildTimelineChat(timeline.filter(item=>{
+    const message=item.message
+    if(!message)return true
+    if(message.output?.quiet||message.notice?.key==="restart_continuation")return false
+    const review=workReviewNotice(message)
+    return !review||!workIDs.has(review.task)&&review.key==="work_review_held"
+  }))
   // A reply can follow a publication by several bubbles. Keep the original
   // card in sequence and make its latest version reachable from that reply.
   const lastReplyByTurn=new Map<string,W.ProjectAssistantMessage>()
@@ -80,7 +112,7 @@ export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,timeline
 
   }
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
-  return <>{chat.map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<Fragment key={JSON.stringify([item.kind,item.id])}>{requestAbove?.(item.work)}<WorkResultCard work={item.work} w={w} source={source} onOpen={onOpenWork}/></Fragment>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
+  return <>{chat.map(item=>item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(Date.parse(item.at))}</time></div>:item.kind==="work"?<Fragment key={JSON.stringify([item.kind,item.id])}>{requestAbove?.(item.work)}<WorkResultCard work={item.work} review={reviews.get(item.work.task_id)} w={w} source={source} onOpen={onOpenWork}/></Fragment>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null
     first.add(entry.exchange.id)
@@ -102,6 +134,8 @@ export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,timeline
           <summary><span className="pa-session-report-head"><span>{w.sessionReport}</span>{sessionReportLine(item.message.text)&&<span className="pa-session-report-line">{sessionReportLine(item.message.text)}</span>}</span><ChevronIcon direction="right"/></summary>
           <p>{item.message.text}</p>
         </details>:item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:
+          workReviewNotice(item.message)?.key==="work_review_held"?
+            <details><summary>{w.workReviewHeld}</summary><p>{item.message.text}</p></details>:
           <p>{item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:compactedNoticeText(item.message,w)??<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
       )}
       {onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}

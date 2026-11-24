@@ -1622,9 +1622,16 @@ ${currentDraft}`:submitted)
   },[queueEditorOpen])
   const queuedCount=head?.queued_turn_count??0
   const unknownCount=head?.unknown_turn_count??0
-  const queuePaused=queuedCount>0&&unknownCount>0
+  const restartMessages=new Map(messages.filter(message=>message.notice?.key==="restart_continuation").map(message=>[message.turn_id,message]))
+  const restartTurn=turns.find(turn=>restartMessages.has(turn.id)&&["queued","accepted","running","waiting_permission"].includes(turn.state))
+  const restartNotice=restartTurn?restartMessages.get(restartTurn.id):undefined
+  const restartInterruption=turns.find(turn=>turn.state==="unknown"&&(turn.failure_field==="restart"||turn.failure_field==="restart_confirmed"))
+  const userTurns=new Set(messages.filter(message=>message.kind==="user").map(message=>message.turn_id))
+  const restartWaitingCount=turns.filter(turn=>["queued","accepted"].includes(turn.state)&&userTurns.has(turn.id)).length
+  const queuePaused=queuedCount>0&&unknownCount>0&&!restartNotice
   const exchangeReplyTurns=new Set(messages.flatMap(message=>message.exchange&&message.turn_id===message.exchange.reply_turn_id?[message.turn_id]:[]))
   const visibleInterruptions=turns.filter(turn=>!["queued","accepted","running","waiting_permission"].includes(turn.state)
+    &&turn.failure_field!=="restart_resumed"&&!(restartNotice&&turn.id===restartInterruption?.id)
     &&!(turn.state==="cancelled"&&(!turn.failure_code&&!turn.started_at||exchangeReplyTurns.has(turn.id))))
   const shownUnknown=visibleInterruptions.filter(turn=>turn.state==="unknown").length
   const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
@@ -1782,7 +1789,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1808,7 +1815,13 @@ ${currentDraft}`:submitted)
       {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
       {visibleInterruptions.map(turn=>
         <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
-          onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}
+          onCheck={turn.state==="unknown"&&!(turn.failure_field==="restart"||turn.failure_field==="restart_confirmed")&&!reconnecting&&!error?checkForUpdates:undefined}
+          queueCount={turn.id===restartInterruption?.id?restartWaitingCount:0}
+          onProgress={(turn.failure_field==="restart"||turn.failure_field==="restart_confirmed")?()=>{
+            const original=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-message-id]")??[]).find(node=>node.dataset.messageId===turn.message_id)
+            original?.scrollIntoView({block:"center"})
+            original?.focus({preventScroll:true})
+          }:undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
         steps={liveSteps.length||deferredTrace?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={!!traceMore&&(liveTraceTurn===moreTraceTurn||!liveSteps.length)} onMore={loadMoreTraces}
@@ -1851,7 +1864,7 @@ ${currentDraft}`:submitted)
             onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
-          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&
+          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&!restartTurn&&
             <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
@@ -1908,7 +1921,10 @@ ${currentDraft}`:submitted)
       }}>{w.teamReviewJump}</button>}
     <div className="pa-chat-footer">
       {!heldSend&&receipt&&(receipt.state==="failed"||receipt.state==="unknown"&&!unknown)&&<p role="status">{w[receipt.state]}</p>}
-      {(queuePaused||unknownCount>shownUnknown)&&<div className="pa-chat-error" role="status">
+      {restartNotice&&!restartNotice.notice?.cause&&<p className="pa-turn pa-restart-state" role="status">
+        {w.restartRestoring}{restartWaitingCount>0&&` · ${w.restartQueueKept.replace("{count}",String(restartWaitingCount))}`}
+      </p>}
+      {!restartNotice&&((queuePaused&&!restartInterruption)||unknownCount>shownUnknown)&&!(reconnecting&&restartInterruption)&&<div className="pa-chat-error" role="status">
         <span>{(queuePaused?w.queuePausedUnknown:w.previousTurnUnknown).replace("{count}",String(queuePaused?queuedCount:unknownCount))}</span>
         <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates}>{w.refresh}</button>
       </div>}

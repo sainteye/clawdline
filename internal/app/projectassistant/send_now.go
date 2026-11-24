@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -50,7 +51,7 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if t.State != pa.TurnQueued || t.QueueEditID != "" || a.turnID == t.ID || a.steering[t.ID] {
+	if t.State != pa.TurnQueued || t.Steering || t.QueueEditID != "" || a.turnID == t.ID || a.steering[t.ID] {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "send_now_turn")
 	}
 	running := a.turnID
@@ -62,6 +63,9 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	active, err := r.o.Repository.Turn(ctx, a.key, running)
 	if err != nil {
 		return pa.Receipt{}, err
+	}
+	if pa.RestartSourceTurn(active) != "" {
+		return pa.Receipt{}, runtimeFailure(pa.ReadOnly, "restart_continuation")
 	}
 	// A native session is shared across chats; steering is still a message
 	// delivery to the running transcript, so both turns must name that chat.
@@ -84,6 +88,14 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	if text == "" {
 		return pa.Receipt{}, runtimeFailure(pa.NotFound, "send_now_message")
 	}
+	t.Steering = true
+	started := r.command(a.key, pa.SendNowOperation, "runtime-steer-start", q.Command)
+	started.IdempotencyKey += "-" + started.ContentHash
+	if _, err = r.mutate(ctx, bot, Mutation{Command: started, Turn: &t,
+		Receipt: pa.Receipt{State: pa.EffectExecuting, ResourceID: t.ID},
+		Events:  []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}}); err != nil {
+		return pa.Receipt{}, err
+	}
 	if a.steering == nil {
 		a.steering = map[string]bool{}
 	}
@@ -101,24 +113,40 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	locked = true
 	delete(a.steering, t.ID)
 	defer r.kickLocked(a)
+	// Once the native call could have seen the text, a lost reply leaves
+	// the durable intent behind. A later restart must not send it again.
 	if steerErr != nil {
-		return pa.Receipt{}, steerErr
+		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.o.Limits.CleanupTimeout)
+		defer cancel()
+		latest, err := r.o.Repository.Turn(settleCtx, a.key, t.ID)
+		if err == nil && latest.State == pa.TurnQueued && latest.Steering {
+			err = r.finishLocked(settleCtx, a, latest, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, pa.SteerUnknownField))
+		}
+		return pa.Receipt{}, errors.Join(steerErr, err)
 	}
-	if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
-		return pa.Receipt{}, err
+	for {
+		bot, err = r.o.Repository.Bot(ctx, a.key)
+		if err != nil {
+			return pa.Receipt{}, err
+		}
+		t, err = r.o.Repository.Turn(ctx, a.key, q.TurnID)
+		if err != nil {
+			return pa.Receipt{}, err
+		}
+		if t.State != pa.TurnQueued || !t.Steering {
+			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "send_now_turn")
+		}
+		t.Steering = false
+		effect := pa.EffectAccepted
+		if outcome == SteerJoined {
+			t.State, t.JoinedTurnID, effect = pa.TurnSucceeded, running, pa.EffectDelivered
+		}
+		receipt, err := r.mutate(ctx, bot, Mutation{Command: q.Command, Turn: &t, Receipt: pa.Receipt{State: effect, ResourceID: t.ID},
+			Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})
+		if !collaborationAggregateConflict(err) || ctx.Err() != nil {
+			return receipt, err
+		}
 	}
-	if outcome != SteerJoined {
-		return r.mutate(ctx, bot, Mutation{Command: q.Command, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: t.ID}})
-	}
-	if t, err = r.o.Repository.Turn(ctx, a.key, q.TurnID); err != nil {
-		return pa.Receipt{}, err
-	}
-	if t.State != pa.TurnQueued {
-		// A Stop meanwhile took it; the agent may still have read it.
-		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "send_now_turn")
-	}
-	t.State, t.JoinedTurnID = pa.TurnSucceeded, running
-	return r.mutate(ctx, bot, Mutation{Command: q.Command, Turn: &t, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})
 }
 
 // kickLocked starts the worker when it stopped, for instance behind a message

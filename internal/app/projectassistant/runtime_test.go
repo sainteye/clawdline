@@ -1072,6 +1072,9 @@ func TestARestartResumesARecentInterruptedTurn(t *testing.T) {
 			t.Fatal(err)
 		}
 		receivePrompt(t, f.provider)
+		if err = f.r.CloseForRestart(t.Context()); err != nil {
+			t.Fatal(err)
+		}
 		options := f.r.o
 		options.Clock = func() time.Time { return time.Now().Add(age) }
 		restarted, err := NewRuntime(options)
@@ -1100,16 +1103,100 @@ func TestARestartResumesARecentInterruptedTurn(t *testing.T) {
 			notice = notice || m.Kind == pa.NoticeMessage && m.Text == resumePrompt
 		}
 		f.store.mu.Unlock()
-		if old != pa.TurnFailed || !notice {
+		if old != pa.TurnUnknown || !notice {
 			t.Fatalf("interrupted turn=%s notice=%v", old, notice)
 		}
+	}
+}
+
+func TestRestartContinuesBeforeQueuedHumanMessages(t *testing.T) {
+	f := newRuntimeFixture(t)
+	original, err := f.submit(t, "first request", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	next, err := f.submit(t, "next request", "next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.r.CloseForRestart(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	awaitTurn(t, f, original.ResourceID, pa.TurnUnknown)
+	awaitTurn(t, f, next.ResourceID, pa.TurnQueued)
+	r, err := NewRuntime(f.r.o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close(context.Background()) })
+	if err = r.Recover(t.Context(), f.key); err != nil {
+		t.Fatal(err)
+	}
+	resumed := receivePrompt(t, f.provider)
+	if resumed.Text != resumePrompt {
+		t.Fatalf("first prompt after restart = %q", resumed.Text)
+	}
+	awaitTurn(t, f, original.ResourceID, pa.TurnUnknown)
+	if err = r.Recover(t.Context(), f.key); err != nil {
+		t.Fatal(err)
+	}
+	f.provider.session().reply <- PromptResult{FinalText: "first request resolved"}
+	continued := receivePrompt(t, f.provider)
+	if continued.Turn.ID != next.ResourceID || continued.Text != "next request" {
+		t.Fatalf("queued message = %+v", continued)
+	}
+	f.provider.session().reply <- PromptResult{FinalText: "next request resolved"}
+	awaitTurn(t, f, next.ResourceID, pa.TurnSucceeded)
+	if f.provider.count() != 3 {
+		t.Fatalf("sent %d prompts", f.provider.count())
+	}
+}
+
+func TestRestartDoesNotReplayAnInterruptedContinuation(t *testing.T) {
+	f := newRuntimeFixture(t)
+	original, err := f.submit(t, "first request", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	queued, err := f.submit(t, "next request", "next")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := f.r
+	for boot := range 2 {
+		if err = r.CloseForRestart(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		r, err = NewRuntime(f.r.o)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runtime := r
+		t.Cleanup(func() { _ = runtime.Close(context.Background()) })
+		if err = r.Recover(t.Context(), f.key); err != nil {
+			t.Fatal(err)
+		}
+		if boot == 0 {
+			q := receivePrompt(t, f.provider)
+			if pa.RestartSourceTurn(q.Turn) != original.ResourceID {
+				t.Fatalf("wrong recovery turn: %+v", q.Turn)
+			}
+		}
+	}
+	eventually(t, func() bool { return r.Usage().ActiveActors == 0 })
+	awaitTurn(t, f, original.ResourceID, pa.TurnUnknown)
+	awaitTurn(t, f, queued.ResourceID, pa.TurnQueued)
+	if f.provider.count() != 2 {
+		t.Fatalf("the second restart sent another prompt: %d", f.provider.count())
 	}
 }
 
 // The daemon's shutdown records the turn it cut off with RestartField; the
 // next start resumes that one and leaves other unknown turns to the person.
 func TestAStartResumesOnlyATurnTheShutdownCutOff(t *testing.T) {
-	for _, field := range []string{RestartField, "execution"} {
+	for _, field := range []string{RestartConfirmedField, RestartField, "execution"} {
 		f := newRuntimeFixture(t)
 		rec, err := f.submit(t, "one", "one")
 		if err != nil {
@@ -1127,7 +1214,7 @@ func TestAStartResumesOnlyATurnTheShutdownCutOff(t *testing.T) {
 		if err = restarted.ResumeInterrupted(context.Background(), f.key); err != nil {
 			t.Fatal(err)
 		}
-		if field != RestartField {
+		if field != RestartConfirmedField {
 			time.Sleep(200 * time.Millisecond)
 			if f.provider.count() != 1 {
 				t.Fatal("an unknown turn that no shutdown cut off was resumed")

@@ -98,7 +98,7 @@ func (r *Engine) EditQueue(ctx context.Context, q QueueEditRequest, check func(c
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if turn.State != pa.TurnQueued || turn.StartedAt != nil || turn.Room != nil ||
+	if turn.State != pa.TurnQueued || turn.Steering || turn.StartedAt != nil || turn.Room != nil ||
 		a.turnID == turn.ID || a.steering[turn.ID] || turn.QueueEditID != q.EditID {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "queue_edit")
 	}

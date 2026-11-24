@@ -177,7 +177,7 @@ func viewTurnProjection(value string) string {
 	// Keep mandatory snapshots bounded even if an old or imported failure has
 	// an arbitrary field. Only host diagnostic categories are public summaries.
 	field := "json_extract(" + value + ",'$.failure.field')"
-	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','owned_cleanup_timeout','restart','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
+	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','owned_cleanup_timeout','restart','restart_confirmed','restart_resumed','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
  'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'))`
@@ -265,7 +265,8 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 		return nil, err
 	}
 	// Join on scalar message positions so SQLite can look up each turn's
-	// anchor without walking the complete message array for each turn.
+	// anchor without walking the complete message array for each turn. An
+	// interrupted restart can still block the queue behind newer messages.
 	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, message_positions AS MATERIALIZED (
  SELECT json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor
  FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object'
@@ -274,7 +275,9 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
  FROM a,json_each(a.j,'$.Turns') t
  LEFT JOIN message_positions m ON m.id=json_extract(t.value,'$.message_id')
  WHERE t.type='object' AND ` + ownChatTurnSQL("t.key") + `
- AND ` + viewBoundFenceSQL("t.value") + ` ORDER BY anchor DESC,id COLLATE BINARY DESC LIMIT 1
+ AND ` + viewBoundFenceSQL("t.value") + ` ORDER BY CASE WHEN json_extract(t.value,'$.state')='unknown'
+ AND json_extract(t.value,'$.failure.field') IN ('restart','restart_confirmed') THEN 0 ELSE 1 END,
+ anchor DESC,id COLLATE BINARY DESC LIMIT 1
 )
 SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_extract(j,'$.state') IN ('succeeded','failed','cancelled','unknown')`
 	var last sql.NullString

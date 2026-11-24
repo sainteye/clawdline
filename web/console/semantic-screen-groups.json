@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14467,
-  "riskKeys": 6159,
-  "nonRiskCount": 8308,
+  "englishContentKeys": 14475,
+  "riskKeys": 6160,
+  "nonRiskCount": 8315,
   "groups": [
     {
       "name": "acp / other",
@@ -6294,7 +6294,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 688,
+      "count": 695,
       "sources": [
         null
       ],
@@ -6703,6 +6703,10 @@
         "projectAssistants.requestVerdictConditional",
         "projectAssistants.requestVerdictPass",
         "projectAssistants.requestYou",
+        "projectAssistants.restartQueueKept",
+        "projectAssistants.restartRestoring",
+        "projectAssistants.restartReviewNeeded",
+        "projectAssistants.restartReviewProgress",
         "projectAssistants.resumePreviousDraft",
         "projectAssistants.retry",
         "projectAssistants.retryNextEdit",
@@ -6977,6 +6981,9 @@
         "projectAssistants.workEvidence",
         "projectAssistants.workLandedIn",
         "projectAssistants.workLanding",
+        "projectAssistants.workReviewHeld",
+        "projectAssistants.workReviewResuming",
+        "projectAssistants.workReviewRunning",
         "projectAssistants.workVerification",
         "projectAssistants.workVerificationFailed",
         "projectAssistants.workVerificationPassed",
