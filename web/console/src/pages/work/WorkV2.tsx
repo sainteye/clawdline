@@ -1532,7 +1532,7 @@ function ReviewRequiredField({ id, checked, disabled, busy = false, onChange }: 
   </div>
 }
 
-function EditWorkModal({ item, busy, failure, onClose, onSave }: {
+export function EditWorkModal({ item, busy, failure, onClose, onSave }: {
   item: WorkV2Item
   busy: boolean
   failure: string
