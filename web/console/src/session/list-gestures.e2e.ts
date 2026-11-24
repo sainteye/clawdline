@@ -1129,6 +1129,7 @@ const PROBE = `(() => {
     confirmAction: sheet && !sheet.hidden ? (document.getElementById("action-confirm-go")?.textContent ?? "") : null,
     confirmDisabled: sheet && !sheet.hidden ? !!document.getElementById("action-confirm-go")?.hasAttribute("disabled") : null,
     focused: document.activeElement ? document.activeElement.id : "",
+    fleetCloseReleased: document.documentElement.dataset.fleetCloseReleased === "true",
   }
 })()`
 
@@ -1162,6 +1163,7 @@ interface Seen {
   confirmAction: string | null
   confirmDisabled: boolean | null
   focused: string
+  fleetCloseReleased: boolean
 }
 
 class Tab {
@@ -1197,10 +1199,10 @@ class Tab {
     )
   }
 
-  async go(address: string): Promise<void> {
+  async go(address: string, timeout?: number): Promise<void> {
     const mark = this.b.mark()
     await this.b.send("Page.navigate", { url: this.origin + address }, this.session)
-    await this.b.event(this.session, "Page.loadEventFired", mark)
+    await this.b.event(this.session, "Page.loadEventFired", mark, timeout)
   }
 
   async desktop(height = 900): Promise<void> {
@@ -4981,7 +4983,7 @@ test("an unreadable close reopens a modal and only an explicit second press forc
     assert.notEqual(closes[1].key, closes[0].key)
   }))
 
-test("the Cloud fleet keeps its Grok close target through a refusal and an explicit override", async () => {
+test("the Cloud fleet returns immediately and can still confirm a refused Grok close", async () => {
   readingScenario = "fleet-close"
   const { createServer: createViteServer } = await import("vite")
   const fixturePage = "/fleet-close-fixture.html"
@@ -5014,7 +5016,10 @@ test("the Cloud fleet keeps its Grok close target through a refusal and an expli
               focusCloudSessions: true, fleetList: () => null,
               fleetReaderMachine: target.machineID, fleetTarget: selected,
               fleetTargetRow: selected ? ${JSON.stringify(targetRow)} : null,
-              onFleetClose: () => setSelected(null),
+              onFleetClose: () => {
+                document.documentElement.dataset.fleetCloseReleased = "true"
+                setSelected(null)
+              },
             })
           }
           localStorage.setItem("ui_language", "zh-Hant")
@@ -5033,27 +5038,45 @@ test("the Cloud fleet keeps its Grok close target through a refusal and an expli
   try {
     await vite.listen()
     const tab = await Tab.open(browser, vite.resolvedUrls!.local[0].replace(/\/$/, ""))
+    let held: ServerResponse | undefined
+    holdClose = (id, res) => {
+      if (id !== FLEET_UNKNOWN || held) return false
+      held = res
+      return true
+    }
     try {
-      await tab.go(fixturePage)
+      await tab.go(fixturePage, 30_000) // Vite transforms the App on the first request.
       await tab.until("the pinned Grok detail opens", (s) => s.detailName?.includes("Fixture Grok worker") === true)
       await tab.press("#detail-actions-trigger")
       await tab.press("#session-end")
       await tab.until("work has been checked", (s) => s.confirmDisabled === false)
-      await tab.press("#action-confirm-go")
+      const returned = await tab.run(`new Promise(resolve => {
+        document.getElementById("action-confirm-go").click()
+        requestAnimationFrame(() => resolve({
+          view: document.getElementById("app").dataset.view, hash: location.hash,
+        }))
+      })`)
+      assert.deepEqual(returned, { view: "list", hash: "#all-machines" },
+        "the fleet is usable on the next frame while the host response is withheld")
+      await tab.until("the first close reaches the host", () => !!held)
+      json(held!, 409, { error: "close_blocked", detail: "unreadable work" })
       const warning = await tab.until("the fleet presents the force-close question after the refusal", (s) =>
-        s.sheet !== null && (s.sheetSay ?? "").includes("是否要強制關閉"))
+        s.sheet !== null && /是否要強制關閉|Force close anyway/.test(s.sheetSay ?? ""))
       assert.equal(warning.focused, "action-confirm-cancel")
       const first = closes.filter(({ id }) => id === FLEET_UNKNOWN)
       assert.equal(first.length, 1)
       assert.notEqual(first[0].force, true)
       await tab.press("#action-confirm-go")
-      await tab.until("the successful close returns to the fleet list", (s) => s.sheet === null && !s.detailName)
+      await tab.until("the successful close releases the retained selection", (s) =>
+        s.sheet === null && !s.detailName && s.fleetCloseReleased)
       const attempts = closes.filter(({ id }) => id === FLEET_UNKNOWN)
       assert.equal(attempts.length, 2)
       assert.equal(attempts[1].force, true)
       assert.equal(attempts[1].version, attempts[0].version)
       assert.notEqual(attempts[1].key, attempts[0].key)
     } finally {
+      holdClose = undefined
+      if (held && !held.writableEnded) json(held, 409, { error: "close_blocked" })
       await tab.close()
     }
   } finally {

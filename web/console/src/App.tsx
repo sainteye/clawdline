@@ -356,6 +356,12 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   const surveyAccount = useCloudAccount()
   const [selected, setSelectedState] = useState<string | null>(null)
   const [openId, setOpenState] = useState<string | null>(null)
+  const [backgroundFleetClose, setBackgroundFleetClose] = useState<string | null>(null)
+  const fleetKey = fleetTarget ? destinationKey(fleetTarget) : null
+  const fleetCloseBehindList = backgroundFleetClose !== null && backgroundFleetClose === fleetKey
+  useEffect(() => {
+    setBackgroundFleetClose((key) => key === fleetKey ? key : null)
+  }, [fleetKey])
   const [view, setViewState] = useState<"list" | "detail">("list")
   const [paneOpen, setPaneState] = useState(true)
   const [filter, setFilterState] = useState("")
@@ -527,7 +533,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   const closingRows = useClosingRows()
   const closeScope = fleetReaderMachine ?? null
   const rows = useMemo(() => closingRows.size
-    ? unfilteredRows.filter((row) => !closingRows.get(closingRowKey(closeScope, row))?.hidden)
+    ? unfilteredRows.filter((row) => !closingRows.has(closingRowKey(closeScope, row)))
     : unfilteredRows, [unfilteredRows, closeScope, closingRows])
   useEffect(() => {
     if (!fleetList && fleet.snapshot?.scan.complete && closingRows.size) {
@@ -537,7 +543,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // The opened fleet Session, waiting for its own row. The pane has nothing to
   // draw until the row is here, and the cloud layer decides how long that may
   // go on without being said (`cloud/opened-row.ts`).
-  const fleetDetailPending = !!fleetList && !!fleetTarget &&
+  const fleetDetailPending = !!fleetList && !!fleetTarget && !fleetCloseBehindList &&
     (fleetReaderMachine !== fleetTarget.machineID || !rows.some((row) =>
       row.id === fleetTarget.sessionID && row.execution_generation === fleetTarget.executionGeneration))
   useEffect(() => {
@@ -640,7 +646,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
       return actor ? [actor] : []
     }),
   }] : [])
-  const detailID = sessionDetailID(openId, fleetList ? fleetTarget : null, fleetReaderMachine, rows)
+  const detailID = sessionDetailID(openId, fleetList && !fleetCloseBehindList ? fleetTarget : null, fleetReaderMachine, rows)
   const detailShown = page === "sessions" && (phone() ? view === "detail" : paneOpen)
   const currentSession = detailID && detailShown ? rows.find(row => row.id === detailID) : undefined
   const currentLead = currentSession && sessionBoardActor(currentSession.assistant, currentSession.sessionId, "")?.id
@@ -713,12 +719,12 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
     const row = rows.find((candidate) => candidate.id === fleetTarget.sessionID &&
       candidate.execution_generation === fleetTarget.executionGeneration)
     const key = destinationKey(fleetTarget)
-    if (row && openedFleetKey.current !== key) {
+    if (row && !fleetCloseBehindList && openedFleetKey.current !== key) {
       openedFleetKey.current = key
       openSession(row.id, true, true)
     }
   }, [fleetList, fleetReaderMachine, fleetTarget?.machineID, fleetTarget?.sessionID,
-    fleetTarget?.executionGeneration, rows])
+    fleetTarget?.executionGeneration, fleetCloseBehindList, rows])
 
   // A fleet swipe names an exact execution. Wait until its machine's rich
   // session row has arrived before opening the ordinary close confirmation.
@@ -753,13 +759,16 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // The action's own call can give the detail back before the header redraws.
   // Pinning a view shows it now: leave the Sessions page's open Session, as its own back button would.
   showViewPane.current = () => { if (pageRef.current !== "sessions") go("sessions"); if (openRef.current) closeDetail() }
-  const closeDetail = (settled = false) => {
+  const closeDetail = (settled = false, holdFleetTarget = false) => {
     if (!settled && openRef.current && closing()) return
     setOpen(null)
     if (fleetList) {
       setView("list")
       writeHash("#all-machines")
-      onFleetClose?.()
+      // The page returns to the list now. Keep the exact execution available
+      // to the close sheet in case the machine asks for another decision.
+      setBackgroundFleetClose(holdFleetTarget ? fleetKey : null)
+      if (!holdFleetTarget) onFleetClose?.()
       return
     }
     if (phone()) {
@@ -813,14 +822,21 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   // The phone's back gesture (`input/action-confirm.js`), and a window that
   // changes width under an open session (`input/edges.js`).
   const closeTarget = (id: string) => {
+    if (fleetCloseBehindList && pageRef.current !== "sessions") return null
     if (fleetTarget && (fleetTarget.machineID !== closeScope || fleetTarget.sessionID !== id)) return null
     const row = unfilteredRows.find((row) => row.id === id &&
       (!fleetTarget || row.execution_generation === fleetTarget.executionGeneration) &&
       (!("machine" in row) || row.machine === closeScope))
     return row ? { machine: closeScope, row, title: detailSessionName(row), pinnedFleet: !!fleetList && !!fleetTarget } : null
   }
-  const layoutRef = useRef({ closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
-  layoutRef.current = { closeDetail, closeTarget, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }
+  const releaseFleetClose = (key: string) => {
+    if (fleetList && fleetKey === key && openRef.current === null && viewRef.current === "list") {
+      setBackgroundFleetClose(null)
+      onFleetClose?.()
+    }
+  }
+  const layoutRef = useRef({ closeDetail, closeTarget, releaseFleetClose, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved })
+  layoutRef.current = { closeDetail, closeTarget, releaseFleetClose, refresh: fleet.refresh, titleSaved: onTitleSaved, receiveTitle: fleet.titleSaved }
 
   // What the overlays ask of the page. `writable` is the original's `S.write`,
   // which comes from `/v1/health`; this daemon's health does not carry it, and
@@ -835,7 +851,8 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
     hostConfirm({
       openId: () => openRef.current,
       writable: () => true,
-      closeDetail: () => layoutRef.current.closeDetail(true),
+      closeDetail: (holdFleetTarget) => layoutRef.current.closeDetail(true, holdFleetTarget),
+      releaseFleetClose: (key) => layoutRef.current.releaseFleetClose(key),
       closeTarget: (id) => layoutRef.current.closeTarget(id),
       refresh: () => layoutRef.current.refresh(),
     })
@@ -1406,13 +1423,13 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
         streamTasks={fleet.tasksLive ? fleet.tasks : null}
         fleetList={fleetList?.(filter, setFilter)}
         sessionBoardSource={boardSource}
-        fleetDetailKey={fleetList && fleetTarget ? JSON.stringify([fleetTarget.machineID, fleetTarget.sessionID,
+        fleetDetailKey={fleetList && fleetTarget && !fleetCloseBehindList ? JSON.stringify([fleetTarget.machineID, fleetTarget.sessionID,
           fleetTarget.executionGeneration, executionReadRevision]) : undefined}
         fleetCoordinatorBound={!!fleetList && !!fleetTarget && fleetTargetIdentity?.machineScope === true &&
           fleetTargetIdentity.coordinatorBound === true}
         fleetDetailPending={fleetDetailPending}
         readerMachine={fleetReaderMachine}
-        fleetDetailProblem={fleetList && fleetTarget ? fleetDetailProblem : null}
+        fleetDetailProblem={fleetList && fleetTarget && !fleetCloseBehindList ? fleetDetailProblem : null}
         viewPane={plugins.viewPane}
         viewReturn={plugins.viewReturn}
       />}
