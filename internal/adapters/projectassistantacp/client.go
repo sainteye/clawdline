@@ -324,7 +324,7 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	// Grok's session modes are a separate control from its launch-level
 	// permission mode. The Bot's permission mode is set on the command line.
-	if session.Modes == nil && q.Bot.Agent == pa.Gemini {
+	if session.Modes == nil && (q.Bot.Agent == pa.Gemini || q.RestartReadOnly) {
 		return refusal(pa.Unsupported, "agent_mode")
 	}
 	if q.Bot.Agent == pa.Grok || session.Modes == nil {

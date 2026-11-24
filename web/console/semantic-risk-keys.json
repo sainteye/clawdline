@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14400,
+  "englishKeys": 14408,
   "counts": {
     "negation": 3677,
-    "state": 2450,
+    "state": 2451,
     "permission": 865,
     "deletion": 336,
     "uncertainty": 578
   },
-  "unionCount": 6134,
+  "unionCount": 6135,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5852,6 +5852,7 @@
       "projectAssistants.workDeliveryCompleted",
       "projectAssistants.workLandingPending",
       "projectAssistants.workOpenSession",
+      "projectAssistants.workReviewQueued",
       "projectAssistants.workVerificationPending",
       "projectMemory.merged",
       "projectMemory.pending",
@@ -13343,6 +13344,7 @@
     "projectAssistants.workLandingPending",
     "projectAssistants.workNoSteps",
     "projectAssistants.workOpenSession",
+    "projectAssistants.workReviewQueued",
     "projectAssistants.workSessionUnavailable",
     "projectAssistants.workVerificationOverride",
     "projectAssistants.workVerificationPending",

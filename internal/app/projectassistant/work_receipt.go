@@ -122,3 +122,21 @@ func (b *BrokerWorkBridge) receiptExists(ctx context.Context, c pa.Command) (boo
 	}
 	return false, err
 }
+
+// A dispatch intent is immutable, including when it reaches the broker.
+// Only a task link for that specific command settles admission for recovery.
+func restartDispatchUnconfirmed(x Export, turnID string) bool {
+	linked := map[string]bool{}
+	for _, link := range x.WorkLinks {
+		if link.TurnID == turnID {
+			linked[link.TaskID] = true
+		}
+	}
+	for _, rec := range x.Receipts {
+		if rec.Command.Operation == pa.DispatchOperation && rec.ResourceID == turnID &&
+			rec.State == pa.EffectUnknown && !linked[orchestrator.AssistantTaskID(rec.Command)] {
+			return true
+		}
+	}
+	return false
+}

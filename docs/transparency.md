@@ -175,6 +175,16 @@ blocks execution. The pending-integration count follows the broker's settled
 landing through a retryable projection that does not start a review. The
 quoted prompts and the original request's replay policy are unchanged.
 
+Bot restart recovery keeps eligible unstarted chat messages in their original
+order. When native cleanup and the original history are verified, the source
+may queue one restricted continuation ahead of them. The Bot receives a host
+notice asking it to inspect the prior progress. The old execution receipt
+keeps its unknown outcome even after the continuation releases the queue.
+An unconfirmed Send now delivery retains its own uncertainty. A dispatched
+result can stay visible while its review waits for the originating conversation
+to recover. Pending review and restart status are rendered in the reader's
+language, with model instructions and raw diagnostics in details.
+
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant
 principal boundary. Its English and Taiwan Chinese copies distinguish source

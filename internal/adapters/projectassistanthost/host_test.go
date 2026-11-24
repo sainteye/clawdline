@@ -64,6 +64,7 @@ type fixtureProvider struct {
 	answers                  chan [2]string
 	steerOutcome             app.SteerOutcome
 	steered                  chan string
+	steerWait                bool
 }
 
 func (p *fixtureProvider) Capabilities(_ context.Context, b pa.Bot) (pa.Capabilities, error) {
@@ -113,11 +114,15 @@ func (s *fixtureSession) Answer(_ context.Context, request, option string) error
 	}
 	return nil
 }
-func (s *fixtureSession) Steer(_ context.Context, text string) (app.SteerOutcome, error) {
+func (s *fixtureSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
 	if s.p.steered == nil {
 		return "", failure(pa.Unsupported, "steering")
 	}
 	s.p.steered <- text
+	if s.p.steerWait {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}
 	return s.p.steerOutcome, nil
 }
 func (s *fixtureSession) Cancel(context.Context) error { return nil }
@@ -1069,8 +1074,8 @@ func TestHostDurableCleanupFailureAndTimeoutKeepReenableFenced(t *testing.T) {
 }
 
 // As in Codync, a turn the daemon's own restart cut off resumes on the next
-// start through the real store: the interrupted turn is acknowledged and the
-// resume prompt runs as a notice. A refused resume must not acknowledge it.
+// start through the real store. Only a successful continuation acknowledges
+// the interrupted turn; the original outcome stays unknown until then.
 func TestHostRestartResumesTheTurnItCutOff(t *testing.T) {
 	f := newHostFixture(t)
 	f.o.Reader = f.st.ProjectAssistantReader()
@@ -1108,8 +1113,9 @@ func TestHostRestartResumesTheTurnItCutOff(t *testing.T) {
 	if e != nil {
 		t.Fatalf("the chat did not read during a resume: %v", e)
 	}
-	if view.View.Snapshot == nil || len(view.View.Snapshot.PendingTurns) != 1 {
-		t.Fatalf("resumed turn not pending in the view: %+v", view.View.Snapshot)
+	if snapshot := view.View.Snapshot; snapshot == nil || len(snapshot.PendingTurns) != 1 ||
+		snapshot.LastTurn == nil || snapshot.LastTurn.ID != first.ResourceID || snapshot.LastTurn.State != pa.TurnUnknown {
+		t.Fatalf("the chat did not show its continuation and the original hold: %+v", snapshot)
 	}
 	fixtureReceive(t, f.p.sessions) // the first process's session
 	fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "Carried on"}
@@ -1339,6 +1345,65 @@ func TestHostSendNowJoinsTheRunningTurnOrWaits(t *testing.T) {
 		if next := fixtureReceive(t, f.p.sent); !strings.Contains(next.Text, "two") {
 			t.Fatalf("next prompt %q", next.Text)
 		}
+	}
+}
+
+func TestRestartDoesNotResendAnUnconfirmedSteer(t *testing.T) {
+	f := newHostFixture(t)
+	f.p.steered, f.p.steerWait = make(chan string, 1), true
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	ctx := t.Context()
+	if _, err := f.send(t, b, "first"); err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	queued, err := f.send(t, b, "second")
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, chat, _, err := service.Get(ctx, b.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	steerCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.SendNow(steerCtx, app.SendNowRequest{
+			Command: pa.Command{Key: b.Key, Operation: pa.SendNowOperation, IdempotencyKey: "unconfirmed-steer"},
+			Fence:   pa.Fence{Key: b.Key, Project: b.Project, ConversationID: chat.ID, BindingID: chat.BindingID, Generation: chat.Generation},
+			TurnID:  queued.ResourceID,
+		})
+		done <- err
+	}()
+	fixtureReceive(t, f.p.steered)
+	turn, err := f.h.store.Turn(ctx, b.Key, queued.ResourceID)
+	if err != nil || !turn.Steering {
+		t.Fatalf("native steer preceded its durable intent: %+v %v", turn, err)
+	}
+	cancel()
+	if err = fixtureReceive(t, done); err == nil {
+		t.Fatal("lost steer response was reported as successful")
+	}
+	if err = f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	if err = f.h.Recover(ctx, b.Key); err != nil {
+		t.Fatal(err)
+	}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	turn, err = f.h.store.Turn(ctx, b.Key, queued.ResourceID)
+	if err != nil || turn.State != pa.TurnUnknown || turn.Steering || f.p.opens.Load() != 1 {
+		t.Fatalf("unconfirmed steer was lost or resent: %+v opens=%d err=%v", turn, f.p.opens.Load(), err)
 	}
 }
 

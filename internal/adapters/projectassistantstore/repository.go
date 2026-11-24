@@ -551,7 +551,8 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 				return failure(pa.ContextStale, "turn_capture")
 			}
 			retryNotStarted := m.RoutineNotStarted && m.RoutineRun != nil && m.RoutineRun.ID == t.RoutineRunID && old.State == pa.TurnRunning && t.State == pa.TurnQueued && m.RoutineRun.NotStartedProved && m.RoutineRun.State == pa.TurnQueued && len(old.Attempts) == 0
-			if old.State != t.State && !pa.CanTransition(old.State, t.State) && !retryNotStarted {
+			steerUnknown := old.State == pa.TurnQueued && old.Steering && t.State == pa.TurnUnknown && !t.Steering
+			if old.State != t.State && !pa.CanTransition(old.State, t.State) && !retryNotStarted && !steerUnknown {
 				return failure(pa.StaleVersion, "turn_state")
 			}
 			// The running turn may end while the agent answers a steer, so a
@@ -750,8 +751,12 @@ func validateAggregate(a aggregate) error {
 		if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
 			return failure(pa.Invalid, "queue_edit")
 		}
-		// A turn joined by Send now never ran on its own, so it has no captured snapshot.
-		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed || t.JoinedTurnID != ""
+		if t.Steering && (t.State != pa.TurnQueued || t.StartedAt != nil || t.QueueEditID != "") {
+			return failure(pa.Invalid, "steer_state")
+		}
+		// Send now can join an existing conversation without its own snapshot.
+		steerUnknown := t.State == pa.TurnUnknown && t.StartedAt == nil && t.Failure != nil && t.Failure.Field == pa.SteerUnknownField
+		queued := t.State == pa.TurnQueued || t.State == pa.TurnAccepted || t.State == pa.TurnCancelled || t.State == pa.TurnFailed || t.JoinedTurnID != "" || steerUnknown
 		if id == "" || id != t.ID || t.MessageID == "" || t.IdempotencyKey == "" || t.MemoryRevision < 0 || t.MemoryRevision > a.Memory.Revision || !queued && (t.MemoryRevision < 1 || t.Instructions.Revision < 1) {
 			return failure(pa.Invalid, "turn")
 		}

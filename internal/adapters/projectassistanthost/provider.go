@@ -493,6 +493,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	life.sealed, life.seal = context.WithCancel(context.Background())
 	life.watching(context.AfterFunc(openCtx, life.invalidate))
 	bound := func(ctx context.Context) (context.Context, context.CancelFunc, error) {
+		if pa.RestartSourceTurn(turn) != "" {
+			return nil, nil, failure(pa.ReadOnly, "restart_continuation_tools")
+		}
 		if pa.IsLeadCallTurn(turn) {
 			return nil, nil, failure(pa.ScopeDenied, "lead_call_tools")
 		}
