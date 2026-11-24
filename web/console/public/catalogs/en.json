@@ -14333,5 +14333,14 @@
   "capacityRow.bots.cleanup_slow_retry_ms.full": "After the quick re-checks, a Bot keeps re-checking with a doubling wait up to this interval until cleanup is confirmed.",
   "capacityRow.bots.cleanup_slow_retry_ms.what": "Longest wait between a Bot's later re-checks of an unconfirmed Agent process cleanup.",
   "capacityRow.bots.unscanned_census_gap_ms.full": "A shorter gap in the process census is treated like an ordinary check interval; a longer one is searched for leftover processes of your own user.",
-  "capacityRow.bots.unscanned_census_gap_ms.what": "Longest process census gap a Bot accepts without searching for leftover processes."
+  "capacityRow.bots.unscanned_census_gap_ms.what": "Longest process census gap a Bot accepts without searching for leftover processes.",
+  "botsSettings.machine": "Machine",
+  "botsSettings.retry": "Try again",
+  "botsSettings.problemUnsupported": "The Clawdline on this computer is too old to share Bots settings with this device. Update Clawdline on that computer, then try again.",
+  "botsSettings.problemOffline": "Could not reach this computer. Check that it is on and connected, then try again.",
+  "botsSettings.problemUnpaired": "This device is no longer paired with this computer. Pair it again, then try again.",
+  "botsSettings.problemDisabled": "Bots are turned off on this computer.",
+  "botsSettings.problemDenied": "This device is not allowed to read this computer's Bots settings.",
+  "botsSettings.problemReadOnly": "This device can read these settings but not change them.",
+  "botsSettings.problemUnknownSave": "Could not confirm whether the settings were saved. Close and open them again to see what this computer has."
 }

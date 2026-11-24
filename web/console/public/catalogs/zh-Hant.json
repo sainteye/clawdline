@@ -14333,5 +14333,14 @@
   "capacityRow.bots.cleanup_slow_retry_ms.full": "快速重新確認用完後，Bot 會繼續重新確認，等待時間每次加倍，最多到這個間隔，直到確認清理完成。",
   "capacityRow.bots.cleanup_slow_retry_ms.what": "Bot 之後重新確認 Agent 程序清理時，兩次之間最長的等待時間。",
   "capacityRow.bots.unscanned_census_gap_ms.full": "程序盤點中斷的時間比這個短，就當成一般的檢查間隔；比這個長，才會搜尋你這個使用者留下的程序。",
-  "capacityRow.bots.unscanned_census_gap_ms.what": "Bot 不搜尋殘留程序就接受的最長程序盤點空窗。"
+  "capacityRow.bots.unscanned_census_gap_ms.what": "Bot 不搜尋殘留程序就接受的最長程序盤點空窗。",
+  "botsSettings.machine": "機器",
+  "botsSettings.retry": "重試",
+  "botsSettings.problemUnsupported": "這台電腦的 Clawdline 版本太舊，無法和這個裝置共用 Bots 設定。請先更新那台電腦的 Clawdline，再重試。",
+  "botsSettings.problemOffline": "連不上這台電腦。請確認它已開機並連上網路，再重試。",
+  "botsSettings.problemUnpaired": "這個裝置已經沒有和這台電腦配對。請重新配對後再重試。",
+  "botsSettings.problemDisabled": "這台電腦沒有開啟 Bots。",
+  "botsSettings.problemDenied": "這個裝置沒有權限讀取這台電腦的 Bots 設定。",
+  "botsSettings.problemReadOnly": "這個裝置只能查看這些設定，不能修改。",
+  "botsSettings.problemUnknownSave": "無法確認設定有沒有存到。請關閉後重新開啟，查看這台電腦上目前的內容。"
 }

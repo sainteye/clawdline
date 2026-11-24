@@ -16,11 +16,11 @@ import (
 
 func init() {
 	register(op{name: "project-assistants.attachment", read: true, shape: projectAssistantAttachmentReply, partial: projectAssistantFailure})
-	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "send-receipt", "view", "rules", "output", "input", "memory-view", "configuration", "configuration-profile", "login-profiles", "extensions", "network-settings", "handoff-card", "dev-servers", "dev-server-logs", "tower-floors"} {
+	for _, word := range []string{"status", "projects", "list", "get", "history", "events", "export", "send-receipt", "view", "rules", "output", "input", "memory-view", "configuration", "configuration-profile", "login-profiles", "extensions", "network-settings", "handoff-card", "dev-servers", "dev-server-logs", "tower-floors", "shared-settings"} {
 		register(op{name: "project-assistants." + word, read: true,
 			shape: projectAssistantReply, partial: projectAssistantFailure})
 	}
-	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "queue-edit", "rule-remove", "send-pictures", "send-files", "upload", "rename-artifact", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings-save", "react", "handoff-card-write", "dev-server-start", "dev-server-restart", "dev-server-stop", "dev-server-remove", "tower-floor-save"} {
+	for _, word := range []string{"create", "edit", "send", "stop", "answer", "read", "observed", "forget", "memory", "visibility", "delete", "send-now", "queue-edit", "rule-remove", "send-pictures", "send-files", "upload", "rename-artifact", "login-profile", "login-secret", "connector-credential", "connector-secret", "network-settings-save", "react", "handoff-card-write", "dev-server-start", "dev-server-restart", "dev-server-stop", "dev-server-remove", "tower-floor-save", "shared-settings-save"} {
 		register(op{name: "project-assistants." + word,
 			readLevel: word == "read" || word == "observed",
 			guard:     projectAssistantGuard, shape: projectAssistantReply, partial: projectAssistantFailure})

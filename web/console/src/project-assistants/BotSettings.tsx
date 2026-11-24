@@ -79,7 +79,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
   const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
   const [workReview,setWorkReview]=useState(bot.work_review!=="off")
-  const sharedMemory=useSharedMemorySwitch(bot.key.bot_id)
+  const sharedMemory=useSharedMemorySwitch(source,bot.key.bot_id)
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
   const showTeamSetting=!(bot.lead&&source?.canLeadTeamDefault?.())
   const teamChanged=showTeamSetting&&manageTeam!==(original.manage_team??false)

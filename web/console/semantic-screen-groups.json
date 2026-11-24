@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14333,
-  "riskKeys": 6097,
-  "nonRiskCount": 8236,
+  "englishContentKeys": 14342,
+  "riskKeys": 6102,
+  "nonRiskCount": 8240,
   "groups": [
     {
       "name": "acp / other",
@@ -528,7 +528,7 @@
     },
     {
       "name": "botsSettings / other",
-      "count": 29,
+      "count": 33,
       "sources": [
         null
       ],
@@ -550,12 +550,16 @@
         "botsSettings.kind",
         "botsSettings.kindPlaceholder",
         "botsSettings.loading",
+        "botsSettings.machine",
         "botsSettings.memoryNote",
         "botsSettings.memoryText",
         "botsSettings.memoryTitle",
         "botsSettings.model",
         "botsSettings.modelDefault",
         "botsSettings.open",
+        "botsSettings.problemDisabled",
+        "botsSettings.problemUnsupported",
+        "botsSettings.retry",
         "botsSettings.rulesTitle",
         "botsSettings.save",
         "botsSettings.saving",

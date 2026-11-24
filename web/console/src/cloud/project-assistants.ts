@@ -1,7 +1,7 @@
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
-import type { MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SourceClient } from "../project-assistants/client.js"
+import type { MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SharedSettingsAnswer, SharedSettingsWrite, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -69,6 +69,8 @@ export const PROJECT_ASSISTANTS_ROUTINE_PREVIEW_API_LEVEL = 96
 // The Bots tower's floor placements, one document per machine, arrive at 97.
 export const PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL = 97
 export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
+// Machine-named Bots shared settings, carried over Cloud, arrive at 116.
+export const PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL = 116
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -221,7 +223,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard"): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest | SharedSettingsWrite, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard"): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
     try { this.check(signal,write,content,minimum,mode); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
@@ -577,6 +579,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canTowerFloors(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL);return true}catch{return false}}
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   saveTowerFloor(r:W.ProjectAssistantTowerFloorRequest,s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors",s,r,"POST",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
+  sharedSettings(s:AbortSignal){return this.request<SharedSettingsAnswer>("/v1/project-assistant-shared-settings"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL)}
+  saveSharedSettings(r:SharedSettingsWrite,s:AbortSignal){return this.request<SharedSettingsAnswer>("/v1/project-assistant-shared-settings",s,r,"PUT",true,PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL)}
   canNetworkSettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL);return true}catch{return false}}
   networkSettings(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal){this.key(key);return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(key,"/network-settings")+query({machine_id:this.machineID,conversation_id:conversation}),signal,undefined,"GET",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
   saveNetworkSettings(r:W.ProjectAssistantNetworkSettingsRequest,signal:AbortSignal){return this.request<W.ProjectAssistantNetworkSettingsResponse>(endpoint(r.command.key,"/network-settings"),signal,r,"POST",true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL)}
@@ -675,6 +679,21 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       !Number.isSafeInteger(fields.expected_version) || fields.expected_version < 0 || !Number.isInteger(fields.floor) || fields.floor < 0 || fields.floor > 3 ||
       typeof fields.idempotency_key !== "string" || !fields.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key) throw failure("pa_invalid")
     return {word:"project-assistants.tower-floor-save",kind:"action" as const,fields:fields as Record<string,unknown>,id:fields.idempotency_key as string}
+  }
+  if (url.pathname === "/v1/project-assistant-shared-settings") {
+    if (method === "GET") {
+      if (init?.body != null || url.searchParams.size !== 1 || !url.searchParams.get("machine_id")) throw failure("pa_invalid")
+      return {word:"project-assistants.shared-settings",kind:"read" as const,fields:{machine_id:url.searchParams.get("machine_id")},id:""}
+    }
+    if (method !== "PUT" || url.search || typeof init?.body !== "string") throw failure("pa_invalid")
+    let fields
+    try { fields = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
+    const names = ["machine_id","idempotency_key","expected_version","settings"]
+    if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length || names.some(name=>!Object.hasOwn(fields,name)) ||
+      typeof fields.machine_id !== "string" || !fields.machine_id || !Number.isSafeInteger(fields.expected_version) || fields.expected_version < 0 ||
+      !fields.settings || typeof fields.settings !== "object" || Array.isArray(fields.settings) ||
+      typeof fields.idempotency_key !== "string" || !fields.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key) throw failure("pa_invalid")
+    return {word:"project-assistants.shared-settings-save",kind:"action" as const,fields:fields as Record<string,unknown>,id:fields.idempotency_key as string}
   }
   const work = /^\/v1\/work\/v2\/items\/([^/]+)$/.exec(url.pathname)
   if (work && method === "GET") return {word:"work.v2.item",kind:"read" as const,fields:{id:decodeURIComponent(work[1])},id:""}
