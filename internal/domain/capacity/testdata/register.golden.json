@@ -3919,22 +3919,20 @@
   {
     "Register": "daemon",
     "Name": "bots.server_unconfirmed_notice_ms",
-    "Class": "observation",
+    "Class": "buffer",
     "Unit": "milliseconds",
     "Limit": 30000,
     "WarnAt": 0,
-    "AtLimit": "none",
-    "Deviation": "Notice only; a server whose authority cannot be read keeps running until the person stops or releases it.",
+    "AtLimit": "coalesce",
+    "Deviation": "",
     "Told": [
+      "diagnostics",
       "sender"
     ],
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
-    "Sources": [
-      "internal/domain/capacity.BotServerUnconfirmedNoticeMilliseconds",
-      "internal/domain/capacity.BotServerUnconfirmedNotice"
-    ]
+    "Sources": null
   },
   {
     "Register": "daemon",

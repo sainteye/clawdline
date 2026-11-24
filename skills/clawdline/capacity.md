@@ -201,6 +201,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.server_probe_readers` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.server_spec_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.server_unconfirmed_notice_ms` | 30000 | `milliseconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.skill_asset_files` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.stderr_bytes` | 65536 | `bytes` | `coalesce` | `diagnostics, sender` | — |
 | `bots.steer_answer_ms` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
