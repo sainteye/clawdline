@@ -2143,16 +2143,22 @@ func (r *Engine) finishDispatch(ctx context.Context, a *runtimeActor, q pa.WorkR
 	if err = pa.CheckFence(fence, currentFence(bot, c)); err != nil {
 		return link, err
 	}
-	if link.Fence != fence || link.TurnID != q.TurnID || link.ID == "" || link.TaskID == "" {
+	// Work a thread worker dispatched at another Bot's request is owned by
+	// the host notice in its main chat, and persisted there.
+	ownerFence, ownerTurn := fence, q.TurnID
+	if q.OwnerTurnID != "" {
+		ownerFence, ownerTurn = q.Owner()
+	}
+	if link.Fence != ownerFence || link.TurnID != ownerTurn || link.ID == "" || link.TaskID == "" {
 		return link, runtimeFailure(pa.ScopeDenied, "work_link")
 	}
-	export, err := r.o.Repository.Export(ctx, a.key)
+	export, err := r.o.Repository.Export(ctx, ownerFence.Key)
 	if err != nil {
 		return link, err
 	}
 	for _, persisted := range export.WorkLinks {
 		if persisted.ID == link.ID {
-			if persisted.Fence != fence || persisted.TurnID != q.TurnID || persisted.TaskID != link.TaskID {
+			if persisted.Fence != ownerFence || persisted.TurnID != ownerTurn || persisted.TaskID != link.TaskID {
 				return link, runtimeFailure(pa.ScopeDenied, "persisted_work_owner")
 			}
 			return persisted, nil

@@ -72,6 +72,20 @@ type WorkRequest struct {
 	// Choice holds the optional kind, agent, model and effort arguments.
 	// The broker resolves them against the machine's dispatch rules.
 	Choice DispatchChoice
+	// OwnerFence and OwnerTurnID, set only by the host, name the main chat
+	// that owns work a Bot's thread worker dispatched at another Bot's
+	// request: the turn is the host notice written there for it. Zero means
+	// the actor's own conversation and turn own the work.
+	OwnerFence  Fence
+	OwnerTurnID string
+}
+
+// Owner is the conversation and turn that own the requested work.
+func (q WorkRequest) Owner() (Fence, string) {
+	if q.OwnerTurnID != "" {
+		return q.OwnerFence, q.OwnerTurnID
+	}
+	return q.Actor.Fence, q.TurnID
 }
 
 // ValidateWorkTitle applies the broker's task title rules before an effect

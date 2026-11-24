@@ -1055,7 +1055,12 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
-		if pa.IsPeerRequest(turn.Origin) {
+		// A Bot answering another Bot's message_bot may dispatch into its own
+		// Project: the requester delegated the work so the person need not
+		// repeat it in this Bot's chat. Another Project still needs the
+		// person (dispatch_project_direct below). A request from another
+		// machine stays refused.
+		if turn.Origin == pa.NetworkRequestOrigin {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
 		if continueOnCompletion && !directUserTurn(turn) {
@@ -1133,7 +1138,16 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}{q.Binding.Fence, turnID, brief, claims, title, target, persona, boardItemID, continueOnCompletion, choice})
 		hash := sha256.Sum256(payload)
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
-		return r.DispatchWork(ctx, pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion, Choice: choice})
+		request := pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, ContinueOnCompletion: continueOnCompletion, Choice: choice}
+		if taskOwner.BotID != "" && turn.Origin == pa.BotRequestOrigin {
+			// A thread worker answering another Bot dispatches for the Bot
+			// that owns it: a notice in that Bot's main chat owns the task,
+			// so its progress, work_status and review turn are there.
+			if err := h.anchorPeerDispatch(ctx, r, c.WorkOwner, turn, &request); err != nil {
+				return pa.WorkLink{}, err
+			}
+		}
+		return r.DispatchWork(ctx, request)
 	}
 	// One turn gets one observation of a running task. Further observations
 	// belong to the completion callback or a later status question.
@@ -1181,7 +1195,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	}
 	if taskOwner.BotID != "" {
 		tools.routines = nil
-		tools.dispatch = nil
+		if turn.Origin != pa.BotRequestOrigin {
+			tools.dispatch = nil
+		}
 		if !pa.IsPeerRequest(turn.Origin) {
 			// A thread answering another Bot reaches its owner's work through
 			// the broker's resolved owner; other background threads do not.

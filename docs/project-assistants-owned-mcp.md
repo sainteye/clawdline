@@ -178,8 +178,24 @@ so the capability ends with that turn.
   into its owner's work; `message_work` there answers
   `pa_scope_denied`/`message_work_from_main_chat`.
 
-Other tools blocked on peer-request turns (`dispatch_work`, `send_message`,
-routines, outputs) are unchanged.
+Since 2026-11-24 a peer-request turn on this machine (`bot_request`) can also
+call `dispatch_work` and the browser tools. Before that, a Bot asked by another
+Bot to dispatch a fix or take an acceptance screenshot answered
+`pa_disabled`/`native_work` and `pa_scope_denied`/`browser_turn_origin`, and
+the person had to repeat the request in that Bot's own chat.
+
+- `dispatch_work` dispatches into the recipient's own Project only. Another
+  Project needs the person's card, which a peer turn cannot show, so it is
+  refused as `pa_scope_denied`/`dispatch_project_direct`. Board items and
+  `continue_on_completion` still need a direct user turn.
+- The browser owner is derived from the worker's own conversation, so the
+  turn reaches only the tabs it opened, never the main chat's.
+- A request from another machine (`network_request`) still has neither.
+- The dispatched task belongs to the thread worker: its completion wakes that
+  worker's conversation, not the recipient's main chat, and the main chat's
+  `work_status` does not list it.
+
+`send_message`, routines and outputs stay blocked on peer-request turns.
 
 ## Asking the person (`ask_person`)
 

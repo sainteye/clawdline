@@ -41,9 +41,11 @@ func BrowserOwner(f pa.Fence, forgottenThrough int64) string {
 	return BrowserOwnerPrefix + hex.EncodeToString(h.Sum(nil))
 }
 
-// browserScope admits the first supported lane: the person's own main chat.
-// A routine slot and a Bot-to-Bot turn are refused rather than borrowing the
-// main lane's tabs.
+// browserScope admits the person's own main chat and a Bot answering another
+// Bot's message_bot on this machine. The owner is derived from the turn's own
+// conversation, so a peer request's private thread worker reaches only the
+// tabs it opened. A routine slot and a request from another machine are
+// refused rather than borrowing the main lane's tabs.
 func browserScope(binding pa.ExecutionBinding, turn pa.Turn) error {
 	if binding.SessionSlot != "" {
 		return failure(pa.ScopeDenied, "browser_session_slot")
@@ -52,7 +54,7 @@ func browserScope(binding pa.ExecutionBinding, turn pa.Turn) error {
 		return failure(pa.ScopeDenied, "browser_room")
 	}
 	switch turn.Origin {
-	case "", pa.UserOrigin, pa.HostNoticeOrigin:
+	case "", pa.UserOrigin, pa.HostNoticeOrigin, pa.BotRequestOrigin:
 		return nil
 	}
 	return failure(pa.ScopeDenied, "browser_turn_origin")
