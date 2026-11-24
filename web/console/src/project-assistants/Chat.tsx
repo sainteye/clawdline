@@ -175,14 +175,19 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const finish=(paintOpportunity: boolean)=>{
       cancelAnimationFrame(frame)
       document.removeEventListener("visibilitychange",visibility)
+      window.removeEventListener("blur", committed)
+      window.removeEventListener("pagehide", committed)
       finishCommittedRead.current=undefined
       if(paintOpportunity)trace.mark("paint_opportunity")
       trace.finish(paintOpportunity?"paint_opportunity":"committed")
     }
-    const visibility=()=>{if(document.visibilityState==="hidden")finish(false)}
-    finishCommittedRead.current=()=>finish(false)
-    if(document.visibilityState!=="visible"){finish(false);return}
+    const committed=()=>finish(false)
+    const visibility=()=>{if(document.visibilityState==="hidden")committed()}
+    finishCommittedRead.current=committed
+    if(document.visibilityState!=="visible"||!document.hasFocus()){committed();return}
     document.addEventListener("visibilitychange",visibility)
+    window.addEventListener("blur", committed)
+    window.addEventListener("pagehide", committed)
     // A rendering opportunity between callbacks, using the browser's clock.
     frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(()=>finish(true))})
   },[data,timeline])

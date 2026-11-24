@@ -792,7 +792,8 @@ for a restored route) or the history action. Subtract consecutive marks on the s
 isolate browser admission and sealing, command publish and relay receipt, response arrival
 and the browser's message queue, response open and validation, timeline preparation, and
 React commit. The optional `paint_opportunity_ms` records a frame opportunity in a visible
-tab, after commit. A hidden tab or a closed chat can still record the stages it reached.
+focused tab, after commit. Hidden or unfocused tabs record the commit without waiting for
+an animation frame. Blur, page hide or closing the chat records the stages already reached.
 Stages without evidence are absent. Periodic event polls and auxiliary collections do
 not emit these opening and history records.
 
