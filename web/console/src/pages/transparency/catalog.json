@@ -4404,57 +4404,6 @@
       ]
     },
     {
-      "id": "persistent-bot-group-rooms",
-      "scope": "conditional",
-      "agents": [
-        "claude",
-        "codex"
-      ],
-      "stages": [
-        "turn"
-      ],
-      "scenes": [
-        "task"
-      ],
-      "sources": [
-        {
-          "path": "internal/adapters/projectassistantstore/group_views.go",
-          "line": 1
-        },
-        {
-          "path": "web/console/src/project-assistants/GroupMemberOutcome.tsx",
-          "line": 1
-        },
-        {
-          "path": "internal/app/projectassistant/runtime_groups.go",
-          "line": 616
-        },
-        {
-          "path": "internal/app/projectassistant/runtime.go",
-          "line": 1
-        },
-        {
-          "path": "internal/app/projectassistant/group_rooms.go",
-          "line": 1
-        },
-        {
-          "path": "internal/adapters/projectassistantstore/groups.go",
-          "line": 1
-        }
-      ],
-      "original": [
-        "You are %s, one participant in a group chat (\"<group name>\" — \"<what the group works on, on one line, when described>\") with the user and %s.\n",
-        "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is the one message the room sees. Keep it short and conversational. After this round, only the participants someone @-mentions answer again: @-mention another participant when you need their answer or action, and only then. If you have nothing new worth adding, reply exactly %q. Never reveal private one-on-one context.\n",
-        "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
-        "[Clawdline: this replies to %s: %q] %s",
-        "It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.\n"
-      ],
-      "locations": [
-        "Member's own Bot conversation, one queued room turn",
-        "Host room driver with a stored room ticket"
-      ]
-    },
-    {
       "id": "persistent-bot-team",
       "scope": "conditional",
       "agents": [
@@ -5531,6 +5480,60 @@
         "Every agent's fixed Bot frame: when to use ask_person, and Claude Code's allowed owned tools",
         "A request turn's send_message, delivered only to the recipient's own main chat and marked with the requester"
       ]
+    },
+    {
+      "id": "persistent-bot-group-rooms",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "task"
+      ],
+      "sources": [
+        {
+          "path": "internal/adapters/projectassistantstore/group_views.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/GroupMemberOutcome.tsx",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/runtime_groups.go",
+          "line": 616
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/group_rooms.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/groups.go",
+          "line": 1
+        }
+      ],
+      "original": [
+        "You are %s, one participant in a group chat (\"<group name>\" — \"<what the group works on, on one line, when described>\") with the user and %s.\n",
+        "You have your full toolkit here. Do the work first, then answer: your final reply of this turn is the one message the room sees. Keep it short and conversational. After this round, only the participants someone @-mentions answer again: @-mention another participant when you need their answer or action, and only then. If you have nothing new worth adding, reply exactly %q. Never reveal private one-on-one context.\n",
+        "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
+        "[Clawdline: this replies to %s: %q] %s",
+        "%s [Clawdline: the user attached %d picture(s) to this message; they are included with this turn.]",
+        "%s [Clawdline: the user attached %d picture(s) to this message, but none could be included with this turn; you cannot see them.]",
+        "%s [Clawdline: the user attached %d picture(s) to this message; only %d of them could be included with this turn, and you cannot see the other %d.]",
+        "It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.\n"
+      ],
+      "locations": [
+        "Member's own Bot conversation, one queued room turn",
+        "Host room driver with a stored room ticket"
+      ]
     }
   ],
   "sourceChecks": {
@@ -5643,7 +5646,7 @@
     "internal/adapters/projectassistantstore/collaboration.go": "3a470ae1f8ccd5fc80f77c40f3328cd962a730b702e1c593befcf6113b639fc2",
     "internal/adapters/projectassistantstore/fallback.go": "aa7f1cd40905992cce640e6ab6460e8d374785fffd95a33b7b8554f5146d80bd",
     "internal/adapters/projectassistantstore/group_views.go": "1343eed4283b871a7bfb4c58200dd26117f915e58046a091bc1d5727f3d1c850",
-    "internal/adapters/projectassistantstore/groups.go": "ce67f70200d1f45dd5f1ca35a9ce76e5070f0f96cdb7ab84aff14e95808a28b5",
+    "internal/adapters/projectassistantstore/groups.go": "cc29704431be7a3af2fbca24901718466511ebaf25a74f5982c451088fc03b6a",
     "internal/adapters/projectassistantstore/handoff_card.go": "a2a6255ecc2b91db47a211914322b03ea8a0e4f4e3f5aad0f5717aec05073d59",
     "internal/adapters/projectassistantstore/inputs.go": "490f982024fa679da1f8813531a64ed5715c58b2ee22b5842665056b0503c1b0",
     "internal/adapters/projectassistantstore/lead.go": "d2b71c6011c22f6437f1e6f789552d955b03da19828df631c58ec326f4b1f8f5",
@@ -5703,7 +5706,7 @@
     "internal/app/projectassistant/extensions.go": "ade658b4d4fc1e821879449ccd2c2b2734b61f190875f6e8c4e2c43e7f095c4c",
     "internal/app/projectassistant/fallback.go": "35ef8d81a19ec9ef0811ae740948e65356f6b99d481147f4035ddfc4841d3819",
     "internal/app/projectassistant/fallback_ledger.go": "38990dc5ebe047ce808f29f575497c2b5264a98ea370b2282304992e04b67746",
-    "internal/app/projectassistant/group_rooms.go": "244cae7e7d55081e54604220a4154ab6c7a37aa0da1d20732c4e9d68e691a4cc",
+    "internal/app/projectassistant/group_rooms.go": "363332ce4594f8c9aee51cf7faa6cb86c60834a7c2c1a298327b28d92023e733",
     "internal/app/projectassistant/handoff_card.go": "226fbd47b11d4b24c06a7172ed317cdc07f2ae08671740042400b5379815a477",
     "internal/app/projectassistant/inputs.go": "42d237758dbfc3aeb23098e0f90513532e6ed1191e0cc49525d8d585c50e79e7",
     "internal/app/projectassistant/lifecycle.go": "3834297cca7a135c008b26a4bd2f47e5f24855b652a8ef44bc83a87af75b7e5c",
@@ -5717,7 +5720,7 @@
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "9a647b81cd99ae5c6c4e7201a3b2ebc2c48e5c3de9ac081073eeddbbe0a831c3",
-    "internal/app/projectassistant/runtime_groups.go": "eee58674ba7c9f0e5300712c60516a968739ec0ffc3ee18971ce9505b06cc557",
+    "internal/app/projectassistant/runtime_groups.go": "2c452cca0ca654145a152ed6517b95afd8ad1398558b296a7aba00066db6bf51",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
     "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",

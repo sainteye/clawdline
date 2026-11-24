@@ -148,7 +148,7 @@ function useExchangeParticipants(source:SourceClient|undefined,roster:readonly W
 }
 
 /** Each mounted picture owns its request; a source change discards late bytes. */
-function BotPicture({id,localURL,source,botKey,w}:{id:string;localURL:string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;w:Words}){
+export function BotPicture({id,localURL,source,botKey,w}:{id:string;localURL:string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;w:Words}){
   const [result,setResult]=useState<{source:SourceClient;id:string;machine:string;bot:string;url?:string;error?:string}|null>(null)
   const [attempt,setAttempt]=useState(0)
   const machine=botKey?.machine_id??"",bot=botKey?.bot_id??""

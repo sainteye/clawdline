@@ -782,7 +782,7 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 // PersonWrote writes the person's line and starts the room turn it asks
 // for, in one transaction under the room revision, with the command's
 // receipt. A replay returns the stored line's seq and starts nothing.
-func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevision int64, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error) {
+func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevision int64, text string, attachments []pa.Attachment, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error) {
 	if len(quoted) > 1 || len(quoted) == 1 && quoted[0] < 1 {
 		return pa.RoomEntry{}, pa.RoomState{}, nil, failure(pa.Invalid, "quote_seq")
 	}
@@ -850,7 +850,7 @@ func (s *GroupStore) PersonWrote(ctx context.Context, c pa.Command, expectedRevi
 	if err != nil {
 		return pa.RoomEntry{}, st, nil, err
 	}
-	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, At: time.Now().UTC(), Text: text, ReplyToAuthor: replyToAuthor, Quote: quote}
+	entry := pa.RoomEntry{Seq: seq, Kind: pa.RoomPersonEntry, At: time.Now().UTC(), Text: text, ReplyToAuthor: replyToAuthor, Quote: quote, Attachments: attachments}
 	if err = writeLine(ctx, tx, key, entry); err != nil {
 		return pa.RoomEntry{}, st, nil, err
 	}

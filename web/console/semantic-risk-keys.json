@@ -6108,7 +6108,8 @@
       "projectAssistants.memoryCardSaved",
       "projectAssistants.memoryCardSkipped",
       "capacityRow.bots.peer_note_bytes.full",
-      "capacityRow.bots.peer_notes_per_request.full"
+      "capacityRow.bots.peer_notes_per_request.full",
+      "capacityRow.bots.room_pictures.full"
     ],
     "permission": [
       "acp.permissionPending",
@@ -7891,7 +7892,8 @@
       "worktree.incompleteEvidence",
       "worktree.lifecycleUnavailable",
       "worktree.targetUnknown",
-      "worktree.unknown"
+      "worktree.unknown",
+      "transparency.card.persistent-bot-group-rooms.how"
     ]
   },
   "union": [
@@ -14006,6 +14008,7 @@
     "projectAssistants.memoryCardSaved",
     "projectAssistants.memoryCardSkipped",
     "capacityRow.bots.peer_note_bytes.full",
-    "capacityRow.bots.peer_notes_per_request.full"
+    "capacityRow.bots.peer_notes_per_request.full",
+    "capacityRow.bots.room_pictures.full"
   ]
 }
