@@ -4597,12 +4597,16 @@ type ProjectAssistantBotSummary struct {
 
 	// Broker Sessions this Bot dispatched, counted from its work links. Absent when
 	// there are none or the source is older.
-	DispatchedWork     *ProjectAssistantDispatchedWork `json:"dispatched_work,omitempty"`
-	Failure            *ProjectAssistantFailure        `json:"failure,omitempty"`
-	LatestMessage      string                          `json:"latest_message"`
-	PendingPermissions int64                           `json:"pending_permissions"`
-	ReadCursor         ProjectAssistantReadCursor      `json:"read_cursor"`
-	Source             ProjectAssistantSourceStatus    `json:"source"`
+	DispatchedWork *ProjectAssistantDispatchedWork `json:"dispatched_work,omitempty"`
+	Failure        *ProjectAssistantFailure        `json:"failure,omitempty"`
+	LatestMessage  string                          `json:"latest_message"`
+
+	// The kind of the message latest_message came from, such as work for a Session
+	// report. Empty or absent on older sources.
+	LatestMessageKind  string                       `json:"latest_message_kind,omitempty"`
+	PendingPermissions int64                        `json:"pending_permissions"`
+	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
+	Source             ProjectAssistantSourceStatus `json:"source"`
 
 	// The Bot’s own chat activity, independent of background work, unread count and
 	// source connection. Optional for older daemons.

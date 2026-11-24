@@ -618,14 +618,16 @@ type BotSummary struct {
 	Bot             Bot    `json:"bot"`
 	// Status describes the Bot’s own chat. Activity carries a live tool title
 	// or a localized key. BackgroundWork describes independent workers.
-	Status             string     `json:"status,omitempty"`
-	Failure            *Failure   `json:"failure,omitempty"`
-	LatestMessage      string     `json:"latest_message"`
-	Activity           string     `json:"activity"`
-	ActivityAt         time.Time  `json:"activity_at"`
-	UnreadCount        int64      `json:"unread_count"`
-	ReadCursor         ReadCursor `json:"read_cursor"`
-	PendingPermissions int64      `json:"pending_permissions"`
+	Status        string   `json:"status,omitempty"`
+	Failure       *Failure `json:"failure,omitempty"`
+	LatestMessage string   `json:"latest_message"`
+	// LatestMessageKind lets a list say where LatestMessage appears in the chat.
+	LatestMessageKind  MessageKind `json:"latest_message_kind,omitempty"`
+	Activity           string      `json:"activity"`
+	ActivityAt         time.Time   `json:"activity_at"`
+	UnreadCount        int64       `json:"unread_count"`
+	ReadCursor         ReadCursor  `json:"read_cursor"`
+	PendingPermissions int64       `json:"pending_permissions"`
 	// ActiveWork counts work this Bot handed elsewhere that has not finished:
 	// Board work links still accepted, waiting for the person or executing,
 	// plus background tasks still waiting or active. Absent means none.

@@ -1367,6 +1367,10 @@
         "latest_message": {
           "type": "string"
         },
+        "latest_message_kind": {
+          "type": "string",
+          "description": "The kind of the message latest_message came from, such as work for a Session report. Empty or absent on older sources."
+        },
         "activity": {
           "type": "string"
         },
