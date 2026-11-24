@@ -799,6 +799,13 @@ test("a Cloud Bot read correlates relay timing with one content-free browser rec
   const [row] = rows
   assert.equal(row.trace_id,requestID)
   assert.equal(row.interaction_id,requestID)
+  assert.equal(row.machine,"one")
+  const client = Object.create(CloudClient.prototype)
+  client.classicSessionMachine = "two"
+  const route = client._viewerEventRoute(client._viewerEventAbout({event:"cloud.bots.read", data:row}),
+    [{machine:"one",capable:true},{machine:"two",capable:true}],false)
+  assert.equal(route.machine,"one")
+  assert.equal(route.route,"row_machine")
   assert.match(String(row.trace_id),/^bot-view-[0-9a-f-]+$/)
   assert.equal(row.sequence,42)
   assert.equal(row.outcome,"refused")
