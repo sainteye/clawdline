@@ -126,6 +126,7 @@ func (s *Store) Save(ctx context.Context, in app.MemoryWrite) (pa.MemoryRevision
 		return nil
 	})
 }
+
 // rebaseMemoryRevision lets a write read at an older index revision proceed
 // at the current one when none of the notes it names was written since:
 // other notes saved in between, by the Bot or a person, are not a conflict.
