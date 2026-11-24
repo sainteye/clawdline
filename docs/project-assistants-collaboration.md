@@ -36,7 +36,9 @@ assert observation or read acknowledgement.
 Request turns refuse chat publication, another Bot request, file/artifact
 publication and schedule mutations at the Host/Engine boundary. Request/reply
 turns cannot write Bot memory as user facts. Broker dispatch remains a separate
-capability and is not implemented using a child as a teammate.
+capability and is not implemented using a child as a teammate; since
+2026-11-24 a request turn may dispatch into the recipient's own Project
+(`docs/project-assistants-owned-mcp.md`).
 
 New turn origins are `user`, `host_notice`, `bot_request`, and `bot_reply`.
 Empty legacy origin preserves existing behavior, never deriving authority from

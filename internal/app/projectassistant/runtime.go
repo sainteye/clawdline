@@ -61,8 +61,9 @@ type Engine struct {
 }
 
 type routineCompletion struct {
-	turn pa.Turn
-	text string
+	turn   pa.Turn
+	text   string
+	answer string
 }
 
 type runtimeActor struct {
@@ -1593,15 +1594,15 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		// notice says what happened. An answered /compact that reported no
 		// compaction is a definite failure, never a silent success.
 		if compactedNotice == nil {
-			return r.finishWithContextLocked(ctx, a, t, pa.TurnFailed, "", runtimeFailure(pa.Unsupported, compactNotReported), usage)
+			return r.finishWithContextLocked(ctx, a, t, pa.TurnFailed, "", "", runtimeFailure(pa.Unsupported, compactNotReported), usage)
 		}
-		result.FinalText = ""
+		result = PromptResult{}
 	}
 	a.compacted = compactedNotice
-	err = r.finishWithContextLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, nil, usage)
+	err = r.finishWithContextLocked(ctx, a, t, pa.TurnSucceeded, result.FinalText, result.answer(), nil, usage)
 	a.compacted = nil
 	if err != nil && (t.RoutineRunID != "" || t.ExchangeID != "") {
-		a.completion = &routineCompletion{turn: t, text: result.FinalText}
+		a.completion = &routineCompletion{turn: t, text: result.FinalText, answer: result.answer()}
 		r.retain(a, err)
 	}
 	return err
@@ -1705,12 +1706,14 @@ func resolvePromptQuote(export Export, id string, fence pa.Fence, memory pa.Memo
 }
 
 func (r *Engine) finishLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error) error {
-	return r.finishWithContextLocked(ctx, a, t, state, text, cause, pa.ContextSample{})
+	return r.finishWithContextLocked(ctx, a, t, state, text, text, cause, pa.ContextSample{})
 }
 
-func (r *Engine) finishWithContextLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error, usage pa.ContextSample) error {
+// text is the chat's fallback reply; answer is what a correlated Bot reply
+// or a forwarded decision carries to the requester.
+func (r *Engine) finishWithContextLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text, answer string, cause error, usage pa.ContextSample) error {
 	for {
-		err := r.finishOnceLocked(ctx, a, t, state, text, cause, usage)
+		err := r.finishOnceLocked(ctx, a, t, state, text, answer, cause, usage)
 		if !collaborationAggregateConflict(err) {
 			return err
 		}
@@ -1722,7 +1725,7 @@ func (r *Engine) finishWithContextLocked(ctx context.Context, a *runtimeActor, t
 	}
 }
 
-func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text string, cause error, usage pa.ContextSample) error {
+func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Turn, state pa.TurnState, text, answer string, cause error, usage pa.ContextSample) error {
 	bot, err := r.o.Repository.Bot(ctx, a.key)
 	if err != nil {
 		return err
@@ -1894,14 +1897,14 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		if err != nil {
 			return err
 		}
-		_, err = p.FinishExchange(ctx, m, text)
+		_, err = p.FinishExchange(ctx, m, answer)
 	} else if t.Room != nil {
 		err = r.finishRoomTurn(ctx, bot, m, text)
 	} else {
 		_, err = r.mutate(ctx, bot, m)
 	}
 	if err == nil && t.DecisionExchangeID != "" {
-		err = r.forwardDecision(ctx, bot.Key, t, text)
+		err = r.forwardDecision(ctx, bot.Key, t, answer)
 	}
 	return err
 }
@@ -2143,16 +2146,22 @@ func (r *Engine) finishDispatch(ctx context.Context, a *runtimeActor, q pa.WorkR
 	if err = pa.CheckFence(fence, currentFence(bot, c)); err != nil {
 		return link, err
 	}
-	if link.Fence != fence || link.TurnID != q.TurnID || link.ID == "" || link.TaskID == "" {
+	// Work a thread worker dispatched at another Bot's request is owned by
+	// the host notice in its main chat, and persisted there.
+	ownerFence, ownerTurn := fence, q.TurnID
+	if q.OwnerTurnID != "" {
+		ownerFence, ownerTurn = q.Owner()
+	}
+	if link.Fence != ownerFence || link.TurnID != ownerTurn || link.ID == "" || link.TaskID == "" {
 		return link, runtimeFailure(pa.ScopeDenied, "work_link")
 	}
-	export, err := r.o.Repository.Export(ctx, a.key)
+	export, err := r.o.Repository.Export(ctx, ownerFence.Key)
 	if err != nil {
 		return link, err
 	}
 	for _, persisted := range export.WorkLinks {
 		if persisted.ID == link.ID {
-			if persisted.Fence != fence || persisted.TurnID != q.TurnID || persisted.TaskID != link.TaskID {
+			if persisted.Fence != ownerFence || persisted.TurnID != ownerTurn || persisted.TaskID != link.TaskID {
 				return link, runtimeFailure(pa.ScopeDenied, "persisted_work_owner")
 			}
 			return persisted, nil

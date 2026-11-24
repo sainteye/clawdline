@@ -218,7 +218,22 @@ type PromptQuote struct {
 	MessageID string
 	Text      string
 }
-type PromptResult struct{ FinalText string }
+
+// PromptResult is what a finished prompt said. FinalText is the last reply
+// segment, the chat's fallback reply. AnswerText is all the text after the
+// turn's last tool call, which a correlated Bot reply carries; empty means
+// the provider does not report it and FinalText stands for it.
+type PromptResult struct {
+	FinalText  string
+	AnswerText string
+}
+
+func (p PromptResult) answer() string {
+	if p.AnswerText != "" {
+		return p.AnswerText
+	}
+	return p.FinalText
+}
 
 // Usage contains counts only, never prompts, credentials or native stderr.
 // A host can wire these readings into its registered capacity measurements.

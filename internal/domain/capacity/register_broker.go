@@ -74,8 +74,8 @@ func brokerBounds() []Entry {
 		},
 		{
 			// Enters the beat presses on a child's briefing that is still
-			// held in its composer after the send's own presses (task
-			// bb9f44d8). Past it nothing more is pressed; the task ends
+			// held in its composer after the send's own presses.
+			// Past it nothing more is pressed; the task ends
 			// dispatch.brief_held_grace_seconds after the last press with a
 			// task_stalled notice.
 			Name: DispatchBriefEnterPresses, Class: Buffer, Unit: Rows,

@@ -15,7 +15,7 @@ import (
 
 // A briefing that was typed and never submitted (stall.go, tendHeld).
 //
-// Task bb9f44d8, 2026-11-24: the briefing reached Claude Code's composer, the
+// On 2026-11-24 the briefing reached Claude Code's composer, the
 // Enter after it was lost while auto mode redrew the composer, and the task
 // sat `spawning` with the whole briefing in the input line. The stall watch
 // counted a composer with text in it as not idle, so it neither nudged nor

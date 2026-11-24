@@ -554,7 +554,7 @@ func (r *Engine) retryCleanupWith(a *runtimeActor, force bool) {
 	a.mu.Lock()
 	var err error
 	if a.completion != nil {
-		err = r.finishLocked(ctx, a, a.completion.turn, pa.TurnSucceeded, a.completion.text, nil)
+		err = r.finishWithContextLocked(ctx, a, a.completion.turn, pa.TurnSucceeded, a.completion.text, a.completion.answer, nil, pa.ContextSample{})
 		if err == nil {
 			a.completion = nil
 		}

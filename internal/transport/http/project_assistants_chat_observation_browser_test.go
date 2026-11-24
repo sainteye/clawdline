@@ -104,7 +104,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery", "interrupted-exchange"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -142,6 +142,11 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
 			f.enable(t)
 			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+			if name == "interrupted-exchange" {
+				seedQueuedBotStatus(t, f, pa.TurnUnknown)
+				paServerOK(t, f.request(t, "POST", "/v1/settings/project-assistants", f.local, `{"enabled":false}`))
+				f.enable(t)
+			}
 			source := httptest.NewServer(f.h)
 			defer source.Close()
 			var finish, start sync.Once

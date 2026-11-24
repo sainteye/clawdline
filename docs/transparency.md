@@ -18,6 +18,34 @@ affects the closed Session report card. Model context, tools, approvals and
 execution are unchanged. Only those source receipts are refreshed; this review
 does not deploy the public website.
 
+Work a Bot's private thread worker dispatches at another Bot's request now
+belongs to that Bot's main chat: the Host writes a finished host-notice turn
+there ("Dispatched task … at …'s request." in English and Taiwan Traditional
+Chinese) and the broker records it as the task's owner, so the completion
+review turn runs in the main chat. Reviewed the persistent-bot-review card in
+both languages: the notice turn never runs a prompt, and the fixed Bot frame,
+the peer-request prompt, the work-completion prompt and the tool descriptions
+are unchanged. Only the actor, provider, provider message and runtime source
+receipts are refreshed; this review does not deploy the public website.
+
+A Bot answering another Bot's request on this machine can now call
+`dispatch_work` into its own Project and use browser tabs it opened in that
+turn. Reviewed the persistent-bot-review card in English and Taiwan Traditional
+Chinese: the peer-request prompt, the fixed Bot frame and the tool
+descriptions are unchanged, and none of them said a request turn cannot
+dispatch or browse. Another Project, Board items, completion callbacks and
+requests from another machine stay refused at the Host. Only the provider
+source receipt is refreshed; this review does not deploy the public website.
+
+A Bot's reply to another Bot's request, and a decision answer forwarded to the
+requester, now carry all the text after the turn's last tool call instead of
+only its last text segment. Reviewed the persistent-bot-review card in English
+and Taiwan Traditional Chinese: its prompts and tools are unchanged, and the
+reply stays data inside the existing correlated-reply frame under the same
+reply limit. The chat's fallback reply is still the last segment. Only the
+ACP client, compaction and runtime source receipts are refreshed; this review
+does not deploy the public website.
+
 Bots are now told when to use `ask_person`. Reviewed the persistent-bot-review
 card in English and Taiwan Traditional Chinese against the fixed Bot frame,
 the peer-request and correlated-reply prompts and the `message_bot`
@@ -140,9 +168,12 @@ receipts are refreshed.
 The Bot exchange restart fix implements the existing English and Taiwan
 Traditional Chinese review card's promise to preserve replies through a
 restart. During a planned shutdown the source keeps unstarted reply turns
-and replies waiting for queue space. Startup uses the normal worker to deliver
-the saved outcome under the existing queue and execution rules. The quoted
-prompts and the original request's replay policy are unchanged.
+and replies waiting for queue space. Startup restores the saved feature state
+and starts recovery after write access is published. The exchange can show
+the request outcome and reply delivery while the sender's unknown turn still
+blocks execution. The pending-integration count follows the broker's settled
+landing through a retryable projection that does not start a review. The
+quoted prompts and the original request's replay policy are unchanged.
 
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant

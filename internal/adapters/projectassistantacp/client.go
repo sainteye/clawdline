@@ -83,8 +83,13 @@ type Client struct {
 	traceTools     map[string]nativeToolTrace
 	// reply segments, as Codync's text segments: a tool call or a new message
 	// closes one, and the next starts after a blank line.
-	segmentStart        int
-	segmentClosed       bool
+	segmentStart  int
+	segmentClosed bool
+	// answerStart is where the text after the turn's last tool call begins.
+	// A new message id, a thought or a plan splits a reply segment but not
+	// this answer, which is what a correlated Bot reply carries.
+	answerStart         int
+	toolSinceText       bool
 	messageID           string
 	steering            bool
 	sequence            uint64
@@ -630,6 +635,7 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	c.turnID = q.Turn.ID
 	c.promptDeadline = deadline
 	c.partial, c.segmentStart, c.segmentClosed, c.messageID = "", 0, false, ""
+	c.answerStart, c.toolSinceText = 0, false
 	c.traceSegment, c.traceTools = pa.Trace{}, nil
 	sid, instructions := c.sessionID, c.openingInstructions
 	c.mu.Unlock()
@@ -688,11 +694,14 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	p.rpc.c.mu.Lock()
 	p.rpc.c.closeSegment()
 	partial := strings.TrimSpace(p.rpc.c.partial[p.rpc.c.segmentStart:])
+	answer := strings.TrimSpace(p.rpc.c.partial[p.rpc.c.answerStart:])
 	p.rpc.c.traceSegment, p.rpc.c.traceTools = pa.Trace{}, nil
 	cancelled := p.rpc.c.cancelled
 	p.rpc.c.turnID = ""
 	p.rpc.c.mu.Unlock()
-	if result.Text == "" {
+	if result.Text != "" {
+		answer = result.Text
+	} else {
 		result.Text = partial
 	}
 	if cancelled || result.StopReason == "cancelled" || result.StopReason == "refusal" {
@@ -709,7 +718,7 @@ func (p *promptPending) Wait(ctx context.Context) (app.PromptResult, error) {
 	if result.StopReason == "max_tokens" || result.StopReason == "max_turn_requests" {
 		return app.PromptResult{}, refusal(pa.Unsupported, "prompt_"+result.StopReason)
 	}
-	return app.PromptResult{FinalText: result.Text}, nil
+	return app.PromptResult{FinalText: result.Text, AnswerText: answer}, nil
 }
 
 func (c *Client) read() {
@@ -884,7 +893,7 @@ func (c *Client) handle(f frame) error {
 		}
 		if p.Update.SessionUpdate == "tool_call" {
 			c.mu.Lock()
-			c.segmentClosed = true
+			c.segmentClosed, c.toolSinceText = true, true
 			c.mu.Unlock()
 			return c.traceUpdate(raw(p.Update))
 		}
@@ -919,6 +928,9 @@ func (c *Client) handle(f frame) error {
 					c.partial += "\n\n"
 				}
 				c.segmentStart = len(c.partial)
+			}
+			if c.toolSinceText {
+				c.answerStart, c.toolSinceText = c.segmentStart, false
 			}
 			c.partial += content.Text
 			c.mu.Unlock()
@@ -1128,6 +1140,7 @@ func (c *Client) closeSegment() {
 	if c.segmentStart <= len(c.partial) && toolMarkup.MatchString(strings.TrimSpace(c.partial[c.segmentStart:])) {
 		c.partial = strings.TrimRight(c.partial[:c.segmentStart], "\n")
 		c.segmentStart = len(c.partial)
+		c.answerStart = min(c.answerStart, c.segmentStart)
 	}
 	c.segmentClosed = false
 }

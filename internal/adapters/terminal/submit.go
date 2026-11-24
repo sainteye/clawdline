@@ -533,7 +533,7 @@ func submit(ctx context.Context, in input, text string, window time.Duration) er
 		if look >= len(nudgePauses) {
 			// Every bounded Enter was pressed and the composer still holds the
 			// text: it was not submitted, and saying nil would have the caller
-			// count it delivered (task bb9f44d8, 2026-11-24).
+			// count it delivered (2026-11-24).
 			return HeldAfterEnter{Enters: enters}
 		}
 		// The first Enter went; a nudge that fails is only logged, because
@@ -551,7 +551,7 @@ func submit(ctx context.Context, in input, text string, window time.Duration) er
 // Code's, a rule above and below — holding the end of text or a paste
 // placeholder after an Enter. Unlike stillHolds it allows the composer to have
 // been redrawn: Claude Code redraws it while auto mode starts, and the Enter
-// that redraw swallowed was the briefing's only one (task bb9f44d8). Codex's
+// that redraw swallowed was the briefing's only one. Codex's
 // unframed "›" and a shell's caret keep stillHolds' rule.
 func heldInComposer(screen, text string) bool {
 	return inputLine(screen).framed && HoldsTyped(screen, text)

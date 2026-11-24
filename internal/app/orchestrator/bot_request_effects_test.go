@@ -26,7 +26,9 @@ func TestBotRequestIDLeavesOldHashesAndRecordsAlone(t *testing.T) {
 		BoardItemID          string            `json:"board_item_id,omitempty"`
 		ContinueOnCompletion bool              `json:"continue_on_completion,omitempty"`
 		Choice               pa.DispatchChoice `json:"choice,omitzero"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice})
+		OwnerFence           pa.Fence          `json:"owner_fence,omitzero"`
+		OwnerTurnID          string            `json:"owner_turn_id,omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice, q.OwnerFence, q.OwnerTurnID})
 	sum := sha256.Sum256(body)
 	if got := AssistantRequestHash(q); got != hex.EncodeToString(sum[:]) {
 		t.Fatal("a request naming no card changed the hash of receipts written before cards")

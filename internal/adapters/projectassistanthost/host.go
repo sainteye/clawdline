@@ -35,6 +35,10 @@ type DispatchPolicy struct {
 }
 
 type Options struct {
+	// A composing server can finish publishing its admission state before
+	// recovery or routine work checks that authority.
+	DeferBackgroundStart bool
+
 	// Both lead setup and quota checks use source-owned local observations.
 	DefaultLeadAgent func(time.Time) pa.Agent
 	LeadTimeZone     string
@@ -548,26 +552,38 @@ func (h *Host) Enable(ctx context.Context) error {
 	if err := h.ensureLead(ctx); err != nil {
 		log.Printf("bots: lead setup did not complete: %s", pa.Code(err))
 	}
+	if !h.o.DeferBackgroundStart {
+		h.StartBackgroundWork()
+	}
+	return nil
+}
+
+func (h *Host) StartBackgroundWork() {
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if !h.enabled || h.routineStop != nil {
+		return
+	}
 	tickCtx, stop := context.WithCancel(context.Background())
 	h.routineStop = stop
 	h.routineDone = make(chan struct{})
 	go h.routineTick(tickCtx, h.routineDone)
-	go h.resumeInterrupted()
-	h.mu.Unlock()
-	return nil
+	go func() {
+		h.resumeInterrupted(tickCtx)
+		h.reconcileSettledWork(tickCtx)
+	}()
 }
 
 // resumeInterrupted recovers eligible turns and wakes senders with durable
 // Bot replies once the host is enabled.
-func (h *Host) resumeInterrupted() {
+func (h *Host) resumeInterrupted(parent context.Context) {
 	h.mu.Lock()
 	st := h.store
 	h.mu.Unlock()
 	if st == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), h.o.Limits.CleanupTimeout*4)
+	ctx, cancel := context.WithTimeout(parent, h.o.Limits.CleanupTimeout*4)
 	defer cancel()
 	var keys, expiredCalls, replySenders, completionSenders []pa.BotKey
 	query := pa.ListBots{MachineID: h.o.MachineID, PageSize: pa.MaxPageRows}
@@ -625,6 +641,39 @@ func (h *Host) resumeInterrupted() {
 	for _, key := range completionSenders {
 		if err := r.Recover(ctx, key); err != nil {
 			log.Printf("bots: a work completion did not resume: %s", pa.Code(err))
+		}
+	}
+}
+
+// Repair already settled broker records missed by an older projection. This
+// refreshes WorkLinks without scheduling a result review or performing a landing.
+func (h *Host) reconcileSettledWork(parent context.Context) {
+	h.mu.Lock()
+	st, bridge := h.store, h.bridge
+	h.mu.Unlock()
+	ctx, cancel := context.WithTimeout(parent, h.o.Limits.CleanupTimeout)
+	defer cancel()
+	after := ""
+	for {
+		ids, err := st.SettledWorkRepairs(ctx, h.o.MachineID, after)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("bots: cannot read settled work for reconciliation: %v", err)
+			}
+			return
+		}
+		for _, id := range ids {
+			record, _, err := h.o.Broker.Record(ctx, id)
+			if err == nil {
+				err = bridge.Sync(ctx, orchestrator.AssistantWorkSnapshotOf(record))
+			}
+			if err != nil && ctx.Err() == nil {
+				log.Printf("bots: cannot reconcile settled work %s: %s", id, pa.Code(err))
+			}
+			after = id
+		}
+		if len(ids) < pa.MaxPageRows {
+			return
 		}
 	}
 }

@@ -12,7 +12,9 @@ import (
 	"testing"
 	"time"
 
+	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
@@ -129,4 +131,141 @@ console.log("paired SourceClient -> authenticated TCP HTTP -> real SQLite: exact
 		t.Fatal("read opened the native/model provider")
 	}
 	t.Log(string(log))
+}
+
+func TestServerRestartPreservesQueuedBotStatus(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		enabled  bool
+		original pa.TurnState
+	}{
+		{"enabled with unknown original", true, pa.TurnUnknown},
+		{"enabled with finished original", true, pa.TurnSucceeded},
+		{"disabled", false, pa.TurnUnknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newPAServerFixture(t, true)
+			f.enable(t)
+			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+			exchange := seedQueuedBotStatus(t, f, tc.original)
+			db := f.s.store.ProjectAssistantDatabase()
+			if err := f.s.StopProjectAssistants(ctx); err != nil {
+				t.Fatal(err)
+			}
+			retained, err := featurestore.New(db).Exchange(ctx, f.key, exchange.ID)
+			if err != nil || retained.Delivery != "queued" {
+				t.Fatalf("shutdown lost queued status: %s, %v", retained.Delivery, err)
+			}
+			if !tc.enabled {
+				if _, err := f.s.settingsFile().Set(map[string]any{"project_assistants_enabled": false}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := f.s.store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			restarted, err := New(f.s.cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = restarted.StopProjectAssistants(context.Background()); _ = restarted.store.Close() })
+			provider := &paSoakPeer{}
+			restarted.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+			if err = restarted.StartProjectAssistants(ctx); err != nil {
+				t.Fatal(err)
+			}
+			store := featurestore.New(restarted.store.ProjectAssistantDatabase())
+			if tc.original == pa.TurnSucceeded {
+				f.s, f.h = restarted, restarted.Handler()
+				export := paSoakAwait(t, f, exchange.ReplyTurnID, pa.TurnSucceeded)
+				retained, err = store.Exchange(ctx, f.key, exchange.ID)
+				if err != nil || retained.Delivery != "delivered" || retained.Outcome != pa.ExchangeUnknown || len(export.Turns) != 2 || provider.sends.Load() != 1 {
+					t.Fatalf("restart must only deliver the original status: delivery=%s outcome=%s turns=%d sends=%d err=%v", retained.Delivery, retained.Outcome, len(export.Turns), provider.sends.Load(), err)
+				}
+				return
+			}
+			if tc.enabled {
+				// The unknown original still blocks model work, but the status is already in the chat.
+				retained, err = store.Exchange(ctx, f.key, exchange.ID)
+				if err != nil || retained.Delivery != "queued" || retained.Revision != exchange.Revision {
+					t.Fatalf("enabled startup changed queued status: %s, revision %d, %v", retained.Delivery, retained.Revision, err)
+				}
+				f.s, f.h = restarted, restarted.Handler()
+				var page contract.ProjectAssistantReadViewResponse
+				history := f.request(t, "GET", paViewURL(f.key, exchange.Source.ConversationID, pa.ReadViewSnapshot, "", "", 0, 100), f.local, nil)
+				paServerOK(t, history)
+				if err = json.Unmarshal(history.Body.Bytes(), &page); err != nil {
+					t.Fatal(err)
+				}
+				var shown bool
+				for _, item := range page.Items {
+					if item.Message != nil && item.Message.Exchange != nil && item.Message.Exchange.ID == exchange.ID {
+						shown = item.Message.Exchange.Outcome == string(pa.ExchangeUnknown) && item.Message.Exchange.Delivery == "queued"
+					}
+				}
+				if !shown {
+					t.Fatal("interrupted status was missing from the blocked chat")
+				}
+				paServerOK(t, f.request(t, "POST", "/v1/settings/project-assistants", f.local, `{"enabled":false}`))
+			}
+			retained, err = store.Exchange(ctx, f.key, exchange.ID)
+			last, lastErr := store.Turn(ctx, f.key, exchange.ReplyTurnID)
+			if err != nil || lastErr != nil || retained.Delivery != "dropped" || last.State != pa.TurnCancelled || last.StartedAt != nil {
+				t.Fatalf("disabled state did not cancel the unstarted reply: %s, %s, %v, %v", retained.Delivery, last.State, err, lastErr)
+			}
+		})
+	}
+}
+
+// Use the durable state left when the recipient was interrupted and its status was queued.
+func seedQueuedBotStatus(t *testing.T, f *paServerFixture, originalState pa.TurnState) pa.Exchange {
+	t.Helper()
+	ctx := t.Context()
+	got := f.get(t, f.local)
+	peerRequest := f.create()
+	peerRequest.Command.Key.BotID = "review-peer"
+	peerRequest.Command.IdempotencyKey = "create-review-peer"
+	peerRequest.Settings.Name = "Synthetic peer"
+	peer := f.request(t, "POST", "/v1/project-assistants", f.local, peerRequest)
+	paServerOK(t, peer)
+	var recipient contract.ProjectAssistantBotResponse
+	if err := json.Unmarshal(peer.Body.Bytes(), &recipient); err != nil {
+		t.Fatal(err)
+	}
+
+	project := paDomainProjectScope(got.Bot.Project)
+	fence := pa.Fence{Key: f.key, Project: project, ConversationID: got.Conversation.ID, Generation: got.Conversation.Generation, BindingID: got.Conversation.BindingID}
+	bindings := map[string]pa.ExecutionBinding{}
+	if originalState == pa.TurnSucceeded {
+		fence.Generation, fence.BindingID = 1, "original-binding"
+		bindings[fence.BindingID] = pa.ExecutionBinding{Fence: fence, Agent: pa.Agent(got.Bot.Agent), MemoryRevision: 1, InstructionRevision: 1}
+	}
+	exchange := pa.Exchange{ID: "interrupted-request", Project: project,
+		Source:       pa.ExchangeEndpoint{Key: f.key, ConversationID: got.Conversation.ID},
+		Target:       pa.ExchangeEndpoint{Key: pa.BotKey{MachineID: f.key.MachineID, BotID: "review-peer"}, ConversationID: recipient.Bot.ConversationID},
+		SourceTurnID: "original", RequestTurnID: "peer-request", ReplyTurnID: "interrupted-request-reply-turn",
+		Request: "Check a synthetic fact.", Outcome: pa.ExchangeUnknown, Revision: 3, Hops: 1, Delivery: "queued",
+		Detail: "execution_effect_unknown:restart"}
+	reply := pa.Turn{ID: exchange.ReplyTurnID, Fence: fence, MessageID: "status-message", State: pa.TurnQueued, Origin: pa.BotReplyOrigin, ExchangeID: exchange.ID, Hops: 1, IdempotencyKey: exchange.ID + "-reply"}
+	original := pa.Turn{ID: exchange.SourceTurnID, Fence: fence, MessageID: "original-message", State: originalState, Origin: pa.UserOrigin, IdempotencyKey: "original-key", MemoryRevision: 1, Instructions: pa.InstructionSnapshot{Revision: 1}}
+	if originalState == pa.TurnUnknown {
+		original.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "restart"}
+	}
+	messages := []pa.Message{
+		{ID: original.MessageID, TurnID: original.ID, Fence: fence, Seq: 1, Kind: pa.UserMessage, Text: "Ask the peer.", At: time.Now().Add(-2 * time.Hour)},
+		{ID: reply.MessageID, TurnID: reply.ID, Fence: fence, Seq: 2, Kind: pa.NoticeMessage, Text: exchange.Request, At: time.Now(), Exchange: &exchange},
+	}
+	db := f.s.store.ProjectAssistantDatabase()
+	xRaw, _ := json.Marshal(exchange)
+	tRaw, _ := json.Marshal(map[string]pa.Turn{original.ID: original, reply.ID: reply})
+	mRaw, _ := json.Marshal(messages)
+	bRaw, _ := json.Marshal(bindings)
+	if _, err := db.ExecContext(ctx, "INSERT INTO project_assistant_exchanges(machine,id,source,target,outstanding,revision,data) VALUES (?,?,?,?,0,?,?)", f.key.MachineID, exchange.ID, f.key.BotID, exchange.Target.Key.BotID, exchange.Revision, xRaw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns',json(?),'$.Messages',json(?),'$.Bindings',json(?),'$.Conversation.binding_id',?,'$.Conversation.generation',?,'$.Conversation.last_message_seq',2) WHERE machine=? AND bot=?`, string(tRaw), string(mRaw), string(bRaw), fence.BindingID, fence.Generation, f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	return exchange
 }

@@ -102,7 +102,10 @@ To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user
    finding, result or question. Once it has sent a message, later final text stays
    in the process trace; it must send any further result explicitly too. If it sends
    no message, its last text segment becomes the fallback reply. Earlier narration
-   stays in the trace. Longer reports can be published as an HTML artifact.
+   stays in the trace. A reply to another Bot's request, including one forwarded
+   after the person answers its question, carries all the text after the turn's
+   last tool call instead: an agent can stream one answer under several message
+   ids, and the last segment alone once delivered only its closing status lines. Longer reports can be published as an HTML artifact.
    **Show what it did** keeps separate native narration, thoughts when the agent
    supplies them, and individual tool calls with their status, text output and
    diffs. The supplied Codex adapter's terminal-output metadata is joined in

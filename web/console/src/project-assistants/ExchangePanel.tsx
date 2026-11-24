@@ -79,6 +79,8 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
         const time=Date.parse(at),then=Date.parse(rows[index-1]?.at??"")
         const outcome=exchangeOutcome(x.outcome),delivery=exchangeDelivery(x.delivery)
         const pending=outcome==="queued"||outcome==="sent"
+        const restarted=outcome==="unknown"&&x.detail==="execution_effect_unknown:restart"
+        const showDelivery=delivery!=="unknown"&&(outcome!=="completed"||delivery!=="delivered")
         return <section key={x.id} className="pa-exchange-record">
           {Number.isFinite(time)&&(!Number.isFinite(then)||time-then>ChatSeparatorGapMs)&&<time dateTime={at}>
             {new Intl.DateTimeFormat(language,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(time)}
@@ -86,8 +88,10 @@ export function ExchangePanel({source,scope,reference,entries,roster,language,w,
           {message(exchangeParticipant(x,"source"),x.request)}
           {x.reply&&message(exchangeParticipant(x,"target"),x.reply)}
           {pending?<p className="pa-exchange-note" role="status">{words.waiting.replace("{name}",nameOf(exchangeParticipant(x,"target")))}</p>:
-            outcome!=="completed"?<p className="pa-exchange-note pa-exchange-error">{words[outcome]}{x.detail&&` · ${x.detail}`}</p>:null}
-          {delivery==="waiting"||delivery==="dropped"?<p className="pa-exchange-note">{words[`delivery_${delivery}`]}</p>:null}
+            x.outcome==="needs_person"?<p className="pa-exchange-note" role="status">{w.decisionWaiting.replace("{name}",nameOf(exchangeParticipant(x,"target")))}</p>:
+            outcome!=="completed"?<p className="pa-exchange-note pa-exchange-error">{words.state} · {words[outcome]}{restarted&&` · ${w.failRestart}`}</p>:null}
+          {showDelivery&&<p className="pa-exchange-note">{words.delivery} · {words[`delivery_${delivery}`]}</p>}
+          {x.detail&&<details className="pa-exchange-note"><summary>{words.detail}</summary><code>{x.detail}</code></details>}
         </section>
       })}
     </div>

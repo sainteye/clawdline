@@ -60,6 +60,7 @@
 | `botrequest.description_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `botrequest.events_per_card` | 2000 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `botrequest.label_bytes` | 120 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `botrequest.merge_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `botrequest.note_bytes` | 1024 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `botrequest.open_cards` | 500 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `botrequest.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
