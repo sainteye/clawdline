@@ -208,6 +208,16 @@ func transition(from, to servers.State) bool {
 	}
 }
 
+// released is a person's explicit release of an attempt whose process could
+// not be proved stopped; it is the only way out of a persisted unknown.
+func released(from servers.State, r servers.Record) bool {
+	switch from {
+	case servers.Accepted, servers.Running, servers.Stopping, servers.Unknown:
+		return r.State == servers.Failed && r.Failure == servers.ReleasedUnconfirmed
+	}
+	return false
+}
+
 // Save is a CAS, deliberately not an idempotent insert: two different owners
 // cannot both win the same accepted intent even when their payloads match.
 func (s *Ledger) Save(ctx context.Context, expected int64, r servers.Record) error {
@@ -250,7 +260,7 @@ func saveAttempt(ctx context.Context, tx *sql.Tx, expected int64, r servers.Reco
 	if prior.Version != expected {
 		return refusal(pa.StaleVersion, "server_revision")
 	}
-	if !transition(prior.State, r.State) {
+	if !transition(prior.State, r.State) && !released(prior.State, r) {
 		return refusal(pa.Invalid, "server_transition")
 	}
 	var result sql.Result

@@ -3918,6 +3918,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.server_unconfirmed_notice_ms",
+    "Class": "observation",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "none",
+    "Deviation": "Notice only; a server whose authority cannot be read keeps running until the person stops or releases it.",
+    "Told": [
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.BotServerUnconfirmedNoticeMilliseconds",
+      "internal/domain/capacity.BotServerUnconfirmedNotice"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.skill_asset_files",
     "Class": "buffer",
     "Unit": "rows",

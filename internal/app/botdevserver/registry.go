@@ -46,6 +46,8 @@ type RegistryOptions struct {
 	Restarts         Restarts
 	Launch           func(context.Context, Spec) (Process, error)
 	CleanupTimeout   time.Duration
+	// Clock times how long Reconcile has been unable to confirm authority.
+	Clock func() time.Time
 }
 
 type registered struct {
@@ -53,6 +55,9 @@ type registered struct {
 	owner    *Owner
 	log      *LogTail
 	reserved bool
+	// unconfirmedSince is when Reconcile last began failing to read this
+	// definition's authority without an authoritative denial; zero when known.
+	unconfirmedSince time.Time
 }
 
 type Registry struct {
@@ -79,6 +84,9 @@ func OpenRegistry(ctx context.Context, o RegistryOptions) (*Registry, error) {
 	}
 	if len(rows) > capacity.MaximumBotServerDefinitions {
 		return nil, failure(pa.CapacityFull, "server_definitions")
+	}
+	if o.Clock == nil {
+		o.Clock = time.Now
 	}
 	lifetime, cancel := context.WithCancel(o.Lifetime)
 	r := &Registry{o: o, ctx: lifetime, cancel: cancel, rows: map[string]*registered{}, bySpec: map[string]string{}}
