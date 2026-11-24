@@ -879,7 +879,9 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
         // This named read can use the machine's authenticated reply in its place.
         if (advertised.fromSnapshot && !advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
       } else if (request.word === "project-assistants.view") {
-        if (!advertised.commands?.includes(request.word)) throw failure(advertised.fromSnapshot ? "pa_unsupported" : "pa_offline")
+        // Only a list not yet received waits; a complete list without View is a refusal.
+        if (!advertised.commands || advertised.incomplete) throw failure("pa_offline")
+        if (!advertised.commands.includes(request.word)) throw failure("pa_unsupported")
       } else {
         if (advertised.incomplete) throw failure("pa_offline")
         if (!advertised.commands?.includes(request.word)) throw failure("pa_unsupported")
