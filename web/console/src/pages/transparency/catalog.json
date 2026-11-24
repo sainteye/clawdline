@@ -5738,7 +5738,7 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "b14aefc8c31db03ecbda82c8be61c323877ba3abf05e6cfdfe23d3946afff212",
+    "web/console/src/project-assistants/Chat.tsx": "ea55fd666b5d0510114d9fa4ada1a7fc712f51bbf3b63dee73430cf2324d8090",
     "web/console/src/project-assistants/ChatRows.tsx": "a43ba79a0e9ccf08fd3939ec92796135e5107ce7ea00c0b541c4d1dc9e7c08a6",
     "web/console/src/project-assistants/DevServers.tsx": "788e9abd6e14dbc90746a12d889e8f7f7709bea0b18c811d12f09c1276b6a344",
     "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",

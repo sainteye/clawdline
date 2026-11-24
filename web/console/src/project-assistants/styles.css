@@ -929,3 +929,14 @@
   .project-assistants .pa-context-menu button { padding:12px; }
   .project-assistants .pa-context-menu .pa-context-cancel { justify-content:center;align-items:center;margin-top:4px;border-top:1px solid var(--pa-line);border-radius:0 0 10px 10px; }
 }
+/* A file dragged over a Bot chat: one quiet dashed outline over the whole chat, never a second card. */
+.project-assistants .pa-drop-target { position:absolute;inset:8px;z-index:30;display:grid;place-items:center;padding:16px;border:1.5px dashed rgb(255 255 255 / .32);border-radius:18px;background:rgb(8 8 8 / .9);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);pointer-events:none;animation:pa-drop-target-in 120ms ease-out; }
+.project-assistants .pa-drop-target[data-refused] { border-color:rgb(255 255 255 / .16);background:rgb(8 8 8 / .92); }
+.project-assistants .pa-drop-target-label { display:flex;flex-direction:column;align-items:center;gap:6px;max-width:28rem;text-align:center;overflow-wrap:anywhere;color:#fafafa; }
+.project-assistants .pa-drop-target-label > strong { font-size:15px;font-weight:600; }
+.project-assistants .pa-drop-target-label > span { font-size:13px;color:var(--pa-dim); }
+.project-assistants .pa-drop-target[data-refused] .pa-drop-target-label > svg,.project-assistants .pa-drop-target[data-refused] .pa-drop-target-label > strong { color:#c9c9ce; }
+@keyframes pa-drop-target-in { from { opacity:0; } to { opacity:1; } }
+@media (prefers-reduced-motion:reduce) { .project-assistants .pa-drop-target { animation:none; } }
+/* Consecutive Bot exchange capsules keep the chat's message rhythm instead of touching. */
+.project-assistants .pa-chat-content > .pa-exchange-attribution { margin:4px 0 12px; }

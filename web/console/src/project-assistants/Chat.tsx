@@ -686,11 +686,39 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       .catch(fail)
       .finally(()=>{const pending=--imageReads.current;if(valid())setReadingImages(pending)})
   }
+  // Why a file drag cannot land here, in the person's words; "" when it can.
+  const dropRefusal=(transfer:DataTransfer)=>{
+    if(thread)return w.dropBlockedThread
+    if(!canAttach&&!canInput)return w.dropBlockedUnavailable
+    if(reconnecting||error==="pa_offline"||data&&data.source.state==="offline")return w.dropBlockedOffline
+    if(!enabled||unknown||legacyBlocked())return w.dropBlockedReadOnly
+    if(busy)return w.dropBlockedBusy
+    // Browsers expose each dragged file's type before the drop; an empty type is decided by name on drop.
+    if(!canInput&&Array.from(transfer.items??[]).some(item=>item.kind==="file"&&!!item.type&&!item.type.startsWith("image/")))return w.dropBlockedImagesOnly
+    return ""
+  }
+  const [dropTarget,setDropTarget]=useState<{refusal:string}|null>(null),dragDepth=useRef(0)
+  const showDropTarget=(transfer:DataTransfer)=>{const refusal=dropRefusal(transfer);setDropTarget(old=>old?.refusal===refusal?old:{refusal});return refusal}
+  const endFileDrag=useCallback(()=>{dragDepth.current=0;setDropTarget(null)},[])
+  useEffect(()=>{
+    if(!dropTarget)return
+    // A drag dropped elsewhere on the page or cancelled with Esc may not send the chat its last dragleave.
+    const key=(e:KeyboardEvent)=>{if(e.key==="Escape")endFileDrag()}
+    window.addEventListener("drop",endFileDrag,true);window.addEventListener("dragend",endFileDrag,true);window.addEventListener("keydown",key,true)
+    return ()=>{window.removeEventListener("drop",endFileDrag,true);window.removeEventListener("dragend",endFileDrag,true);window.removeEventListener("keydown",key,true)}
+  },[dropTarget,endFileDrag])
+  const dragHandlers={
+    onDragEnter:(e:DragEvent<HTMLDivElement>)=>{if(!fileDrag(e.dataTransfer))return;e.preventDefault();dragDepth.current++;showDropTarget(e.dataTransfer)},
+    onDragOver:(e:DragEvent<HTMLDivElement>)=>{if(!fileDrag(e.dataTransfer))return;e.preventDefault();e.dataTransfer.dropEffect=showDropTarget(e.dataTransfer)?"none":"copy"},
+    // Moving between children sends enter before leave, so the count never reaches zero mid-chat.
+    onDragLeave:(e:DragEvent<HTMLDivElement>)=>{if(!fileDrag(e.dataTransfer)||dragDepth.current===0)return;if(--dragDepth.current===0)setDropTarget(null)},
+    onDrop:(e:DragEvent<HTMLDivElement>)=>{endFileDrag();dropFiles(e)},
+  }
   const dropFiles=(event:DragEvent<HTMLDivElement>)=>{
     const transfer=event.dataTransfer
-    if(thread||!fileDrag(transfer))return
+    if(!fileDrag(transfer))return
     event.preventDefault()
-    if(!attachmentsEnabled)return
+    if(thread||!attachmentsEnabled)return
     const items=Array.from(transfer.items??[])
     if(items.some(item=>item.webkitGetAsEntry?.()?.isDirectory)){setFileError(w.foldersUnsupported);return}
     const selected=Array.from(transfer.files)
@@ -1536,7 +1564,14 @@ ${currentDraft}`:submitted)
     return <PermissionCard offer={offer} enabled={enabled&&!unknown&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
   }
   return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
-    onDragOver={thread?undefined:e=>{if(fileDrag(e.dataTransfer))e.preventDefault()}} onDrop={thread?undefined:dropFiles}>
+    {...dragHandlers} data-file-drag={dropTarget?(dropTarget.refusal?"refused":"ready"):undefined}>
+    {dropTarget&&<div className="pa-drop-target" data-refused={dropTarget.refusal?true:undefined} role="status" aria-live="polite">
+      <div className="pa-drop-target-label">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{dropTarget.refusal?<><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></>:<><path d="M12 15V4"/><path d="M7.5 8.5L12 4l4.5 4.5"/><path d="M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/></>}</svg>
+        <strong>{dropTarget.refusal?w.dropBlocked:canInput?w.dropAttach:w.dropAttachImages}</strong>
+        <span>{dropTarget.refusal||w.dropAttachHint}</span>
+      </div>
+    </div>}
     {thread?<header className="pa-chat-header pa-thread-header">
       <button ref={identityButton} type="button" className="pa-circle" onClick={onBack} aria-label={w.backgroundBack}>‹</button>
       <div className="pa-thread-heading"><h2>{thread.title}</h2><small><span>{backgroundTaskLabel(thread,w)}</span>
