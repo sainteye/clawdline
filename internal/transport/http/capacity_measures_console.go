@@ -10,6 +10,12 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 	out := map[string]func() capacity.Reading{
+		"console.quota_read_wait_milliseconds":        quotaScheduleReadMeasurement,
+		"console.schedule_read_wait_milliseconds":     quotaScheduleReadMeasurement,
+		"console.schedule_retry_first_milliseconds":   quotaScheduleReadMeasurement,
+		"console.schedule_retry_ceiling_milliseconds": quotaScheduleReadMeasurement,
+		"console.reads_out_per_target":                quotaScheduleReadMeasurement,
+		"console.held_read_lost_milliseconds":         quotaScheduleReadMeasurement,
 		"console.copilot_session_report_batch": func() capacity.Reading {
 			return capacity.Unmeasured("per-call presentation batch; at most two Sessions, separate from task allowance")
 		},
@@ -431,4 +437,8 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		}
 	}
 	return out
+}
+
+func quotaScheduleReadMeasurement() capacity.Reading {
+	return capacity.Unmeasured("quota and schedule reads are held in a browser tab; this daemon has no per-tab wait or occupancy measurements")
 }

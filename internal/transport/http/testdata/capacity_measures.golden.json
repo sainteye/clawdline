@@ -2476,6 +2476,10 @@
     "Note": true
   },
   {
+    "Name": "console.held_read_lost_milliseconds",
+    "Err": true
+  },
+  {
     "Name": "console.local_performance_body_bytes",
     "Known": true,
     "Note": true
@@ -2601,6 +2605,14 @@
     "Note": true
   },
   {
+    "Name": "console.quota_read_wait_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.reads_out_per_target",
+    "Err": true
+  },
+  {
     "Name": "console.relay_feature_wait_seconds",
     "Known": true,
     "Note": true
@@ -2609,6 +2621,18 @@
     "Name": "console.relay_transcript_expect_reask_seconds",
     "Known": true,
     "Note": true
+  },
+  {
+    "Name": "console.schedule_read_wait_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.schedule_retry_ceiling_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.schedule_retry_first_milliseconds",
+    "Err": true
   },
   {
     "Name": "console.service_performance_alerts",
