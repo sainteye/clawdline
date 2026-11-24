@@ -237,6 +237,22 @@ func (h *HumanInterventions) update(ctx context.Context, id, conversation, sourc
 		if action == "reopen" && prev.Kind == "secret" && prev.Resolution == "Secret Handoff used" {
 			return humanInterventionError("secret_handoff_used", "A used Secret Handoff cannot be reopened. Create a new request.")
 		}
+		if action == "read" {
+			// A read marker is not an edit: it never conflicts and never
+			// advances the version another copy's resolve is checked against.
+			out = prev
+			if prev.ReadAt == nil {
+				if err := tx.MarkHumanInterventionRead(prev.ID, at); err != nil {
+					return err
+				}
+				out.ReadAt = &at
+			}
+			if answer != nil {
+				body = answer(out)
+				return tx.CompleteReceipt(k, store.ReceiptAnswer{Status: http.StatusOK, Body: body})
+			}
+			return nil
+		}
 		if prev.Version != version {
 			return store.ErrConflict
 		}
@@ -245,10 +261,6 @@ func (h *HumanInterventions) update(ctx context.Context, id, conversation, sourc
 		}
 		out = prev
 		switch action {
-		case "read":
-			if out.ReadAt == nil {
-				out.ReadAt = &at
-			}
 		case "withdraw":
 			out.ResolvedAt = &at
 			out.Withdrawn = true

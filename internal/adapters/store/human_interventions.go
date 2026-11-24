@@ -184,6 +184,23 @@ func (t *WorkV2Tx) PutHumanIntervention(prev, next work.HumanIntervention) error
 	return nil
 }
 
+// MarkHumanInterventionRead records the first read without advancing the
+// version, so a read on one device never invalidates another device's copy.
+func (t *WorkV2Tx) MarkHumanInterventionRead(id string, at time.Time) error {
+	res, err := t.tx.ExecContext(t.ctx, `UPDATE human_interventions SET read_at=? WHERE id=? AND read_at IS NULL`, at.Unix(), id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 1 {
+		t.wrote++
+	}
+	return nil
+}
+
 func (s *Store) HumanInterventions(ctx context.Context, conversation string) ([]work.HumanIntervention, int64, error) {
 	rows, err := s.rd.QueryContext(ctx, `SELECT `+humanInterventionColumns+` FROM human_interventions WHERE target_conversation=? AND resolved_at IS NULL ORDER BY created_at DESC,id LIMIT ?`, conversation, HumanInterventionsOpenLimit)
 	if err != nil {
