@@ -6,7 +6,7 @@
     "state": 2425,
     "permission": 861,
     "deletion": 336,
-    "uncertainty": 572
+    "uncertainty": 573
   },
   "unionCount": 6086,
   "categories": {
@@ -7815,6 +7815,7 @@
       "transparency.card.persistent-bot-api-key.effect",
       "transparency.card.persistent-bot-background-tasks.effect",
       "transparency.card.persistent-bot-group-rooms.effect",
+      "transparency.card.persistent-bot-group-rooms.how",
       "transparency.card.persistent-bot-network.condition",
       "transparency.card.persistent-bot-network.effect",
       "transparency.card.persistent-bot-outputs.how",

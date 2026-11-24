@@ -4510,6 +4510,8 @@
         "[Group chat: %q - with %s]\nNew messages in the room (oldest first):\nUser: …\n<name>: …\n",
         "[Clawdline: this replies to %s: %q] %s",
         "%s [Clawdline: the user attached %d picture(s) to this message; they are included with this turn.]",
+        "%s [Clawdline: the user attached %d picture(s) to this message, but none could be included with this turn; you cannot see them.]",
+        "%s [Clawdline: the user attached %d picture(s) to this message; only %d of them could be included with this turn, and you cannot see the other %d.]",
         "It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.\n"
       ],
       "locations": [
@@ -5639,7 +5641,7 @@
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "b763f26a85a3ebf28f52d45ed9f4b6b9760ea5cb2f11697c2c95dccf5d228ffb",
-    "internal/app/projectassistant/runtime_groups.go": "ce78782f60daca4a9fb9a858cd9c8cd372b25a3668cf316be6e4e9614ef7226a",
+    "internal/app/projectassistant/runtime_groups.go": "2c452cca0ca654145a152ed6517b95afd8ad1398558b296a7aba00066db6bf51",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
     "internal/app/projectassistant/service_routines.go": "971b45309cc127bfddb71aa810dd457c581310b9c5fd15fa3aeccd839ae29423",
     "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",
@@ -5795,7 +5797,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "27641a4fcd4d27dabe0cce0bc2a452288e8904c1ca496e7cea4e01a179210013",
-    "zh-Hant": "233117d633199eb849466cd52add2916ce99523d09e7eda9c3ebaef24c7ee64c"
+    "en": "d0c4d3bd043ffc4f53afbb6ae37fdae8c2692fc1ec758667745ab8a0efd40858",
+    "zh-Hant": "51c83ca736b78bdd276034d8bd9afb3ceac8b5579008fc9d9def281285136451"
   }
 }

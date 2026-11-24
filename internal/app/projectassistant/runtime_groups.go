@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -207,7 +208,7 @@ type RoomDriverOptions struct {
 	ID        func() string
 	// Pictures copies the person's room pictures into each asked member's
 	// own store, so the member's turn reads them as a one-to-one send does.
-	// Without it a room line's pictures are named in the prompt only.
+	// Without it the prompt says the line's pictures could not be included.
 	Pictures RoomPictures
 }
 
@@ -219,32 +220,55 @@ type RoomPictures interface {
 
 // memberPictures copies the pictures of the person's lines in shown into
 // member's store. A picture that cannot be copied is left out of the turn,
-// never sent half-read; the prompt still says it was attached.
-func (d *RoomDriver) memberPictures(group, member pa.BotKey, shown []pa.RoomEntry) []pa.Attachment {
-	if d.o.Pictures == nil {
-		return nil
+// never sent half-read, and logged. delivered counts, by line seq, the
+// pictures that did reach the member, so the prompt claims no others.
+func (d *RoomDriver) memberPictures(group, member pa.BotKey, shown []pa.RoomEntry) (out []pa.Attachment, delivered map[int64]int) {
+	delivered = map[int64]int{}
+	lost := func(e pa.RoomEntry, reason string, err error) {
+		log.Printf("project assistant: room picture not delivered to member; group=%s member=%s line=%d reason=%s: %v", group.BotID, member.BotID, e.Seq, reason, err)
 	}
-	var out []pa.Attachment
 	for _, e := range shown {
 		if e.Kind != pa.RoomPersonEntry {
 			continue
 		}
 		for _, a := range e.Attachments {
+			if d.o.Pictures == nil {
+				lost(e, "no_picture_store", nil)
+				continue
+			}
 			if len(out) == pa.MaxRoomPictures {
-				return out
+				lost(e, "turn_picture_limit", nil)
+				continue
 			}
 			data, err := d.o.Pictures.Read(group, a)
 			if err != nil {
+				lost(e, "read_failed", err)
 				continue
 			}
 			copied, err := d.o.Pictures.Put(member, a.MediaType, data)
 			if err != nil {
+				lost(e, "copy_failed", err)
 				continue
 			}
 			out = append(out, copied)
+			delivered[e.Seq]++
 		}
 	}
-	return out
+	return out, delivered
+}
+
+// roomPictureNote says how many pictures a room line carried and how many of
+// them are in this turn; a member is never told it can see a picture it was
+// not given.
+func roomPictureNote(attached, delivered int) string {
+	switch {
+	case delivered >= attached:
+		return fmt.Sprintf("[Clawdline: the user attached %d picture(s) to this message; they are included with this turn.]", attached)
+	case delivered == 0:
+		return fmt.Sprintf("[Clawdline: the user attached %d picture(s) to this message, but none could be included with this turn; you cannot see them.]", attached)
+	default:
+		return fmt.Sprintf("[Clawdline: the user attached %d picture(s) to this message; only %d of them could be included with this turn, and you cannot see the other %d.]", attached, delivered, attached-delivered)
+	}
 }
 
 // RoomDriver runs group rooms as Codync's chat/group.rs does: speakers are
@@ -572,11 +596,10 @@ func (d *RoomDriver) ask(ctx context.Context, g pa.Group, speakers []pa.RoomSpea
 	if err != nil {
 		return nil, false
 	}
-	prompt, shown, latest, err := d.prompt(ctx, g, speakers, s)
+	prompt, shown, pictures, err := d.prompt(ctx, g, speakers, s)
 	if err != nil {
 		return nil, false
 	}
-	pictures := d.memberPictures(g.Key, s.Key, latest)
 	asked[s.Key] = shown
 	feature, source, err := d.o.Authorize(ctx, s.Key)
 	if err != nil {
@@ -653,8 +676,10 @@ func (d *RoomDriver) lateAnswer(ctx context.Context, p RoomPublication) {
 }
 
 // prompt is Codync's member_prompt: who is in the room, how to answer, and
-// the newest lines, each clipped. shown is the newest seq it shows.
-func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomSpeaker, me pa.RoomSpeaker) (string, int64, []pa.RoomEntry, error) {
+// the newest lines, each clipped. shown is the newest seq it shows. It copies
+// those lines' pictures to the member first, so each line's note counts the
+// pictures the returned attachments really carry.
+func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomSpeaker, me pa.RoomSpeaker) (string, int64, []pa.Attachment, error) {
 	lines, err := d.o.Rooms.store.LinesBefore(ctx, g.Key, 0, d.o.Limits.HistoryLines)
 	if err != nil {
 		return "", 0, nil, err
@@ -671,6 +696,7 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 			break
 		}
 	}
+	pictures, delivered := d.memberPictures(g.Key, me.Key, lines)
 	names := map[pa.BotKey]string{}
 	var peers []string
 	for _, s := range speakers {
@@ -716,7 +742,7 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 				text = fmt.Sprintf("[Clawdline: this replies to %s: %q] %s", name, clipRunes(e.Quote.Text, d.o.Limits.PeerLineRunes), text)
 			}
 			if n := len(e.Attachments); n > 0 {
-				text = strings.TrimSpace(fmt.Sprintf("%s [Clawdline: the user attached %d picture(s) to this message; they are included with this turn.]", text, n))
+				text = strings.TrimSpace(text + " " + roomPictureNote(n, delivered[e.Seq]))
 			}
 			switch {
 			case e.Kind == pa.RoomPersonEntry:
@@ -738,7 +764,7 @@ func (d *RoomDriver) prompt(ctx context.Context, g pa.Group, speakers []pa.RoomS
 	} else {
 		out = append(out, "", fmt.Sprintf("It's your turn, %s. Reply to the room if you have something worth adding, or reply exactly %q if you don't.", me.Name, pa.RoomPass))
 	}
-	return strings.Join(out, "\n"), shown, lines, nil
+	return strings.Join(out, "\n"), shown, pictures, nil
 }
 
 func clipRunes(s string, n int) string {

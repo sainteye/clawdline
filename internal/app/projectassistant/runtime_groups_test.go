@@ -3,6 +3,7 @@ package projectassistant_test
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -126,6 +127,27 @@ type roomHarness struct {
 	members  []pa.Bot
 	ids      atomic.Int64
 	pictures projectassistantstore.Attachments
+	// pictureFault, when set, fails the driver's nth (from 1) copy of a
+	// room picture into a member's store.
+	pictureFault atomic.Pointer[func(n int) error]
+	pictureCopy  atomic.Int64
+}
+
+// faultyRoomPictures is the room driver's picture store with the harness's
+// injected copy failure in front of it.
+type faultyRoomPictures struct {
+	app.RoomPictures
+	h *roomHarness
+}
+
+func (f faultyRoomPictures) Put(key pa.BotKey, mediaType string, data []byte) (pa.Attachment, error) {
+	n := int(f.h.pictureCopy.Add(1))
+	if fault := f.h.pictureFault.Load(); fault != nil {
+		if err := (*fault)(n); err != nil {
+			return pa.Attachment{}, err
+		}
+	}
+	return f.RoomPictures.Put(key, mediaType, data)
 }
 
 var roomRuntimeLimits = app.RoomLimits{MemberWait: 2 * time.Second, HistoryLines: 24, PeerLineRunes: 2000}
@@ -156,7 +178,7 @@ func (h *roomHarness) start(t *testing.T) {
 		return pa.FeatureState{Enabled: true}, roomSource(k.MachineID), nil
 	}
 	h.pictures = projectassistantstore.Attachments{Dir: filepath.Join(filepath.Dir(h.path), "pictures")}
-	if h.driver, err = app.NewRoomDriver(app.RoomDriverOptions{Rooms: h.rooms, Bots: h.bots, Authorize: authorize, Limits: roomRuntimeLimits, ID: id, Pictures: h.pictures}); err != nil {
+	if h.driver, err = app.NewRoomDriver(app.RoomDriverOptions{Rooms: h.rooms, Bots: h.bots, Authorize: authorize, Limits: roomRuntimeLimits, ID: id, Pictures: faultyRoomPictures{h.pictures, h}}); err != nil {
 		t.Fatal(err)
 	}
 	h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, ProjectResolver: roomResolver{h.scope}, Provider: h.peer,
@@ -534,6 +556,66 @@ func TestRoomPromptCarriesTheGroupDescription(t *testing.T) {
 	}
 	if strings.Contains(prompt, "\nIt's your turn, Alice.\n") {
 		t.Fatalf("a line break in the description became its own prompt line:\n%s", prompt)
+	}
+}
+
+// A room picture that could not be copied to the member is not in its turn,
+// so the prompt must not say it is: it counts the pictures that arrived.
+func TestRoomPromptCountsOnlyThePicturesTheMemberReceived(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		fail      func(n int) bool
+		delivered int
+		want      string
+	}{
+		{"none copied", func(int) bool { return true }, 0, "attached 2 picture(s) to this message, but none could be included with this turn; you cannot see them."},
+		{"one of two copied", func(n int) bool { return n == 2 }, 1, "attached 2 picture(s) to this message; only 1 of them could be included with this turn, and you cannot see the other 1."},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			h := newRoomHarness(t, "Alice")
+			alice := h.members[0]
+			g := h.group(t, "g", alice)
+			h.peer.reply("a", "I cannot see them.")
+			var sent []pa.Attachment
+			for _, body := range []string{"first", "second"} {
+				picture, err := h.pictures.Put(g, "image/png", []byte("\x89PNG\r\n\x1a\n"+body))
+				if err != nil {
+					t.Fatal(err)
+				}
+				sent = append(sent, picture)
+			}
+			fault := func(n int) error {
+				if c.fail(n) {
+					return errors.New("injected copy failure")
+				}
+				return nil
+			}
+			h.pictureFault.Store(&fault)
+			if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-lost-pictures"), "look", sent, pa.BotKey{}, nil); err != nil {
+				t.Fatal(err)
+			}
+			awaitRoom(t, "Alice's room turn to finish", func() bool {
+				turns := h.roomTurns(t, alice)
+				return len(turns) == 1 && terminal(turns[0].State)
+			})
+			h.driver.Idle()
+			h.peer.mu.Lock()
+			images := len(h.peer.images["a"])
+			h.peer.mu.Unlock()
+			if images != c.delivered {
+				t.Fatalf("Alice's turn carried %d pictures, want %d", images, c.delivered)
+			}
+			got := h.peer.asked("a")
+			if len(got) != 1 {
+				t.Fatalf("Alice was asked %d times, want once: %q", len(got), got)
+			}
+			if strings.Contains(got[0], "they are included with this turn") {
+				t.Fatalf("%d of 2 pictures were delivered, but the prompt says they are included:\n%s", images, got[0])
+			}
+			if !strings.Contains(got[0], c.want) {
+				t.Fatalf("the prompt does not say which pictures are missing (want %q):\n%s", c.want, got[0])
+			}
+		})
 	}
 }
 
