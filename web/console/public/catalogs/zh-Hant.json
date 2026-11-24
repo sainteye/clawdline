@@ -12139,6 +12139,7 @@
   "projectAssistants.sendUnconfirmed": "送達狀態未確認",
   "projectAssistants.retryUnsentSend": "重試送出",
   "projectAssistants.retryFailedAt": "重試失敗（{time}）：{reason}",
+  "projectAssistants.sendInterrupted": "上一輪仍待查核，Bot 目前無法將這則訊息排入佇列。",
   "projectAssistants.retryReasonUnknown": "無法確認 Agent 有沒有收到。",
   "projectAssistants.retryReasonUnreachable": "連不上執行這個 Bot 的電腦。",
   "projectAssistants.retryReasonChanged": "這段對話或你的存取權限已經變更。",

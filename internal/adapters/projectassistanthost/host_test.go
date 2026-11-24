@@ -428,12 +428,12 @@ func TestHostLazySendDisablePreservesUnknownAndExistingHostWork(t *testing.T) {
 	}
 	unknownReceipt := false
 	for _, receipt := range x.Receipts {
-		if receipt.ResourceID == first.ResourceID && receipt.State == pa.EffectUnknown && receipt.Command.IdempotencyKey == "runtime-acknowledge-"+first.ResourceID {
+		if receipt.ResourceID == first.ResourceID && receipt.State == pa.EffectUnknown && receipt.Command.IdempotencyKey == "runtime-finish-"+first.ResourceID {
 			unknownReceipt = true
 		}
 	}
 	if !unknownReceipt {
-		t.Fatal("acknowledgement did not keep the effect unknown in its receipt")
+		t.Fatal("acknowledgement did not preserve the original unknown execution receipt")
 	}
 }
 

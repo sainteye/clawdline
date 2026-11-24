@@ -399,6 +399,20 @@ test("a retry that the daemon answers with execution_effect_unknown shows this a
   }
 })
 
+test("a restart admission refusal keeps the retry and explains that the Bot did not queue the message",async()=>{
+  for(const [code,language] of [["pa_outcome_unknown","en"],["pa_stale_version","zh-Hant"]]){
+    const w=words(language)
+    const refusal={contract_version:"project-assistants.v1",error:{code,field:"inspect_interrupted_turn",retry_after_seconds:0}}
+    const outcome=await retryOnce(async()=>{throw refusal},()=>null)
+    assert.equal(outcome.kind,"failed")
+    assert.equal(outcome.editable,false)
+    const html=render(UnsentActions,{accepted:false,failure:outcome.failure,canRetry:true,onRetry(){},w,language})
+    assert.match(html,new RegExp(w.sendInterrupted))
+    assert.match(html,new RegExp(w.retryUnsentSend))
+    assert.doesNotMatch(html,new RegExp(w.retryReasonUnknown))
+  }
+})
+
 test("a retry in flight shows a disabled sending button in place of the retry button",()=>{
   for(const language of ["en","zh-Hant"]){
     const w=words(language)

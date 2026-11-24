@@ -8,7 +8,7 @@ import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
-import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
+import { authorized, command, errorCode, failure, provablyNotSent, sendBlockedByInterruptedTurn } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages, type ChatProgress } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
@@ -957,7 +957,7 @@ ${currentDraft}`:submitted)
       }
       // Only a refusal that provably sent nothing releases the hold; anything
       // that may have crossed the transport stays unknown and is never resent.
-      const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
+      const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&!sendBlockedByInterruptedTurn(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
       const field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
       const handoffRefused=field?.startsWith("handoff_")
       if(valid()&&handoffRefused)handoff.conflict(code)
@@ -1046,8 +1046,10 @@ ${currentDraft}`:submitted)
       const q={...intent,...(pictures.length?{images:pictures}:{})}
       outcome=await retryOnce(()=>authorized(source,current,s=>source.send(q,s),new AbortController().signal),
         answer=>!sendAcknowledgement(answer,q)?null:admittedReceipt(answer.receipt)?answer.receipt:answer.receipt.state==="failed"?"rejected":null)
-      if(outcome.kind==="admitted")view.heldOutcomes.settle(draftKey,id,{...held,receipt:outcome.receipt})
-      else if(outcome.kind==="rejected")view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true,superseded:true})
+      if(outcome.kind==="admitted"){
+        view.heldOutcomes.settle(draftKey,id,{...held,receipt:outcome.receipt})
+        if(valid())observation.accept(outcome.receipt)
+      }else if(outcome.kind==="rejected")view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true,superseded:true})
       else if(outcome.editable)view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true})
     }finally{
       retryInFlight.current=false;view.heldOutcomes.endTransport(draftKey,id,null)
@@ -1844,7 +1846,7 @@ ${currentDraft}`:submitted)
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>
     </header>}
     {(reconnecting||error)&&<div className="pa-chat-error" role={reconnecting?"status":"alert"} data-reconnecting={reconnecting||undefined}>
-      <span>{reconnecting?w.chatReconnecting:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
+      <span>{reconnecting?w.chatReconnecting:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}

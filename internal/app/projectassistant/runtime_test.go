@@ -118,6 +118,9 @@ func (s *runtimeStore) Commit(_ context.Context, m Mutation) (pa.Receipt, error)
 	if m.Conversation != nil {
 		s.c = *m.Conversation
 	}
+	for _, id := range m.AcknowledgeUnknown {
+		s.turns[id] = s.turns[id].AcknowledgeUnknown()
+	}
 	if m.Turn != nil {
 		if _, ok := s.turns[m.Turn.ID]; !ok {
 			s.order = append(s.order, m.Turn.ID)

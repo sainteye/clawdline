@@ -1,10 +1,10 @@
 import type * as W from "@clawdline/contract"
 import { useEffect, useId, useRef, useState } from "react"
-import { errorCode } from "./client"
+import { errorCode, sendBlockedByInterruptedTurn } from "./client"
 import type { HeldOutcome } from "./view-state"
 import type { Words } from "./words"
 
-export type RetryFailure = { code: string, at: number }
+export type RetryFailure = { code: string, at: number, interrupted?: true }
 export type RetryOutcome =
   | { kind: "admitted", receipt: W.ProjectAssistantReceipt }
   | { kind: "rejected" }
@@ -25,6 +25,7 @@ export async function retryOnce(send: () => Promise<unknown>,
     return { kind: "failed", failure: { code: "pa_outcome_unknown", at: now() }, editable: false }
   } catch (error) {
     const code = errorCode(error)
+    if (sendBlockedByInterruptedTurn(error)) return { kind: "failed", failure: { code, at: now(), interrupted: true }, editable: false }
     return { kind: "failed", failure: { code, at: now() }, editable: !uncertain.has(code) }
   }
 }
@@ -42,6 +43,9 @@ export function retryFailureKind(code: string): Kind {
 
 export function retryFailureText(failure: RetryFailure, w: Words, language: string) {
   const time = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(failure.at)
+  if (failure.interrupted) {
+    return { title: w.retryFailedAt.replace("{time}", time).replace("{reason}", w.sendInterrupted), next: "" }
+  }
   const kind = retryFailureKind(failure.code)
   const reason = { again: w.retryReasonUnknown, later: w.retryReasonUnreachable, reload: w.retryReasonChanged, settings: w.retryReasonRefused, edit: w.retryReasonNotAccepted }[kind]
   const next = { again: w.retryNextAgain, later: w.retryNextLater, reload: w.retryNextReload, settings: w.retryNextSettings, edit: w.retryNextEdit }[kind]

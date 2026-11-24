@@ -189,6 +189,12 @@ export function errorCode(error: unknown): W.ProjectAssistantErrorCode | "unavai
   return value?.error?.code ?? "unavailable"
 }
 
+export function sendBlockedByInterruptedTurn(error: unknown): boolean {
+  const refusal = (error as Partial<W.ProjectAssistantErrorResponse> | null)?.error
+  return refusal?.field === "inspect_interrupted_turn" &&
+    (refusal.code === "pa_stale_version" || refusal.code === "pa_outcome_unknown")
+}
+
 /**
  * A write failure that provably never left this client: the request was
  * refused before any byte reached a transport. This is the generic transport

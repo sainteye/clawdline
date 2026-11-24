@@ -464,13 +464,11 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	// An unknown turn is never replayed. A queue admitted before it ended
-	// stays held behind it, and so does a new message. When only unknown
-	// turns remain, as in CodyNC, the person's new message acknowledges
-	// them: each becomes failed with an unknown effect, its receipt stays
-	// unknown, and the new turn runs. An owned process whose cleanup is
-	// unknown was already refused by acquire.
+	// An unknown turn is never replayed. A person can release a queue held
+	// by a restart by sending a new instruction in the same chat.
 	var unknown []pa.Turn
+	var recoverySource string
+	var steering bool
 	waiting := 0
 	for _, t := range pending {
 		if t.State == pa.TurnUnknown {
@@ -480,6 +478,10 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		if !a.working && (t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission) {
 			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
 		}
+		if source := pa.RestartSourceTurn(t); source != "" {
+			recoverySource = source
+		}
+		steering = steering || t.Steering || a.steering[t.ID]
 		waiting++
 	}
 	if s.LeadCall && (!bot.Lead || a.working || c.ActiveTurnID != "" || len(pending) > 0) {
@@ -493,12 +495,24 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "work_completion_unknown_barrier")
 		}
 	}
-	if s.RestartSource != "" && (!s.Notice || s.Command.IdempotencyKey != pa.RestartContinuationPrefix+s.RestartSource ||
-		len(unknown) != 1 || unknown[0].ID != s.RestartSource || !restartInterrupted(unknown[0])) {
-		return pa.Receipt{}, runtimeFailure(pa.ContextStale, "restart_source")
-	}
-	if s.RestartSource == "" && len(unknown) > 0 && waiting > 0 {
-		return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
+	var acknowledge []pa.Turn
+	if s.RestartSource != "" {
+		if !s.Notice || s.Command.IdempotencyKey != pa.RestartContinuationPrefix+s.RestartSource ||
+			len(unknown) != 1 || unknown[0].ID != s.RestartSource || !restartInterrupted(unknown[0]) {
+			return pa.Receipt{}, runtimeFailure(pa.ContextStale, "restart_source")
+		}
+	} else if len(unknown) > 0 {
+		recovering := len(unknown) == 1 && recoverySource == unknown[0].ID && unknown[0].Failure != nil &&
+			unknown[0].Failure.Field == RestartConfirmedField
+		if waiting > 0 && (steering || !canContinueRestartQueue(s, c, unknown) ||
+			!recovering && (recoverySource != "" || c.ActiveTurnID != "")) {
+			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
+		}
+		// A queued or running automatic continuation still owns recovery.
+		// An ordinary message can wait behind it in the existing queue.
+		if !recovering {
+			acknowledge = unknown
+		}
 	}
 	if s.Compact {
 		if err = r.admitCompaction(ctx, a, bot, c, pending, s); err != nil {
@@ -543,18 +557,12 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		b := pa.ExecutionBinding{Fence: currentFence(bot, c), Agent: bot.Agent, LoginProfile: bot.LoginProfile, MemoryRevision: memory.Revision, ForgottenThrough: memory.ForgottenThrough, InstructionRevision: bot.Instructions.Revision}
 		binding = &b
 	}
-	if s.RestartSource == "" {
-		for _, t := range unknown {
-			t.State = pa.TurnFailed
-			t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: "acknowledged"}
-			cmd := r.command(a.key, pa.SendOperation, "runtime-acknowledge-"+t.ID, t)
-			if _, err = r.mutate(ctx, bot, Mutation{Command: cmd, Turn: &t, Receipt: pa.Receipt{State: pa.EffectUnknown, ResourceID: t.ID}, Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}}); err != nil {
-				return pa.Receipt{}, err
-			}
-			if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
-				return pa.Receipt{}, err
-			}
-		}
+	var acknowledged []string
+	var events []pa.Event
+	for _, t := range acknowledge {
+		t = t.AcknowledgeUnknown()
+		acknowledged = append(acknowledged, t.ID)
+		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t})
 	}
 	if len(files) > 0 {
 		if e := s.InputCheck(ctx); e != nil {
@@ -610,7 +618,12 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	case pa.WorkCompletionTask(turn) != "":
 		message.Notice = &pa.NoticeRef{Key: pa.NoticeWorkReview, Cause: pa.WorkCompletionTask(turn)}
 	}
-	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, Messages: []pa.Message{message}, Permissions: decisions, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID}, Events: append([]pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}}, decisionEvents...)})
+	events = append(events, pa.Event{Fence: fence, Kind: pa.MessageCreated, Message: &message}, pa.Event{Fence: fence, Kind: pa.TurnUpdated, Turn: &turn})
+	receipt, err := r.commitHandoffAwareInput(ctx, bot, s, Mutation{
+		Command: s.Command, Conversation: &c, Binding: binding, Turn: &turn, AcknowledgeUnknown: acknowledged,
+		Messages: []pa.Message{message}, Permissions: decisions, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: turn.ID},
+		Events: append(events, decisionEvents...),
+	})
 	if err != nil {
 		return pa.Receipt{}, err
 	}

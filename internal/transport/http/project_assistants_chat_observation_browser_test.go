@@ -114,7 +114,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery", "interrupted-exchange", "interrupted-exchange-desktop", "event-backlog"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery", "interrupted-exchange", "interrupted-exchange-desktop", "restart-held-mobile", "event-backlog"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -150,8 +150,15 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 				}
 			}
 			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+			restartProvider := &paSoakPeer{}
+			if name == "restart-held-mobile" {
+				f.s.projectAssistants.provider = func() (app.Provider, error) { return restartProvider, nil }
+			}
 			f.enable(t)
 			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+			if name == "restart-held-mobile" {
+				seedQueuedBotStatus(t, f, pa.TurnUnknown)
+			}
 			if strings.HasPrefix(name, "interrupted-exchange") {
 				seedQueuedBotStatus(t, f, pa.TurnUnknown)
 				paServerOK(t, f.request(t, "POST", "/v1/settings/project-assistants", f.local, `{"enabled":false}`))
@@ -198,6 +205,9 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 			_ = os.WriteFile(filepath.Join(out, "browser.log"), output, 0600)
 			if err != nil {
 				t.Fatalf("chat observation: %v\n%s", err, output)
+			}
+			if name == "restart-held-mobile" && restartProvider.sends.Load() != 2 {
+				t.Fatalf("expected the original queued reply and one follow-up, got %d prompts", restartProvider.sends.Load())
 			}
 			t.Log(string(output))
 		})

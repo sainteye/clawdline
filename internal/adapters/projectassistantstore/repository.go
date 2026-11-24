@@ -523,6 +523,13 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		a.Bindings[b.Fence.BindingID] = b
 	}
+	for _, id := range m.AcknowledgeUnknown {
+		t, ok := a.Turns[id]
+		if !ok || t.State != pa.TurnUnknown || t.Fence.ConversationID != a.Conversation.ID || a.Conversation.ActiveTurnID == id {
+			return failure(pa.StaleVersion, "inspect_interrupted_turn")
+		}
+		a.Turns[id] = t.AcknowledgeUnknown()
+	}
 	if m.Turn != nil {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {

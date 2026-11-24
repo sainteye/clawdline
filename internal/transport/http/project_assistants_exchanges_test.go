@@ -200,6 +200,88 @@ func TestServerRestartContinuesOriginalQueueAcrossTwoBoots(t *testing.T) {
 	}
 }
 
+func TestServerSendUnblocksQueueAfterUnverifiedRestart(t *testing.T) {
+	ctx := t.Context()
+	f := newPAServerFixture(t, true)
+	provider := &paSoakPeer{}
+	f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	exchange := seedQueuedBotStatus(t, f, pa.TurnUnknown)
+	repo := featurestore.New(f.s.store.ProjectAssistantDatabase())
+	before, err := repo.Export(ctx, f.key)
+	if err != nil || len(before.Turns) != 2 {
+		t.Fatalf("seeded turns: %v, %v", before.Turns, err)
+	}
+	var original pa.Turn
+	for _, turn := range before.Turns {
+		if turn.State == pa.TurnUnknown {
+			original = turn
+		}
+	}
+	if original.ID == "" {
+		t.Fatal("missing interrupted turn")
+	}
+	bot := before.Bot
+	bot.Version++
+	receipt, err := repo.Commit(ctx, app.Mutation{
+		Command:         pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "restart-unknown", ContentHash: strings.Repeat("a", 64)},
+		ExpectedVersion: before.Bot.Version, Bot: &bot, Turn: &original,
+		Receipt: pa.Receipt{ID: "restart-unknown", ResourceID: original.ID, State: pa.EffectUnknown},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(f.s.Handler())
+	t.Cleanup(server.Close)
+	client := &paSoakHTTP{fixture: f, server: server}
+	client.reconnect()
+
+	path := "/v1/project-assistants/" + f.key.BotID + "/messages"
+	got := client.get(t)
+	input := contract.ProjectAssistantSendRequest{Command: f.command(pa.SendOperation, "continue"), Text: "continue",
+		Fence: paWireFence(pa.Fence{Key: f.key, Project: paDomainProjectScope(got.Bot.Project), ConversationID: got.Conversation.ID, BindingID: got.Conversation.BindingID, Generation: got.Conversation.Generation})}
+	db := f.s.store.ProjectAssistantDatabase()
+	if _, err := db.ExecContext(ctx, `CREATE TRIGGER fail_manual_continue BEFORE INSERT ON project_assistant_receipts
+		WHEN NEW.command_key='continue' BEGIN SELECT RAISE(ABORT, 'injected admission failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if status := client.request(t, "POST", path, input, nil); status != 500 {
+		t.Fatalf("injected failure returned HTTP %d", status)
+	}
+	old, oldErr := repo.Turn(ctx, f.key, original.ID)
+	queued, queuedErr := repo.Turn(ctx, f.key, exchange.ReplyTurnID)
+	if oldErr != nil || queuedErr != nil || old.State != pa.TurnUnknown || queued.State != pa.TurnQueued || provider.sends.Load() != 0 {
+		t.Fatalf("failed admission released the queue: %s, %s, %v, %v", old.State, queued.State, oldErr, queuedErr)
+	}
+	if _, err := db.ExecContext(ctx, "DROP TRIGGER fail_manual_continue"); err != nil {
+		t.Fatal(err)
+	}
+
+	q, admitted := client.send(t, "continue")
+	var replay contract.ProjectAssistantReceiptResponse
+	if status := client.request(t, "POST", path, q, &replay); status != 200 || replay.Receipt != admitted {
+		t.Fatalf("retry changed the admission: HTTP %d, %+v", status, replay)
+	}
+	after := paSoakAwait(t, f, admitted.ResourceID, pa.TurnSucceeded)
+	turns := make(map[string]pa.Turn, len(after.Turns))
+	for _, turn := range after.Turns {
+		turns[turn.ID] = turn
+	}
+	if len(turns) != 3 || turns[exchange.ReplyTurnID].State != pa.TurnSucceeded ||
+		turns[original.ID].State != pa.TurnFailed || turns[original.ID].Failure.Code != pa.ExecutionEffectUnknown ||
+		after.Conversation.ID != before.Conversation.ID {
+		t.Fatalf("queue or original history changed unexpectedly: %+v", turns)
+	}
+	if first, second := turns[exchange.ReplyTurnID].StartedAt, turns[admitted.ResourceID].StartedAt; first == nil || second == nil || first.After(*second) {
+		t.Fatalf("queued status did not run first: %v versus %v", first, second)
+	}
+	kept, err := repo.Receipt(ctx, receipt.Command)
+	if err != nil || kept == nil || *kept != receipt || provider.sends.Load() != 2 {
+		t.Fatalf("uncertain receipt or prompt count changed: %+v, %v, %d", kept, err, provider.sends.Load())
+	}
+}
+
 func TestServerRestartPreservesQueuedBotStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

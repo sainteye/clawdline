@@ -184,6 +184,10 @@ An unconfirmed Send now delivery retains its own uncertainty. A dispatched
 result can stay visible while its review waits for the originating conversation
 to recover. Pending review and restart status are rendered in the reader's
 language, with model instructions and raw diagnostics in details.
+A person can send another instruction in the same chat when restart recovery
+needs review. The source acknowledges the interrupted turn in the same
+transaction as the new message, keeps its original execution receipt and
+processes unstarted messages in their original order.
 
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant

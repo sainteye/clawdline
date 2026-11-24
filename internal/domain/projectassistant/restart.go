@@ -26,3 +26,9 @@ func QueuedChatRestartWork(turn Turn) bool {
 	return QueuedWorkCompletion(turn) || RestartSourceTurn(turn) != "" ||
 		(turn.Origin == UserOrigin || turn.Origin == "") && turn.Room == nil && turn.Network == nil && turn.DecisionExchangeID == "" && turn.RoutineRunID == ""
 }
+
+func (t Turn) AcknowledgeUnknown() Turn {
+	t.State = TurnFailed
+	t.Failure = &Failure{Code: ExecutionEffectUnknown, Field: "acknowledged"}
+	return t
+}

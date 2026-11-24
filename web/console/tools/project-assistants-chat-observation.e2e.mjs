@@ -22,7 +22,7 @@ async function testBrowser(){
   throw Error("No installed headless shell. This harness installs nothing.")
 }
 const files=new Map(),traffic=[],results=[]
-let decisionAttempts=0,finished=false
+let decisionAttempts=0,sendAttempts=0,finished=false
 let sent=false,started=false,failReads=scenario==="read-failure",holdNextSnapshot=false,releaseHeld,held=false
 for(const name of ["current"]){
   const contents=(await readFile(fixture,"utf8")).replaceAll('"../../src/',JSON.stringify(path.join(root,"src/")).slice(0,-1))
@@ -49,6 +49,7 @@ const server=createServer(async(req,res)=>{
         raw=JSON.stringify(envelope)
       }
       const record={word:envelope.type,mode:envelope.mode,acceptedAt:performance.now()};traffic.push(record)
+      if(scenario==="restart-held-mobile"&&envelope.type==="project-assistants.send")record.request=envelope.request
       if(sent&&failReads&&envelope.type==="project-assistants.view"){
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline",field:"fixture_read",retry_after_seconds:0}}}));return
       }
@@ -67,10 +68,16 @@ const server=createServer(async(req,res)=>{
           return
         }
       }
+      if(scenario==="restart-held-mobile"&&envelope.type==="project-assistants.send"&&++sendAttempts===1){
+        record.status=502
+        res.writeHead(502,{"Content-Type":"application/json"})
+        res.end("{}")
+        return
+      }
       const answer=await fetch(cloud,{method:"POST",body:raw});let payload=await answer.text()
       // Capture the first post-send read against the admission fence, then
       // release the provider so later reads see the running fence.
-      if(sent&&!started&&envelope.type==="project-assistants.view"&&["events","snapshot"].includes(envelope.mode)){
+      if(scenario!=="restart-held-mobile"&&sent&&!started&&envelope.type==="project-assistants.view"&&["events","snapshot"].includes(envelope.mode)){
         started=true
         const transition=await fetch(cloud+"/start",{method:"POST"})
         assert.equal(transition.status,204,"the local provider must reach the new running binding")
@@ -122,11 +129,30 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange","restart-held-mobile"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
-  if(scenario.startsWith("interrupted-exchange")){
+  if(scenario==="restart-held-mobile"){
+    await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
+    await until(sessionId,"document.body.innerText.includes('上一輪已暫停')")
+    await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
+    const followup="Synthetic restart follow-up"
+    await send("Input.insertText",{text:followup},sessionId)
+    await until(sessionId,"!!document.querySelector('.pa-composer .pa-send:not(:disabled)')")
+    await evaluate(sessionId,"document.querySelector('.pa-composer .pa-send').click()")
+    const retry=".pa-unsent button"
+    await until(sessionId,`[...document.querySelectorAll('${retry}')].some(button=>button.innerText==='重試送出'&&!button.disabled)`)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1)
+    await capture(sessionId,"restart-held-before-retry")
+    await evaluate(sessionId,`[...document.querySelectorAll('${retry}')].find(button=>button.innerText==='重試送出').click()`)
+    await until(sessionId,`document.body.innerText.includes(${JSON.stringify(followup)})&&document.body.innerText.includes('Answer to '+${JSON.stringify(followup)})&&!document.querySelector('.pa-unsent')`)
+    const sends=traffic.filter(p=>p.word==="project-assistants.send")
+    assert.deepEqual(sends.map(p=>p.status),[502,200])
+    assert.ok(sends[0].request&&sends[0].request===sends[1].request,"manual retry must keep the original request identity")
+    await capture(sessionId,"restart-held-after-retry")
+    results.push({scenario,retryAccepted:true,sends:sends.length})
+  }else if(scenario.startsWith("interrupted-exchange")){
     await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
     await until(sessionId,"!!document.querySelector('.pa-exchange-entry[data-failed]')")
     const chat=await capture(sessionId,"interrupted-exchange")

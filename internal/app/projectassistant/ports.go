@@ -113,12 +113,15 @@ type Mutation struct {
 	Bot               *pa.Bot
 	Conversation      *pa.Conversation
 	Turn              *pa.Turn
-	Binding           *pa.ExecutionBinding
-	Messages          []pa.Message
-	Permissions       []pa.PermissionOffer
-	WorkLinks         []pa.WorkLink
-	Memory            *pa.MemoryRevision
-	Events            []pa.Event
+	// AcknowledgeUnknown releases interrupted turns in the same commit as
+	// the new message. Their original receipts still describe the effects.
+	AcknowledgeUnknown []string
+	Binding            *pa.ExecutionBinding
+	Messages           []pa.Message
+	Permissions        []pa.PermissionOffer
+	WorkLinks          []pa.WorkLink
+	Memory             *pa.MemoryRevision
+	Events             []pa.Event
 }
 type Repository interface {
 	Bot(context.Context, pa.BotKey) (pa.Bot, error)

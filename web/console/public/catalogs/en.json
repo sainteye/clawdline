@@ -12139,6 +12139,7 @@
   "projectAssistants.sendUnconfirmed": "Delivery unconfirmed",
   "projectAssistants.retryUnsentSend": "Retry sending",
   "projectAssistants.retryFailedAt": "Retry failed ({time}): {reason}",
+  "projectAssistants.sendInterrupted": "The Bot could not queue this message while the previous turn still needs review.",
   "projectAssistants.retryReasonUnknown": "Clawdline could not confirm whether the agent received it.",
   "projectAssistants.retryReasonUnreachable": "The computer running this Bot could not be reached.",
   "projectAssistants.retryReasonChanged": "This conversation or your access changed.",

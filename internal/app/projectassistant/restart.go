@@ -19,6 +19,20 @@ func restartOrigin(t pa.Turn) bool {
 		t.Room == nil && t.Network == nil && t.DecisionExchangeID == "" && t.RoutineRunID == ""
 }
 
+func canContinueRestartQueue(s Submission, c pa.Conversation, unknown []pa.Turn) bool {
+	if s.Notice || s.Compact || s.Decision != nil || s.Room != nil || s.Network != nil || s.AuthorityCheck == nil || s.Message.Handoff != nil {
+		return false
+	}
+	for _, t := range unknown {
+		if !restartInterrupted(t) || t.RoutineRunID != "" || t.Room != nil || t.Network != nil ||
+			pa.IsPeerRequest(t.Origin) || !sameSessionOwner(t.Fence, s.Message.Fence) ||
+			c.SessionResetGeneration > 0 && t.Fence.Generation <= c.SessionResetGeneration {
+			return false
+		}
+	}
+	return true
+}
+
 func restartNativeMode(agent pa.Agent) string {
 	switch agent {
 	case pa.ClaudeCode, pa.Gemini:
