@@ -27,6 +27,7 @@ var areas = []area{
 	{"antigravity", []string{"antigravity"}, antigravityBounds},
 	{"artifacts", []string{"artifacts", "icons", "screens", "voice"}, artifactsBounds},
 	{"board", []string{"board", "decisions", "epic", "planreview", "proposals", "run", "usage"}, boardBounds},
+	{"botrequest", []string{"botrequest"}, botRequestBounds},
 	{"broker", []string{"coordinator", "dispatch", "handoff", "leases", "orchestrator", "waits"}, brokerBounds},
 	{"browser", []string{"browser"}, browserBounds},
 	{"cache", []string{"cache"}, cacheBounds},

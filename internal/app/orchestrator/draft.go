@@ -67,6 +67,10 @@ type draft struct {
 	Model          string           `json:"model"`
 	WorkID         json.RawMessage  `json:"work_id"`
 	AlsoWorkIDs    json.RawMessage  `json:"also_work_ids"`
+	// BotRequestID is read only to be refused: the Bot dispatch door alone
+	// sets Record.BotRequestID, from the card it resolved
+	// (docs/bot-request-cards.md §8.1). A task file cannot attach itself.
+	BotRequestID json.RawMessage `json:"bot_request_id"`
 
 	// Graph is a node's place in a task graph (graphs.go, W6).
 	//
@@ -240,6 +244,9 @@ func (b *Broker) readDraftAs(id string, scheduled, detached bool) (Record, error
 // Every other field meets the same checks a caller's brief meets, so a template
 // asking for something this broker does not do is refused by name.
 func (b *Broker) admit(id string, d draft, scheduled, detached bool) (Record, error) {
+	if len(d.BotRequestID) > 0 && string(d.BotRequestID) != "null" {
+		return Record{}, refuse(http.StatusUnprocessableEntity, "bad_task", "bot_request_id is set by the Bot dispatch door only; dispatch without it")
+	}
 	return b.admitOwned(id, d, scheduled, detached, false)
 }
 
