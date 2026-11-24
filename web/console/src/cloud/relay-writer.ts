@@ -311,6 +311,7 @@ export type WriteRoute =
   | { op: "usage-work-samples"; word: Carried<"usage.work-samples"> }
   | { op: "capacity"; word: Carried<"capacity"> }
   | { op: "provider-quotas"; word: Carried<"provider-quotas"> }
+  | { op: "provider-quotas-refresh"; word: Carried<"provider-quotas-refresh"> }
   | { op: "chrome-tab-status"; word: Carried<"chrome-tab-status"> }
   | { op: "chrome-tab-activity"; word: Carried<"chrome-tab-activity"> }
   | { op: "chrome-tab-screenshot"; word: Carried<"chrome-tab-screenshot"> }
@@ -532,6 +533,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "usage",
   "capacity",
   "provider-quotas",
+  "provider-quotas-refresh",
   "chrome-tab-status",
   "chrome-tab-screenshot",
   "chrome-tab-activity",
@@ -618,7 +620,10 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     // The capacity block on Settings: the register's rows and the dead
     // letters, machine-wide, on the machine's one reply channel.
     if (head === "doctor" && segments.length === 1) return { op: "doctor", word: "doctor" }
-    if (head === "provider-quotas" && segments.length === 1) return { op: "provider-quotas", word: "provider-quotas" }
+    if (head === "provider-quotas") {
+      if (segments.length === 1) return { op: "provider-quotas", word: "provider-quotas" }
+      if (segments.length === 2 && a === "refresh") return { op: "provider-quotas-refresh", word: "provider-quotas-refresh" }
+    }
     // The Session's Chrome tab panel (session/BrowserPanel.tsx).
     if (head === "browser" && a === "status" && segments.length === 2) return { op: "chrome-tab-status", word: "chrome-tab-status" }
     if (head === "browser" && a === "screenshot" && segments.length === 2) return { op: "chrome-tab-screenshot", word: "chrome-tab-screenshot" }
@@ -1824,6 +1829,7 @@ export class RelayWriter {
       }
       case "doctor":
       case "provider-quotas":
+      case "provider-quotas-refresh":
       case "capacity":
       case "default-models":
       case "voice-settings":

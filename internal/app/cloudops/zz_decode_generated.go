@@ -206,6 +206,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-worktree-remove":                  genDecodeProjectWorktreeRemove,
 	"projects":                                 genDecodeProjects,
 	"provider-quotas":                          genDecodeProviderQuotas,
+	"provider-quotas-refresh":                  genDecodeProviderQuotasRefresh,
 	"push-key":                                 genDecodePushKey,
 	"push-test":                                genDecodePushTest,
 	"push-unsubscribe":                         genDecodePushUnsubscribe,
@@ -5648,6 +5649,22 @@ func genDecodeProviderQuotas(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	path := "/v1/provider-quotas"
+	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeProviderQuotasRefresh is the `provider-quotas-refresh` row's decode.
+func genDecodeProviderQuotasRefresh(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/provider-quotas/refresh"
 	req := LocalRequest{Method: "GET", Path: path}
 	return p, req, true
 }

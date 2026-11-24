@@ -6,8 +6,9 @@ import { usePoll } from "../useFleet.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
 import { onMachineChanged } from "../cloud/machine-switch.js"
 import * as L from "../legacy/bridge.js"
-import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance } from "./model.js"
+import { quotaCountdown, quotaStale, visibleQuotaRows, compactWindow, quotaCreditBalance, quotaRefreshResult } from "./model.js"
 import { quotaVisible, subscribeQuotaVisible } from "./visibility.js"
+import { toast } from "../overlays/toast.js"
 import { requestStatusRefresh } from "../status-refresh.js"
 import { lastQuotaReading, rememberQuotaReading } from "./last-reading.js"
 import "./quota.css"
@@ -81,17 +82,56 @@ export function QuotaBar({ machineName, offline = false, mobileListShown = false
   if (!shown) return null
   return <footer ref={footer} className="provider-quota-bar" inert={inert}>
     {accessory}
-    <QuotaReading key={JSON.stringify([quotaScope, revision])} scope={quotaScope ?? ""} machineName={machineName} offline={offline} mobile={mobile} />
+    <QuotaReading key={JSON.stringify([quotaScope, revision])} scope={quotaScope ?? ""} machineName={machineName} offline={offline} mobile={mobile} apiLevel={version.apiLevel} />
   </footer>
 }
 
-function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; machineName?: string; offline: boolean; mobile: boolean }) {
+type ManualCheck = {
+  before: ProviderQuotaSnapshot | null
+  supported: boolean
+  started: boolean
+}
+
+function QuotaReading({ scope, machineName, offline, mobile, apiLevel }: { scope: string; machineName?: string; offline: boolean; mobile: boolean; apiLevel?: number }) {
   const offlineRef = useRef(offline); offlineRef.current = offline
+  const dialog = useRef<HTMLDialogElement>(null)
+  const opener = useRef<HTMLButtonElement | null>(null)
+  const [expanded, setExpanded] = useState(false)
+  const [feedback, setFeedback] = useState("")
+  const [refreshing, setRefreshing] = useState(false)
+  const manual = useRef<ManualCheck | null>(null)
+  useEffect(() => () => { manual.current = null }, [])
   const read = useMemo(() => async () => {
-    if (offlineRef.current) throw new Error("offline")
-    return client.providerQuotas()
+    const check = manual.current
+    const explicit = check !== null && !check.started
+    if (check) check.started = true
+    const finish = (message: string, bad = false) => {
+      if (!check || manual.current !== check) return
+      manual.current = null
+      setFeedback(message)
+      setRefreshing(false)
+      if (!dialog.current?.open) toast(message, bad)
+    }
+    try {
+      if (offlineRef.current) throw new Error("offline")
+      const snapshot = await client.providerQuotas(explicit && check.supported)
+      if (check && !snapshot.updating) {
+        const result = quotaRefreshResult(check.before, snapshot)
+        if (!check.supported) finish(nextWord("quotaRefreshOlder"))
+        else if (result === "updated") finish(nextWord("quotaRefreshUpdated"))
+        else if (result === "partial") finish(nextWord("quotaRefreshPartial"), true)
+        else if (result === "failed") finish(nextWord("quotaRefreshFailed"), true)
+        else finish(nextWord("quotaRefreshUnchanged"))
+      } else if (check && manual.current === check && !check.before) {
+        check.before = snapshot
+      }
+      return snapshot
+    } catch (error) {
+      finish(nextWord(offlineRef.current ? "quotaOfflineNoReading" : "quotaReadUnavailable"), true)
+      throw error
+    }
   }, [])
-  const polling = usePoll<ProviderQuotaSnapshot>(read, 30_000)
+  const polling = usePoll<ProviderQuotaSnapshot>(read, refreshing ? 2_000 : 30_000)
   // A remount starts its poller empty; until it reads, the footer shows the
   // last reading this browser kept for the machine, marked outdated.
   if (polling.data) rememberQuotaReading(scope, polling.data)
@@ -101,17 +141,21 @@ function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; 
   const more = rows.length - shown.length
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000))
   useEffect(() => { const timer = window.setInterval(() => setNow(Math.floor(Date.now() / 1000)), 60_000); return () => clearInterval(timer) }, [])
-  const dialog = useRef<HTMLDialogElement>(null)
-  const opener = useRef<HTMLButtonElement | null>(null)
-  const [expanded, setExpanded] = useState(false)
   useEffect(() => {
     if (expanded && dialog.current && !dialog.current.open) dialog.current.showModal()
     if (!expanded && dialog.current?.open) dialog.current.close()
   }, [expanded])
   const refresh = () => {
-    requestStatusRefresh()
-    // A slow quota read must not block entry recovery or start another read.
-    if (!polling.pending && !offline) polling.poke()
+    if (manual.current) return
+    if (offline) {
+      toast(nextWord("quotaOfflineNoReading"), true)
+      return
+    }
+    manual.current = { before: polling.data ?? saved, supported: apiLevel === undefined || apiLevel >= 115, started: false }
+    setFeedback("")
+    setRefreshing(true)
+    setNow(Math.floor(Date.now() / 1000))
+    polling.poke()
   }
   const stale = (row: ProviderQuotaRow) => offline || !!polling.error || !!saved || quotaStale(row, now)
   const open = (button: HTMLButtonElement) => { opener.current = button; setExpanded(true) }
@@ -140,7 +184,10 @@ function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; 
         aria-label={nextWord("quotaMore", { count: more })} onClick={(e) => open(e.currentTarget)}>+{more}</button>}
     </div>
     <button className="quota-refresh" type="button" title={nextWord("quotaRefresh")} aria-label={nextWord("quotaRefresh")}
-      onClick={refresh}>↻</button>
+      aria-busy={refreshing} onClick={() => {
+        requestStatusRefresh()
+        refresh()
+      }}><span aria-hidden="true">↻</span></button>
     <dialog ref={dialog} id="provider-quota-detail" className="quota-dialog" aria-labelledby="quota-dialog-title"
       onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation() }}
       onCancel={() => setExpanded(false)} onClose={() => { setExpanded(false); opener.current?.focus() }}
@@ -150,8 +197,15 @@ function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; 
         const box = event.currentTarget.getBoundingClientRect()
         if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) setExpanded(false)
       }}>
-      <div className="quota-dialog-heading"><h2 id="quota-dialog-title">{nextWord("quotaTitle")}</h2>
-        <button type="button" onClick={() => setExpanded(false)} aria-label={nextWord("quotaClose")}>×</button></div>
+      <div className="quota-dialog-heading">
+        <h2 id="quota-dialog-title">{nextWord("quotaTitle")}</h2>
+        <div className="quota-dialog-actions">
+          <button type="button" className="chip quota-refresh-now" aria-disabled={refreshing || offline}
+            aria-busy={refreshing} onClick={() => { if (!offline) refresh() }}>{nextWord(refreshing ? "quotaRefreshing" : "quotaRefreshNow")}</button>
+          <button type="button" className="quota-dialog-close" onClick={() => setExpanded(false)} aria-label={nextWord("quotaClose")} autoFocus>×</button>
+        </div>
+        <p className="quota-caption quota-refresh-feedback" role="status">{feedback}</p>
+      </div>
       <p className="quota-caption">{machineName || nextWord("quotaThisMachine")} · {nextWord("quotaAccountScope")}</p>
       {rows.map((row) => <section key={row.id} className="quota-detail-row">
         <h3><Icon id={row.id} />{row.label}{stale(row) && <span className="quota-stale">{nextWord("quotaStale")}</span>}</h3>
@@ -163,7 +217,6 @@ function QuotaReading({ scope, machineName, offline, mobile }: { scope: string; 
           {row.problem === "reauth_required" && <span> {nextWord("quotaRunCLI", { provider: row.label })}</span>}</p>}
       </section>)}
       <p className="quota-caption">{nextWord("quotaRefreshHint")}</p>
-      <button type="button" className="chip" disabled={polling.pending || offline} onClick={refresh}>{nextWord("quotaRefresh")}</button>
     </dialog>
   </>
 }

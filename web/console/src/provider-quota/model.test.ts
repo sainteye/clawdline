@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 // @ts-expect-error -- Node tests load the TypeScript source.
-import { compactQuotaRows, compactWindow, quotaCountdown, quotaCreditBalance, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
+import { compactQuotaRows, compactWindow, quotaCountdown, quotaCreditBalance, quotaRefreshResult, quotaStale, QUOTA_VISIBLE_KEY, readQuotaVisible, saveQuotaVisible, visibleQuotaRows } from "./model.ts"
 import type { ProviderQuotaRow } from "@clawdline/contract"
 const row = (id: ProviderQuotaRow["id"], percent: number): ProviderQuotaRow => ({ id, label: id, windows: [{ name: "7d", used_percent: percent }], stale: false, source: "provider_api" })
 test("providers with no number stay hidden while a real zero stays visible", () => {
@@ -120,4 +120,21 @@ test("a credits balance is shown only while credits are in use", () => {
   assert.equal(quotaCreditBalance({ ...spent, credits_in_use: false }, "en-US"), null)
   assert.equal(quotaCreditBalance({ ...spent, credit_balance: undefined }, "en-US"), null)
   assert.equal(quotaCreditBalance({ ...spent, credit_balance: Number.NaN }, "en-US"), null)
+})
+
+
+test("manual refresh feedback uses observation times, including when the percentage stays the same", () => {
+  const claude = { ...row("claude", 81), observed_at: 100 }
+  const codex = { ...row("codex", 73), observed_at: 100 }
+  const snapshot = (providers: ProviderQuotaRow[]) => ({ providers, at: 200, updating: false })
+  const before = snapshot([claude, codex])
+  const newer = { ...claude, observed_at: 200 }
+  const failed = { ...claude, stale: true, problem: "unavailable" }
+  assert.equal(quotaRefreshResult(before, snapshot([claude, codex])), "unchanged")
+  assert.equal(quotaRefreshResult(before, snapshot([newer, codex])), "updated")
+  assert.equal(quotaRefreshResult(before, snapshot([failed, codex])), "failed")
+  assert.equal(quotaRefreshResult(before, snapshot([failed, { ...codex, observed_at: 200 }])), "partial")
+  assert.equal(quotaRefreshResult(before, snapshot([claude, codex, { ...row("grok", 0), windows: [], problem: "not_signed_in" }])), "unchanged")
+  assert.equal(quotaRefreshResult(null, before), "unchanged")
+  assert.equal(quotaRefreshResult(null, snapshot([{ ...failed, windows: [] }])), "failed")
 })

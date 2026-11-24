@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14302,
+  "englishKeys": 14309,
   "counts": {
-    "negation": 3634,
+    "negation": 3636,
     "state": 2424,
     "permission": 860,
     "deletion": 336,
     "uncertainty": 572
   },
-  "unionCount": 6080,
+  "unionCount": 6082,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2750,7 +2750,9 @@
       "next.quotaNoReading",
       "next.quotaNotSignedIn",
       "next.quotaReadUnavailable",
-      "next.quotaRefreshHint",
+      "next.quotaRefreshFailed",
+      "next.quotaRefreshPartial",
+      "next.quotaRefreshUnchanged",
       "next.quotaRunCLI",
       "next.quotaSaveFailed",
       "next.quotaUnavailable",
@@ -12292,7 +12294,9 @@
     "next.quotaOfflineNoReading",
     "next.quotaReadUnavailable",
     "next.quotaReauth",
-    "next.quotaRefreshHint",
+    "next.quotaRefreshFailed",
+    "next.quotaRefreshPartial",
+    "next.quotaRefreshUnchanged",
     "next.quotaRunCLI",
     "next.quotaSaveFailed",
     "next.quotaSettingHint",

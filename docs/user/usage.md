@@ -76,9 +76,10 @@ tightest providers, with remaining providers available through **+N**.
 mobile Session list** switches, both on by default. Each choice is saved independently in this
 browser and survives reloads. Existing saved visibility carries over until you change a switch. It does not change the dispatch quota check. Cloud shows
 the selected machine's reading rather than adding the same account's quota across machines.
-An outdated or offline reading is marked as such. Refresh never sends a chat message. Gemini and
-Grok checks have a minimum 15-minute interval; expired credentials are refreshed by running the
-corresponding CLI on that machine. [Sources and refresh behavior](../provider-quotas.md).
+An outdated or offline reading is marked as such. **Refresh now** in the detail dialog and
+the footer's refresh button report when checks finish and whether newer readings arrived.
+Claude Code, Gemini and Grok checks have a minimum 15-minute interval. Codex updates when its
+CLI writes a new quota record. Refresh never sends a chat message. [Sources and refresh behavior](../provider-quotas.md).
 
 ## How much each assistant has left
 

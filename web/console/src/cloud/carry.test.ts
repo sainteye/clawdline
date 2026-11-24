@@ -305,6 +305,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.ok("usage.work-samples" in CARRIED)
   assert.ok("capacity" in CARRIED)
   assert.ok("provider-quotas" in CARRIED)
+  assert.equal(CARRIED["provider-quotas-refresh"], "GET /v1/provider-quotas/refresh")
   assert.ok("default-models" in CARRIED)
   assert.ok("default-models-update" in CARRIED)
   assert.ok("notification-rules" in CARRIED)
@@ -451,7 +452,7 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.threads"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 326)
+  assert.equal(Object.keys(CARRIED).length, 327)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

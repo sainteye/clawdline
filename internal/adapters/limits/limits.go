@@ -501,11 +501,11 @@ type quota struct {
 	freshFor int64
 	// reason and note are why there is no reading: which of the four kinds of
 	// nothing, and the clause naming the file it was looked for in.
-	reason Reason
-	note   string
-	// fromClaudeCode is the windows having come from Claude Code's own usage
-	// answer because the status line had no fresh one.
+	reason         Reason
+	note           string
 	fromClaudeCode bool
+	updating       bool
+	checkProblem   string
 	// creditsInUse and creditBalance are Quota's CreditsInUse and
 	// CreditBalance.
 	creditsInUse  bool
@@ -727,6 +727,7 @@ type askedClaude struct {
 	windows []Window
 	at      *int64
 	outcome claudeusage.Outcome
+	checked time.Time
 	next    time.Time
 	busy    bool
 	// answers counts finished asks, so a reading begun before one finished
@@ -773,6 +774,9 @@ type Quota struct {
 	// FromClaudeCode is the windows having come from Claude Code's own usage
 	// answer rather than the status line's record.
 	FromClaudeCode bool
+	// Updating and CheckProblem describe the independent Claude usage check.
+	Updating     bool
+	CheckProblem string
 	// CreditsInUse is a live Codex window being spent while the account
 	// still has credits: Codex keeps working and charges each turn to the
 	// credits balance. Availability stays Exhausted, because the plan is.
@@ -791,13 +795,11 @@ func NewReader(home string, settings func() Settings) *Reader {
 	return &Reader{home: home, settings: settings, cache: map[string]cached{}}
 }
 
-// WithClaudeCode lets the Claude reading ask Claude Code itself when the
-// status line has written no fresh window: no file, no window, every window
-// reset, or too old. Every reader of Claude's quota — dispatch, Session info,
-// the Status Line corner, the assistants route and the quota footer — reads
-// through Quota, so they all see that one answer. An ask runs in the
-// background, one at a time, at most once every claudeusage.RefreshSecondsLimit;
-// a reading never waits for it.
+// WithClaudeCode lets the Claude reading ask Claude Code itself on manual
+// refresh or when the status line has written no fresh window. Dispatch,
+// Session info, the Status Line corner, the assistants route and the quota
+// footer all share that answer. Checks run in the background, one at a time,
+// at most once every claudeusage.RefreshSecondsLimit.
 func (r *Reader) WithClaudeCode(ask func(context.Context) ([]claudeusage.Window, claudeusage.Outcome)) *Reader {
 	r.ask = ask
 	return r
@@ -830,18 +832,24 @@ var Assistants = []string{"claude", "codex"}
 // line's windows (Machine) are this reading's windows, so a session's `/info`
 // and the assistants route can never show one account two ways.
 func (r *Reader) Quota(assistant string, now time.Time) Quota {
-	return r.quota(assistant, now, true)
+	return r.quota(assistant, now, true, false)
+}
+
+// Refresh rereads local records immediately and, for Claude, asks the CLI
+// even when the status line is fresh. The shared cooldown still applies.
+func (r *Reader) Refresh(assistant string, now time.Time) Quota {
+	return r.quota(assistant, now, true, true)
 }
 
 // Observe is Quota without starting an ask of Claude Code: Doctor's
 // inspection reads what is known and changes nothing.
 func (r *Reader) Observe(assistant string, now time.Time) Quota {
-	return r.quota(assistant, now, false)
+	return r.quota(assistant, now, false, false)
 }
 
-func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
+func (r *Reader) quota(assistant string, now time.Time, mayAsk, refresh bool) Quota {
 	r.mu.Lock()
-	if hit, ok := r.cache[assistant]; ok && hit.until.After(now) {
+	if hit, ok := r.cache[assistant]; ok && hit.until.After(now) && !refresh {
 		hit.used = now
 		r.cache[assistant] = hit
 		r.mu.Unlock()
@@ -858,7 +866,7 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 	var home string
 	switch assistant {
 	case "claude":
-		q = r.claude(s, now, mayAsk)
+		q = r.claude(s, now, mayAsk, refresh)
 		home = filepath.Join(r.home, ".claude")
 	case "codex":
 		q = r.codex(s, now)
@@ -881,6 +889,8 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 		Reason:         q.reason,
 		Detail:         q.detail,
 		FromClaudeCode: q.fromClaudeCode,
+		Updating:       q.updating,
+		CheckProblem:   q.checkProblem,
 		CreditsInUse:   q.creditsInUse,
 		CreditBalance:  q.creditBalance,
 	}
@@ -894,7 +904,7 @@ func (r *Reader) quota(assistant string, now time.Time, mayAsk bool) Quota {
 	}
 
 	r.mu.Lock()
-	if r.asked.answers == answers {
+	if current := r.cache[assistant]; mayAsk && r.asked.answers == answers && !current.used.After(now) {
 		r.hold(assistant, cached{until: now.Add(cacheFor), used: now, quota: out})
 	}
 	r.mu.Unlock()
@@ -959,7 +969,7 @@ func (r *Reader) codexHome(s Settings) string {
 
 // claude is `AssistantQuota.claude(cacheDirectory:now:)`, saying which kind of
 // nothing it found when it found none.
-func (r *Reader) claude(s Settings, now time.Time, mayAsk bool) quota {
+func (r *Reader) claude(s Settings, now time.Time, mayAsk, refresh bool) quota {
 	path := filepath.Join(r.statusDir(s), "rate-limits.json")
 	where := r.tilde(path)
 	var limits Limits
@@ -973,9 +983,10 @@ func (r *Reader) claude(s Settings, now time.Time, mayAsk bool) quota {
 	default:
 		limits, f = claudeRecord(data, now, where)
 	}
-	fromClaudeCode := false
-	if r.ask != nil && !liveRecord(limits, now) {
-		limits, f, fromClaudeCode = r.claudeCode(limits, f, now, mayAsk)
+	var fromClaudeCode, updating bool
+	var checkProblem string
+	if r.ask != nil {
+		limits, f, fromClaudeCode, updating, checkProblem = r.claudeCode(limits, f, now, mayAsk && (refresh || !liveRecord(limits, now)))
 	}
 	q := quota{
 		availability: availabilityOf(limits.Windows, now, s.LowThreshold),
@@ -984,11 +995,13 @@ func (r *Reader) claude(s Settings, now time.Time, mayAsk bool) quota {
 		windows:      limits.Windows,
 		reason:       f.reason,
 		note:         f.note,
+		updating:     updating,
+		checkProblem: checkProblem,
 	}
 	q = finished(q, false, now)
 	if fromClaudeCode && len(q.windows) > 0 {
 		q.fromClaudeCode = true
-		q.detail += "; asked Claude Code, as the status line wrote no fresh window"
+		q.detail += "; asked Claude Code"
 	}
 	return q
 }
@@ -1003,11 +1016,10 @@ func liveRecord(record Limits, now time.Time) bool {
 	return record.At == nil || epoch(now)-float64(*record.At) <= float64(freshFor(record.Windows))
 }
 
-// claudeCode is the Claude reading when the status line has none fresh: the
-// last answer Claude Code gave, when it is newer than the record, with an ask
-// started in the background when mayAsk allows and the floor has passed.
-// Otherwise the record stands, and its sentence says what the ask found.
-func (r *Reader) claudeCode(record Limits, f found, now time.Time, mayAsk bool) (Limits, found, bool) {
+// claudeCode picks the newer observation and returns the check state from
+// the same locked snapshot, so a completed check cannot return old windows
+// with Updating already cleared.
+func (r *Reader) claudeCode(record Limits, f found, now time.Time, mayAsk bool) (Limits, found, bool, bool, string) {
 	r.mu.Lock()
 	a := &r.asked
 	if mayAsk && !a.busy && !now.Before(a.next) {
@@ -1021,10 +1033,19 @@ func (r *Reader) claudeCode(record Limits, f found, now time.Time, mayAsk bool) 
 			windows = append(windows, w)
 		}
 	}
-	at, outcome := a.at, a.outcome
+	at, outcome, checking := a.at, a.outcome, a.busy
+	var problem string
+	if !checking && now.Before(a.next) && (record.At == nil || a.checked.Unix() >= *record.At) {
+		switch outcome {
+		case claudeusage.NoPlan, claudeusage.NoWindow:
+			problem = "no_reading"
+		case claudeusage.NoExecutable, claudeusage.Failed:
+			problem = "unavailable"
+		}
+	}
 	r.mu.Unlock()
-	if len(windows) > 0 && at != nil && (len(record.Windows) == 0 || record.At == nil || *at > *record.At) {
-		return Limits{At: at, Windows: windows}, found{}, true
+	if len(windows) > 0 && at != nil && (len(record.Windows) == 0 || record.At == nil || *at >= *record.At) {
+		return Limits{At: at, Windows: windows}, found{}, true, checking, problem
 	}
 	if outcome != "" && len(record.Windows) == 0 {
 		said := map[claudeusage.Outcome]string{
@@ -1038,7 +1059,7 @@ func (r *Reader) claudeCode(record Limits, f found, now time.Time, mayAsk bool) 
 		}
 		f.note += said
 	}
-	return record, f, false
+	return record, f, false, checking, problem
 }
 
 // askClaudeCode asks once and keeps the answer. A failed ask keeps the last
@@ -1054,6 +1075,7 @@ func (r *Reader) askClaudeCode() {
 	a.busy = false
 	a.answers++
 	a.outcome = outcome
+	a.checked = now
 	if outcome == "" && len(got) > 0 {
 		a.windows = make([]Window, 0, len(got))
 		for _, w := range got {

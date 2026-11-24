@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14302,
-  "riskKeys": 6080,
-  "nonRiskCount": 8222,
+  "englishContentKeys": 14309,
+  "riskKeys": 6082,
+  "nonRiskCount": 8227,
   "groups": [
     {
       "name": "acp / other",
@@ -4335,7 +4335,7 @@
     },
     {
       "name": "next / other",
-      "count": 1352,
+      "count": 1357,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5166,6 +5166,11 @@
         "next.quotaOn",
         "next.quotaRateLimited",
         "next.quotaRefresh",
+        "next.quotaRefreshHint",
+        "next.quotaRefreshNow",
+        "next.quotaRefreshOlder",
+        "next.quotaRefreshUpdated",
+        "next.quotaRefreshing",
         "next.quotaResetPending",
         "next.quotaResetsIn",
         "next.quotaSettingDesktopTitle",

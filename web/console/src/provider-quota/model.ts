@@ -1,4 +1,4 @@
-import type { ProviderQuotaRow, ProviderQuotaWindow } from "@clawdline/contract"
+import type { ProviderQuotaRow, ProviderQuotaSnapshot, ProviderQuotaWindow } from "@clawdline/contract"
 
 export type QuotaLayout = "desktop" | "mobile"
 export const quotaVisibilityKey = (layout: QuotaLayout) => `${QUOTA_VISIBLE_KEY}.${layout}`
@@ -60,4 +60,21 @@ export function quotaCountdown(reset: number | undefined, now: number): string |
   const minutes = Math.ceil((reset - now) / 60)
   const days = Math.floor(minutes / 1440), hours = Math.floor(minutes % 1440 / 60), mins = minutes % 60
   return days ? `${days}d ${hours}h` : hours ? `${hours}h ${mins}m` : `${mins}m`
+}
+
+
+// A completed check can return the same provider observation. A newer
+// observation counts even when its percentage did not change.
+export function quotaRefreshResult(before: ProviderQuotaSnapshot | null, after: ProviderQuotaSnapshot): "updated" | "partial" | "failed" | "unchanged" {
+  let updated = false
+  let failed = false
+  for (const row of after.providers) {
+    const previous = before?.providers.find((old) => old.id === row.id)
+    if (row.windows.length > 0 && row.observed_at !== undefined &&
+        before !== null && row.observed_at > (previous?.observed_at ?? 0)) updated = true
+    if (row.problem && (row.windows.length > 0 || (previous?.windows.length ?? 0) > 0 ||
+        !["no_record", "no_reading", "not_signed_in"].includes(row.problem))) failed = true
+  }
+  if (updated) return failed ? "partial" : "updated"
+  return failed ? "failed" : "unchanged"
 }

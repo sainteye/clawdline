@@ -98,6 +98,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/provider-quotas/refresh",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/doctor",
       "guide": "connect"
     },

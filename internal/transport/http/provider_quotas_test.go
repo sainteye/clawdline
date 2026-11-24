@@ -1,15 +1,18 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/claudeusage"
 	"github.com/sainteye/clawdline/internal/adapters/limits"
 	"github.com/sainteye/clawdline/internal/adapters/providerquota"
 	"github.com/sainteye/clawdline/internal/contract"
@@ -40,6 +43,90 @@ func TestProviderQuotaEndpointIsReadOnlyAndUsesThePublishedContract(t *testing.T
 	s.providerQuotas(rec, httptest.NewRequest("POST", "/v1/provider-quotas", nil))
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("write accepted: %d", rec.Code)
+	}
+}
+
+func TestManualProviderQuotaRefreshChecksClaudeDespiteAFreshStatusLine(t *testing.T) {
+	home := t.TempDir()
+	now := time.Now()
+	record, err := json.Marshal(map[string]any{
+		"at": now.Add(-2 * time.Minute).Unix(),
+		"rate_limits": map[string]any{"seven_day": map[string]any{
+			"used_percentage": 81, "resets_at": now.Add(time.Hour).Unix(),
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(home, ".claude", "statusline-cache")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "rate-limits.json"), record, 0600); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	finish := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(finish)
+	asked := make(chan struct{}, 2)
+	local := limits.NewReader(home, nil).WithClaudeCode(func(ctx context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+		asked <- struct{}{}
+		select {
+		case <-release:
+			return []claudeusage.Window{{Name: "7d", UsedPercent: 27}}, ""
+		case <-ctx.Done():
+			return nil, claudeusage.Failed
+		}
+	})
+	s := &Server{providerQuotaService: providerquota.New(home, local)}
+	read := func(path string) contract.ProviderQuotaSnapshot {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		s.providerQuotas(rec, httptest.NewRequest("GET", path, nil))
+		var got contract.ProviderQuotaSnapshot
+		if rec.Code != 200 || json.Unmarshal(rec.Body.Bytes(), &got) != nil {
+			t.Fatalf("%s: %d %s", path, rec.Code, rec.Body.String())
+		}
+		return got
+	}
+	initial := read("/v1/provider-quotas")
+	if initial.Updating || initial.Providers[0].Windows[0].UsedPercent != 81 {
+		t.Fatalf("initial reading: %+v", initial)
+	}
+	for i := 0; i < 2; i++ {
+		got := read("/v1/provider-quotas/refresh")
+		if !got.Updating || got.Providers[0].Windows[0].UsedPercent != 81 {
+			t.Fatalf("refresh should report work in flight and keep the previous reading: %+v", got)
+		}
+	}
+	select {
+	case <-asked:
+	case <-time.After(time.Second):
+		t.Fatal("manual refresh did not ask Claude Code")
+	}
+	finish()
+	deadline := time.Now().Add(time.Second)
+	for {
+		got := read("/v1/provider-quotas")
+		if !got.Updating {
+			row := got.Providers[0]
+			if row.Source != "provider_cli" || len(row.Windows) != 1 || row.Windows[0].UsedPercent != 27 {
+				t.Fatalf("the newer Claude answer did not reach the shared snapshot: %+v", row)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the Claude check did not settle")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if got := read("/v1/provider-quotas/refresh"); got.Updating {
+		t.Fatal("another check started inside the cooldown")
+	}
+	select {
+	case <-asked:
+		t.Fatal("manual refresh repeated an in-flight check")
+	default:
 	}
 }
 

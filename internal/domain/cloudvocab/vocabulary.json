@@ -10813,6 +10813,20 @@
       }
     },
     {
+      "op": "provider-quotas-refresh",
+      "kind": "read",
+      "write_gate": false,
+      "console": "carried",
+      "console_route": "GET /v1/provider-quotas/refresh",
+      "console_seam": "writer",
+      "local": {"method": "GET"},
+      "example": {"request": "req-provider-quotas-refresh", "session": "__clawdline_machine__"},
+      "shapes": [
+        {"body": ["request", "session"], "path": "/v1/provider-quotas/refresh"}
+      ],
+      "decode": {"reply": "machine", "route": {"path": "/v1/provider-quotas/refresh"}}
+    },
+    {
       "op": "push-key",
       "kind": "read",
       "write_gate": false,

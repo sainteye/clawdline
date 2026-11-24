@@ -317,6 +317,7 @@ export const CARRIED = {
   // Account quota snapshots for the global footer. Credentials remain on the
   // machine.
   "provider-quotas": "GET /v1/provider-quotas",
+  "provider-quotas-refresh": "GET /v1/provider-quotas/refresh",
   "push-key": "GET /v1/push/key",
   "push-subscribe": "POST /v1/push/subscribe",
   "push-test": "POST /v1/push/test",

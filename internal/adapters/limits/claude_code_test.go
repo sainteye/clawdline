@@ -113,6 +113,27 @@ func TestAFreshStatusLineIsNeitherReplacedNorAsked(t *testing.T) {
 	}
 }
 
+func TestFailedManualClaudeCheckKeepsTheStatusLineReading(t *testing.T) {
+	now := time.Now()
+	at := strconv.FormatInt(now.Add(-time.Minute).Unix(), 10)
+	reset := strconv.FormatInt(now.Add(time.Hour).Unix(), 10)
+	r, _, release := askingReader(t, `{"at":`+at+
+		`,"rate_limits":{"seven_day":{"used_percentage":81,"resets_at":`+reset+`}}}`)
+	close(release)
+	r.WithClaudeCode(func(context.Context) ([]claudeusage.Window, claudeusage.Outcome) {
+		return nil, claudeusage.Failed
+	})
+	if q := r.Refresh("claude", now); !q.Updating {
+		t.Fatalf("manual check was not started: %+v", q)
+	}
+	askSettled(t, r)
+	q := r.Quota("claude", now)
+	if q.CheckProblem != "unavailable" || q.Updating || q.Availability != OK ||
+		q.FromClaudeCode || strings.Join(percents(q), ",") != "7d=81" {
+		t.Fatalf("failed check displaced the status-line reading: %+v", q)
+	}
+}
+
 func TestAnOldStatusLineGivesWayToANewerAnswer(t *testing.T) {
 	now := time.Now()
 	old := now.Add(-48 * time.Hour)

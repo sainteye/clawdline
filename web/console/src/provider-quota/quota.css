@@ -33,12 +33,21 @@
 .quota-provider[data-stale] progress { opacity: .5; }
 .quota-refresh, .quota-more { flex: 0 0 auto; padding: 4px; }
 .quota-refresh { display: grid; place-items: center; min-width: 28px; min-height: 28px; font-size: 14px; line-height: 1; }
-.quota-refresh:disabled { opacity: .4; cursor: default; }
+.quota-refresh[aria-busy="true"] { color: var(--accent); cursor: progress; }
+@media (prefers-reduced-motion: no-preference) {
+  .quota-refresh[aria-busy="true"] span { animation: quota-refresh-spin 1s linear infinite; }
+}
+@keyframes quota-refresh-spin { to { transform: rotate(360deg); } }
 .quota-dialog { width: min(620px, calc(100vw - 28px)); max-height: min(80dvh, 780px); overflow: auto; padding: 20px; border: 1px solid var(--line); border-radius: 14px; color: var(--ink); background: var(--bg); }
 .quota-dialog::backdrop { background: rgb(0 0 0 / .55); }
-.quota-dialog-heading { position: sticky; top: -20px; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 20px; margin: -20px -20px 0; padding: 14px 20px 10px; background: var(--bg); }
+.quota-dialog-heading { position: sticky; top: -20px; z-index: 1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: 10px; margin: -20px -20px 0; padding: 14px 20px 10px; background: var(--bg); }
 .quota-dialog-heading h2 { margin: 0; font-size: 17px; }
-.quota-dialog-heading button { display: grid; place-items: center; min-width: 40px; min-height: 40px; margin-right: -8px; font-size: 24px; padding: 0; }
+.quota-dialog-actions { display: flex; align-items: center; gap: 8px; margin-inline-start: auto; }
+.quota-dialog-close { display: grid; place-items: center; min-width: 40px; min-height: 40px; margin-inline-end: -8px; font-size: 24px; padding: 0; }
+.quota-refresh-now { min-height: 40px; }
+.quota-refresh-now[aria-disabled="true"] { opacity: .65; cursor: default; }
+.quota-refresh-feedback { width: 100%; }
+.quota-dialog-heading .quota-refresh-feedback:empty { margin: 0; }
 .quota-detail-row { border-top: 1px solid var(--line); padding: 12px 0; }
 .quota-detail-row h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 14px; }
 .quota-detail-row .quota-window { display: flex; gap: 10px; margin: 9px 0; flex-wrap: wrap; }
@@ -63,7 +72,7 @@
   .quota-machine { display: none; }
   .quota-providers { gap: 12px; overflow: hidden; }
   .quota-provider { min-width: 0; flex-shrink: 1; overflow: hidden; }
-  .quota-stale, .quota-credits, .quota-unknown { display: none; }
+  .quota-provider .quota-stale, .quota-credits, .quota-unknown { display: none; }
   .quota-provider[data-stale] { opacity: .5; }
   .quota-compact-window progress, .quota-compact-window .quota-reset { display: none; }
 }

@@ -59,7 +59,14 @@ func (s *Server) providerQuotas(w http.ResponseWriter, r *http.Request) {
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "Provider quotas are read with GET.")
 		return
 	}
-	snapshot := s.providerQuotaReader().Snapshot(time.Now())
+	now := time.Now()
+	reader := s.providerQuotaReader()
+	var snapshot providerquota.Snapshot
+	if r.URL.Path == "/v1/provider-quotas/refresh" {
+		snapshot = reader.Refresh(now)
+	} else {
+		snapshot = reader.Snapshot(now)
+	}
 	s.doctorHistory().Record(snapshot)
 	writeJSON(w, snapshot)
 }

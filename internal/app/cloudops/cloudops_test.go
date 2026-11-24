@@ -961,6 +961,10 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		body:    map[string]any{"type": "provider-quotas", "session": machine, "request": "req-provider-quotas"},
 		session: machine, name: "read:req-provider-quotas", method: "GET", path: "/v1/provider-quotas",
 	}, {
+		word:    "provider-quotas-refresh",
+		body:    map[string]any{"type": "provider-quotas-refresh", "session": machine, "request": "req-provider-quotas-refresh"},
+		session: machine, name: "read:req-provider-quotas-refresh", method: "GET", path: "/v1/provider-quotas/refresh",
+	}, {
 		word:    "default-models",
 		body:    map[string]any{"type": "default-models", "session": machine, "request": "req-models"},
 		session: machine, name: "read:req-models",

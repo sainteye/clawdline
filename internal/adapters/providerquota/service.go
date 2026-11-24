@@ -105,44 +105,49 @@ func readSmall(path string) ([]byte, error) {
 func baseRow(id, label, source string) Row {
 	return Row{ID: id, Label: label, Source: source, Windows: []Window{}}
 }
-func (s *Service) Snapshot(now time.Time) Snapshot { return s.snapshot(now, true) }
+func (s *Service) Snapshot(now time.Time) Snapshot { return s.snapshot(now, true, false) }
+
+func (s *Service) Refresh(now time.Time) Snapshot { return s.snapshot(now, true, true) }
 
 // Inspect reads existing evidence without credential access or provider requests.
-func (s *Service) Inspect(now time.Time) Snapshot { return s.snapshot(now, false) }
+func (s *Service) Inspect(now time.Time) Snapshot { return s.snapshot(now, false, false) }
 
-func (s *Service) snapshot(now time.Time, refresh bool) Snapshot {
+func (s *Service) snapshot(now time.Time, mayCheck, manual bool) Snapshot {
 	out := Snapshot{At: now.Unix(), Providers: []Row{}}
 	if s.local != nil {
 		for _, p := range []struct{ id, label, source string }{{"claude", "Claude Code", "claude_statusline"}, {"codex", "Codex", "codex_rollout"}} {
-			// A refreshing read may let the Claude reading ask Claude Code;
-			// Doctor's inspection observes without asking.
 			var q limits.Quota
-			if refresh {
+			switch {
+			case manual:
+				q = s.local.Refresh(p.id, now)
+			case mayCheck:
 				q = s.local.Quota(p.id, now)
-			} else {
+			default:
 				q = s.local.Observe(p.id, now)
 			}
+			out.Updating = out.Updating || q.Updating
 			source := p.source
 			if q.FromClaudeCode {
 				source = "provider_cli"
 			}
 			row := baseRow(p.id, p.label, source)
-			row.Stale = q.Stale
+			row.Stale = q.Stale || q.CheckProblem != "" && len(q.Windows) > 0
 			row.ObservedAt = q.ObservedAt
 			for _, w := range q.Windows {
 				if w.UsedPercent != nil {
 					row.Windows = append(row.Windows, Window{Name: w.Name, UsedPercent: *w.UsedPercent, ResetsAt: w.ResetsAt})
 				}
 			}
-			if q.Reason != "" {
-				row.Problem = string(q.Reason)
+			row.Problem = string(q.Reason)
+			if q.CheckProblem != "" {
+				row.Problem = q.CheckProblem
 			}
 			row.CreditsInUse, row.CreditBalance = q.CreditsInUse, q.CreditBalance
 			out.Providers = append(out.Providers, row)
 		}
 	}
 	for i, p := range []struct{ id, label string }{{"gemini", "Gemini"}, {"grok", "Grok"}} {
-		row, busy := s.provider(now, i, p.id, p.label, refresh)
+		row, busy := s.provider(now, i, p.id, p.label, mayCheck)
 		out.Providers = append(out.Providers, row)
 		out.Updating = out.Updating || busy
 	}

@@ -2712,6 +2712,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/usage/sessions/s1", "usage"],
     ["/v1/capacity", "capacity"],
     ["/v1/provider-quotas", "provider-quotas"],
+    ["/v1/provider-quotas/refresh", "provider-quotas-refresh"],
     ["/v1/browser/status", "chrome-tab-status"],
     ["/v1/browser/screenshot", "chrome-tab-screenshot"],
     ["/v1/browser/activity", "chrome-tab-activity"],
@@ -2895,7 +2896,10 @@ test("provider quota metadata crosses Cloud as a machine read without credential
   const { reader } = seam(client)
   assert.equal((await reader.fetch("/v1/provider-quotas")).status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "provider-quotas", {}, "read"])
+  assert.equal((await reader.fetch("/v1/provider-quotas/refresh")).status, 200)
+  assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "provider-quotas-refresh", {}, "read"])
   assert.equal((await reader.fetch("/v1/provider-quotas?account=other")).status, 501)
+  assert.equal((await reader.fetch("/v1/provider-quotas/refresh?account=other")).status, 501)
 })
 
 

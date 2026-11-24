@@ -731,6 +731,7 @@ func (s *Server) routeTable() []route {
 		// keep (orchestrator.go).
 		{Route{"*", "/v1/orchestrator/assistants"}, s.brokerAssistants},
 		{Route{"*", "/v1/provider-quotas"}, s.providerQuotas},
+		{Route{"*", "/v1/provider-quotas/refresh"}, s.providerQuotas},
 		{Route{"*", "/v1/doctor"}, s.doctorReport},
 		{Route{"*", "/v1/orchestrator/landings"}, s.brokerLandings},
 		{Route{"*", "/v1/orchestrator/notify"}, s.brokerMachineNotify},

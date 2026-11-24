@@ -19,7 +19,7 @@ const { outputFiles } = await build({
       : path.includes("useFleet") ? "export const usePoll = () => globalThis.quotaFixture.poll"
       : path.includes("NeedsUpdate") ? "export const useMachineVersion = () => globalThis.quotaFixture.version"
       : path.includes("machine-switch") ? "export const onMachineChanged = () => () => {}"
-      : path.includes("bridge") ? "export const assistantLogoHTML = () => ''"
+      : path.includes("bridge") ? "export const assistantLogoHTML = () => ''; export const failureSentence = () => ''"
       : "export const subscribeQuotaVisible = () => () => {}; export const quotaVisible = () => globalThis.quotaFixture.preference",
     }))
   } }],

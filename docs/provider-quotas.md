@@ -40,7 +40,7 @@ the saved browser preference.
 
 | Provider | Read source | Login ownership |
 | --- | --- | --- |
-| Claude Code | Existing `limits.Reader`: status-line `rate-limits.json`; when that has no fresh window, Claude Code's own `get_usage` control request | No credential access or login change: Claude Code reads and refreshes its own sign-in |
+| Claude Code | Existing `limits.Reader`: status-line `rate-limits.json` and Claude Code's own `get_usage` control request | No credential access or login change: Claude Code reads and refreshes its own sign-in |
 | Codex | Existing `limits.Reader`: quota keys in recent rollouts | No credential access or login change |
 | Gemini | Public CLI: fixed `--settings '{"useG1Credits":false}' --print /usage`; legacy ACP 1.4.1: fixed `/usage` command | Native CLI owns the default personal sign-in; Clawdline checks its explicit personal/no-Credits policy and does not borrow user conversations |
 | Legacy Gemini CLI (without native configuration) | Existing `~/.gemini/oauth_creds.json`; `loadCodeAssist`, then `retrieveUserQuota` | Reads the saved access token; login remains owned by that CLI |
@@ -71,8 +71,12 @@ can be dispatched. The browser polls while visible, normally every 30 seconds. G
 refresh asynchronously, one in flight per provider, with a 15-minute minimum interval shared by
 all browsers on that daemon. A complete refresh has a ten-second deadline, no automatic retries,
 and respects a longer `Retry-After`. The native reader replaces the legacy credential/API path when configured.
-The Refresh button rereads this cache and the local files;
-it does not bypass provider cooldowns.
+Both refresh buttons use `GET /v1/provider-quotas/refresh` (`provider-quotas-refresh` over Cloud,
+API level 115). It rereads local records immediately, allows Claude's native check even with a
+fresh status-line record and respects each provider's cooldown. Codex updates when its CLI writes
+a new reading. While a manual check is in progress the browser polls the ordinary snapshot more
+frequently and reports when it sees a newer observation, a failed check or unchanged readings.
+On older daemons the buttons reread the ordinary snapshot and explain the version requirement.
 
 Failed refreshes keep the last successful windows marked outdated. A changed credential identity
 clears the previous account's cached reading, and an in-flight answer for it cannot publish into
@@ -104,8 +108,8 @@ skips the keychain where Claude Code keeps its sign-in. Clawdline never reads th
 A reading never waits for an ask. Asks run one at a time, at most once every 15 minutes
 (`claudeusage.RefreshSecondsLimit`), each stopped after ten seconds and 1 MiB of output; all
 three are registered capacity rows. Any reader may start one; Doctor's inspection reads with
-`Observe`, which never does. A fresh status-line reading is never replaced or asked about, and an
-answer replaces an old record only when it is newer. The answer ages by the same freshness line
+`Observe`, which never does. A fresh status-line reading suppresses automatic asks. A manual refresh can ask anyway, and the
+shared reader picks the newest observation. The answer ages by the same freshness line
 as the record. When it answers, the footer names the native CLI as the source and Session info's
 sentence ends "asked Claude Code". When it cannot, the reason stays the record's (`no_record`,
 for example) and the sentence adds what the ask found: no Claude Code installed, no plan windows

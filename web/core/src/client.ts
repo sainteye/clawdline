@@ -51,8 +51,8 @@ export class ClawdlineClient {
     return `${this.baseUrl}${path}`
   }
 
-  providerQuotas(): Promise<import("@clawdline/contract").ProviderQuotaSnapshot> {
-    return this.get("/v1/provider-quotas")
+  providerQuotas(refresh = false): Promise<import("@clawdline/contract").ProviderQuotaSnapshot> {
+    return this.get(refresh ? "/v1/provider-quotas/refresh" : "/v1/provider-quotas")
   }
 
   health(): Promise<Health> {
