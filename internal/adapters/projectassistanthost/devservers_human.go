@@ -176,6 +176,18 @@ func (d hostDevServers) Control(ctx context.Context, key pa.BotKey, project pa.P
 			}
 		}
 	case "remove":
+		if expected.Attempt.State == servers.Unknown {
+			// The person removes a server whose owner was lost or whose cleanup
+			// was never confirmed. The menu says the command may still run.
+			if err := r.ReleaseExpected(ctx, expected); err != nil {
+				return app.DevServerResult{}, err
+			}
+			for _, saved := range r.Snapshot(key, project) {
+				if saved.ID == q.ID {
+					expected = saved
+				}
+			}
+		}
 		if err := r.RemoveExpected(ctx, expected); err != nil {
 			return app.DevServerResult{}, err
 		}
