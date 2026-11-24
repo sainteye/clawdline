@@ -6481,6 +6481,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "cloud.line_open_retry_first_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 5,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.LineOpenRetryFirstSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "cloud.line_open_retry_max_seconds",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/cloud.LineOpenRetryMaxSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "cloud.peer_body_bytes",
     "Class": "buffer",
     "Unit": "bytes",

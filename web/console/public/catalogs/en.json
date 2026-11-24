@@ -14221,5 +14221,9 @@
   "capacityRow.console.quota_last_reading_machines.what": "How many machines this browser keeps a last quota reading for.",
   "capacityRow.console.quota_last_reading_machines.full": "Past it, the reading saved longest ago is dropped. That machine's footer shows its quota again after its next successful read.",
   "capacityRow.console.quota_last_reading_age_seconds.what": "How long a kept quota reading can be shown while a new one cannot be read.",
-  "capacityRow.console.quota_last_reading_age_seconds.full": "Past it, the kept reading is no longer shown, because its usage windows have reset. The footer says the quota could not be read until a read succeeds."
+  "capacityRow.console.quota_last_reading_age_seconds.full": "Past it, the kept reading is no longer shown, because its usage windows have reset. The footer says the quota could not be read until a read succeeds.",
+  "capacityRow.cloud.line_open_retry_first_seconds.what": "After the Cloud connection fails to start on this machine, how long before it tries again. Each further failure doubles the wait, up to the next limit.",
+  "capacityRow.cloud.line_open_retry_first_seconds.full": "Until the retry succeeds, your phone and app.clawdline.com cannot reach this machine, and the Cloud settings say why. A brief file or disk problem clears by itself; nothing for you to do.",
+  "capacityRow.cloud.line_open_retry_max_seconds.what": "The longest wait between two attempts to start a Cloud connection that keeps failing. The machine never gives up; it keeps trying at least this often.",
+  "capacityRow.cloud.line_open_retry_max_seconds.full": "While it keeps failing, the Cloud settings show the reason. If this machine was signed out or removed from the account, it stops retrying until you sign in again."
 }

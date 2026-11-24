@@ -559,6 +559,10 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		if !link.Enabled() {
 			return nil
 		}
+		if err := link.OpenFailure(); err != nil {
+			// The status route explains this line; the gate retries it.
+			return cloudLineNotUp{err}
+		}
 		lineCtx, cancel := context.WithCancel(ctx)
 		stop = cancel
 		done = make(chan struct{})
@@ -578,7 +582,8 @@ func startCloudLine(ctx context.Context, cfg config.Config, srv *httptransport.S
 		}()
 		return nil
 	}
-	gate := &cloudUpdateGate{ctx: ctx, ready: admit, open: reload}
+	gate := &cloudUpdateGate{ctx: ctx, ready: admit, open: reload,
+		final: cloudtransport.OpenRefusedForGood, logf: log.Printf}
 	srv.SetCloudReload(gate.reload)
 	if err := gate.reload(); err != nil {
 		// A malformed setting is loud, but never takes the local daemon down.

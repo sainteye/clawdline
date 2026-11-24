@@ -559,6 +559,8 @@ const (
 	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
 	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
 	CloudTerminalRosterRetry          = "cloud.terminal_roster_retry_seconds"
+	CloudLineOpenRetryFirst           = "cloud.line_open_retry_first_seconds"
+	CloudLineOpenRetryMax             = "cloud.line_open_retry_max_seconds"
 	CloudRosterShortReadAttempts      = "cloud.roster_short_read_attempts"
 	CloudTerminalUnverifiedRetire     = "cloud.terminal_unverified_retire_seconds"
 	CloudTerminalConnections          = "cloud.terminal_connections"
