@@ -22,7 +22,7 @@ async function testBrowser(){
   throw Error("No installed headless shell. This harness installs nothing.")
 }
 const files=new Map(),traffic=[],results=[]
-let decisionAttempts=0
+let decisionAttempts=0,finished=false
 let sent=false,started=false,failReads=scenario==="read-failure",holdNextSnapshot=false,releaseHeld,held=false
 for(const name of ["current"]){
   const contents=(await readFile(fixture,"utf8")).replaceAll('"../../src/',JSON.stringify(path.join(root,"src/")).slice(0,-1))
@@ -32,7 +32,7 @@ for(const name of ["current"]){
 const server=createServer(async(req,res)=>{
   try{
     const url=new URL(req.url,"http://fixture")
-    if(url.pathname==="/finish"){await fetch(cloud+"/finish",{method:"POST"});res.writeHead(204);res.end();return}
+    if(url.pathname==="/finish"){await fetch(cloud+"/finish",{method:"POST"});finished=true;res.writeHead(204);res.end();return}
     if(url.pathname==="/control"){
       if(url.searchParams.has("hold"))holdNextSnapshot=true
       if(url.searchParams.has("release")){releaseHeld?.();releaseHeld=undefined}
@@ -42,7 +42,12 @@ const server=createServer(async(req,res)=>{
     }
     if(url.pathname==="/relay"){
       const chunks=[];for await(const chunk of req)chunks.push(chunk)
-      const raw=Buffer.concat(chunks).toString(),envelope=JSON.parse(raw)
+      let raw=Buffer.concat(chunks).toString()
+      const envelope=JSON.parse(raw)
+      if(scenario==="event-backlog"&&finished&&envelope.mode==="events"){
+        envelope.page_size=1
+        raw=JSON.stringify(envelope)
+      }
       const record={word:envelope.type,mode:envelope.mode,acceptedAt:performance.now()};traffic.push(record)
       if(sent&&failReads&&envelope.type==="project-assistants.view"){
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline",field:"fixture_read",retry_after_seconds:0}}}));return
@@ -83,6 +88,12 @@ const server=createServer(async(req,res)=>{
       if(scenario==="late-message"&&envelope.mode==="events"){
         const value=JSON.parse(payload),body=value.body
         if(body?.items){const previous=body.items.length;body.items=body.items.filter(row=>row.event?.message?.kind!=="assistant");record.delayedAssistantRows=previous-body.items.length;record.terminal=body.items.some(row=>row.event?.turn?.state==="succeeded");payload=JSON.stringify(value)}
+      }
+      if(scenario==="event-backlog"&&finished&&envelope.mode==="events"){
+        const body=JSON.parse(payload).body
+        record.hasMore=body?.has_more
+        record.afterSeq=envelope.after_seq
+        record.nextSeq=body?.next_seq
       }
       record.status=answer.status;record.returnedAt=performance.now();res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(payload);return
     }
@@ -191,6 +202,9 @@ try{
     await evaluate(sessionId,"document.querySelector('.pa-chat-error[data-reconnecting] button').click()")
   }
   await until(sessionId,"window.chatObservation.phases.some(p=>p.phase==='returned'&&p.head?.current_fence.generation>=2)")
+  if(scenario==="event-backlog"){
+    await until(sessionId,"window.chatObservation.phases.some(p=>p.phase==='returned'&&p.mode==='snapshot'&&p.head?.current_fence.generation>=2)")
+  }
   if(scenario==="busy")await evaluate(sessionId,"window.chatObservation.visibility('hidden')")
   if(scenario==="leave"||scenario==="revoke"){
     if(scenario==="leave"){await evaluate(sessionId,"document.querySelector('.pa-chat-back').click()");await until(sessionId,"!document.querySelector('.pa-chat-layout')")}
@@ -291,6 +305,14 @@ try{
     const terminal=traffic.find(p=>p.terminal&&p.delayedAssistantRows>0)
     assert.ok(terminal,"the terminal event must arrive with its answer omitted by the fault")
     assert.ok(traffic.some(p=>p.mode==='snapshot'&&p.acceptedAt>terminal.returnedAt),"a final snapshot must recover the omitted answer")
+  }
+  if(scenario==="event-backlog"){
+    const first=traffic.find(p=>p.hasMore)
+    const next=traffic.find(p=>p.afterSeq===first?.nextSeq&&p.acceptedAt>=first?.returnedAt)
+    assert.ok(first&&next,"a backlog must continue from the exact returned cursor")
+    const gap=next.acceptedAt-first.returnedAt
+    console.log(JSON.stringify({eventBacklogNextRequestMs:gap}))
+    assert.ok(gap<1500,`an available event page waited ${gap} ms for the next poll`)
   }
   const readCount=traffic.filter(p=>p.word==='project-assistants.view').length
   await new Promise(r=>setTimeout(r,3300))

@@ -97,6 +97,24 @@ func load(ctx context.Context, r reader, key pa.BotKey) (aggregate, error) {
 	}
 	return a, err
 }
+
+// ReadNativeContextFacts keeps optional chat status off the writer. Read the
+// live turn and its current binding from the same committed Bot version.
+func (s *Store) ReadNativeContextFacts(ctx context.Context, key pa.BotKey, turnID string) (app.NativeContextFacts, error) {
+	a, err := load(ctx, s.reader, key)
+	if err != nil {
+		return app.NativeContextFacts{}, err
+	}
+	facts := app.NativeContextFacts{Bot: a.Bot, Conversation: a.Conversation, Memory: a.Memory}
+	if turn, ok := a.Turns[turnID]; ok {
+		facts.Turn = &turn
+	}
+	if binding, ok := a.Bindings[a.Conversation.BindingID]; ok {
+		facts.Binding = &binding
+	}
+	return facts, nil
+}
+
 func (s *Store) Bot(ctx context.Context, key pa.BotKey) (pa.Bot, error) {
 	a, e := load(ctx, s.db, key)
 	return a.Bot, e

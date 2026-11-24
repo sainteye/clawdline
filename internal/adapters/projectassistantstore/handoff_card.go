@@ -98,7 +98,7 @@ func handoffView(a aggregate, card *pa.HandoffCard) app.HandoffView {
 }
 
 func (s *Store) ReadHandoff(ctx context.Context, key pa.BotKey, conversation string) (app.HandoffView, error) {
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	tx, err := s.reader.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return app.HandoffView{}, err
 	}

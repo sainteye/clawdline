@@ -29,6 +29,7 @@ type observationProvider struct {
 	probes        atomic.Int32
 	closeFailure  error
 	promptFailure error
+	pageBacklog   bool
 	offerDecision func(context.Context, pa.Turn) error
 }
 
@@ -85,6 +86,14 @@ func (p observationPending) Wait(ctx context.Context) (app.PromptResult, error) 
 	p.session.owner.entered.Do(func() { close(p.session.owner.started) })
 	select {
 	case <-p.session.owner.finish:
+		if p.session.owner.pageBacklog {
+			for _, id := range []string{"synthetic-backlog-first", "synthetic-backlog-second"} {
+				event := app.ProtocolEvent{ID: id, Fence: turn.Fence, TurnID: turn.ID, Trace: &pa.Trace{ID: id, TurnID: turn.ID, Category: "tool", Text: "Synthetic backlog output", Complete: true}}
+				if err := p.session.emit(ctx, event); err != nil {
+					return app.PromptResult{}, err
+				}
+			}
+		}
 		if offer := p.session.owner.offerDecision; offer != nil {
 			if err := offer(ctx, turn); err != nil {
 				return app.PromptResult{}, err
@@ -104,7 +113,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 	if dir == "" {
 		t.Skip("set CLAWDLINE_CHAT_OBSERVATION_BROWSER_DIR for the isolated accepted-send observation proof")
 	}
-	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery", "interrupted-exchange"}
+	cases := []string{"hidden-en-desktop", "hidden-zh-mobile", "busy", "late-message", "read-failure", "leave", "revoke", "unknown", "malformed", "inspect", "cleanup-timeout", "quota-card", "decision-card", "decision-recovery", "interrupted-exchange", "event-backlog"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			out := filepath.Join(dir, name)
@@ -112,7 +121,7 @@ func TestProjectAssistantChatObservationBrowser(t *testing.T) {
 				t.Fatal(err)
 			}
 			f := newPAServerFixture(t, true)
-			provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}
+			provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{}), pageBacklog: name == "event-backlog"}
 			if name == "cleanup-timeout" {
 				provider.closeFailure = context.DeadlineExceeded
 			}

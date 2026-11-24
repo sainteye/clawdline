@@ -15,6 +15,7 @@ import (
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
@@ -325,6 +326,68 @@ func TestProjectAssistantViewCloudBridgeRouterServerRealStore(t *testing.T) {
 	}
 	if f.providerCalls.Load() != 0 || f.s.projectAssistants.host.Usage().Processes != 0 {
 		t.Fatal("read allocated provider/runtime")
+	}
+}
+
+func TestActiveProjectAssistantViewAnswersWhileTheWriterIsHeld(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}
+	close(provider.start)
+	defer close(provider.finish)
+	f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	paServerOK(t, f.send(t, f.local, "read the conversation while this turn runs"))
+	select {
+	case <-provider.started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("synthetic provider did not reach its running turn")
+	}
+
+	snapshot := paViewServerRead(t, f, pa.ReadViewSnapshot, "", "", 0, 20, f.local)
+	if snapshot.Head.Conversation.ActiveTurnID == "" || len(snapshot.Items) == 0 {
+		t.Fatal("fixture must contain a visible message and a running turn")
+	}
+	db := f.s.store.ProjectAssistantDatabase()
+	tx, err := db.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`UPDATE project_assistant_schema SET version=version WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	waitCount := db.Stats().WaitCount
+
+	for _, mode := range []pa.ReadViewMode{pa.ReadViewSnapshot, pa.ReadViewEvents} {
+		t.Run(string(mode), func(t *testing.T) {
+			epoch, after := snapshot.SourceEpoch, snapshot.Head.EventFrontier
+			if mode == pa.ReadViewSnapshot {
+				epoch, after = "", 0
+			}
+			path := paViewURL(f.key, snapshot.Head.Conversation.ID, mode, epoch, "", after, 20) + "&defer_trace_count=true"
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			r := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+			r.Host = "127.0.0.1"
+			r.Header.Set("Authorization", "Bearer "+f.local)
+			w := httptest.NewRecorder()
+			started := time.Now()
+			f.h.ServeHTTP(w, r)
+			t.Logf("running chat while writer is held: %v (HTTP %d)", time.Since(started), w.Code)
+			paAssertHTTPContract(t, w, http.StatusOK, "ProjectAssistantReadViewResponse")
+			var got contract.ProjectAssistantReadViewResponse
+			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+				t.Fatal(err)
+			}
+			if got.Head.Conversation.ActiveTurnID != snapshot.Head.Conversation.ActiveTurnID ||
+				(mode == pa.ReadViewSnapshot && len(got.Items) != len(snapshot.Items)) {
+				t.Fatal("running chat lost its message or active turn")
+			}
+		})
+	}
+	if got := db.Stats().WaitCount; got != waitCount {
+		t.Errorf("running chat queued for the writer: %d wait(s)", got-waitCount)
 	}
 }
 

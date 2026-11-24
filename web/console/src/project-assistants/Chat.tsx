@@ -389,7 +389,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // it into an immediate loop; the existing cadence still owns later reads.
     if(manual)observation.finalSnapshot=false
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current
-    let snapshotValidated=false
+    let snapshotValidated=false,nextReadDelay=EventRefreshMs
     eventControl.current=control
     const settleCollections=async(modes:("permissions"|"traces")[])=>{
       // A projection failing at an older fence is retried on the next poll.
@@ -421,7 +421,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       setReconnecting(false)
       if(recovery.current||!currentData.current||!canWrite(currentData.current.source))return
       if(observation.finalSnapshot&&(document.visibilityState!=="hidden"||observation.active))void refresh(true)
-      else scheduleRead(EventRefreshMs)
+      else scheduleRead(nextReadDelay)
     }
     try {
       if(recovery.current||!currentData.current||manual||!!error)await readSnapshot()
@@ -446,6 +446,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
             }
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
+          // Another bounded page is already available. The idle cadence
+          // resumes once observation reaches the end of the backlog.
+          if(page.has_more)nextReadDelay=0
           lastSeq.current=page.next_seq;callViewFrontier.current=page.has_more?page.next_seq:page.head.event_frontier;setError("")
           const modes=new Set(collectionsToRetry.current)
           if(before.pending_permission_count!==page.head.pending_permission_count||page.items.some(row=>row.event?.permission))modes.add("permissions")

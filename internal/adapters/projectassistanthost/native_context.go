@@ -16,27 +16,26 @@ func (h *Host) NativeContext(ctx context.Context, fence pa.Fence) (app.NativeCon
 	if err != nil {
 		return unknown, err
 	}
-	readCheck := func() error {
-		bot, conversation, _, err := s.Get(ctx, fence.Key)
-		if err != nil {
-			return err
-		}
-		current := pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: conversation.ID, BindingID: conversation.BindingID, Generation: conversation.Generation}
-		return pa.CheckSendFence(fence, current)
-	}
-	if err = readCheck(); err != nil {
+	if err = s.AuthorizeRead(ctx, fence.Key); err != nil {
 		return unknown, err
 	}
 	h.mu.Lock()
-	r := h.engine
+	r, store := h.engine, h.store
 	live := h.enabled && !h.closed && !h.cleanupPending
 	h.mu.Unlock()
 	if !live || r == nil {
 		return unknown, nil
 	}
-	// Recheck human read authority inside the borrowed actor's lifetime as
-	// well; a post-read database call outside it could outlive native cleanup.
-	state, err := r.NativeContext(ctx, fence, readCheck)
+	// Live metadata needs current human and source authority. The actor
+	// validates its own binding and project from the read-side facts.
+	readCheck := func() error {
+		if err := s.AuthorizeRead(ctx, fence.Key); err != nil {
+			return err
+		}
+		_, _, err := h.background(ctx, fence.Key, true)
+		return err
+	}
+	state, err := r.NativeContext(ctx, fence, readCheck, store.ReadNativeContextFacts)
 	if err != nil {
 		return unknown, err
 	}

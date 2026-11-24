@@ -377,7 +377,7 @@ func (s *Store) BackgroundOwner(ctx context.Context, worker pa.BotKey) (pa.BotKe
 	if !strings.HasPrefix(worker.BotID, "thread-") {
 		return owner, nil
 	}
-	err := s.db.QueryRowContext(ctx, `SELECT bot FROM project_assistant_background_tasks WHERE machine=? AND worker=? AND worker<>''`,
+	err := s.reader.QueryRowContext(ctx, `SELECT bot FROM project_assistant_background_tasks WHERE machine=? AND worker=? AND worker<>''`,
 		worker.MachineID, worker.BotID).Scan(&owner.BotID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return owner, nil

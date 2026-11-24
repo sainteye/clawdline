@@ -29,7 +29,20 @@ func TestRuntimeNativeContextRejectsRevokedOrUnknownOwner(t *testing.T) {
 				f.store.bot.Instructions.Revision++
 			}
 			f.store.mu.Unlock()
-			state, err := f.r.NativeContext(context.Background(), q.Turn.Fence, nil)
+			read := func(ctx context.Context, key pa.BotKey, id string) (NativeContextFacts, error) {
+				memory, err := f.memory.Current(ctx, key)
+				if err != nil {
+					return NativeContextFacts{}, err
+				}
+				f.store.mu.Lock()
+				defer f.store.mu.Unlock()
+				turn := f.store.turns[id]
+				binding := f.store.bindings[f.store.c.BindingID]
+				return NativeContextFacts{Bot: f.store.bot, Conversation: f.store.c, Turn: &turn, Binding: &binding, Memory: memory}, nil
+			}
+			ctx := context.Background()
+			check := func() error { return f.r.authorized(ctx, q.Turn.Fence.Key, q.Turn.Fence.Project) }
+			state, err := f.r.NativeContext(ctx, q.Turn.Fence, check, read)
 			if state.NativeSessionID != "" || state.CommandsKnown || state.UsageKnown {
 				t.Fatalf("unqualified reading: %+v", state)
 			}

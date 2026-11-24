@@ -104,3 +104,30 @@ func TestBotListAndSendReceiptAnswerWhileTheWriterIsHeld(t *testing.T) {
 		t.Fatalf("an absent receipt should return not found while the writer is held: %v", err)
 	}
 }
+
+func TestBotHandoffReadAnswersWhileTheWriterIsHeld(t *testing.T) {
+	f := newHostFixture(t)
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.start(t)
+	f.enable(t)
+	bot := f.create(t, "handoff-reader")
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := f.o.Database.BeginTx(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	view, err := service.ReadHandoff(ctx, bot.Key, bot.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Fence.Key != bot.Key || view.Fence.ConversationID != bot.ConversationID || view.Card != nil {
+		t.Fatalf("unexpected handoff view: %+v", view)
+	}
+}

@@ -6,10 +6,22 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+// NativeContextFacts are the durable parts of one Bot read together. Native
+// context checks this snapshot again after sampling the still-owned session.
+type NativeContextFacts struct {
+	Bot          pa.Bot
+	Conversation pa.Conversation
+	Turn         *pa.Turn
+	Binding      *pa.ExecutionBinding
+	Memory       pa.MemoryRevision
+}
+
+type NativeContextRead func(context.Context, pa.BotKey, string) (NativeContextFacts, error)
+
 // NativeContext borrows only an existing execution owner. It never opens a
 // provider, acquires a process slot, creates an actor, or retains a last reading.
 // A known reading describes this live turn, not eligibility for compaction.
-func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck func() error) (NativeContextState, error) {
+func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck func() error, readFacts NativeContextRead) (NativeContextState, error) {
 	unknown := NativeContextState{Fence: fence}
 	if err := ctx.Err(); err != nil {
 		return unknown, err
@@ -28,12 +40,10 @@ func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck fu
 		return unknown, nil
 	}
 	defer a.mu.Unlock()
-	if readCheck != nil {
-		if err := readCheck(); err != nil {
-			return unknown, err
-		}
+	if err := readCheck(); err != nil {
+		return unknown, err
 	}
-	before, live, err := r.nativeContextBinding(ctx, a, fence)
+	before, live, err := r.nativeContextBinding(ctx, a, fence, readFacts)
 	if err != nil || !live {
 		return unknown, err
 	}
@@ -50,12 +60,10 @@ func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck fu
 	if state.Fence != fence || state.NativeSessionID != before.NativeSessionID || a.session.SessionID() != before.NativeSessionID {
 		return unknown, runtimeFailure(pa.StaleGeneration, "native_context_identity")
 	}
-	if readCheck != nil {
-		if err := readCheck(); err != nil {
-			return unknown, err
-		}
+	if err := readCheck(); err != nil {
+		return unknown, err
 	}
-	after, live, err := r.nativeContextBinding(ctx, a, fence)
+	after, live, err := r.nativeContextBinding(ctx, a, fence, readFacts)
 	if err != nil || !live {
 		return unknown, err
 	}
@@ -73,7 +81,7 @@ func (r *Engine) NativeContext(ctx context.Context, fence pa.Fence, readCheck fu
 
 // The caller holds actor.mu. Recheck persisted authority on both sides of the
 // optional native read; an old process handle is not current binding authority.
-func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fence pa.Fence) (pa.ExecutionBinding, bool, error) {
+func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fence pa.Fence, readFacts NativeContextRead) (pa.ExecutionBinding, bool, error) {
 	var empty pa.ExecutionBinding
 	if err := ctx.Err(); err != nil {
 		return empty, false, err
@@ -84,34 +92,31 @@ func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fenc
 	if unavailable || a.opening || a.closing || a.stopped.Load() || a.lifetime.Err() != nil || a.session == nil || a.turnID == "" {
 		return empty, false, nil
 	}
-	bot, err := r.o.Repository.Bot(ctx, fence.Key)
+	facts, err := readFacts(ctx, fence.Key, a.turnID)
 	if err != nil {
 		return empty, false, err
 	}
-	if err = r.authorized(ctx, fence.Key, bot.Project); err != nil {
+	bot, conversation := facts.Bot, facts.Conversation
+	if bot.ConversationID != conversation.ID {
+		return empty, false, runtimeFailure(pa.NotFound, "conversation")
+	}
+	if err = pa.CheckFence(fence, currentFence(bot, conversation)); err != nil {
 		return empty, false, err
 	}
-	c, err := r.o.Repository.Conversation(ctx, fence.Key, bot.ConversationID)
-	if err != nil {
-		return empty, false, err
-	}
-	if err = pa.CheckFence(fence, currentFence(bot, c)); err != nil {
-		return empty, false, err
-	}
-	if c.ActiveTurnID != a.turnID {
+	if conversation.ActiveTurnID != a.turnID {
 		return empty, false, nil
 	}
-	turn, err := r.o.Repository.Turn(ctx, fence.Key, a.turnID)
-	if err != nil {
-		return empty, false, err
+	if facts.Turn == nil {
+		return empty, false, runtimeFailure(pa.NotFound, "turn")
 	}
+	turn := facts.Turn
 	if turn.Room != nil || turn.Fence != fence || (turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
 		return empty, false, nil
 	}
-	binding, err := r.o.Repository.Binding(ctx, fence.Key, fence.BindingID)
-	if err != nil {
-		return empty, false, err
+	if facts.Binding == nil {
+		return empty, false, runtimeFailure(pa.NotFound, "binding")
 	}
+	binding := *facts.Binding
 	if binding.Fence != fence || binding.Revoked {
 		return empty, false, runtimeFailure(pa.Revoked, "native_context_binding")
 	}
@@ -128,10 +133,7 @@ func (r *Engine) nativeContextBinding(ctx context.Context, a *runtimeActor, fenc
 	if resolved.Scope != bot.Project {
 		return empty, false, runtimeFailure(pa.ScopeDenied, "native_context_project")
 	}
-	memory, err := r.o.Memory.Current(ctx, fence.Key)
-	if err != nil {
-		return empty, false, err
-	}
+	memory := facts.Memory
 	if memory.Key != fence.Key || memory.Project != bot.Project || memory.Revision != binding.MemoryRevision || memory.ForgottenThrough != binding.ForgottenThrough || bot.Instructions.Revision != binding.InstructionRevision {
 		return empty, false, runtimeFailure(pa.ContextStale, "native_context_revision")
 	}
