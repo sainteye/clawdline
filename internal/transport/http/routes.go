@@ -58,7 +58,8 @@ import (
 // Session GitHub change reports arrive at API 111.
 // Deferring the Bot chat trace count arrives at API 113.
 // Machine-wide Bots dispatch rules and shared memory arrive at API 114.
-const APILevel = 114
+// The same document, named by machine and carried over Cloud, arrives at API 115.
+const APILevel = 115
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

@@ -18,6 +18,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/project-assistant-shared-settings",
+      "guide": "project"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/project-assistant-targets",
       "guide": "project"
     },

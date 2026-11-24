@@ -160,6 +160,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.send-now":              genDecodeProjectAssistantsSendNow,
 	"project-assistants.send-pictures":         genDecodeProjectAssistantsSendPictures,
 	"project-assistants.send-receipt":          genDecodeProjectAssistantsSendReceipt,
+	"project-assistants.shared-settings":       genDecodeProjectAssistantsSharedSettings,
+	"project-assistants.shared-settings-save":  genDecodeProjectAssistantsSharedSettingsSave,
 	"project-assistants.status":                genDecodeProjectAssistantsStatus,
 	"project-assistants.stop":                  genDecodeProjectAssistantsStop,
 	"project-assistants.team-answer":           genDecodeProjectAssistantsTeamAnswer,
@@ -4585,6 +4587,60 @@ func genDecodeProjectAssistantsSendReceipt(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"conversation_id": genValue{from: "conversation_id"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsSharedSettings is the `project-assistants.shared-settings` row's decode.
+func genDecodeProjectAssistantsSharedSettings(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "machine_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-shared-settings"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsSharedSettingsSave is the `project-assistants.shared-settings-save` row's decode.
+func genDecodeProjectAssistantsSharedSettingsSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_version", "idempotency_key", "machine_id", "request", "session", "settings"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("settings", genRule{kind: "object", maxBytes: 65536}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-shared-settings"
+	req := LocalRequest{Method: "PUT", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "settings": genValue{from: "settings"}})
 	return p, req, true
 }
 
