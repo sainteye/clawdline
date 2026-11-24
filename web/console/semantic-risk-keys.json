@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14225,
+  "englishKeys": 14227,
   "counts": {
-    "negation": 3619,
-    "state": 2406,
-    "permission": 858,
+    "negation": 3620,
+    "state": 2407,
+    "permission": 859,
     "deletion": 326,
     "uncertainty": 569
   },
-  "unionCount": 6047,
+  "unionCount": 6049,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -216,6 +216,7 @@
       "capacityRow.bots.hook_poll_seconds.full",
       "capacityRow.bots.login_probe_backoff_milliseconds.full",
       "capacityRow.bots.login_secret_targets.what",
+      "capacityRow.bots.login_status_milliseconds.full",
       "capacityRow.bots.manager_approval_seconds.full",
       "capacityRow.bots.manager_card_units.full",
       "capacityRow.bots.mcp_write_ms.full",
@@ -3815,6 +3816,7 @@
       "capacityRow.bots.instruction_bytes.full",
       "capacityRow.bots.login_profiles.full",
       "capacityRow.bots.login_secret_targets.full",
+      "capacityRow.bots.login_status_milliseconds.full",
       "capacityRow.bots.manager_card_units.full",
       "capacityRow.bots.manager_created.full",
       "capacityRow.bots.manager_pending.full",
@@ -6122,6 +6124,7 @@
       "capacityRow.bots.login_probe_attempts.what",
       "capacityRow.bots.login_probe_backoff_milliseconds.full",
       "capacityRow.bots.login_probe_backoff_milliseconds.what",
+      "capacityRow.bots.login_status_milliseconds.what",
       "capacityRow.bots.mcp_write_ms.what",
       "capacityRow.bots.memory_preview.what",
       "capacityRow.bots.network_grants.what",
@@ -8221,6 +8224,8 @@
     "capacityRow.bots.login_profiles.full",
     "capacityRow.bots.login_secret_targets.full",
     "capacityRow.bots.login_secret_targets.what",
+    "capacityRow.bots.login_status_milliseconds.full",
+    "capacityRow.bots.login_status_milliseconds.what",
     "capacityRow.bots.manager_approval_seconds.full",
     "capacityRow.bots.manager_card_units.full",
     "capacityRow.bots.manager_created.full",

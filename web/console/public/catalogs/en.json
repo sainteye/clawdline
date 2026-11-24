@@ -1113,6 +1113,8 @@
   "capacityRow.bots.login_probe_attempts.what": "How many times one sign-in check reads native status or the stored key before it reports the outcome as unconfirmed.",
   "capacityRow.bots.login_probe_backoff_milliseconds.full": "The wait between sign-in check reads doubles from 200 milliseconds and never exceeds this.",
   "capacityRow.bots.login_probe_backoff_milliseconds.what": "The longest wait between two reads of one sign-in check.",
+  "capacityRow.bots.login_status_milliseconds.full": "A status read that does not answer in time counts as interrupted: the check keeps the previous state and the other Bots keep running.",
+  "capacityRow.bots.login_status_milliseconds.what": "The longest wait for one native sign-in status read during a sign-in check.",
   "capacityRow.bots.login_profiles.full": "Another profile is refused; existing sign-ins are preserved.",
   "capacityRow.bots.login_profiles.what": "Managed account and API-key login profiles per source account and machine.",
   "capacityRow.bots.login_secret_targets.full": "Another handoff is refused at the limit. Existing targets remain available until their 15-minute expiry or source restart.",

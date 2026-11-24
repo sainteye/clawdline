@@ -1113,6 +1113,8 @@
   "capacityRow.bots.login_probe_attempts.what": "一次登入檢查最多讀取原生登入狀態或已存金鑰幾次，之後才回報結果無法確認。",
   "capacityRow.bots.login_probe_backoff_milliseconds.full": "登入檢查兩次讀取之間的等待從 200 毫秒起倍增，最長不超過這個值。",
   "capacityRow.bots.login_probe_backoff_milliseconds.what": "一次登入檢查中，兩次讀取之間最長的等待時間。",
+  "capacityRow.bots.login_status_milliseconds.full": "逾時沒有回應的狀態讀取視為中斷：這次檢查保留原本的狀態，其他 Bot 照常執行。",
+  "capacityRow.bots.login_status_milliseconds.what": "登入檢查中，單次讀取原生登入狀態的最長等待時間。",
   "capacityRow.bots.login_profiles.full": "拒絕新增超出數量的登入設定，保留原有登入。",
   "capacityRow.bots.login_profiles.what": "每個來源帳號與電腦持有的獨立帳號及 API 金鑰登入設定。",
   "capacityRow.bots.login_secret_targets.full": "達上限時拒絕新增交付。現有交付可使用到 15 分鐘期限或來源重新啟動為止。",

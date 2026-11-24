@@ -35,7 +35,9 @@ type Registry struct {
 	Now                   func() time.Time
 	// ProbeBackoff is the first wait between check reads; tests set it to zero.
 	ProbeBackoff time.Duration
-	workers      sync.WaitGroup
+	// StatusTimeout bounds one native status read whatever the native does.
+	StatusTimeout time.Duration
+	workers       sync.WaitGroup
 }
 
 func fail(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -58,7 +60,7 @@ func New(ctx context.Context, db *sql.DB, state, account, machine string, native
 		return nil, fail(pa.Invalid, "login_profile_state")
 	}
 	source := sha256.Sum256([]byte(account + "\x00" + machine))
-	r := &Registry{db: db, root: filepath.Join(resolved, "project-assistants", "login-profiles", hex.EncodeToString(source[:])), source: hex.EncodeToString(source[:]), machine: machine, native: native, running: map[string]app.LoginProcess{}, targets: map[string]secretTarget{}, Now: time.Now, ProbeBackoff: pa.LoginProbeBackoff}
+	r := &Registry{db: db, root: filepath.Join(resolved, "project-assistants", "login-profiles", hex.EncodeToString(source[:])), source: hex.EncodeToString(source[:]), machine: machine, native: native, running: map[string]app.LoginProcess{}, targets: map[string]secretTarget{}, Now: time.Now, ProbeBackoff: pa.LoginProbeBackoff, StatusTimeout: pa.MaxLoginStatusMilliseconds * time.Millisecond}
 	r.vault = botprofilevault.New(r.root)
 	// Schema installation is owned by the Bot store, not this constructor.
 	_, e = db.ExecContext(ctx, `UPDATE project_assistant_login_profiles SET state='unknown',revision=revision+1 WHERE source=? AND state IN ('accepted','running','removing')`, r.source)
@@ -273,57 +275,68 @@ func (r *Registry) SubmitSecret(ctx context.Context, q pa.LoginProfileAction, va
 	}
 	return r.apply(ctx, q, value, admit)
 }
+
+// apply holds the registry lock for the durable decision only. A check's
+// native status or vault reads run after the lock is released, so a read that
+// hangs never stops another Bot from acquiring its own profile.
 func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []byte, admit func(context.Context) error) (pa.LoginProfile, error) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	p, probe, e := r.applyLocked(ctx, q, secret, admit)
+	r.mu.Unlock()
+	if e != nil || !probe {
+		return p, e
+	}
+	return r.check(ctx, p, admit)
+}
+func (r *Registry) applyLocked(ctx context.Context, q pa.LoginProfileAction, secret []byte, admit func(context.Context) error) (pa.LoginProfile, bool, error) {
 	if r.closed {
-		return pa.LoginProfile{}, fail(pa.Revoked, "login_profile_source")
+		return pa.LoginProfile{}, false, fail(pa.Revoked, "login_profile_source")
 	}
 	if q.Command.Key.MachineID != r.machine {
-		return pa.LoginProfile{}, fail(pa.ScopeDenied, "login_profile_machine")
+		return pa.LoginProfile{}, false, fail(pa.ScopeDenied, "login_profile_machine")
 	}
 	var data []byte
 	e := r.db.QueryRowContext(ctx, `SELECT data FROM project_assistant_receipts WHERE machine=? AND bot=? AND operation=? AND command_key=?`, q.Command.Key.MachineID, q.Command.Key.BotID, q.Command.Operation, q.Command.IdempotencyKey).Scan(&data)
 	if e == nil {
 		var j journal
 		if json.Unmarshal(data, &j) != nil {
-			return pa.LoginProfile{}, fail(pa.OutcomeUnknown, "login_profile_receipt")
+			return pa.LoginProfile{}, false, fail(pa.OutcomeUnknown, "login_profile_receipt")
 		}
 		if _, e = pa.DecideReplay(q.Command, &j.Receipt); e != nil {
-			return pa.LoginProfile{}, e
+			return pa.LoginProfile{}, false, e
 		}
-		return j.Profile, nil
+		return j.Profile, false, nil
 	}
 	if e != sql.ErrNoRows {
-		return pa.LoginProfile{}, e
+		return pa.LoginProfile{}, false, e
 	}
 	if e = admit(ctx); e != nil {
-		return pa.LoginProfile{}, e
+		return pa.LoginProfile{}, false, e
 	}
 	if q.Agent != pa.ClaudeCode && q.Agent != pa.Codex {
-		return pa.LoginProfile{}, fail(pa.Unsupported, "login_profile_agent")
+		return pa.LoginProfile{}, false, fail(pa.Unsupported, "login_profile_agent")
 	}
 	if !utf8.ValidString(q.Name) || utf8.RuneCountInString(q.Name) > pa.MaxNameRunes || strings.ContainsAny(q.Name, "\x00\r\n") {
-		return pa.LoginProfile{}, fail(pa.Invalid, "login_profile_name")
+		return pa.LoginProfile{}, false, fail(pa.Invalid, "login_profile_name")
 	}
 	var p pa.LoginProfile
 	if q.Action == "create" {
 		if q.ProfileID != "" || q.Revision != 0 || strings.TrimSpace(q.Name) == "" {
-			return p, fail(pa.Invalid, "login_profile_create")
+			return p, false, fail(pa.Invalid, "login_profile_create")
 		}
 		var n int
 		if e = r.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_login_profiles WHERE source=? AND (removed=0 OR state IN ('unknown','cleanup_unknown'))`, r.source).Scan(&n); e != nil {
-			return p, e
+			return p, false, e
 		}
 		if n >= pa.MaxLoginProfiles {
-			return p, fail(pa.CapacityFull, "login_profiles")
+			return p, false, fail(pa.CapacityFull, "login_profiles")
 		}
 		kind := q.Kind
 		if kind == "" {
 			kind = "account"
 		}
 		if kind != "account" && kind != "api_key" {
-			return p, fail(pa.Invalid, "login_profile_kind")
+			return p, false, fail(pa.Invalid, "login_profile_kind")
 		}
 		p = pa.LoginProfile{ID: id(), Agent: q.Agent, Kind: kind, Name: q.Name, State: "signed_out", Revision: 1}
 		if kind == "api_key" {
@@ -334,13 +347,13 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 	} else {
 		p, e = r.get(ctx, q.ProfileID)
 		if e != nil {
-			return p, e
+			return p, false, e
 		}
 		if p.Agent != q.Agent {
-			return p, fail(pa.ScopeDenied, "login_profile_agent")
+			return p, false, fail(pa.ScopeDenied, "login_profile_agent")
 		}
 		if p.Revision != q.Revision {
-			return p, fail(pa.StaleVersion, "login_profile")
+			return p, false, fail(pa.StaleVersion, "login_profile")
 		}
 		p.Revision++
 	}
@@ -349,18 +362,18 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 	case "create":
 	case "rename":
 		if strings.TrimSpace(q.Name) == "" {
-			return p, fail(pa.Invalid, "login_profile_name")
+			return p, false, fail(pa.Invalid, "login_profile_name")
 		}
 		p.Name = q.Name
 	case "prepare-key", "submit-key", "start":
 		if (q.Action == "start") != (p.Kind == "account") {
-			return p, fail(pa.Invalid, "login_profile_kind")
+			return p, false, fail(pa.Invalid, "login_profile_kind")
 		}
 		// An unknown key profile accepts a replacement key: the person's new key
 		// is the explicit way out. An unknown account still needs a check first,
 		// because an earlier native sign-in may still be writing its slot.
 		if p.State == "accepted" || p.State == "running" || p.State == "unknown" && p.Kind == "account" {
-			return p, fail(pa.OutcomeUnknown, "login_profile_state")
+			return p, false, fail(pa.OutcomeUnknown, "login_profile_state")
 		}
 		// A selected profile is an immutable credential identity. Changing its
 		// account requires deselecting it first, which advances each Bot's
@@ -369,14 +382,14 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		var references, holds int
 		e = r.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_bots WHERE machine=? AND (json_extract(CAST(data AS TEXT),'$.Bot.login_profile')=? OR EXISTS(SELECT 1 FROM json_each(json_extract(CAST(data AS TEXT),'$.Bot.fallback_steps')) f WHERE json_extract(f.value,'$.login_profile')=?))`, r.machine, p.ID, p.ID).Scan(&references)
 		if e != nil {
-			return p, e
+			return p, false, e
 		}
 		e = r.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_login_holds WHERE source=? AND profile=?`, r.source, p.ID).Scan(&holds)
 		if e != nil {
-			return p, e
+			return p, false, e
 		}
 		if references != 0 || holds != 0 {
-			return p, fail(pa.ScopeDenied, "login_profile_in_use")
+			return p, false, fail(pa.ScopeDenied, "login_profile_in_use")
 		}
 		if q.Action == "prepare-key" {
 			for target, v := range r.targets {
@@ -385,16 +398,16 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 				}
 			}
 			if len(r.targets) >= pa.MaxLoginSecretTargets {
-				return p, fail(pa.CapacityFull, "login_secret_targets")
+				return p, false, fail(pa.CapacityFull, "login_secret_targets")
 			}
 			p.Handoff = &pa.LoginSecretTarget{ID: id(), Expires: r.Now().Add(secrets.MaxSecretHandoffSeconds * time.Second)}
 		} else if q.Action == "submit-key" {
 			target, ok := r.targets[q.Target]
 			if !ok || !r.Now().Before(target.expires) || !target.matches(q) {
-				return p, fail(pa.Expired, "login_secret_target")
+				return p, false, fail(pa.Expired, "login_secret_target")
 			}
 			if len(secret) == 0 || len(secret) > secrets.MaxSecretHandoffBytes || strings.ContainsAny(string(secret), "\x00\r\n") {
-				return p, fail(pa.Invalid, "login_secret_value")
+				return p, false, fail(pa.Invalid, "login_secret_value")
 			}
 			p.State = "accepted"
 		} else {
@@ -402,105 +415,105 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		}
 	case "cancel":
 		if p.Kind != "account" {
-			return p, fail(pa.Invalid, "login_profile_kind")
+			return p, false, fail(pa.Invalid, "login_profile_kind")
 		}
 		if r.running[p.ID] == nil {
-			return p, fail(pa.OutcomeUnknown, "login_profile_process")
+			return p, false, fail(pa.OutcomeUnknown, "login_profile_process")
 		}
 	case "check":
 		// Check is the way out of unknown: it never borrows the old receipt and
 		// settles only from a fresh read. A sign-in this daemon is running is
 		// still settled by that sign-in finishing.
 		if r.running[p.ID] != nil {
-			return p, fail(pa.OutcomeUnknown, "login_profile_state")
+			return p, false, fail(pa.OutcomeUnknown, "login_profile_state")
 		}
 	case "remove":
 		var references, holds int
 		e = r.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_bots WHERE machine=? AND (json_extract(CAST(data AS TEXT),'$.Bot.login_profile')=? OR EXISTS(SELECT 1 FROM json_each(json_extract(CAST(data AS TEXT),'$.Bot.fallback_steps')) f WHERE json_extract(f.value,'$.login_profile')=?))`, r.machine, p.ID, p.ID).Scan(&references)
 		if e != nil {
-			return p, e
+			return p, false, e
 		}
 		e = r.db.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_login_holds WHERE source=? AND profile=?`, r.source, p.ID).Scan(&holds)
 		if e != nil {
-			return p, e
+			return p, false, e
 		}
 		// An unknown key profile has no native process: with no execution hold
 		// its key and slot can be removed. An unknown account may still have a
 		// native sign-in writing its slot and must be checked first.
 		if references != 0 || holds != 0 || r.running[p.ID] != nil || p.State == "unknown" && p.Kind == "account" || p.State == "running" || p.State == "accepted" {
-			return p, fail(pa.ScopeDenied, "login_profile_in_use")
+			return p, false, fail(pa.ScopeDenied, "login_profile_in_use")
 		}
 		removed = true
 		p.State = "removing"
 	default:
-		return p, fail(pa.Invalid, "login_profile_action")
+		return p, false, fail(pa.Invalid, "login_profile_action")
 	}
 	tx, e := r.db.BeginTx(ctx, nil)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
 	defer tx.Rollback()
 	_, e = tx.ExecContext(ctx, `INSERT INTO project_assistant_login_profiles(source,id,agent,name,state,revision,removed) VALUES(?,?,?,?,?,?,?) ON CONFLICT(source,id) DO UPDATE SET name=excluded.name,state=excluded.state,revision=excluded.revision,removed=excluded.removed`, r.source, p.ID, p.Agent, p.Name, p.State, p.Revision, removed)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
 	if q.Action == "create" {
 		if _, e = tx.ExecContext(ctx, `INSERT INTO project_assistant_login_kinds(source,id,kind) VALUES(?,?,?)`, r.source, p.ID, p.Kind); e != nil {
-			return p, e
+			return p, false, e
 		}
 	}
 	j := journal{Receipt: pa.Receipt{ID: id(), Command: q.Command, State: pa.EffectAccepted, ResourceID: p.ID}, Profile: p}
 	data, e = json.Marshal(j)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
 	_, e = tx.ExecContext(ctx, `INSERT INTO project_assistant_receipts(machine,bot,operation,command_key,receipt_id,data) VALUES(?,?,?,?,?,?)`, q.Command.Key.MachineID, q.Command.Key.BotID, q.Command.Operation, q.Command.IdempotencyKey, j.ID, data)
 	if e != nil {
-		return p, e
+		return p, false, e
 	}
 	if e = tx.Commit(); e != nil {
-		return p, fail(pa.OutcomeUnknown, "login_profile_commit")
+		return p, false, fail(pa.OutcomeUnknown, "login_profile_commit")
 	}
 	if q.Action == "rename" {
-		return p, nil
+		return p, false, nil
 	}
 	if q.Action == "check" {
-		return r.check(ctx, p, admit)
+		return p, true, nil
 	}
 	if q.Action == "prepare-key" {
 		r.targets[p.Handoff.ID] = secretTarget{key: q.Command.Key, fence: q.Fence, profile: p.ID, revision: p.Revision, authority: q.Authority, agent: p.Agent, expires: p.Handoff.Expires}
-		return p, nil
+		return p, false, nil
 	}
 	if q.Action == "submit-key" {
 		delete(r.targets, q.Target)
 		if e = admit(ctx); e != nil {
 			r.state(p, "unknown")
-			return p, e
+			return p, false, e
 		}
 		if _, e = r.profileEnvironment(p, false); e == nil {
 			e = r.vault.Put(p.ID, r.aad(p), secret, secrets.MaxSecretHandoffBytes)
 		}
 		if e != nil {
 			r.state(p, "unknown")
-			return p, fail(pa.OutcomeUnknown, "login_profile_vault")
+			return p, false, fail(pa.OutcomeUnknown, "login_profile_vault")
 		}
 		if e = admit(ctx); e != nil {
 			r.state(p, "unknown")
-			return p, e
+			return p, false, e
 		}
 		r.state(p, "signed_in")
-		return p, nil
+		return p, false, nil
 	}
 	if p.Kind == "api_key" && (q.Action == "create" || q.Action == "remove") {
 		if q.Action == "remove" {
 			if e = r.vault.Remove(p.ID); e != nil {
 				r.state(p, "cleanup_unknown")
-				return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
+				return p, false, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 			}
 			path, e := r.slot(p)
 			if e != nil || os.RemoveAll(path) != nil {
 				r.state(p, "cleanup_unknown")
-				return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
+				return p, false, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 			}
 			r.state(p, "removed")
 		} else {
@@ -508,40 +521,40 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 		}
 		if e != nil {
 			r.state(p, "unknown")
-			return p, fail(pa.AuthProbeUnknown, "login_profile_vault")
+			return p, false, fail(pa.AuthProbeUnknown, "login_profile_vault")
 		}
-		return p, nil
+		return p, false, nil
 	}
 	env, e := r.environment(p)
 	if e != nil {
 		r.state(p, "unknown")
-		return p, e
+		return p, false, e
 	}
 	if e = admit(ctx); e != nil {
 		r.state(p, "unknown")
-		return p, e
+		return p, false, e
 	}
 	switch q.Action {
 	case "remove":
 		if e = r.native.SignOut(ctx, p.Agent, env); e != nil {
 			r.state(p, "cleanup_unknown")
-			return p, fail(pa.ExecutionEffectUnknown, "login_profile_sign_out")
+			return p, false, fail(pa.ExecutionEffectUnknown, "login_profile_sign_out")
 		}
 		path, e := r.slot(p)
 		if e != nil {
 			r.state(p, "cleanup_unknown")
-			return p, e
+			return p, false, e
 		}
 		if e = os.RemoveAll(path); e != nil {
 			r.state(p, "cleanup_unknown")
-			return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
+			return p, false, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 		}
 		r.state(p, "removed")
 	case "start":
 		process, e := r.native.Start(ctx, p.Agent, env)
 		if e != nil {
 			r.state(p, "unknown")
-			return p, fail(pa.OutcomeUnknown, "login_profile_start")
+			return p, false, fail(pa.OutcomeUnknown, "login_profile_start")
 		}
 		r.running[p.ID] = process
 		r.state(p, "running")
@@ -550,19 +563,21 @@ func (r *Registry) apply(ctx context.Context, q pa.LoginProfileAction, secret []
 	case "cancel":
 		if e = r.running[p.ID].Close(ctx); e != nil {
 			r.state(p, "unknown")
-			return p, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
+			return p, false, fail(pa.ExecutionEffectUnknown, "login_profile_cleanup")
 		}
 	}
 	// Return the durable acceptance snapshot. Replays return these exact bytes;
 	// GET observes subsequent running/signed-in facts, never an invented success.
-	return p, nil
+	return p, false, nil
 }
 
 // check settles a profile from one fresh read, retried a bounded number of
-// times. Only an answer changes the stored state: signed in (a readable key or
-// a native signed-in status) or the native signed-out status, which is the
+// times. It runs without the registry lock and each native read has its own
+// deadline. Only an answer changes the stored state: signed in (a readable key
+// or a native signed-in status) or the native signed-out status, which is the
 // authoritative refusal. An interrupted or timed-out read leaves the previous
 // state in place, so a failure is never cached and the next check can settle.
+// The answer is written only if nothing changed the profile while it was read.
 func (r *Registry) check(ctx context.Context, p pa.LoginProfile, admit func(context.Context) error) (pa.LoginProfile, error) {
 	if e := admit(ctx); e != nil {
 		return p, e
@@ -572,8 +587,12 @@ func (r *Registry) check(ctx context.Context, p pa.LoginProfile, admit func(cont
 	if p.Kind == "api_key" {
 		field = "login_profile_vault"
 	} else {
+		// The slot directory is created under the lock, as every other caller does.
+		r.mu.Lock()
 		var e error
-		if env, e = r.profileEnvironment(p, false); e != nil {
+		env, e = r.profileEnvironment(p, false)
+		r.mu.Unlock()
+		if e != nil {
 			return p, e
 		}
 	}
@@ -591,7 +610,7 @@ func (r *Registry) check(ctx context.Context, p pa.LoginProfile, admit func(cont
 				settled, e = "signed_out", nil
 			}
 		} else {
-			settled, e = r.native.Status(ctx, p.Agent, env)
+			settled, e = r.status(ctx, p.Agent, env)
 		}
 		if e == nil && (settled == "signed_in" || settled == "signed_out") {
 			break
@@ -610,8 +629,44 @@ func (r *Registry) check(ctx context.Context, p pa.LoginProfile, admit func(cont
 			wait = min(2*wait, pa.MaxLoginProbeBackoffMilliseconds*time.Millisecond)
 		}
 	}
-	r.state(p, settled)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return p, fail(pa.Revoked, "login_profile_source")
+	}
+	if r.running[p.ID] != nil {
+		return p, fail(pa.OutcomeUnknown, "login_profile_state")
+	}
+	written, e := r.db.ExecContext(context.Background(), `UPDATE project_assistant_login_profiles SET state=?,revision=revision+1 WHERE source=? AND id=? AND revision=? AND removed=0`, settled, r.source, p.ID, p.Revision)
+	if e != nil {
+		return p, fail(pa.AuthProbeUnknown, field)
+	}
+	if n, e := written.RowsAffected(); e != nil || n != 1 {
+		return p, fail(pa.StaleVersion, "login_profile")
+	}
 	return p, nil
+}
+
+// status is one native status read with its own deadline. A native that does
+// not honour cancellation is abandoned at the deadline instead of waited for.
+func (r *Registry) status(ctx context.Context, agent pa.Agent, env []string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, r.StatusTimeout)
+	defer cancel()
+	type answer struct {
+		state string
+		err   error
+	}
+	done := make(chan answer, 1)
+	go func() {
+		state, e := r.native.Status(ctx, agent, env)
+		done <- answer{state, e}
+	}()
+	select {
+	case a := <-done:
+		return a.state, a.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 func (r *Registry) state(p pa.LoginProfile, state string) {
@@ -623,7 +678,7 @@ func (r *Registry) finish(p pa.LoginProfile, env []string, process app.LoginProc
 	cleanup := process.Close(context.Background())
 	state := "unknown"
 	if e == nil && cleanup == nil {
-		if v, err := r.native.Status(context.Background(), p.Agent, env); err == nil {
+		if v, err := r.status(context.Background(), p.Agent, env); err == nil {
 			state = v
 		}
 	}
