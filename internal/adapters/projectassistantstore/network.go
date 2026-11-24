@@ -67,9 +67,8 @@ func (s *Store) SaveNetworkSettings(ctx context.Context, write pa.NetworkSetting
 	if err != nil {
 		return pa.NetworkSettings{}, err
 	}
-	if a.Bot.Version != write.ExpectedBotVersion {
-		return pa.NetworkSettings{}, failure(pa.StaleVersion, "network_bot_version")
-	}
+	// Bot.Version advances with every chat turn, so it is not compared here;
+	// the settings revision below is the edit guard and the fence the boundary.
 	currentFence := pa.Fence{Key: a.Bot.Key, Project: a.Bot.Project, ConversationID: a.Conversation.ID, BindingID: a.Conversation.BindingID, Generation: a.Conversation.Generation}
 	if write.Fence != currentFence {
 		return pa.NetworkSettings{}, failure(pa.StaleGeneration, "network_fence")

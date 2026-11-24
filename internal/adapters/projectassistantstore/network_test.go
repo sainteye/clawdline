@@ -53,10 +53,16 @@ func TestNetworkSettingsKeepAccountScopeCASAndHistoricalBytes(t *testing.T) {
 	stale.Fence.Generation++
 	_, err = store.SaveNetworkSettings(testContext, stale, ready)
 	requireCode(t, err, pa.StaleGeneration)
-	stale = write
-	stale.ExpectedBotVersion++
-	_, err = store.SaveNetworkSettings(testContext, stale, ready)
-	requireCode(t, err, pa.StaleVersion)
+	// Chat activity advances Bot.Version; the settings revision alone guards a toggle.
+	busy := write
+	busy.ExpectedBotVersion--
+	off := false
+	busy.Patch = pa.NetworkSettingsPatch{ReachableByAssistants: &off}
+	toggled, err := store.SaveNetworkSettings(testContext, busy, ready)
+	if err != nil || toggled.Revision != 2 || toggled.ReachableByAssistants || !toggled.OfferedToNetwork {
+		t.Fatalf("toggle after Bot activity: %+v %v", toggled, err)
+	}
+	first = toggled
 	var after []byte
 	if err = db.QueryRow(`SELECT data FROM project_assistant_bots WHERE machine=? AND bot=?`, bot.Key.MachineID, bot.Key.BotID).Scan(&after); err != nil || !bytes.Equal(before, after) {
 		t.Fatalf("network settings rewrote historical Bot bytes: %v", err)
