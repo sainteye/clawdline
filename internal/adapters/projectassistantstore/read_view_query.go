@@ -62,6 +62,10 @@ func viewFenceSQL(value string, current bool) string {
 	return "coalesce((" + strings.Join(conditions, " AND ") + "),0)"
 }
 
+func viewPermissionFenceSQL(value string) string {
+	return "(" + viewFenceSQL(value, true) + " OR (json_extract(" + value + ",'$.kind')='decision' AND " + viewFenceSQL(value, false) + "))"
+}
+
 // Historical display is not execution authority. It still requires the exact
 // persisted binding, including a turn's matching generation. Generation zero
 // is the valid pre-binding admission state.
@@ -331,7 +335,7 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
  (SELECT count(*) FROM a,json_each(a.j,'$.Turns') WHERE type='object' AND json_extract(value,'$.state')='unknown'),
  (SELECT count(*) FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
  AND json_extract(t.value,'$.state') IN ('accepted','queued') AND ` + ownChatTurnSQL("t.key") + `),
- (SELECT count(*) FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewFenceSQL("p.value", true) + `)`
+ (SELECT count(*) FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `)`
 	if err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount); err != nil {
 		return err
 	}

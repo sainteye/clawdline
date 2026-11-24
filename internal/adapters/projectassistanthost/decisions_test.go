@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -80,6 +81,8 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
 	f.o.Limits.MaxProcesses = 2
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
 	f.start(t)
 	f.enable(t)
 	a, b, x, offer := startPeerQuestion(t, f)
@@ -95,7 +98,37 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "decide"}, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, OptionID: "reply-1"}); err != nil {
+	unrelated, err := f.send(t, b, "unrelated topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "Here is the unrelated answer."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, b.Key, unrelated.ResourceID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+
+	query := pa.ReadViewRequest{Key: b.Key, ConversationID: b.ConversationID, Mode: pa.ReadViewSnapshot, PageSize: 1}
+	snapshot, err := service.View(ctx, query)
+	if err != nil || snapshot.View.Head.CurrentFence == offer.Fence || snapshot.View.Head.PendingPermissionCount != 1 {
+		t.Fatalf("the open decision did not survive the recipient's new binding: %+v, %v", snapshot.View.Head, err)
+	}
+	query.Mode, query.SourceEpoch = pa.ReadViewPermissions, snapshot.View.SourceEpoch
+	collection, err := service.View(ctx, query)
+	if err != nil || len(collection.View.Items) != 1 || collection.View.Items[0].PermissionSummary == nil {
+		t.Fatalf("the open decision is missing from the recipient chat: %+v, %v", collection.View.Items, err)
+	}
+	query.Mode, query.Cursor = pa.ReadViewDetail, collection.View.Items[0].PermissionSummary.DetailCursor
+	detail, err := service.View(ctx, query)
+	if err != nil || len(detail.View.Items) != 1 || detail.View.Items[0].Permission == nil {
+		t.Fatalf("the original decision could not be opened: %+v, %v", detail.View.Items, err)
+	}
+	card := detail.View.Items[0].Permission
+	if card.ID != offer.ID || card.Fence != snapshot.View.Head.CurrentFence {
+		t.Fatalf("the card lost its identity or the current chat fence: %+v", card)
+	}
+	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "decide"}, pa.PermissionAnswer{Fence: card.Fence, OfferID: card.ID, OptionID: "reply-1"}); err != nil {
 		t.Fatal(err)
 	}
 	main := fixtureReceive(t, f.p.sessions)
