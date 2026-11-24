@@ -18,6 +18,16 @@ affects the closed Session report card. Model context, tools, approvals and
 execution are unchanged. Only those source receipts are refreshed; this review
 does not deploy the public website.
 
+Work a Bot's private thread worker dispatches at another Bot's request now
+belongs to that Bot's main chat: the Host writes a finished host-notice turn
+there ("Dispatched task … at …'s request." in English and Taiwan Traditional
+Chinese) and the broker records it as the task's owner, so the completion
+review turn runs in the main chat. Reviewed the persistent-bot-review card in
+both languages: the notice turn never runs a prompt, and the fixed Bot frame,
+the peer-request prompt, the work-completion prompt and the tool descriptions
+are unchanged. Only the actor, provider, provider message and runtime source
+receipts are refreshed; this review does not deploy the public website.
+
 A Bot answering another Bot's request on this machine can now call
 `dispatch_work` into its own Project and use browser tabs it opened in that
 turn. Reviewed the persistent-bot-review card in English and Taiwan Traditional

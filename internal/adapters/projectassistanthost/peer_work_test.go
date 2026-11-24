@@ -8,7 +8,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -218,4 +220,102 @@ func TestPeerRequestTurnDispatchesAndUsesItsOwnBrowser(t *testing.T) {
 		t.Fatalf("browser_status from the peer-request turn: %+v, %v", status, err)
 	}
 	worker.reply <- app.PromptResult{FinalText: "Dispatched and captured."}
+}
+
+// Work a Bot dispatches while answering another Bot belongs to its main chat:
+// a notice there names who asked and the task, the task attaches to it, the
+// main chat's work_status reads it and its completion wakes the main chat,
+// not the hidden thread that dispatched it.
+func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
+	ctx := context.Background()
+	f, _, _ := browserFixture(t)
+	f.o.Limits.MaxBots, f.o.Limits.MaxProcesses = 4, 3
+	f.start(t)
+	f.enable(t)
+	atlas, lens := f.create(t, "atlas"), f.create(t, "lens")
+	if _, err := f.send(t, lens, "ask"); err != nil {
+		t.Fatal(err)
+	}
+	asker := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	x, err := asker.q.Tools.(peerWorkTools).MessageBot(ctx, pa.BotMessageRequest{TargetBotID: atlas.Key.BotID, Text: "Please dispatch the fix.", IdempotencyKey: "fix"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	asker.reply <- app.PromptResult{FinalText: "Asked Atlas."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, lens.Key, x.SourceTurnID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	f.h.tickBackgroundTasks(ctx)
+	worker := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	if worker.q.Bot.Key == atlas.Key {
+		t.Fatal("the request did not run in Atlas's thread worker")
+	}
+	tools := worker.q.Tools.(peerWorkTools)
+	link, err := tools.Dispatch(ctx, "peer-work", "Fix the header", "Change only a.go.", []string{"a.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The same dispatch again is the same task and the same single notice.
+	again, err := tools.Dispatch(ctx, "peer-work", "Fix the header", "Change only a.go.", []string{"a.go"})
+	if err != nil || again.TaskID != link.TaskID {
+		t.Fatalf("repeated dispatch: %+v, %v", again, err)
+	}
+	main, err := f.h.store.Export(ctx, atlas.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hidden, _ := f.h.store.Export(ctx, worker.q.Bot.Key)
+	if link.Fence.Key != atlas.Key || len(main.WorkLinks) != 1 || len(hidden.WorkLinks) != 0 {
+		t.Fatalf("task owned by %s; main chat links=%d, hidden thread links=%d", link.Fence.Key.BotID, len(main.WorkLinks), len(hidden.WorkLinks))
+	}
+	var notices []pa.Message
+	for _, m := range main.Messages {
+		if m.Kind == pa.NoticeMessage && m.TurnID == link.TurnID {
+			notices = append(notices, m)
+		}
+	}
+	if len(notices) != 1 || !strings.Contains(notices[0].Text, "lens") || !strings.Contains(notices[0].Text, "Fix the header") || !strings.Contains(notices[0].Text, "應 Bot lens 的請求") {
+		t.Fatalf("main-chat notice: %+v", notices)
+	}
+	// The worker can still read the work it dispatched for its owner.
+	if got, err := tools.Status(ctx, link.TaskID); err != nil || got.TaskID != link.TaskID {
+		t.Fatalf("work_status from the thread worker: %+v, %v", got, err)
+	}
+	worker.reply <- app.PromptResult{FinalText: "Dispatched."}
+	// Atlas's answer goes back to Lens as a reply turn.
+	reply := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	if reply.q.Bot.Key != lens.Key {
+		t.Fatalf("the answer went to %s, not Lens", reply.q.Bot.Key.BotID)
+	}
+	reply.reply <- app.PromptResult{FinalText: "Thanks."}
+	fixtureEventually(t, func() bool {
+		x, err := f.h.store.Export(ctx, lens.Key)
+		return err == nil && x.Conversation.ActiveTurnID == ""
+	})
+
+	if _, err := f.send(t, atlas, "how is the fix going?"); err != nil {
+		t.Fatal(err)
+	}
+	chat := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	if got, err := chat.q.Tools.(peerWorkTools).Status(ctx, link.TaskID); err != nil || got.TaskID != link.TaskID {
+		t.Fatalf("work_status from Atlas's main chat: %+v, %v", got, err)
+	}
+	chat.reply <- app.PromptResult{FinalText: "Still running."}
+	fixtureEventually(t, func() bool {
+		x, err := f.h.store.Export(ctx, atlas.Key)
+		return err == nil && x.Conversation.ActiveTurnID == ""
+	})
+
+	if _, err := f.o.Broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Header fixed."}); err != nil {
+		t.Fatal(err)
+	}
+	wake := fixtureReceive(t, f.p.sent)
+	if pa.WorkCompletionTask(wake.Turn) != link.TaskID || wake.Turn.Fence.Key != atlas.Key {
+		t.Fatalf("the review turn ran in %s, not Atlas's main chat: %+v", wake.Turn.Fence.Key.BotID, wake.Turn)
+	}
 }

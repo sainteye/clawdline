@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -102,6 +103,26 @@ func peerWorkOwner(ctx context.Context, st *featurestore.Store, worker pa.Bot) p
 		return pa.Fence{}
 	}
 	return pa.Fence{Key: owner, Project: bot.Project, ConversationID: bot.ConversationID}
+}
+
+// anchorPeerDispatch writes the main chat's notice for work a thread worker
+// dispatches at another Bot's request and names it the work's owner. Without
+// a resolved owner the dispatch is refused rather than left on the hidden
+// thread, where the person would never see it.
+func (h *Host) anchorPeerDispatch(ctx context.Context, r *app.Engine, owner pa.Fence, turn pa.Turn, q *pa.WorkRequest) error {
+	if owner.Key.BotID == "" || q.TargetProject != (pa.ProjectScope{}) {
+		return failure(pa.ScopeDenied, "work_owner")
+	}
+	text := app.PeerDispatchNoticeText(h.peerRequester(ctx, q.Command.Key, turn), q.Title)
+	fence, turnID, err := r.AnchorPeerDispatch(ctx, owner.Key, orchestrator.AssistantTaskID(q.Command), text)
+	if err != nil {
+		return err
+	}
+	if fence.Key != owner.Key || fence.Project != owner.Project || fence.ConversationID != owner.ConversationID {
+		return failure(pa.StaleVersion, "work_owner")
+	}
+	q.OwnerFence, q.OwnerTurnID = fence, turnID
+	return nil
 }
 
 func (w NativeWork) MessageWork(ctx context.Context, taskID, text, key string) (pa.WorkMessageReceipt, error) {

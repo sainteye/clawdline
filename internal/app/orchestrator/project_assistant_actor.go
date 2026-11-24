@@ -250,7 +250,10 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		ContinueOnCompletion bool   `json:"continue_on_completion,omitempty"`
 		// Omitted when empty so receipts written before dispatch rules keep their hash.
 		Choice pa.DispatchChoice `json:"choice,omitzero"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice})
+		// Omitted when the actor owns the work, so earlier receipts keep their hash.
+		OwnerFence  pa.Fence `json:"owner_fence,omitzero"`
+		OwnerTurnID string   `json:"owner_turn_id,omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice, q.OwnerFence, q.OwnerTurnID})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -265,6 +268,17 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	}
 	if q.TurnID != c.ActiveTurnID {
 		return c, assistantFailure(pa.StaleVersion, "work_turn")
+	}
+	if q.OwnerTurnID != "" || q.OwnerFence != (pa.Fence{}) {
+		// Only a thread worker answering another Bot hands its work to the
+		// main chat the host resolved for it, and only for plain work in
+		// that Project: Board items, completion turns and other Projects
+		// still need the person's own turn.
+		owner := c.WorkOwner
+		if owner.Key.BotID == "" || q.OwnerTurnID == "" || q.OwnerFence.Key != owner.Key || q.OwnerFence.Project != owner.Project ||
+			q.OwnerFence.ConversationID != owner.ConversationID || q.BoardItemID != "" || q.ContinueOnCompletion || q.TargetProject != (pa.ProjectScope{}) {
+			return c, assistantFailure(pa.ScopeDenied, "work_owner")
+		}
 	}
 	if _, err = admitPersona(assistantPersona(q)); err != nil {
 		return c, assistantFailure(pa.Invalid, "persona")
@@ -391,7 +405,8 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 		return Dispatched{}, err
 	}
 	r.WorkID = q.BoardItemID
-	r.AssistantOwner = &AssistantOwner{Fence: q.Actor.Fence, BotName: c.BotName, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion}
+	ownerFence, ownerTurn := q.Owner()
+	r.AssistantOwner = &AssistantOwner{Fence: ownerFence, BotName: c.BotName, TurnID: ownerTurn, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion}
 	if pa.ValidateAppearance(c.BotAppearance) == nil {
 		r.AssistantOwner.BotAppearance = c.BotAppearance
 	}
