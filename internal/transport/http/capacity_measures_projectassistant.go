@@ -273,6 +273,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsCleanupRetryDelay:     unobserved,
 		capacity.BotsCleanupSlowRetryDelay: unobserved,
 		capacity.BotsUnscannedCensusGap:    unobserved,
+		capacity.BotsCleanupSlowRetries:    unobserved,
 		capacity.BotsRPCDeadline:           unobserved,
 		capacity.BotsTurnControlWindow:     unobserved,
 		capacity.BotsSurvey:                pure,

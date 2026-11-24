@@ -273,7 +273,7 @@ What changed:
   other `os/exec` child the daemon runs.
 - **Lower bound.** A gap that opens before the first successful census starts
   at `StartProcess`.
-- **Re-checks never stop.** After `bots.cleanup_retries` quick retries, a
+- **Re-checks were meant never to stop** (superseded below). After `bots.cleanup_retries` quick retries, a
   retained Bot keeps re-checking with a doubling delay capped at
   `bots.cleanup_slow_retry_ms` (5 min) until cleanup is confirmed or the
   daemon stops (`retryRetained` in `internal/app/projectassistant/lifecycle.go`).
@@ -292,3 +292,43 @@ not at the census moment), `TestRuntimeRetainedCleanupKeepsRecheckingAfterQuickR
 and `TestRuntimeNextMessageRechecksRetainedCleanup`. Each failed before the
 change. The Engine tests inject the cleanup failure at the provider session's
 Close, not at the census; the census path is covered by the adapter tests.
+
+## Second review: re-checking forever is a lock too (Fuse, 2026-11-24)
+
+A long gap scans live processes of our own user born inside it whose oldest
+such ancestor hangs from pid 1 or a daemon ancestor. On macOS launchd keeps
+starting the person's apps and XPC services with exactly that shape; on Linux
+`systemd --user` and a tmux server are daemon ancestors. Re-checks that never
+stop therefore made recovery wait for an unrelated process to exit, possibly
+for hours.
+
+- **Bounded, then released.** After the quick retries,
+  `bots.cleanup_slow_retries` (8: 32, 64, 128, 256 s, then every 300 s, about
+  23 min) slow re-checks run. Then the Bot is released without confirmation
+  (`releaseUnconfirmed`, cause `degraded`): the daemon log names the pids that
+  kept cleanup unconfirmed (`UnconfirmedProcesses`), the abandoned session is
+  never reused or signalled again, the earlier turn keeps
+  `execution_effect_unknown` and is not resent, and a `cleanup_released`
+  notice in the chat says the previous processes could not all be confirmed
+  stopped and to check Activity Monitor.
+- **Release without confirming.** The refusal line in the Bot chat carries a
+  "Release without confirming" button with its risk written beside it. It
+  sends `stop` with `release_unconfirmed`; the same release runs at once with
+  cause `person`.
+- **Unreadable start times.** `ps` now runs with `LC_ALL=C`, since `lstart`
+  follows `LC_TIME`. Before, a row whose start time did not parse counted as
+  born inside the gap, so one such row kept every long gap open. Now it is
+  logged and counts only when its parent is an owned process.
+- **Narrowing not adopted.** Filtering by executable name (claude, codex,
+  node) is unsound: an Agent can leave any program behind (a shell, python,
+  git), and the census deliberately reads no arguments. Session id and process
+  group are what a `setsid` escape changes, and those escapes are what the gap
+  check exists for. The bounded release covers the remaining false positives.
+- The 250 ms interval in the subject of 6e36cb987 was reverted by 3e3ac8852;
+  the survey polls every 50 ms.
+
+Tests: `TestRuntimeRetainedCleanupDegradesAfterBoundedSlowRechecks`,
+`TestRuntimeReleaseUnconfirmedFreesARetainedBotAtOnce`,
+`TestProcessNamesTheOrphanThatKeepsAGapOpen` (a real orphan keeps cleanup
+refused until the release) and
+`TestProcessCloseDoesNotHoldAGapOnAnUnreadableStartTime`.

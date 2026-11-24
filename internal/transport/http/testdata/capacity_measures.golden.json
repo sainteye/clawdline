@@ -330,6 +330,11 @@
     "Note": true
   },
   {
+    "Name": "bots.cleanup_slow_retries",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.cleanup_slow_retry_ms",
     "Known": true,
     "Note": true
