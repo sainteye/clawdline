@@ -62,7 +62,7 @@ const server=createServer(async(req,res)=>{try{
 await new Promise(resolve=>server.listen(0,"127.0.0.1",resolve))
 const origin=`http://127.0.0.1:${server.address().port}`
 const profile=await mkdtemp(path.join(tmpdir(),"board-edit-conflict-"))
-const browser=spawn(chrome,["--headless=new","--disable-features=OmniboxEverywhere","--disable-gpu","--hide-scrollbars","--no-first-run","--remote-debugging-port=0",`--user-data-dir=${profile}`,"about:blank"],{stdio:"ignore"})
+const browser=spawn(chrome,["--headless=new","--disable-features=OmniboxEverywhere","--disable-gpu","--hide-scrollbars","--no-first-run","--use-mock-keychain","--remote-debugging-port=0",`--user-data-dir=${profile}`,"about:blank"],{stdio:"ignore"})
 try{
   let port=""
   for(let i=0;i<200&&!port;i++){port=(await readFile(path.join(profile,"DevToolsActivePort"),"utf8").catch(()=>"")).split("\n")[0];if(!port)await new Promise(r=>setTimeout(r,50))}
