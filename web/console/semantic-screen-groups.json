@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14388,
-  "riskKeys": 6123,
-  "nonRiskCount": 8265,
+  "englishContentKeys": 14410,
+  "riskKeys": 6127,
+  "nonRiskCount": 8283,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 766,
+      "count": 784,
       "sources": [
         null
       ],
@@ -663,6 +663,24 @@
         "capacityRow.artifacts.report_image_side.what",
         "capacityRow.artifacts.report_total_image_pixels.full",
         "capacityRow.artifacts.video_chunk_bytes.what",
+        "capacityRow.botrequest.batch_cards.full",
+        "capacityRow.botrequest.batch_cards.what",
+        "capacityRow.botrequest.chain_bots.full",
+        "capacityRow.botrequest.chain_bots.what",
+        "capacityRow.botrequest.checklist_entries.full",
+        "capacityRow.botrequest.checklist_entries.what",
+        "capacityRow.botrequest.description_bytes.full",
+        "capacityRow.botrequest.description_bytes.what",
+        "capacityRow.botrequest.events_per_card.full",
+        "capacityRow.botrequest.events_per_card.what",
+        "capacityRow.botrequest.label_bytes.full",
+        "capacityRow.botrequest.label_bytes.what",
+        "capacityRow.botrequest.note_bytes.full",
+        "capacityRow.botrequest.note_bytes.what",
+        "capacityRow.botrequest.page_rows.what",
+        "capacityRow.botrequest.receipts.full",
+        "capacityRow.botrequest.verdicts_per_card.full",
+        "capacityRow.botrequest.verdicts_per_card.what",
         "capacityRow.bots.actors.what",
         "capacityRow.bots.adapter_install_seconds.full",
         "capacityRow.bots.adapter_install_seconds.what",

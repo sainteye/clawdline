@@ -830,6 +830,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/bot-request/",
+      "guide": "board"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/work/",
       "guide": "board"
     },
