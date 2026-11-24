@@ -159,7 +159,9 @@ async function verify({width,height,language,reducedMotion}){
     const stepped=await page.evaluate(()=>window.stages.queueActions[0])
     assert.equal(stepped.turn_id,"turn-4")
     assert.equal(stepped.command.operation,"send_now")
-    if(reducedMotion!=="reduce")await wait(()=>window.stages.animations.some(row=>row.id==="person-turn-4"&&row.name==="pa-bubble-enter"))
+    // It was already on screen as a queued message, so it takes its place without entering again.
+    await page.waitForTimeout(300)
+    assert.equal(await page.evaluate(()=>window.stages.animations.some(row=>row.id==="person-turn-4"&&row.name==="pa-bubble-enter")),false)
     assert.equal(await inserted.count(),1)
     await begin("Take this queued message back");await read("release",["accepted"])
     const remove=page.locator(".pa-queued").filter({hasText:"Take this queued message back"})
