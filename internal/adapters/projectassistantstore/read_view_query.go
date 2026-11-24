@@ -117,7 +117,7 @@ SELECT version,valid AND json_type(j)='object'
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN b END,
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN c END,
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN m END,
- (SELECT coalesce(max(seq),0) FROM project_assistant_events WHERE machine=?) FROM meta`
+ (` + eventFrontierSQL + `) FROM meta`
 	var version int64
 	var valid bool
 	var bot, conversation, memory sql.NullString

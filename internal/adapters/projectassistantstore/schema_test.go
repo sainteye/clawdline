@@ -534,6 +534,9 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 			}
 			var oldDDL []string
 			for _, statement := range after["@schema"] {
+				if statement == "CREATE INDEX project_assistant_event_machine ON project_assistant_events(machine,seq)" {
+					continue
+				}
 				if strings.Contains(statement, "project_assistant_background_") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_lead_setup ") {
 					continue
 				}
@@ -555,5 +558,61 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				t.Fatal("reinstall", err)
 			}
 		})
+	}
+}
+
+func TestInstallAddsAnOrderedMachineEventFrontier(t *testing.T) {
+	db, _, _ := testDB(t)
+	if _, err := db.Exec(`DROP INDEX IF EXISTS project_assistant_event_machine`); err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []struct {
+		seq              int64
+		machine, bot, id string
+	}{
+		{1, "source", "first-bot", "z"},
+		{2, "other-source", "another-bot", "y"},
+		{3, "source", "second-bot", "a"},
+		{4, "other-source", "another-bot", "x"},
+	} {
+		if _, err := db.Exec(`INSERT INTO project_assistant_events(seq,machine,bot,event_id,data) VALUES (?,?,?,?,?)`,
+			event.seq, event.machine, event.bot, event.id, []byte("{}")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := (Installer{}).Install(testContext, db); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []struct {
+		machine string
+		seq     int64
+	}{{"source", 3}, {"other-source", 4}, {"empty", 0}} {
+		var got int64
+		if err := db.QueryRow(eventFrontierSQL, scope.machine).Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != scope.seq {
+			t.Fatalf("machine frontier = %d, want %d", got, scope.seq)
+		}
+	}
+	rows, err := db.Query("EXPLAIN QUERY PLAN "+eventFrontierSQL, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, auxiliary int
+		var detail string
+		if err := rows.Scan(&id, &parent, &auxiliary, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(plan, "\n"), "SEARCH project_assistant_events USING COVERING INDEX project_assistant_event_machine") {
+		t.Fatalf("frontier cannot seek in sequence order: %v", plan)
 	}
 }

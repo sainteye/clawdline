@@ -10,6 +10,8 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+const eventFrontierSQL = `SELECT coalesce(max(seq),0) FROM project_assistant_events WHERE machine=?`
+
 func validateStoredEvent(a aggregate, e pa.Event) error {
 	if err := pa.ValidateEvent(e); err != nil {
 		return err
@@ -130,7 +132,7 @@ func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error)
 		return out, err
 	}
 	var last int64
-	if err = tx.QueryRowContext(ctx, `SELECT coalesce(max(seq),0) FROM project_assistant_events WHERE machine=?`, q.Key.MachineID).Scan(&last); err != nil {
+	if err = tx.QueryRowContext(ctx, eventFrontierSQL, q.Key.MachineID).Scan(&last); err != nil {
 		return out, err
 	}
 	if q.AfterSeq > last {
