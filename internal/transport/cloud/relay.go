@@ -35,6 +35,7 @@ import (
 	"time"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
@@ -162,25 +163,27 @@ func (r *Relay) DeliverDirect(envelope domaincloud.Envelope, plaintext []byte, v
 
 // DeliverTraced is Deliver or DeliverDirect carrying the transport phase's
 // connection-health correlation (adaptercloud.Options.InboundTraced).
-func (r *Relay) DeliverTraced(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, correlation string, direct bool) {
-	r.deliverCorrelated(envelope, plaintext, verifiedKey, direct, correlation)
+func (r *Relay) DeliverTraced(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, correlation string, direct bool, frameStarted time.Time) {
+	r.deliverCorrelated(envelope, plaintext, verifiedKey, direct, correlation, frameStarted)
 }
 
 func (r *Relay) deliver(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, direct bool) {
-	r.deliverCorrelated(envelope, plaintext, verifiedKey, direct, "")
+	r.deliverCorrelated(envelope, plaintext, verifiedKey, direct, "", time.Time{})
 }
 
-func (r *Relay) deliverCorrelated(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, direct bool, correlation string) {
+func (r *Relay) deliverCorrelated(envelope domaincloud.Envelope, plaintext []byte, verifiedKey ed25519.PublicKey, direct bool, correlation string, frameStarted time.Time) {
 	r.start()
 	in := Inbound{
-		Correlation: correlation,
-		Channel:     envelope.Ch,
-		Class:       string(envelope.Class),
-		Sender:      envelope.Sender,
-		Sequence:    envelope.Seq,
-		Plaintext:   plaintext,
-		VerifiedKey: verifiedKey,
-		Direct:      direct,
+		ReceivedAt:   time.Now(),
+		FrameStarted: frameStarted,
+		Correlation:  correlation,
+		Channel:      envelope.Ch,
+		Class:        string(envelope.Class),
+		Sender:       envelope.Sender,
+		Sequence:     envelope.Seq,
+		Plaintext:    plaintext,
+		VerifiedKey:  verifiedKey,
+		Direct:       direct,
 	}
 	if r.Audience != nil {
 		r.Audience(envelope.Sender)
@@ -346,6 +349,7 @@ func (r *Relay) publishSealed(ctx context.Context, out Outbound, class domainclo
 	// different reads on one session are two facts, and coalescing them would
 	// settle one waiter with the other's payload. Only `s/` and `orch/` carry
 	// a whole current value, and only those are reserved as latest-value.
+	reserved := botreadtrace.Measure(ctx, "response_reserve")
 	switch {
 	case out.Refusal:
 		// The sentence that says this channel is full, admitted under the
@@ -359,13 +363,17 @@ func (r *Relay) publishSealed(ctx context.Context, out Outbound, class domainclo
 		seq, err = r.Spool.ReserveAnswer(kind, out.Channel, out.Channel, len(out.Payload), out.Headroom)
 	}
 	if err != nil {
+		reserved()
 		return 0, err
 	}
 	if err := r.Spool.LabelKey(seq, keyID); err != nil {
+		reserved()
 		return 0, err
 	}
 
+	reserved()
 	_ = h.Step(connectionhealth.StageHandlerCompleted, connectionhealth.LocRelaySeal)
+	seal := botreadtrace.Measure(ctx, "response_seal")
 	now := r.now()
 	envelope, err := domaincloud.Seal(out.Payload, domaincloud.SealParams{
 		Ch:     out.Channel,
@@ -379,16 +387,22 @@ func (r *Relay) publishSealed(ctx context.Context, out Outbound, class domainclo
 		Rand:   rand.Reader,
 	})
 	if err != nil {
+		seal()
 		return 0, err
 	}
 	sealed, err := envelope.CanonicalJSON()
+	seal()
 	if err != nil {
 		return 0, err
 	}
 	_ = h.Step(connectionhealth.StageResponseSealed, connectionhealth.LocRelaySpoolSeal)
-	if err := r.Spool.SealCorrelated(seq, sealed, now, connectionhealth.CarriedCorrelation(ctx)); err != nil {
+	spool := botreadtrace.Measure(ctx, "response_spool")
+	err = r.Spool.SealCorrelated(seq, sealed, now, connectionhealth.CarriedCorrelation(ctx))
+	spool()
+	if err != nil {
 		return 0, err
 	}
+	botreadtrace.SetResponseSequence(ctx, seq)
 	_ = h.Progress(connectionhealth.StageSpoolQueued)
 	queued = true
 	h.End(true)

@@ -80,8 +80,8 @@ func newResponseRig(t *testing.T, tracker *connectionhealth.Tracker, fence adapt
 		Inbound:      relay.Deliver,
 		// The frame is handed on as the relay socket hands it: not direct,
 		// so its answer is spooled.
-		InboundTraced: func(env domaincloud.Envelope, plain []byte, key ed25519.PublicKey, correlation string, _ bool) {
-			relay.DeliverTraced(env, plain, key, correlation, false)
+		InboundTraced: func(env domaincloud.Envelope, plain []byte, key ed25519.PublicKey, correlation string, _ bool, frameStarted time.Time) {
+			relay.DeliverTraced(env, plain, key, correlation, false, frameStarted)
 		},
 		Health: tracker,
 	})

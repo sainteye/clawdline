@@ -1,3 +1,5 @@
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { BotReadObservation, type BotReadMode } from "../project-assistants/read-observation.ts"
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
@@ -77,7 +79,7 @@ const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
 const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
 type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
-export type AssistantFetch = (input: string, init?: RequestInit) => Promise<Response>
+export type AssistantFetch = (input: string, init?: RequestInit, observation?: BotReadObservation) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
   accountKey: string
@@ -151,6 +153,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   private readonly transport: AssistantFetch
   private readonly currentGrant: () => AssistantGrant | null
   private readonly reportRosterFailure?: (failure: RosterFailure) => void
+  private readonly reportRead?: (data: Record<string, unknown>) => void
   private readonly lifetime = new AbortController()
   private access: W.ProjectAssistantAccess = "hidden"
   private lastStatus: W.ProjectAssistantSourceStatus | null = null
@@ -160,10 +163,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
     if(source.fresh&&source.state==="online")this.observedWriteAccess=source.readable&&source.writable&&source.access==="interactive"
   }
   constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null,
-    reportRosterFailure?: (failure: RosterFailure) => void) {
+    reportRosterFailure?: (failure: RosterFailure) => void, reportRead?: (data: Record<string, unknown>) => void) {
     this.grant = { ...grant }; this.machineID = grant.machineID; this.machineName = grant.name; this.authorizationRevision = grant.authorizationRevision
     this.transport = transport; this.currentGrant = currentGrant
     this.reportRosterFailure = reportRosterFailure
+    this.reportRead = reportRead
   }
   revoke() { this.lifetime.abort() }
   get browserRemote() { return this.grant.accountKey !== "local" }
@@ -229,7 +233,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest | SharedSettingsWrite, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard"): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest | SharedSettingsWrite, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard", observation?: BotReadObservation): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
     try { this.check(signal,write,content,minimum,mode); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
@@ -238,7 +242,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
-        ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":"command" in body ? body.command.idempotency_key : body.idempotency_key}} : {})})
+        ...(body ? {body:JSON.stringify(body),headers:{"Content-Type":"application/json","Idempotency-Key":"command" in body ? body.command.idempotency_key : body.idempotency_key}} : {})},observation)
       this.recheck(signal,write,content,minimum,response,mode)
       const answer: unknown = await response.json()
       this.recheck(signal,write,content,minimum,answer,mode)
@@ -464,14 +468,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
   edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined||r.settings?.work_review!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.agent==="antigravity"?PROJECT_ASSISTANTS_GEMINI_API_LEVEL:r.settings?.agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:r.settings?.roster!==undefined?PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL:r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
-  async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal) {
+  beginReadObservation(mode: BotReadMode, start: number, interactionID?: string) {
+    if (this.reportRead && this.grant.accountKey !== "local") return new BotReadObservation(mode,start,this.reportRead,interactionID)
+  }
+  async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal,observation?: BotReadObservation) {
     this.key(r.key);readViewRequest(r)
     const level=r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
     const mode = this.grant.accountKey === "local" ? "standard" : "cloud-view"
     const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
       machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,
       ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{})
-    }),s,undefined,"GET",true,level,mode)
+    }),s,undefined,"GET",true,level,mode,observation)
     this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL,mode)
     if(!answer?.head)throw failure("pa_invalid")
     // The path owns Bot identity. Chat independently checks the captured Project scope.
@@ -875,7 +882,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
 /** Uses the passed machine and authenticated connection, never install.ts's active reader. */
 export type AssistantRelayConnection = Pick<CloudClientHandle,"_machineRequest" | "_machineRequestAs" | "machineDescriptor" | "orchestratorSnapshots">
 export function capturedAssistantRelayFetch(machineID: string, current: () => AssistantRelayConnection | null, carried: readonly string[]): AssistantFetch {
-  return async (input,init) => {
+  return async (input,init,observation) => {
     let request: ReturnType<typeof assistantRelayRequest>, client: AssistantRelayConnection | null
     // Everything before the encrypted request is a refusal that sent nothing.
     try {
@@ -904,8 +911,12 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
     } catch (error) { throw notSent(error) }
     // The connection's authenticated principal is authoritative; body reader_id is only a hint.
     const connection = client!, read = request.kind === "read"
-    if (!(read ? connection._machineRequest : connection._machineRequestAs)) throw notSent(failure("pa_unsupported"))
-    const answer = read ? await connection._machineRequest?.(machineID,request.word,request.fields,"read",undefined,{signal:init?.signal ?? undefined}) :
+    const traced = request.word === "project-assistants.view" && connection._machineRequestAs ? observation : undefined
+    if (!(read ? traced || connection._machineRequest : connection._machineRequestAs)) throw notSent(failure("pa_unsupported"))
+    observation?.mark("admitted")
+    const answer = traced ? await connection._machineRequestAs!(traced.id,machineID,request.word,request.fields,"read",undefined,
+      {signal:init?.signal ?? undefined, observeBotRead:traced.mark}) :
+      read ? await connection._machineRequest?.(machineID,request.word,request.fields,"read",undefined,{signal:init?.signal ?? undefined}) :
       await connection._machineRequestAs?.(request.id,machineID,request.word,request.fields,"action")
     if (answer === undefined) throw failure("pa_unsupported")
     if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")
@@ -930,8 +941,10 @@ export class ProjectAssistantRegistry {
   private listeners = new Set<() => void>()
   private snapshot: readonly SourceClient[] = []
   readonly reportRosterScreen?: (evidence: RosterScreenEvidence) => void
-  constructor(accountKey: string, readerID: string, reportRosterScreen?: (evidence: RosterScreenEvidence) => void) {
+  private readonly reportRead?: (data: Record<string, unknown>) => void
+  constructor(accountKey: string, readerID: string, reportRosterScreen?: (evidence: RosterScreenEvidence) => void, reportRead?: (data: Record<string, unknown>) => void) {
     this.accountKey = accountKey; this.readerID = readerID; this.reportRosterScreen = reportRosterScreen
+    this.reportRead = reportRead
   }
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => {this.listeners.delete(listener)} }
   getSnapshot = () => this.snapshot
@@ -960,7 +973,7 @@ export class ProjectAssistantRegistry {
       const held = {...grant,authorizationRevision:revision}
       effective.set(grant.machineID,held)
       if (!this.clients.has(grant.machineID)) {
-        this.clients.set(grant.machineID,new ProjectAssistantSourceClient(held,transport(held),() => this.grants.get(grant.machineID) ?? null,reportRosterFailure))
+        this.clients.set(grant.machineID,new ProjectAssistantSourceClient(held,transport(held),() => this.grants.get(grant.machineID) ?? null,reportRosterFailure,this.reportRead))
         this.revisions.set(grant.machineID,grant.authorizationRevision);changed = true
       }
     }

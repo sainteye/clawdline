@@ -75,7 +75,7 @@ type Options struct {
 	// envelope) and which carrier it came on, so the receiver's lane
 	// continues the same logical operation. Which callback runs and when is
 	// otherwise unchanged; it must not block either.
-	InboundTraced func(env cloud.Envelope, plaintext []byte, key ed25519.PublicKey, correlation string, direct bool)
+	InboundTraced func(env cloud.Envelope, plaintext []byte, key ed25519.PublicKey, correlation string, direct bool, frameStarted time.Time)
 	// PeerInbound receives opaque machine-to-machine frames. It must enqueue
 	// rather than perform a Cloud authorization read on the socket reader.
 	PeerInbound          func([]byte)
@@ -831,6 +831,7 @@ func (t *Transport) admitEnvelope(raw []byte, directViewer string) bool {
 
 // admitTraced is admitEnvelope stepping h through each wait of the ladder.
 func (t *Transport) admitTraced(raw []byte, directViewer string, h connectionhealth.Handle) bool {
+	frameStarted := time.Now()
 	envelope, err := cloud.DecodeEnvelope(raw)
 	if err != nil {
 		t.opts.Status.Dropped(DropMalformed)
@@ -936,7 +937,7 @@ func (t *Transport) admitTraced(raw []byte, directViewer string, h connectionhea
 	// is what shows it when it does.
 	_ = h.Step(connectionhealth.StageLaneQueued, connectionhealth.LocInboundCallback)
 	if t.opts.InboundTraced != nil {
-		t.opts.InboundTraced(envelope, plaintext, verifiedKey, h.Correlation(), directViewer != "" && t.opts.DirectInbound != nil)
+		t.opts.InboundTraced(envelope, plaintext, verifiedKey, h.Correlation(), directViewer != "" && t.opts.DirectInbound != nil, frameStarted)
 		return true
 	}
 	if directViewer != "" && t.opts.DirectInbound != nil {

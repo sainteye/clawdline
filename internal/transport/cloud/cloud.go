@@ -16,11 +16,13 @@ package cloud
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/json"
 	"errors"
 	"log"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	"github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
@@ -29,12 +31,14 @@ import (
 // it. The envelope itself is not repeated: the transport already checked its
 // signature and opened its ciphertext.
 type Inbound struct {
-	Channel     string
-	Class       string
-	Sender      string
-	Sequence    uint64
-	Plaintext   []byte
-	VerifiedKey ed25519.PublicKey
+	ReceivedAt   time.Time
+	FrameStarted time.Time
+	Channel      string
+	Class        string
+	Sender       string
+	Sequence     uint64
+	Plaintext    []byte
+	VerifiedKey  ed25519.PublicKey
 	// Direct marks a request that arrived on the sender's own direct carrier
 	// instead of the relay socket. Its answer goes back the same way, which is
 	// the whole of the routing rule: nothing else about the request differs,
@@ -216,10 +220,20 @@ func (s Service) Run(ctx context.Context) error {
 // is the case where the body named no waiter this machine may safely settle,
 // and the refusal is recorded here instead of being published somewhere a
 // different reader would receive it.
-func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
+func (s Service) Answer(ctx context.Context, request Inbound) (answer cloudops.Answer) {
+	observation := botreadtrace.FromCommand(request.Plaintext)
+	publication := "unpublished"
+	if observation != nil {
+		observation.Between("source_open", request.FrameStarted, request.ReceivedAt)
+		observation.Between("source_queue", request.ReceivedAt, time.Now())
+		ctx = botreadtrace.With(ctx, observation)
+		defer func() { s.logBotRead(observation, request, answer, publication) }()
+	}
 	started := s.now()
 	command := replyCommand(request)
-	answer := s.Bridge.Handle(ctx, command)
+	handled := botreadtrace.Measure(ctx, "bridge")
+	answer = s.Bridge.Handle(ctx, command)
+	handled()
 	if s.ReadHandled != nil {
 		s.ReadHandled()
 	}
@@ -241,7 +255,11 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 		Headroom: answer.Session == cloudops.MachineReplySession, Direct: request.Direct,
 		Reply: Reply{Sender: request.Sender, Sequence: request.Sequence, Name: answer.Name,
 			Status: answer.Status, Code: answer.Code}}
-	if err := s.Transport.Publish(ctx, out); err != nil {
+	published := botreadtrace.Measure(ctx, "response_publish")
+	err := s.Transport.Publish(ctx, out)
+	published()
+	if err != nil {
+		publication = "publish_failed"
 		// The answer's own channel is the only way back to the asker, so a
 		// publication that cannot leave is never retried into a second
 		// effect. But a full channel is not a reason to say nothing: the
@@ -266,6 +284,7 @@ func (s Service) Answer(ctx context.Context, request Inbound) cloudops.Answer {
 	// only the reply ack and later inventory counts — nothing tied the effect
 	// to the request. Log only authenticated envelope metadata and the typed
 	// outcome; never the command body, message text, or credentials.
+	publication = "publish_accepted"
 	if answer.Mutating {
 		if s.Acted != nil && answer.OK() && answer.Subject != "" &&
 			(answer.Subject != cloudops.MachineReplySession || answer.Operation == "start" || answer.Operation == "resume") {
@@ -316,6 +335,20 @@ func codeOrOK(code string) string {
 		return "ok"
 	}
 	return code
+}
+
+func (s Service) logBotRead(record *botreadtrace.Record, request Inbound, answer cloudops.Answer, publication string) {
+	row, err := json.Marshal(struct {
+		*botreadtrace.Record
+		Sequence    uint64 `json:"sequence"`
+		Operation   string `json:"connection_operation,omitempty"`
+		Status      int    `json:"status"`
+		Code        string `json:"code"`
+		Publication string `json:"publication"`
+	}{record, request.Sequence, request.Correlation, answer.Status, codeOrOK(answer.Code), publication})
+	if err == nil {
+		s.logf("cloud: bot_view %s", row)
+	}
 }
 
 // The typed refusal follows the original request's identity and operation.
@@ -379,7 +412,13 @@ func (s Service) refuse(ctx context.Context, r Refuser) {
 // Busy answers one request the queue turned away with `cloud_ingress_busy`,
 // on the channel its sender waits on. It returns why the sender could not be
 // told, or "" when the answer was handed to the transport.
-func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
+func (s Service) Busy(ctx context.Context, request Inbound, limit int) (why string) {
+	observation := botreadtrace.FromCommand(request.Plaintext)
+	if observation != nil {
+		observation.Between("source_open", request.FrameStarted, request.ReceivedAt)
+		observation.Between("source_queue", request.ReceivedAt, time.Now())
+		ctx = botreadtrace.With(ctx, observation)
+	}
 	answer := s.Bridge.Busy(cloudops.Command{
 		Channel:     request.Channel,
 		Class:       cloudops.Class(request.Class),
@@ -388,6 +427,15 @@ func (s Service) Busy(ctx context.Context, request Inbound, limit int) string {
 		Sequence:    request.Sequence,
 		Plaintext:   request.Plaintext,
 	}, limit)
+	if observation != nil {
+		defer func() {
+			publication := "busy_reply_accepted"
+			if why != "" {
+				publication = "busy_reply_failed"
+			}
+			s.logBotRead(observation, request, answer, publication)
+		}()
+	}
 	if !answer.Published() {
 		return "the request names no waiter a refusal may be published to (" + answer.Code + ")"
 	}

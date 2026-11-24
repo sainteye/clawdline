@@ -1085,7 +1085,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     return envelope
   }
 
-  _applySnapshot(channel, payload, envelope, realign) {
+  _applySnapshot(channel, payload, envelope, realign, receivedAt, openingAt) {
     if (channel?.kind === "transcript" && typeof payload?.read === "string") {
       const machine = decodedChannelSegment(channel.machine)
       const session = decodedChannelSegment(channel.session)
@@ -1107,7 +1107,7 @@ export class StatusCloudClient extends CatalogCloudClient {
         return
       }
     }
-    return super._applySnapshot(channel, payload, envelope, realign)
+    return super._applySnapshot(channel, payload, envelope, realign, receivedAt, openingAt)
   }
 
   _settleRead(key, body, error) {

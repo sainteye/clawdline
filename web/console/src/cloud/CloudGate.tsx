@@ -614,6 +614,10 @@ export function CloudGate({ declared, sessionSource = null }: { declared: string
     current.viewerEvents?.recordImmediately?.("cloud.bots.roster.unavailable", {
       ...evidence, observed_at_ms: Date.now(), web_build: webBuild,
     })
+  }, evidence => {
+    const current = client.current
+    if (current?.account !== who.account) return
+    current.viewerEvents?.record?.("cloud.bots.read", {...evidence, web_build: webBuild})
   }) : null, [who?.account, webBuild])
   const assistantRegistryRef = useRef(assistantRegistry)
   const [assistantWorkIntent,setAssistantWorkIntent] = useState<AssistantWorkIntent | null>(null)

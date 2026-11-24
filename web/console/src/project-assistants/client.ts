@@ -1,3 +1,4 @@
+import type { BotReadMode, BotReadObservation } from "./read-observation"
 import type { WorkV2Item } from "../pages/work/api"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node's strip-types runner loads the generated source extension.
@@ -21,6 +22,7 @@ export type ProjectMemoryPage={page:number;page_size:number}
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 export interface SourceClient {
+  beginReadObservation?(mode: BotReadMode, start: number, interactionID?: string): BotReadObservation | undefined
   canFirstRun?(): boolean
   firstRun?(signal: AbortSignal): Promise<W.ProjectAssistantFirstRun>
  canReactions?():boolean
@@ -102,7 +104,7 @@ export interface SourceClient {
   get(request: W.ProjectAssistantBotKey, signal: AbortSignal): Promise<W.ProjectAssistantGetResponse>
   edit(request: W.ProjectAssistantEditRequest, signal: AbortSignal): Promise<W.ProjectAssistantBotResponse>
   history(request: W.ProjectAssistantHistoryRequest, signal: AbortSignal): Promise<W.ProjectAssistantHistoryResponse>
-  view(request: W.ProjectAssistantReadViewRequest, signal: AbortSignal): Promise<W.ProjectAssistantReadViewResponse>
+  view(request: W.ProjectAssistantReadViewRequest, signal: AbortSignal, observation?: BotReadObservation): Promise<W.ProjectAssistantReadViewResponse>
   send(request: W.ProjectAssistantSendRequest, signal: AbortSignal): Promise<W.ProjectAssistantReceiptResponse>
   canHandoff?(): boolean
   handoff?(key: W.ProjectAssistantBotKey, conversation: string, signal: AbortSignal): Promise<W.ProjectAssistantHandoffResponse>

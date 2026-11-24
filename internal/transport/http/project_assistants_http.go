@@ -18,6 +18,7 @@ import (
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -120,12 +121,14 @@ func (h *projectAssistantHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if view, ok := payload.(paEncodedReadView); ok {
+		check := botreadtrace.Measure(r.Context(), "publication_authority")
 		if h.options.BeforeViewPublish != nil {
 			h.options.BeforeViewPublish()
 		}
 		if _, err = h.status(r.Context(), true); err == nil {
 			err = view.result.Revalidate(r.Context())
 		}
+		check()
 		if err != nil {
 			paWriteHTTPFailure(w, paReadViewFailure(err, "view_publication"))
 			return

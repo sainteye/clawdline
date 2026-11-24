@@ -7,6 +7,7 @@ import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
+import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, provablyNotSent } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages } from "./chat-items"
@@ -112,14 +113,14 @@ export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,c
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
-  showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
+  openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -161,6 +162,40 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[browserOpener])
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
+  const opening = useRef<{ at: number; trace?: string }>({at:openedAt ?? performance.now()})
+  const readyRead = useRef<BotReadObservation | undefined>(undefined)
+  const finishCommittedRead = useRef<(() => void) | undefined>(undefined)
+  useLayoutEffect(()=>{
+    const trace=readyRead.current
+    if (!data || !trace) return
+    readyRead.current=undefined
+    finishCommittedRead.current?.()
+    trace.mark("committed")
+    let frame=0
+    const finish=(paintOpportunity: boolean)=>{
+      cancelAnimationFrame(frame)
+      document.removeEventListener("visibilitychange",visibility)
+      finishCommittedRead.current=undefined
+      if(paintOpportunity)trace.mark("paint_opportunity")
+      trace.finish(paintOpportunity?"paint_opportunity":"committed")
+    }
+    const visibility=()=>{if(document.visibilityState==="hidden")finish(false)}
+    finishCommittedRead.current=()=>finish(false)
+    if(document.visibilityState!=="visible"){finish(false);return}
+    document.addEventListener("visibilitychange",visibility)
+    // A rendering opportunity between callbacks, using the browser's clock.
+    frame=requestAnimationFrame(()=>{frame=requestAnimationFrame(()=>finish(true))})
+  },[data,timeline])
+  useLayoutEffect(()=>()=>{
+    finishCommittedRead.current?.()
+    readyRead.current?.finish("abandoned")
+  },[])
+  const prepareReadDisplay=useCallback((trace?:BotReadObservation)=>{
+    if(!trace)return
+    readyRead.current?.finish("abandoned")
+    trace.mark("ready")
+    readyRead.current=trace
+  },[])
   // The entry-time question is consumed when the current permission cards arrive.
   const [focusTarget,setFocusTarget]=useState(focusDecision??""),[focusedDecision,setFocusedDecision]=useState(""),[decisionHandled,setDecisionHandled]=useState(false)
   const [rosterQuestion,setRosterQuestion]=useState(()=>!thread&&summary.activity.startsWith("Asks: ")?summary.activity.slice("Asks: ".length):"")
@@ -302,9 +337,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     key:scope.key,conversation_id:scope.conversation_id,mode,source_epoch:mode==="snapshot"?"":epoch.current,cursor,after_seq:mode==="events"?lastSeq.current:0,page_size,
     ...(teamCards?{team_cards:true}:{}),...(deferTraceCount&&mode!=="traces"?{defer_trace_count:true}:{})
   }),[scope,teamCards,deferTraceCount])
-  const read=useCallback(async(q:W.ProjectAssistantReadViewRequest,signal:AbortSignal)=>{
-    const answer=await authorized(source,current,s=>typeof source.view==="function"?source.view(q,s):Promise.reject(failure("pa_unsupported")),signal)
-    return readView(answer,q,scope)
+  const read=useCallback(async(q:W.ProjectAssistantReadViewRequest,signal:AbortSignal,trace?:BotReadObservation)=>{
+    const answer=await authorized(source,current,s=>typeof source.view==="function"?source.view(q,s,trace):Promise.reject(failure("pa_unsupported")),signal)
+    const page=readView(answer,q,scope)
+    trace?.mark("validated")
+    return page
   },[source,current,scope])
   const adoptHead=useCallback((page:W.ProjectAssistantReadViewResponse)=>{
     const before=headRef.current
@@ -317,8 +354,16 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(d){const next={...d,bot:page.snapshot?.bot??d.bot,conversation:page.head.conversation,source:page.source};currentData.current=next;setData(next)}
   },[])
   const recoverSnapshot=useCallback(async(signal:AbortSignal)=>{
-    const page=await read(request("snapshot","",chatInitialPageRows),signal)
-    if(!valid()||signal.aborted)return
+    const trace=!currentData.current ? source.beginReadObservation?.("snapshot",opening.current.at,opening.current.trace) : undefined
+    if(trace)opening.current.trace??=trace.id
+    let page: W.ProjectAssistantReadViewResponse
+    try {
+      page=await read(request("snapshot","",chatInitialPageRows),signal,trace)
+    } catch(error) {
+      trace?.finish(signal.aborted?"abandoned":"refused",errorCode(error))
+      throw error
+    }
+    if(!valid()||signal.aborted){trace?.finish("abandoned");return}
     if(!entryChecked.current){
       entryChecked.current=true
       const hasJournal=view.heldOutcomes.aside(draftKey).some(held=>sameConversation(held.intent.fence,scope))
@@ -336,14 +381,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();backgroundTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
     const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
-    const rows=mergeTimeline([page.items,queued]);timelineRef.current=rows;setTimeline(rows);observation.apply(page)
+    const rows=mergeTimeline([page.items,queued]);observation.apply(page)
+    prepareReadDisplay(trace);timelineRef.current=rows;setTimeline(rows)
     epoch.current=page.source_epoch;lastSeq.current=page.head.event_frontier;callViewFrontier.current=page.head.event_frontier
     headRef.current=page.head;setHead(page.head);currentData.current=fresh;setData(fresh)
     setMore(page.next_cursor);setError("")
     // No receipts in a bounded snapshot means an unknown local intent remains unknown.
     view.recoveryRequired.delete(draftKey);recovery.current=false;setRecoveryRequired(false)
     return page
-  },[read,request,valid,view,draftKey,scope,entryDraft,heldAtMount,archiveLegacyDraft])
+  },[read,request,valid,view,draftKey,scope,entryDraft,heldAtMount,archiveLegacyDraft,source,prepareReadDisplay])
   const collection=useCallback(async(mode:"permissions"|"traces",cursor="")=>{
     const before=headRef.current,capturedEpoch=epoch.current
     if(!before||recovery.current||!valid()||collectionBusy.current.has(mode))return
@@ -1219,18 +1265,26 @@ ${currentDraft}`:submitted)
     const control=new AbortController();reads.current.add(control);collectionBusy.current.set("history",control)
     const el=scroll.current,oldHeight=el?.scrollHeight??0,oldTop=el?.scrollTop??0
     setEarlierLoading(true)
+    const trace=source.beginReadObservation?.("history",performance.now())
+    let adopted=false
     try{
-      const page=await read(request("history",cursor),control.signal)
+      const page=await read(request("history",cursor),control.signal,trace)
       if(!valid()||control.signal.aborted||epoch.current!==capturedEpoch||recovery.current)return
       if(page.has_more&&historyCursors.current.has(page.next_cursor))throw failure("pa_invalid")
       if(!headRef.current||!sameFence(captured.current_fence,headRef.current.current_fence))return
       if(!sameFence(page.head.current_fence,captured.current_fence))throw failure("pa_stale_generation")
       historyCursors.current.add(cursor)
-      const rows=mergeTimeline([timelineRef.current,page.items]);timelineRef.current=rows;setTimeline(rows)
+      const rows=mergeTimeline([timelineRef.current,page.items])
+      prepareReadDisplay(trace);adopted=true;timelineRef.current=rows;setTimeline(rows)
       setMore(page.next_cursor)
       requestAnimationFrame(()=>{if(el&&valid()&&epoch.current===capturedEpoch)el.scrollTop=oldTop+el.scrollHeight-oldHeight})
-    }catch(e){if(!control.signal.aborted)readFailed(e)}
-    finally{reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history");if(valid())setEarlierLoading(false)}
+    }catch(e){
+      trace?.finish(control.signal.aborted?"abandoned":"refused",errorCode(e))
+      if(!control.signal.aborted)readFailed(e)
+    }finally{
+      if(!adopted)trace?.finish("abandoned")
+      reads.current.delete(control);if(collectionBusy.current.get("history")===control)collectionBusy.current.delete("history");if(valid())setEarlierLoading(false)
+    }
   }
   const viewHandoffHistory=(bookmark?:string)=>{
     const timeline=scroll.current

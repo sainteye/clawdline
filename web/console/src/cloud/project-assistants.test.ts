@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import http from "node:http"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
-import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, cloudAssistantGrants, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch } from "./project-assistants.ts"
+import { ProjectAssistantSourceClient, ProjectAssistantRegistry, assistantRelayRequest, cloudAssistantGrants, capturedAssistantRelayFetch, type AssistantGrant, type AssistantFetch, type AssistantRelayConnection } from "./project-assistants.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { command, errorCode } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node executes source extensions.
@@ -760,6 +760,54 @@ test("captured bounded reads preserve all six modes and optional chat flags", as
     assert.deepEqual(captured.at(-1),request)
   }
   assert.equal(captured.length,requests.length)
+})
+
+test("a Cloud Bot read correlates relay timing with one content-free browser record", async () => {
+  const rows: Record<string, unknown>[] = []
+  const registry = new ProjectAssistantRegistry("account", "trusted-reader", undefined, row => rows.push(row))
+  let requestID: string | undefined
+  const connection = {
+    machineDescriptor: () => ({machine:{commands:["project-assistants.view"]}}),
+    async _machineRequestAs(id: string, _machine: string, word: string, fields: Record<string, unknown>,
+        kind: "read" | "action", _timeout?: number, options?: Parameters<NonNullable<AssistantRelayConnection["_machineRequestAs"]>>[6]) {
+      requestID = id
+      assert.equal(word, "project-assistants.view")
+      assert.equal(kind, "read")
+      assert.equal(fields.conversation_id, "synthetic-conversation")
+      const at = performance.now()
+      options?.observeBotRead?.("sealed", at, 41)
+      options?.observeBotRead?.("sent", at)
+      options?.observeBotRead?.("relay_ack", at + 1)
+      // A key rotation sends the same read under a new envelope sequence.
+      options?.observeBotRead?.("sealed", at + 2, 42)
+      options?.observeBotRead?.("sent", at + 2)
+      throw {contract_version:"project-assistants.v1",error:{code:"pa_offline"}}
+    },
+  }
+  const relay = capturedAssistantRelayFetch("one",()=>connection,["project-assistants.view"])
+  registry.sync([{...grant(),apiLevel:71}],()=>relay)
+  const observation = registry.getSnapshot()[0].beginReadObservation?.("snapshot", performance.now())
+  assert.ok(observation)
+  const fields: W.ProjectAssistantReadViewRequest = {
+    key:{machine_id:"one",bot_id:"synthetic-bot"},conversation_id:"synthetic-conversation",
+    mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:20,
+  }
+  await assert.rejects(registry.getSnapshot()[0].view(fields,signal(),observation), error => errorCode(error) === "pa_offline")
+  observation.finish("refused","pa_offline")
+  observation.finish("abandoned")
+  assert.equal(rows.length,1)
+  const [row] = rows
+  assert.equal(row.trace_id,requestID)
+  assert.equal(row.interaction_id,requestID)
+  assert.match(String(row.trace_id),/^bot-view-[0-9a-f-]+$/)
+  assert.equal(row.sequence,42)
+  assert.equal(row.outcome,"refused")
+  assert.equal(row.code,"pa_offline")
+  assert.equal(typeof row.admitted_ms,"number")
+  assert.equal(typeof row.sent_ms,"number")
+  assert.equal(row.relay_ack_ms,undefined)
+  assert.equal(row.committed_ms,undefined)
+  assert.doesNotMatch(JSON.stringify(row),/synthetic-bot|synthetic-conversation/)
 })
 
 test("bounded relay reads refuse malformed queries and bodies before transport", async () => {

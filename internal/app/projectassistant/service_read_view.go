@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -57,12 +58,15 @@ func (s *Service) View(ctx context.Context, q pa.ReadViewRequest) (ReadViewResul
 	if err := pa.CheckReadViewRequest(q); err != nil {
 		return ReadViewResult{}, err
 	}
+	authorize := botreadtrace.Measure(ctx, "view_authority")
 	workerCtx, _, err := s.backgroundChannel(ctx, q.Key)
 	if err != nil {
+		authorize()
 		return ReadViewResult{}, err
 	}
 	ctx = workerCtx
 	a, err := s.readViewAuthority(ctx, q.Key)
+	authorize()
 	if err != nil {
 		return ReadViewResult{}, err
 	}
@@ -101,7 +105,10 @@ func (s *Service) View(ctx context.Context, q pa.ReadViewRequest) (ReadViewResul
 	if view.Snapshot != nil && (view.Snapshot.Bot.Key != q.Key || view.Snapshot.Bot.Project != h.Project || view.Snapshot.Bot.ConversationID != q.ConversationID) {
 		return ReadViewResult{}, serviceFailure(pa.ScopeDenied, "view_snapshot_identity")
 	}
-	if err = check(ctx); err != nil {
+	recheck := botreadtrace.Measure(ctx, "view_revalidate")
+	err = check(ctx)
+	recheck()
+	if err != nil {
 		return ReadViewResult{}, err
 	}
 	if view.Snapshot != nil {

@@ -329,6 +329,74 @@ func TestProjectAssistantViewCloudBridgeRouterServerRealStore(t *testing.T) {
 	}
 }
 
+func TestProjectAssistantCloudReadRecordsReachedStages(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	got := f.get(t, f.local)
+	f.pin(t, "reader", adaptercloud.ScopeReadOnly, false)
+	const traceID = "bot-view-b0700001-0000-4000-8000-000000000001"
+	fields, err := json.Marshal(map[string]any{
+		"type": "project-assistants.view", "session": cloudops.MachineReplySession, "request": traceID,
+		"key": paWireBotKey(f.key), "conversation_id": got.Conversation.ID, "mode": "snapshot", "page_size": 20,
+		"source_epoch": "", "cursor": "", "after_seq": 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bridge := cloudops.Bridge{MachineID: f.identity.MachineID,
+		Router:        cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)},
+		AllowCommands: func() bool { return false }}
+	var row struct {
+		TraceID     string           `json:"trace_id"`
+		Sequence    uint64           `json:"sequence"`
+		Status      int              `json:"status"`
+		Publication string           `json:"publication"`
+		Stages      map[string]int64 `json:"stages_ms"`
+	}
+	fake := cloudtransport.NewFake(4)
+	service := cloudtransport.Service{MachineID: f.identity.MachineID, Bridge: bridge, Transport: fake,
+		Log: func(format string, args ...any) {
+			line, found := strings.CutPrefix(fmt.Sprintf(format, args...), "cloud: bot_view ")
+			if found {
+				if strings.Contains(line, got.Conversation.ID) || strings.Contains(line, f.key.BotID) {
+					t.Fatal("read record contains request content")
+				}
+				if err := json.Unmarshal([]byte(line), &row); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}}
+	now := time.Now()
+	request := cloudtransport.Inbound{Channel: "ctl/" + f.identity.MachineID, Class: "ctl", Sender: "reader",
+		Plaintext: fields, Sequence: 104, FrameStarted: now.Add(-time.Millisecond), ReceivedAt: now}
+	answer := service.Answer(context.Background(), request)
+	if !answer.OK() || !strings.Contains(string(answer.Payload), "read:"+traceID) ||
+		row.TraceID != traceID || row.Sequence != request.Sequence || row.Status != 200 || row.Publication != "publish_accepted" {
+		t.Fatalf("request and observed answer disagree: %d, %+v", answer.Status, row)
+	}
+	for _, stage := range []string{"source_open", "source_queue", "bridge", "view", "view_authority",
+		"sqlite_acquire", "sqlite_read", "view_revalidate", "response_encode", "publication_authority", "response_publish"} {
+		if elapsed, ok := row.Stages[stage]; !ok || elapsed < 0 {
+			t.Errorf("missing stage %q: %+v", stage, row.Stages)
+		}
+	}
+	if _, ok := row.Stages["native_context"]; ok {
+		t.Error("recorded an optional lookup without an active turn")
+	}
+	row.Stages = nil
+	request.Sequence++
+	if reason := service.Busy(context.Background(), request, 1); reason != "" {
+		t.Fatal(reason)
+	}
+	if row.TraceID != traceID || row.Sequence != request.Sequence || row.Status != 429 || row.Publication != "busy_reply_accepted" {
+		t.Fatalf("busy reply lost its correlation: %+v", row)
+	}
+	if _, ok := row.Stages["sqlite_read"]; ok {
+		t.Error("read the store to return a busy refusal")
+	}
+}
+
 func TestActiveProjectAssistantViewAnswersWhileTheWriterIsHeld(t *testing.T) {
 	f := newPAServerFixture(t, true)
 	provider := &observationProvider{finish: make(chan struct{}), start: make(chan struct{}), started: make(chan struct{})}

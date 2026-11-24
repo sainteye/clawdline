@@ -771,6 +771,46 @@ Hosted 頁面讀取失敗時，如果失敗發生在送出之前或回答離開�
 
 The first-read timing events `cloud.detail.first_read` and `cloud.transcript.first_read` include the opaque Session ID alongside the machine, outcome and stage durations. An abandoned first detail read reports `outcome=aborted`. A slow or refused machine read logs its Session ID too. This joins the phone's opening attempt to the exact machine response without logging a title or conversation text; a timing event for another Session is not evidence about the one on screen.
 
+#### 9.5.4 Opening a Bot conversation and reading older messages
+
+The hosted console carries `project-assistants.view` on the encrypted relay WebSocket.
+The request publishes on `ctl/<machine>`; the answer returns on
+`t/<machine>/__clawdline_machine__`. The source verifies and opens the envelope, admits
+it to the read lane, and calls the Bot read handler through the Cloud bridge and in-process
+HTTP router. The handler checks access, reads the bounded SQLite view, optionally looks up
+the active turn's native context, encodes the answer, and checks current publication
+authority. The source queues the sealed answer for the relay. The console opens and
+validates the answer, merges it into the timeline, and commits that timeline to the DOM.
+
+For the opening snapshot and explicitly requested older history, start with
+`event=cloud.bots.read` in the viewer event log. The existing `diagnostics.events` outbox
+delivers it to an eligible paired machine under its ordinary retention and rate limits.
+The row has the hosted build and a unique `trace_id` per attempt, including retries after
+an opening refusal. Retries for one opening share an `interaction_id`. The row records elapsed
+milliseconds from the Bot selection (or Chat mount
+for a restored route) or the history action. Subtract consecutive marks on the same row to
+isolate browser admission and sealing, command publish and relay receipt, response arrival
+and the browser's message queue, response open and validation, timeline preparation, and
+React commit. The optional `paint_opportunity_ms` records a frame opportunity in a visible
+tab, after commit. A hidden tab or a closed chat can still record the stages it reached.
+Stages without evidence are absent. Periodic event polls and auxiliary collections do
+not emit these opening and history records.
+
+Find `cloud: bot_view` on the source with the same `trace_id` and request `sequence`.
+Its `stages_ms` are source-local durations, some nested inside the bridge or view totals.
+The row separates frame verification/open, ingress and worker queue wait, access and
+revalidation, SQLite acquisition and transaction work, optional native context, encoding,
+publication authority, and response reserve/seal/spool. A busy reply leaves a typed refusal
+with only the stages it reached. `publish_accepted` means the outbound transport accepted
+the answer for delivery. The returned envelope's sequence and the source's
+`connection_operation` let an operator follow its spool drain in connection health.
+
+The request's relay receipt and the response envelope delimit the observed transport
+intervals. They do not provide separately joinable timings for the relay's own
+admission, fanout, or each one-way network hop. Browser and source clocks are independent;
+compare intervals measured on one clock. The records omit Bot identifiers, conversation
+identifiers, message content, cursor values, and credentials.
+
 ### 9.6 本機 broker 的 typed 拒絕
 
 遠端派工會得到本機 orchestrator 原本就有的那組 typed error：`workspace_busy`、`over_capacity`、

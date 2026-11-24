@@ -1,3 +1,4 @@
+import type { BotReadObservation } from "../project-assistants/read-observation"
 // The Swift app's hosted-console transport, given types and one way in.
 //
 // `legacy/js/net/cloud-*.js` are that console's Cloud modules, copied from it
@@ -112,6 +113,7 @@ export interface CloudClientHandle extends CloudReadClient {
   /** A request with a stable id, answered on the encrypted machine channel. */
   _machineRequestAs?(
     request: string, machine: string, word: string, body: Record<string, unknown>, kind: "read" | "action", timeoutMs?: number,
+    readOptions?: { signal?: AbortSignal; observeBotRead?: BotReadObservation["mark"] },
   ): Promise<unknown>
   /** Low-level encrypted command seam used by the original webhook binder. */
   _publishCommand(

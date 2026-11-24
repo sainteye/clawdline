@@ -692,8 +692,9 @@ export class CloudClient {
         this._forgetSocketSubscriptions();
         var self = this;
         ws.onmessage = function (event) {
+            var receivedAt = performance.now();
             self.messageChain = self.messageChain.then(function () {
-                return self._receive(event.data);
+                return self._receive(event.data, receivedAt);
             }).catch(function (error) {
                 self._recordFrameFailure(error, event.data);
                 self._emit({ type: "error", error: error });
@@ -814,7 +815,7 @@ export class CloudClient {
         return this.start();
     }
 
-    async _receive(raw) {
+    async _receive(raw, receivedAt) {
         if (typeof raw !== "string") throw cloudError("bad_frame", "the relay sent a binary frame");
         var frame;
         try { frame = JSON.parse(raw); } catch (e) { throw cloudError("bad_frame", "the relay sent non-JSON"); }
@@ -830,13 +831,13 @@ export class CloudClient {
         if (frame.type === "content_key_answer" && this.viewerRekey) return this.viewerRekey.answer(raw);
         if (frame.type === "challenge") return this._answerChallenge(frame);
         if (frame.type === "ready") return this._becameReady(frame);
-        if (frame.type === "envelope") return this._receiveEnvelope(frame.envelope, frame.realign === true);
+        if (frame.type === "envelope") return this._receiveEnvelope(frame.envelope, frame.realign === true, receivedAt);
         if (frame.type === "ping") {
             this._send({ type: "pong" });
             return;
         }
         if (frame.type === "ack") {
-            this._relayAnswered(frame, null);
+            this._relayAnswered(frame, null, receivedAt);
             this._emit(frame);
             return;
         }
@@ -844,7 +845,7 @@ export class CloudClient {
             this._relayAnswered(frame, failureFromRelay(frame.code, {
                 field: frame.field, fromPublishError: true,
                 message: "the relay refused this publish"
-            }));
+            }), receivedAt);
             this._emit(frame);
             return;
         }
@@ -1277,12 +1278,12 @@ export class CloudClient {
      * event: by then `unreadable_envelope` has already replaced the exception that meant
      * something. `probe.stage` is set before each step, so the stage is where it threw.
      */
-    async _receiveEnvelope(envelope, realign) {
+    async _receiveEnvelope(envelope, realign, receivedAt) {
         var probe = { stage: "other", original: null, cause: null, senderKeyFound: null,
             senderKeySource: null, senderKeyLookupMs: null, routedMachine: null,
             pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null };
         try {
-            return await this._openEnvelopeFrame(envelope, realign, probe);
+            return await this._openEnvelopeFrame(envelope, realign, probe, receivedAt);
         } catch (error) {
             this._recordReceiveFailure(error, envelope, realign, probe);
             // The answer this envelope may have carried never reached its read: replay, the apply
@@ -1293,7 +1294,8 @@ export class CloudClient {
         }
     }
 
-    async _openEnvelopeFrame(envelope, realign, probe) {
+    async _openEnvelopeFrame(envelope, realign, probe, receivedAt) {
+        var openingAt = performance.now();
         probe.stage = "channel_parse";
         var channel = parseEnvelopeChannel(envelope && envelope.ch);
         var routedMachine = channel.kind === "session" || channel.kind === "transcript" ||
@@ -1420,7 +1422,7 @@ export class CloudClient {
         try { payload = clear.length ? JSON.parse(textDecoder.decode(clear)) : null; }
         catch (e) { throw cloudError("bad_payload", "the decrypted stream payload is not JSON"); }
         probe.stage = "apply";
-        this._applySnapshot(channel, payload, envelope, realign);
+        this._applySnapshot(channel, payload, envelope, realign, receivedAt ?? openingAt, openingAt);
     }
 
     /**
@@ -1616,7 +1618,7 @@ export class CloudClient {
         return true;
     }
 
-    _applySnapshot(channel, payload, envelope, realign) {
+    _applySnapshot(channel, payload, envelope, realign, receivedAt, openingAt) {
         this.envelopeOpened = true;
         if (channel.kind === "session") {
             var identity = sessionIdentity({ machine: decodedChannelSegment(channel.machine),
@@ -1743,6 +1745,10 @@ export class CloudClient {
             // again. A name carrying this page's request id (`read:`/`action:`) cannot be someone
             // else's answer, and `image.<id>` names bytes that never change, so those still settle.
             if (!realign || /^(read|action):/.test(answer.read) || /^image\./.test(answer.read)) {
+                var observeBotRead = this.readWaiters.get(settles)?.observeBotRead;
+                observeBotRead?.("response_frame", receivedAt, envelope.seq);
+                observeBotRead?.("response_open_started", openingAt);
+                observeBotRead?.("response_open");
                 this._settleRead(settles, answer.body, answer.error);
             }
             this._emit({ type: "read", read: answer.read, data: answer.body,
@@ -3629,6 +3635,7 @@ export class CloudClient {
                     ? extra.request : null,
                 action: action, channel: null,
                 retireUncertain: !!(readOptions && readOptions.retireUncertain),
+                observeBotRead: readOptions && readOptions.observeBotRead,
                 // The read's connection-health trace: issued now, its response and decrypt-apply
                 // recorded under the same correlation when it settles (`_settleRead`).
                 health: viewerHealthBegin("viewer_request_issued", "read") };
@@ -3823,7 +3830,7 @@ export class CloudClient {
      * `publish_error`. Both name `(ch, seq)`, so the request they are about is found by sequence
      * and settled now — not sixty seconds later by a timer that has lost the code.
      */
-    _relayAnswered(frame, refusal) {
+    _relayAnswered(frame, refusal, receivedAt) {
         var seq = frame && frame.seq;
         if (!Number.isSafeInteger(seq)) return;
         var pending = this.pendingBySequence.get(seq);
@@ -3838,6 +3845,7 @@ export class CloudClient {
         } else if (!refusal && frame.status === "delivered" && target) {
             this.machineOffline.delete(target);
         }
+        pending?.observeBotRead?.(refusal ? "relay_refused" : "relay_ack", receivedAt);
         if (!refusal) {
             this.trail.step(ref, "relayed");
             if (pending && pending.ack) {
@@ -4681,13 +4689,15 @@ export class CloudClient {
                 pending.waiters.ref = ref;
             }
             pending.registered = { ref: ref, machine: machine,
-                key: pending.key || null, ack: pending.ack || null };
+                key: pending.key || null, ack: pending.ack || null, observeBotRead: pending.waiters?.observeBotRead };
             this.pendingBySequence.set(sequence, pending.registered);
         }
+        pending?.waiters?.observeBotRead?.("sealed", undefined, sequence);
         this.trail.sealed({ sender: ref.sender, seq: sequence, request: ref.request, type: type,
             machine: machine });
         try {
             this._send({ type: "publish", envelope: envelope });
+            pending?.waiters?.observeBotRead?.("sent");
         } catch (error) {
             this.pendingBySequence.delete(sequence);
             if (pending && pending.waiters) pending.waiters.ref = null;

@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -83,14 +84,18 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 	if err = pa.CheckReadViewRequest(request); err != nil {
 		return nil, err
 	}
+	read := botreadtrace.Measure(r.Context(), "view")
 	result, err := h.options.Service.View(r.Context(), request)
+	read()
 	if err != nil {
 		return nil, paReadViewFailure(err, "view_query")
 	}
 	head := &result.View.Head
 	if h.options.NativeContext != nil && head.Conversation.ActiveTurnID != "" &&
 		(request.Mode == pa.ReadViewSnapshot || request.Mode == pa.ReadViewEvents) {
+		lookup := botreadtrace.Measure(r.Context(), "native_context")
 		state, err := h.options.NativeContext(r.Context(), head.CurrentFence)
+		lookup()
 		if err == nil && state.Fence == head.CurrentFence && state.TurnID == head.Conversation.ActiveTurnID {
 			if state.UsageKnown {
 				head.ContextUsage = &app.ReadContextUsage{Live: true, TurnID: state.TurnID, UsedTokens: state.UsedTokens, WindowTokens: state.WindowTokens}
@@ -100,7 +105,9 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 			}
 		}
 	}
+	pack := botreadtrace.Measure(r.Context(), "response_encode")
 	encoded, err := paPackReadView(request, result)
+	pack()
 	if err != nil {
 		return nil, err
 	}

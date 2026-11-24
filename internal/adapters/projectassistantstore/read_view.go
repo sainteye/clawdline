@@ -14,6 +14,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -60,11 +61,14 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 	if q.Request.Mode != pa.ReadViewSnapshot && q.Request.SourceEpoch != s.sourceEpoch {
 		return out, failure(pa.CursorExpired, "source_epoch")
 	}
+	acquire := botreadtrace.Measure(ctx, "sqlite_acquire")
 	tx, err := s.borrowedDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	acquire()
 	if err != nil {
 		return out, err
 	}
 	defer tx.Rollback()
+	defer botreadtrace.Measure(ctx, "sqlite_read")()
 	rawBytes := 0
 	h, bot, err := viewHead(ctx, tx, q, &rawBytes)
 	if err != nil {
