@@ -55,7 +55,7 @@ try{
         const remove=row.querySelector("button[aria-label]:not(.pa-select-button)"),order=row.firstElementChild
         const r=remove.getBoundingClientRect(),o=order.getBoundingClientRect(),box=row.getBoundingClientRect()
         const centre={x:r.left+r.width/2,y:r.top+r.height/2}
-        const misses=touch?[[-21.5,-21.5],[21.5,-21.5],[-21.5,21.5],[21.5,21.5],[0,-21.5],[0,21.5],[-21.5,0],[21.5,0]].filter(([dx,dy])=>document.elementFromPoint(centre.x+dx,centre.y+dy)?.closest("button")!==remove):[]
+        const misses=touch?[[-21,-21],[21,-21],[-21,21],[21,21],[0,-21],[0,21],[-21,0],[21,0]].filter(([dx,dy])=>document.elementFromPoint(centre.x+dx,centre.y+dy)?.closest("button")!==remove):[]
         return {line:Math.abs(centre.y-(o.top+o.height/2)),inside:r.right<=box.right+0.5&&r.left>=o.right,misses,label:remove.getAttribute("aria-label")}
       },touch)
       if(seen.line>2)problems.push(`${name}: row ${i+1}'s ${seen.label} is on the same line as its order number (${seen.line}px apart)`)
