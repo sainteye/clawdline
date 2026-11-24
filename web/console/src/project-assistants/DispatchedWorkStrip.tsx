@@ -1,7 +1,7 @@
 import {useEffect, useState, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {CloneMark} from "./BotRow"
-import {dispatchedCounts, dispatchedReason, dispatchedRows, DispatchedStripRows} from "./dispatched-work"
+import {dispatchedCounts, dispatchedReason, dispatchedRows, DispatchedStripRows, type DispatchedKind} from "./dispatched-work"
 import {elapsed} from "./working"
 import type {Words} from "./words"
 import "./dispatched-work.css"
@@ -11,6 +11,13 @@ type OpenWork = (link: W.ProjectAssistantWorkLink, view?: "session") => void
 /** Use the same machine and conversation checks as the work result card. */
 export function openDispatchedSession(link: W.ProjectAssistantWorkLink, openWork?: OpenWork) {
   openWork?.(link, link.worker_terminal && link.worker_session ? "session" : undefined)
+}
+
+/** The decorative state mark beside a listed row; the row's text names the state. */
+export function DispatchedMark({kind}: {kind: DispatchedKind}) {
+  return <span className="pa-dispatched-mark" aria-hidden="true">
+    {kind === "delivered" && <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>}
+  </span>
 }
 
 /** "N 個工作在跑" above the Bot's composer, sharing the line with the
@@ -50,7 +57,7 @@ export function DispatchedWorkStrip({links, ownProjectID, background, onOpen, w}
         const time = row.kind === "running" ? elapsed(row.link.started_at, now) : ""
         return <li key={row.link.id}>
           <button type="button" className="pa-dispatched-row" data-kind={row.kind} title={row.link.landing_note || undefined} onClick={() => openDispatchedSession(row.link, onOpen)}>
-            <span className="pa-dispatched-mark" aria-hidden="true"/>
+            <DispatchedMark kind={row.kind}/>
             <span className="pa-dispatched-text"><strong>{row.link.title || row.link.task_id}</strong>
               <small>{dispatchedReason(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}</small></span>
             {time && <time>{time}</time>}<span aria-hidden="true">›</span>

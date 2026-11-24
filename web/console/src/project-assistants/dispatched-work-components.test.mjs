@@ -6,10 +6,10 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedWorkStrip,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedMark,DispatchedWorkStrip,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotRow,DispatchedWorkStrip,openDispatchedSession,words}=compiled.exports
+const {BotRow,DispatchedMark,DispatchedWorkStrip,openDispatchedSession,words}=compiled.exports
 const w=words("zh-Hant"),render=(c,p)=>renderToStaticMarkup(React.createElement(c,p))
 const live={fresh:true,state:"online",readable:true,writable:true,access:"interactive"}
 const item=extra=>({bot:{key:{machine_id:"m",bot_id:"atlas"},name:"Atlas",project:{kind:"repository",machine_id:"m",project_id:"p"},appearance:{shape:"blob",color:"#5b8def"},agent:"claude"},status:"idle",activity:"",latest_message:"Last reply",activity_at:"2026-11-23T09:00:00Z",pending_permissions:0,unread_count:0,source:live,...extra})
@@ -48,4 +48,12 @@ test("the chat strip takes no space without work, keeps the background capsule, 
   openDispatchedSession({id:"unbound",worker_terminal:"trm_a&b"},open)
   openDispatchedSession({id:"unopened"},open)
   assert.deepEqual(calls,[["linked","session"],["unbound",undefined],["unopened",undefined]])
+})
+
+test("a delivered row's mark is a check, and every other state keeps its plain dot", () => {
+  const delivered=render(DispatchedMark,{kind:"delivered"})
+  assert.match(delivered,/^<span[^>]*aria-hidden="true"[^>]*><svg[^>]*>.*<\/svg><\/span>$/)
+  for(const kind of ["needsYou","running","queued","failed"]){
+    assert.doesNotMatch(render(DispatchedMark,{kind}),/<svg/)
+  }
 })
