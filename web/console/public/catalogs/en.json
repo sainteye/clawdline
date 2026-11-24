@@ -12221,6 +12221,7 @@
   "projectAssistants.decisionDone": "{name} finished",
   "projectAssistants.decisionHandled": "This decision was already handled.",
   "projectAssistants.decisionHandledDismiss": "Dismiss",
+  "projectAssistants.jumpWorking": "Working",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

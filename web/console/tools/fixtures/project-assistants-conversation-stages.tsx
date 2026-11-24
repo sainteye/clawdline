@@ -26,8 +26,11 @@ const persist=()=>sessionStorage.setItem(storageKey,JSON.stringify(data))
 const apply=(fact:Fact)=>fact.kind==="message"?source.scriptMessage(bot,fact.id,fact.author,fact.text,fact.turn):source.push(fact.event)
 for(const fact of data.facts)apply(fact)
 const originalView=source.view!
+// Synthetic background work the e2e can start and end; it rides on the view head like the real source's.
+let background:W.ProjectAssistantBackgroundTaskSummary|undefined
 source.view=async(request,signal)=>{
   const page=await originalView({...request,cursor:request.cursor.split("!")[0]},signal)
+  if(background)page.head.background_tasks=[background]
   if(request.mode==="snapshot"||request.mode==="history"){
     const withdrawn=new Set(data.facts.flatMap(fact=>fact.kind==="event"&&fact.event.turn?.state==="cancelled"&&!fact.event.turn.failure?[fact.event.turn.message_id]:[]))
     page.items=page.items.filter(row=>!row.message||!withdrawn.has(row.message.id))
@@ -136,11 +139,26 @@ const fixture={
     emit("permission_offered",{permission:offer})
   },
   releaseQueueAction:()=>{const done=releaseQueue;releaseQueue=undefined;done?.()},
+  background:(state:string|null,title="Check the synthetic notes")=>{
+    background=state?{id:"stage-background",title,origin_message_id:"person-turn-1",state,started_at:new Date(Date.now()-28_000).toISOString(),
+      ...(state==="active"?{}:{ended_at:new Date().toISOString()}),worker:{...bot.key,bot_id:"thread-stage-background"}}:undefined
+    // Any event makes the Chat read the head again; repeating the running turn's state changes nothing else.
+    const running=[...activeTurns].find(([,value])=>value==="running")?.[0]
+    if(running)turn(running,"running")
+  },
+  dispatched:(work:W.ProjectAssistantDispatchedWork|undefined)=>setDispatched?.(work),
   data,animations,queueActions,queueEdits,
 }
 Object.assign(window,{stages:fixture})
 const summary=(await source.list({machine_id:bot.key.machine_id,cursor:"",query:"",page_size:100},signal)).items[0]
-createRoot(document.querySelector("#app")!).render(<div className="project-assistants" style={{height:"100dvh",background:"var(--pa-bg)"}}>
-  <Chat summary={summary} source={source} current={current} accountKey="stages" view={createViewState(window.localStorage)}
+const viewState=createViewState(window.localStorage)
+let setDispatched:((work:W.ProjectAssistantDispatchedWork|undefined)=>void)|undefined
+function StagedChat(){
+  const [work,setWork]=React.useState<W.ProjectAssistantDispatchedWork>()
+  setDispatched=setWork
+  return <Chat summary={work?{...summary,dispatched_work:work}:summary} source={source} current={current} accountKey="stages" view={viewState}
     w={w} language={language} onBack={()=>{}} onBotChanged={()=>{}}/>
+}
+createRoot(document.querySelector("#app")!).render(<div className="project-assistants" style={{height:"100dvh",background:"var(--pa-bg)"}}>
+  <StagedChat/>
 </div>)
