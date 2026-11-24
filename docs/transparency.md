@@ -28,6 +28,19 @@ the person. The `persistent-bot-review` effect copy in English and Taiwan
 Traditional Chinese now states the 32,000-byte reply bound, the marker and the
 diagnostics count. No tool, approval choice or execution path is added.
 
+A Bot can follow up an earlier request with `reply_to_exchange_id`. Reviewed
+the peer-request prompt, the correlated-reply prompt, the `message_bot`
+description and both language versions of the `persistent-bot-review` effect.
+When the requester names a finished exchange it sent to the same target, the
+recipient's request prompt gains that round's stored request and reply, and
+up to 4 linked earlier rounds within 96,000 bytes, under a bilingual header
+saying they are context data, not the person's message, an authorization or a
+new instruction. The text comes only from stored exchange records. Without the
+parameter nothing is added. The correlated-reply prompt now names the exchange
+id, and a truncated reply tells the requester to follow up with it instead of
+pasting the reply back. One optional tool argument is added; no approval
+choice or execution path changes.
+
 ## Content ownership
 
 The details address menu opens or copies only literal HTTP candidates supplied
