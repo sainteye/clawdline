@@ -59,12 +59,12 @@ unmetered: native usage and extra-credit policy still belong to the account.
   machine with `--always-approve` instead, Grok's highest mode, where only its
   deny rules and hooks still stop a call. The choice is frozen into the
   Session's launch context: a running Session keeps its mode, and the setting
-  cannot widen it. A dispatch `ask` stays supervised; explicit `full` uses
-  `--always-approve`.
-  `--no-leader` keeps each process owned by its daemon lifecycle.
-- An `edits` ceiling is refused. Grok's Auto mode is not assumed equivalent to
-  allowing edits alone. Explicit reasoning effort is also refused until its
-  session-local mapping has been verified.
+  cannot widen it. The dispatch broker starts new Grok tasks in `full` mode
+  (`--always-approve`) for all valid task permission choices, regardless of
+  the machine dispatch default. `--no-leader` keeps each process owned by its
+  daemon lifecycle.
+- Explicit reasoning effort is refused until its session-local mapping has
+  been verified.
 
 The first real input carries the frozen Project context: role and handbook,
 shared memory, Board language, answer-Note guidance and chosen workflow.

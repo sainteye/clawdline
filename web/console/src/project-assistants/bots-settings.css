@@ -41,6 +41,21 @@
   .project-assistants .pa-bs-panel { width:100%;max-height:none;height:100%;border:0;border-radius:0;padding-top:env(safe-area-inset-top); }
   .project-assistants .pa-bs-footer { padding-bottom:max(12px,env(safe-area-inset-bottom)); }
   .project-assistants .pa-bs-scope { max-width:55%; }
+  /* A phone cannot fit order, agent, model, effort and remove on one line. The remove
+     button stays at the end of the first line so it is read with its own row; model and
+     effort take the second line under the agent. */
+  .project-assistants .pa-bs-agent { display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:6px; }
+  .project-assistants .pa-bs-agent > .pa-bs-order { grid-area:1/1; }
+  .project-assistants .pa-bs-agent > .pa-bs-order + .pa-select { grid-area:1/2;justify-self:start;min-width:0;max-width:100%; }
+  .project-assistants .pa-bs-agent > .pa-bs-icon { grid-area:1/3;justify-self:end;margin:0; }
+  .project-assistants .pa-bs-agent > .pa-bs-model { grid-area:2/2;min-width:0;width:100%; }
+  .project-assistants .pa-bs-agent > .pa-bs-model ~ .pa-select { grid-area:2/3;max-width:none; }
+  .project-assistants .pa-bs-agents { gap:12px; }
+}
+/* On touch the icon buttons keep their 32px look and gain a 44px hit area. */
+@media (pointer: coarse) {
+  .project-assistants .pa-bs-icon { position:relative; }
+  .project-assistants .pa-bs-icon::after { content:"";position:absolute;inset:-6px; }
 }
 @media (prefers-reduced-motion: reduce) { .project-assistants .pa-bs-chevron { transition:none; } }
 .project-assistants .pa-bs-icon svg { width:14px;height:14px;flex:none; }

@@ -29,7 +29,7 @@ const origin="http://127.0.0.1:"+server.address().port
 const browser=await browsers.chromium.launch({args:["--disable-features=OmniboxEverywhere"]})
 try{
   for(const [name,viewport] of [["desktop",{width:1280,height:900}],["390",{width:390,height:844}]]){
-    const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW"})
+    const touch=name==="390",page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:touch,hasTouch:touch})
     await page.goto(origin+"/")
     await page.click("#opener")
     const dialog=page.getByRole("dialog")
@@ -44,6 +44,26 @@ try{
     if(name==="390")assert.ok(box.width>=389&&box.x<=1,"full screen at 390px")
     await page.locator(".pa-bs-body").evaluate(e=>e.scrollTop=0)
     await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-${name}.png`)})
+    // Each fallback agent's remove button stays on the line of its own order number,
+    // inside its row, and on touch it answers a 44px square around its centre.
+    const agentRows=page.locator(".pa-bs-agent"),problems=[]
+    assert.ok(await agentRows.count()>=4,"the fixture shows a rule with several fallback agents")
+    for(let i=0;i<await agentRows.count();i++){
+      const row=agentRows.nth(i)
+      await row.scrollIntoViewIfNeeded()
+      const seen=await row.evaluate((row,touch)=>{
+        const remove=row.querySelector("button[aria-label]:not(.pa-select-button)"),order=row.firstElementChild
+        const r=remove.getBoundingClientRect(),o=order.getBoundingClientRect(),box=row.getBoundingClientRect()
+        const centre={x:r.left+r.width/2,y:r.top+r.height/2}
+        const misses=touch?[[-21,-21],[21,-21],[-21,21],[21,21],[0,-21],[0,21],[-21,0],[21,0]].filter(([dx,dy])=>document.elementFromPoint(centre.x+dx,centre.y+dy)?.closest("button")!==remove):[]
+        return {line:Math.abs(centre.y-(o.top+o.height/2)),inside:r.right<=box.right+0.5&&r.left>=o.right,misses,label:remove.getAttribute("aria-label")}
+      },touch)
+      if(seen.line>2)problems.push(`${name}: row ${i+1}'s ${seen.label} is on the same line as its order number (${seen.line}px apart)`)
+      if(!seen.inside)problems.push(`${name}: row ${i+1}'s ${seen.label} stays inside its row`)
+      if(seen.misses.length)problems.push(`${name}: row ${i+1}'s ${seen.label} answers a 44px touch target (missed at ${JSON.stringify(seen.misses)})`)
+    }
+    assert.deepEqual(problems,[],"every fallback agent row keeps its remove button")
+    await page.locator(".pa-bs-rule").nth(1).screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-fallbacks-${name}.png`)})
     // Scope picker open.
     await page.locator(".pa-bs-scope-button").nth(1).click()
     await page.locator(".pa-bs-scope-pop").waitFor();await page.waitForTimeout(250)

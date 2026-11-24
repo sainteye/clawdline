@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/squadfiles"
 	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -20,7 +21,7 @@ func TestGrokDispatchOwnsTheWorkspaceAndBriefsOnlyOnce(t *testing.T) {
 	b.OpenOwnedChild = func(_ context.Context, r Record, cwd, _ string, _ squadfiles.Files, _ workflowlaunch.Prepared) (OwnedChild, error) {
 		opens++
 		if r.Assistant != "grok" || r.PermissionMode != "full" || r.Worktree == nil || cwd != r.Worktree.Path {
-			t.Fatal("provider, permission or workspace changed")
+			t.Fatalf("worker launch: assistant=%q permission=%q worktree=%v", r.Assistant, r.PermissionMode, r.Worktree)
 		}
 		out := ownedFixture(cwd)
 		out.Row.Assistant = session.AssistantGrok
@@ -34,13 +35,13 @@ func TestGrokDispatchOwnsTheWorkspaceAndBriefsOnlyOnce(t *testing.T) {
 	b.Type = func(ctx context.Context, pane, line string) error {
 		sends++
 		r, _, err := b.Record(ctx, id)
-		if err != nil || r.ChildConversationID != row.ConversationID || pane != row.ID {
+		if err != nil || r.PermissionMode != "full" || r.ChildConversationID != row.ConversationID || pane != row.ID {
 			t.Fatal("first input preceded durable ownership")
 		}
 		_, err = b.Accept(ctx, id, w1Secret)
 		return err
 	}
-	writeBrief(t, b, id, repo, map[string]any{"assistant": "grok", "permission_mode": "full", "isolation": "worktree", "claims": []string{"program.go"}})
+	writeBrief(t, b, id, repo, map[string]any{"assistant": "grok", "permission_mode": "ask", "isolation": "worktree", "claims": []string{"program.go"}})
 	inv, err := b.ReadInventory(ctx, repo, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -58,19 +59,29 @@ func TestGrokDispatchOwnsTheWorkspaceAndBriefsOnlyOnce(t *testing.T) {
 	}
 }
 
-func TestGrokEditsCeilingIsRefusedBeforeOpeningAWorker(t *testing.T) {
-	b, ctx := newTestBroker(t)
+func TestGrokDispatchUsesFullForEveryValidTaskPermission(t *testing.T) {
+	b, _ := newTestBroker(t)
+	if _, err := nextconfig.Open(b.Dir).Set(map[string]any{"orchestrator_permission": "ask"}); err != nil {
+		t.Fatal(err)
+	}
 	b.OwnedProviderAvailable = func(context.Context, string) bool { return true }
 	b.OpenOwnedChild = func(context.Context, Record, string, string, squadfiles.Files, workflowlaunch.Prepared) (OwnedChild, error) {
-		t.Fatal("unsupported permission opened a worker")
+		t.Fatal("reading a draft opened a worker")
 		return OwnedChild{}, nil
 	}
 	const id = "d8400002-0000-4000-8000-000000000002"
-	writeBrief(t, b, id, b.Dir, map[string]any{"assistant": "grok", "permission_mode": "edits"})
-	_, err := b.Dispatch(ctx, DispatchRequest{TaskID: id, Secret: w1Secret, Offered: true})
+	for _, mode := range []string{"", "ask", "edits", "full"} {
+		writeBrief(t, b, id, b.Dir, map[string]any{"assistant": "grok", "permission_mode": mode})
+		r, err := b.ReadDraft(id)
+		if err != nil || r.PermissionMode != "full" {
+			t.Errorf("permission %q: admitted %q, err=%v", mode, r.PermissionMode, err)
+		}
+	}
+	writeBrief(t, b, id, b.Dir, map[string]any{"assistant": "grok", "permission_mode": "invalid"})
+	_, err := b.ReadDraft(id)
 	var refusal Refusal
-	if !errors.As(err, &refusal) || refusal.Code != "provider_permission_unsupported" {
-		t.Fatalf("permission refusal=%v", err)
+	if !errors.As(err, &refusal) || refusal.Code != "bad_task" {
+		t.Fatalf("invalid permission refusal=%v", err)
 	}
 }
 

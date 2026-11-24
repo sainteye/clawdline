@@ -4,7 +4,6 @@ import {createRoot} from "react-dom/client"
 import type * as W from "@clawdline/contract"
 import {ProjectAssistantSourceClient} from "../../src/cloud/project-assistants"
 import {DevServers} from "../../src/project-assistants/DevServers"
-import {BotDetailsPanel} from "../../src/project-assistants/BotDetailsPanel"
 import {Chat} from "../../src/project-assistants/Chat"
 import {FallbackSourceScope} from "../../src/project-assistants/FallbackSettings"
 import {fixtureSource} from "../../src/project-assistants/fixtures"
@@ -38,7 +37,7 @@ function bot(id:string):W.ProjectAssistantBot{return {key:{machine_id:grant.mach
 function Fixture(){
  const [selected,setSelected]=useState("Builder"),[active,setActive]=useState(true),[live,setLive]=useState(true),[frontier,setFrontier]=useState(0),w=words(language),current=bot(selected)
  return <div className="project-assistants"><nav aria-label="Synthetic controls"><button onClick={()=>setSelected(s=>s==="Builder"?"Other Bot":"Builder")}>Switch Bot</button><button onClick={()=>setActive(a=>!a)}>Toggle details</button><button onClick={()=>{revoked=true;setLive(false)}}>Revoke source</button><button onClick={()=>void fetch("/fixture/lose-next",{method:"POST"})}>Lose next reply</button><button onClick={()=>void fetch("/fixture/invalid-next",{method:"POST"})}>Invalidate next reply</button><button onClick={()=>void fetch("/fixture/hold-read",{method:"POST"})}>Hold next read</button><button onClick={()=>void fetch("/fixture/release-read",{method:"POST"})}>Release read</button><button onClick={()=>void fetch("/fixture/add-server",{method:"POST"}).then(()=>setFrontier(n=>n+1))}>Complete new server</button></nav><main className="pa-server-fixture" hidden={!active}>
-  <DevServers key={selected} source={source} bot={current} enabled={live&&grant.writable} active={active} frontier={frontier} w={w}/><BotDetailsPanel bot={current} projectName="Synthetic Project" machineName="Synthetic computer" onSettings={()=>{}} onRoutines={()=>{}} w={w}/>
+  <DevServers key={selected} source={source} bot={current} enabled={live&&grant.writable} active={active} frontier={frontier} w={w}/>
  </main></div>
 }
 const base=fixtureSource(grant.machineID)
