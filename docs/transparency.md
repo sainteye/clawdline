@@ -140,9 +140,12 @@ receipts are refreshed.
 The Bot exchange restart fix implements the existing English and Taiwan
 Traditional Chinese review card's promise to preserve replies through a
 restart. During a planned shutdown the source keeps unstarted reply turns
-and replies waiting for queue space. Startup uses the normal worker to deliver
-the saved outcome under the existing queue and execution rules. The quoted
-prompts and the original request's replay policy are unchanged.
+and replies waiting for queue space. Startup restores the saved feature state
+and starts recovery after write access is published. The exchange can show
+the request outcome and reply delivery while the sender's unknown turn still
+blocks execution. The pending-integration count follows the broker's settled
+landing through a retryable projection that does not start a review. The
+quoted prompts and the original request's replay policy are unchanged.
 
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant

@@ -5550,7 +5550,7 @@
     "internal/adapters/projectassistanthost/devservers.go": "43a19faa631826795d39ad8f896e5a5250e696f9ecc8f570cbd393ac0cd9f1ab",
     "internal/adapters/projectassistanthost/devservers_human.go": "9e48dd5991c435e73c2d577ad5fbc6c28a287597e39172adacc1e4f0dbe24484",
     "internal/adapters/projectassistanthost/devservers_ports.go": "3c1a12ecd6dda4701ee14d53660a4004a6a831d3692e0e100cc84d77990fb394",
-    "internal/adapters/projectassistanthost/host.go": "e0ccd086af93a6187c0a91c43b3d998fb46e41721c233700fa931e7a9351d68e",
+    "internal/adapters/projectassistanthost/host.go": "af7a88f172d6edd78b6b294ac729d7174c679da087ea80e6ea4f631b7ce25c7c",
     "internal/adapters/projectassistanthost/lead.go": "e33b998121310d910a84a3f1493d9b737646bf9051d256ed17d2b8740484393e",
     "internal/adapters/projectassistanthost/native_context.go": "6bde4fee5efb052752a1c2031a98959cb8c20200d3337abf4adac2af42e1d9c5",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
@@ -5597,7 +5597,7 @@
     "internal/app/botnetwork/routes.go": "2ce97e7608f8668d38cd4050786a1cc9265cc5b6b44942373e37710f0b4ed2d9",
     "internal/app/botnetwork/service.go": "41e78b7e53c91425b9431bc179e5997d554f49036fd303b13cb190792b2aa13f",
     "internal/app/browserbridge/profiles.go": "f41aacbc491f0cb2bbb95008d09bf358b0664ffb01b0b515364f348b550f3834",
-    "internal/app/orchestrator/assistant_work_completion.go": "0b538410de7ec41f0ce0659c2a9a391b546c4e04e0d677a64f5394552c573938",
+    "internal/app/orchestrator/assistant_work_completion.go": "84c92cffc95a9c7021dc12f9ef3f721705d5096bfaf078909580255d403d5f62",
     "internal/app/orchestrator/brief.go": "3685236a26e16da5f343064ade707523de1409eda320f929e9c13d41592c0428",
     "internal/app/orchestrator/child_guide.go": "c54f3d5ace461f5ba20f3804d0a177d34ddb2c528b23c3b4d099ace667c154e6",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
@@ -5692,7 +5692,7 @@
     "internal/transport/http/project_assistants_assistant_cloud.go": "fac5fc5a9774d186b6318a2616568f8229331a0f4cd8effea692fdc0df41a635",
     "internal/transport/http/project_assistants_cloud_hooks.go": "0b3d3e05276e67e3ad4ad1644c00c268be0b784374853a9199e1dcc58bdf8193",
     "internal/transport/http/project_assistants_connector_credentials.go": "d5734c4e6ebff636c46b24c87a044df390b26d226f95dff6308b4d7f70caf89f",
-    "internal/transport/http/project_assistants_host.go": "789a7305a6fa24c44e2505c1e8ab86ff1b4536045ba305178e905b3444f9aaa9",
+    "internal/transport/http/project_assistants_host.go": "1f4d349c2a5e01b0986fc93e205fdb188e2e0fbd2ab5d56117d31f9048c5cf71",
     "internal/transport/http/project_assistants_lead_control.go": "ecc4f622a9b1b0864efe0247f88a2aecba8137093c4690efbfc628a93c19932e",
     "internal/transport/http/project_assistants_login_profiles.go": "10a43acbb279c6455d8d7adf226ffdb36da32b18e124b37d23849da0aec73ad2",
     "internal/transport/http/project_assistants_memory_settings.go": "e38bc87ca019942b520a7027f87d85039d6ae623a4e7858f77f4a0bfe4fbd0c1",
@@ -5738,10 +5738,10 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "8332c32928445ea4ca575773e24c852aa68e2e69311878e24a3303890a6df8ce",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "0083a8be739e11ce211f0219e66d966e2ab07cb8ebe0d83153be0dfa8944b9a2",
+    "web/console/src/project-assistants/Chat.tsx": "5de70938d3b1a8e9f3778ec3b3f5cc43e17008b49b063846b49273e4b7b377cb",
     "web/console/src/project-assistants/ChatRows.tsx": "47b5832bd677e20a0c1945f38db9433902c1f6f925886b4af40a7127b88d4c71",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
-    "web/console/src/project-assistants/ExchangePanel.tsx": "bd920b7a035e27d5c9ce6219a57b63040003f6e547e6cf5dcca3517bf4e1455f",
+    "web/console/src/project-assistants/ExchangePanel.tsx": "81fe64a4593e7945d3ed0a40e303fbcfe3e1ef67bbd11c8da1b77f36b9953188",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
     "web/console/src/project-assistants/ImageViewer.tsx": "d31081988eed7e19c66984a44ed4bd7d9e0ec6170054babe413a2cbb44a26f07",
     "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
@@ -5794,7 +5794,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "8a986076222b47009b31047ca74e8617dfc8d645cb5514707d3220a843250630",
-    "zh-Hant": "18c29250f65932420add7ac2120aa46e7a789597a3a22b7085118d6c89546fa2"
+    "en": "8b996709834f84003216ca5172ce6399be2a4a69df66ef4c6003957e0a6cb8b5",
+    "zh-Hant": "ea0ba0168d0e12f6d14fc49adf036ed32574a6ecf4a11998a81f8f97daafc7bc"
   }
 }

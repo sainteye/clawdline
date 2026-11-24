@@ -108,3 +108,32 @@ func noteBackgroundOwner(ctx context.Context, tx *sql.Tx, owner pa.BotKey) error
 		owner.MachineID, owner.BotID)
 	return err
 }
+
+// SettledWorkRepairs finds existing projected links whose owner already
+// settled the broker obligation. Older failed projections carry no retry row.
+func (s *Store) SettledWorkRepairs(ctx context.Context, machine, after string) ([]string, error) {
+	rows, err := s.reader.QueryContext(ctx, `
+SELECT t.id
+FROM project_assistant_bots b, json_each(CAST(b.data AS TEXT),'$.WorkLinks') w
+JOIN broker_tasks t ON t.id=json_extract(w.value,'$.task_id')
+WHERE b.machine=? AND t.id>? AND json_valid(t.record)
+AND json_extract(t.record,'$.assistant_owner.fence.key.machine_id')=b.machine
+AND json_extract(t.record,'$.assistant_owner.fence.key.bot_id')=b.bot
+AND json_extract(t.record,'$.landing.state') IN ('landed','incorporated','abandoned','nothing_to_land')
+AND json_extract(w.value,'$.state') IN ('completed','failed')
+AND coalesce(json_extract(w.value,'$.landing'),'') NOT IN ('landed','incorporated','abandoned','nothing_to_land')
+ORDER BY t.id LIMIT ?`, machine, after, pa.MaxPageRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

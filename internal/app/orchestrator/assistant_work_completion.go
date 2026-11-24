@@ -11,6 +11,7 @@ import (
 
 const (
 	EffectAssistantWorkCompleted = "bot.work.completed"
+	EffectAssistantWorkLanding   = "bot.work.landing"
 	// EffectAssistantWorkWaiting is written when a Bot-owned task first
 	// starts waiting for a person. The host's review turn shares the
 	// completion receipt, so one task never gets a second review turn.
@@ -25,6 +26,7 @@ func init() {
 	runMutationEffects = func(b *Broker, ctx context.Context, ids []int64) { b.runRecorded(ctx, ids) }
 	effectHandlers[EffectAssistantWorkCompleted] = effectHandler{idempotent: true, run: runAssistantWorkCompleted}
 	effectHandlers[EffectAssistantWorkWaiting] = effectHandler{idempotent: true, run: runAssistantWorkWaiting}
+	effectHandlers[EffectAssistantWorkLanding] = effectHandler{idempotent: true, run: runAssistantWorkLanding}
 }
 
 func runAssistantWorkCompleted(ctx context.Context, b *Broker, e store.Effect) effectResult {
@@ -46,6 +48,20 @@ func runAssistantWorkCompleted(ctx context.Context, b *Broker, e store.Effect) e
 		sink = b.AssistantWorkChanged
 	}
 	return deliverAssistantWork(ctx, b, r, sink, r.FinishedAt, "bot_work_completion_delivered")
+}
+
+func runAssistantWorkLanding(ctx context.Context, b *Broker, e store.Effect) effectResult {
+	r, _, err := b.Record(ctx, e.Subject)
+	if err != nil {
+		if isNotFound(err) {
+			return effectResult{state: store.EffectFailed, outcome: "worker_missing"}
+		}
+		return effectResult{deferErr: err}
+	}
+	if r.AssistantOwner == nil || r.Landing == nil || !pa.SettledLanding(string(r.Landing.State)) {
+		return effectResult{state: store.EffectFailed, outcome: "worker_landing_not_settled"}
+	}
+	return deliverAssistantWork(ctx, b, r, b.AssistantWorkChanged, r.Landing.At, "bot_work_landing_delivered")
 }
 
 func runAssistantWorkWaiting(ctx context.Context, b *Broker, e store.Effect) effectResult {

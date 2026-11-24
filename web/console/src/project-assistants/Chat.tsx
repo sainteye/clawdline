@@ -1533,7 +1533,10 @@ ${currentDraft}`:submitted)
   const queuedCount=head?.queued_turn_count??0
   const unknownCount=head?.unknown_turn_count??0
   const queuePaused=queuedCount>0&&unknownCount>0
-  const shownUnknown=turns.filter(turn=>turn.state==="unknown").length
+  const exchangeReplyTurns=new Set(messages.flatMap(message=>message.exchange&&message.turn_id===message.exchange.reply_turn_id?[message.turn_id]:[]))
+  const visibleInterruptions=turns.filter(turn=>!["queued","accepted","running","waiting_permission"].includes(turn.state)
+    &&!(turn.state==="cancelled"&&(!turn.failure_code&&!turn.started_at||exchangeReplyTurns.has(turn.id))))
+  const shownUnknown=visibleInterruptions.filter(turn=>turn.state==="unknown").length
   const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
@@ -1712,7 +1715,7 @@ ${currentDraft}`:submitted)
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
       {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
-      {turns.filter(t=>!["queued","accepted","running","waiting_permission"].includes(t.state)&&!(t.state==="cancelled"&&!t.failure_code&&!t.started_at)).map(turn=>
+      {visibleInterruptions.map(turn=>
         <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
           onCheck={turn.state==="unknown"&&!reconnecting&&!error?checkForUpdates:undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>

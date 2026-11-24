@@ -155,8 +155,9 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		defaultLeadAgent = p.defaultLeadAgent
 	}
 	h, err = projectassistanthost.New(ctx, projectassistanthost.Options{
-		NativeHistory: projectassistantstore.NewNativeMaintenanceHistoryReader(s.cfg.Dir),
-		Network:       netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
+		NativeHistory:        projectassistantstore.NewNativeMaintenanceHistoryReader(s.cfg.Dir),
+		DeferBackgroundStart: true,
+		Network:              netSource.service(), NetworkAccount: s.botNetworkAccount, NetworkCapabilities: s.botNetworkCapabilities,
 		Assistants:       netSource.assistantService(),
 		NetworkTransport: s.botNetworkTransport,
 		Extensions:       extensions, LoginProfiles: profileFactory, Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: i.MachineID,
@@ -188,7 +189,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 	p.host, p.account, p.machine = h, i.AccountID, i.MachineID
 	p.inspectionFailed = false
 	p.mu.Unlock()
-	return h, h.Disable(ctx)
+	return h, nil
 }
 
 // StartProjectAssistants performs the persisted opt-in/opt-out once at boot.
@@ -221,6 +222,7 @@ func (s *Server) StartProjectAssistants(ctx context.Context) error {
 	p.mu.Lock()
 	p.allowed = true
 	p.mu.Unlock()
+	h.StartBackgroundWork()
 	return nil
 }
 
@@ -618,6 +620,7 @@ func (s *Server) setProjectAssistantSettings(ctx context.Context, f *nextconfig.
 	p.mu.Lock()
 	p.allowed = true
 	p.mu.Unlock()
+	h.StartBackgroundWork()
 	return v, nil
 }
 
