@@ -110,6 +110,12 @@ func baseConsoleBounds() []Entry {
 			Sources: []string{"internal/domain/capacity.MaximumVideoPreviewMilliseconds"},
 		},
 		{
+			// Chat.tsx PushedEventFallbackMs: a Bot chat whose live roster stream is
+			// connected reads on each roster change; this timer is only a fallback.
+			Name: "console.bot_chat_pushed_fallback_milliseconds", Class: Buffer, Unit: Milliseconds,
+			Limit: 15000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+		},
+		{
 			// NextMessages.add shares KEPT_CARDS from session/persist.ts.
 			Name: "console.next_messages", Class: Buffer, Unit: Rows,
 			Limit: 20, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person,

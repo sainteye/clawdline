@@ -74,6 +74,8 @@ import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
 import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
 export const EventRefreshMs = 3000
+/** While the live roster stream reports this Bot's changes, the timer is only a fallback. */
+export const PushedEventFallbackMs = 15000
 
 function transientChatRead(error:unknown) {
   const code=errorCode(error)
@@ -113,14 +115,14 @@ export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,c
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
-  openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
+  openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;pushed?:boolean;
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const canReadProgress=source.canReadProgress?.()===true
@@ -285,6 +287,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
   const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
+  const pushedRef=useRef(pushed);pushedRef.current=pushed
   const checkForUpdates=async()=>{
     setCheckingUpdates(true)
     try{await refresh(true)}finally{setCheckingUpdates(false)}
@@ -447,7 +450,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // it into an immediate loop; the existing cadence still owns later reads.
     if(manual)observation.finalSnapshot=false
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current
-    let snapshotValidated=false,nextReadDelay=EventRefreshMs
+    let snapshotValidated=false,nextReadDelay=pushedRef.current&&!observation.active?PushedEventFallbackMs:EventRefreshMs
     eventControl.current=control
     const settleCollections=async(modes:("permissions"|"traces")[])=>{
       // A projection failing at an older fence is retried on the next poll.
@@ -554,6 +557,17 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show);window.addEventListener("online",visibility)
     return()=>{alive.current=false;observation.stop();uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show);window.removeEventListener("online",visibility)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
+  // The roster frame only says when to read; the events read still decides what
+  // changed, so a repeated or reordered frame coalesces into one cursor read.
+  const pushSignal=JSON.stringify([summary.version,summary.activity_at,summary.unread_count,summary.latest_message,summary.status,summary.activity,summary.pending_permissions])
+  const lastPushSignal=useRef(pushSignal)
+  useEffect(()=>{
+    if(lastPushSignal.current===pushSignal)return
+    lastPushSignal.current=pushSignal
+    if(!pushed||!currentData.current||recovery.current||document.visibilityState==="hidden")return
+    if(timer.current){clearTimeout(timer.current);timer.current=null}
+    void refresh(false)
+  },[pushSignal,pushed,refresh])
   // A send made by a Chat that was left lands in the host journal by its own
   // command identity; this Chat shows that outcome once and never resends.
   const refreshRef=useRef(refresh);refreshRef.current=refresh

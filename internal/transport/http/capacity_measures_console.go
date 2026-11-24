@@ -128,6 +128,9 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 		"console.transcript_quiet_failures": func() capacity.Reading {
 			return capacity.Reading{Err: "live browser transcript failure counts are not observed by the daemon"}
 		},
+		"console.bot_chat_pushed_fallback_milliseconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-Console Bot chat fallback timer; daemon cannot observe a browser's timers"}
+		},
 		"console.transcript_quiet_milliseconds": func() capacity.Reading {
 			return capacity.Reading{Err: "live browser transcript recovery timers are not observed by the daemon"}
 		},

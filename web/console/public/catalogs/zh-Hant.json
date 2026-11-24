@@ -1943,6 +1943,8 @@
   "capacityRow.console.transcript_fling_gap_milliseconds.what": "仍算作同一次快速捲動的滾輪事件最長間隔。",
   "capacityRow.console.transcript_fling_hold_milliseconds.full": "更早的訊息在上方載入後，往頂端的快速捲動剩下的部分最多暫停這麼久，讓你正在看的訊息留在畫面上。停下來或往反方向捲動會提早放開。",
   "capacityRow.console.transcript_fling_hold_milliseconds.what": "更早訊息載入後，暫停快速捲動剩餘部分的最長時間。",
+  "capacityRow.console.bot_chat_pushed_fallback_milliseconds.full": "名冊即時串流連線時，開著的 Bot 聊天一收到串流的變更通知就讀新訊息；這個計時器只用來補抓漏掉的變更。沒有串流時，聊天每 3 秒讀一次。",
+  "capacityRow.console.bot_chat_pushed_fallback_milliseconds.what": "名冊即時串流連線時，開著的 Bot 聊天兩次備援讀取之間最長的間隔。",
   "capacityRow.console.transcript_quiet_milliseconds.full": "須在超過此時間後再次讀取失敗，且同時達到連續失敗門檻，才顯示錯誤。權限與執行身分拒絕仍立即顯示。",
   "capacityRow.console.transcript_quiet_milliseconds.what": "連續暫時讀取失敗顯示為錯誤前，至少保留的復原時間。",
   "capacityRow.console.transcript_revision_restarts.full": "清除不相容的歷史、讀取最新一頁後，重試較早訊息一次；第二次失敗會保留錯誤與手動重試操作。",
