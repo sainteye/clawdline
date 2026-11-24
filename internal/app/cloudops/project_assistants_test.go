@@ -139,7 +139,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 72 {
+	if len(out) != 74 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -762,6 +762,16 @@ func projectAssistantServerOperationCases() []operationCase {
 	save := map[string]any{"machine_id": "mac-01", "idempotency_key": "case-tower-floor-save", "expected_version": 0, "project_id": "project", "floor": 2}
 	raw, _ := json.Marshal(save)
 	save["type"], save["session"], save["request"] = "project-assistants.tower-floor-save", MachineReplySession, "case-tower-floor-save"
-	return append(rows, operationCase{word: "project-assistants.tower-floor-save", method: "POST", path: "/v1/project-assistant-floors",
+	rows = append(rows, operationCase{word: "project-assistants.tower-floor-save", method: "POST", path: "/v1/project-assistant-floors",
 		session: MachineReplySession, name: "action:case-tower-floor-save", answers: &router{body: floors}, body2: string(raw), body: save})
+	shared := `{"contract_version":"project-assistants.v1","machine_id":"mac-01","settings":{"version":1,"rules":[],"memory":[]},"agents":[],"limits":{}}`
+	rows = append(rows, operationCase{word: "project-assistants.shared-settings", method: "GET", path: "/v1/project-assistant-shared-settings",
+		query: map[string]string{"machine_id": "mac-01"}, session: MachineReplySession, name: "read:case-shared-settings", answers: &router{body: shared},
+		body: map[string]any{"type": "project-assistants.shared-settings", "session": MachineReplySession, "request": "case-shared-settings", "machine_id": "mac-01"}})
+	put := map[string]any{"machine_id": "mac-01", "idempotency_key": "case-shared-settings-save", "expected_version": 0,
+		"settings": map[string]any{"version": 0, "rules": []any{}, "memory": []any{map[string]any{"id": "m", "text": "Answer first", "scope": map[string]any{"all": true}}}}}
+	raw, _ = json.Marshal(put)
+	put["type"], put["session"], put["request"] = "project-assistants.shared-settings-save", MachineReplySession, "case-shared-settings-save"
+	return append(rows, operationCase{word: "project-assistants.shared-settings-save", method: "PUT", path: "/v1/project-assistant-shared-settings",
+		session: MachineReplySession, name: "action:case-shared-settings-save", answers: &router{body: shared}, body2: string(raw), body: put})
 }
