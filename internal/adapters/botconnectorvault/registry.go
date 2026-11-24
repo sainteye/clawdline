@@ -69,7 +69,8 @@ func opaque() (string, error) {
 
 // New receives authenticated source identity from composition, never HTTP.
 // Schema creation belongs to the feature installer. A restarted accepted write
-// remains unknown, and in-memory targets cannot survive the source restart.
+// remains unknown until the person enters a replacement, and in-memory targets
+// cannot survive the source restart.
 func New(ctx context.Context, db *sql.DB, state, account, machine string) (*Registry, error) {
 	if db == nil || account == "" || machine == "" || !filepath.IsAbs(state) {
 		return nil, fail(pa.Invalid, "connector_source")
@@ -290,9 +291,13 @@ func (r *Registry) Apply(ctx context.Context, s Scope, q Action, value []byte, s
 		if len(value) == 0 || len(value) > secrets.MaxSecretHandoffBytes || strings.ContainsAny(string(value), "\x00\r\n") {
 			return Result{}, fail(pa.Invalid, "connector_secret_value")
 		}
-	} else if q.Action == "prepare" && (p.State == "accepted" || p.State == "unknown" || p.State == "cleanup_unknown") {
+	} else if q.Action == "prepare" && p.State == "accepted" {
 		return Result{}, fail(pa.OutcomeUnknown, "connector_credential")
 	}
+	// An unknown credential (a restart during a write or a held execution, or an
+	// uncertain cleanup) accepts a replacement from the person. That is its way
+	// out: the new revision revokes every earlier capture through Check, and the
+	// uncertain holds stay recorded. Without a replacement it is never lent.
 	p.scope = scope
 	p.Revision++
 	p.Handoff = nil
