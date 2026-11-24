@@ -285,3 +285,68 @@ func TestARefusedWakeTellsThePersonInTheChatOnce(t *testing.T) {
 		t.Fatalf("a refused task was woken later: wakes=%d", wakes)
 	}
 }
+
+// A full Bot is a transient refusal: the outbox retries it, so one full
+// moment neither writes a notice nor locks the task. When capacity returns,
+// the same delivery wakes the Bot. Only the attempt at the end of the retry
+// window tells the person in the chat.
+func TestAFullBotStillTakesTheWorkOverWhenCapacityReturns(t *testing.T) {
+	n := startNative(t, nil)
+	ctx := context.Background()
+	link := dispatchUnrequested(t, n, "capacity")
+	n.f.capacityFull.Store(true)
+	if _, err := n.f.o.Broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Capacity summary."}); err != nil {
+		t.Fatal(err)
+	}
+	record, _, _ := n.f.o.Broker.Record(ctx, link.TaskID)
+	snapshot := orchestrator.AssistantWorkSnapshotOf(record)
+	if err := n.f.h.completeWork(ctx, snapshot); pa.Code(err) != pa.CapacityFull {
+		t.Fatalf("a full Bot answered %v, want capacity_full", err)
+	}
+	x, err := n.f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range x.Messages {
+		if m.Kind == pa.NoticeMessage && strings.Contains(m.Text, link.TaskID) {
+			t.Fatalf("a transient refusal wrote a final notice: %+v", m)
+		}
+	}
+	n.f.capacityFull.Store(false)
+	if err := n.f.h.completeWork(ctx, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	if wakes, _ := workTurns(t, n); wakes != 1 {
+		t.Fatalf("the task was not taken over after capacity returned: wakes=%d", wakes)
+	}
+}
+
+// When the retry window has ended, a full Bot is told once in the chat.
+func TestAFullBotAtTheEndOfTheRetryWindowTellsThePerson(t *testing.T) {
+	n := startNative(t, nil)
+	ctx := context.Background()
+	link := dispatchUnrequested(t, n, "capacity-last")
+	n.f.capacityFull.Store(true)
+	if _, err := n.f.o.Broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Last summary."}); err != nil {
+		t.Fatal(err)
+	}
+	record, _, _ := n.f.o.Broker.Record(ctx, link.TaskID)
+	snapshot := orchestrator.AssistantWorkSnapshotOf(record)
+	snapshot.LastAttempt = true
+	if err := n.f.h.completeWork(ctx, snapshot); pa.Code(err) != pa.CapacityFull {
+		t.Fatalf("a full Bot answered %v, want capacity_full", err)
+	}
+	x, err := n.f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	notices := 0
+	for _, m := range x.Messages {
+		if m.Kind == pa.NoticeMessage && strings.Contains(m.Text, link.TaskID) && strings.Contains(m.Text, string(pa.CapacityFull)) {
+			notices++
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("last-attempt notices=%d, want 1", notices)
+	}
+}

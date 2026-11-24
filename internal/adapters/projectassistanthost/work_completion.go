@@ -35,8 +35,9 @@ func (h *Host) completeWork(ctx context.Context, completion orchestrator.Assista
 		err = runtime.WakeWorkCompletion(ctx, completion.Link, feature, source)
 	}
 	// A refusal ends the outbox row for good. The person reads why in the
-	// chat instead of finding a result nobody took over.
-	if err != nil && orchestrator.AssistantWorkRefused(pa.Code(err)) {
+	// chat instead of finding a result nobody took over. A full Bot is
+	// retried and only told on the last attempt.
+	if err != nil && orchestrator.AssistantWorkGivenUp(completion, pa.Code(err)) {
 		if e := runtime.RefuseWorkCompletion(ctx, completion.Link, err); e != nil {
 			return errors.Join(err, e)
 		}

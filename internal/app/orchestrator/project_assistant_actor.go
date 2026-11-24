@@ -429,6 +429,9 @@ type AssistantWorkSnapshot struct {
 	Owner  AssistantOwner
 	Link   pa.WorkLink
 	Result string
+	// LastAttempt is set by the outbox when its retry window has ended, so
+	// a transient refusal of this attempt is final.
+	LastAttempt bool
 }
 
 // AssistantWorkSnapshotOf projects a broker-owned record, never client JSON.
