@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
 import { botRosterActivity, dispatchedCount, rosterMood } from "./working.ts"
 // @ts-expect-error Node executes source extensions.
-import { dispatchedRows, dispatchedCounts, DeliveredWorkMs } from "./dispatched-work.ts"
+import { dispatchedRows, dispatchedCounts, dispatchedReason } from "./dispatched-work.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "./words.ts"
 
@@ -59,18 +59,47 @@ test("the clone count is running plus needing you, and zero without dispatched w
   assert.equal(dispatchedCount(row({dispatched_work:{running:-1,needs_you:1.5,delivered:0}})), 0)
 })
 
-test("the strip lists each link once at its latest state: needs you, running longest first, then recent deliveries", () => {
-  const now = Date.parse("2026-11-23T10:00:00Z")
+test("the strip lists each link once at its latest state: needs you, running longest first, then work whose landing is owed", () => {
   const link = (id: string, state: string, extra: Record<string, unknown> = {}) => ({id, task_id:id, state, ...extra}) as unknown as W.ProjectAssistantWorkLink
   const rows = dispatchedRows([
     link("a", "accepted"), link("a", "executing", {started_at:"2026-11-23T09:50:00Z"}),
     link("b", "executing", {started_at:"2026-11-23T09:00:00Z"}),
     link("c", "waiting_for_person"),
-    link("d", "completed", {finished_at:"2026-11-23T08:00:00Z"}),
-    link("e", "completed", {finished_at:new Date(now - DeliveredWorkMs - 1000).toISOString()}),
-    link("f", "completed"), link("g", "failed"), link("h", "landed"), link("i", "unknown"),
-  ], now)
-  assert.deepEqual(rows.map((r: {link:{id:string}}) => r.link.id), ["c", "b", "a", "d"])
-  assert.deepEqual(dispatchedCounts(rows), {running:2, needsYou:1, delivered:1})
-  assert.deepEqual(dispatchedRows([link("g", "failed"), link("h", "landed")], now), [])
+    link("d", "completed", {finished_at:"2026-11-23T08:00:00Z", landing:"pending"}),
+    // Finished three days ago and still owed: it stays listed.
+    link("e", "completed", {finished_at:"2026-11-20T08:00:00Z", landing:"pending"}),
+    // An older source without a landing state is owed, not hidden.
+    link("f", "completed"),
+    link("g", "failed"), link("g2", "failed", {landing:"pending", landing_note:"timed out with commits"}),
+    link("h", "landed"), link("i", "unknown"),
+    link("j", "completed", {landing:"abandoned"}), link("k", "completed", {landing:"nothing_to_land"}),
+    link("l", "failed", {landing:"abandoned"}),
+  ])
+  assert.deepEqual(rows.map((r: {link:{id:string}}) => r.link.id), ["c", "b", "a", "d", "e", "f", "g2"])
+  assert.deepEqual(dispatchedCounts(rows), {running:2, needsYou:1, delivered:4})
+  assert.deepEqual(dispatchedRows([link("g", "failed"), link("h", "landed")]), [])
+})
+
+test("a link disappears the moment its landing settles", () => {
+  const link = (state: string, extra: Record<string, unknown> = {}) => ({id:"x", task_id:"x", state, ...extra}) as unknown as W.ProjectAssistantWorkLink
+  const owed = link("completed", {landing:"pending", finished_at:"2026-11-01T00:00:00Z"})
+  assert.equal(dispatchedRows([owed]).length, 1)
+  for (const settled of [link("landed", {landing:"landed"}), link("landed", {landing:"incorporated"}), link("completed", {landing:"abandoned"}), link("completed", {landing:"nothing_to_land"})]) {
+    assert.deepEqual(dispatchedRows([owed, settled]), [], JSON.stringify(settled))
+  }
+})
+
+test("every listed state says in plain words what it waits for", () => {
+  const link = (state: string, extra: Record<string, unknown> = {}) => ({id:"x", task_id:"x", state, ...extra}) as unknown as W.ProjectAssistantWorkLink
+  const reasonOf = (l: W.ProjectAssistantWorkLink) => dispatchedReason(dispatchedRows([l])[0], w)
+  assert.equal(reasonOf(link("waiting_for_person")), "等你回答分身的問題")
+  assert.equal(reasonOf(link("executing")), "執行中")
+  assert.equal(reasonOf(link("accepted")), "啟動中")
+  assert.equal(reasonOf(link("completed", {landing:"pending"})), "已交付，等 Bot 合併")
+  assert.equal(reasonOf(link("completed")), "已交付，沒有落地紀錄")
+  assert.equal(reasonOf(link("failed", {landing:"pending"})), "失敗，留下的改動還沒處理")
+  const reasons = new Set(["waiting_for_person", "executing", "accepted"].map(s => reasonOf(link(s))))
+  for (const extra of [{landing:"pending"}, {}]) reasons.add(reasonOf(link("completed", extra)))
+  reasons.add(reasonOf(link("failed", {landing:"pending"})))
+  assert.equal(reasons.size, 6)
 })

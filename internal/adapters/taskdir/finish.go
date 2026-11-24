@@ -251,6 +251,11 @@ func ValidateResult(task, result map[string]any) string {
 			reasons = append(reasons, reason)
 		}
 	}
+	if value, present := result["carries"]; present {
+		if reason := validateCarries(value, result["task_id"]); reason != "" {
+			reasons = append(reasons, reason)
+		}
+	}
 	review, hasReview := result["review"]
 	if requiresReview(task) && result["status"] == "success" && !hasReview {
 		reasons = append(reasons, "a successful review task requires a closed review receipt")
@@ -309,6 +314,22 @@ func requiresReview(task map[string]any) bool {
 // delivery whose extra sentence nobody can read. The tmp file is left where it
 // is and the child corrects it. A child that writes no leftovers at all passes
 // this without ever meeting it.
+// validateCarries admits a list of distinct task ids other than this one.
+func validateCarries(value any, self any) string {
+	rows, ok := value.([]any)
+	if !ok || len(rows) > work.CarriesLimit {
+		return fmt.Sprintf("carries must be a list of at most %d task ids", work.CarriesLimit)
+	}
+	seen := map[any]bool{}
+	for _, row := range rows {
+		if s, ok := row.(string); !ok || len(s) != 36 || !isTaskID(row) || row == self || seen[row] {
+			return "carries must list distinct lowercase task UUIDs other than this task"
+		}
+		seen[row] = true
+	}
+	return ""
+}
+
 func validateLeftovers(value any) string {
 	rows, ok := value.([]any)
 	if !ok || len(rows) > work.LeftoversLimit {

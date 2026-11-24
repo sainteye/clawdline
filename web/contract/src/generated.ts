@@ -5648,7 +5648,8 @@ export interface ProjectAssistantDevServersResponse {
 
 export interface ProjectAssistantDispatchedWork {
   /**
-   * Dispatched Sessions delivered within the last day and not yet landed.
+   * Finished dispatched Sessions whose landing is still owed, however long ago they
+   * finished.
    */
   delivered: number
 
@@ -7922,7 +7923,18 @@ export interface ProjectAssistantWorkLink {
    */
   finished_at?: string
   id: string
+
+  /**
+   * Broker landing state of the task. Absent before the broker opens a landing
+   * record and on older sources.
+   */
+  landing?: string
   landing_commit: string
+
+  /**
+   * Broker note on the landing, such as why it is still pending.
+   */
+  landing_note?: string
 
   /**
    * Branch on which the Broker proved landing.

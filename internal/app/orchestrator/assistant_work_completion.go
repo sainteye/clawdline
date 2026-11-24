@@ -70,7 +70,7 @@ func runAssistantWorkWaiting(ctx context.Context, b *Broker, e store.Effect) eff
 
 func deliverAssistantWork(ctx context.Context, b *Broker, r Record, sink func(context.Context, AssistantWorkSnapshot) error, since time.Time, outcome string) effectResult {
 	if sink == nil {
-		if b.now().Sub(since) >= pa.DeliveredWorkWindow {
+		if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
 			return effectResult{state: store.EffectFailed, outcome: "bot_host_unavailable"}
 		}
 		return effectResult{deferErr: errors.New("Bot completion host is unavailable")}
@@ -84,7 +84,7 @@ func deliverAssistantWork(ctx context.Context, b *Broker, r Record, sink func(co
 	case pa.ScopeDenied, pa.Revoked, pa.NotFound, pa.ContextStale, pa.Invalid, pa.IdempotencyConflict, pa.CapacityFull:
 		return effectResult{state: store.EffectFailed, outcome: string(code)}
 	default:
-		if b.now().Sub(since) >= pa.DeliveredWorkWindow {
+		if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
 			return effectResult{state: store.EffectFailed, outcome: string(code)}
 		}
 		return effectResult{deferErr: err}

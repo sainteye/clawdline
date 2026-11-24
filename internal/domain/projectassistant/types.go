@@ -481,6 +481,32 @@ type WorkLink struct {
 	Project         string    `json:"project,omitempty"`
 	StartedAt       time.Time `json:"started_at,omitzero"`
 	FinishedAt      time.Time `json:"finished_at,omitzero"`
+	// Landing is the broker's landing state for the task (pending, landed,
+	// incorporated, abandoned, nothing_to_land); empty when the task has no
+	// landing record yet or the source is older.
+	Landing string `json:"landing,omitempty"`
+	// LandingNote is the broker's note on that landing, such as why it is
+	// still pending.
+	LandingNote string `json:"landing_note,omitempty"`
+}
+
+// SettledLanding reports a landing state after which nothing more is owed.
+func SettledLanding(state string) bool {
+	return state == "landed" || state == "incorporated" || state == "abandoned" || state == "nothing_to_land"
+}
+
+// Unsettled reports a finished dispatch whose landing is still owed: it stays
+// listed, without any time limit, until its landing settles. A completed link
+// from an older source carries no landing state and stays listed as owed; a
+// failed link is owed only when the broker opened a pending landing for it.
+func (l WorkLink) Unsettled() bool {
+	switch l.State {
+	case WorkCompleted:
+		return !SettledLanding(l.Landing)
+	case WorkFailed:
+		return l.Landing == "pending"
+	}
+	return false
 }
 
 type MemorySource struct {
@@ -569,19 +595,23 @@ type BackgroundWork struct {
 
 // DispatchedWork counts the broker Sessions a Bot dispatched, from its work
 // links: Running is accepted or executing, NeedsYou is waiting for the
-// person, Delivered is completed within MaxDeliveredWorkSeconds and not landed.
+// person, Delivered is finished work whose landing is still owed (Unsettled),
+// however long ago it finished.
 type DispatchedWork struct {
 	Running   int64 `json:"running"`
 	NeedsYou  int64 `json:"needs_you"`
 	Delivered int64 `json:"delivered"`
 }
 
-// MaxDeliveredWorkSeconds is how long a delivered, not yet landed Session
-// stays visible to its Bot; registered as bots.dispatched_delivered_seconds.
-const MaxDeliveredWorkSeconds = 24 * 60 * 60
+// MaxCompletionWakeRetrySeconds is how long the broker keeps retrying to hand
+// a finished dispatch back to its Bot while the Bot host is unavailable;
+// registered as bots.completion_wake_retry_seconds. It used to also hide a
+// delivered Session from the Bot's list after a day; that list now keeps
+// every unsettled delivery until its landing settles.
+const MaxCompletionWakeRetrySeconds = 24 * 60 * 60
 
-// DeliveredWorkWindow is MaxDeliveredWorkSeconds as a duration.
-const DeliveredWorkWindow = MaxDeliveredWorkSeconds * time.Second
+// CompletionWakeRetryWindow is MaxCompletionWakeRetrySeconds as a duration.
+const CompletionWakeRetryWindow = MaxCompletionWakeRetrySeconds * time.Second
 
 type BotSummary struct {
 	CompletedTurnID string `json:"completed_turn_id,omitempty"`

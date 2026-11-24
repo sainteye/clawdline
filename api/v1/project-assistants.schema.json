@@ -1147,7 +1147,13 @@
         "finished_at": {
           "type": "string",
           "description": "When the broker task reached a terminal state. Absent while it runs and on older sources."
-        }
+        },
+        "landing": {
+          "type": "string",
+          "enum": ["pending", "landed", "incorporated", "abandoned", "nothing_to_land"],
+          "description": "Broker landing state of the task. Absent before the broker opens a landing record and on older sources."
+        },
+        "landing_note": { "type": "string", "description": "Broker note on the landing, such as why it is still pending." }
       },
       "required": [
         "id",
@@ -1343,7 +1349,7 @@
       "properties": {
         "running": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions accepted or executing." },
         "needs_you": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions waiting for the person." },
-        "delivered": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions delivered within the last day and not yet landed." }
+        "delivered": { "type": "integer", "minimum": 0, "description": "Finished dispatched Sessions whose landing is still owed, however long ago they finished." }
       }
     },
     "ProjectAssistantBotSummary": {

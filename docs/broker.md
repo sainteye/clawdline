@@ -136,6 +136,17 @@ tree equality 能回答的問題：語意整合本來就會讓兩棵樹不同。
 若 carrier 的 landing 日後被更正，舊 landing 仍由 carrier 的 `corrected_from` 與 `landing.corrected` event 保留；
 `incorporated` 自己也保存當時驗過的 carrier commit、target commit、原 delivery head 與 base，不會只剩一個會漂移的 task id。
 
+**承載宣告（`carries`）。** child 的 result.json 可以列出它帶上的其他 task（`carries`，最多
+`orchestrator.result_carries` = 16 個，不能是自己、不能重複；`taskdir.ValidateResult` 整份退回超過的清單）。broker 證明
+這個 carrier 自己的 `landed` 之後（`land()` 結尾的 `incorporateCarried`，`internal/app/orchestrator/landing_carries.go`），
+對每個被帶上、仍是 `pending` 的 task 用 `git cherry <carrier landing commit> <delivery head> <base>` 比對 patch-id：
+全部 commit 都有等價 patch，才經由同一個 `land()` 記成 `incorporated`（commit 是 carrier 的 landing commit，`carrier_task`
+是 carrier，`note` 寫明是 patch-id 比對的結果），所以 `proveIncorporated` 的 repo／target／exact commit／非祖先檢查與
+`unverified_landing` 照樣把關。有任何一個 commit 找不到等價 patch、沒有 commit 可比、或 gate 拒絕時，保持 `pending`，
+`note` 寫明 carrier 是誰、缺幾個 commit 或被拒絕的原因。這一步失敗不會撤回 carrier 自己的 landing。merge commit 不在
+`git cherry` 比對範圍。沒有宣告 `carries`、事後才發現 patch 已全部在 target 上的 delivery，broker 目前**不會**自己找 carrier；
+那需要從已落地的 task 反查承載 commit，會讓 beat 的成本跟歷史長度成正比（G33），留待另行設計。
+
 目前看得到、但還沒有新增狀態的形狀：
 
 - 一份 delivery 被拆到兩個以上的 landing commit；一個 `commit` 與一個 `carrier_task` 表達不了完整集合。

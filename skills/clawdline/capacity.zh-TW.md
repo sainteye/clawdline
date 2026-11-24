@@ -80,6 +80,7 @@
 | `bots.cloud_pending` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.cloud_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.cloud_refresh_seconds` | 20 | `seconds` | `expire` | `diagnostics` | — |
+| `bots.completion_wake_retry_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.config_cache_entries` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `bots.config_cache_seconds` | 600 | `seconds` | `expire` | `diagnostics` | — |
 | `bots.config_choices` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -103,7 +104,6 @@
 | `bots.dispatch_rule_agents` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_rules` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_seconds` | 3600 | `seconds` | `refuse` | `diagnostics, sender` | — |
-| `bots.dispatched_delivered_seconds` | 86400 | `seconds` | `coalesce` | `diagnostics, sender` | — |
 | `bots.dispatched_strip_rows` | 5 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
@@ -666,6 +666,7 @@
 | `orchestrator.delivery_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.delivery_commits` | 4096 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `orchestrator.opening_stuck_seconds` | 1800 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `orchestrator.result_carries` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `personas.catalog` | 64 | `rows` | `refuse` | `diagnostics` | — |
 | `personas.suggestion_context_bytes` | 16384 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `personas.text_bytes` | 8192 | `bytes` | `refuse` | `diagnostics` | — |

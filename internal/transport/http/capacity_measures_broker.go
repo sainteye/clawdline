@@ -13,6 +13,9 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 		"orchestrator.delivery_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
 		},
+		"orchestrator.result_carries": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-result admission guard"}
+		},
 		"orchestrator.delivery_commits": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-delivery evidence admission guard"}
 		},

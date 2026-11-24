@@ -230,10 +230,13 @@ func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
 		{ID: "queued", Fence: fence, TurnID: "turn", TaskID: "task-a", State: pa.WorkAccepted, Title: "Queued work", Project: "/p"},
 		{ID: "running", Fence: fence, TurnID: "turn", TaskID: "task-b", State: pa.WorkExecuting, StartedAt: now.Add(-time.Minute)},
 		{ID: "asking", Fence: fence, TurnID: "turn", TaskID: "task-c", State: pa.WorkWaitingForPerson},
-		{ID: "delivered", Fence: fence, TurnID: "turn", TaskID: "task-d", State: pa.WorkCompleted, FinishedAt: now.Add(-time.Hour)},
-		{ID: "old-delivery", Fence: fence, TurnID: "turn", TaskID: "task-e", State: pa.WorkCompleted, FinishedAt: now.Add(-pa.DeliveredWorkWindow - time.Minute)},
+		{ID: "delivered", Fence: fence, TurnID: "turn", TaskID: "task-d", State: pa.WorkCompleted, Landing: "pending", FinishedAt: now.Add(-time.Hour)},
+		{ID: "old-delivery", Fence: fence, TurnID: "turn", TaskID: "task-e", State: pa.WorkCompleted, Landing: "pending", FinishedAt: now.Add(-72 * time.Hour)},
 		{ID: "undated-delivery", Fence: fence, TurnID: "turn", TaskID: "task-f", State: pa.WorkCompleted},
 		{ID: "failed", Fence: fence, TurnID: "turn", TaskID: "task-g", State: pa.WorkFailed},
+		{ID: "failed-owed", Fence: fence, TurnID: "turn", TaskID: "task-j", State: pa.WorkFailed, Landing: "pending", LandingNote: "timed out with commits"},
+		{ID: "abandoned", Fence: fence, TurnID: "turn", TaskID: "task-k", State: pa.WorkCompleted, Landing: "abandoned"},
+		{ID: "empty", Fence: fence, TurnID: "turn", TaskID: "task-l", State: pa.WorkCompleted, Landing: "nothing_to_land"},
 		{ID: "landed", Fence: fence, TurnID: "turn", TaskID: "task-h", State: pa.WorkLanded},
 		{ID: "unknown", Fence: fence, TurnID: "turn", TaskID: "task-i", State: pa.WorkUnknown},
 	}
@@ -245,7 +248,10 @@ func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
 		WorkLinks: links, Receipt: pa.Receipt{ID: "dispatched", State: pa.EffectDelivered}}); err != nil {
 		t.Fatal(err)
 	}
-	want := &pa.DispatchedWork{Running: 2, NeedsYou: 1, Delivered: 1}
+	// Delivered: the recent and the three-day-old pending deliveries, the
+	// older-source delivery without a landing state, and the failed one
+	// that owes a landing. Abandoned and nothing_to_land are settled.
+	want := &pa.DispatchedWork{Running: 2, NeedsYou: 1, Delivered: 4}
 	if got := listSummary(t, s, bot.Key).DispatchedWork; !reflect.DeepEqual(got, want) {
 		t.Fatalf("list dispatched_work = %+v, want %+v", got, want)
 	}
@@ -261,9 +267,9 @@ func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
 }
 
 func TestDispatchedWorkIsAbsentWhenNothingCounts(t *testing.T) {
-	now := time.Now()
-	none := []pa.WorkLink{{State: pa.WorkFailed}, {State: pa.WorkLanded}, {State: pa.WorkCompleted}, {State: pa.WorkUnknown}}
-	if got := countDispatchedWork(slices.Values(none), now); got != nil {
+	none := []pa.WorkLink{{State: pa.WorkFailed}, {State: pa.WorkLanded}, {State: pa.WorkCompleted, Landing: "abandoned"},
+		{State: pa.WorkCompleted, Landing: "nothing_to_land"}, {State: pa.WorkFailed, Landing: "abandoned"}, {State: pa.WorkUnknown}}
+	if got := countDispatchedWork(slices.Values(none)); got != nil {
 		t.Fatalf("got %+v, want nil so the field is absent", got)
 	}
 }

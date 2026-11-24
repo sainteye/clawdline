@@ -6,6 +6,9 @@ package capacity
 func brokerBounds() []Entry {
 	return []Entry{
 		{Name: "orchestrator.delivery_bytes", Class: Buffer, Unit: Bytes, Limit: 256 << 10, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceBytesLimit"}},
+		// The other tasks one result.json may say it carried; a longer
+		// list is refused whole by the child's own validator.
+		{Name: "orchestrator.result_carries", Class: Buffer, Unit: Rows, Limit: 16, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/work.CarriesLimit"}},
 		{Name: "orchestrator.delivery_commits", Class: Buffer, Unit: Rows, Limit: 4096, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/session.DeliveryEvidenceCommitsLimit"}},
 		{
 			// The askers waiting for one lease — the compile slot, or one

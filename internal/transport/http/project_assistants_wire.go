@@ -305,6 +305,8 @@ func paWireWorkLink(value pa.WorkLink) contract.ProjectAssistantWorkLink {
 	out.WorkerSession = value.WorkerSession
 	out.TargetProjectID = value.TargetProjectID
 	out.Project = value.Project
+	out.Landing = value.Landing
+	out.LandingNote = value.LandingNote
 	if !value.StartedAt.IsZero() {
 		out.StartedAt = value.StartedAt.UTC().Format(time.RFC3339Nano)
 	}

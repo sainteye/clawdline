@@ -146,6 +146,26 @@ func (g *Git) Commits(ctx context.Context, repo, base, branch string) (int, bool
 	return n, true
 }
 
+// PatchesIn reports, for the commits base..head, how many have no
+// patch-equivalent commit reachable from upstream (git cherry, which compares
+// patch-ids) and how many it compared. Merge commits are not compared.
+func (g *Git) PatchesIn(ctx context.Context, repo, upstream, head, base string) (missing, total int, err error) {
+	out, err := g.run(ctx, repo, "cherry", upstream, head, base)
+	if err != nil {
+		return 0, 0, err
+	}
+	for _, line := range strings.Split(out, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+ "):
+			missing++
+			total++
+		case strings.HasPrefix(line, "- "):
+			total++
+		}
+	}
+	return missing, total, nil
+}
+
 // Dirty reports uncommitted changes in a checkout, tracked or not.
 func (g *Git) Dirty(ctx context.Context, worktree string) (dirty bool, known bool) {
 	out, err := g.runIn(ctx, worktree, "status", "--porcelain")

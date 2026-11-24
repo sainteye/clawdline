@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14286,
-  "riskKeys": 6066,
-  "nonRiskCount": 8220,
+  "englishContentKeys": 14290,
+  "riskKeys": 6069,
+  "nonRiskCount": 8221,
   "groups": [
     {
       "name": "acp / other",
@@ -615,7 +615,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 757,
+      "count": 759,
       "sources": [
         null
       ],
@@ -679,6 +679,7 @@
         "capacityRow.bots.cleanup_retry_ms.full",
         "capacityRow.bots.cloud_endpoints.what",
         "capacityRow.bots.cloud_lease_seconds.what",
+        "capacityRow.bots.completion_wake_retry_seconds.full",
         "capacityRow.bots.config_cache_entries.what",
         "capacityRow.bots.config_cache_seconds.what",
         "capacityRow.bots.config_choices.what",
@@ -1127,6 +1128,7 @@
         "capacityRow.naming.tail_entries.what",
         "capacityRow.notification.rule_wait_seconds.what",
         "capacityRow.orchestrator.delivery_bytes.what",
+        "capacityRow.orchestrator.result_carries.what",
         "capacityRow.personas.text_bytes.what",
         "capacityRow.places.antigravity_history_bytes.what",
         "capacityRow.places.antigravity_history_entries.what",
@@ -6272,7 +6274,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 627,
+      "count": 626,
       "sources": [
         null
       ],
@@ -6379,7 +6381,6 @@
         "projectAssistants.dispatchDecline",
         "projectAssistants.dispatchedOtherProject",
         "projectAssistants.dispatchedShowSetting",
-        "projectAssistants.dispatchedStateNeedsYou",
         "projectAssistants.dispatchedStateQueued",
         "projectAssistants.dispatchedStripDelivered",
         "projectAssistants.dispatchedStripLabel",

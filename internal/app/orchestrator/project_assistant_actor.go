@@ -471,6 +471,9 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	case StateFailure, StateCancelled, StateSpawnFailed:
 		s.Link.State = pa.WorkFailed
 	}
+	if r.Landing != nil {
+		s.Link.Landing, s.Link.LandingNote = string(r.Landing.State), r.Landing.Note
+	}
 	if r.Landing != nil && (r.Landing.State == LandingLanded || r.Landing.State == LandingIncorporated) {
 		s.Link.State, s.Link.LandingCommit = pa.WorkLanded, r.Landing.Commit
 		s.Link.LandingTarget = r.Landing.Target

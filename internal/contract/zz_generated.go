@@ -4820,7 +4820,8 @@ type ProjectAssistantDevServersResponse struct {
 }
 
 type ProjectAssistantDispatchedWork struct {
-	// Dispatched Sessions delivered within the last day and not yet landed.
+	// Finished dispatched Sessions whose landing is still owed, however long ago they
+	// finished.
 	Delivered int64 `json:"delivered"`
 
 	// Dispatched Sessions waiting for the person.
@@ -6894,9 +6895,16 @@ type ProjectAssistantWorkLink struct {
 
 	// When the broker task reached a terminal state. Absent while it runs and on older
 	// sources.
-	FinishedAt    string `json:"finished_at,omitempty"`
-	ID            string `json:"id"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	ID         string `json:"id"`
+
+	// Broker landing state of the task. Absent before the broker opens a landing
+	// record and on older sources.
+	Landing       string `json:"landing,omitempty"`
 	LandingCommit string `json:"landing_commit"`
+
+	// Broker note on the landing, such as why it is still pending.
+	LandingNote string `json:"landing_note,omitempty"`
 
 	// Branch on which the Broker proved landing.
 	LandingTarget string `json:"landing_target,omitempty"`

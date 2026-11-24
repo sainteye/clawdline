@@ -239,7 +239,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsDispatchedStripRows: func() capacity.Reading {
 			return capacity.Unmeasured("each browser composes its dispatched-work strip; the source does not observe the rendered row count")
 		},
-		capacity.BotsDispatchedDeliveredSeconds: pure,
+		capacity.BotsCompletionWakeRetrySeconds: pure,
 		capacity.BotsGroupPreviewAvatars: func() capacity.Reading {
 			return capacity.Unmeasured("each browser composes its group avatar preview; the source does not observe the rendered member count")
 		},
