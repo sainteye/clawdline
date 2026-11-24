@@ -14,7 +14,7 @@ import { createContext, useCallback, useContext, useEffect, useLayoutEffect, use
 import { createPortal } from "react-dom"
 import type { Assistant, SessionRow } from "@clawdline/contract"
 import { RefusalError, asMachineNeedsUpdate, type MachineNeedsUpdate } from "@clawdline/core"
-import { NeedsUpdate } from "../../machine/NeedsUpdate.js"
+import { NeedsUpdate, useMachineVersion } from "../../machine/NeedsUpdate.js"
 import { recordSessionListFailure } from "../../cloud/install.js"
 import * as L from "../../legacy/bridge.js"
 import { isPicture, prepareReferencePicture } from "../../legacy/shots-bridge.js"
@@ -939,6 +939,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   reportsExpanded?: boolean
   foldDescription?: boolean
 }) {
+  const machine = useMachineVersion()
   const [terminal, setTerminal] = useState("")
   const providerReading = useAssistantFacts("", `${item.id}:${item.version}`)
   const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? { id }
@@ -1236,7 +1237,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
     </div>
     {editing && <EditWorkModal item={item} busy={!!busy} failure={failure} onClose={() => setEditing(false)} onSave={(title, description, base, overwrite, conflicted) => {
       void run(`edit-${item.id}`, async () => {
-        try { return await editWorkV2(item, title, description, undefined, { base, overwrite }) } catch (e) {
+        try { return await editWorkV2(item, title, description, undefined, { base, overwrite, apiLevel: machine.apiLevel }) } catch (e) {
           if (e instanceof RefusalError && e.code === "field_conflict") conflicted()
           throw e
         }

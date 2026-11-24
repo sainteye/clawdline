@@ -1,6 +1,7 @@
 import { RefusalError, TransportError, isRefusal } from "@clawdline/core"
 import { fetchWithDeadline } from "./fetch-deadline.js"
 import { readSessionListWith } from "./session-assignment.js"
+import { editWorkV2Body, type WorkV2EditBase } from "./edit-request.js"
 import type { Assistant, PersonaSuggestionReply, SessionsSnapshot, UsageItem, UsageSession, WorkGateCompactRead, WorkGateDetailRead, WorkGateDecisionAction } from "@clawdline/contract"
 import type { CreatedVia } from "./words.js"
 
@@ -503,20 +504,10 @@ export const remindWorkV2 = (item: WorkV2Item) =>
  * With `base`, the item as the editor opened it, an agent's step, document or
  * phase write meanwhile does not refuse the edit; only a field changed both
  * here and elsewhere is a `field_conflict`, and `overwrite` keeps this edit's value.
+ * `base` is sent only to a machine whose API level knows it (edit-request.ts).
  */
-export const editWorkV2 = (item: WorkV2Item, title: string, description: string, acceptance?: string,
-  based?: { base: WorkV2Item; overwrite?: boolean }) =>
-  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, {
-    expected_version: (based?.base ?? item).version,
-    title,
-    description,
-    ...(acceptance === undefined ? {} : { acceptance_criteria: acceptance }),
-    ...(based ? {
-      base: { title: based.base.title, description: based.base.description,
-        ...(acceptance === undefined ? {} : { acceptance_criteria: based.base.acceptance_criteria ?? "" }) },
-      ...(based.overwrite ? { overwrite_conflicts: true } : {}),
-    } : {}),
-  }, "PATCH")
+export const editWorkV2 = (item: WorkV2Item, title: string, description: string, acceptance?: string, based?: WorkV2EditBase) =>
+  mutate<{ item: WorkV2Item }>(`/v1/work/v2/items/${item.id}`, editWorkV2Body(item, title, description, acceptance, based), "PATCH")
 
 /** The editable fields a draft changed from its base that the live item also changed, to a different value. */
 export function editConflictFields(base: WorkV2Item, live: WorkV2Item, title: string, description: string): ("title" | "description")[] {
