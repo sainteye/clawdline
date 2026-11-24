@@ -3,6 +3,7 @@ package projectassistanthost
 import (
 	"context"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
@@ -167,5 +168,120 @@ func TestWorkWaitingForAPersonIsTheOnlyReview(t *testing.T) {
 	fixtureEventually(t, func() bool { _, results := workTurns(t, n); return results == 1 })
 	if wakes, _ := workTurns(t, n); wakes != 1 || n.f.p.opens.Load() != 2 {
 		t.Fatalf("a task reviewed while waiting was reviewed again: wakes=%d opens=%d", wakes, n.f.p.opens.Load())
+	}
+}
+
+// requestPerson stands for the gate verdict a child's task-secret request
+// carries. The production source revalidates any such verdict as a person's
+// and refuses it as pa_revoked; the review turn must not inherit it.
+type requestPerson struct{}
+
+// A child reports through its own request after the Bot has moved on by
+// several turns. The review turn is still queued, in the Bot's current
+// conversation, exactly once.
+func TestAChildsReportingRequestStillWakesTheBotAfterLaterTurns(t *testing.T) {
+	n := startNative(t, func(f *hostFixture) {
+		// Later turns register their own tools; only the first is the
+		// fixture's to receive.
+		native, registered := f.o.NativeWork, atomic.Bool{}
+		f.o.NativeWork = func(ctx context.Context, q app.OpenRequest, w NativeWork) (func(), error) {
+			if registered.Swap(true) {
+				return func() {}, nil
+			}
+			return native(ctx, q, w)
+		}
+		source := f.o.Source
+		f.o.Source = func(ctx context.Context, key pa.BotKey, write bool) (pa.SourceStatus, error) {
+			s, err := source(ctx, key, write)
+			if ctx.Value(requestPerson{}) != nil {
+				s.State = pa.SourceRevoked
+			}
+			return s, err
+		}
+	})
+	ctx := context.Background()
+	session := fixtureReceive(t, n.f.p.sessions)
+	link, err := n.tools.Dispatch(ctx, "later-turns", "Review the result", "Change only a.go in the isolated worktree.", []string{"a.go"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.reply <- app.PromptResult{FinalText: "Dispatched."}
+	fixtureEventually(t, func() bool {
+		turn, err := n.f.h.store.Turn(ctx, n.bot.Key, n.prompt.Turn.ID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	for _, text := range []string{"two", "three"} {
+		if _, e := n.f.send(t, n.bot, text); e != nil {
+			t.Fatal(e)
+		}
+		sent := fixtureReceive(t, n.f.p.sent)
+		select {
+		case reopened := <-n.f.p.sessions:
+			session = reopened
+		default:
+		}
+		session.reply <- app.PromptResult{FinalText: "Reply to " + text}
+		fixtureEventually(t, func() bool {
+			turn, err := n.f.h.store.Turn(ctx, n.bot.Key, sent.Turn.ID)
+			return err == nil && turn.State == pa.TurnSucceeded
+		})
+	}
+	x, err := n.f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("dispatch fence generation=%d binding=%q; current generation=%d binding=%q", link.Fence.Generation, link.Fence.BindingID, x.Conversation.Generation, x.Conversation.BindingID)
+	reporting := context.WithValue(ctx, requestPerson{}, true)
+	if _, err := n.f.o.Broker.Settle(reporting, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Child summary."}); err != nil {
+		t.Fatal(err)
+	}
+	wake := fixtureReceive(t, n.f.p.sent)
+	if pa.WorkCompletionTask(wake.Turn) != link.TaskID || wake.Turn.Fence.ConversationID != x.Conversation.ID {
+		t.Fatalf("the review turn was not queued in the current conversation: %+v", wake.Turn)
+	}
+	r, _, _ := n.f.o.Broker.Record(ctx, link.TaskID)
+	// A replayed delivery reaches the host the way the broker hands it over.
+	if err := n.f.h.completeWork(ctx, orchestrator.AssistantWorkSnapshotOf(r)); err != nil {
+		t.Fatal(err)
+	}
+	if wakes, results := workTurns(t, n); wakes != 1 || results != 1 {
+		t.Fatalf("wakes=%d results=%d, want one each", wakes, results)
+	}
+}
+
+// A wake the host refuses for good is not silent: the person reads the typed
+// reason in the chat, once, and no review turn follows later.
+func TestARefusedWakeTellsThePersonInTheChatOnce(t *testing.T) {
+	n := startNative(t, nil)
+	ctx := context.Background()
+	link := dispatchUnrequested(t, n, "refused")
+	n.f.revoked.Store(true)
+	if _, err := n.f.o.Broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Refused summary."}); err != nil {
+		t.Fatal(err)
+	}
+	var notices []pa.Message
+	fixtureEventually(t, func() bool {
+		x, err := n.f.h.store.Export(ctx, n.bot.Key)
+		if err != nil {
+			return false
+		}
+		notices = notices[:0]
+		for _, m := range x.Messages {
+			if m.Kind == pa.NoticeMessage && strings.Contains(m.Text, link.TaskID) {
+				notices = append(notices, m)
+			}
+		}
+		return len(notices) > 0
+	})
+	if len(notices) != 1 || !strings.Contains(notices[0].Text, string(pa.Revoked)) || !strings.Contains(notices[0].Text, "沒能接手") {
+		t.Fatalf("refusal notice: %+v", notices)
+	}
+	n.f.revoked.Store(false)
+	record, _, _ := n.f.o.Broker.Record(ctx, link.TaskID)
+	if err := n.f.h.completeWork(ctx, orchestrator.AssistantWorkSnapshotOf(record)); err != nil {
+		t.Fatal(err)
+	}
+	if wakes, _ := workTurns(t, n); wakes != 0 {
+		t.Fatalf("a refused task was woken later: wakes=%d", wakes)
 	}
 }
