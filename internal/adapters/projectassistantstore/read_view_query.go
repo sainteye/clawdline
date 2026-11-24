@@ -354,7 +354,7 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
 	if err != nil {
 		return err
 	}
-	if q.Request.DeferTraceCount && q.Request.Mode != pa.ReadViewTraces {
+	if q.Request.Mode == pa.ReadViewProgress || q.Request.DeferTraceCount && q.Request.Mode != pa.ReadViewTraces {
 		return nil
 	}
 	var bad int64

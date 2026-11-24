@@ -113,6 +113,9 @@ func paWireReadItem(v app.ReadViewItem) (contract.ProjectAssistantReadViewItem, 
 	case v.Kind == app.ReadItemTrace && v.Trace != nil:
 		item := paWireTrace(*v.Trace)
 		out.Trace = &item
+		if !v.OccurredAt.IsZero() {
+			out.OccurredAt, err = paWireTime(v.OccurredAt)
+		}
 	case v.Kind == app.ReadItemEvent && v.Event != nil:
 		var item contract.ProjectAssistantEvent
 		item, err = paWireEvent(*v.Event)

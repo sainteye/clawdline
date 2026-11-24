@@ -7220,6 +7220,11 @@ export interface ProjectAssistantReadViewItem {
    * newer work fact.
    */
   observed_event_seq: number
+
+  /**
+   * When an inline progress segment started. Present on progress rows.
+   */
+  occurred_at?: string
   permission?: ProjectAssistantPermissionOffer
   permission_summary?: ProjectAssistantReadPermissionSummary
   trace?: ProjectAssistantTrace
@@ -7236,9 +7241,10 @@ export type ProjectAssistantReadViewMode =
   | "events"
   | "permissions"
   | "traces"
+  | "progress"
   | "detail"
 
-export const ProjectAssistantReadViewModeValues: readonly ProjectAssistantReadViewMode[] = ["snapshot", "history", "events", "permissions", "traces", "detail"] as const
+export const ProjectAssistantReadViewModeValues: readonly ProjectAssistantReadViewMode[] = ["snapshot", "history", "events", "permissions", "traces", "progress", "detail"] as const
 
 /**
  * Additive read operation. Query modes enforce their own unused-field/epoch rules.

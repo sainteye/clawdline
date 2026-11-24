@@ -4895,7 +4895,7 @@ func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
 		return plan{}, LocalRequest{}, false
 	}
-	if !b.genValid("mode", genRule{kind: "string", enum: []string{"snapshot", "history", "events", "permissions", "traces", "detail"}}) {
+	if !b.genValid("mode", genRule{kind: "string", enum: []string{"snapshot", "history", "events", "permissions", "traces", "progress", "detail"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("page_size", genRule{kind: "integer", min: genInt(1), max: genInt(256)}) {

@@ -6262,7 +6262,10 @@ type ProjectAssistantReadViewItem struct {
 
 	// Observation frontier, or the event sequence. An older page cannot downgrade a
 	// newer work fact.
-	ObservedEventSeq  int64                                  `json:"observed_event_seq"`
+	ObservedEventSeq int64 `json:"observed_event_seq"`
+
+	// When an inline progress segment started. Present on progress rows.
+	OccurredAt        string                                 `json:"occurred_at,omitempty"`
 	Permission        *ProjectAssistantPermissionOffer       `json:"permission,omitempty"`
 	PermissionSummary *ProjectAssistantReadPermissionSummary `json:"permission_summary,omitempty"`
 	Trace             *ProjectAssistantTrace                 `json:"trace,omitempty"`
@@ -6279,11 +6282,12 @@ const (
 	ProjectAssistantReadViewModeEvents      ProjectAssistantReadViewMode = "events"
 	ProjectAssistantReadViewModePermissions ProjectAssistantReadViewMode = "permissions"
 	ProjectAssistantReadViewModeTraces      ProjectAssistantReadViewMode = "traces"
+	ProjectAssistantReadViewModeProgress    ProjectAssistantReadViewMode = "progress"
 	ProjectAssistantReadViewModeDetail      ProjectAssistantReadViewMode = "detail"
 )
 
 // ProjectAssistantReadViewModeValues is every value the contract allows, in contract order.
-var ProjectAssistantReadViewModeValues = []ProjectAssistantReadViewMode{ProjectAssistantReadViewModeSnapshot, ProjectAssistantReadViewModeHistory, ProjectAssistantReadViewModeEvents, ProjectAssistantReadViewModePermissions, ProjectAssistantReadViewModeTraces, ProjectAssistantReadViewModeDetail}
+var ProjectAssistantReadViewModeValues = []ProjectAssistantReadViewMode{ProjectAssistantReadViewModeSnapshot, ProjectAssistantReadViewModeHistory, ProjectAssistantReadViewModeEvents, ProjectAssistantReadViewModePermissions, ProjectAssistantReadViewModeTraces, ProjectAssistantReadViewModeProgress, ProjectAssistantReadViewModeDetail}
 
 // Additive read operation. Query modes enforce their own unused-field/epoch
 // rules. Trusted authority binding and byte budget are not wire inputs.
