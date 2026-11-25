@@ -1,12 +1,36 @@
 package http
 
 import (
+	"bytes"
 	"net/http"
 	"testing"
 
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
+
+func TestProjectAssistantListPublishesDispatchedExecutionCount(t *testing.T) {
+	f := newPAHTTPFixture(t)
+	f.create(t)
+	for _, tc := range []struct {
+		executing int64
+		want      string
+	}{
+		{0, `"executing":0`},
+		{1, `"executing":1`},
+	} {
+		f.repo.list = pa.BotPage{Items: []pa.BotSummary{{
+			Bot: f.repo.bot, ActivityAt: f.now,
+			ReadCursor:     pa.ReadCursor{Key: f.key, ConversationID: f.repo.conversation.ID, ReaderID: f.authority.ReaderID},
+			DispatchedWork: &pa.DispatchedWork{Running: 2, Executing: tc.executing},
+		}}}
+		rec := f.request(t, http.MethodGet, "/v1/project-assistants?machine_id="+f.key.MachineID+"&query=&cursor=&page_size=25", nil)
+		paAssertHTTPContract(t, rec, http.StatusOK, "ProjectAssistantListResponse")
+		if !bytes.Contains(rec.Body.Bytes(), []byte(tc.want)) {
+			t.Errorf("list response omitted %s: %s", tc.want, rec.Body.Bytes())
+		}
+	}
+}
 
 func TestProjectAssistantRosterPublishesBackgroundWorkSeparatelyFromChat(t *testing.T) {
 	f := newPAHTTPFixture(t)

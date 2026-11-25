@@ -5049,6 +5049,10 @@ type ProjectAssistantDispatchedWork struct {
 	// finished.
 	Delivered int64 `json:"delivered"`
 
+	// Dispatched Sessions currently executing. Current sources include zero. Older
+	// sources omit this count.
+	Executing int64 `json:"executing"`
+
 	// Dispatched Sessions waiting for the person.
 	NeedsYou int64 `json:"needs_you"`
 

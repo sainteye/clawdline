@@ -1,6 +1,7 @@
 package projectassistantstore
 
 import (
+	"encoding/json"
 	"reflect"
 	"slices"
 	"testing"
@@ -251,7 +252,7 @@ func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
 	// Delivered: the recent and the three-day-old pending deliveries, the
 	// older-source delivery without a landing state, and the failed one
 	// that owes a landing. Abandoned and nothing_to_land are settled.
-	want := &pa.DispatchedWork{Running: 2, NeedsYou: 1, Delivered: 4}
+	want := &pa.DispatchedWork{Running: 2, Executing: 1, NeedsYou: 1, Delivered: 4}
 	if got := listSummary(t, s, bot.Key).DispatchedWork; !reflect.DeepEqual(got, want) {
 		t.Fatalf("list dispatched_work = %+v, want %+v", got, want)
 	}
@@ -264,6 +265,34 @@ func TestDispatchedWorkCountsSessionsByStateInListAndRoster(t *testing.T) {
 		}
 	}
 	t.Fatal("roster has no row for the owner")
+}
+
+func TestDispatchedWorkReportsExecutingSeparatelyFromQueued(t *testing.T) {
+	queued := pa.WorkLink{State: pa.WorkAccepted}
+	executing := pa.WorkLink{State: pa.WorkExecuting}
+	for _, tc := range []struct {
+		name      string
+		links     []pa.WorkLink
+		running   int64
+		executing int64
+	}{
+		{"queued and executing", []pa.WorkLink{queued, executing}, 2, 1},
+		{"queued only", []pa.WorkLink{queued}, 1, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw, err := json.Marshal(countDispatchedWork(slices.Values(tc.links)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]int64
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if n, present := got["executing"]; !present || n != tc.executing || got["running"] != tc.running {
+				t.Fatalf("dispatched_work = %s, want running=%d and executing=%d", raw, tc.running, tc.executing)
+			}
+		})
+	}
 }
 
 func TestDispatchedWorkIsAbsentWhenNothingCounts(t *testing.T) {

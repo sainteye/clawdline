@@ -5928,6 +5928,12 @@ export interface ProjectAssistantDispatchedWork {
   delivered: number
 
   /**
+   * Dispatched Sessions currently executing. Current sources include zero. Older
+   * sources omit this count.
+   */
+  executing: number
+
+  /**
    * Dispatched Sessions waiting for the person.
    */
   needs_you: number

@@ -119,10 +119,21 @@ test("the strip and the roster row show the same counts when the chat has loaded
   assert.equal(strip.rows.length + strip.more, 15)
 })
 
+test("the strip animates only when the summary confirms execution", () => {
+  const queued = {id:"queued", task_id:"queued", state:"accepted"} as W.ProjectAssistantWorkLink
+  const executing = {...queued, state:"executing"} as W.ProjectAssistantWorkLink
+  const summary = {running:2, needs_you:0, delivered:4}
+  assert.equal(dispatchedStrip([queued], {...summary, executing:1}).showWorking, true)
+  assert.equal(dispatchedStrip([executing], {...summary, executing:0}).showWorking, false)
+  assert.equal(dispatchedStrip([], {...summary, running:0, executing:0}).showWorking, false)
+  assert.equal(dispatchedStrip([executing], row({dispatched_work:summary}).dispatched_work).showWorking, false)
+  assert.equal(dispatchedStrip([executing], undefined).showWorking, false)
+})
+
 test("past the row limit the strip lists the limit and says how many more there are", () => {
   const link = (id: string, state: string, extra: Record<string, unknown> = {}) => ({id, task_id:id, state, ...extra}) as unknown as W.ProjectAssistantWorkLink
   const loaded = Array.from({length: 9}, (_, i) => link(`d${i}`, "completed", {landing:"pending"}))
-  const strip = dispatchedStrip(loaded, {running:0, needs_you:0, delivered:14})
+  const strip = dispatchedStrip(loaded, {running:0, executing:0, needs_you:0, delivered:14})
   assert.equal(strip.rows.length, DispatchedStripRows)
   assert.equal(strip.more, 14 - DispatchedStripRows)
   // Without the roster's count (an older source), the loaded links are all there is.
@@ -130,5 +141,5 @@ test("past the row limit the strip lists the limit and says how many more there 
   assert.deepEqual(older.counts, {running:0, needsYou:0, delivered:9})
   assert.equal(older.rows.length + older.more, 9)
   // The roster says nothing is owed: nothing is shown, even if a loaded link is stale.
-  assert.equal(dispatchedStrip([link("x", "completed", {landing:"pending"})], {running:0, needs_you:0, delivered:0}).rows.length, 0)
+  assert.equal(dispatchedStrip([link("x", "completed", {landing:"pending"})], {running:0, executing:0, needs_you:0, delivered:0}).rows.length, 0)
 })

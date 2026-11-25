@@ -1,5 +1,7 @@
 import type * as W from "@clawdline/contract"
 import type {Words} from "./words"
+// @ts-expect-error Node executes source extensions.
+import {hasExecutingDispatch} from "./working.ts"
 
 /** Mirrors capacity.MaximumBotDispatchedStripRows (bots.dispatched_strip_rows). */
 export const DispatchedStripRows = 5
@@ -64,7 +66,7 @@ export function dispatchedStrip(links: readonly W.ProjectAssistantWorkLink[], wo
     : dispatchedCounts(all)
   const total = counts.running + counts.needsYou + counts.delivered
   const rows = total > 0 ? all.slice(0, Math.min(DispatchedStripRows, total)) : []
-  return {counts, rows, more: Math.max(0, total - rows.length)}
+  return {counts, rows, more: Math.max(0, total - rows.length), showWorking: hasExecutingDispatch(work)}
 }
 
 /** What a listed row waits for, in plain words, from the task record and its

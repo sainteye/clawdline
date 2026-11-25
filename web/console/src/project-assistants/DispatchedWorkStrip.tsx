@@ -2,6 +2,7 @@ import {useEffect, useState, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {CloneMark} from "./BotRow"
 import {dispatchedReason, dispatchedStrip, type DispatchedKind} from "./dispatched-work"
+import {ThinkingOrb} from "./ThinkingOrb"
 import {elapsed} from "./working"
 import type {Words} from "./words"
 import "./dispatched-work.css"
@@ -28,7 +29,7 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
 }) {
   const [now, setNow] = useState(Date.now)
   const [open, setOpen] = useState(false)
-  const {counts, rows: shown, more} = dispatchedStrip(links, work)
+  const {counts, rows: shown, more, showWorking} = dispatchedStrip(links, work)
   const ticking = shown.some(row => row.kind === "running" && row.link.started_at)
   useEffect(() => {
     if (!ticking) return
@@ -45,7 +46,7 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
     <div className="pa-dispatched-line">
       {background}
       <button type="button" className="pa-dispatched-toggle" aria-expanded={open} aria-label={`${w.dispatchedStripLabel}: ${parts.join(", ")}`} onClick={() => setOpen(!open)}>
-        <CloneMark/><span>{parts.map((part, i) => <span key={i} className={i === 0 && counts.running > 0 ? "pa-dispatched-lead" : undefined}>{i > 0 ? " · " : ""}{part}</span>)}</span>
+        {showWorking ? <ThinkingOrb state="working" size={13} color="currentColor"/> : <CloneMark/>}<span>{parts.map((part, i) => <span key={i} className={i === 0 && counts.running > 0 ? "pa-dispatched-lead" : undefined}>{i > 0 ? " · " : ""}{part}</span>)}</span>
         <svg className="pa-dispatched-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ transform: open ? "rotate(90deg)" : undefined }}><path d="M6 4l4 4-4 4"/></svg>
       </button>
     </div>

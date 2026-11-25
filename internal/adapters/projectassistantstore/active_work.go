@@ -46,8 +46,11 @@ func countDispatchedWork(links iter.Seq[pa.WorkLink]) *pa.DispatchedWork {
 	var out pa.DispatchedWork
 	for link := range links {
 		switch link.State {
-		case pa.WorkAccepted, pa.WorkExecuting:
+		case pa.WorkAccepted:
 			out.Running++
+		case pa.WorkExecuting:
+			out.Running++
+			out.Executing++
 		case pa.WorkWaitingForPerson:
 			out.NeedsYou++
 		default:

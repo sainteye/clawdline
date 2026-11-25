@@ -1384,9 +1384,10 @@
     "ProjectAssistantDispatchedWork": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["running", "needs_you", "delivered"],
+      "required": ["running", "executing", "needs_you", "delivered"],
       "properties": {
         "running": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions accepted or executing." },
+        "executing": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions currently executing. Current sources include zero. Older sources omit this count." },
         "needs_you": { "type": "integer", "minimum": 0, "description": "Dispatched Sessions waiting for the person." },
         "delivered": { "type": "integer", "minimum": 0, "description": "Finished dispatched Sessions whose landing is still owed, however long ago they finished." }
       }

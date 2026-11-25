@@ -87,6 +87,12 @@ export function dispatchedCount(item: W.ProjectAssistantBotSummary): number {
   return work ? n(work.running) + n(work.needs_you) : 0
 }
 
+export function hasExecutingDispatch(work: W.ProjectAssistantDispatchedWork | undefined): boolean {
+  // Older sources include queued Sessions in running without reporting how many are executing.
+  const executing = work?.executing
+  return typeof executing === "number" && Number.isSafeInteger(executing) && executing > 0
+}
+
 /** The roster state a person sees. With dispatched work shown, precedence is
  * needsInput > error > working > waitingOnWork > idle; with it hidden (or on
  * an older source without the field) this is today's presentation. */
