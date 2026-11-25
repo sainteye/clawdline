@@ -41,8 +41,8 @@ export function mergeRoster(pages: readonly (readonly W.ProjectAssistantBotSumma
 
 export interface ReadingPosition { top: number; following: boolean }
 /**
- * One unobserved chat send per account/Bot, owned by the host. Never replayed.
- * A send's open request belongs to this lifetime too, so leaving its Chat keeps its receipt.
+ * The host journal retains unobserved sends and their receipts by account and Bot.
+ * The page's open requests can settle here while no Chat is mounted.
  */
 export interface HeldOutcome {
   intent: W.ProjectAssistantSendRequest; receipt: W.ProjectAssistantReceipt | null

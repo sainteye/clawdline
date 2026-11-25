@@ -1323,3 +1323,11 @@ The Cloud Bot roster can ask its paired source for the existing list before
 the API version and command inventory arrive. The English and Taiwan
 Traditional Chinese Bot explanations still describe the same send authority
 and instruction inputs. The source receipt follows the read path.
+
+Submitting a Bot message now keeps its attachment checks and send running
+when the chat closes. On return, the browser can retry an unconfirmed send
+once under the original command and source grant. The source deduplicates
+admission by key. Review of the English and Taiwan Traditional Chinese
+persistent Bot and interrupted-turn cards found the same instruction inputs,
+source authority, and turn-review prompt. The source receipt follows the
+browser send path.
