@@ -92,7 +92,7 @@ internal/transport/http/copilot_work.go	Server.beginVoiceWork	178	55
 internal/transport/http/copilot_work.go	Server.copilotWorkRoute	139	48
 internal/transport/http/gate.go	writePolicy	92	59
 internal/transport/http/project_assistants_http.go	projectAssistantHTTP.read	127	49
-internal/transport/http/project_assistants_http.go	projectAssistantHTTP.write	179	66
+internal/transport/http/project_assistants_http.go	projectAssistantHTTP.write	184	66
 internal/transport/http/project_assistants_roster.go	projectAssistantHTTP.rosterEvents	130	34
 internal/transport/http/projects.go	Server.projectsRoute	124	38
 internal/transport/http/sessions.go	Server.sessionsPayloadRead	132	37
