@@ -344,7 +344,7 @@ func TestPeerRequestTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
 	ctx := context.Background()
 	f, _, _ := browserFixture(t)
 	f.o.Projects = peerFolders{fixtureResolver{f}}
-	f.o.Limits.MaxBots, f.o.Limits.MaxProcesses = 4, 3
+	f.o.Limits.MaxBots = 4
 	f.start(t)
 	f.enable(t)
 	atlas, lens := f.create(t, "atlas"), f.create(t, "lens")
