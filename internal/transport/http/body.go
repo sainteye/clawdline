@@ -8,6 +8,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/projectsync"
 )
 
@@ -58,16 +59,32 @@ var bodyLimits = map[string]int64{
 	"/v1/project-sync/": projectsync.MaxEntryBytes,
 }
 
+// botBodyPattern is the one pattern every Bot route is registered under, so
+// the routes that carry pictures are told apart by their path.
+const botBodyPattern = "/v1/project-assistants/"
+
 // bodyLimitFor is the bound for a request the mux dispatches under pattern,
 // and false for the fallback, which is not bounded here.
-func bodyLimitFor(pattern string) (int64, bool) {
+func bodyLimitFor(pattern string, r *http.Request) (int64, bool) {
 	if pattern == "/" {
 		return 0, false
+	}
+	if pattern == botBodyPattern && botPictureRoute(r) {
+		return capacity.MaximumBotSendBodyBytes, true
 	}
 	if n, ok := bodyLimits[pattern]; ok {
 		return n, true
 	}
 	return commandBodyLimit, true
+}
+
+// botPictureRoute is a Bot send or queue edit, the two writes whose body
+// carries pictures as data: URLs (capacity bots.send_body_bytes), told apart
+// by the same parse the Bot handler dispatches by. Every other Bot route keeps
+// commandBodyLimit.
+func botPictureRoute(r *http.Request) bool {
+	route, err := paRoute(r)
+	return err == nil && r.Method == http.MethodPost && (route.action == "send" || route.action == "queue-edit")
 }
 
 // boundBodies reads each request's body to its route's bound before the mux
@@ -79,13 +96,17 @@ func boundBodies(mux *http.ServeMux) http.Handler {
 			return
 		}
 		_, pattern := mux.Handler(r)
-		limit, bounded := bodyLimitFor(pattern)
+		limit, bounded := bodyLimitFor(pattern, r)
 		if !bounded {
 			mux.ServeHTTP(w, r)
 			return
 		}
+		tooLarge := writeBodyTooLarge
+		if pattern == botBodyPattern {
+			tooLarge = writeBotBodyTooLarge
+		}
 		if r.ContentLength > limit {
-			writeBodyTooLarge(w, limit)
+			tooLarge(w, limit)
 			return
 		}
 		body, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
@@ -94,7 +115,7 @@ func boundBodies(mux *http.ServeMux) http.Handler {
 			return
 		}
 		if int64(len(body)) > limit {
-			writeBodyTooLarge(w, limit)
+			tooLarge(w, limit)
 			return
 		}
 		_ = r.Body.Close()
@@ -109,4 +130,13 @@ func writeBodyTooLarge(w http.ResponseWriter, limit int64) {
 	w.Header().Set("Connection", "close")
 	writeAuthRefusal(w, http.StatusRequestEntityTooLarge, "body_too_large",
 		fmt.Sprintf("This route reads a body of at most %d bytes.", limit))
+}
+
+// writeBotBodyTooLarge answers a Bot route in the Bot error shape, so a page
+// reads `pa_capacity_full` field `body` as a body too large for this route, a
+// 413 it should not retry, never a busy 429.
+func writeBotBodyTooLarge(w http.ResponseWriter, _ int64) {
+	w.Header().Set("Connection", "close")
+	w.Header().Set("Cache-Control", "no-store")
+	paWriteHTTPFailure(w, paHTTPFailure(pa.CapacityFull, paBodyTooLargeField))
 }

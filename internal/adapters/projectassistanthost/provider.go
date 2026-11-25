@@ -417,15 +417,16 @@ func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.Pendi
 
 // Steer forwards Send now to a native session that can take it.
 func (s *ownedSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+	// Both refusals here come before the native session saw the text.
 	if s.life.extensions != nil {
 		if e := s.life.extensions(ctx); e != nil {
-			return "", e
+			return "", app.SteerRefused(e)
 		}
 	}
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {
 		return steerer.Steer(ctx, text)
 	}
-	return "", failure(pa.Unsupported, "steering")
+	return "", app.SteerRefused(failure(pa.Unsupported, app.SteeringField))
 }
 func (s *ownedSession) Close(ctx context.Context) error {
 	s.life.invalidate()

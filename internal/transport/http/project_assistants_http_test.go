@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	paStore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -621,7 +622,7 @@ func TestProjectAssistantHTTPAllWritesRejectMalformedObjectsAndHeaders(t *testin
 				{"null", `null`, pa.Invalid, http.StatusBadRequest},
 				{"invalid-utf8", strings.Replace(valid, "untrusted-client-hash", string([]byte{0xff}), 1), pa.Invalid, http.StatusBadRequest},
 				{"array", `[]`, pa.Invalid, http.StatusBadRequest},
-				{"oversize", valid + strings.Repeat(" ", paBodyLimit(operation.name)), pa.CapacityFull, http.StatusTooManyRequests},
+				{"oversize", valid + strings.Repeat(" ", paBodyLimit(operation.name)), pa.CapacityFull, http.StatusRequestEntityTooLarge},
 			}
 			for _, test := range bodies {
 				t.Run(test.name, func(t *testing.T) {
@@ -1124,5 +1125,75 @@ func TestProjectAssistantQueueEditHTTPValidatesTheMutation(t *testing.T) {
 	paAssertHTTPContract(t, rec, 200, "ProjectAssistantReceiptResponse")
 	if len(f.runtime.queueEdits) != 1 || f.runtime.queueEdits[0].TurnID != "queued" || f.runtime.queueEdits[0].Command.ContentHash == "" {
 		t.Fatalf("missing validated queue edit: %+v", f.runtime.queueEdits)
+	}
+}
+
+// A phone picture is sent as a data: URL, so a Bot send or queue edit is
+// bounded by bots.send_body_bytes through the daemon's whole handler, not cut
+// to the 2 MiB every other route gets before the Bot handler runs. Past its
+// bound a body is a 413 with field body, which no wait makes fit.
+func TestABotPictureBodyReachesTheBotThroughTheWholeHandler(t *testing.T) {
+	f := newPAServerFixture(t, false)
+	base := "/v1/project-assistants/" + f.key.BotID
+	padded := func(n int) string {
+		head := `{"command":{"idempotency_key":"padded"}`
+		return head + strings.Repeat(" ", n-len(head)-1) + "}"
+	}
+	tooLarge := func(t *testing.T, w *httptest.ResponseRecorder) {
+		t.Helper()
+		if failure := paAssertHTTPFailure(t, w, http.StatusRequestEntityTooLarge, pa.CapacityFull); failure.Field != paBodyTooLargeField {
+			t.Fatalf("an oversized body names %q", failure.Field)
+		}
+	}
+	for _, route := range []string{"/messages", "/queue-edit"} {
+		t.Run(route, func(t *testing.T) {
+			if w := f.request(t, http.MethodPost, base+route, f.local, padded(commandBodyLimit*3/2)); w.Code == http.StatusRequestEntityTooLarge {
+				t.Fatalf("a %d-byte picture body was refused before the Bot: %s", commandBodyLimit*3/2, w.Body)
+			}
+			tooLarge(t, f.request(t, http.MethodPost, base+route, f.local, padded(capacity.MaximumBotSendBodyBytes+1)))
+		})
+	}
+	// Every other Bot route keeps the ordinary bound, in the Bot's own shape.
+	tooLarge(t, f.request(t, http.MethodPost, base+"/send-now", f.local, padded(commandBodyLimit+1)))
+}
+
+// An ACP agent that never advertised steering refuses Send now before
+// anything reaches it, so the message keeps its place in the queue instead of
+// becoming an unknown outcome that also halts the worker.
+func TestSendNowToAnAgentThatCannotSteerLeavesTheMessageQueued(t *testing.T) {
+	f, reads := inputACPFixture(t)
+	if err := os.WriteFile(reads+".hold", nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := "/v1/project-assistants/" + f.key.BotID
+	fence := inputFixtureFence(f, f.get(t, f.local))
+	upload := inputUploadRequest(f, fence, "22222222-2222-4222-8222-222222222222", "held", []byte("hold"))
+	paServerOK(t, f.request(t, http.MethodPost, base+"/upload", f.local, upload))
+	paServerOK(t, f.request(t, http.MethodPost, base+"/messages", f.local, contract.ProjectAssistantSendRequest{Command: f.command(pa.SendOperation, "running"), Fence: fence, UploadIds: []string{upload.File.ID}}))
+	deadline := time.Now().Add(15 * time.Second)
+	for {
+		if _, err := os.Stat(reads); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the first message never reached the agent")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	queued := f.request(t, http.MethodPost, base+"/messages", f.local, contract.ProjectAssistantSendRequest{Command: f.command(pa.SendOperation, "queued"), Fence: inputFixtureFence(f, f.get(t, f.local)), Text: "Synthetic queued"})
+	paServerOK(t, queued)
+	turnID := paHTTPDecode[contract.ProjectAssistantReceiptResponse](t, queued).Receipt.ResourceID
+	now := f.request(t, http.MethodPost, base+"/send-now", f.local, contract.ProjectAssistantSendNowRequest{Command: f.command(pa.SendNowOperation, "now"), Fence: inputFixtureFence(f, f.get(t, f.local)), TurnID: turnID})
+	if failure := paAssertHTTPFailure(t, now, http.StatusNotImplemented, pa.Unsupported); failure.Field != app.SteeringField {
+		t.Fatalf("Send now to an agent without steering names %q", failure.Field)
+	}
+	x, err := paStore.New(f.s.store.ProjectAssistantDatabase()).Export(context.Background(), f.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, turn := range x.Turns {
+		if turn.ID == turnID && (turn.State != pa.TurnQueued || turn.Steering || turn.Failure != nil) {
+			t.Fatalf("the refused message left the queue: %+v", turn)
+		}
 	}
 }

@@ -15,6 +15,13 @@ type QueueEditRequest struct {
 	Text    string
 }
 
+// The fields of a queue edit refused for good: a group room's message, and a
+// message the agent already took.
+const (
+	QueueEditRoomField = "room"
+	QueueEditSentField = "already_sent"
+)
+
 type queueEditor interface {
 	EditQueue(context.Context, QueueEditRequest, func(context.Context) error) (pa.Receipt, error)
 }
@@ -66,7 +73,7 @@ func (s *Service) EditQueue(ctx context.Context, q QueueEditRequest) (pa.Receipt
 func (r *Engine) EditQueue(ctx context.Context, q QueueEditRequest, check func(context.Context) error) (pa.Receipt, error) {
 	a, err := r.acquire(q.Command.Key)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, notAdmitted(err)
 	}
 	defer r.release(a)
 	a.mu.Lock()
@@ -91,15 +98,23 @@ func (r *Engine) EditQueue(ctx context.Context, q QueueEditRequest, check func(c
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if err := pa.CheckSendFence(q.Fence, currentFence(bot, conversation)); err != nil {
+	if err := checkQueueScope(q.Fence, currentFence(bot, conversation)); err != nil {
 		return pa.Receipt{}, err
 	}
 	turn, err := r.o.Repository.Turn(ctx, a.key, q.TurnID)
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	if turn.State != pa.TurnQueued || turn.Steering || turn.StartedAt != nil || turn.Room != nil ||
-		a.turnID == turn.ID || a.steering[turn.ID] || turn.QueueEditID != q.EditID {
+	if turn.Room != nil {
+		// A group room's queue is shared by its members; it has no editor.
+		return pa.Receipt{}, runtimeFailure(pa.Unsupported, QueueEditRoomField)
+	}
+	// StartedAt on a queued turn is a routine run's retry, whose notice is
+	// not a person's message to edit; a human turn is never requeued.
+	if turn.State != pa.TurnQueued || turn.StartedAt != nil || a.turnID == turn.ID {
+		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, QueueEditSentField)
+	}
+	if turn.Steering || a.steering[turn.ID] || turn.QueueEditID != q.EditID {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "queue_edit")
 	}
 	editID := q.EditID

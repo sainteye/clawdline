@@ -835,6 +835,9 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 	return nil, paHTTPFailure(pa.Invalid, "route")
 }
 
+// paBodyTooLargeField is the field of a body refused for its size.
+const paBodyTooLargeField = "body"
+
 func paDecodeHTTP[T any](w http.ResponseWriter, r *http.Request) (T, error) {
 	return paDecodeHTTPLimit[T](w, r, commandBodyLimit)
 }
@@ -871,7 +874,7 @@ func paDecodeHTTPLimit[T any](w http.ResponseWriter, r *http.Request, limit int6
 	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
-			return value, paHTTPFailure(pa.CapacityFull, "body")
+			return value, paHTTPFailure(pa.CapacityFull, paBodyTooLargeField)
 		}
 		return value, paHTTPFailure(pa.Invalid, "body")
 	}
@@ -1038,6 +1041,11 @@ func paWriteHTTPFailure(w http.ResponseWriter, err error) {
 		status = http.StatusNotImplemented
 	case pa.OutcomeUnknown, pa.ExecutionEffectUnknown:
 		status = http.StatusInternalServerError
+	}
+	if failure.Code == pa.CapacityFull && failure.Field == paBodyTooLargeField {
+		// A body past its route's bound is refused the same way every time;
+		// waiting does not make it fit.
+		status = http.StatusRequestEntityTooLarge
 	}
 	if failure.Code == pa.CapacityFull && failure.RetryAfterSeconds > 0 {
 		w.Header().Set("Retry-After", strconv.FormatInt(failure.RetryAfterSeconds, 10))

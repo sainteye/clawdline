@@ -3946,7 +3946,7 @@
         },
         {
           "path": "internal/app/projectassistant/send_now.go",
-          "line": 88
+          "line": 127
         }
       ],
       "original": [
@@ -4602,7 +4602,7 @@
         },
         {
           "path": "internal/adapters/projectassistanthost/provider.go",
-          "line": 525
+          "line": 526
         },
         {
           "path": "internal/transport/http/project_assistants_lead_control.go",
@@ -5529,7 +5529,7 @@
     "internal/adapters/planner/recap.go": "b3ebf0eaf6db01552c2a1050b1ddcf04a1c4a5f754a7afcc96eb4580574bde31",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "3a6adb41cafc7074db0f447da01b735ac30a1c551ba2b3329ba6b8c11eaeba6a",
-    "internal/adapters/projectassistantacp/client.go": "291522bc74fd5254235be2a73712b922294c8d0c315c654e242a8affc590af53",
+    "internal/adapters/projectassistantacp/client.go": "ec81e63f815d3a27466fbad63c95b7af1b3bc8c1443f3b2e711bbfcf0ca27a4f",
     "internal/adapters/projectassistantacp/client_compaction.go": "e6b3cdc3301ff2d3e605808f23e484f2a6df07635ef28112f027268b00db114f",
     "internal/adapters/projectassistantacp/client_context.go": "af9b92208ded670ec3e1f2d91af26703e02b0c912cb9e4c8e4fea4406107b525",
     "internal/adapters/projectassistantacp/compaction.go": "b9d3eb425548603dd71f1f3c3ae709de4809af8fd59175db94a19f2aa2121bdb",
@@ -5569,7 +5569,7 @@
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "f70c8a8143db6e3f001ceca25820472335b45963febfce21eb13261c1c7ff570",
+    "internal/adapters/projectassistanthost/provider.go": "85e27995557ac2e9907c807c99a205f802b0c0dfc9fb3b947dc2b019cd483f6d",
     "internal/adapters/projectassistanthost/provider_message.go": "599aca530041e41b4f3541b49f6e7c4a0f5d3984ad37930e7fe9b5481a10ddda",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
     "internal/adapters/projectassistanthost/work_completion.go": "77c002f4a0e57812ae8d406bbe0aaf997010a3079c81cd6ba6dba7541161aeed",
@@ -5648,14 +5648,14 @@
     "internal/app/projectassistant/native_context.go": "531cd7098aafd9df6b92b29a22d11b8b3a52ed2ec7742f91b710ecf189a09ae7",
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
     "internal/app/projectassistant/provider_failure.go": "5db159084d21b5b0924bbaa4fa624236388e4debcf82f9abaeec8000f539cb78",
-    "internal/app/projectassistant/queue_edit.go": "e5c38f755ed206faaf166670e98e526786141b982c14ac7c0b6290f52b37c45e",
+    "internal/app/projectassistant/queue_edit.go": "7fc8b3f29add67b24281428ec7b89a945adfbc9ca95a8974f2d358168598d113",
     "internal/app/projectassistant/restart.go": "44d0b2ccdcfddd45835bc16945c760f203bd98769c3f6c66beac0419771c6db4",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "10b7d54fbb321fcc60d448e1cc3be3fc2858e5ca9d983c0e6976dd5c898ade07",
     "internal/app/projectassistant/runtime_groups.go": "98e658e5bd8f1fceb250c10f3d3a4eaa2547b47433205caf7f77a6aa86dc37cc",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
-    "internal/app/projectassistant/send_now.go": "b49400b1ce394ac4d8fe1ea0c17aa3c8ff64fc73cd8ecfb413b32f54e8b2ddc2",
+    "internal/app/projectassistant/send_now.go": "b72e94bd077809d0559bbfa5a8f8e1efe74bbf704d4692521da1efed40d9f565",
     "internal/app/projectassistant/service_routines.go": "47b4f2ab953551938f828229ff837d77c8361bed25aafdaa653c5be943a3eed3",
     "internal/app/projectassistant/service_team.go": "a6e6f7cb4ba9152e763549834a6e73286c2c9cc0ad00cf7229cffa4d2482b7a2",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
