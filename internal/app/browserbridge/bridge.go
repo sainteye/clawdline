@@ -822,17 +822,8 @@ func (b *Bridge) run(ctx context.Context, conversation, op string, args json.Raw
 	if len(args) > 0 && json.Unmarshal(args, &a) != nil {
 		return nil, BadRequest
 	}
-	// The extension receives only checked arguments: a click with a label or
-	// a CSS-pixel point, a viewport preset or size. A refusal names the field.
-	switch op {
-	case "click":
-		if args, err = agentClick(args); err != nil {
-			return nil, err
-		}
-	case "viewport":
-		if args, err = agentViewport(args); err != nil {
-			return nil, err
-		}
+	if args, err = checkedAgentArgs(op, args); err != nil {
+		return nil, err
 	}
 	tab := a.Tab
 	var recorded Result
@@ -1027,19 +1018,37 @@ func (b *Bridge) run(ctx context.Context, conversation, op string, args json.Raw
 	if res.OK {
 		return res.Value, nil
 	}
-	switch Refusal(res.Error) {
-	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab, QueueFull, Cancelled:
-		return nil, Refusal(res.Error)
+	return nil, extensionFailure(op, res.Error)
+}
+
+// checkedAgentArgs is what the extension receives: a click with a label or a
+// CSS-pixel point, a viewport preset or size. A refusal names the field.
+func checkedAgentArgs(op string, args json.RawMessage) (json.RawMessage, error) {
+	switch op {
+	case "click":
+		return agentClick(args)
+	case "viewport":
+		return agentViewport(args)
 	}
-	if strings.HasPrefix(res.Error, string(OtherDebugger)) {
-		return nil, OtherDebugger
+	return args, nil
+}
+
+// extensionFailure turns the extension's failure text into the typed refusal
+// it names, or an ExtensionError carrying the text.
+func extensionFailure(op, message string) error {
+	switch Refusal(message) {
+	case Closing, Disabled, Stopped, PersonControlling, TimedOut, StateWriteFailed, SecretInputFailed, NoTab, QueueFull, Cancelled:
+		return Refusal(message)
+	}
+	if strings.HasPrefix(message, string(OtherDebugger)) {
+		return OtherDebugger
 	}
 	if op == "click" {
-		if missing := clickNotFound(res.Error); missing != nil {
-			return nil, missing
+		if missing := clickNotFound(message); missing != nil {
+			return missing
 		}
 	}
-	return nil, &ExtensionError{Message: res.Error}
+	return &ExtensionError{Message: message}
 }
 
 // ExtensionError is a failure the extension reported (no such element, a

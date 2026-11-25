@@ -44,7 +44,7 @@ internal/adapters/store/work_v2.go	openWorkV2	111	44
 internal/adapters/subagents/reader.go	Reader.readClaude	104	35
 internal/adapters/transcript/turns.go	claudeEntries	177	61
 internal/adapters/transcript/turns.go	decodeNotice	107	25
-internal/app/browserbridge/bridge.go	Bridge.run	157	54
+internal/app/browserbridge/bridge.go	Bridge.run	153	52
 internal/app/orchestrator/brief.go	Broker.ChildBrief	148	14
 internal/app/orchestrator/callback.go	Broker.StartCallback	114	39
 internal/app/orchestrator/dispatch.go	Broker.Dispatch	230	76
