@@ -1150,17 +1150,19 @@ func (c *Client) closeSegment() {
 // promptRequired instead of starting one. What the agent writes next starts a
 // new paragraph of the reply.
 func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+	// Every refusal before _session/steering is sent leaves the message
+	// queued (app.SteerRefused); only an error after it is unknown.
 	if err := pa.ValidateUserMessage(text); err != nil {
-		return "", err
+		return "", app.SteerRefused(err)
 	}
 	c.mu.Lock()
 	steering, sid, active := c.steering, c.sessionID, c.turnID != ""
-	if active {
+	if active && steering {
 		c.segmentClosed = true
 	}
 	c.mu.Unlock()
 	if !steering {
-		return "", refusal(pa.Unsupported, "steering")
+		return "", app.SteerRefused(refusal(pa.Unsupported, app.SteeringField))
 	}
 	if !active {
 		return app.SteerNext, nil
