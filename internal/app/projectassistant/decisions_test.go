@@ -34,8 +34,8 @@ func newDecisionFixture(t *testing.T) (*serviceFixture, *decisionServiceRepo) {
 	f.repo.conversation = pa.Conversation{Key: f.key, ID: "conversation-one", BindingID: "binding-one", Generation: 1}
 	fence := pa.Fence{Key: f.key, ConversationID: "conversation-one", BindingID: "binding-one", Generation: 1}
 	repo.offer = pa.PermissionOffer{ID: "offer-one", Kind: pa.DecisionOfferKind, Fence: fence, State: pa.PermissionPending,
-		Decision: &pa.DecisionRequest{Question: "Roll out now?"},
-		Options:  []pa.PermissionOption{{ID: "reply-1", Label: "Yes"}, {ID: "reply-2", Label: "Not now"}},
+		Decision:  &pa.DecisionRequest{Question: "Roll out now?"},
+		Options:   []pa.PermissionOption{{ID: "reply-1", Label: "Yes"}, {ID: "reply-2", Label: "Not now"}},
 		ExpiresAt: time.Unix(1700000000, 0).Add(time.Hour)}
 	f.s.opts.Repository = repo
 	return f, repo
