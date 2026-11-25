@@ -10,7 +10,7 @@ import "./bot-mentions.css"
 import { useBotMentions, type BotMentionCandidate } from "./BotMentionField"
 import type { Words } from "./words"
 
-export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onAttach,acceptFiles=false,onRemoveImage,onReplaceImage,files=[],onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,mentions,call}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly MarkupPicture[];onAttach?:(files:readonly File[])=>void;acceptFiles?:boolean;onRemoveImage?:(id:MarkupPicture["id"])=>void;onReplaceImage?:(id:MarkupPicture["id"],url:string)=>void;files?:readonly {id:string;file:File}[];onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;mentions?:readonly BotMentionCandidate[];call?:{label:string;disabled:boolean;start:()=>void}}) {
+export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDisabled=disabled,stopBusy=false,busy,quote,onClearQuote,w,images=[],onAttach,acceptFiles=false,onRemoveImage,onReplaceImage,files=[],onRemoveFile,uploading,onCancelUpload,sendBlocked=false,callActive=false,draftEditable=false,sendTextDuringRecovery=false,mentions,marks,call}: {plain?:boolean;text:string;onText:(s:string)=>void;onSend:()=>void;onStop?:()=>void;disabled:boolean;stopDisabled?:boolean;stopBusy?:boolean;busy:boolean;quote?:string;onClearQuote:()=>void;w:Words;images?:readonly MarkupPicture[];onAttach?:(files:readonly File[])=>void;acceptFiles?:boolean;onRemoveImage?:(id:MarkupPicture["id"])=>void;onReplaceImage?:(id:MarkupPicture["id"],url:string)=>void;files?:readonly {id:string;file:File}[];onRemoveFile?:(id:string)=>void;uploading?:string;onCancelUpload?:()=>void;sendBlocked?:boolean;callActive?:boolean;draftEditable?:boolean;sendTextDuringRecovery?:boolean;mentions?:readonly BotMentionCandidate[];marks?:(display:string)=>readonly {start:number;end:number}[];call?:{label:string;disabled:boolean;start:()=>void}}) {
   const composing=useRef(false),picker=useRef<HTMLInputElement>(null)
   const voiceRow=useRef<HTMLDivElement>(null),editor=useRef<HTMLTextAreaElement>(null)
   const mine=useRef(false),gone=useRef(false),latest=useRef({text,onText})
@@ -94,7 +94,7 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
       {!plain&&<button type="button" className="pa-mic" aria-label={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} title={recording?L.strings.webVoiceStop:L.strings.webVoiceStart} aria-pressed={recording} disabled={recording?false:disabled||busy||voiceBusy||callActive} onMouseDown={e=>e.preventDefault()} onClick={pressVoice}>
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">{recording?<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>:<><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.75 11.75v.5a6.25 6.25 0 0 0 12.5 0v-.5M12 18.5V21"/></>}</svg>
       </button>}
-      <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} enterKeyHint={L.keyboard()?"send":"enter"} aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
+      <div className="pa-editor"><div className={mentions?.length?"pa-editor-mirror pa-mention-mirror":"pa-editor-mirror"} aria-hidden="true">{marks?markedRuns(mention.display,marks(mention.display)):mentions?.length?mention.marks:text+"​"}</div><textarea ref={editor} rows={1} enterKeyHint={L.keyboard()?"send":"enter"} aria-label={w.compose} placeholder={w.compose+"…"} {...mention.textareaProps} disabled={disabled&&!draftEditable}
         onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onPaste={onAttach?paste:undefined}
         onKeyDown={keyDown}/></div>
       {showCall&&call?<button type="button" className="pa-send" data-call aria-label={call.label} title={call.label}
@@ -106,3 +106,13 @@ export function Composer({plain=false,text,onText,onSend,onStop,disabled,stopDis
     </form>
   </div>
 }
+
+/** The draft with the given runs highlighted, for a room that reads @ by its own rule. */
+function markedRuns(display:string,runs:readonly {start:number;end:number}[]) {
+  const out:(string|ReturnType<typeof mark>)[]=[]
+  let at=0
+  for(const r of runs){if(r.start<at)continue;if(r.start>at)out.push(display.slice(at,r.start));out.push(mark(display.slice(r.start,r.end),r.start));at=r.end}
+  out.push(display.slice(at)+"\u200b")
+  return out
+}
+const mark=(text:string,key:number)=><mark key={key} className="pa-mention-mark">{text}</mark>

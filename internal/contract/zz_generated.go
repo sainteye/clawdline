@@ -6571,9 +6571,13 @@ type ProjectAssistantRoomAttempt struct {
 
 type ProjectAssistantRoomEntry struct {
 	// Source timestamp for new entries; old undated entries omit it.
-	At            string                          `json:"at,omitempty"`
-	Author        *ProjectAssistantBotKey         `json:"author,omitempty"`
-	Kind          string                          `json:"kind"`
+	At     string                  `json:"at,omitempty"`
+	Author *ProjectAssistantBotKey `json:"author,omitempty"`
+	Kind   string                  `json:"kind"`
+
+	// The source's own reading of each @ in text, the same reading that routes the
+	// message. Offsets count UTF-16 code units of text.
+	Mentions      []ProjectAssistantRoomMention   `json:"mentions,omitempty"`
 	Quote         *ProjectAssistantRoomQuote      `json:"quote,omitempty"`
 	Reactions     []ProjectAssistantReactionActor `json:"reactions,omitempty"`
 	ReplyToAuthor *ProjectAssistantBotKey         `json:"reply_to_author,omitempty"`
@@ -6597,6 +6601,15 @@ type ProjectAssistantRoomMemberOutcome struct {
 	State    ProjectAssistantTurnState  `json:"state"`
 	TurnID   string                     `json:"turn_id"`
 	Work     []ProjectAssistantRoomWork `json:"work,omitempty"`
+}
+
+type ProjectAssistantRoomMention struct {
+	End int64 `json:"end"`
+
+	// An @all or @everyone, which routes to every member.
+	Everyone bool                    `json:"everyone,omitempty"`
+	Member   *ProjectAssistantBotKey `json:"member,omitempty"`
+	Start    int64                   `json:"start"`
 }
 
 type ProjectAssistantRoomQuote struct {

@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, type MouseEvent } from "react"
 import { isAppleTouchDevice, isStandaloneWebApp } from "../legacy/js/net/cloud-onboarding.js"
 import { richText } from "../legacy/js/view/markdown.js"
 import { bindNativeModalBackdrop } from "../modal-backdrop.js"
+import { markdownWithMentions, type MarkdownMention } from "./mention-markdown"
 import type { Words } from "./words"
 
-export function BotMessageMarkdown({ text, w }: { text: string; w: Words }) {
+export function BotMessageMarkdown({ text, w, mentions = [] }: { text: string; w: Words; mentions?: readonly MarkdownMention[] }) {
   const [original, setOriginal] = useState<HTMLAnchorElement | null>(null)
   const dialog = useRef<HTMLDialogElement>(null)
 
@@ -33,7 +34,7 @@ export function BotMessageMarkdown({ text, w }: { text: string; w: Words }) {
 
   const close = () => setOriginal(null)
   return <>
-    <div className="pa-markdown" onClick={chooseGmailDestination} dangerouslySetInnerHTML={{ __html: richText(text, { codeCopy: true }) }} />
+    <div className="pa-markdown" onClick={chooseGmailDestination} dangerouslySetInnerHTML={{ __html: markdownWithMentions(text, mentions, source => richText(source, { codeCopy: true })) }} />
     {original && <dialog ref={dialog} aria-label={w.gmailOpen} className="pa-gmail-link" data-modal-dismiss="true"
       onCancel={event => { event.preventDefault(); close() }}>
       <a className="pa-pill" href={`x-safari-${original.href}`} referrerPolicy="no-referrer">{w.gmailSafari}</a>

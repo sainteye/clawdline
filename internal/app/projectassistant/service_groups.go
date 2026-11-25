@@ -195,13 +195,19 @@ func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, repl
 		_, e := s.authorizeEffect(ctx, c.Key, true, a)
 		return e
 	}
-	return driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check, quoted...)
+	e, step, err := driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check, quoted...)
+	if err == nil {
+		if g, gerr := driver.o.Rooms.store.Group(ctx, c.Key); gerr == nil {
+			e.Mentions = pa.RoomMentions(driver.speakers(ctx, g), e.Author, e.Text)
+		}
+	}
+	return e, step, err
 }
 
 // GroupHistory reads the room with the person's read authority for the
 // group; it does not require, and does not use, any member's execution.
 func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupHistoryPage, error) {
-	rooms, _, err := s.groups()
+	rooms, driver, err := s.groups()
 	if err != nil {
 		return GroupHistoryPage{}, err
 	}
@@ -218,6 +224,11 @@ func (s *Service) GroupHistory(ctx context.Context, q GroupHistoryQuery) (GroupH
 	page, err := rooms.store.History(ctx, q.Key, q.BeforeSeq, q.PageSize)
 	if err != nil {
 		return GroupHistoryPage{}, err
+	}
+	// Marked with the members' current names, as routing reads them.
+	speakers := driver.speakers(ctx, page.Group)
+	for i := range page.Lines {
+		page.Lines[i].Mentions = pa.RoomMentions(speakers, page.Lines[i].Author, page.Lines[i].Text)
 	}
 	reader := pa.HumanReactionID(a.ReaderID)
 	for _, reactions := range page.Reactions {

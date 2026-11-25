@@ -7598,6 +7598,12 @@ export interface ProjectAssistantRoomEntry {
   at?: string
   author?: ProjectAssistantBotKey
   kind: string
+
+  /**
+   * The source's own reading of each @ in text, the same reading that routes the
+   * message. Offsets count UTF-16 code units of text.
+   */
+  mentions?: ProjectAssistantRoomMention[]
   quote?: ProjectAssistantRoomQuote
   reactions?: ProjectAssistantReactionActor[]
   reply_to_author?: ProjectAssistantBotKey
@@ -7625,6 +7631,17 @@ export interface ProjectAssistantRoomMemberOutcome {
   state: ProjectAssistantTurnState
   turn_id: string
   work?: ProjectAssistantRoomWork[]
+}
+
+export interface ProjectAssistantRoomMention {
+  end: number
+
+  /**
+   * An @all or @everyone, which routes to every member.
+   */
+  everyone?: boolean
+  member?: ProjectAssistantBotKey
+  start: number
 }
 
 export interface ProjectAssistantRoomQuote {

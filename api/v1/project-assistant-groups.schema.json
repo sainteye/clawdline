@@ -116,12 +116,42 @@
         },
         "quote": {
           "$ref": "#/$defs/ProjectAssistantRoomQuote"
+        },
+        "mentions": {
+          "type": "array",
+          "description": "The source's own reading of each @ in text, the same reading that routes the message. Offsets count UTF-16 code units of text.",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantRoomMention"
+          }
         }
       },
       "required": [
         "seq",
         "kind",
         "text"
+      ],
+      "additionalProperties": false
+    },
+    "ProjectAssistantRoomMention": {
+      "type": "object",
+      "properties": {
+        "start": {
+          "type": "integer"
+        },
+        "end": {
+          "type": "integer"
+        },
+        "member": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantBotKey"
+        },
+        "everyone": {
+          "type": "boolean",
+          "description": "An @all or @everyone, which routes to every member."
+        }
+      },
+      "required": [
+        "start",
+        "end"
       ],
       "additionalProperties": false
     },

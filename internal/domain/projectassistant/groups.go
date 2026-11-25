@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -580,6 +581,16 @@ type RoomEntry struct {
 	// Quote is captured from this room's stored line by the Host. It is not
 	// supplied by the client and is kept apart from the person's own text.
 	Quote *RoomQuote `json:"quote,omitempty"`
+	// Mentions is a read projection from RoomMentions, never stored.
+	Mentions []RoomMention `json:"-"`
+}
+
+// RoomMention is one @ in an entry's text that routes it: to Member, or to
+// every member. Start and End count UTF-16 code units, as a browser does.
+type RoomMention struct {
+	Start, End int
+	Member     BotKey
+	Everyone   bool
 }
 
 type RoomQuote struct {
@@ -821,26 +832,84 @@ func handles(name string) []string {
 	return slices.Compact(out)
 }
 
-// mentions: @handle not followed by more of a Latin word, so @al is not
-// @alice; CJK names are often followed straight by the message.
-func mentions(text, handle string) bool {
-	lower := strings.ToLower(text)
-	needle := "@" + handle
-	for i := 0; ; {
-		j := strings.Index(lower[i:], needle)
-		if j < 0 {
-			return false
+// RoomMentions is every @ in text that routes it, read exactly as routing
+// reads it (RoomNamedBy, roomResponders), so what a viewer sees marked is
+// who was asked. author is excluded as RoomNamedBy excludes it; a person's
+// entry has no author.
+func RoomMentions(members []RoomSpeaker, author BotKey, text string) []RoomMention {
+	var out []RoomMention
+	add := func(spans [][2]int, m RoomMention) {
+		for _, s := range spans {
+			m.Start, m.End = utf16Len(text[:s[0]]), utf16Len(text[:s[1]])
+			out = append(out, m)
 		}
-		end := i + j + len(needle)
-		if end >= len(lower) {
-			return true
-		}
-		c := lower[end]
-		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_') {
-			return true
-		}
-		i = i + j + 1
 	}
+	for _, h := range []string{"all", "everyone"} {
+		add(mentionSpans(text, h), RoomMention{Everyone: true})
+	}
+	for _, m := range members {
+		if m.Key == author {
+			continue
+		}
+		for _, h := range handles(m.Name) {
+			add(mentionSpans(text, h), RoomMention{Member: m.Key})
+		}
+	}
+	slices.SortStableFunc(out, func(a, b RoomMention) int {
+		if a.Start != b.Start {
+			return a.Start - b.Start
+		}
+		return b.End - a.End
+	})
+	return slices.CompactFunc(out, func(a, b RoomMention) bool { return a == b })
+}
+
+func utf16Len(s string) int {
+	n := 0
+	for _, r := range s {
+		if r >= 0x10000 {
+			n += 2
+		} else {
+			n++
+		}
+	}
+	return n
+}
+
+// mentions: @handle not followed by more of a Latin word, so @al is not
+// @alice; CJK names are often followed straight by the message. It is the
+// one reading of an @: routing and RoomMentions both come through here.
+func mentions(text, handle string) bool { return len(mentionSpans(text, handle)) > 0 }
+
+// mentionSpans are the byte ranges of text where @handle (lowercase) is
+// mentioned. Letters compare as strings.ToLower compares them.
+func mentionSpans(text, handle string) [][2]int {
+	var out [][2]int
+	for i := 0; i < len(text); i++ {
+		if text[i] != '@' {
+			continue
+		}
+		end, ok := i+1, true
+		for _, want := range handle {
+			r, size := utf8.DecodeRuneInString(text[end:])
+			if size == 0 || unicode.ToLower(r) != want {
+				ok = false
+				break
+			}
+			end += size
+		}
+		if !ok {
+			continue
+		}
+		if end < len(text) {
+			r, _ := utf8.DecodeRuneInString(text[end:])
+			if c := unicode.ToLower(r); c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '_' {
+				continue
+			}
+		}
+		out = append(out, [2]int{i, end})
+	}
+	return out
 }
 
 // RoomRun gives each addressed member a chance to answer the person. Later

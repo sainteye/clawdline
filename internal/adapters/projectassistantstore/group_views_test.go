@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -75,7 +76,7 @@ func TestGroupPreviewsKeepSourceTimeAndFitTheReadBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	previews, err := groups.GroupPreviews(testContext, "machine", len(raw)+roomBytes)
-	if err != nil || len(previews) != 2 || previews[0].LastEntry == nil || *previews[0].LastEntry != old || !previews[0].LastEntry.At.IsZero() {
+	if err != nil || len(previews) != 2 || previews[0].LastEntry == nil || !reflect.DeepEqual(*previews[0].LastEntry, old) || !previews[0].LastEntry.At.IsZero() {
 		t.Fatalf("preview invented time or selected metadata instead of the line: %+v %v", previews, err)
 	}
 	// The first group's real line and room consume exactly the budget. The
