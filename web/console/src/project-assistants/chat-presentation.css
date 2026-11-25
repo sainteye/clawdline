@@ -104,7 +104,8 @@
 
 /* Keep the text bubble separate from controls and durable reaction receipts. */
 .project-assistants .pa-chat-surface .pa-chat-content { max-width:820px; }
-.project-assistants .pa-chat-surface .pa-message { max-width:88%;margin:4px 0 12px;padding:0;background:transparent;border-radius:0; }
+.project-assistants .pa-chat-surface :is(.pa-message,.pa-exchange-card) { max-width:88%; }
+.project-assistants .pa-chat-surface .pa-message { margin:4px 0 12px;padding:0;background:transparent;border-radius:0; }
 .project-assistants .pa-chat-surface .pa-message.pa-mine { margin-left:auto;max-width:84%;padding:0;background:transparent;border-radius:0; }
 .project-assistants .pa-chat-surface .pa-unverified-draft { cursor:text;user-select:text; }
 .project-assistants .pa-chat-surface :is(.pa-unverified-action,.pa-unverified-save) { display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;column-gap:12px; }
@@ -215,12 +216,14 @@
  .project-assistants .pa-chat-surface .pa-mine>.pa-message-controls::before { left:auto;right:0; }
  @container (min-width:700px) {
   .project-assistants .pa-chat-surface .pa-message,
+  .project-assistants .pa-chat-surface .pa-exchange-card,
   .project-assistants .pa-chat-surface .pa-message.pa-mine { max-width:min(84%,calc(100% - 104px)); }
   .project-assistants .pa-chat-surface .pa-message-controls>button.pa-message-shortcut { display:grid; }
  }
 }
 @media(max-width:700px), (pointer:coarse) {
  .project-assistants .pa-chat-surface .pa-message,
+ .project-assistants .pa-chat-surface .pa-exchange-card,
  .project-assistants .pa-chat-surface .pa-message.pa-mine { max-width:calc(100% - 48px); }
  .project-assistants .pa-chat-surface .pa-message-controls { --pa-action-size:44px; }
  .project-assistants .pa-chat-surface .pa-reaction-own { min-height:44px;min-width:44px; }
@@ -228,6 +231,18 @@
 @media(max-width:700px) {
  .project-assistants .pa-chat-surface .pa-chat-scroll { padding:18px 16px 24px; }
 }
+.project-assistants .pa-chat-surface .pa-message.pa-system-notice {
+ width:100%; max-width:none; min-height:40px; align-items:center; margin:4px 0; cursor:default;
+}
+.project-assistants .pa-chat-surface .pa-system-notice > .pa-message-bubble {
+ display:flex; align-items:center; justify-content:center; gap:10px; width:100%; padding:0;
+}
+.pa-system-notice > .pa-message-bubble::before,
+.pa-system-notice > .pa-message-bubble::after { content:""; flex:1; max-width:40px; height:1px; background:var(--pa-line); }
+.project-assistants .pa-chat-surface .pa-system-notice > .pa-message-bubble > p {
+ margin:0; font-size:12px; font-style:normal; text-align:center;
+}
+.project-assistants .pa-chat-surface .pa-chat-content > p.pa-turn:not([role]) { margin:8px 0; text-align:center; }
 @media(prefers-reduced-motion:reduce) {
  .project-assistants .pa-chat-surface .pa-message-controls { transition:none; }
 }

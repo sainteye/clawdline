@@ -5829,7 +5829,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "1f08e7cdfe4d2153f58c5914d15b4c5a759d1415630e7918727db014dd0644d6",
-    "web/console/src/project-assistants/ChatRows.tsx": "14c67e7da42292615dbc160332367dcd21dbabb8fc8f5a98ea44614256a8e490",
+    "web/console/src/project-assistants/ChatRows.tsx": "a57212bf3523425cee67bfb88134bd5cd3f20fa4ff9a9322dc100925126c6a3c",
     "web/console/src/project-assistants/DecisionCard.tsx": "d13335a03c51be11d1d14ea81e7d86c9947466da36d8ceef1d64285e6ca9ddc9",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
