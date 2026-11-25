@@ -3709,8 +3709,12 @@
           "line": 1
         },
         {
+          "path": "internal/app/projectassistant/submit.go",
+          "line": 442
+        },
+        {
           "path": "internal/app/projectassistant/runtime.go",
-          "line": 657
+          "line": 1
         },
         {
           "path": "internal/app/projectassistant/attempt.go",
@@ -4221,6 +4225,10 @@
           "line": 1
         },
         {
+          "path": "internal/app/projectassistant/submit.go",
+          "line": 1
+        },
+        {
           "path": "internal/app/projectassistant/attempt.go",
           "line": 1
         },
@@ -4266,6 +4274,10 @@
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/submit.go",
           "line": 1
         },
         {
@@ -4407,6 +4419,10 @@
           "line": 1
         },
         {
+          "path": "internal/app/projectassistant/submit.go",
+          "line": 1
+        },
+        {
           "path": "internal/app/projectassistant/attempt.go",
           "line": 1
         },
@@ -4518,8 +4534,8 @@
           "line": 498
         },
         {
-          "path": "internal/app/projectassistant/runtime.go",
-          "line": 556
+          "path": "internal/app/projectassistant/submit.go",
+          "line": 293
         },
         {
           "path": "internal/app/projectassistant/attempt.go",
@@ -4559,8 +4575,8 @@
           "line": 856
         },
         {
-          "path": "internal/app/projectassistant/service_team.go",
-          "line": 214
+          "path": "internal/app/projectassistant/service_team_call.go",
+          "line": 45
         },
         {
           "path": "internal/adapters/projectassistantstore/team.go",
@@ -4690,6 +4706,10 @@
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/submit.go",
           "line": 1
         },
         {
@@ -5544,6 +5564,10 @@
           "line": 1
         },
         {
+          "path": "internal/app/projectassistant/submit.go",
+          "line": 1
+        },
+        {
           "path": "internal/app/projectassistant/attempt.go",
           "line": 1
         }
@@ -5598,6 +5622,10 @@
         },
         {
           "path": "internal/app/projectassistant/runtime.go",
+          "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/submit.go",
           "line": 1
         },
         {
@@ -5816,13 +5844,14 @@
     "internal/app/projectassistant/restart.go": "d1bc28469c94bfe7d03f20dafcaeac83bb41d536376d06ab58744f073fd72968",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "58920f2f21bc683bcdb146defd01d3fa8a09b5af41a07ac070a5dfb5d9e5455b",
+    "internal/app/projectassistant/runtime.go": "9df3cd8e94cbe2dbe64adef8e52293b13738776ca0bf18323815dd365f81c848",
     "internal/app/projectassistant/runtime_groups.go": "83b7086262a37a790fd26d053afffc49c98acb7147e76afeff4778aa4d2d6b97",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
     "internal/app/projectassistant/send_now.go": "5686c6f5bd0f6411f7eb2c67ddd20ab13a77d2243ffd4c7f1ba14c447dba92ef",
     "internal/app/projectassistant/service_routines.go": "47b4f2ab953551938f828229ff837d77c8361bed25aafdaa653c5be943a3eed3",
-    "internal/app/projectassistant/service_team.go": "d6533e0a18e2ffd58ad4fe7bd430b8482689e3c5e7b2072a2c9295124a39c033",
+    "internal/app/projectassistant/service_team_call.go": "7ee303d4a9608080703e66c78b437c50f9319349e2fae59ce2247c5a36f6c322",
     "internal/app/projectassistant/session_handoff.go": "26be6109c4b41f1e880c0d8112f7116c74f9d0510555f7e41dc8ee4eaab512ad",
+    "internal/app/projectassistant/submit.go": "ad827912e1a244c3ecc8a02c568f5b0913cb49ee60dd7140a0cdb6d86a545e27",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
     "internal/app/projectassistant/work_completion.go": "1e34203cf5582e6c1f15721add71fb39ad2568d92bdaa6f4a5bfbcddf76ada31",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",

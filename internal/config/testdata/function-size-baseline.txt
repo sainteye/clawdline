@@ -55,10 +55,8 @@ internal/app/orchestrator/handoffs.go	Broker.openSession	108	36
 internal/app/orchestrator/leases.go	Broker.Acquire	139	35
 internal/app/orchestrator/lifecycle.go	Broker.land	140	54
 internal/app/projectassistant/routines.go	Engine.TickRoutines	115	31
-internal/app/projectassistant/runtime.go	Engine.Submit	245	91
 internal/app/projectassistant/runtime.go	Engine.finishOnceLocked	141	53
 internal/app/projectassistant/runtime.go	Engine.work	119	31
-internal/app/projectassistant/service_team.go	TeamCoordinator.Call	264	82
 internal/app/projectassistant/session_handoff.go	sessionContinuationBefore	116	42
 internal/app/proposals.go	Participation.Propose	171	55
 internal/app/schedules.go	ScheduleBook.build	107	38
