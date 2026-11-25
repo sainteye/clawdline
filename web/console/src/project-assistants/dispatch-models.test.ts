@@ -51,3 +51,14 @@ test("a concrete current model is named by its name, not its description", () =>
   assert.equal(out.defaultName, "6.2 Sol")
   assert.deepEqual(out.choices.map(c => c.label), ["6.2 Sol", "6.2 Astra"])
 })
+
+test("a Default entry that copies a model's note is named by that model", () => {
+  // The shape Codex's adapter sent on this machine on 2026-11-25.
+  const out = dispatchModels(catalog("codex", "default", [
+    { value: "default", name: "Default", description: "Fast, go-to model for coding and everyday work." },
+    { value: "model-sol", name: "6.2 Sol", description: "Fast, go-to model for coding and everyday work." },
+    { value: "model-astra", name: "6.2 Astra", description: "Our most capable model for complex coding and professional work." },
+  ]))
+  assert.equal(out.defaultName, "6.2 Sol")
+  assert.deepEqual(out.choices.map(c => c.value), ["model-sol", "model-astra"])
+})

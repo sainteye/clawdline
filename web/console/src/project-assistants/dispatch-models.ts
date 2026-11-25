@@ -33,9 +33,11 @@ export function dispatchModels(catalog: W.ProjectAssistantConfigurationCatalog |
     choices.push({ value, label: split ? value : choice.name || value, hint: split ? undefined : choice.description || undefined })
   }
   const current = model.choices.find(c => c.value === model.current)
-  // What an unset model runs: the default entry's note (Claude names the model there),
-  // else the name of the agent's current concrete choice. A concrete choice's note
-  // describes the model ("Fast, go-to model for …"); it is not its name.
-  const defaultName = own ? own.description ?? "" : current ? (current.value !== modelPart(current.value) ? modelPart(current.value) : current.name || current.value) : ""
+  // What an unset model runs. Claude's Default entry names the model in its note.
+  // Codex's Default entry copies the default model's note ("Fast, go-to model for …"),
+  // which is a description, not a name: the model with that same note is the one meant.
+  // Without a Default entry, the agent's current concrete choice runs.
+  const named = own?.description ? model.choices.find(c => c !== own && c.description === own.description) : undefined
+  const defaultName = own ? named?.name || own.description || "" : current ? (current.value !== modelPart(current.value) ? modelPart(current.value) : current.name || current.value) : ""
   return { choices, defaultName }
 }
