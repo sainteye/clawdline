@@ -157,7 +157,7 @@ SELECT version,valid AND json_type(j)='object'
 	}
 	c := h.Conversation
 	if sample := c.ContextUsage; c.ActiveTurnID == "" && sample.TurnID != "" &&
-		sample.BindingID == c.BindingID && sample.Generation == c.Generation && sample.MemoryRevision == m.Revision &&
+		sample.BindingID == c.BindingID && sample.Generation == c.Generation && sample.Generation > c.SessionResetGeneration && sample.MemoryRevision == m.Revision &&
 		sample.UsedTokens >= 0 && sample.WindowTokens > 0 && (q.Request.Mode == pa.ReadViewSnapshot || q.Request.Mode == pa.ReadViewEvents) {
 		h.ContextUsage = &app.ReadContextUsage{TurnID: sample.TurnID, UsedTokens: sample.UsedTokens, WindowTokens: sample.WindowTokens}
 	}

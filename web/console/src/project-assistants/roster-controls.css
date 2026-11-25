@@ -58,8 +58,17 @@ html.pa-roster-dragging,html.pa-roster-dragging * { cursor:grabbing!important;us
 .project-assistants .pa-roster-confirm input { width:100%; }
 .project-assistants .pa-roster-confirm .pa-actions { justify-content:flex-end; margin-top:18px; }
 .project-assistants .pa-roster-notice {
-  position:absolute; z-index:30; inset:auto 12px 12px auto; display:flex; align-items:center; gap:12px; padding:6px 10px;
-  color:var(--pa-text); background:var(--pa-panel,#18181b); border:1px solid var(--pa-line); border-radius:12px;
+  position:absolute; z-index:30; inset:calc(max(12px, env(safe-area-inset-top)) + 56px) 12px auto 12px;
+  margin-inline:auto; width:fit-content; max-width:min(460px, calc(100% - 24px));
+  display:flex; align-items:center; gap:10px; padding:8px 12px;
+  color:var(--pa-text); background:var(--pa-panel,#18181b); border:1px solid var(--pa-line);
+  border-radius:12px; box-shadow:0 8px 24px #000a; font-size:14px; line-height:1.4;
+}
+.project-assistants .pa-roster-notice[data-tone="ok"] { border-color:#3f7a55; }
+.project-assistants .pa-roster-notice[data-tone="error"] { border-color:#a34c4c; }
+.project-assistants .pa-roster-notice > button:last-child {
+  flex:none; min-width:32px; min-height:32px; padding:0; border:1px solid var(--pa-line);
+  border-radius:999px; background:transparent; color:inherit; font:inherit; cursor:pointer;
 }
 
 .project-assistants .pa-roster-lead {

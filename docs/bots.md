@@ -432,8 +432,10 @@ compaction counts once even when both signals arrive. Nothing is guessed from ti
 #### Compact now and New session from the context meter
 
 Clicking the context meter under a Bot chat opens a small menu (a bottom sheet within the Safe Area on
-a phone): **Compact now**, **New session (with handoff)** and **Cancel**. New session is the existing
-roster action and confirmation (`fresh_context`).
+a phone): **Compact now**, **New session** and **Cancel**. New session is the existing
+roster action and confirmation (`fresh_context`): it stops any active turn, invalidates the earlier native
+session without carrying a handoff, clears the previous `Last CTX` reading, and confirms above the composer
+that the next message starts with a fresh context.
 
 Compact now is `POST /v1/project-assistants/{bot}/messages` with `compact: true`, empty text and an
 idempotency key; Cloud carries it as the same `project-assistants.send` word. The source admits one

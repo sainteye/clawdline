@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -59,5 +60,32 @@ func TestRuntimeNativeContextRejectsRevokedOrUnknownOwner(t *testing.T) {
 				t.Fatal("a read opened a provider")
 			}
 		})
+	}
+}
+
+func TestNewSessionClearsStoredContextUsage(t *testing.T) {
+	f := newRuntimeFixture(t)
+	f.store.mu.Lock()
+	f.store.c.Generation = 2
+	f.store.c.BindingID = "binding-2"
+	f.store.c.LastMessageSeq = 4
+	f.store.c.ContextUsage = pa.ContextSample{
+		TurnID: "turn-2", BindingID: "binding-2", Generation: 2,
+		MemoryRevision: 1, UsedTokens: 402600, WindowTokens: 1000000,
+	}
+	expectedVersion := f.store.bot.Version
+	f.store.mu.Unlock()
+
+	cmd := pa.Command{Key: f.key, Operation: pa.EditOperation, IdempotencyKey: "reset-usage", ContentHash: strings.Repeat("a", 64)}
+	if _, err := f.r.NewSession(context.Background(), cmd, expectedVersion); err != nil {
+		t.Fatalf("NewSession: %v", err)
+	}
+	f.store.mu.Lock()
+	defer f.store.mu.Unlock()
+	if f.store.c.ContextUsage != (pa.ContextSample{}) {
+		t.Fatalf("expected cleared ContextUsage, got %+v", f.store.c.ContextUsage)
+	}
+	if f.store.c.SessionResetGeneration != 2 || f.store.c.SessionResetAfter != 4 {
+		t.Fatalf("unexpected reset boundary: gen=%d after=%d", f.store.c.SessionResetGeneration, f.store.c.SessionResetAfter)
 	}
 }

@@ -1,6 +1,6 @@
 import { ContextMenu, type CompactBlock } from "./ContextMenu"
-import { CompactStatusRow } from "./CompactStatusRow"
-import { compactRefusalCode, followCompaction, type CompactStatus } from "./compact-status"
+import { ContextActionStatusRow, useContextActionStatus } from "./NewSessionStatusRow"
+import { compactRefusalCode } from "./compact-status"
 import { ChatModel, modelEdit } from "./ChatModel"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
@@ -120,13 +120,13 @@ export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
   openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;pushed?:boolean;
-  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
+  onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void;newSessionCount?:number
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -1474,18 +1474,18 @@ ${currentDraft}`:submitted)
     const timer=setTimeout(()=>setPermissionTick(tick=>tick+1),delay)
     return()=>clearTimeout(timer)
   },[nextDeadline,permissionTick])
-  const [compactRequest,setCompactRequest]=useState<CompactStatus|null>(null)
-  // "Compact now" is one idle turn on the source; the agent's own /compact
-  // runs there and the chat then shows the summarized notice. The status row
-  // follows that turn from the press to its notice or failure.
-  const compact=followCompaction(compactRequest,turns,messages,w)
-  const compacting=compact?.state==="sending"||compact?.state==="running"
-  useEffect(()=>{if(compact!==compactRequest)setCompactRequest(compact)},[compact,compactRequest])
-  useEffect(()=>{
-    if(compact?.state!=="done")return
-    const timer=setTimeout(()=>setCompactRequest(current=>current===compact?null:current),8000)
-    return()=>clearTimeout(timer)
-  },[compact])
+  const clearHeadContextUsage=()=>{
+    setHead(before=>{
+      if(!before?.context_usage)return before
+      const next={...before,context_usage:undefined}
+      headRef.current=next
+      return next
+    })
+  }
+  const {compact,compacting,setCompactRequest,freshSessionNotice,dismissFreshSession}=useContextActionStatus({
+    turns,messages,w,newSessionCount,activeTurnID:head?.conversation.active_turn_id,
+    onClearContextUsage:clearHeadContextUsage,onRefresh:()=>void refresh(true)
+  })
   const compactNow=async()=>{
     if(compacting)return
     setCompactRequest({state:"sending"})
@@ -1986,7 +1986,8 @@ ${currentDraft}`:submitted)
       {filesLost&&<p role="alert">{w.filesLost} <button type="button" onClick={()=>{rememberFiles(false);setFilesLost(false)}}>{w.discardFiles}</button></p>}
       {fileError&&<p role="alert">{fileError}</p>}
       {queueEditError&&<p role="alert">{w.queueEditFailed} ({queueEditError})</p>}
-      {!thread&&compact&&<CompactStatusRow status={compact} w={w} onRetry={()=>void compactNow()} onDismiss={()=>setCompactRequest(null)}/>}
+      {!thread&&<ContextActionStatusRow compact={compact} freshSessionNotice={freshSessionNotice} w={w}
+        onRetryCompact={()=>void compactNow()} onDismissCompact={()=>setCompactRequest(null)} onDismissFreshSession={dismissFreshSession}/>}
       {!thread&&data&&<div className="pa-chat-metadata">
         {live&&head?.context_usage&&<ContextMenu usage={head.context_usage} w={w} language={language} compacting={compacting}
           compactBlock={compactBlockFor(enabled,bot.agent,!!head.conversation.active_turn_id||!!head.queued_turn_count||!!head.unknown_turn_count||turns.some(turn=>turn.state==="queued"||turn.state==="accepted"),!!head.current_fence.binding_id)}

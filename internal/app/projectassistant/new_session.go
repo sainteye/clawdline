@@ -46,6 +46,7 @@ func (r *Engine) NewSession(ctx context.Context, command pa.Command, expected in
 	}
 	chat.SessionResetGeneration = chat.Generation
 	chat.SessionResetAfter = chat.LastMessageSeq
+	chat.ContextUsage = pa.ContextSample{}
 	receipt, err := r.mutate(ctx, bot, Mutation{
 		Command: command, Conversation: &chat, StartFreshSession: true, Receipt: pa.Receipt{State: pa.EffectAccepted, ResourceID: chat.ID},
 	})

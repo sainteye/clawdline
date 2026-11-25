@@ -12,6 +12,10 @@ import { createViewState, sameBot, sameFence } from "./view-state"
 import { bootCatalog } from "../catalog"
 export const contractVersion="project-assistants.v1"
 export interface FixtureLog {method:string;machine:string;request:unknown}
+function applyFixtureBotEdit(bot:W.ProjectAssistantBot,settings:W.ProjectAssistantEditSettings,contextUsage:{bot:string;usage:W.ProjectAssistantContextUsage}|undefined) {
+  Object.assign(bot,{name:settings.name,appearance:settings.appearance,instructions:{...bot.instructions,text:settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1,...(settings.background_threads!==undefined?{background_threads:settings.background_threads}:{})})
+  return settings.roster?.fresh_context&&contextUsage?.bot===bot.key.bot_id?undefined:contextUsage
+}
 export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   const project:W.ProjectAssistantProjectScope={machine_id:machineID,project_id:"project",canonical_id:"canonical",kind:"repository"}
   const at="2026-11-12T06:20:00Z"
@@ -143,7 +147,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     },
     async get(r,s){if(legacyForbidden)throw new Error("legacy GET forbidden");if(getGate)await getGate;check("get",r,s);const bot=find(r);return{contract_version:contractVersion,bot,conversation:conversation(bot),source:status()}},
     async create(r,s){check("create",r,s,true);if(createGate)await createGate;if(unknownCreate)throw failure("pa_outcome_unknown");let bot=bots.find(b=>sameBot(b.key,r.command.key));if(!bot){bot={...bots[0],key:r.command.key,name:r.settings.name,appearance:r.settings.appearance,agent:r.settings.agent,permission_policy:r.settings.permission_policy,conversation_id:crypto.randomUUID(),instructions:{text:r.settings.instructions,revision:1,role_snapshot_ref:r.settings.role_snapshot_ref}};bot.project={...project,...r.settings.target};bots.push(bot);created.add(bot.key.bot_id);messages.set(bot.key.bot_id,[])}if(lostCreateReply)throw failure("pa_outcome_unknown");return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
-    async edit(r,s){check("edit",r,s,true);const bot=find(r.command.key);if(bot.version!==r.settings.expected_version)throw failure("pa_stale_version");Object.assign(bot,{name:r.settings.name,appearance:r.settings.appearance,instructions:{...bot.instructions,text:r.settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1,...(r.settings.background_threads!==undefined?{background_threads:r.settings.background_threads}:{})});return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
+    async edit(r,s){check("edit",r,s,true);const bot=find(r.command.key);if(bot.version!==r.settings.expected_version)throw failure("pa_stale_version");contextUsage=applyFixtureBotEdit(bot,r.settings,contextUsage);return{contract_version:contractVersion,bot,receipt:receive(r.command)}},
     async history(r,s){if(legacyForbidden)throw new Error("legacy history forbidden");check("history",r,s);const bot=find(r.key),all=(messages.get(r.key.bot_id)??[]).filter(m=>!r.before_seq||m.seq<r.before_seq),items=all.slice(-r.page_size);return{contract_version:contractVersion,conversation:conversation(bot),items,has_more:all.length>items.length,next_before_seq:items[0]?.seq??0}},
     async view(r,s){
       check("view",r,s)

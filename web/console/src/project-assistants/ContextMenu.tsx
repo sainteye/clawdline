@@ -8,7 +8,7 @@ export type CompactBlock = "working" | "noSession" | "agent" | "readOnly" | null
 
 /**
  * The context meter as a quiet button. It opens a small menu (a bottom sheet
- * on a phone) with Compact now, New session (with handoff) and Cancel.
+ * on a phone) with Compact now, New session and Cancel.
  * Compact now is offered only while the Bot is idle; otherwise it is disabled
  * and says why.
  */

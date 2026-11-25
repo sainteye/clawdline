@@ -1026,3 +1026,32 @@ func TestReadViewTraceCountSeparatesRoomAndChecksSupersededChunks(t *testing.T) 
 		})
 	}
 }
+
+func TestReadViewOmitsContextUsageFromResetSession(t *testing.T) {
+	exported, _, current := viewFixture(t, 1, 0, false)
+	exported.Conversation.ActiveTurnID = ""
+	exported.Conversation.ContextUsage = pa.ContextSample{
+		TurnID: "t1", BindingID: current.BindingID, Generation: current.Generation,
+		MemoryRevision: exported.Memory.Revision, UsedTokens: 402600, WindowTokens: 1000000,
+	}
+	_, _, views, _ := restoreViews(t, exported)
+	q := viewQuery(exported.Bot)
+	before := readView(t, views, q)
+	if before.Head.ContextUsage == nil || before.Head.ContextUsage.UsedTokens != 402600 {
+		t.Fatalf("expected stored context usage before reset, got %+v", before.Head.ContextUsage)
+	}
+
+	exported.Conversation.SessionResetGeneration = current.Generation
+	exported.Conversation.SessionResetAfter = exported.Conversation.LastMessageSeq
+	_, _, resetViews, _ := restoreViews(t, exported)
+	snap := readView(t, resetViews, q)
+	if snap.Head.ContextUsage != nil {
+		t.Fatalf("expected nil context usage after reset in snapshot, got %+v", snap.Head.ContextUsage)
+	}
+	evQuery := q
+	evQuery.Request.Mode, evQuery.Request.SourceEpoch = pa.ReadViewEvents, snap.SourceEpoch
+	ev := readView(t, resetViews, evQuery)
+	if ev.Head.ContextUsage != nil {
+		t.Fatalf("expected nil context usage after reset in events, got %+v", ev.Head.ContextUsage)
+	}
+}
