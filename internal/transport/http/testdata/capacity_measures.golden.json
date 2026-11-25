@@ -1162,6 +1162,11 @@
     "Note": true
   },
   {
+    "Name": "browser.click_coordinate",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "browser.close_receipt_bytes",
     "Err": true
   },
@@ -1209,6 +1214,16 @@
   },
   {
     "Name": "browser.stdin_text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.viewport_height",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "browser.viewport_width",
     "Known": true,
     "Note": true
   },
