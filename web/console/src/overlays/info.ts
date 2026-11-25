@@ -45,6 +45,7 @@ import "./info-next.css"
 import { workflowInfoHTML } from "../session/workflow-profile.js"
 import { protocolStateHTML } from "../session/protocol-state.js"
 import { creditBalanceText } from "../session/status-limits.js"
+import { currentModelRow } from "../model-catalog/match.js"
 
 /**
  * The Session info card — `Info` in `input/info.js`, function for function,
@@ -243,10 +244,9 @@ function canOpenCodexPicker(): boolean {
   const s = session()
   return !!(s && host.writable() && (s.state === "idle" || s.state === "unknown") && !busy)
 }
-/** A dated model finds its versioned row without selecting a shorter version. */
-function onModel(current: string, m: SessionModel): boolean {
-  return !!current && (current === m.id ||
-    (current.startsWith(m.id + "-") && /^\d{8}$/.test(current.slice(m.id.length + 1))))
+/** The one row this session runs, by the rule every model surface shares (model-catalog/match.ts). */
+function onModel(current: string, models: SessionModel[]): SessionModel | undefined {
+  return currentModelRow(current, models, (m) => m.id)
 }
 
 /** The name on its own, for pasting elsewhere; drawn rather than typed. */
@@ -322,9 +322,10 @@ function hero(s: Facts["session"], u: Facts["usage"]): string {
 
 function modelsHTML(models: SessionModel[], current: string): string {
   const can = canSwitch()
+  const row = onModel(current, models)
   let chips = models
     .map((m) => {
-      const on = onModel(current, m)
+      const on = m === row
       const wait = !on && pending === m.command
       return (
         '<button type="button" class="m" data-model="' + esc(m.command) + '" data-name="' + esc(m.name) + '"' +
@@ -365,8 +366,9 @@ function geminiEffortHTML(d: Facts): string {
 
 function codexModelHTML(models: SessionModel[], current: string): string {
   const can = canOpenCodexPicker()
+  const row = onModel(current, models)
   const chips = models.map((model) => {
-    const on = onModel(current, model)
+    const on = model === row
     return '<button type="button" class="m" data-model-picker="1" title="' + esc(nextWord("infoOpenModelPicker")) + '"' +
       (on ? ' data-on="1" aria-current="true"' : "") + (can && !on ? "" : " disabled") + '>' + esc(model.name) + '</button>'
   }).join("")
@@ -609,7 +611,7 @@ function html(d: Facts): string {
   // The model is whatever the record last named, so a `/model` this card sent
   // stops being pending the moment the record agrees with it.
   const current = s.model || (u && u.model) || ""
-  if (pending && models.some((m) => m.command === pending && onModel(current, m))) pending = null
+  if (pending && onModel(current, models)?.command === pending) pending = null
   let out = hero(s, u)
   out += workflowInfoHTML(d.workflow)
   let i = 0
@@ -919,7 +921,7 @@ export const Info = {
           busy = false
           SessionFacts.receiveFull(id, data)
           const observed = data.session.model
-          const selected = data.models.find(m => m.id === observed)?.name || observed || name || word
+          const selected = onModel(observed, data.models)?.name || observed || name || word
           said(fill(catalogWord("antigravity", "modelSelected"), { model: selected }), true)
           draw()
           return

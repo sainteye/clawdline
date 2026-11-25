@@ -4,8 +4,9 @@ import { catalogWord } from "../catalog.js"
 import { useModalBackdrop } from "../modal-backdrop.js"
 import { AgentMark } from "./AgentMark"
 import { agentName } from "./fallback-settings"
-import { PaSelect, type PaSelectStatus } from "./PaSelect"
+import { PaSelect } from "./PaSelect"
 import { useModelCatalog, type ModelCatalog } from "../model-catalog/useModelCatalog"
+import { catalogPicker, paSelectStatus } from "../model-catalog/picker"
 import { errorCode, failure, type SharedSettingsAnswer, type SourceClient } from "./client"
 import "./bots-settings.css"
 
@@ -125,22 +126,14 @@ type Catalogs = ModelCatalog
 
 /** A model drop-down for one agent: the machine's model catalog, with its loading and failure states inside the list. */
 function ModelSelect({ agent, value, onChange, catalogs, disabled }: { agent: string; value?: string; onChange: (model?: string) => void; catalogs: Catalogs; disabled?: boolean }) {
-  const current = catalogs.get(agent)
-  const catalog = current.status === "ready" ? current.catalog : undefined
   const name = agentName(agent)
-  const models = catalog?.models ?? []
-  // Still asking the agent, with nothing to show yet: the list waits inside itself.
-  const loading = !disabled && (current.status === "loading" || current.status === "ready" && current.waiting && !models.length)
-  const options = [{ value: "", label: catalog?.default_name ? word("modelDefaultNamed").replace("{name}", catalog.default_name) : word("modelDefaultPlain") },
-    ...models.map(m => ({ value: m.value, label: m.name, hint: m.description || undefined }))]
-  // A saved model stays visible while the list loads, and after it if the agent no longer lists it.
-  if (value && !options.some(o => o.value === value)) options.push({ value, label: value, hint: catalog && !loading ? word("modelMissing") : undefined })
-  let status: PaSelectStatus | undefined
-  if (loading) status = { kind: "loading", text: word("modelLoading").replace("{agent}", name) }
-  else if (current.status === "failed") status = { kind: "error", text: word("modelFailed").replace("{agent}", name), retryLabel: word("retry"), onRetry: catalogs.retry }
-  else if (current.status === "unsupported") status = { kind: "empty", text: word("modelOlderComputer") }
-  else if (catalog && !models.length) status = { kind: "empty", text: word("modelEmpty").replace("{agent}", name) }
-  return <PaSelect compact ariaLabel={`${name} ${word("model")}`} value={value ?? ""} options={options} busy={loading} status={status} disabled={disabled} onChange={next => onChange(next || undefined)}/>
+  const picker = catalogPicker(catalogs.get(agent), value, name, {
+    defaultNamed: word("modelDefaultNamed"), defaultPlain: word("modelDefaultPlain"), loading: word("modelLoading"), failed: word("modelFailed"),
+    empty: word("modelEmpty"), older: word("modelOlderComputer"), missing: word("modelMissing"), retry: word("retry"),
+  })
+  // A disabled agent is not being asked: no spinner for it.
+  const status = disabled && picker.status?.kind === "loading" ? undefined : paSelectStatus(picker.status, catalogs.retry)
+  return <PaSelect compact ariaLabel={`${name} ${word("model")}`} value={value ?? ""} options={picker.options} busy={!disabled && picker.loading} status={status} disabled={disabled} onChange={next => onChange(next || undefined)}/>
 }
 
 function EffortSelect({ agent, value, efforts, onChange, disabled }: { agent: string; value?: string; efforts: readonly string[]; onChange: (effort?: string) => void; disabled?: boolean }) {

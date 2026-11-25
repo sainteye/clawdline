@@ -19,9 +19,8 @@ import { catalogRefusalDetail, catalogWord } from "../catalog.js"
 import { assistantAdmits, assistantLabel, assistantRolesAdmit, assistantUnavailable, type AssistantOperation } from "./antigravity-ui.js"
 import { resumeCommandPlace } from "./resume-command.js"
 import type { Assistant } from "@clawdline/contract"
-import { WorkModelChoice } from "../pages/work/WorkModelChoice.js"
+import { WorkModelChoice, type LaunchModelChoice } from "../pages/work/WorkModelChoice.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
-import type { DefaultModelOption } from "../pages/settings/api.js"
 import "../pages/work/work.css"
 import { countSessionStarted, notePlaces, sessionRolesShown } from "./first-run.js"
 import { addProjectPlace } from "../pages/work/api.js"
@@ -99,7 +98,7 @@ let persona = ""
 /** The team the role row shows when no persona is chosen. */
 let team = ""
 /** The model chosen for the next start, kept with the assistant it belongs to; null for the default. */
-let model: { assistant: string; option: DefaultModelOption } | null = null
+let model: { assistant: string; option: LaunchModelChoice } | null = null
 /** Redraws the React model row after the imperative state it reads has changed. */
 let redrawModel: () => void = () => {}
 /** The persona chosen for the next resume from the place entered; "" for none. */
@@ -390,10 +389,10 @@ function chosenPersona(): string {
 
 /**
  * The model row, the Board's per-launch choice: shown for a new start in a
- * Project on the machine this console reads, whose model catalog is the one
- * `/v1/settings/default-models` answers with. A machine Session uses the
- * configured default, and a start on another machine would read the wrong
- * catalog, so neither offers it.
+ * Project on the machine this console reads, from that machine's one model
+ * catalog (model-catalog/). A machine Session uses the configured default.
+ * A start on another machine is carried with its model, but the catalog this
+ * row reads is the page machine's, so it would offer the wrong list there.
  */
 function modelRowShown(): boolean {
   const sheet = el("start")

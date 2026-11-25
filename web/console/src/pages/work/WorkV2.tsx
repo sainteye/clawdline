@@ -23,8 +23,7 @@ import { Mark } from "../../session/List.js"
 import { PersonaBot, PersonaTag, usePersonas } from "../../session/PersonaBot.js"
 import { personaById, personaName, personaTitle, rememberTeam, rememberedTeam, shownTeam, switchTeam } from "../../personas.js"
 import { RoleRow } from "../../session/RoleRow.js"
-import { WorkModelChoice } from "./WorkModelChoice.js"
-import type { DefaultModelOption } from "../settings/api.js"
+import { WorkModelChoice, type LaunchModelChoice } from "./WorkModelChoice.js"
 import { nextWord } from "../../next-strings.js"
 import { workProjectID, workRouteFromHash } from "../../page-route.js"
 import { failureWords, when } from "./shared.js"
@@ -947,7 +946,7 @@ function WorkCard({ item, sessions, sessionList, retrySessions, decisions, decis
   const providerFacts = (id: string) => providerReading.assistants.find(facts => facts.id === id) ?? { id }
   const [selectedAssistant, setAssistant] = useState<Assistant>(() => rememberedAssistant())
   const assistant = selectedAssistant
-  const [modelChoice, setModelChoice] = useState<{ assistant: Assistant; option: DefaultModelOption } | null>(null)
+  const [modelChoice, setModelChoice] = useState<{ assistant: Assistant; option: LaunchModelChoice } | null>(null)
   const model = modelChoice?.assistant === assistant ? modelChoice.option : null
   const [rolesOpen, setRolesOpen] = useState(false)
   const roleTrigger = useRef<HTMLButtonElement>(null)

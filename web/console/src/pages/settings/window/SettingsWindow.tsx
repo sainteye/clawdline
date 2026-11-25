@@ -2,14 +2,12 @@ import type { SettingsPane } from "../navigation.js"
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { SettingsSnapshot, VoiceLanguage, VoiceSetup } from "@clawdline/contract"
 import {
-  defaultModelOptions,
   readBrowserSettings,
-  readDefaultModels,
   readSettings,
   writeBrowserSettings,
   writeSettings,
-  type DefaultModelsSnapshot,
 } from "../api.js"
+import { CatalogEffortMenu, CatalogModelMenu, useMachineModelCatalog } from "../../../model-catalog/ui.js"
 import { ASSISTANT_LABEL, W, dictationStatus, fill, hotkeyTrouble, seconds, voiceLanguageSaid } from "./copy.js"
 import {
   beginCloudPairing,
@@ -82,7 +80,7 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
   hideNavigation?: boolean
 } = {}) {
   const [snapshot, setSnapshot] = useState<SettingsSnapshot | null>(null)
-  const [defaultModels, setDefaultModels] = useState<DefaultModelsSnapshot | null>(null)
+  const models = useMachineModelCatalog()
   const [shell, setShell] = useState<ShellState | null>(null)
   const [draft, setDraft] = useState<Draft>({})
   const [selectedTab, setTab] = useState(0)
@@ -143,7 +141,6 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
         setSnapshot(answer)
         setDraft({})
         setSaid("")
-        if (!embedded) void readDefaultModels().then(setDefaultModels, (error: unknown) => setSaid(settingsFailureSentence(error)))
       },
       (error: unknown) => setSaid(settingsFailureSentence(error)),
     )
@@ -500,43 +497,27 @@ export function SettingsWindow({ embedded = false, pane, hideNavigation = false 
             <Switch label={W.settingsFollow} on={!!now("follow_target")} onChange={flip("follow_target")} />
           </Row></>}
           {!embedded && <><Row label={W.settingsCodexDefaultModel} hint={W.settingsDefaultModelHint}>
-            <PopUp
+            <CatalogModelMenu agent="codex" compact catalog={models}
               label={W.settingsCodexDefaultModel}
               value={String(now("codex_default_model"))}
-              options={defaultModelOptions(
-                defaultModels,
-                "codex",
-                String(now("codex_default_model")),
-                W.settingsProviderDefault,
-              )}
-              disabled={!defaultModels}
               onPick={(value) => void change({ codex_default_model: value })}
             />
           </Row>
           <Row label={W.settingsCodexDefaultEffort} hint={W.settingsCodexDefaultEffortHint}>
-            <PopUp label={W.settingsCodexDefaultEffort}
-              value={String(now("codex_default_effort"))}
-              options={[{ value: "", label: W.settingsProviderDefault }, { value: "high", label: "high" }, { value: "xhigh", label: "xhigh" }]}
+            <CatalogEffortMenu agent="codex" compact catalog={models} label={W.settingsCodexDefaultEffort}
+              value={String(now("codex_default_effort"))} defaultLabel={W.settingsProviderDefault}
               onPick={(value) => void change({ codex_default_effort: value })} />
           </Row>
           <Row label={W.settingsClaudeDefaultModel} hint={W.settingsDefaultModelHint}>
-            <PopUp
+            <CatalogModelMenu agent="claude" compact catalog={models}
               label={W.settingsClaudeDefaultModel}
               value={String(now("claude_default_model"))}
-              options={defaultModelOptions(
-                defaultModels,
-                "claude",
-                String(now("claude_default_model")),
-                W.settingsProviderDefault,
-              )}
-              disabled={!defaultModels}
               onPick={(value) => void change({ claude_default_model: value })}
             />
           </Row>
-          <Row label={catalogWord("next", "defaultAntigravityModel")} hint={defaultModels?.models?.antigravity?.length ? undefined : catalogWord("next", "defaultAntigravityCatalogUnknown")}>
-            <PopUp label={catalogWord("next", "defaultAntigravityModel")} value={String(now("antigravity_default_model"))}
-              options={defaultModelOptions(defaultModels, "antigravity", String(now("antigravity_default_model")), W.settingsProviderDefault)}
-              disabled={!defaultModels} onPick={value => void change({ antigravity_default_model: value })} />
+          <Row label={catalogWord("next", "defaultAntigravityModel")}>
+            <CatalogModelMenu agent="antigravity" compact catalog={models} label={catalogWord("next", "defaultAntigravityModel")} value={String(now("antigravity_default_model"))}
+              onPick={value => void change({ antigravity_default_model: value })} />
           </Row></>}
           <Row label={W.settingsCodexAutoName} hint={W.settingsCodexAutoNameHint}>
             <PopUp

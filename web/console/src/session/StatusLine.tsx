@@ -9,6 +9,7 @@ import { SessionFacts, requestInfo } from "../overlays/index.js"
 import { nextWord } from "../next-strings.js"
 import { conversationNotStarted } from "./readiness.js"
 import { readGit } from "../legacy/git-bridge.js"
+import { currentModelRow } from "../model-catalog/match.js"
 import "./status-line-deploy.css"
 
 /**
@@ -332,12 +333,13 @@ function modelHTML(assistant: string | undefined, word: string): string {
 
 /**
  * `modelName` in `status-line.js`: the session's current model, shown by the
- * name its picker row gives it. The row is matched by id or by id prefix, so a
- * dated id still finds its name; a model with no row is shown as written.
+ * name its picker row gives it. The row is found by the rule the info panel
+ * shares (model-catalog/match.ts): a dated or context-variant id still finds
+ * its name, a shorter version never does; a model with no row is shown as written.
  */
 function modelName(info: SessionInfo): string {
   const current = info.session.model || info.usage?.model || ""
-  const row = info.models.find((m) => current && (current === m.id || current.indexOf(m.id) === 0))
+  const row = currentModelRow(current, info.models, (m) => m.id)
   return row ? row.name : current
 }
 

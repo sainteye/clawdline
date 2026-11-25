@@ -2,6 +2,7 @@ import { useMemo } from "react"
 import { catalogWord } from "../catalog.js"
 import { client } from "../client.js"
 import { useMachineVersion } from "../machine/NeedsUpdate.js"
+import { ChoiceMenu } from "../ui-language/ChoiceMenu.js"
 import { agentName } from "../project-assistants/fallback-settings"
 import { machineCatalogSource } from "./machine"
 import "./model-catalog.css"
@@ -54,4 +55,33 @@ export function CatalogStatus({ status, onRetry, className = "work-note", disabl
     </p>
   }
   return <p className={`${className} model-catalog-status`} role="status" data-model-catalog={status.kind}>{status.text}</p>
+}
+
+/**
+ * A model menu for one agent on a settings screen: the catalog's options in a
+ * ChoiceMenu, and the status line under it. The menu stays usable while the
+ * list loads: the agent default and a saved model are always there to pick.
+ */
+export function CatalogModelMenu({ id, agent, label, value, catalog, disabled, compact, onPick }: {
+  id?: string; agent: string; label: string; value: string; catalog: ModelCatalog; disabled?: boolean; compact?: boolean; onPick: (value: string) => void
+}) {
+  const picker = usePicker(catalog, agent, value)
+  return <>
+    <ChoiceMenu id={id} label={label} value={value} options={picker.options} disabled={disabled} compact={compact} onPick={onPick} />
+    <CatalogStatus status={picker.status} onRetry={catalog.retry} disabled={disabled} />
+  </>
+}
+
+/** The agent's efforts from the catalog; a saved effort stays visible before the list answers. */
+export function catalogEffortOptions(efforts: readonly string[], value: string, defaultLabel: string) {
+  const options = [{ value: "", label: defaultLabel }, ...efforts.map(e => ({ value: e, label: e }))]
+  if (value && !options.some(o => o.value === value)) options.push({ value, label: value })
+  return options
+}
+
+export function CatalogEffortMenu({ id, agent, label, value, defaultLabel, catalog, disabled, compact, onPick }: {
+  id?: string; agent: string; label: string; value: string; defaultLabel: string; catalog: ModelCatalog; disabled?: boolean; compact?: boolean; onPick: (value: string) => void
+}) {
+  const picker = usePicker(catalog, agent, undefined)
+  return <ChoiceMenu id={id} label={label} value={value} options={catalogEffortOptions(picker.efforts, value, defaultLabel)} disabled={disabled} compact={compact} onPick={onPick} />
 }

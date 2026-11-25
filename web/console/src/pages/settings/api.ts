@@ -14,29 +14,13 @@ import { client } from "../../client.js"
 export type { IntegrationSettingsSnapshot, IntegrationSettingsRequest } from "@clawdline/contract"
 
 export type DefaultModelAssistant = "codex" | "claude" | "antigravity"
-export type DefaultModelOption = { value: string; label: string }
-type DefaultModelValues = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort" | "antigravity_default_model" | "antigravity_default_effort">
-export type DefaultModelsSnapshot = DefaultModelValues & {
-  models: Record<DefaultModelAssistant, DefaultModelOption[]>
-}
-
-/** Options for one picker, retaining a hand-edited legacy value instead of silently changing it. */
-export function defaultModelOptions(
-  snapshot: DefaultModelsSnapshot | null,
-  assistant: DefaultModelAssistant,
-  current: string,
-  providerDefault: string,
-): DefaultModelOption[] {
-  const available = Array.isArray(snapshot?.models?.[assistant]) ? snapshot.models[assistant] : []
-  const options: DefaultModelOption[] = [{ value: "", label: providerDefault }]
-  if (current && !available.some((option) => option.value === current)) options.push({ value: current, label: current })
-  for (const option of available) {
-    if (option?.value && !options.some((row) => row.value === option.value)) {
-      options.push({ value: option.value, label: option.label || option.value })
-    }
-  }
-  return options
-}
+/**
+ * The saved defaults. The route also answers the machine's models, but every
+ * picker reads those from the one model catalog (model-catalog/), so this
+ * console never reads them here.
+ */
+export type DefaultModelsSnapshot = Pick<SettingsSnapshot, "codex_default_model" | "claude_default_model" | "codex_default_effort" | "antigravity_default_model" | "antigravity_default_effort">
+type DefaultModelValues = DefaultModelsSnapshot
 
 /**
  * `/v1/settings`, this app's own config.json.

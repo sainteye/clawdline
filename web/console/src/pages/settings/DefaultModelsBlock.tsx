@@ -3,9 +3,8 @@ import { useCallback, useEffect, useState } from "react"
 import { RefusalError } from "@clawdline/core"
 import * as L from "../../legacy/bridge.js"
 import { nextWord } from "../../next-strings.js"
-import { ChoiceMenu } from "../../ui-language/ChoiceMenu.js"
+import { CatalogEffortMenu, CatalogModelMenu, useMachineModelCatalog } from "../../model-catalog/ui.js"
 import {
-  defaultModelOptions,
   readDefaultModels,
   writeDefaultModels,
   type DefaultModelAssistant,
@@ -25,6 +24,7 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
   const [snapshot, setSnapshot] = useState<DefaultModelsSnapshot | null>(null)
   const [busy, setBusy] = useState<ModelKey | "read" | null>(null)
   const [said, setSaid] = useState("")
+  const models = useMachineModelCatalog()
 
   const accept = useCallback((answer: DefaultModelsSnapshot) => {
     setSnapshot(answer)
@@ -78,9 +78,8 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
     return (
       <div className="settings-model-field">
         <div className="settings-model-label">{label}</div>
-        <ChoiceMenu id={`settings-${assistant}-default-model`} label={label} value={value} disabled={disabled}
-          options={defaultModelOptions(snapshot, assistant, value, nextWord("defaultModelPlaceholder"))}
-          onPick={(selected) => commit(key, selected)} />
+        <CatalogModelMenu id={`settings-${assistant}-default-model`} agent={assistant} label={label} value={value} disabled={disabled}
+          catalog={models} onPick={(selected) => commit(key, selected)} />
       </div>
     )
   }
@@ -91,14 +90,13 @@ export function DefaultModelsBlock({ shown }: { shown: boolean }) {
       {picker("codex", "codex_default_model", nextWord("defaultCodexModel"))}
       <div className="settings-model-field">
         <div className="settings-model-label">{nextWord("defaultCodexEffort")}</div>
-        <ChoiceMenu id="settings-codex-default-effort" label={nextWord("defaultCodexEffort")}
-          value={modelOf(snapshot, "codex_default_effort")} disabled={disabled}
-          options={[{ value: "", label: nextWord("defaultModelPlaceholder") }, { value: "high", label: catalogWord("inline", "6ef7c9b15ecd") }, { value: "xhigh", label: catalogWord("inline", "b5255978be8e") }]}
+        <CatalogEffortMenu id="settings-codex-default-effort" agent="codex" label={nextWord("defaultCodexEffort")}
+          value={modelOf(snapshot, "codex_default_effort")} disabled={disabled} catalog={models}
+          defaultLabel={nextWord("defaultModelPlaceholder")}
           onPick={(selected) => commit("codex_default_effort", selected)} />
       </div>
       {picker("claude", "claude_default_model", nextWord("defaultClaudeModel"))}
       {picker("antigravity", "antigravity_default_model", catalogWord("next", "defaultAntigravityModel"))}
-      {snapshot?.models?.antigravity?.length ? null : <p className="say">{catalogWord("next", "defaultAntigravityCatalogUnknown")}</p>}
       {snapshot ? null : (
         <button className="chip" type="button" disabled={busy === "read"} onClick={read}>
           {nextWord("defaultModelsRetry")}

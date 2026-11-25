@@ -559,6 +559,45 @@ func deref(s *string) string {
 	return *s
 }
 
+// catalogSessionModels is the model list of a session no live adapter of
+// ours speaks for: the daemon's one model catalog (docs/model-catalog.md), so
+// this panel offers what every other picker on the machine offers. The read
+// answers at once from what the catalog holds; it never waits for the agent.
+//
+// A row's command is the catalog's launchable value; its id is what the
+// session reports while running it, which the console matches the current
+// model against. Codex and Gemini report the value itself. Claude Code takes
+// an alias ("opus") but reports a version ("claude-opus-5-5"), so the alias
+// is resolved through the installed Claude Code's own rows first, then the
+// moving aliases this package knows; a value neither names is its own id.
+// An agent without a catalog lists nothing rather than a guess.
+func (s *Server) catalogSessionModels(home string, assistant session.Assistant) []contract.SessionModel {
+	out := []contract.SessionModel{}
+	catalog, err := s.modelCatalog().Read(string(assistant))
+	if err != nil {
+		return out
+	}
+	ids := map[string]string{}
+	if assistant == session.AssistantClaude && len(catalog.Models) > 0 {
+		for _, m := range transcript.ClaudeModels {
+			ids[m.Command] = m.ID
+		}
+		for _, m := range transcript.Models(home, string(assistant)) {
+			if m.ID != "" {
+				ids[m.Command] = m.ID
+			}
+		}
+	}
+	for _, m := range catalog.Models {
+		id := ids[m.Value]
+		if id == "" {
+			id = m.Value
+		}
+		out = append(out, contract.SessionModel{ID: id, Name: m.Name, Command: m.Value})
+	}
+	return out
+}
+
 // infoPath recognises GET /v1/sessions/{id}/info and returns the id, decoded.
 func infoPath(r *http.Request) (string, bool) {
 	return sessionVerbIs(r, "info", http.MethodGet)
@@ -636,9 +675,7 @@ func (s *Server) sessionInfoRoute(w http.ResponseWriter, r *http.Request, id str
 			}
 		}
 	} else {
-		for _, m := range transcript.Models(home, string(item.Assistant)) {
-			info.Models = append(info.Models, contract.SessionModel{ID: m.ID, Name: m.Name, Command: m.Command})
-		}
+		info.Models = s.catalogSessionModels(home, item.Assistant)
 		// Claude Code's status line writes one small file per session, and it
 		// carries both the cost and the exact context window. It is read once
 		// here: twice would be two answers about one moment.

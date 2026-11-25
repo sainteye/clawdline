@@ -17,6 +17,12 @@ import { CHECK_ICON, COPY_ICON, maskedWebhookURL } from "../schedule-webhook-url
 import { runScheduleWithForce } from "../schedule-force-run.js"
 import { laneOnScreen, laneOwesRead, scheduleRetryDelayMs, SCHEDULE_READ_DEADLINE_MS } from "./schedules-lane.js"
 import { HeldReads } from "../poll.js"
+import { client } from "../client.js"
+import { ModelCatalogReader } from "../model-catalog/reader.js"
+import { machineCatalogSource } from "../model-catalog/machine.js"
+import { catalogPicker } from "../model-catalog/picker.js"
+import { catalogEffortOptions, pickerWords } from "../model-catalog/ui.js"
+import { agentName } from "../project-assistants/fallback-settings.js"
 import { ScheduleRecovery, retainScheduleRows } from "./schedules-recovery.js"
 import "../schedule-errors.css"
 import {
@@ -778,9 +784,6 @@ const Schedule = (() => {
   const CLOSE_KEYS = ["webScheduleCloseSuccess", "webScheduleCloseAlways", "webScheduleCloseNever"]
   const CATCH_DEFAULT = 6
   const TIMEOUT_DEFAULT = 30
-  const MODELS = ["haiku", "sonnet", "opus"]
-  const EFFORTS = ["high", "xhigh"]
-  const NATIVE_EFFORTS = ["low", "medium", "high", "xhigh", "max"]
   // `task.permission_mode` as the parser reads it; "" is no key, the machine's default.
   const PERMISSIONS: [string, NextWord][] = [
     ["", "schedulePermissionDefault"],
@@ -1006,44 +1009,75 @@ const Schedule = (() => {
     paint()
   }
 
+  // The machine's one model catalog (model-catalog/), read afresh each time
+  // the form opens; its answers redraw the model row.
+  let catalog: ModelCatalogReader | null = null
+  function readCatalog(): void {
+    catalog?.stop()
+    catalog = new ModelCatalogReader(machineCatalogSource(undefined, undefined, path => client.url(path)), () => {
+      if (!el("schedule-form").hidden) drawModel()
+    })
+    catalog.start()
+  }
+
   function drawModel(): void {
     const row = el("schedule-model")
     row.innerHTML = ""
     const native = chosenAssistant === "antigravity"
-    const show = chosenAssistant === "claude" || chosenAssistant === "codex" || native
+    const withEffort = chosenAssistant === "codex" || native
+    const show = chosenAssistant === "claude" || withEffort
+    const effortField = native ? catalogWord("next", "scheduleAntigravityEffortField") : nextWord("scheduleEffortField")
     el("schedule-model-label").hidden = !show
-    el("schedule-model-label").textContent = native ? T().webScheduleModel + " / " + catalogWord("next", "scheduleAntigravityEffortField") : chosenAssistant === "codex" ? nextWord("scheduleEffortField") : T().webScheduleModel
+    el("schedule-model-label").textContent = withEffort ? T().webScheduleModel + " / " + effortField : T().webScheduleModel
     row.hidden = !show
     row.setAttribute("data-kind", chosenAssistant || "")
-    if (!show) return
-    const chips = (values: string[], effort: boolean) => {
+    if (!show || !chosenAssistant) return
+    if (!catalog) readCatalog()
+    const picker = catalogPicker(catalog!.get(chosenAssistant), chosenModel, agentName(chosenAssistant), pickerWords())
+    const chips = (values: { value: string; label: string; hint?: string }[], effort: boolean) => {
       const selected = effort ? chosenEffort : chosenModel
-      for (const m of Array.from(new Set(["", ...values, ...(selected ? [selected] : [])]))) {
+      for (const m of values) {
         const chip = document.createElement("button")
         chip.type = "button"
-        chip.className = "chip" + (m === selected ? " on" : "")
-        chip.textContent = m || nextWord("defaultModelPlaceholder")
-        chip.setAttribute("aria-label", (effort ? (native ? catalogWord("next", "scheduleAntigravityEffortField") : nextWord("scheduleEffortField")) : T().webScheduleModel) + ": " + chip.textContent)
-        chip.setAttribute("aria-pressed", m === selected ? "true" : "false")
+        chip.className = "chip" + (m.value === selected ? " on" : "")
+        chip.textContent = m.label
+        if (m.hint) chip.title = m.hint
+        chip.setAttribute("aria-label", (effort ? effortField : T().webScheduleModel) + ": " + chip.textContent)
+        chip.setAttribute("aria-pressed", m.value === selected ? "true" : "false")
         chip.dataset.field = effort ? "effort" : "model"
-        chip.dataset.value = m
+        chip.dataset.value = m.value
         chip.onclick = () => {
-          if (effort) chosenEffort = !native && chosenEffort === m ? "" : m
-          else chosenModel = !native && chosenModel === m ? "" : m
+          if (effort) chosenEffort = !native && chosenEffort === m.value ? "" : m.value
+          else chosenModel = !native && chosenModel === m.value ? "" : m.value
           drawModel()
         }
         row.appendChild(chip)
       }
     }
-    if (native) {
-      // No installed native model catalog: never substitute another provider's list.
-      chips([], false)
+    chips(picker.options, false)
+    if (picker.status) {
       const note = document.createElement("p")
-      note.className = "note"
-      note.textContent = catalogWord("next", "defaultAntigravityCatalogUnknown")
+      note.className = "note model-catalog-status"
+      note.setAttribute("role", picker.status.kind === "failed" ? "alert" : "status")
+      note.dataset.modelCatalog = picker.status.kind
+      if (picker.status.kind === "loading") {
+        const spin = document.createElement("span")
+        spin.className = "model-catalog-spinner"
+        spin.setAttribute("aria-hidden", "true")
+        note.appendChild(spin)
+      }
+      note.appendChild(document.createTextNode(picker.status.text))
+      if (picker.status.kind === "failed") {
+        const retry = document.createElement("button")
+        retry.type = "button"
+        retry.className = "chip"
+        retry.textContent = picker.status.retryLabel
+        retry.onclick = () => catalog?.retry()
+        note.appendChild(retry)
+      }
       row.appendChild(note)
-      chips(NATIVE_EFFORTS, true)
-    } else chips(chosenAssistant === "codex" ? EFFORTS : MODELS, chosenAssistant === "codex")
+    }
+    if (withEffort) chips(catalogEffortOptions(picker.efforts, chosenEffort, nextWord("defaultModelPlaceholder")), true)
     paint()
   }
 
@@ -1400,6 +1434,7 @@ const Schedule = (() => {
     el("schedule-delete").hidden = true
     el("schedule-form-say").textContent = T().webScheduleNewSay
     said("")
+    readCatalog()
     drawWith()
     drawModel()
     drawPermission()

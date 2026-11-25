@@ -789,8 +789,11 @@ function startMachine() {
         places: [{ id: "p-clawdline", label: "clawdline" }, { id: "p-fantease", label: "fantease" }],
         assistants: [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }, { id: "grok", label: "Grok", installed: false }],
       })
-      if (path === "/v1/settings/default-models") return Response.json({ codex_default_model: "gpt-6.1-sol", claude_default_model: null,
-        models: { codex: [{ value: "gpt-6.1-sol" }, { value: "gpt-6-luna" }], claude: [{ value: "claude-opus-5-5" }] } })
+      if (path === "/v1/settings/default-models") return Response.json({ codex_default_model: "gpt-6.1-sol", claude_default_model: null })
+      if (path === "/v1/model-catalog") return Response.json({ agents: [
+        { agent: "claude", models: [{ value: "claude-opus-5-5", name: "Opus" }], default_name: "", efforts: [], source: "native", observed_at: "", refreshing: false },
+        { agent: "codex", models: [{ value: "gpt-6.1-sol", name: "Sol" }, { value: "gpt-6-luna", name: "Luna" }], default_name: "", efforts: ["high"], source: "agent", observed_at: "", refreshing: false },
+      ] })
       if (/^\/v1\/places\/[^/]+\/start\//.test(path)) return Response.json({ id: "%77", backend: "tmux", assistant: "codex" })
       return new Response("", { status: 404 })
     },

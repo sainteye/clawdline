@@ -6,6 +6,8 @@ import type {SessionBoardTarget} from '../session/SessionBoards.js'
 import type {OperationObserver} from './copilot-history.js'
 // @ts-expect-error -- Node's type-stripping tests resolve the source module.
 import { callControlGuidance } from './copilot-call-control.ts'
+// @ts-expect-error -- Node tests load this TypeScript module directly.
+import { machineCatalogSource } from '../model-catalog/machine.ts'
 // @ts-expect-error -- Node executes the TypeScript source in tool tests.
 import { SESSION_BOARD_TOOLS } from './copilot-session-boards.ts'
 import type { Icon } from '@clawdline/contract'
@@ -3125,13 +3127,16 @@ async function listProjects(deps: ToolDeps, logs: ToolLog[], machine: string): P
   let models: Record<string, { default?: string; choices: string[] }> = {}
   if (!machine) {
     try {
-      const m = await deps.fetch('/v1/settings/default-models')
-      if (m.ok) {
-        const d = (await m.json()) as Record<string, unknown> & { models?: Record<string, { value?: unknown; label?: unknown }[]> }
+      // The choices are the machine's one model catalog (docs/model-catalog.md);
+      // the saved per-assistant defaults are the default-models settings.
+      const catalog = await machineCatalogSource(undefined, deps.fetch).modelCatalog!(undefined, new AbortController().signal)
+      {
+        const saved: Record<string, unknown> = await deps.fetch('/v1/settings/default-models').then(r => r.ok ? r.json() as Promise<Record<string, unknown>> : {}, () => ({}))
         for (const a of assistants) {
-          const list = Array.isArray(d.models?.[a.id]) ? d.models![a.id] : []
+          const entry = (catalog.agents ?? []).find(x => x.agent === a.id)
+          const list = Array.isArray(entry?.models) ? entry.models : []
           models[a.id] = {
-            ...(str(d[`${a.id}_default_model`]) ? { default: str(d[`${a.id}_default_model`]) } : {}),
+            ...(str(saved[`${a.id}_default_model`]) ? { default: str(saved[`${a.id}_default_model`]) } : {}),
             choices: list.map((x) => str(x.value)).filter(Boolean).slice(0, 12),
           }
         }
