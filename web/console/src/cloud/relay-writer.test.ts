@@ -2721,6 +2721,7 @@ test("every read the writer carries is one it waits for", () => {
     ["/v1/browser/setup", "chrome-setup"],
     ["/v1/doctor", "doctor"],
     ["/v1/settings/default-models", "default-models"],
+    ["/v1/model-catalog", "model-catalog"],
     ["/v1/settings/voice", "voice-settings"],
     ["/v1/notification-rules", "notification-rules"],
     ["/v1/settings/notifications", "notification-settings"],

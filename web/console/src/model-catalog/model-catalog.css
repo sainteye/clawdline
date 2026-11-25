@@ -1,0 +1,5 @@
+/* The status line under a model picker that is not a Bots drop-down (model-catalog/ui.tsx). */
+.model-catalog-status { display:flex;align-items:center;flex-wrap:wrap;gap:6px;overflow-wrap:anywhere; }
+.model-catalog-spinner { flex:none;width:12px;height:12px;border-radius:50%;border:2px solid currentColor;border-top-color:transparent;opacity:.7;animation:model-catalog-spin .8s linear infinite; }
+@keyframes model-catalog-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .model-catalog-spinner { animation-duration:2.4s; } }

@@ -1304,9 +1304,9 @@
       "kind": "read",
       "write_gate": false,
       "console": "carried",
-      "console_route": "captured Bot source GET /v1/model-catalog",
-      "console_seam": "client",
-      "console_note": "The daemon's one model catalog per agent (docs/model-catalog.md). A read never starts an agent on the caller's time.",
+      "console_route": "GET /v1/model-catalog",
+      "console_seam": "writer",
+      "console_note": "The daemon's one model catalog per agent (docs/model-catalog.md). A read never starts an agent on the caller's time. Every model picker reads it through the page's machine; Bots settings also reads it through the captured Bot source.",
       "local": {"method": "GET"},
       "example": {"agent": "codex", "request": "req-read", "session": "__clawdline_machine__"},
       "shapes": [

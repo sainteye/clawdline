@@ -360,6 +360,7 @@ export type WriteRoute =
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
   | { op: "machine-usage"; word: Carried<"machine-usage"> }
+  | { op: "model-catalog"; word: Carried<"model-catalog"> }
   | { op: "api-performance"; word: Carried<"api-performance"> }
   | { op: "update"; word: Carried<"update"> }
   | { op: "update-fresh"; word: Carried<"update-fresh"> }
@@ -553,6 +554,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "restorable",
   "archived",
   "machine-usage",
+  "model-catalog",
   "api-performance",
   "copilot-work",
   "update",
@@ -676,6 +678,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "machine" && a === "usage" && segments.length === 2) {
       return { op: "machine-usage", word: "machine-usage" }
     }
+    // The daemon's one model catalog (docs/model-catalog.md): every model
+    // picker on the page reads every agent in one read, no query.
+    if (head === "model-catalog" && segments.length === 1) return { op: "model-catalog", word: "model-catalog" }
     // Whether this machine trails the cloud's latest build (docs/updates.md),
     // on the machine's one reply channel.
     if (head === "update" && segments.length === 1) {
@@ -1841,6 +1846,7 @@ export class RelayWriter {
       case "workflow-settings":
       case "notification-settings":
       case "machine-usage":
+      case "model-catalog":
       case "update":
       case "update-fresh": {
         if (typeof client._machineRequest !== "function") {

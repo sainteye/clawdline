@@ -178,8 +178,10 @@ export const CARRIED = {
   // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
   // The daemon's one model catalog per agent (docs/model-catalog.md). A read
-  // never starts an agent on the caller's time.
-  "model-catalog": "captured Bot source GET /v1/model-catalog",
+  // never starts an agent on the caller's time. Every model picker reads it
+  // through the page's machine; Bots settings also reads it through the
+  // captured Bot source.
+  "model-catalog": "GET /v1/model-catalog",
   "native-terminal-input": "POST /v1/sessions/{id}/native-terminal",
   "native-terminal-screen": "GET /v1/sessions/{id}/native-terminal",
   "notification-rules": "GET /v1/notification-rules",

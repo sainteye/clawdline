@@ -376,6 +376,8 @@ test("one word, one list, and every route names a word the table carries", () =>
   // The voice cards on Settings (pages/settings/window/VoiceSettingsCards.tsx).
   assert.equal(CARRIED["voice-live-transcription"], "POST /v1/voice/live-transcription")
   assert.equal(CARRIED["voice-settings"], "GET /v1/settings/voice")
+  // Every model picker reads the page machine's one catalog; Bots settings also asks the captured source.
+  assert.equal(CARRIED["model-catalog"], "GET /v1/model-catalog")
   assert.equal(CARRIED["voice-settings-update"], "POST /v1/settings/voice")
   // Browser invitations, asked by the machine sheet directly (pages/devices/BrowserInvites.tsx).
   for (const word of ["browser-invite-start", "browser-invite-list", "browser-invite-status",
@@ -443,7 +445,6 @@ test("one word, one list, and every route names a word the table carries", () =>
     "project-assistants.send-receipt": "captured Bot source GET /v1/project-assistants/{bot_id}/send-receipt",
     "project-assistants.shared-settings": "captured Bot source GET /v1/project-assistant-shared-settings",
     "project-assistants.shared-settings-save": "captured Bot source PUT /v1/project-assistant-shared-settings",
-    "model-catalog": "captured Bot source GET /v1/model-catalog",
   } as const
   for (const word of Object.keys(bots) as (keyof typeof bots)[]) {
     assert.equal(CARRIED[word], bots[word], word)
