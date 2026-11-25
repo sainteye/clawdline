@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
-import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages } from "./chat-items.ts"
+import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages,placeTurn,queueAhead,queuedLabel,workingSubject } from "./chat-items.ts"
 // @ts-expect-error Node executes source extensions.
 import {admittedReceipt,admittedMessage,sendAcknowledgement,ChatObservation} from "./chat-observation.ts"
 const message=(id:string,seq:number,kind:W.ProjectAssistantMessageKind="assistant",at="2026-11-12T00:00:00Z")=>({id,seq,kind,at,text:id}) as W.ProjectAssistantMessage
@@ -114,4 +114,44 @@ test("in-flight sending bubble is suppressed once conversation admits the messag
   const admitted=message("msg-2",2,"user")
   admitted.text="hello"
   assert.equal(isSendingAdmitted("hello",[prior,admitted],1),true)
+})
+test("a message with other work ahead waits from the start instead of jumping into the queue later",()=>{
+  // 2026-11-25: the person's message released a restart hold. Nothing ran
+  // for a moment, so it was drawn as sent, then moved below the indicator
+  // once an older report started. Work ahead of it keeps it waiting.
+  const report={...message("report",1,"notice")},mine=message("mine",2,"user")
+  const turns=[{message_id:"report",state:"queued"},{message_id:"mine",state:"queued"}] as W.ProjectAssistantTurn[]
+  const parts=partitionMessages([report,mine],turns)
+  assert.deepEqual(parts.queued,[mine])
+  assert.equal(queueAhead("mine",turns),1)
+  assert.equal(queueAhead("mine",[{message_id:"x",state:"running"},...turns] as W.ProjectAssistantTurn[]),2)
+  // Queue order, not message order: a message the worker runs first has nothing ahead.
+  const first=[{message_id:"mine",state:"queued"},{message_id:"report",state:"queued"}] as W.ProjectAssistantTurn[]
+  assert.equal(queueAhead("mine",first),0)
+  assert.deepEqual(partitionMessages([report,mine],first).queued,[])
+  assert.equal(queueAhead("mine",[{message_id:"old",state:"succeeded"},{message_id:"mine",state:"queued"}] as W.ProjectAssistantTurn[]),0)
+})
+test("the working indicator names a work report it is reviewing, not the person's message",()=>{
+  const words={workingOnReport:"Work report: {title}",workingOnReportUntitled:"Work report",workingOnRestart:"Continuing"}
+  const review={...message("review",1,"notice"),notice:{key:"work_review",cause:"task-1"}} as W.ProjectAssistantMessage
+  const resume={...message("resume",2,"notice"),notice:{key:"restart_continuation",cause:""}} as W.ProjectAssistantMessage
+  const mine=message("mine",3,"user")
+  const work={task_id:"task-1",title:"Clean up checkouts"} as W.ProjectAssistantWorkLink
+  const rows=(...items:(W.ProjectAssistantMessage|W.ProjectAssistantWorkLink)[])=>items.map(item=>"seq" in item?{id:item.id,kind:"message",message:item}:{id:"w",kind:"work",work:item}) as W.ProjectAssistantReadViewItem[]
+  assert.equal(workingSubject({message_id:"review"},rows(review,mine,work),words),"Work report: Clean up checkouts")
+  assert.equal(workingSubject({message_id:"review"},rows(review),words),"Work report")
+  assert.equal(workingSubject({message_id:"resume"},rows(resume),words),"")
+  assert.equal(workingSubject({message_id:"mine"},rows(mine,work),words),"")
+  assert.equal(workingSubject(undefined,rows(mine,work),words),"")
+})
+test("a live event places the releasing message where the daemon runs it",()=>{
+  const t=(id:string,origin:string,extra={})=>({id,message_id:id,state:"queued",origin,...extra}) as W.ProjectAssistantReadTurnSummary
+  const held=[t("earlier","user"),t("report","host_notice"),t("reply","bot_reply")]
+  assert.deepEqual(placeTurn(held,t("mine","user",{released_restart:true})).map(x=>x.id),["earlier","mine","report","reply"])
+  assert.deepEqual(placeTurn(held,t("plain","user")).map(x=>x.id),["earlier","report","reply","plain"])
+  const running={...t("report","host_notice"),state:"running"} as W.ProjectAssistantReadTurnSummary
+  assert.deepEqual(placeTurn(held,running).map(x=>x.id),["earlier","report","reply"],"a known turn keeps its place")
+  const words={queued:"Waiting",queuePaused:"Paused",queuedAhead:"{count} ahead"}
+  assert.equal(queuedLabel("reply",held,false,words),"Waiting · 2 ahead")
+  assert.equal(queuedLabel("earlier",held,true,words),"Paused")
 })

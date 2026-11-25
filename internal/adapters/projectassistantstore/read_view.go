@@ -182,7 +182,12 @@ func viewTurnProjection(value string) string {
 	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','owned_cleanup_timeout','restart','restart_confirmed','restart_resumed','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
- 'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'))`
+ 'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'),
+ 'origin',json_extract(` + value + `,'$.origin'),'idempotency_key',json_extract(` + value + `,'$.idempotency_key'),
+ 'steering',json(CASE WHEN json_extract(` + value + `,'$.steering') THEN 'true' ELSE 'false' END),
+ 'released_restart',json(CASE WHEN json_extract(` + value + `,'$.released_restart') THEN 'true' ELSE 'false' END),
+ 'room',CASE WHEN json_extract(` + value + `,'$.room') IS NOT NULL THEN json_object() END,
+ 'network',CASE WHEN json_extract(` + value + `,'$.network') IS NOT NULL THEN json_object() END)`
 }
 
 func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
@@ -193,7 +198,7 @@ func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
 	if err := viewCheckFence(turn.Fence, h, false); err != nil {
 		return app.ReadTurnSummary{}, err
 	}
-	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts, QueueEditID: turn.QueueEditID}
+	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts, QueueEditID: turn.QueueEditID, Origin: turn.Origin, ReleasedRestart: turn.ReleasedRestart}
 	if turn.StartedAt != nil {
 		summary.StartedAt = turn.StartedAt.UTC().Format(time.RFC3339)
 	}
@@ -222,6 +227,7 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	// Leave room for navigation, recent transcript and result metadata even
 	// when queued work occupies most of the persisted conversation.
 	queueBudget := q.ByteLimit / 2
+	var order []pa.Turn
 	pending := botreadtrace.Measure(ctx, "sqlite_pending_turns")
 	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, queueBudget, queueBudget)
 	if err != nil {
@@ -256,6 +262,9 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 			pending()
 			return nil, failure(pa.Invalid, "read_view_turn_message")
 		}
+		var fact pa.Turn
+		_ = json.Unmarshal([]byte(raw.String), &fact) // viewTurn already decoded it
+		order = append(order, fact)
 		out.PendingTurns = append(out.PendingTurns, summary)
 		out.QueuedMessages = append(out.QueuedMessages, m)
 		*rawBytes += len(raw.String) + len(message.String)
@@ -265,6 +274,18 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	pending()
 	if err != nil {
 		return nil, err
+	}
+	// Show the queue in the order the worker runs it (Store.PendingTurns).
+	position := map[string]int{}
+	for i, t := range out.PendingTurns {
+		position[t.ID] = i
+	}
+	turns, messages := out.PendingTurns, out.QueuedMessages
+	out.PendingTurns, out.QueuedMessages = make([]app.ReadTurnSummary, 0, len(turns)), make([]pa.Message, 0, len(messages))
+	for _, t := range pa.OrderQueue(order) {
+		i := position[t.ID]
+		out.PendingTurns = append(out.PendingTurns, turns[i])
+		out.QueuedMessages = append(out.QueuedMessages, messages[i])
 	}
 	// Join on scalar message positions so SQLite can look up each turn's
 	// anchor without walking the complete message array for each turn. An

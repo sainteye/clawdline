@@ -185,7 +185,7 @@ func (s *Store) PendingTurns(ctx context.Context, key pa.BotKey) ([]pa.Turn, err
 		}
 		return left < right
 	})
-	return out, nil
+	return pa.OrderQueue(out), nil
 }
 func (s *Store) Messages(ctx context.Context, q app.HistoryQuery) (app.MessagePage, error) {
 	if err := pa.CheckPage(q.PageSize, false); err != nil {

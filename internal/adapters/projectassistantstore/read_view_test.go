@@ -1055,3 +1055,32 @@ func TestReadViewOmitsContextUsageFromResetSession(t *testing.T) {
 		t.Fatalf("expected nil context usage after reset in events, got %+v", ev.Head.ContextUsage)
 	}
 }
+
+// The read view shows the queue in the order the worker runs it: the
+// person's message that released a restart hold before the automatic report
+// that waited in that queue.
+func TestReadViewShowsTheReleasingMessageAheadOfHeldWork(t *testing.T) {
+	e, _, current := viewFixture(t, 3, 0, false)
+	e.Messages[1].Kind, e.Messages[1].TurnID = pa.NoticeMessage, "report"
+	e.Messages[2].Kind, e.Messages[2].TurnID = pa.UserMessage, "person"
+	e.Turns = append(e.Turns,
+		pa.Turn{ID: "report", Fence: current, MessageID: e.Messages[1].ID, State: pa.TurnQueued, Origin: pa.HostNoticeOrigin, Instructions: e.Bot.Instructions, MemoryRevision: 1, IdempotencyKey: "report"},
+		pa.Turn{ID: "person", Fence: current, MessageID: e.Messages[2].ID, State: pa.TurnQueued, Origin: pa.UserOrigin, ReleasedRestart: true, Instructions: e.Bot.Instructions, MemoryRevision: 1, IdempotencyKey: "person"})
+	_, store, views, _ := restoreViews(t, e)
+	pending, err := store.PendingTurns(testContext, e.Bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 2 || pending[0].ID != "person" || pending[1].ID != "report" {
+		t.Fatalf("worker order = %+v", pending)
+	}
+	v := readView(t, views, viewQuery(e.Bot))
+	got := v.Snapshot.PendingTurns
+	if len(got) != 2 || got[0].ID != "person" || got[1].ID != "report" ||
+		v.Snapshot.QueuedMessages[0].ID != e.Messages[2].ID || v.Snapshot.QueuedMessages[1].ID != e.Messages[1].ID {
+		t.Fatalf("read view order = %+v", got)
+	}
+	if !got[0].ReleasedRestart || got[0].Origin != pa.UserOrigin || got[1].ReleasedRestart || got[1].Origin != pa.HostNoticeOrigin {
+		t.Fatalf("read view turn facts = %+v", got)
+	}
+}

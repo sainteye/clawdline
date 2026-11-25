@@ -7411,7 +7411,18 @@ export interface ProjectAssistantReadTurnSummary {
   fence: ProjectAssistantFence
   id: string
   message_id: string
+
+  /**
+   * Who admitted the turn: user, host_notice, bot_request, bot_reply and so on.
+   */
+  origin?: string
   queue_edit_id?: string
+
+  /**
+   * True when the person's message released a queue held by a turn a restart
+   * interrupted; it runs before automatic work already waiting in that queue.
+   */
+  released_restart?: boolean
 
   /**
    * When the turn began running, RFC 3339; empty while it waits.
@@ -8199,6 +8210,12 @@ export interface ProjectAssistantTurn {
    * Current edit identity. The queued message will wait until the edit is resolved.
    */
   queue_edit_id?: string
+
+  /**
+   * True when the person's message released a queue held by a turn a restart
+   * interrupted; it runs before automatic work already waiting in that queue.
+   */
+  released_restart?: boolean
 
   /**
    * When the turn began running, RFC 3339; absent while it waits.

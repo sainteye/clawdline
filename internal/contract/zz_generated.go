@@ -6429,7 +6429,14 @@ type ProjectAssistantReadTurnSummary struct {
 	Fence        ProjectAssistantFence `json:"fence"`
 	ID           string                `json:"id"`
 	MessageID    string                `json:"message_id"`
-	QueueEditID  string                `json:"queue_edit_id,omitempty"`
+
+	// Who admitted the turn: user, host_notice, bot_request, bot_reply and so on.
+	Origin      string `json:"origin,omitempty"`
+	QueueEditID string `json:"queue_edit_id,omitempty"`
+
+	// True when the person's message released a queue held by a turn a restart
+	// interrupted; it runs before automatic work already waiting in that queue.
+	ReleasedRestart bool `json:"released_restart,omitempty"`
 
 	// When the turn began running, RFC 3339; empty while it waits.
 	StartedAt string                    `json:"started_at"`
@@ -7114,6 +7121,10 @@ type ProjectAssistantTurn struct {
 
 	// Current edit identity. The queued message will wait until the edit is resolved.
 	QueueEditID string `json:"queue_edit_id,omitempty"`
+
+	// True when the person's message released a queue held by a turn a restart
+	// interrupted; it runs before automatic work already waiting in that queue.
+	ReleasedRestart bool `json:"released_restart,omitempty"`
 
 	// When the turn began running, RFC 3339; absent while it waits.
 	StartedAt string                    `json:"started_at,omitempty"`

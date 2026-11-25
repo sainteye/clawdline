@@ -10,7 +10,7 @@ import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
-import { isSendingAdmitted, partitionMessages } from "./chat-items"
+import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, workingSubject } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
@@ -495,7 +495,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
           const rows=eventTimeline(timelineRef.current,page.items);timelineRef.current=rows;setTimeline(rows)
           for(const row of page.items){const event=row.event!
             if(event.turn&&(event.turn.state==="queued"||sameFence(event.turn.fence,page.head.current_fence)))
-              setTurns(old=>[...old.filter(t=>t.id!==event.turn!.id),turnSummary(event.turn!)])
+              setTurns(old=>placeTurn(old,turnSummary(event.turn!)))
             if(!sameFence(event.fence,page.head.current_fence))continue
             if(event.message?.kind==="assistant"&&event.message.turn_id){const id=event.message.turn_id;setActivity(old=>old[id]?{...old,[id]:""}:old)}
             if(event.trace){if(browserToolTrace(event.trace)){const trace=event.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}const now=visibleTrace(event.trace)?activityOf(event.trace):"",id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
@@ -1868,7 +1868,7 @@ ${currentDraft}`:submitted)
         <TurnInterruption key={turn.id} turn={turn} w={w}
           onProgress={turn===restartInterruption&&messages.some(message=>message.id===turn.message_id)?()=>viewHandoffHistory(turn.message_id):undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
-      <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
+      <WorkingTransition turn={visibleTurn} activity={currentActivity} subject={workingSubject(visibleTurn,timeline,w)} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
         steps={liveSteps.length||deferredTrace?expanded=><Trace inline expanded={expanded} summaries={liveSteps} details={details} more={!!traceMore&&(liveTraceTurn===moreTraceTurn||!liveSteps.length)} onMore={loadMoreTraces}
           onDetail={readTraceDetail} deferred={deferredTrace} w={w}/>:undefined}/>
       {stopText&&!visibleTurn&&<p className="pa-turn" role="status">{stopText}</p>}
@@ -1886,7 +1886,7 @@ ${currentDraft}`:submitted)
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" role="listitem" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
-          <span className="pa-queued-preview"><span className="pa-queued-label">{queuePaused?w.queuePaused:w.queued} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
+          <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}

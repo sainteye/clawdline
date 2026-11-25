@@ -82,7 +82,7 @@ func (s *runtimeStore) PendingTurns(context.Context, pa.BotKey) ([]pa.Turn, erro
 			out = append(out, clone(x))
 		}
 	}
-	return out, nil
+	return pa.OrderQueue(out), nil
 }
 func (s *runtimeStore) Receipt(_ context.Context, c pa.Command) (*pa.Receipt, error) {
 	s.mu.Lock()

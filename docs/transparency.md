@@ -196,6 +196,13 @@ A person can send another instruction in the same chat when restart recovery
 needs review. The source acknowledges the interrupted turn in the same
 transaction as the new message, keeps its original execution receipt and
 processes unstarted messages in their original order.
+That message runs ahead of the automatic work already waiting in the queue:
+work reports and other Bots' requests and replies. It never moves ahead of
+the person's earlier messages, a verified continuation, held edits or a
+running turn. Its prompt first asks the Bot to inspect what the interrupted
+turn finished and states how many automatic items are still queued; those
+items are delivered afterwards, not dropped. A work review admitted after a
+declined continuation is released the same way as work queued before it.
 
 The person's own message is admitted behind any unknown turn, whatever its
 cause, origin or count, and behind a stale active-turn pointer; only an
