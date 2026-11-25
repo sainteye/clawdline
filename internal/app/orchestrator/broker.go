@@ -51,6 +51,9 @@ type Broker struct {
 	AssistantAuthority     *AssistantAuthority
 	AssistantWorkChanged   func(context.Context, AssistantWorkSnapshot) error
 	AssistantWorkCompleted func(context.Context, AssistantWorkSnapshot) error
+	// AssistantRootDelivered tells the Bot that opened a Root, once, that the
+	// Root reported delivery (handoffs.go). Nil queues no notice.
+	AssistantRootDelivered func(context.Context, AssistantRootDelivery) error
 	// BotRequestNotice wakes one Bot with a Bot request card notice: the new
 	// holder after a handoff, or an asking Bot after completion
 	// (bot_request_effects.go). The Bot host sets it.

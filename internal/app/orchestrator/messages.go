@@ -475,9 +475,11 @@ func (b *Broker) ReportSessionDeliveryWithEvidence(ctx context.Context, terminal
 		Terminal: terminalID, Conversation: s.ConversationID, After: at, Summary: trimmed,
 		Language: b.notificationLanguage(), Tag: "session-delivery-" + terminalID,
 	})
+	effects := append([]store.Effect{{Kind: EffectSessionDeliveryPush, Subject: terminalID, Payload: push}},
+		b.rootDeliveryEffects(ctx, terminalID, trimmed, at)...)
 	_, err = b.Store.AppendWithEffects(ctx, store.Event{
 		Kind: "session.delivered", Subject: terminalID, Payload: payload,
-	}, store.Effect{Kind: EffectSessionDeliveryPush, Subject: terminalID, Payload: push})
+	}, effects...)
 	if err != nil {
 		return SessionDelivery{}, err
 	}

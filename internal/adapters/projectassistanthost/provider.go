@@ -1093,8 +1093,15 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
 		botRequestID := pa.BotRequestFrom(ctx)
-		if _, e := botRequestDispatchScope(ctx, h.botRequestCards(), nil, q.Bot.Key.BotID, turn, botRequestID); e != nil {
+		cardScoped, e := botRequestDispatchScope(ctx, h.botRequestCards(), nil, q.Bot.Key.BotID, turn, botRequestID)
+		if e != nil {
 			return pa.WorkLink{}, e
+		}
+		// A Root is whole ownership handed to an independent Session: only a
+		// turn the person started, or the holder of a person-rooted request
+		// card working on that card, may open one.
+		if mode := pa.DispatchChoiceFrom(ctx).Mode; mode != "" && (mode != pa.DispatchModeRoot || !directUserTurn(turn) && !cardScoped) {
+			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_root_origin")
 		}
 		// A Bot answering another Bot's message_bot may dispatch into its own
 		// Project: the requester delegated the work so the person need not

@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
 	"github.com/sainteye/clawdline/internal/app/tmuxview"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
 	"github.com/sainteye/clawdline/internal/productcopy"
@@ -755,6 +756,26 @@ type RootAssignmentRequest struct {
 	// It is in-process only, so neither the wire contract nor the digest of a
 	// request changes.
 	Handoff *HandoffInput `json:"-"`
+	// BotOwner names the Bot that opened this Root through dispatch_work
+	// mode "root" (DispatchAssistantRoot). It is ownership provenance, not
+	// parentage: the Root is still nobody's child. Omitted when empty, so
+	// the digest of every other request is unchanged.
+	BotOwner *RootBotOwner `json:"bot_owner,omitempty"`
+}
+
+// RootBotOwner records which Bot, turn and request opened a Root, so the
+// opening Bot can be told once when the Root reports delivery.
+type RootBotOwner struct {
+	Fence        pa.Fence   `json:"fence"`
+	TurnID       string     `json:"turn_id"`
+	Command      pa.Command `json:"command"`
+	RequestHash  string     `json:"request_hash"`
+	BotName      string     `json:"bot_name,omitempty"`
+	BotRequestID string     `json:"bot_request_id,omitempty"`
+	BoardItemID  string     `json:"board_item_id,omitempty"`
+	// DeliveredAt is when the opening Bot accepted the delivery notice; it
+	// is set on the stored row only, never in a request.
+	DeliveredAt int64 `json:"delivered_at,omitempty"`
 }
 
 // RootAssignment is one Feature Root as this broker keeps it. It carries no
@@ -790,6 +811,8 @@ type RootAssignment struct {
 	// AwaitingDialogSince is when the briefing stopped on a dialog, zero when
 	// it never did (root_dialog.go).
 	AwaitingDialogSince int64 `json:"awaiting_dialog_since,omitempty"`
+	// BotOwner is the Bot that opened this Root, nil for every other door.
+	BotOwner *RootBotOwner `json:"bot_owner,omitempty"`
 }
 
 // RootAssignmentClosure records a verified close of this assignment's exact
@@ -1001,6 +1024,7 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 		ProjectDir: filepath.Clean(req.ProjectDir), Label: strings.TrimSpace(req.Label), State: AssignmentAccepted,
 		Assignment: req.Assignment, CreatedAt: now.Unix(), Ownership: "independent_root",
 		BriefPath: filepath.Join(dir, "ASSIGNMENT.md"), Persona: req.Persona, BriefLanguage: b.DisplayLanguage(),
+		BotOwner: req.BotOwner,
 	}
 	if err := os.MkdirAll(filepath.Join(dir, "artifacts"), 0o700); err != nil {
 		b.refundDispatch()
@@ -1014,6 +1038,9 @@ func (b *Broker) OpenRootAssignment(ctx context.Context, key string, req RootAss
 			pack = filepath.Join(dir, "handoff")
 		}
 		brief = withHandoff(brief, HandoffSection(pack, err))
+	}
+	if req.BotOwner != nil {
+		brief += rootBotSection(*req.BotOwner)
 	}
 	if err := writeFileSync(a.BriefPath, []byte(brief)); err != nil {
 		b.refundDispatch()
@@ -1159,4 +1186,135 @@ func packageRoots(state string, addDirs []string) []string {
 		roots = append(roots, parent)
 	}
 	return roots
+}
+
+// --- a Root a Bot opened -------------------------------------------------------
+
+// EffectAssistantRootDelivered tells the Bot that opened a Root that the Root
+// reported delivery with `clawdline session report`.
+const EffectAssistantRootDelivered = "bot.root.delivered"
+
+func init() {
+	effectHandlers[EffectAssistantRootDelivered] = effectHandler{idempotent: true, run: runAssistantRootDelivered}
+}
+
+// AssistantRootDelivery is what the Bot host receives once per Bot-opened
+// Root: the first delivery report from that Root's own terminal.
+type AssistantRootDelivery struct {
+	AssignmentID string
+	Title        string
+	Summary      string
+	TerminalID   string
+	// At is when the Root reported, the same on every retry.
+	At    time.Time
+	Owner RootBotOwner
+	// LastAttempt is set when the retry window has ended.
+	LastAttempt bool
+}
+
+type rootDeliveryPayload struct {
+	Summary  string `json:"summary"`
+	Terminal string `json:"terminal"`
+	At       int64  `json:"at"`
+}
+
+// rootDeliveryEffects names the notice a delivery report owes the Bot that
+// opened this terminal's Root. Only an open Root whose Bot has not yet been
+// told qualifies, and nothing is queued while no Bot host receives it.
+func (b *Broker) rootDeliveryEffects(ctx context.Context, terminalID, summary string, at time.Time) []store.Effect {
+	if b.AssistantRootDelivered == nil {
+		return nil
+	}
+	rows, err := b.RootAssignments(ctx)
+	if err != nil {
+		log.Printf("orchestrator: Bot Root delivery lookup: %v", err)
+		return nil
+	}
+	for _, a := range rows {
+		if a.BotOwner == nil || a.BotOwner.DeliveredAt != 0 || a.Closure != nil || a.Executor == nil || a.Executor.TerminalID != terminalID {
+			continue
+		}
+		payload, _ := json.Marshal(rootDeliveryPayload{Summary: summary, Terminal: terminalID, At: at.Unix()})
+		return []store.Effect{{Kind: EffectAssistantRootDelivered, Subject: a.ID, Payload: payload}}
+	}
+	return nil
+}
+
+func runAssistantRootDelivered(ctx context.Context, b *Broker, e store.Effect) effectResult {
+	a, err := b.RootAssignmentByID(ctx, e.Subject)
+	if err != nil {
+		if isNotFound(err) {
+			return effectResult{state: store.EffectFailed, outcome: "root_missing"}
+		}
+		return effectResult{deferErr: err}
+	}
+	if a.BotOwner == nil {
+		return effectResult{state: store.EffectFailed, outcome: "root_not_bot_owned"}
+	}
+	if a.BotOwner.DeliveredAt != 0 {
+		// A second report from the same Root: the Bot was already told.
+		return effectResult{state: store.EffectDone, outcome: "bot_already_told"}
+	}
+	var p rootDeliveryPayload
+	_ = json.Unmarshal(e.Payload, &p)
+	since := time.Unix(p.At, 0)
+	sink := b.AssistantRootDelivered
+	if sink == nil {
+		if b.now().Sub(since) >= pa.CompletionWakeRetryWindow {
+			return effectResult{state: store.EffectFailed, outcome: "bot_host_unavailable"}
+		}
+		return effectResult{deferErr: errors.New("Bot Root delivery host is unavailable")}
+	}
+	notice := AssistantRootDelivery{AssignmentID: a.ID, Title: a.Label, Summary: p.Summary, TerminalID: p.Terminal, At: since, Owner: *a.BotOwner,
+		LastAttempt: b.now().Sub(since) >= pa.CompletionWakeRetryWindow}
+	if err := sink(HostContext(ctx), notice); err != nil {
+		if AssistantWorkRefused(pa.Code(err)) || notice.LastAttempt {
+			return effectResult{state: store.EffectFailed, outcome: string(pa.Code(err))}
+		}
+		return effectResult{deferErr: err}
+	}
+	if _, err := b.updateAssignment(ctx, a.ID, "root_assignment.bot_told", func(x *RootAssignment) {
+		if x.BotOwner != nil && x.BotOwner.DeliveredAt == 0 {
+			x.BotOwner.DeliveredAt = b.now().Unix()
+		}
+	}); err != nil {
+		log.Printf("orchestrator: Bot Root %s told, receipt not recorded: %v", a.ID, err)
+	}
+	return effectResult{state: store.EffectDone, outcome: "bot_root_delivery_told"}
+}
+
+// AssistantRootLink is the chat strip's projection of a Bot-opened Root. Its
+// TaskID is the Root Assignment id: a Root has no task record, so work_status
+// does not follow it, and its delivery arrives as AssistantRootDelivery.
+func AssistantRootLink(a RootAssignment) pa.WorkLink {
+	if a.BotOwner == nil {
+		return pa.WorkLink{}
+	}
+	link := pa.WorkLink{ID: a.ID, TaskID: a.ID, Fence: a.BotOwner.Fence, TurnID: a.BotOwner.TurnID, Title: a.Label,
+		BoardItemID: a.BotOwner.BoardItemID, BotRequestID: a.BotOwner.BotRequestID, Project: filepath.Base(a.ProjectDir), State: pa.WorkAccepted}
+	if a.Executor != nil {
+		link.WorkerTerminal = a.Executor.TerminalID
+		link.StartedAt = time.Unix(a.Executor.OpenedAt, 0).UTC()
+	}
+	switch a.State {
+	case AssignmentBriefed:
+		link.State = pa.WorkExecuting
+	case AssignmentAwaitingDialog:
+		link.State = pa.WorkWaitingForPerson
+	case AssignmentFailed:
+		link.State, link.FailureReason = pa.WorkFailed, a.Failure
+	}
+	return link
+}
+
+// rootBotSection is appended to a Bot-opened Root's brief. It says who
+// opened it and how the Bot hears back, and nothing that makes it a child.
+func rootBotSection(owner RootBotOwner) string {
+	name := owner.BotName
+	if name == "" {
+		name = "a Bot"
+	}
+	return "OPENED BY A BOT\nThe Bot " + name + " opened this Root for the person. You are an independently owned Root, not anybody's child: " +
+		"the ordinary Root rules in this repository's instruction files apply, including integrating, pushing and recording landings when your scope calls for it. " +
+		"When the work is finished and verified, run `clawdline session report --summary \"...\"`; that receipt is what tells " + name + ".\n\n"
 }
