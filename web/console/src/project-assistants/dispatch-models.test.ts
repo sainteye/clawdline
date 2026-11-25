@@ -41,3 +41,13 @@ test("no catalog or no model option offers only the agent default", () => {
   assert.deepEqual(dispatchModels(undefined), { choices: [], defaultName: "" })
   assert.deepEqual(dispatchModels({ agent: "grok", model: "", options: [] } as never), { choices: [], defaultName: "" })
 })
+
+test("a concrete current model is named by its name, not its description", () => {
+  // The shape Codex's adapter sent on 2026-11-25: no Default entry, notes that describe each model.
+  const out = dispatchModels(catalog("codex", "model-sol", [
+    { value: "model-sol", name: "6.2 Sol", description: "Fast, go-to model for coding and everyday work." },
+    { value: "model-astra", name: "6.2 Astra", description: "Our most capable model for complex coding and professional work." },
+  ]))
+  assert.equal(out.defaultName, "6.2 Sol")
+  assert.deepEqual(out.choices.map(c => c.label), ["6.2 Sol", "6.2 Astra"])
+})
