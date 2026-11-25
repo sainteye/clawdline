@@ -113,13 +113,13 @@ tools/check-private.sh                  # nothing of the person's is in a public
 node tools/check-console-tests.mjs      # every console test file is run by npm test or npm run check
 node tools/check-mirror-tests.mjs       # no console test asserts on the shape of the code
 node tools/check-browser-switches.mjs   # every Chromium launch disables OmniboxEverywhere
-tools/heavy.sh node --test tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
+tools/heavy.sh node --test tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs tools/check-web-code-shape.test.mjs
 tools/heavy.sh bash tools/test-check-modes.sh # entrypoint scope, fallback and failure propagation
 tools/heavy.sh bash tools/release/supply-chain.test.sh # release evidence fails on what it exists to catch
 tools/heavy.sh sh tools/test-shell-pairing-permission.sh # macOS only: a pairing's code waits for its saved permission
 tools/heavy.sh bash tools/test-linux-dev-build.sh # Linux only: dev skips full checks; ordinary builds preserve failures
 tools/heavy.sh bash tools/test-heavy-linux-cache.sh # Linux only: cache ownership, retention and pressure cleanup
-( cd web && npm run check && ../tools/heavy.sh npm run build && ../tools/heavy.sh npm test )   # when anything under web/ changed
+( cd web && npm run check && ../tools/heavy.sh npm run build && ../tools/heavy.sh npm test )   # when anything under web/ changed; check includes the code-shape guard
 ```
 
 - **Only application builds and native compilation queue through `tools/heavy.sh`** (`clawdline heavy`).

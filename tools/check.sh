@@ -271,7 +271,7 @@ if [ "$(uname -s)" = Linux ]; then
   check "test-heavy-linux-cache.sh" bash tools/test-heavy-linux-cache.sh
   check "test-linux-dev-build.sh" bash tools/test-linux-dev-build.sh
 fi
-check "check planning and profiling tests" bounded_test_step 180 node --test --test-timeout=120000 tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs
+check "check planning and profiling tests" bounded_test_step 180 node --test --test-timeout=120000 tools/check-plan.test.mjs tools/check-profile.test.mjs tools/check-scope.test.mjs tools/check-web-code-shape.test.mjs
 check "check modes integration" bash tools/test-check-modes.sh
 check "check exit-time Go cache trim" bash tools/test-check-go-cache-trim.sh
 check "machine-word delta guard" bash tools/test-machine-words-changes.sh
@@ -306,6 +306,8 @@ elif [ "$web" = scoped ]; then
   check "web: semantic risk keys" node web/console/tools/semantic-risk-keys.mjs --check
   check "web: semantic screen groups" node web/console/tools/group-semantic-keys.mjs --check
   check "web: refusal copy" node web/console/tools/check-refusal-text.mjs
+  check "web: code shape" node tools/check-web-code-shape.mjs
+  check "web: core and contract alone" sh -c 'cd web && node node_modules/typescript/bin/tsc --noEmit -p core && node node_modules/typescript/bin/tsc --noEmit -p contract'
   if [ "${#web_tests[@]}" -gt 0 ]; then check "web: affected tests" run_web_tests; else summary+=("SKIP  web runtime tests  (no affected test imports; integration/CI runs the full suite)"); fi
   summary+=("SKIP  web bundle  (integration, CI and release)")
 else

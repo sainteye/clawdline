@@ -110,6 +110,16 @@ and a shrunken or removed one must be updated. After a refactor, run the guard w
 `CLAWDLINE_TIGHTEN_SHAPE_BASELINES=1` to lower and remove entries. That mode never adds or
 raises one. Both guards run in the uncached repository-copy guards of every `tools/check.sh`.
 
+`tools/check-web-code-shape.mjs` applies the same two ratchets to the console's TypeScript and
+runs with the web checks. `web/contract` imports nothing outside itself; `web/core` imports only
+itself and `@clawdline/contract`, with no stylesheet or bundler query import and no
+`import.meta` ([plan.md](plan.md) §3.1). Neither had a violation on 2026-11-25, so there is no
+layer baseline. Each is also type-checked with its own DOM-free tsconfig; before, only the
+console's tsconfig, which includes the DOM, ever compiled them. Functions have the same limits as
+Go, measured from the outermost function so that a component's handlers count toward the
+component; `?:` counts as a branch, and JSX is an expression. The 111 functions already over a
+limit are in `web/function-size-baseline.txt`; `--tighten` lowers and removes entries only.
+
 A port is one thing the platform does: `TerminalHost` (list, open, send, interrupt, close,
 reveal, read the screen), `ProcessHost`, `ScreenHost`, `KeyHost` and others
 (`internal/app/ports/ports.go`). A platform capability is answered by name before anything is

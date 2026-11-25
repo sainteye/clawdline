@@ -119,6 +119,7 @@ RN 的 primitive（`View` / `Text`）做這種版面要付出的代價，遠大�
 | 畫面 | React DOM / RN | 各自寫 | 各自寫 |
 
 `core` 的硬規則：**不 import DOM，不 import React，不 import 任何 bundler 專屬語法。**
+（2026-11-25 起由 `tools/check-web-code-shape.mjs` 與 `tsc -p core` 強制。）
 它跟 host 要的東西只有兩樣，而且都寫在型別裡：
 
 - `fetch` — 瀏覽器和 RN 都有，所以 client 不需要平台分支
