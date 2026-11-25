@@ -197,6 +197,22 @@ needs review. The source acknowledges the interrupted turn in the same
 transaction as the new message, keeps its original execution receipt and
 processes unstarted messages in their original order.
 
+The person's own message is admitted behind any unknown turn, whatever its
+cause, origin or count, and behind a stale active-turn pointer; only an
+automatic restart continuation still queued or running keeps its source
+unacknowledged ahead of the message. A running row no worker owns is recorded
+unknown (`worker_lost`) and is never resent. When a verified restart declines
+its continuation (too old, an unconfirmed tool or dispatch, a changed binding,
+or a continuation that ended without succeeding) and messages wait behind the
+interrupted turn, the source settles that turn as `restart_not_repeated` with
+its execution receipt still unknown, writes a visible notice that it was not
+repeated, and starts the first queued prompt with a host header asking the Bot
+to inspect what finished and not repeat a write, send, dispatch or other
+external action. A dispatched task's review now waits in the queue behind the
+interrupted origin instead of holding the outbox; it runs only after the origin
+is resumed, acknowledged or settled. These change no memory selection,
+execution authority or replay rule: no earlier prompt is sent again.
+
 The Bot network card separately describes authenticated cross-source work,
 captured execution fences, untrusted peer input and the dedicated assistant
 principal boundary. Its English and Taiwan Chinese copies distinguish source

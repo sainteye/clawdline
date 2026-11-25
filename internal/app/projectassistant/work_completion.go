@@ -32,12 +32,6 @@ func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, featu
 	}
 	x, err := check(ctx)
 	if err != nil {
-		var refusal *pa.Failure
-		if errors.As(err, &refusal) && refusal.Field == "work_completion_restart" {
-			if noteErr := r.recordWorkReviewWaiting(ctx, x, link); noteErr != nil {
-				return noteErr
-			}
-		}
 		return err
 	}
 	if workCompletionChain(x, link) >= pa.MaxRoutineFollowUpChain {
@@ -50,20 +44,6 @@ func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, featu
 			Fence: currentFence(x.Bot, x.Conversation), QuoteMessageID: link.ResultMessageID,
 			Text: WorkCompletionPrompt(link),
 		},
-	})
-	return err
-}
-
-func (r *Engine) recordWorkReviewWaiting(ctx context.Context, x Export, link pa.WorkLink) error {
-	command := r.command(link.Fence.Key, pa.SendOperation, "work-review-waiting-"+link.TaskID, link.ResultMessageID)
-	fence := link.Fence
-	message := pa.Message{ID: "work-review-waiting-" + link.TaskID, Fence: fence, TurnID: link.TurnID,
-		Kind: pa.NoticeMessage, Text: "Result received. Review will wait for the previous turn to recover.", At: r.o.Clock(),
-		Notice: &pa.NoticeRef{Key: pa.NoticeWorkReviewWaiting, Cause: link.TaskID}}
-	_, err := r.mutate(ctx, x.Bot, Mutation{
-		Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: message.ID},
-		Messages: []pa.Message{message},
-		Events:   []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}},
 	})
 	return err
 }
@@ -148,13 +128,17 @@ func checkWorkCompletion(x Export, taskID, quoteID string, requireFinishedOrigin
 			if turn.MemoryRevision < x.Memory.ForgottenThrough {
 				return runtimeFailure(pa.ContextStale, "work_completion_origin")
 			}
-			recovered := turn.State == pa.TurnFailed && turn.Failure != nil && turn.Failure.Field == pa.RestartResumedField
-			if !requireFinishedOrigin && restartInterrupted(turn) && link.ResultMessageID != "" {
-				// The result is already in chat. Keep the existing outbox
-				// pending until the original conversation is recovered.
-				return runtimeFailure(pa.CapacityFull, "work_completion_restart")
+			// An origin interrupted after it dispatched still owns the work:
+			// resumed after a restart, acknowledged by the person's next
+			// message, or settled when a restart continuation was declined.
+			settled := turn.State == pa.TurnSucceeded ||
+				turn.State == pa.TurnFailed && turn.Failure != nil && turn.Failure.Code == pa.ExecutionEffectUnknown
+			if requireFinishedOrigin && !settled {
+				return runtimeFailure(pa.ContextStale, "work_completion_origin")
 			}
-			if turn.State != pa.TurnSucceeded && !recovered && (requireFinishedOrigin || turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission) {
+			// While the origin runs or is unknown, the review is queued
+			// behind it; the queue does not start it before the origin settles.
+			if !settled && turn.State != pa.TurnRunning && turn.State != pa.TurnWaitingPermission && turn.State != pa.TurnUnknown {
 				return runtimeFailure(pa.ContextStale, "work_completion_origin")
 			}
 			return nil

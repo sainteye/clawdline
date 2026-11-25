@@ -282,6 +282,54 @@ func TestServerSendUnblocksQueueAfterUnverifiedRestart(t *testing.T) {
 	}
 }
 
+// On 2026-11-25 the daemon log showed the person's Bot messages refused for
+// five days as pa_outcome_unknown / inspect_interrupted_turn: an earlier turn
+// had an unknown outcome that no restart continuation owned, or a stale
+// active-turn pointer named it. A new message never repeats that turn, so it
+// is admitted through the real SQLite store and runs after the queue.
+func TestServerSendIsAdmittedBehindAnyUnknownTurn(t *testing.T) {
+	for _, tc := range []struct{ name, field, active string }{
+		{"execution", "execution", ""},
+		{"steer unknown", pa.SteerUnknownField, ""},
+		{"stale active turn", "execution", "original"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := t.Context()
+			f := newPAServerFixture(t, true)
+			provider := &paSoakPeer{}
+			f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+			f.enable(t)
+			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+			exchange := seedQueuedBotStatus(t, f, pa.TurnUnknown)
+			db := f.s.store.ProjectAssistantDatabase()
+			if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns.original.failure.field',?,'$.Conversation.active_turn_id',?) WHERE machine=? AND bot=?`,
+				tc.field, tc.active, f.key.MachineID, f.key.BotID); err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(f.s.Handler())
+			t.Cleanup(server.Close)
+			client := &paSoakHTTP{fixture: f, server: server}
+			client.reconnect()
+			_, admitted := client.send(t, "continue")
+			after := paSoakAwait(t, f, admitted.ResourceID, pa.TurnSucceeded)
+			turns := make(map[string]pa.Turn, len(after.Turns))
+			for _, turn := range after.Turns {
+				turns[turn.ID] = turn
+			}
+			if turns[exchange.ReplyTurnID].State != pa.TurnSucceeded || turns["original"].State != pa.TurnFailed ||
+				turns["original"].Failure.Code != pa.ExecutionEffectUnknown || after.Conversation.ActiveTurnID != "" {
+				t.Fatalf("queue or original history changed unexpectedly: %+v", turns)
+			}
+			if first, second := turns[exchange.ReplyTurnID].StartedAt, turns[admitted.ResourceID].StartedAt; first == nil || second == nil || first.After(*second) {
+				t.Fatalf("queued status did not run first: %v versus %v", first, second)
+			}
+			if provider.sends.Load() != 2 {
+				t.Fatalf("sent %d prompts; the unknown turn must not be repeated", provider.sends.Load())
+			}
+		})
+	}
+}
+
 func TestServerRestartPreservesQueuedBotStatus(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

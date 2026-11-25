@@ -174,6 +174,9 @@ func QuiesceHistory(ctx context.Context, repo Repository, clock func() time.Time
 	return QuiesceHistoryFor(ctx, repo, clock, id, key, "execution")
 }
 
+// WorkerLostField identifies a running row found with no worker owning it.
+const WorkerLostField = "worker_lost"
+
 // RestartField identifies a restart without proof of native cleanup.
 const RestartField = "restart"
 
@@ -244,74 +247,7 @@ pendingTurns:
 		if t.State != pa.TurnQueued && t.State != pa.TurnAccepted && t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 			continue
 		}
-		state := pa.TurnCancelled
-		if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering {
-			state = pa.TurnUnknown
-		}
-		failureField := field
-		if t.Steering {
-			failureField = pa.SteerUnknownField
-		}
-		t.State, t.QueueEditID, t.Steering = state, "", false
-		t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: failureField}
-		conversation := x.Conversation
-		if conversation.ActiveTurnID == t.ID {
-			conversation.ActiveTurnID = ""
-		}
-		permissions := []pa.PermissionOffer{}
-		events := []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}
-		for _, offer := range x.Permissions {
-			if offer.TurnID != t.ID || offer.State != pa.PermissionPending {
-				continue
-			}
-			if offer.Fence != t.Fence {
-				return runtimeFailure(pa.ScopeDenied, "cleanup_permission")
-			}
-			offer.State = terminalPermissionState(offer, state, clock())
-			permissions = append(permissions, offer)
-			copy := offer
-			events = append(events, pa.Event{Fence: t.Fence, Kind: pa.PermissionAnswered, Permission: &copy})
-		}
-		command := runtimeCommand(key, pa.SendOperation, "runtime-finish-"+t.ID, t)
-		bot := x.Bot
-		expected := bot.Version
-		bot.Version++
-		bot.UpdatedAt = clock()
-		for i := range events {
-			events[i].Version = pa.ContractVersion
-			events[i].ID = id()
-			events[i].At = clock()
-		}
-		effect := pa.EffectFailed
-		if state == pa.TurnUnknown {
-			effect = pa.EffectUnknown
-		}
-		var run *pa.RoutineRun
-		if t.RoutineRunID != "" {
-			for _, v := range x.RoutineRuns {
-				if v.ID == t.RoutineRunID {
-					copy := v
-					copy.State = state
-					copy.NotStartedProved = false
-					at := clock()
-					copy.FinishedAt = &at
-					copy.Published = state != pa.TurnUnknown
-					run = &copy
-					break
-				}
-			}
-		}
-		m := Mutation{RoutineRun: run, Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events}
-		if t.ExchangeID != "" {
-			p, ok := repo.(CollaborationRepository)
-			if !ok {
-				return runtimeFailure(pa.Unsupported, "collaboration_cleanup")
-			}
-			_, err = p.FinishExchange(ctx, m, "")
-		} else {
-			_, err = repo.Commit(ctx, m)
-		}
-		if err != nil {
+		if err = quiesceTurn(ctx, repo, clock, id, key, x, t, field); err != nil {
 			return err
 		}
 	}
@@ -319,6 +255,79 @@ pendingTurns:
 		return p.DropExchangeReplies(ctx, key, clock())
 	}
 	return nil
+}
+
+// quiesceTurn ends one pending turn of a fresh export: a turn that may have
+// run becomes unknown, one that never started is cancelled. It never replays.
+func quiesceTurn(ctx context.Context, repo Repository, clock func() time.Time, id func() string, key pa.BotKey, x Export, t pa.Turn, field string) error {
+	state := pa.TurnCancelled
+	if t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission || t.Steering {
+		state = pa.TurnUnknown
+	}
+	failureField := field
+	if t.Steering {
+		failureField = pa.SteerUnknownField
+	}
+	t.State, t.QueueEditID, t.Steering = state, "", false
+	t.Failure = &pa.Failure{Code: pa.ExecutionEffectUnknown, Field: failureField}
+	conversation := x.Conversation
+	if conversation.ActiveTurnID == t.ID {
+		conversation.ActiveTurnID = ""
+	}
+	permissions := []pa.PermissionOffer{}
+	events := []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}
+	for _, offer := range x.Permissions {
+		if offer.TurnID != t.ID || offer.State != pa.PermissionPending {
+			continue
+		}
+		if offer.Fence != t.Fence {
+			return runtimeFailure(pa.ScopeDenied, "cleanup_permission")
+		}
+		offer.State = terminalPermissionState(offer, state, clock())
+		permissions = append(permissions, offer)
+		copy := offer
+		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.PermissionAnswered, Permission: &copy})
+	}
+	command := runtimeCommand(key, pa.SendOperation, "runtime-finish-"+t.ID, t)
+	bot := x.Bot
+	expected := bot.Version
+	bot.Version++
+	bot.UpdatedAt = clock()
+	for i := range events {
+		events[i].Version = pa.ContractVersion
+		events[i].ID = id()
+		events[i].At = clock()
+	}
+	effect := pa.EffectFailed
+	if state == pa.TurnUnknown {
+		effect = pa.EffectUnknown
+	}
+	var run *pa.RoutineRun
+	if t.RoutineRunID != "" {
+		for _, v := range x.RoutineRuns {
+			if v.ID == t.RoutineRunID {
+				copy := v
+				copy.State = state
+				copy.NotStartedProved = false
+				at := clock()
+				copy.FinishedAt = &at
+				copy.Published = state != pa.TurnUnknown
+				run = &copy
+				break
+			}
+		}
+	}
+	m := Mutation{RoutineRun: run, Command: command, ExpectedVersion: expected, Bot: &bot, Conversation: &conversation, Turn: &t, Permissions: permissions, Receipt: pa.Receipt{ID: id(), Command: command, State: effect, ResourceID: t.ID}, Events: events}
+	if t.ExchangeID != "" {
+		p, ok := repo.(CollaborationRepository)
+		if !ok {
+			return runtimeFailure(pa.Unsupported, "collaboration_cleanup")
+		}
+		_, err := p.FinishExchange(ctx, m, "")
+		return err
+	}
+	_, err := repo.Commit(ctx, m)
+	return err
 }
 
 func interruptedPermission(turn pa.Turn, offers []pa.PermissionOffer) bool {
