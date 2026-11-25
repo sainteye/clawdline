@@ -52,8 +52,59 @@ models are kept per agent.
 
 ## Console
 
-`web/console/src/model-catalog/useModelCatalog.ts` reads the catalog for one captured machine
-source, local or Cloud, polls while any agent is refreshing (bounded, never an endless spinner)
-and exposes loading, ready (with `waiting`), failed (with retry) and unsupported. A daemon older
-than API 120, or a relay that does not carry the word, is unsupported: the picker offers only the
-agent default and says why. Bots settings uses it; the other pickers move to it next.
+`web/console/src/model-catalog/` is the only console code that reads a model list. It holds:
+
+- `useModelCatalog.ts` / `reader.ts`: the catalog for one captured machine source, local or
+  Cloud. It polls while any agent is refreshing (bounded, never an endless spinner) and exposes
+  loading, ready (with `waiting`), failed (with retry) and unsupported.
+- `machine.ts` / `ui.tsx` `useMachineModelCatalog`: the page's own machine as a source,
+  `GET /v1/model-catalog` locally or the Cloud word `model-catalog` through the relay writer.
+  An older daemon's 404, or a relay or machine that does not carry the word, is unsupported.
+- `picker.ts` `catalogPicker`: one agent's options (the agent default first, a saved model kept
+  with a "not in the current list" hint) and its one status line. `CatalogStatus`,
+  `CatalogModelMenu` and `CatalogEffortMenu` draw it outside the Bots drop-down.
+- `match.ts` `currentModelRow` / `isCurrentModel`: the one rule for which listed model a session
+  runs: the same word, a dated release (`-20250805`) or a bracketed variant (`[1m]`), never a
+  shorter version.
+- `one-catalog.test.ts`: fails when a hard-coded alias list, default-models model options, or a
+  read of `/v1/model-catalog` reappears elsewhere in console sources.
+
+A daemon older than API 120, or a relay that does not carry the word, is unsupported: the
+picker offers only the agent default and says why.
+
+Consumers:
+
+- Bots settings (`project-assistants/BotsSettingsModal.tsx` `ModelSelect`), through the
+  captured Bot source.
+- Settings, Work tab (`pages/settings/window/SettingsWindow.tsx`) and "Defaults for new
+  sessions" (`pages/settings/DefaultModelsBlock.tsx`): models and the Codex effort. The saved
+  values still come from and go to `/v1/settings/default-models`.
+- The Board's per-launch row (`pages/work/WorkModelChoice.tsx`, used by `pages/work/WorkV2.tsx`
+  and the Start sheet `session/Start.tsx`), Grok included. The Start sheet offers no row for a
+  start on another machine: the start is carried there with its model, but the row reads the
+  page machine's catalog.
+- Schedules (`pages/schedules.tsx`): models for Claude Code, Codex and Gemini, and the catalog
+  efforts for Codex and Gemini.
+- The voice copilot's `list_projects` (`realtime/copilot-tools.ts`): the choices per assistant;
+  the saved defaults still come from default-models.
+- Session info (`overlays/info.ts`) and the status line (`session/StatusLine.tsx`) match the
+  current model with `currentModelRow`. `GET /v1/sessions/{id}/info` lists the catalog for a
+  session no live adapter speaks for (`catalogSessionModels` in
+  `internal/transport/http/transcript.go`); a live owned Gemini or Grok session lists its own
+  offer, which is the truth for that session.
+- Bot runtime pickers: see [Bots](bots.md).
+
+## Not pickers
+
+These daemon lists name models but offer nothing to choose from, so they deliberately do not
+read the catalog:
+
+- `internal/adapters/planner/planner.go` `planner.Models`: the classifier's output vocabulary
+  (haiku/sonnet/opus as a size tier); anything else it answers is dropped to the default.
+- `internal/adapters/transcript/pricing.go` `ClaudeModels`: Claude Code's moving aliases mapped to
+  the IDs a transcript reports, for parsing and for matching a session's current model.
+- The effort suffix in `internal/transport/http/start.go` and `antigravity_owned.go`
+  (`hasKnownEffortSuffix`): composes a launch from a saved default model and effort; it already
+  reads the one effort table (`modelcatalog.Efforts`).
+- Voice copilot realtime models (`internal/domain/copilot`) and usage's `WorkCursorModel` are not
+  agent models.

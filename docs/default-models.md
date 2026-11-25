@@ -14,10 +14,12 @@ and `max`; Codex retains its separate `high`/`xhigh` vocabulary. The reader help
 `nextconfig.DefaultAntigravityEffort` provides only this provider's validated effort.
 An absent or malformed setting never borrows a value from another provider.
 
-The `models` lists come from the daemon's [model catalog](model-catalog.md), the
-same lists every other picker reads. An empty list means unknown. The website offers the
-native default and a validated saved model without inventing model names, context
-sizes, quota, or prices. An unknown saved effort remains visible until explicitly
+The route still answers `models` lists, built from the daemon's
+[model catalog](model-catalog.md), for older consoles. This console does not read
+them: both Settings pickers (the Work tab and "Defaults for new sessions") take their
+options and efforts from the catalog itself (`web/console/src/model-catalog`), and
+read this route only for the saved values. The website offers the agent default and
+a validated saved model without inventing model names, context sizes, quota, or prices. An unknown saved effort remains visible until explicitly
 changed; an invalid new write is refused. Saving a choice does not authorize paid
 calls or paid fallback.
 
