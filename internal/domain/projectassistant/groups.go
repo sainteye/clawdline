@@ -600,15 +600,24 @@ type RoomMention struct {
 // the same four a one-to-one Bot send allows.
 const MaxRoomPictures = 4
 
+var roomPictures boundUsage
+
+// RoomPicturesFit reports whether a room line of n pictures is within
+// MaxRoomPictures, and counts it for bots.room_pictures.
+func RoomPicturesFit(n int) bool { return roomPictures.admit(n, MaxRoomPictures) }
+
+// RoomPictureUsage is the diagnostics reading for bots.room_pictures.
+func RoomPictureUsage() BoundUsage { return roomPictures.usage() }
+
 // ValidateRoomMessage admits the person's room line: text, pictures or both.
 // Text keeps the room's own line budget; each picture is checked as a
 // one-to-one send checks it.
 func ValidateRoomMessage(text string, attachments []Attachment) error {
+	if !RoomPicturesFit(len(attachments)) {
+		return fail(CapacityFull, "images")
+	}
 	if len(attachments) == 0 {
 		return ValidateMessage(text)
-	}
-	if len(attachments) > MaxRoomPictures {
-		return fail(CapacityFull, "images")
 	}
 	if len(text) > MaxMessageBytes {
 		return fail(CapacityFull, "text")

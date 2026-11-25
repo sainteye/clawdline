@@ -479,7 +479,7 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 			return nil, err
 		}
 		// The count is refused before any picture is decoded or stored.
-		if len(v.Images) > pa.MaxRoomPictures {
+		if !pa.RoomPicturesFit(len(v.Images)) {
 			return nil, paHTTPFailure(pa.CapacityFull, "images")
 		}
 		// The room's pictures are kept under the group's own key, where the

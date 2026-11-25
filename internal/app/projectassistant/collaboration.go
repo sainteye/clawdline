@@ -345,7 +345,7 @@ func (r *Engine) postPeerNote(ctx context.Context, t pa.Turn, e ProtocolEvent) e
 	if err := pa.ValidateMessage(e.Message); err != nil {
 		return err
 	}
-	if len(e.Message) > pa.MaxPeerNoteBytes {
+	if !pa.PeerNoteBytesFit(len(e.Message)) {
 		return runtimeFailure(pa.CapacityFull, "peer_note_text")
 	}
 	notes, ok := r.o.Repository.(PeerNoteRepository)

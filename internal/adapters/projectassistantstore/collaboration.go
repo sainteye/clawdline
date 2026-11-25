@@ -817,7 +817,7 @@ func (s *Store) PostPeerNote(ctx context.Context, q app.PeerNote) (pa.Message, e
 			sent++
 		}
 	}
-	if sent >= pa.MaxPeerNotesPerRequest {
+	if !pa.PeerNoteFits(sent) {
 		return pa.Message{}, failure(pa.CapacityFull, "peer_notes")
 	}
 	if err = exchangeApply(ctx, tx, &owner, m); err != nil {

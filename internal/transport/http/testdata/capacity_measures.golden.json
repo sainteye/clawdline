@@ -798,6 +798,16 @@
     "Note": true
   },
   {
+    "Name": "bots.peer_note_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.peer_notes_per_request",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.permission_action_bytes",
     "Known": true,
     "Note": true
@@ -859,6 +869,11 @@
   },
   {
     "Name": "bots.review_request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.room_pictures",
     "Known": true,
     "Note": true
   },
