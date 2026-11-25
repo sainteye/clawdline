@@ -1147,7 +1147,19 @@
         "handoffs (a long Root's milestone handoff too), Root assignments; `clawdline guide running` — stalled children, leftovers, respawn.\n",
         "\n",
         "\n",
-        "If this item has no steps and the work is multi-stage — several changes verified separately, or more than one part of the system — first break it into its ordered steps with `clawdline item step-add {id} \"…\" \"…\"` and complete each with `clawdline item step-done` once it is verified; a single straightforward change takes no steps. After discussing a step with the person, if it is no longer needed, use `clawdline item step-cancel --reason \"<why it is no longer needed>\" {id} <step-id>`; this records cancellation rather than completion and no longer blocks closing. Use `clawdline item step-reopen {id} <step-id>` if it becomes needed again. Never cancel a step merely to bypass unfinished work or missing approval.\n"
+        "If this item has no steps and the work is multi-stage — several changes verified separately, or more than one part of the system — first break it into its ordered steps with `clawdline item step-add {id} \"…\" \"…\"` and complete each with `clawdline item step-done` once it is verified; a single straightforward change takes no steps. After discussing a step with the person, if it is no longer needed, use `clawdline item step-cancel --reason \"<why it is no longer needed>\" {id} <step-id>`; this records cancellation rather than completion and no longer blocks closing. Use `clawdline item step-reopen {id} <step-id>` if it becomes needed again. Never cancel a step merely to bypass unfinished work or missing approval.\n",
+        "\n",
+        "// rootBotSection is appended to a Bot-opened Root's brief. It says who\n",
+        "// opened it and how the Bot hears back, and nothing that makes it a child.\n",
+        "func rootBotSection(owner RootBotOwner) string {\n",
+        "\tname := owner.BotName\n",
+        "\tif name == \"\" {\n",
+        "\t\tname = \"a Bot\"\n",
+        "\t}\n",
+        "\treturn \"OPENED BY A BOT\\nThe Bot \" + name + \" opened this Root for the person. You are an independently owned Root, not anybody's child: \" +\n",
+        "\t\t\"the ordinary Root rules in this repository's instruction files apply, including integrating, pushing and recording landings when your scope calls for it. \" +\n",
+        "\t\t\"When the work is finished and verified, run `clawdline session report --summary \\\"...\\\"`; that receipt is what tells \" + name + \".\\n\\n\"\n",
+        "}\n"
       ],
       "locations": [
         "<state>/root-assignments/<id>/ASSIGNMENT.md"
@@ -5392,11 +5404,13 @@
         }
       ],
       "original": [
-        "When the user asks you to open a work Session or delegate work to a named Project, use dispatch_work with project set to the exact, unique registered repository folder name or its absolute registered path. For investigation only, pass claims: [] and include the no-write scope in the brief. Ask which Project if the destination is ambiguous. Report the receipt accurately and let the result return to this chat. 當使用者要求在指定 Project 開工作階段或派工到該 Project 時，請用 dispatch_work，在 project 填入已登錄且唯一的儲存庫資料夾名稱或絕對路徑。只調查時將 claims 設為空陣列，並在任務說明寫明範圍。若有多個同名 Project，請確認使用者指定哪一個。依派工收據回報，結果會回到這個對話。"
+        "When the user asks you to open a work Session or delegate work to a named Project, use dispatch_work with project set to the exact, unique registered repository folder name or its absolute registered path. For investigation only, pass claims: [] and include the no-write scope in the brief. Ask which Project if the destination is ambiguous. Report the receipt accurately and let the result return to this chat. 當使用者要求在指定 Project 開工作階段或派工到該 Project 時，請用 dispatch_work，在 project 填入已登錄且唯一的儲存庫資料夾名稱或絕對路徑。只調查時將 claims 設為空陣列，並在任務說明寫明範圍。若有多個同名 Project，請確認使用者指定哪一個。依派工收據回報，結果會回到這個對話。",
+        "\"mode\":                   map[string]any{\"type\": \"string\", \"enum\": []string{\"child\", pa.DispatchModeRoot}, \"description\": \"Optional. child (default) opens bounded work that returns a branch for review. root opens an independently owned Root Session for integration, release, or a whole feature the user hands off end to end: it may merge, push, deploy and record landings under the repository's ordinary rules, and it is nobody's child. Only a turn the user started, or a request card you hold, may open a Root. Claims may be empty; continue_on_completion is not used. Its report arrives in this chat when it runs clawdline session report. 選填。child（預設）開啟有範圍的工作，交回分支供審查。root 開啟獨立負責的 Root 工作階段，用於整合、發版，或使用者交給它從頭到尾負責的整個功能：可依儲存庫一般規則合併、推送、部署與記錄落地，它不是任何人的子任務。只有使用者本人開始的回合、或你持有的交辦卡能開 Root。claims 可為空陣列，不使用 continue_on_completion。它執行 clawdline session report 時，回報會回到這個聊天。\"},"
       ],
       "locations": [
         "Designated Lead instructions",
-        "Owned dispatch_work tool and Broker admission"
+        "Owned dispatch_work tool and Broker admission",
+        "dispatch_work mode root and its Root brief"
       ]
     },
     {
@@ -5578,7 +5592,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "083319097ceedcaaaa33fbd13c89966d2b736c9e20f0a338f1fe59a917aa15c1",
+    "internal/adapters/projectassistantacp/mcp.go": "c510a85afbe13c2966602f60b3a4d0f8a1f9596f95632c050a3fc2200dc2a112",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5601,15 +5615,15 @@
     "internal/adapters/projectassistanthost/devservers.go": "43a19faa631826795d39ad8f896e5a5250e696f9ecc8f570cbd393ac0cd9f1ab",
     "internal/adapters/projectassistanthost/devservers_human.go": "9e48dd5991c435e73c2d577ad5fbc6c28a287597e39172adacc1e4f0dbe24484",
     "internal/adapters/projectassistanthost/devservers_ports.go": "3c1a12ecd6dda4701ee14d53660a4004a6a831d3692e0e100cc84d77990fb394",
-    "internal/adapters/projectassistanthost/host.go": "73221047c7d0ddc6eedeaaa43d69064678c3f6ce4d56f5a8b52887876b6221d9",
+    "internal/adapters/projectassistanthost/host.go": "c352cf59b9d389e726eeae3f72c9d7c77ebb4bd9a49868d490cf31867acfcdcd",
     "internal/adapters/projectassistanthost/lead.go": "e33b998121310d910a84a3f1493d9b737646bf9051d256ed17d2b8740484393e",
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "85e27995557ac2e9907c807c99a205f802b0c0dfc9fb3b947dc2b019cd483f6d",
+    "internal/adapters/projectassistanthost/provider.go": "9aaec532fb62fff93c82689b1aa2d1dbcfc88956a519136d5b2ebb9ee2c3e588",
     "internal/adapters/projectassistanthost/provider_message.go": "599aca530041e41b4f3541b49f6e7c4a0f5d3984ad37930e7fe9b5481a10ddda",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
-    "internal/adapters/projectassistanthost/work_completion.go": "77c002f4a0e57812ae8d406bbe0aaf997010a3079c81cd6ba6dba7541161aeed",
+    "internal/adapters/projectassistanthost/work_completion.go": "53f0b16b1251c50ecf1275d0ecf790ba3600028ec8363979c7acefce6523dc8c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "4eca7f2fcd21ae79433f3280a723dfe07f3e4a5e90d82f1bc8ff8bff8313e2d3",
     "internal/adapters/projectassistantstore/collaboration.go": "ca9c875307e4b86ba448e44455417bbc2bc5ddc5223fcc4057c61a7a10b06cbc",
@@ -5656,14 +5670,14 @@
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
     "internal/app/orchestrator/dispatch.go": "64daecbabb01bf1609e518cf85c3743967dbea9beb35533c2bf05fc199b66a0c",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
-    "internal/app/orchestrator/handoffs.go": "e3d2c18486a12abfb7139edb28549c3387b750eab46bd3fd92098aaa6247a8a6",
+    "internal/app/orchestrator/handoffs.go": "42f47816a31086355748893a1ba90d327ee4b7bf5dbedf916bb3d9603aeb70a5",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
     "internal/app/orchestrator/milestone_name.go": "590d98d9d1842636dc58613f86c4e088483f860c098aba0ab9f82eb292a7c641",
     "internal/app/orchestrator/notice.go": "3261eecc450916a8575529eb4b9f753426b1c56b9b1320e3f5860f8bea9c956d",
     "internal/app/orchestrator/owned_child.go": "40fa15e1b28ec67434b23a55373b43996a2bda27972ae355feebef938456293f",
     "internal/app/orchestrator/policy.go": "f165e3bbc9b3c96b60a9a14de6b7cbd942eed6146771a4cd59ae2c7a4385624f",
     "internal/app/orchestrator/policy_projection.go": "964d5d2db030ae7a489bfc00d393c68c74d8aaef05be70c3dd489cf45191d925",
-    "internal/app/orchestrator/project_assistant_actor.go": "418901dd9536f4f05778084247ecddc1103823ef02eaa339769cc7c1d2d72128",
+    "internal/app/orchestrator/project_assistant_actor.go": "d67a0e77fc0b1576a8809b4091f9ac6a7e399bd6d6696f51d0c062c843d70dfc",
     "internal/app/orchestrator/project_assistant_message.go": "020e300ef73fc3cc5076bc36dec4edc5f3385d455555adedd2dfa08e11f1717c",
     "internal/app/orchestrator/scheduled.go": "2555cdca780f69a4e7d3123ed34b5e5138e74932275c2e503b6214ac80481bbf",
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",

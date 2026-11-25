@@ -786,37 +786,11 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		}
 		return map[string]string{"state": "delivered", "idempotency_key": q.ID}, nil
 	case "dispatch_work":
-		var q struct {
-			ID                   string   `json:"idempotency_key"`
-			Title                string   `json:"title"`
-			Brief                string   `json:"brief"`
-			Claims               []string `json:"claims"`
-			Project              string   `json:"project"`
-			Persona              string   `json:"persona"`
-			BoardItemID          string   `json:"board_item_id"`
-			ContinueOnCompletion bool     `json:"continue_on_completion"`
-			Kind                 string   `json:"kind"`
-			Agent                string   `json:"agent"`
-			Model                string   `json:"model"`
-			Effort               string   `json:"effort"`
-			BotRequestID         string   `json:"bot_request_id"`
-			Mode                 string   `json:"mode"`
+		q, dispatchCtx, err := decodeDispatchWork(ctx, arguments)
+		if err != nil {
+			return nil, err
 		}
-		if mcpDecode(arguments, &q) == nil {
-			if q.Mode == "child" {
-				q.Mode = ""
-			}
-			ctx = pa.WithDispatchChoice(ctx, pa.DispatchChoice{Kind: q.Kind, Agent: q.Agent, Model: q.Model, Effort: q.Effort, Mode: q.Mode})
-			if q.BotRequestID != "" {
-				ctx = pa.WithBotRequest(ctx, q.BotRequestID)
-			}
-		}
-		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion && q.Mode != pa.DispatchModeRoot {
-			return nil, refusal(pa.Invalid, "mcp_dispatch")
-		}
-		if q.Mode != "" && q.Mode != pa.DispatchModeRoot || q.Mode == pa.DispatchModeRoot && q.ContinueOnCompletion {
-			return nil, refusal(pa.Invalid, "dispatch_mode")
-		}
+		ctx = dispatchCtx
 		if q.ContinueOnCompletion {
 			tools, ok := s.tools.(app.CompletionDispatchTools)
 			if !ok {
@@ -1200,4 +1174,57 @@ func browserFailureResult(err error) any {
 		return mcpToolResult(out, true)
 	}
 	return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true)
+}
+
+type dispatchWorkArgs struct {
+	ID                   string   `json:"idempotency_key"`
+	Title                string   `json:"title"`
+	Brief                string   `json:"brief"`
+	Claims               []string `json:"claims"`
+	Project              string   `json:"project"`
+	Persona              string   `json:"persona"`
+	BoardItemID          string   `json:"board_item_id"`
+	ContinueOnCompletion bool     `json:"continue_on_completion"`
+	Kind                 string   `json:"kind"`
+	Agent                string   `json:"agent"`
+	Model                string   `json:"model"`
+	Effort               string   `json:"effort"`
+	BotRequestID         string   `json:"bot_request_id"`
+	Mode                 string   `json:"mode"`
+}
+
+// decodeDispatchWork reads dispatch_work's arguments once and carries the
+// dispatch choice and request card on the context, as the host reads them.
+func decodeDispatchWork(ctx context.Context, arguments []byte) (dispatchWorkArgs, context.Context, error) {
+	var q dispatchWorkArgs
+	if mcpDecode(arguments, &q) != nil {
+		return q, ctx, refusal(pa.Invalid, "mcp_dispatch")
+	}
+	q.Mode = dispatchMode(q.Mode)
+	ctx = pa.WithDispatchChoice(ctx, pa.DispatchChoice{Kind: q.Kind, Agent: q.Agent, Model: q.Model, Effort: q.Effort, Mode: q.Mode})
+	if q.BotRequestID != "" {
+		ctx = pa.WithBotRequest(ctx, q.BotRequestID)
+	}
+	if q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion && q.Mode != pa.DispatchModeRoot {
+		return q, ctx, refusal(pa.Invalid, "mcp_dispatch")
+	}
+	return q, ctx, checkDispatchMode(q.Mode, q.ContinueOnCompletion)
+}
+
+// dispatchMode maps dispatch_work's mode argument to DispatchChoice.Mode:
+// "child" is the default and stored as empty, so child hashes are unchanged.
+func dispatchMode(mode string) string {
+	if mode == "child" {
+		return ""
+	}
+	return mode
+}
+
+// checkDispatchMode admits only a child or a Root, and a Root reports through
+// its own delivery rather than a completion turn.
+func checkDispatchMode(mode string, continueOnCompletion bool) error {
+	if mode != "" && mode != pa.DispatchModeRoot || mode == pa.DispatchModeRoot && continueOnCompletion {
+		return refusal(pa.Invalid, "dispatch_mode")
+	}
+	return nil
 }
