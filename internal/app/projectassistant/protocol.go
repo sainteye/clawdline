@@ -323,6 +323,8 @@ type ProtocolEvent struct {
 	Trace      *pa.Trace
 	Permission *pa.PermissionOffer
 	Output     *pa.Output
+	// RoomPicture describes an output snapshot staged under this turn's room key.
+	RoomPicture *pa.Attachment `json:",omitempty"`
 	// ToolDiscovery is set by the Host for its own read-only tool catalog
 	// lookup, which is journaled but cannot execute a model tool.
 	ToolDiscovery bool

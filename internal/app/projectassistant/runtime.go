@@ -1999,6 +1999,10 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
 		return runtimeFailure(pa.StaleVersion, "incoming_turn")
 	}
+	pictures, err := roomOutputAttachment(t, e)
+	if err != nil {
+		return err
+	}
 	if pa.IsPeerRequest(t.Origin) && (e.Message != "" || e.Output != nil) {
 		if t.Origin != pa.BotRequestOrigin || e.Output != nil || e.Permission != nil || e.Trace != nil {
 			return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
@@ -2024,7 +2028,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 				return err
 			}
 		}
-		msg := pa.Message{ID: "explicit-" + t.ID + "-" + e.ID, Fence: e.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: e.Message, Output: e.Output, At: r.o.Clock()}
+		msg := pa.Message{ID: "explicit-" + t.ID + "-" + e.ID, Fence: e.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: e.Message, Output: e.Output, At: r.o.Clock(), Attachments: pictures}
 		m.Messages = []pa.Message{msg}
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.MessageCreated, Message: &msg})
 	}

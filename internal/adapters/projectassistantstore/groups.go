@@ -737,7 +737,7 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 		if err != nil {
 			return err
 		}
-		entry, ok, err := pa.PublishRoomAnswer(g, st, ticket, seq, text)
+		entry, ok, err := pa.PublishRoomAnswer(g, st, ticket, seq, text, roomOutputPictures(a.Messages, t))
 		if err != nil {
 			var f *pa.Failure
 			if errors.As(err, &f) {
@@ -777,6 +777,27 @@ func (s *Store) FinishRoomTurn(ctx context.Context, m app.Mutation, text string)
 		return app.RoomPublication{}, err
 	}
 	return out, nil
+}
+
+func roomOutputPictures(messages []pa.Message, turn pa.Turn) []pa.Attachment {
+	var pictures []pa.Attachment
+	seen := map[string]bool{}
+	for _, message := range messages {
+		if message.TurnID != turn.ID || message.Fence != turn.Fence || message.Output == nil {
+			continue
+		}
+		for _, picture := range message.Attachments {
+			if seen[picture.ID] {
+				continue
+			}
+			pictures = append(pictures, picture)
+			seen[picture.ID] = true
+			if len(pictures) == pa.MaxRoomPictures {
+				return pictures
+			}
+		}
+	}
+	return pictures
 }
 
 // PersonWrote writes the person's line and starts the room turn it asks
@@ -878,6 +899,30 @@ func roomLine(ctx context.Context, r reader, key pa.BotKey, seq int64) (pa.RoomE
 	var entry pa.RoomEntry
 	err = json.Unmarshal(raw, &entry)
 	return entry, err
+}
+
+// CheckAttachment gates staged room pictures on a committed line. An
+// ordinary Bot key keeps the existing attachment read behavior.
+func (s *GroupStore) CheckAttachment(ctx context.Context, key pa.BotKey, id string) error {
+	if !validDigest(id) {
+		return failure(pa.Invalid, "attachment")
+	}
+	var unpublished bool
+	err := s.reads().QueryRowContext(ctx, `
+SELECT EXISTS (
+ SELECT 1 FROM project_assistant_groups g
+ WHERE g.machine=? AND g.grp=? AND NOT EXISTS (
+  SELECT 1 FROM project_assistant_group_lines l, json_each(CAST(l.data AS TEXT), '$.attachments') a
+  WHERE l.machine=g.machine AND l.grp=g.grp AND json_extract(a.value, '$.id')=?
+ )
+)`, key.MachineID, key.BotID, id).Scan(&unpublished)
+	if err != nil {
+		return err
+	}
+	if unpublished {
+		return failure(pa.NotFound, "attachment")
+	}
+	return nil
 }
 
 // Lines reads a room's lines with seq > after, oldest first, at most limit;

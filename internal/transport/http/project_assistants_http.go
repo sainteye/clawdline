@@ -465,7 +465,7 @@ func (h *projectAssistantHTTP) read(r *http.Request, route paHTTPRoute) (any, er
 		if err != nil {
 			return nil, err
 		}
-		if err = h.options.Service.AuthorizeRead(r.Context(), key); err != nil {
+		if err = h.options.Service.AuthorizeAttachmentRead(r.Context(), key, route.offer); err != nil {
 			return nil, err
 		}
 		data, mediaType, err := h.options.Attachments.ReadByID(key, route.offer)

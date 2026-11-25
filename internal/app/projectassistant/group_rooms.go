@@ -39,6 +39,7 @@ type GroupRoomStore interface {
 	PersonWrote(context.Context, pa.Command, int64, string, []pa.Attachment, pa.BotKey, ...int64) (pa.RoomEntry, pa.RoomState, *pa.RoomTurn, error)
 	Lines(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
 	LinesBefore(context.Context, pa.BotKey, int64, int) ([]pa.RoomEntry, error)
+	CheckAttachment(context.Context, pa.BotKey, string) error
 	Groups(context.Context, string) ([]pa.Group, error)
 	GroupPreviews(context.Context, string, int) ([]pa.GroupPreview, error)
 	History(context.Context, pa.BotKey, int64, int) (GroupHistoryPage, error)
@@ -259,7 +260,7 @@ func (r *GroupRooms) Publish(ctx context.Context, t pa.RoomTicket, seq int64, te
 	if err != nil {
 		return pa.RoomEntry{}, false, err
 	}
-	return pa.PublishRoomAnswer(g, st, t, seq, text)
+	return pa.PublishRoomAnswer(g, st, t, seq, text, nil)
 }
 
 // ProjectRoomMemberOutcome exposes only allowlisted execution diagnostics
