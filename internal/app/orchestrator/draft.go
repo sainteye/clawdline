@@ -298,9 +298,9 @@ func (b *Broker) admitOwned(id string, d draft, scheduled, detached, assistant b
 		return bad("isolation must be one of: none, worktree")
 	}
 	permission := d.PermissionMode
-	// Broker dispatches use Grok's always-approve mode. A Bot's typed dispatch
-	// instead carries the permission authorized by its own policy.
-	if d.Assistant == projects.AssistantGrok && !assistant {
+	// Broker dispatches use Grok's always-approve mode. A Bot's dispatch takes
+	// the same path as a Session's child, so it resolves the same way.
+	if d.Assistant == projects.AssistantGrok {
 		switch permission {
 		case "", "ask", "edits":
 			permission = "full"
@@ -315,10 +315,6 @@ func (b *Broker) admitOwned(id string, d draft, scheduled, detached, assistant b
 	}
 	switch permission {
 	case "ask", "edits", "full":
-	case "auto":
-		if !assistant || d.Assistant != projects.AssistantClaude {
-			return bad("permission_mode must be one of: ask, edits, full")
-		}
 	default:
 		return bad("permission_mode must be one of: ask, edits, full")
 	}

@@ -51,3 +51,18 @@ func TestBotDispatchExplicitAgentBeatsTheRuleAndBadValuesAreRefused(t *testing.T
 		t.Fatalf("explicit agent = %v, %v", out.Record.Assistant, err)
 	}
 }
+
+// A rule that sends work to Codex launches it with the person's dispatch
+// permission. Before, the Bot carried Claude's Auto mode and Codex was refused.
+func TestBotDispatchRuleToCodexUsesTheDispatchPermission(t *testing.T) {
+	b, ctx, c, q, _ := assistantBrokerFixture(t)
+	codingToCodex(c)
+	q.Choice = pa.DispatchChoice{Kind: "coding"}
+	out, err := b.DispatchAssistant(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.Record.Assistant != "codex" || out.Record.PermissionMode != "full" {
+		t.Fatalf("rule dispatch = %s/%s, want codex/full (the unset dispatch setting)", out.Record.Assistant, out.Record.PermissionMode)
+	}
+}

@@ -25,7 +25,6 @@ type DispatchPolicy struct {
 	AllowedClaims  []string
 	AnyProjectFile bool
 	Assistant      string
-	PermissionMode string
 	TimeoutMinutes int
 	// Shared and Agents feed dispatch rule resolution. Empty rules keep
 	// Assistant for every dispatch.
@@ -421,7 +420,6 @@ func (h *Host) current(ctx context.Context, key pa.BotKey) (orchestrator.Assista
 			out.AllowedClaims = append([]string(nil), p.AllowedClaims...)
 			out.AnyProjectFile = p.AnyProjectFile
 			out.Assistant = p.Assistant
-			out.PermissionMode = p.PermissionMode
 			out.TimeoutMinutes = p.TimeoutMinutes
 			out.SharedSettings = p.Shared
 			out.DispatchAgents = p.Agents

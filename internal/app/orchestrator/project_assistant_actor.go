@@ -53,7 +53,6 @@ type AssistantCurrent struct {
 	// directory checks still apply to every claim.
 	AnyProjectFile bool
 	Assistant      string
-	PermissionMode string
 	TimeoutMinutes int
 	// SharedSettings and DispatchAgents come from the source machine; the
 	// request's Choice is resolved against them (explicit > rule > Assistant).
@@ -404,13 +403,10 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	}
 	id := AssistantTaskID(q.Command)
 	protocol := Protocol
-	d := draft{Protocol: &protocol, TaskID: id, Kind: "implementation", Assistant: c.Assistant, PermissionMode: c.PermissionMode, ProjectDir: c.Project.Directory,
+	d := draft{Protocol: &protocol, TaskID: id, Kind: "implementation", Assistant: c.Assistant, ProjectDir: c.Project.Directory,
 		Title: assistantTaskTitle(q), Instructions: q.Brief, Claims: &q.Claims, Isolation: IsolationWorktree, TimeoutMinutes: &c.TimeoutMinutes, Persona: assistantPersona(q), Model: c.Resolved.Model}
 	if c.Resolved.Effort != "" {
 		d.ReasoningEffort, _ = json.Marshal(c.Resolved.Effort)
-	}
-	if c.PermissionMode == "" {
-		return Dispatched{}, assistantFailure(pa.ScopeDenied, "worker_permission")
 	}
 	r, err := b.admitAssistant(id, d)
 	if err != nil {

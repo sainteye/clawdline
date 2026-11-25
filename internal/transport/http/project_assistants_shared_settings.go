@@ -12,6 +12,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 func (s *Server) projectAssistantSharedSettings() projectassistantstore.SharedSettings {
@@ -19,12 +20,20 @@ func (s *Server) projectAssistantSharedSettings() projectassistantstore.SharedSe
 }
 
 // projectAssistantDispatchAgents lists agents a Bot dispatch can run on this
-// machine, with the effort values each launcher accepts. Grok is a Bot agent
-// but not a dispatch assistant, so it is never offered.
-func projectAssistantDispatchAgents(now time.Time) []pa.DispatchAgentOption {
+// machine, with the effort values each launcher accepts. Gemini and Grok are
+// available exactly when the broker would admit their dispatch: their owned
+// session host is running.
+func (s *Server) projectAssistantDispatchAgents(now time.Time) []pa.DispatchAgentOption {
 	var out []pa.DispatchAgentOption
-	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex, pa.Gemini} {
-		if !quotaReader().Observe(string(agent), now).Installed {
+	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex, pa.Gemini, pa.Grok} {
+		available := false
+		switch agent {
+		case pa.Gemini, pa.Grok:
+			available = s.ownedHost(session.Assistant(agent)) != nil
+		default:
+			available = quotaReader().Observe(string(agent), now).Installed
+		}
+		if !available {
 			continue
 		}
 		option := pa.DispatchAgentOption{Agent: agent, Efforts: []string{}}
@@ -55,7 +64,7 @@ func sharedSettingsLimits() map[string]int {
 func (s *Server) projectAssistantSharedSettingsRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	store := s.projectAssistantSharedSettings()
-	agents := projectAssistantDispatchAgents(time.Now())
+	agents := s.projectAssistantDispatchAgents(time.Now())
 	if agents == nil {
 		agents = []pa.DispatchAgentOption{}
 	}

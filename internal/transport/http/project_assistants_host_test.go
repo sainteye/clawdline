@@ -31,10 +31,10 @@ import (
 	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
-func TestProductionBotDispatchSelectsClaudeAutoMode(t *testing.T) {
+func TestProductionBotDispatchDefaultsToClaude(t *testing.T) {
 	s := &Server{cfg: config.Config{Dir: t.TempDir()}}
 	policy, err := s.projectAssistantDispatchPolicy(t.Context(), pa.BotKey{})
-	if err != nil || !policy.Allowed || policy.Assistant != projects.AssistantClaude || policy.PermissionMode != "auto" {
+	if err != nil || !policy.Allowed || policy.Assistant != projects.AssistantClaude {
 		t.Fatalf("unexpected Bot dispatch policy: %+v, %v", policy, err)
 	}
 	// With no saved rules every dispatch still resolves to Claude Code.

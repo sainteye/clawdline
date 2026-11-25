@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/lane"
@@ -28,7 +29,7 @@ func assistantBrokerFixture(t *testing.T) (*Broker, context.Context, *AssistantC
 	scope := pa.ProjectScope{MachineID: key.MachineID, ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}
 	c := &AssistantCurrent{Fence: pa.Fence{Key: key, Project: scope, ConversationID: "chat", BindingID: "binding", Generation: 1},
 		Source: pa.SourceStatus{MachineID: key.MachineID, State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}, Feature: pa.FeatureState{Enabled: true},
-		Project: pa.ProjectResolution{Scope: scope, Directory: repo, Current: true, Available: true}, ActiveTurnID: "turn", DispatchAllowed: true, AllowedClaims: []string{"a.go", "new.go"}, Assistant: "codex", PermissionMode: "edits", TimeoutMinutes: 30}
+		Project: pa.ProjectResolution{Scope: scope, Directory: repo, Current: true, Available: true}, ActiveTurnID: "turn", DispatchAllowed: true, AllowedClaims: []string{"a.go", "new.go"}, Assistant: "codex", TimeoutMinutes: 30}
 	authority, err := NewAssistantAuthority(AssistantAuthorityOptions{Current: func(_ context.Context, k pa.BotKey) (AssistantCurrent, error) {
 		if k != c.Fence.Key {
 			return AssistantCurrent{}, assistantFailure(pa.ScopeDenied, "bot")
@@ -63,10 +64,14 @@ func assistantBrokerFixture(t *testing.T) (*Broker, context.Context, *AssistantC
 	return b, ctx, c, q, &calls
 }
 
-func TestBotDispatchLaunchesClaudeInAutoMode(t *testing.T) {
+// A Bot's dispatch resolves its permission exactly as a Session's child does:
+// from the person's dispatch permission setting, whatever the agent.
+func TestBotDispatchUsesTheSessionChildPermission(t *testing.T) {
 	b, ctx, current, request, _ := assistantBrokerFixture(t)
 	current.Assistant = "claude"
-	current.PermissionMode = "auto"
+	if _, err := nextconfig.Open(b.Dir).Set(map[string]any{"orchestrator_permission": "edits"}); err != nil {
+		t.Fatal(err)
+	}
 	b.Live = func(context.Context) []session.Session {
 		return []session.Session{{ID: "%80", Backend: session.BackendTmux, Assistant: session.AssistantClaude}}
 	}
@@ -76,8 +81,8 @@ func TestBotDispatchLaunchesClaudeInAutoMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	line := b.Launcher.(*recordingLauncher).line()
-	if out.Record.PermissionMode != "auto" || !strings.Contains(line, "--permission-mode auto") {
-		t.Fatalf("dispatch did not launch in Auto: state=%s mode=%s command=%s", out.Record.State, out.Record.PermissionMode, line)
+	if out.Record.PermissionMode != "edits" || !strings.Contains(line, "--permission-mode acceptEdits") {
+		t.Fatalf("dispatch did not use the dispatch setting: state=%s mode=%s command=%s", out.Record.State, out.Record.PermissionMode, line)
 	}
 	if out.Record.Title != "Change only a.go in the isolated worktree." {
 		t.Fatalf("legacy dispatch title = %q", out.Record.Title)

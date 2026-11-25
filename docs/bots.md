@@ -52,22 +52,38 @@ first-use setup ahead of time and prints which Claude Code version it found;
 
 ## Bots settings: dispatch rules and memory for every Bot
 
-The gear above the Bots list opens **Bots settings** as a modal (full screen at phone width). It
-holds two machine-wide lists, stored together in `project-assistants/shared-settings.json` and
-served at `/v1/project-assistants/shared-settings` (GET; PUT with `expected_version`, whole document).
-Both start empty, and empty keeps the earlier behavior.
+The gear above the Bots list opens **Bots settings** as a modal (full screen at phone width) with a
+side navigation: **Dispatch** and **Shared memory** (two tabs above the pane at phone width). Its
+document is stored in `project-assistants/shared-settings.json` and served at
+`/v1/project-assistants/shared-settings` (GET; PUT with `expected_version`, whole document). An empty
+document keeps the earlier behavior.
 
-- **Dispatch rules.** Each rule has a work kind (for example 寫程式, 設計, 生圖), a description that
-  helps the Bot recognize it, an ordered agent list and a Project scope. Each agent can carry a model
-  and a model strength (effort). Only agents this computer can dispatch are offered (Claude Code,
-  Codex, Gemini); strength lists only the values the agent's launcher accepts (Codex `high`/`xhigh`,
-  Gemini `low`–`max`; Claude Code none). Grok is not a dispatch assistant and is shown as unavailable.
-  **Selection is ordered fallback**: the first listed agent available here runs the work. The person
-  can predict the result from the table, and the Bot can still be told a specific agent. When none
-  of a rule's agents is available, dispatch fails with `pa_unsupported` `dispatch_rule_agents`
-  instead of silently running Claude Code.
-- **Precedence in `dispatch_work`**: explicit `agent`/`model`/`effort` > the rule for `kind` >
-  Claude Code. With no rule, or a kind that matches none, dispatch is exactly as before.
+- **Default agent.** Four tiles, one per agent (Claude Code, Codex, Gemini, Grok Build), each with
+  the agent's own logo. An agent this computer cannot dispatch is shown as "not on this computer"
+  and cannot be chosen. The choice, with an optional model and effort, is stored as `default`;
+  absent means Claude Code, and Claude Code with nothing else set is stored as absent. A saved
+  default whose agent later becomes unavailable falls back to Claude Code.
+- **Kinds of work.** A table of rules; each row opens the kind's own page: the work kind (for example
+  寫程式, 設計, 生圖), a description that helps the Bot recognize it, a Project scope, and all four
+  agents as a list where the order they are picked is the order they are tried (up to four). Each
+  picked agent carries a model and an effort. Claude Code and Codex are available when installed;
+  Gemini and Grok when their owned session host runs, the same condition under which the Broker
+  admits their dispatch. Effort lists only the values the agent's launcher accepts (Codex
+  `high`/`xhigh`, Gemini `low`–`max`; Claude Code and Grok none). **Selection is ordered fallback**:
+  the first listed agent available here runs the work. When none of a rule's agents is available,
+  dispatch fails with `pa_unsupported` `dispatch_rule_agents` instead of silently running another.
+- **Model drop-downs** list what the agent itself reports, asked through one of the machine's Bots
+  (the lead first) with the same discovery a Bot's own settings use, one request at a time. The
+  first entry is "Agent default (<what it runs>)", meaning no model is named. Codex's per-effort
+  entries collapse to one model each, and names the launcher's model rule would refuse are not
+  offered. The list shows its loading state, a failure with a retry, or that the agent reported no
+  other models; it opens upward when the pane has no room below. A saved model the agent no longer
+  lists stays selected and is marked.
+- **Precedence in `dispatch_work`**: explicit `agent`/`model`/`effort` > the rule for `kind` > the
+  saved default > Claude Code. With no rule and no default, dispatch is exactly as before.
+- **Permission.** A Bot's dispatch carries no permission of its own: it is admitted exactly as a
+  Session's child is, so every agent, Claude Code included, runs with the person's dispatch
+  permission setting, and Grok follows the child-dispatch mapping.
 - **Memory for every Bot.** Rows of text, each with a Project scope: *All Projects (including future
   ones)* by default, or chosen Projects. A row whose Projects were all removed applies nowhere. The
   rows that apply enter a Bot's memory opening as `<shared_memory>` before its own memory; its

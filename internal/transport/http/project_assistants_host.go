@@ -634,8 +634,8 @@ func (s *Server) projectAssistantDispatchPolicy(context.Context, pa.BotKey) (pro
 	if err != nil {
 		return projectassistanthost.DispatchPolicy{}, err
 	}
-	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude", PermissionMode: "auto",
-		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60, Shared: shared, Agents: projectAssistantDispatchAgents(time.Now())}, nil
+	return projectassistanthost.DispatchPolicy{Allowed: true, AnyProjectFile: true, Assistant: "claude",
+		TimeoutMinutes: capacity.MaximumBotDispatchSeconds / 60, Shared: shared, Agents: s.projectAssistantDispatchAgents(time.Now())}, nil
 }
 
 // projectAssistantAttachments is where pictures sent to Bots are kept.

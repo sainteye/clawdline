@@ -356,6 +356,15 @@
 .project-assistants .pa-select-text { flex:1;min-width:0;display:flex;flex-direction:column; }
 .project-assistants .pa-select-text>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-select-check { flex:none;color:#e39567; }
+/* A list that would run past the box it scrolls in opens above its button. */
+.project-assistants .pa-select[data-up] .pa-select-list { top:auto;bottom:calc(100% + 6px); }
+/* The status line names why the options are what they are: loading, failed, or none. */
+.project-assistants .pa-select-list li.pa-select-status { cursor:default;color:var(--pa-dim);font-size:12.5px;line-height:1.45;border-top:1px solid var(--pa-line);border-radius:0;margin-top:4px;padding-top:10px; }
+.project-assistants .pa-select-list li.pa-select-status[data-kind="error"] { color:#e8b57a; }
+.project-assistants .pa-select-list li.pa-select-retry { color:#fafafa;font-size:13px; }
+.project-assistants .pa-select-spinner { flex:none;width:12px;height:12px;border-radius:50%;border:2px solid #ffffff2e;border-top-color:#fafafa;animation:pa-select-spin .8s linear infinite; }
+@keyframes pa-select-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .project-assistants .pa-select-spinner { animation-duration:2.4s; } }
 .project-assistants .pa-select-compact { margin:0;max-width:60%; }
 .project-assistants .pa-select-compact .pa-select-button { min-height:28px;margin:0;padding:4px 8px;gap:6px;border:0;background:transparent;font-size:11px;color:var(--pa-dim); }
 .project-assistants .pa-select-compact .pa-select-button:hover:not(:disabled) { background:var(--pa-card); }

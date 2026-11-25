@@ -134,3 +134,34 @@ func TestABotThatTurnsSharedMemoryOffGetsNothing(t *testing.T) {
 		t.Fatal("a new Bot must use shared memory by default")
 	}
 }
+
+func TestSavedDefaultRunsUnmatchedWorkAndYieldsWhenUnavailable(t *testing.T) {
+	s := codingRule()
+	s.Default = &DispatchRuleAgent{Agent: Codex, Model: "gpt-5.5", Effort: "high"}
+	for _, c := range []DispatchChoice{{}, {Kind: "design"}} {
+		got, err := ResolveDispatch(s, testOptions, "p1", "claude", c)
+		if err != nil || got != (ResolvedDispatch{Assistant: "codex", Model: "gpt-5.5", Effort: "high", Source: "default"}) {
+			t.Fatalf("%+v: got %+v, %v", c, got, err)
+		}
+	}
+	// A rule still wins over the default.
+	if got, _ := ResolveDispatch(s, testOptions, "p1", "claude", DispatchChoice{Kind: "coding"}); got.Source != "rule" || got.Effort != "xhigh" {
+		t.Fatalf("rule lost to the default: %+v", got)
+	}
+	// A default agent this machine cannot dispatch falls back to the policy agent.
+	s.Default = &DispatchRuleAgent{Agent: Grok}
+	if got, err := ResolveDispatch(s, testOptions, "p1", "claude", DispatchChoice{}); err != nil || got != (ResolvedDispatch{Assistant: "claude", Source: "default"}) {
+		t.Fatalf("unavailable default got %+v, %v", got, err)
+	}
+}
+
+func TestSavedDefaultIsValidated(t *testing.T) {
+	for _, d := range []DispatchRuleAgent{{Agent: "nobody"}, {Agent: Codex, Model: "Has Space"}, {Agent: Codex, Effort: strings.Repeat("x", 17)}} {
+		if err := ValidateSharedSettings(SharedSettings{Default: &d}); Code(err) != Invalid {
+			t.Fatalf("%+v accepted: %v", d, err)
+		}
+	}
+	if err := ValidateSharedSettings(SharedSettings{Default: &DispatchRuleAgent{Agent: Grok}}); err != nil {
+		t.Fatalf("a valid default was refused: %v", err)
+	}
+}

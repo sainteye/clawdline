@@ -1,25 +1,35 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import type * as W from "@clawdline/contract"
 import { catalogWord } from "../catalog.js"
 import { useModalBackdrop } from "../modal-backdrop.js"
-import { PaSelect } from "./PaSelect"
+import { AgentMark } from "./AgentMark"
+import { agentName } from "./fallback-settings"
+import { PaSelect, type PaSelectStatus } from "./PaSelect"
+import { dispatchModels, type DispatchModels } from "./dispatch-models"
 import { errorCode, failure, type SharedSettingsAnswer, type SourceClient } from "./client"
 import "./bots-settings.css"
 
-// Machine-wide Bots settings: dispatch rules and memory shared by every Bot.
-// The daemon document is the source of truth; this modal edits a copy and
-// writes the whole document with the version it read.
+// Machine-wide Bots settings: the default agent, dispatch rules and memory
+// shared by every Bot. The daemon document is the source of truth; this modal
+// edits a copy and writes the whole document with the version it read.
 
 export type SharedScope = { all: boolean; projects?: string[] }
 export type RuleAgent = { agent: string; model?: string; effort?: string }
 export type DispatchRule = { id: string; kind: string; hint?: string; agents: RuleAgent[]; scope: SharedScope }
 export type SharedMemory = { id: string; text: string; scope: SharedScope }
-export type SharedSettings = { version: number; rules: DispatchRule[]; memory: SharedMemory[]; memory_opt_out?: string[]; project_overrides?: unknown }
+export type SharedSettings = { version: number; default?: RuleAgent; rules: DispatchRule[]; memory: SharedMemory[]; memory_opt_out?: string[]; project_overrides?: unknown }
 export type AgentOption = { agent: string; efforts: string[] }
 export type SharedSettingsReply = { machine_id?: string; settings: SharedSettings; agents: AgentOption[]; limits: Record<string, number> }
 export type ProjectChoice = { id: string; name: string }
 
+// Every agent a Bot can dispatch, in the order the Session list uses. An agent
+// this machine cannot run is still shown, marked, so the choice is never a mystery.
+const ALL_AGENTS: readonly W.ProjectAssistantAgent[] = ["claude", "codex", "antigravity", "grok"]
+// The daemon's policy agent when no default is saved (projectAssistantDispatchPolicy).
+const BUILT_IN_DEFAULT = "claude"
+const MAX_RULE_AGENTS = 4
+
 const word = (key: string) => catalogWord("botsSettings", key)
-const agentName = (agent: string) => agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : agent === "antigravity" ? "Gemini" : agent === "grok" ? "Grok" : agent
 const newID = () => Math.random().toString(36).slice(2, 12)
 
 /** Why one machine's settings could not be read or saved, in words a person can act on. */
@@ -67,8 +77,9 @@ export function trapFocus(event: ReactKeyboardEvent<HTMLElement> | KeyboardEvent
   else if (!event.shiftKey && (active === last || !container.contains(active))) { event.preventDefault(); first.focus() }
 }
 
-function Chevron() {
-  return <svg className="pa-bs-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>
+function Chevron({ dir = "down" }: { dir?: "down" | "right" | "left" }) {
+  const d = dir === "right" ? "M6 4l4 4-4 4" : dir === "left" ? "M10 4L6 8l4 4" : "M4 6l4 4 4-4"
+  return <svg className="pa-bs-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d}/></svg>
 }
 
 function CloseIcon() {
@@ -110,31 +121,174 @@ export function ScopePicker({ scope, projects, onChange }: { scope: SharedScope;
   </div>
 }
 
-function RuleEditor({ rule, agents, projects, onChange, onDelete }: { rule: DispatchRule; agents: readonly AgentOption[]; projects: readonly ProjectChoice[]; onChange: (rule: DispatchRule) => void; onDelete: () => void }) {
-  const known = agents.map(a => a.agent)
-  const agentOptions = (current: string) => [...agents.map(a => ({ value: a.agent, label: agentName(a.agent) })), ...(known.includes(current) ? [] : [{ value: current, label: `${agentName(current)} · ${word("unavailable")}` }])]
-  const setAgent = (index: number, next: RuleAgent) => onChange({ ...rule, agents: rule.agents.map((a, i) => i === index ? next : a) })
-  return <li className="pa-bs-rule">
-    <div className="pa-bs-rule-head">
-      <input className="pa-bs-input" aria-label={word("kind")} placeholder={word("kindPlaceholder")} value={rule.kind} maxLength={64} onChange={e => onChange({ ...rule, kind: e.target.value })}/>
-      <ScopePicker scope={rule.scope} projects={projects} onChange={scope => onChange({ ...rule, scope })}/>
-      <button type="button" className="pa-bs-icon" aria-label={word("deleteRule")} title={word("deleteRule")} onClick={onDelete}><CloseIcon/></button>
-    </div>
-    <input className="pa-bs-input pa-bs-hint" aria-label={word("hint")} placeholder={word("hintPlaceholder")} value={rule.hint ?? ""} maxLength={300} onChange={e => onChange({ ...rule, hint: e.target.value })}/>
-    <ol className="pa-bs-agents" aria-label={word("agentsInOrder")}>
-      {rule.agents.map((a, i) => {
-        const efforts = agents.find(o => o.agent === a.agent)?.efforts ?? []
-        return <li key={i} className="pa-bs-agent">
-          <span className="pa-bs-order" aria-hidden="true">{i + 1}</span>
-          <PaSelect compact ariaLabel={word("agent")} value={a.agent} options={agentOptions(a.agent)} onChange={agent => setAgent(i, { agent })}/>
-          <input className="pa-bs-input pa-bs-model" aria-label={word("model")} placeholder={word("modelDefault")} value={a.model ?? ""} maxLength={64} onChange={e => setAgent(i, { ...a, model: e.target.value.trim() || undefined })}/>
-          {efforts.length > 0 && <PaSelect compact ariaLabel={word("effort")} value={a.effort ?? ""} options={[{ value: "", label: word("effortDefault") }, ...efforts.map(e => ({ value: e, label: e }))]} onChange={effort => setAgent(i, { ...a, effort: effort || undefined })}/>}
-          <button type="button" className="pa-bs-icon" aria-label={word("removeAgent")} title={word("removeAgent")} disabled={rule.agents.length < 2} onClick={() => onChange({ ...rule, agents: rule.agents.filter((_, j) => j !== i) })}><CloseIcon/></button>
-        </li>
+type CatalogState = { status: "loading" | "ready" | "error" | "unavailable"; models?: DispatchModels }
+type Catalogs = { state: Readonly<Record<string, CatalogState>>; load: (agent: string, again?: boolean) => void }
+
+/**
+ * Each agent's model list, asked of the agent itself through one of this
+ * machine's Bots (the same discovery a Bot's own settings use). Requests run
+ * one at a time, as the source has a single discovery slot, and each answer
+ * is kept while the dialog is open.
+ */
+function useModelCatalogs(source: SourceClient | undefined, bot: W.ProjectAssistantBot | undefined): Catalogs {
+  const [state, setState] = useState<Record<string, CatalogState>>({})
+  const asked = useRef(new Set<string>())
+  const queue = useRef(Promise.resolve())
+  const generation = useRef(0)
+  const control = useRef(new AbortController())
+  useEffect(() => {
+    generation.current++
+    asked.current = new Set()
+    setState({})
+    return () => control.current.abort()
+  }, [source, bot?.key.bot_id, bot?.conversation_id])
+  const load = useCallback((agent: string, again = false) => {
+    if (asked.current.has(agent) && !again) return
+    asked.current.add(agent)
+    const set = (next: CatalogState) => setState(s => ({ ...s, [agent]: next }))
+    if (!source?.configuration || !bot) { set({ status: "unavailable" }); return }
+    const mine = generation.current
+    set({ status: "loading" })
+    queue.current = queue.current.then(async () => {
+      if (mine !== generation.current) return
+      control.current = new AbortController()
+      try {
+        const answer = await source.configuration!(bot.key, bot.conversation_id, agent as W.ProjectAssistantAgent, "", control.current.signal)
+        if (mine === generation.current) set(answer.catalog.agent === agent ? { status: "ready", models: dispatchModels(answer.catalog) } : { status: "error" })
+      } catch {
+        if (mine === generation.current && !control.current.signal.aborted) set({ status: "error" })
+      }
+    })
+  }, [source, bot])
+  return { state, load }
+}
+
+/** A model drop-down for one agent: the agent's own list, with its loading and failure states inside the list. */
+function ModelSelect({ agent, value, onChange, catalogs, disabled }: { agent: string; value?: string; onChange: (model?: string) => void; catalogs: Catalogs; disabled?: boolean }) {
+  const { load } = catalogs
+  useEffect(() => { if (!disabled) load(agent) }, [agent, disabled, load])
+  const current = catalogs.state[agent]
+  const models = current?.models
+  const name = agentName(agent)
+  const loading = !disabled && (!current || current.status === "loading")
+  const options = [{ value: "", label: models?.defaultName ? word("modelDefaultNamed").replace("{name}", models.defaultName) : word("modelDefaultPlain") }, ...(models?.choices ?? [])]
+  // A saved model stays visible while the list loads, and after it if the agent no longer lists it.
+  if (value && !options.some(o => o.value === value)) options.push({ value, label: value, hint: current?.status === "ready" ? word("modelMissing") : undefined })
+  let status: PaSelectStatus | undefined
+  if (loading) status = { kind: "loading", text: word("modelLoading").replace("{agent}", name) }
+  else if (current?.status === "error") status = { kind: "error", text: word("modelFailed").replace("{agent}", name), retryLabel: word("retry"), onRetry: () => load(agent, true) }
+  else if (current?.status === "unavailable") status = { kind: "error", text: word("modelNoBot") }
+  else if (current?.status === "ready" && !models?.choices.length) status = { kind: "empty", text: word("modelEmpty").replace("{agent}", name) }
+  return <PaSelect compact ariaLabel={`${name} ${word("model")}`} value={value ?? ""} options={options} busy={loading} status={status} disabled={disabled} onChange={next => onChange(next || undefined)}/>
+}
+
+function EffortSelect({ agent, value, efforts, onChange, disabled }: { agent: string; value?: string; efforts: readonly string[]; onChange: (effort?: string) => void; disabled?: boolean }) {
+  if (!efforts.length) return null
+  return <PaSelect compact ariaLabel={`${agentName(agent)} ${word("effort")}`} value={value ?? ""} disabled={disabled}
+    options={[{ value: "", label: word("effortDefault") }, ...efforts.map(e => ({ value: e, label: e }))]} onChange={next => onChange(next || undefined)}/>
+}
+
+function DefaultAgent({ value, agents, catalogs, onChange }: { value?: RuleAgent; agents: readonly AgentOption[]; catalogs: Catalogs; onChange: (next?: RuleAgent) => void }) {
+  const chosen = value?.agent ?? BUILT_IN_DEFAULT
+  const available = (agent: string) => agents.some(a => a.agent === agent)
+  // Claude Code with nothing else set is the built-in default, so it is stored as no default at all.
+  const set = (next: RuleAgent) => onChange(next.agent === BUILT_IN_DEFAULT && !next.model && !next.effort ? undefined : next)
+  const efforts = agents.find(a => a.agent === chosen)?.efforts ?? []
+  return <section className="pa-bs-group" aria-labelledby="pa-bs-default">
+    <h3 id="pa-bs-default">{word("defaultTitle")}</h3>
+    <p className="pa-bs-note">{word("defaultNote")}</p>
+    <div className="pa-bs-tiles" role="radiogroup" aria-labelledby="pa-bs-default">
+      {ALL_AGENTS.map(agent => {
+        const on = agent === chosen, usable = available(agent)
+        return <button key={agent} type="button" role="radio" aria-checked={on} className="pa-bs-tile" data-on={on || undefined} disabled={!usable && !on}
+          onClick={() => { if (!on) set({ agent }) }}>
+          <AgentMark agent={agent} size={20}/>
+          <span className="pa-bs-tile-name">{agentName(agent)}</span>
+          <span className="pa-bs-tile-sub">{on ? word("defaultBadge") : usable ? word("installed") : word("notInstalled")}</span>
+        </button>
       })}
-    </ol>
-    {rule.agents.length < 4 && agents.length > 0 && <button type="button" className="pa-bs-link" onClick={() => onChange({ ...rule, agents: [...rule.agents, { agent: agents[0].agent }] })}>{word("addFallback")}</button>}
+    </div>
+    {!available(chosen) && <p className="pa-bs-note pa-bs-warn">{word("defaultUnavailable").replace("{agent}", agentName(chosen))}</p>}
+    <div className="pa-bs-model-row">
+      <ModelSelect agent={chosen} value={value?.model} catalogs={catalogs} disabled={!available(chosen)} onChange={model => set({ agent: chosen, model, effort: value?.effort })}/>
+      <EffortSelect agent={chosen} value={value?.effort} efforts={efforts} disabled={!available(chosen)} onChange={effort => set({ agent: chosen, model: value?.model, effort })}/>
+    </div>
+  </section>
+}
+
+function RuleRow({ rule, projects, onOpen }: { rule: DispatchRule; projects: readonly ProjectChoice[]; onOpen: () => void }) {
+  const first = rule.agents[0]
+  const kind = rule.kind.trim()
+  return <li>
+    <button type="button" className="pa-bs-kind-row" onClick={onOpen}>
+      <span className="pa-bs-kind-name">
+        <span className={kind ? undefined : "pa-bs-dim"}>{kind || word("unnamedKind")}</span>
+        <small>{scopeLabel(rule.scope, projects)}</small>
+      </span>
+      <span className="pa-bs-kind-agent">
+        {first && <AgentMark agent={first.agent as W.ProjectAssistantAgent} size={16}/>}
+        <span>{first ? agentName(first.agent) : ""}</span>
+        {rule.agents.length > 1 && <small>{word("fallbackCount").replace("{n}", String(rule.agents.length - 1))}</small>}
+      </span>
+      <Chevron dir="right"/>
+    </button>
   </li>
+}
+
+function RuleDetail({ rule, agents, projects, catalogs, onChange, onDelete, onBack }: {
+  rule: DispatchRule; agents: readonly AgentOption[]; projects: readonly ProjectChoice[]; catalogs: Catalogs
+  onChange: (rule: DispatchRule) => void; onDelete: () => void; onBack: () => void
+}) {
+  const kindInput = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (!rule.kind) kindInput.current?.focus() }, [rule.id])
+  const available = (agent: string) => agents.some(a => a.agent === agent)
+  const setAgent = (agent: string, next: RuleAgent) => onChange({ ...rule, agents: rule.agents.map(a => a.agent === agent ? next : a) })
+  // Agents saved by an older version but not among the four still show, so nothing is dropped silently.
+  const listed = [...ALL_AGENTS, ...rule.agents.map(a => a.agent).filter(a => !ALL_AGENTS.includes(a as W.ProjectAssistantAgent))]
+  return <section className="pa-bs-group pa-bs-detail" aria-labelledby="pa-bs-detail-title">
+    <div className="pa-bs-detail-head">
+      <button type="button" className="pa-bs-icon" aria-label={word("back")} title={word("back")} onClick={onBack}><Chevron dir="left"/></button>
+      <h3 id="pa-bs-detail-title">{rule.kind.trim() || word("unnamedKind")}</h3>
+    </div>
+    <div className="pa-bs-fields">
+      <label className="pa-bs-field"><span>{word("kind")}</span>
+        <input ref={kindInput} className="pa-bs-input" placeholder={word("kindPlaceholder")} value={rule.kind} maxLength={64} onChange={e => onChange({ ...rule, kind: e.target.value })}/>
+      </label>
+      <div className="pa-bs-field"><span>{word("appliesTo")}</span><ScopePicker scope={rule.scope} projects={projects} onChange={scope => onChange({ ...rule, scope })}/></div>
+    </div>
+    <label className="pa-bs-field"><span>{word("hintLabel")}</span>
+      <input className="pa-bs-input" placeholder={word("hintPlaceholder")} value={rule.hint ?? ""} maxLength={300} onChange={e => onChange({ ...rule, hint: e.target.value })}/>
+    </label>
+    <div className="pa-bs-field">
+      <span id="pa-bs-order-label">{word("agentsPick")}</span>
+      <ul className="pa-bs-order-list" aria-labelledby="pa-bs-order-label">
+        {listed.map(agent => {
+          const at = rule.agents.findIndex(a => a.agent === agent), included = at >= 0, usable = available(agent)
+          const last = included && rule.agents.length < 2, full = !included && rule.agents.length >= MAX_RULE_AGENTS
+          const entry = rule.agents[at]
+          const efforts = agents.find(a => a.agent === agent)?.efforts ?? []
+          return <li key={agent} className="pa-bs-order-item" data-on={included || undefined}>
+            <button type="button" className="pa-bs-order-toggle" aria-pressed={included} disabled={last || full || (!included && !usable)}
+              title={last ? word("agentLast") : undefined}
+              onClick={() => onChange({ ...rule, agents: included ? rule.agents.filter(a => a.agent !== agent) : [...rule.agents, { agent }] })}>
+              <span className="pa-bs-order" data-first={at === 0 || undefined}>{included ? at + 1 : ""}</span>
+              <AgentMark agent={agent as W.ProjectAssistantAgent} size={18}/>
+              <span className="pa-bs-order-name">{agentName(agent)}</span>
+              {!usable && <small>{word("notInstalled")}</small>}
+              {last && <small>{word("agentLast")}</small>}
+            </button>
+            {included && entry && <div className="pa-bs-model-row pa-bs-order-settings">
+              <ModelSelect agent={agent} value={entry.model} catalogs={catalogs} disabled={!usable} onChange={model => setAgent(agent, { ...entry, model })}/>
+              <EffortSelect agent={agent} value={entry.effort} efforts={efforts} disabled={!usable} onChange={effort => setAgent(agent, { ...entry, effort })}/>
+            </div>}
+          </li>
+        })}
+      </ul>
+    </div>
+    <div className="pa-bs-detail-foot">
+      <button type="button" className="pa-bs-danger" onClick={onDelete}>{word("deleteRule")}</button>
+    </div>
+  </section>
 }
 
 function MemoryRow({ entry, projects, onChange, onDelete }: { entry: SharedMemory; projects: readonly ProjectChoice[]; onChange: (entry: SharedMemory) => void; onDelete: () => void }) {
@@ -149,7 +303,13 @@ function MemoryRow({ entry, projects, onChange, onDelete }: { entry: SharedMemor
 
 export type SettingsMachine = { source: SourceClient; name: string }
 
-export function BotsSettingsModal({ projects, onClose, machines, initialMachine }: { projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string }) {
+type Tab = "dispatch" | "memory"
+
+export function BotsSettingsModal({ projects, onClose, machines, initialMachine, catalogBots }: {
+  projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string
+  /** One Bot per machine whose source asks each agent for its model list. */
+  catalogBots?: ReadonlyMap<string, W.ProjectAssistantBot>
+}) {
   const panel = useRef<HTMLElement>(null)
   const opener = useRef<Element | null>(typeof document === "undefined" ? null : document.activeElement)
   const [machine, setMachine] = useState(() => machines.find(m => m.source.machineID === initialMachine)?.source.machineID ?? machines[0]?.source.machineID ?? "")
@@ -161,11 +321,14 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
   const [error, setError] = useState("")
   const [saving, setSaving] = useState(false)
   const [attempt, setAttempt] = useState(0)
+  const [tab, setTab] = useState<Tab>("dispatch")
+  const [editing, setEditing] = useState<string | null>(null)
+  const catalogs = useModelCatalogs(source, catalogBots?.get(machine))
   const close = () => { onClose(); (opener.current as HTMLElement | null)?.focus?.() }
   const backdrop = useModalBackdrop(close)
   useEffect(() => {
     const control = new AbortController()
-    setReply(undefined); setDraft(undefined); setLoadError(""); setError("")
+    setReply(undefined); setDraft(undefined); setLoadError(""); setError(""); setEditing(null)
     if (!source) { setLoadError(sharedSettingsProblem(failure("pa_unsupported"), false)); return }
     readSharedSettings(source, control.signal).then(r => { if (!control.signal.aborted) { setReply(r); setDraft(r.settings) } },
       e => { if (!control.signal.aborted) setLoadError(sharedSettingsProblem(e, false)) })
@@ -190,43 +353,61 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
       const clean = { ...draft, rules: draft.rules.filter(r => r.kind.trim()), memory: draft.memory.filter(m => m.text.trim()) }
       const next = await writeSharedSettings(source, clean)
       setReply(next); setDraft(next.settings)
+      if (editing && !next.settings.rules.some(r => r.id === editing)) setEditing(null)
     } catch (e) { setError(sharedSettingsProblem(e, true)) }
     finally { setSaving(false) }
   }
   const agents = reply?.agents ?? []
   const limits = reply?.limits ?? {}
   const dirty = !!draft && JSON.stringify(draft) !== JSON.stringify(reply?.settings)
+  const rule = draft?.rules.find(r => r.id === editing)
+  const setRules = (rules: DispatchRule[]) => draft && setDraft({ ...draft, rules })
+  const addRule = () => {
+    if (!draft) return
+    const first = agents[0]?.agent ?? BUILT_IN_DEFAULT
+    const next = { id: newID(), kind: "", agents: [{ agent: first }], scope: { all: true } }
+    setDraft({ ...draft, rules: [...draft.rules, next] })
+    setEditing(next.id)
+  }
   return <div className="pa-form-scrim pa-bs-scrim" {...backdrop}>
-    <section ref={panel} className="pa-bs-panel" role="dialog" aria-modal="true" aria-labelledby="pa-bs-title"
->
+    <section ref={panel} className="pa-bs-panel" role="dialog" aria-modal="true" aria-labelledby="pa-bs-title">
       <header className="pa-bs-header">
         <h2 id="pa-bs-title">{word("title")}</h2>
         <button type="button" className="pa-bs-icon pa-bs-close" aria-label={word("close")} title={word("close")} onClick={close}><CloseIcon/></button>
       </header>
-      <div className="pa-bs-body">
-        {machines.length > 1 && <div className="pa-bs-machine">
-          <span id="pa-bs-machine-label">{word("machine")}</span>
-          <PaSelect compact ariaLabel={word("machine")} value={machine} disabled={saving} onChange={setMachine}
-            options={machines.map(m => ({ value: m.source.machineID, label: m.name }))}/>
-        </div>}
-        {!draft && !loadError && <p className="pa-bs-note">{word("loading")}</p>}
-        {loadError && <div className="pa-bs-problem" role="alert">
-          <p className="pa-bs-error">{loadError}</p>
-          <button type="button" className="pa-bs-secondary" onClick={() => setAttempt(a => a + 1)}>{word("retry")}</button>
-        </div>}
-        {draft && <>
-          <section className="pa-bs-group" aria-labelledby="pa-bs-rules">
-            <h3 id="pa-bs-rules">{word("rulesTitle")}</h3>
-            <p className="pa-bs-note">{word("rulesNote")}</p>
-            <ul className="pa-bs-list">
-              {draft.rules.map((rule, i) => <RuleEditor key={rule.id} rule={rule} agents={agents} projects={projects}
-                onChange={next => setDraft({ ...draft, rules: draft.rules.map((r, j) => j === i ? next : r) })}
-                onDelete={() => setDraft({ ...draft, rules: draft.rules.filter((_, j) => j !== i) })}/>)}
-            </ul>
-            {draft.rules.length === 0 && <p className="pa-bs-empty">{word("rulesEmpty")}</p>}
-            {draft.rules.length < (limits.rules ?? 12) && agents.length > 0 && <button type="button" className="pa-bs-add" onClick={() => setDraft({ ...draft, rules: [...draft.rules, { id: newID(), kind: "", agents: [{ agent: agents[0].agent }], scope: { all: true } }] })}>{word("addRule")}</button>}
-          </section>
-          <section className="pa-bs-group" aria-labelledby="pa-bs-memory">
+      <div className="pa-bs-layout">
+        <nav className="pa-bs-nav" aria-label={word("title")}>
+          {(["dispatch", "memory"] as const).map(t => <button key={t} type="button" className="pa-bs-nav-item" aria-current={tab === t ? "page" : undefined}
+            onClick={() => { setTab(t); setEditing(null) }}>{word(t === "dispatch" ? "tabDispatch" : "tabMemory")}</button>)}
+        </nav>
+        <div className="pa-bs-body">
+          {machines.length > 1 && <div className="pa-bs-machine">
+            <span id="pa-bs-machine-label">{word("machine")}</span>
+            <PaSelect compact ariaLabel={word("machine")} value={machine} disabled={saving} onChange={setMachine}
+              options={machines.map(m => ({ value: m.source.machineID, label: m.name }))}/>
+          </div>}
+          {!draft && !loadError && <p className="pa-bs-note" role="status">{word("loading")}</p>}
+          {loadError && <div className="pa-bs-problem" role="alert">
+            <p className="pa-bs-error">{loadError}</p>
+            <button type="button" className="pa-bs-secondary" onClick={() => setAttempt(a => a + 1)}>{word("retry")}</button>
+          </div>}
+          {draft && tab === "dispatch" && (rule
+            ? <RuleDetail rule={rule} agents={agents} projects={projects} catalogs={catalogs}
+              onChange={next => setRules(draft.rules.map(r => r.id === next.id ? next : r))}
+              onDelete={() => { setRules(draft.rules.filter(r => r.id !== rule.id)); setEditing(null) }}
+              onBack={() => setEditing(null)}/>
+            : <>
+              <DefaultAgent value={draft.default} agents={agents} catalogs={catalogs} onChange={next => setDraft({ ...draft, default: next })}/>
+              <section className="pa-bs-group" aria-labelledby="pa-bs-rules">
+                <h3 id="pa-bs-rules">{word("kindsTitle")}</h3>
+                <p className="pa-bs-note">{word("kindsNote")}</p>
+                {draft.rules.length > 0 ? <ul className="pa-bs-kinds">
+                  {draft.rules.map(r => <RuleRow key={r.id} rule={r} projects={projects} onOpen={() => setEditing(r.id)}/>)}
+                </ul> : <p className="pa-bs-empty">{word("kindsEmpty")}</p>}
+                {draft.rules.length < (limits.rules ?? 12) && <button type="button" className="pa-bs-add" onClick={addRule}>{word("addKind")}</button>}
+              </section>
+            </>)}
+          {draft && tab === "memory" && <section className="pa-bs-group" aria-labelledby="pa-bs-memory">
             <h3 id="pa-bs-memory">{word("memoryTitle")}</h3>
             <p className="pa-bs-note">{word("memoryNote")}</p>
             <ul className="pa-bs-list">
@@ -236,9 +417,9 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
             </ul>
             {draft.memory.length === 0 && <p className="pa-bs-empty">{word("memoryEmpty")}</p>}
             {draft.memory.length < (limits.memory_entries ?? 20) && <button type="button" className="pa-bs-add" onClick={() => setDraft({ ...draft, memory: [...draft.memory, { id: newID(), text: "", scope: { all: true } }] })}>{word("addMemory")}</button>}
-          </section>
-        </>}
-        {error && <p className="pa-bs-error" role="alert">{error}</p>}
+          </section>}
+          {error && <p className="pa-bs-error" role="alert">{error}</p>}
+        </div>
       </div>
       <footer className="pa-bs-footer">
         <button type="button" className="pa-bs-secondary" onClick={close}>{word("cancel")}</button>

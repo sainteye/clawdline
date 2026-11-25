@@ -47,7 +47,7 @@ func (s *Server) projectAssistantMachineSettingsRoute(w http.ResponseWriter, r *
 }
 
 func (s *Server) machineSharedSettingsAnswer(machine string, settings pa.SharedSettings) machineSharedSettingsReply {
-	agents := projectAssistantDispatchAgents(time.Now())
+	agents := s.projectAssistantDispatchAgents(time.Now())
 	if agents == nil {
 		agents = []pa.DispatchAgentOption{}
 	}

@@ -202,7 +202,7 @@ func newHostFixture(t *testing.T) *hostFixture {
 			return s, nil
 		},
 		DispatchPolicy: func(context.Context, pa.BotKey) (DispatchPolicy, error) {
-			return DispatchPolicy{Allowed: true, AllowedClaims: []string{"a.go"}, Assistant: "codex", PermissionMode: "edits", TimeoutMinutes: 30}, nil
+			return DispatchPolicy{Allowed: true, AllowedClaims: []string{"a.go"}, Assistant: "codex", TimeoutMinutes: 30}, nil
 		},
 		Provider: func() (app.Provider, error) { f.factories.Add(1); return f.p, nil },
 	}

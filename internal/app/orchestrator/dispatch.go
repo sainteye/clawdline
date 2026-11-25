@@ -458,7 +458,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 		if err != nil {
 			return Dispatched{}, err
 		}
-		if filepath.Clean(current.Project.Directory) != record.ProjectDir || current.Assistant != record.Assistant || current.PermissionMode != record.PermissionMode || current.TimeoutMinutes != record.TimeoutMinutes {
+		if filepath.Clean(current.Project.Directory) != record.ProjectDir || current.Assistant != record.Assistant || current.TimeoutMinutes != record.TimeoutMinutes {
 			return Dispatched{}, assistantFailure(pa.StaleVersion, "dispatch_policy")
 		}
 	}

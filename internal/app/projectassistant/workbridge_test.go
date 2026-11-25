@@ -153,7 +153,7 @@ func newBridgeFixture(t *testing.T) (*BrokerWorkBridge, *orchestrator.Broker, *b
 	scope := pa.ProjectScope{MachineID: key.MachineID, ProjectID: "project", CanonicalID: "canonical", Kind: pa.RepositoryProject}
 	fence := pa.Fence{Key: key, Project: scope, ConversationID: "chat", Generation: 1, BindingID: "binding"}
 	current := &orchestrator.AssistantCurrent{Fence: fence, Feature: pa.FeatureState{Enabled: true}, Source: pa.SourceStatus{MachineID: key.MachineID, State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive},
-		Project: pa.ProjectResolution{Scope: scope, Directory: repoDir, Current: true, Available: true}, ActiveTurnID: "turn", DispatchAllowed: true, AllowedClaims: []string{"a.go"}, Assistant: "codex", PermissionMode: "edits", TimeoutMinutes: 30}
+		Project: pa.ProjectResolution{Scope: scope, Directory: repoDir, Current: true, Available: true}, ActiveTurnID: "turn", DispatchAllowed: true, AllowedClaims: []string{"a.go"}, Assistant: "codex", TimeoutMinutes: 30}
 	authority, err := orchestrator.NewAssistantAuthority(orchestrator.AssistantAuthorityOptions{Current: func(context.Context, pa.BotKey) (orchestrator.AssistantCurrent, error) { return *current, nil }, Clock: time.Now})
 	if err != nil {
 		t.Fatal(err)

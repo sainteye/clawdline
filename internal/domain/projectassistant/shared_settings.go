@@ -71,7 +71,10 @@ type ProjectSettingsOverride struct {
 }
 
 type SharedSettings struct {
-	Version          int64                              `json:"version"`
+	Version int64 `json:"version"`
+	// Default runs work no rule matches. Absent keeps the policy's built-in
+	// agent, Claude Code, as before the setting existed.
+	Default          *DispatchRuleAgent                 `json:"default,omitempty"`
 	Rules            []DispatchRule                     `json:"rules"`
 	Memory           []SharedMemoryEntry                `json:"memory"`
 	ProjectOverrides map[string]ProjectSettingsOverride `json:"project_overrides,omitempty"`
@@ -192,12 +195,19 @@ func invalidChoice(field string, allowed []string) error {
 	return &Failure{Code: Invalid, Field: field, Allowed: strings.Join(allowed, ", ")}
 }
 
-// ResolveDispatch applies explicit arguments > a matching rule > fallback.
-// With no rules and no arguments the result is exactly fallback, the agent
-// every Bot dispatch used before rules existed.
+// ResolveDispatch applies explicit arguments > a matching rule > the saved
+// default > fallback. With no rules, no default and no arguments the result
+// is exactly fallback, the agent every Bot dispatch used before rules existed.
+// A saved default whose agent is unavailable here also yields fallback.
 func ResolveDispatch(s SharedSettings, options []DispatchAgentOption, projectID, fallback string, c DispatchChoice) (ResolvedDispatch, error) {
 	if c.Model != "" && !validModel(c.Model) {
 		return ResolvedDispatch{}, invalidChoice("dispatch_model", nil)
+	}
+	byDefault := ResolvedDispatch{Assistant: fallback, Source: "default"}
+	if d := s.Default; d != nil {
+		if _, ok := findOption(options, d.Agent); ok {
+			byDefault = ResolvedDispatch{Assistant: string(d.Agent), Model: d.Model, Effort: d.Effort, Source: "default"}
+		}
 	}
 	var out ResolvedDispatch
 	switch {
@@ -207,7 +217,7 @@ func ResolveDispatch(s SharedSettings, options []DispatchAgentOption, projectID,
 		}
 		out = ResolvedDispatch{Assistant: c.Agent, Source: "explicit"}
 	case c.Kind != "":
-		out = ResolvedDispatch{Assistant: fallback, Source: "default"}
+		out = byDefault
 		for _, rule := range s.RulesFor(projectID) {
 			if !strings.EqualFold(strings.TrimSpace(rule.Kind), strings.TrimSpace(c.Kind)) {
 				continue
@@ -230,7 +240,7 @@ func ResolveDispatch(s SharedSettings, options []DispatchAgentOption, projectID,
 			break
 		}
 	default:
-		out = ResolvedDispatch{Assistant: fallback, Source: "default"}
+		out = byDefault
 	}
 	if c.Model != "" {
 		out.Model = c.Model
@@ -277,6 +287,10 @@ func validRowID(id string) bool {
 	return true
 }
 
+func validRuleAgent(a DispatchRuleAgent) bool {
+	return a.Agent.Valid() && (a.Model == "" || validModel(a.Model)) && len(a.Effort) <= 16
+}
+
 func validRules(rules []DispatchRule) error {
 	if len(rules) > MaxDispatchRules {
 		return fail(CapacityFull, "dispatch_rules")
@@ -293,7 +307,7 @@ func validRules(rules []DispatchRule) error {
 			return fail(Invalid, "dispatch_rule_agents")
 		}
 		for _, a := range r.Agents {
-			if !a.Agent.Valid() || a.Model != "" && !validModel(a.Model) || len(a.Effort) > 16 {
+			if !validRuleAgent(a) {
 				return fail(Invalid, "dispatch_rule_agents")
 			}
 		}
@@ -303,6 +317,9 @@ func validRules(rules []DispatchRule) error {
 
 // ValidateSharedSettings checks a whole-list write before it is stored.
 func ValidateSharedSettings(s SharedSettings) error {
+	if s.Default != nil && !validRuleAgent(*s.Default) {
+		return fail(Invalid, "dispatch_default")
+	}
 	if err := validRules(s.Rules); err != nil {
 		return err
 	}
