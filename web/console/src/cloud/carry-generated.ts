@@ -177,6 +177,9 @@ export const CARRIED = {
   // The dashboard behind the session counts (`machine/`): CPU, memory, disk
   // space and grouped reclaim backlog, a machine read with no parameter.
   "machine-usage": "GET /v1/machine/usage",
+  // The daemon's one model catalog per agent (docs/model-catalog.md). A read
+  // never starts an agent on the caller's time.
+  "model-catalog": "captured Bot source GET /v1/model-catalog",
   "native-terminal-input": "POST /v1/sessions/{id}/native-terminal",
   "native-terminal-screen": "GET /v1/sessions/{id}/native-terminal",
   "notification-rules": "GET /v1/notification-rules",

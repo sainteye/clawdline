@@ -19,7 +19,7 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 274
+          "line": 261
         }
       ],
       "original": [
@@ -74,11 +74,11 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 237
+          "line": 224
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 385
+          "line": 372
         }
       ],
       "original": [
@@ -2414,11 +2414,11 @@
       "sources": [
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 105
+          "line": 92
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 394
+          "line": 381
         },
         {
           "path": "internal/app/start.go",
@@ -2430,7 +2430,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 667
+          "line": 670
         }
       ],
       "original": [],
@@ -2484,7 +2484,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 237
+          "line": 224
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -2605,7 +2605,7 @@
         },
         {
           "path": "internal/transport/http/antigravity_owned.go",
-          "line": 44
+          "line": 45
         },
         {
           "path": "internal/transport/http/antigravity_history.go",
@@ -2692,7 +2692,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 382
+          "line": 369
         },
         {
           "path": "skills/workflow.go",
@@ -2853,7 +2853,7 @@
         },
         {
           "path": "internal/adapters/projects/launch.go",
-          "line": 382
+          "line": 369
         },
         {
           "path": "internal/adapters/codegraph/codegraph.go",
@@ -3242,7 +3242,7 @@
         },
         {
           "path": "internal/transport/http/antigravity_owned.go",
-          "line": 97
+          "line": 98
         }
       ],
       "original": [
@@ -5559,7 +5559,7 @@
     "internal/adapters/memory/memory.go": "236f15e80e79d72f060ac487ed74f57fc25c775897028fd4c775fa2164346c46",
     "internal/adapters/nextconfig/browser_mode.go": "042c8a8abfebcfc6537d2720023443e98a2088032502bb119d4e5e5988f3e90e",
     "internal/adapters/nextconfig/browser_policy.go": "62039a6f023460a6ffa71ee7ee1d548694c8fa74e7327e4971c7ea2eab0ff77c",
-    "internal/adapters/nextconfig/nextconfig.go": "aa1104baff84001f2d79512058f547f94e118aa07c515c53e0aeeadc75c9f95a",
+    "internal/adapters/nextconfig/nextconfig.go": "ac278ded76001b7882e31757d5843d96728d71b30727f363b6f00366e686d39d",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
@@ -5631,7 +5631,7 @@
     "internal/adapters/projectassistantwebhook/input.go": "14d39aff8cfccbbd197e1cc2eb40cc705e3581532ce42d10fb31055c8547342c",
     "internal/adapters/projects/antigravity_context.go": "863f150a041d717da4d9cedf3b6b68238c6c15f34162b0014831350fad2e22c3",
     "internal/adapters/projects/claude_language.go": "7dde4197d65e2d6844acafbbf2397406b1868c6b9375b7bd69965e635a377b7d",
-    "internal/adapters/projects/launch.go": "b486912ad4660db0ef960fd2f46737146fc8d474115d87852131810cdc8aa7b1",
+    "internal/adapters/projects/launch.go": "ccabf75919afa42b7e22e517ca0f14d198e73984ebd5ac2867de0b498505c839",
     "internal/adapters/skillfile/skillfile.go": "a10a410e8966b71a8c4d6666e0155a4b0b12cb3f513d9843038e3e2e2118ffde",
     "internal/adapters/squadfiles/bot_skills.go": "35fe20acdcc0b38e4c6aaed8dc02c52211fc4a05c349481218c65977cc5a6076",
     "internal/adapters/squadfiles/launch.go": "8f3e51f35df23fc2c34537eab07a58857f81eaac0cf1c3236c6c2d9253ac4e6a",
@@ -5728,7 +5728,7 @@
     "internal/transport/http/antigravity_history.go": "af3efe40f4214a0df012df5ff47904df2e228bfde3011f7ca72cb92bfd5a45ce",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "09ee4349f3132962773ff0f0e44b923b038a98eb1d271f2a92608a4e2c751698",
-    "internal/transport/http/antigravity_owned.go": "bb613d276e03da75dd121b00ff95bbc43ab8b017a1c3ba1d2c4a894d4e6af482",
+    "internal/transport/http/antigravity_owned.go": "d960722ff249fbdf71d262b207e72972ce209dd7cc648e6c125e9064244d1e53",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",
@@ -5780,7 +5780,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "7d61c17d99540e0340ccd800cb8f6be807ebe1657bfa1f5d38db591e12e6c2da",
+    "web/console/src/cloud/project-assistants.ts": "3f95899a6c7fbfbbb89ac74d347037bb0a7917f79d2e18c2b0aed5889f9445a0",
     "web/console/src/cloud/relay-writer.ts": "9e13ed3493954116d110ca44608f2264a26dc6d3c9bf718847adfcb7792b015d",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",

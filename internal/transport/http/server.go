@@ -49,6 +49,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/adapters/updatecheck"
 	"github.com/sainteye/clawdline/internal/app"
+	"github.com/sainteye/clawdline/internal/app/modelcatalog"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/config"
@@ -57,6 +58,8 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/connectionhealth"
 	"github.com/sainteye/clawdline/internal/domain/copilot"
 	"github.com/sainteye/clawdline/internal/domain/icon"
+	mc "github.com/sainteye/clawdline/internal/domain/modelcatalog"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/projectsync"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/squad"
@@ -65,18 +68,24 @@ import (
 type Server struct {
 	questionAnalysis copilotQuestionBook
 	// recaps keeps each Session's forked recap (session_recaps.go).
-	recaps             *recapBook
-	projectAssistants  projectAssistantServer
-	voiceWorkMu        sync.Mutex
-	voiceWorkWake      uint64
-	voiceWorkSessions  []copilotDecisionSession
-	voiceWorkContracts json.RawMessage
-	voiceWorkRunning   bool
-	voiceWorkContext   context.Context
-	codegraphMu        sync.Mutex
-	browserMu          sync.Mutex
-	browserBridge      *browserbridge.Bridge
-	browserProfiles    *browserbridge.Profiles
+	recaps            *recapBook
+	projectAssistants projectAssistantServer
+	// The daemon's one model catalog (model_catalog.go). The two func fields
+	// are private fixture seams; production reads the installed agents.
+	modelCatalogOnce    sync.Once
+	modelCatalogService *modelcatalog.Service
+	modelCatalogNative  func(string) []mc.Model
+	modelCatalogProbe   func(context.Context, string) (pa.ConfigurationCatalog, error)
+	voiceWorkMu         sync.Mutex
+	voiceWorkWake       uint64
+	voiceWorkSessions   []copilotDecisionSession
+	voiceWorkContracts  json.RawMessage
+	voiceWorkRunning    bool
+	voiceWorkContext    context.Context
+	codegraphMu         sync.Mutex
+	browserMu           sync.Mutex
+	browserBridge       *browserbridge.Bridge
+	browserProfiles     *browserbridge.Profiles
 	// browserRelaunched is the extension version the test Chrome was last
 	// relaunched for (browser_upkeep.go); guarded by browserMu.
 	browserRelaunched string
@@ -787,6 +796,7 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/notification-rules"}, s.notificationRulesRoute},
 		{Route{"*", "/v1/settings/notifications"}, s.notificationSettingsRoute},
 		{Route{"*", "/v1/settings/default-models"}, s.defaultModelsRoute},
+		{Route{"*", "/v1/model-catalog"}, s.modelCatalogRoute},
 		{Route{"*", "/v1/settings/voice"}, s.voiceSettingsRoute},
 		{Route{"*", "/v1/settings/copilot"}, s.copilotSettingsRoute},
 		{Route{"*", "/v1/settings/work-gates"}, s.workGateSettingsRoute},

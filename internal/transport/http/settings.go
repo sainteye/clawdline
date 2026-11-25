@@ -7,7 +7,6 @@ import (
 	"io"
 	"mime"
 	"net/http"
-	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/terminal"
-	"github.com/sainteye/clawdline/internal/adapters/transcript"
 	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	"github.com/sainteye/clawdline/internal/contract"
 )
@@ -185,7 +183,7 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 			writeSettingsFailure(w, f, err)
 			return
 		}
-		writeJSON(w, defaultModelsSnapshot(f, v))
+		writeJSON(w, s.defaultModelsSnapshot(f, v))
 	case http.MethodPost:
 		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
 			writeRefusal(w, http.StatusUnsupportedMediaType, "unsupported_media_type",
@@ -222,7 +220,7 @@ func (s *Server) defaultModelsRoute(w http.ResponseWriter, r *http.Request) {
 			writeSettingsFailure(w, f, err)
 			return
 		}
-		writeJSON(w, defaultModelsSnapshot(f, v))
+		writeJSON(w, s.defaultModelsSnapshot(f, v))
 	default:
 		writeRefusal(w, http.StatusMethodNotAllowed, "method_not_allowed", "GET or POST")
 	}
@@ -485,13 +483,15 @@ type defaultModelOption struct {
 	Label string `json:"label"`
 }
 
-func defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModelsAnswer {
+// The lists are the model catalog's (model_catalog.go), so this picker and
+// every other screen offer the same models for one agent.
+func (s *Server) defaultModelsSnapshot(f *nextconfig.File, v nextconfig.Values) defaultModelsAnswer {
 	snapshot := settingsSnapshot(f, v)
-	home, _ := os.UserHomeDir()
 	models := map[string][]defaultModelOption{"codex": {}, "claude": {}, "antigravity": {}}
 	for _, assistant := range []string{"codex", "claude", "antigravity"} {
-		for _, model := range transcript.Models(home, assistant) {
-			models[assistant] = append(models[assistant], defaultModelOption{Value: model.Command, Label: model.Name})
+		catalog, _ := s.modelCatalog().Read(assistant)
+		for _, model := range catalog.Models {
+			models[assistant] = append(models[assistant], defaultModelOption{Value: model.Value, Label: model.Name})
 		}
 	}
 	// No installed native model-list source: an empty catalog means unknown.

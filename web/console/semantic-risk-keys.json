@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14541,
+  "englishKeys": 14551,
   "counts": {
-    "negation": 3706,
-    "state": 2483,
+    "negation": 3707,
+    "state": 2484,
     "permission": 867,
     "deletion": 336,
     "uncertainty": 582
   },
-  "unionCount": 6190,
+  "unionCount": 6191,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -299,6 +299,7 @@
       "capacityRow.cache.git_not_repo_rows.what",
       "capacityRow.cache.image_thumbs.full",
       "capacityRow.cache.image_thumbs.what",
+      "capacityRow.cache.model_name_bytes.full",
       "capacityRow.cache.pinned_read.full",
       "capacityRow.cache.provider_quota.full",
       "capacityRow.cache.provider_quota_renew_seconds.full",
@@ -4001,6 +4002,7 @@
       "capacityRow.cache.claude_usage_request_seconds.full",
       "capacityRow.cache.git_not_repo.full",
       "capacityRow.cache.image_thumbs.full",
+      "capacityRow.cache.model_name_bytes.full",
       "capacityRow.cache.pinned_read.full",
       "capacityRow.cache.pinned_read.what",
       "capacityRow.cache.provider_quota_renew_seconds.what",
@@ -8581,6 +8583,7 @@
     "capacityRow.cache.git_not_repo_rows.what",
     "capacityRow.cache.image_thumbs.full",
     "capacityRow.cache.image_thumbs.what",
+    "capacityRow.cache.model_name_bytes.full",
     "capacityRow.cache.pinned_read.full",
     "capacityRow.cache.pinned_read.what",
     "capacityRow.cache.provider_quota.full",

@@ -34,3 +34,18 @@ func PersonalGroupScope(machine string) ProjectScope {
 	digest := sha256.Sum256([]byte("personal-group\x00" + machine))
 	return PersonalScope(ProjectSelection{MachineID: machine, ProjectID: workspacePrefix + hex.EncodeToString(digest[:])})
 }
+
+// ModelCatalogBotID names the machine's own model discovery, which is not a
+// Bot: no Bot record, conversation or memory has this identity.
+const ModelCatalogBotID = "model-catalog"
+
+// ModelCatalogBot is the identity the daemon's model catalog asks an agent
+// for its models with (internal/app/modelcatalog). It runs in its own empty
+// personal workspace, so no Project's settings shape the answer and no Bot
+// needs to be chosen, and it uses the person's own login, as an unconfigured
+// Bot would.
+func ModelCatalogBot(machine string, agent Agent) Bot {
+	digest := sha256.Sum256([]byte("model-catalog\x00" + machine))
+	scope := PersonalScope(ProjectSelection{MachineID: machine, ProjectID: workspacePrefix + hex.EncodeToString(digest[:])})
+	return Bot{Key: BotKey{MachineID: machine, BotID: ModelCatalogBotID}, Project: scope, ConversationID: ModelCatalogBotID, Agent: agent}
+}

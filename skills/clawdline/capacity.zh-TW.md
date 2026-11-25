@@ -260,6 +260,11 @@
 | `cache.git_not_repo` | 60 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.git_not_repo_rows` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.image_thumbs` | 8388608 | `bytes` | `evict_oldest` | `diagnostics` | — |
+| `cache.model_catalog_models` | 64 | `rows` | `coalesce` | `diagnostics` | — |
+| `cache.model_catalog_probe_seconds` | 90 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.model_catalog_refresh_seconds` | 600 | `seconds` | `expire` | `diagnostics` | — |
+| `cache.model_catalog_retry_seconds` | 60 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `cache.model_name_bytes` | 64 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `cache.pinned_read` | 3 | `seconds` | `expire` | `diagnostics` | — |
 | `cache.provider_quota` | 4 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `cache.provider_quota_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |

@@ -3,7 +3,6 @@ import { useState } from "react"
 import { bootCatalog } from "../catalog"
 import { BotsSettingsModal, type SharedSettingsReply } from "./BotsSettingsModal"
 import type { SourceClient } from "./client"
-import type * as W from "@clawdline/contract"
 import "./styles.css"
 
 // Synthetic data only: fake Project names, no daemon.
@@ -17,25 +16,32 @@ const reply: SharedSettingsReply = {
 }
 // A synthetic source in place of a machine, as a Cloud or local console passes one.
 const answer = (machine: string) => ({ contract_version: "project-assistants.v1" as const, machine_id: machine, ...reply })
-// Synthetic model catalogs shaped like each ACP adapter's (Codex lists one entry per effort).
-const catalogs: Record<string, { current: string; choices: { value: string; name: string; description?: string }[] }> = {
-  claude: { current: "default", choices: [{ value: "default", name: "Default (recommended)", description: "Opus" }, { value: "opus", name: "Opus" }, { value: "sonnet", name: "Sonnet" }, { value: "haiku", name: "Haiku" }] },
-  codex: { current: "model-a/high", choices: [{ value: "model-a/high", name: "model-a (high)" }, { value: "model-a/xhigh", name: "model-a (xhigh)" }, { value: "model-b-mini/high", name: "model-b-mini (high)" }] },
-  antigravity: { current: "default", choices: [{ value: "default", name: "Default", description: "Pro" }, { value: "flash", name: "Flash" }] },
-}
+// Synthetic model catalogs as the daemon's GET /v1/model-catalog answers them.
+type Row = { agent: string; models: { value: string; name: string; description?: string }[]; default_name: string; efforts: string[]; source: "native" | "agent"; observed_at: string; refreshing: boolean }
+const row = (agent: string, default_name: string, models: string[], refreshing = false, source: Row["source"] = "agent"): Row =>
+  ({ agent, default_name, models: models.map(m => ({ value: m.toLowerCase(), name: m })), efforts: [], source, observed_at: "2026-11-25T00:00:00Z", refreshing })
 const discovery = new URLSearchParams(location.search)
 const delay = Number(discovery.get("delay") ?? 600)
-let geminiFailures = discovery.has("geminiFails") ? 1 : 0
-;(window as unknown as { asked: string[] }).asked = []
+// The first read fails once with ?fails, so the list shows its retry.
+let failures = discovery.has("fails") ? 1 : 0
+const started = Date.now()
+;(window as unknown as { asked: number }).asked = 0
 const fakeSource = (machine: string, older = false) => ({
   machineID: machine, authorizationRevision: "fixture",
   async sharedSettings() { if (older) throw { contract_version: "project-assistants.v1", error: { code: "pa_unsupported", field: "", retry_after_seconds: 0 } }; return answer(machine) },
-  async configuration(_key: unknown, _conversation: string, agent: string) {
-    ;(window as unknown as { asked: string[] }).asked.push(agent)
+  canModelCatalog: () => !older,
+  async modelCatalog() {
+    ;(window as unknown as { asked: number }).asked++
     await new Promise(r => setTimeout(r, delay))
-    if (agent === "antigravity" && geminiFailures-- > 0) throw { contract_version: "project-assistants.v1", error: { code: "pa_unavailable", field: "", retry_after_seconds: 0 } }
-    const c = catalogs[agent] ?? { current: "", choices: [] }
-    return { contract_version: "project-assistants.v1", catalog: { agent, model: "", options: [{ id: "model", name: "Model", category: "model", current: c.current, choices: c.choices }] } }
+    if (failures-- > 0) throw { contract_version: "project-assistants.v1", error: { code: "pa_offline", field: "", retry_after_seconds: 0 } }
+    // Codex has no native list here: the daemon is still asking it for three seconds.
+    const codexDone = Date.now() - started > 3000
+    return { agents: [
+      row("claude", "Opus", ["Opus", "Sonnet", "Haiku"]),
+      codexDone ? row("codex", "model-a", ["model-a", "model-b-mini"]) : row("codex", "", [], true, "native"),
+      row("antigravity", "Pro", ["Flash"]),
+      row("grok", "", [], false, "native"),
+    ] }
   },
   async saveSharedSettings(r: { settings: SharedSettingsReply["settings"] }) {
     reply.settings = { ...r.settings, version: reply.settings.version + 1 }
@@ -46,13 +52,12 @@ const fakeSource = (machine: string, older = false) => ({
 const several = new URLSearchParams(location.search).has("machines")
 const machines = several ? [{ source: fakeSource("m-studio"), name: "Studio" }, { source: fakeSource("m-laptop", true), name: "Laptop" }] : [{ source: fakeSource("m-studio"), name: "Studio" }]
 const projects = [{ id: "p-web", name: "Sample Web" }, { id: "p-api", name: "Sample API" }, { id: "p-docs", name: "Sample Docs" }]
-const catalogBots = new Map(machines.map(m => [m.source.machineID, { key: { machine_id: m.source.machineID, bot_id: "lead" }, conversation_id: "c1", lead: true } as unknown as W.ProjectAssistantBot]))
 
 function App() {
   const [open, setOpen] = useState(false)
   return <div className="project-assistants" style={{ position: "relative", height: "100%" }}>
     <button id="opener" type="button" onClick={() => setOpen(true)}>open</button>
-    {open && <BotsSettingsModal projects={projects} machines={machines} catalogBots={catalogBots} onClose={() => setOpen(false)}/>}
+    {open && <BotsSettingsModal projects={projects} machines={machines} onClose={() => setOpen(false)}/>}
   </div>
 }
 

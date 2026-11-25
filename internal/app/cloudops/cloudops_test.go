@@ -970,6 +970,11 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "read:req-models",
 		method: "GET", path: "/v1/settings/default-models",
 	}, {
+		word:    "model-catalog",
+		body:    map[string]any{"type": "model-catalog", "session": machine, "request": "req-catalog", "agent": "codex"},
+		session: machine, name: "read:req-catalog",
+		method: "GET", path: "/v1/model-catalog", query: map[string]string{"agent": "codex"},
+	}, {
 		word: "default-models-update",
 		body: map[string]any{"type": "default-models-update", "session": machine, "request": "req-models-write",
 			"changes": map[string]any{"codex_default_model": "gpt-6"}},

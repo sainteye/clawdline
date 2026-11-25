@@ -6,11 +6,10 @@ import (
 	"io"
 	"net/http"
 	"path/filepath"
-	"slices"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
-	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/modelcatalog"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -36,14 +35,7 @@ func (s *Server) projectAssistantDispatchAgents(now time.Time) []pa.DispatchAgen
 		if !available {
 			continue
 		}
-		option := pa.DispatchAgentOption{Agent: agent, Efforts: []string{}}
-		switch agent {
-		case pa.Codex:
-			option.Efforts = slices.Clone(projects.ReasoningEfforts)
-		case pa.Gemini:
-			option.Efforts = []string{"low", "medium", "high", "xhigh", "max"}
-		}
-		out = append(out, option)
+		out = append(out, pa.DispatchAgentOption{Agent: agent, Efforts: modelcatalog.Efforts(string(agent))})
 	}
 	return out
 }

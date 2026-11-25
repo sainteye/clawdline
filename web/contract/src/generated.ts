@@ -4570,6 +4570,43 @@ export interface MachineUsageOther {
   rss_bytes: number
 }
 
+/**
+ * One agent's catalog. A picker offers "Agent default (default_name)" first, then
+ * models. source native is the fast tier read from the agent's own files or CLI;
+ * agent is the agent's own answer. While refreshing is true a reader polls again.
+ * problem names why the last agent discovery failed while the list shown is the
+ * last good one.
+ */
+export interface ModelCatalogAgent {
+  agent: string
+  default_name: string
+  efforts: string[]
+  models: ModelCatalogModel[]
+  observed_at: string
+  problem?: string
+  problem_field?: string
+  refreshing: boolean
+  source: string
+}
+
+/**
+ * Every agent in claude, codex, antigravity, grok order, or the one named by
+ * ?agent=.
+ */
+export interface ModelCatalogAnswer {
+  agents: ModelCatalogAgent[]
+}
+
+/**
+ * One model a picker offers. value is launchable as it stands (projects.ModelName);
+ * the agent's own default is never an entry.
+ */
+export interface ModelCatalogModel {
+  description?: string
+  name: string
+  value: string
+}
+
 export interface Mover {
   id: string
   kind: MoverKind

@@ -23,6 +23,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/app/ports"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/modelcatalog"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -57,7 +58,7 @@ func (s *Server) openOwnedAntigravity(ctx context.Context, starter app.Starter, 
 }
 
 func hasKnownEffortSuffix(model string) bool {
-	for _, e := range []string{"low", "medium", "high", "xhigh", "max"} {
+	for _, e := range modelcatalog.Efforts(modelcatalog.Antigravity) {
 		if strings.HasSuffix(model, "-"+e) {
 			return true
 		}

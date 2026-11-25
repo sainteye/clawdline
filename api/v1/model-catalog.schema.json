@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "model-catalog.schema.json",
+  "title": "Model catalog",
+  "description": "GET /v1/model-catalog and the Cloud word model-catalog: the daemon's one list of models per agent, read by every screen that offers a model (docs/model-catalog.md).",
+  "$defs": {
+    "ModelCatalogModel": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One model a picker offers. value is launchable as it stands (projects.ModelName); the agent's own default is never an entry.",
+      "required": [
+        "value",
+        "name"
+      ],
+      "properties": {
+        "value": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "ModelCatalogAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One agent's catalog. A picker offers \"Agent default (default_name)\" first, then models. source native is the fast tier read from the agent's own files or CLI; agent is the agent's own answer. While refreshing is true a reader polls again. problem names why the last agent discovery failed while the list shown is the last good one.",
+      "required": [
+        "agent",
+        "models",
+        "default_name",
+        "efforts",
+        "source",
+        "observed_at",
+        "refreshing"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "enum": [
+            "claude",
+            "codex",
+            "antigravity",
+            "grok"
+          ]
+        },
+        "models": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelCatalogModel"
+          }
+        },
+        "default_name": {
+          "type": "string"
+        },
+        "efforts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "native",
+            "agent"
+          ]
+        },
+        "observed_at": {
+          "type": "string"
+        },
+        "refreshing": {
+          "type": "boolean"
+        },
+        "problem": {
+          "type": "string"
+        },
+        "problem_field": {
+          "type": "string"
+        }
+      }
+    },
+    "ModelCatalogAnswer": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every agent in claude, codex, antigravity, grok order, or the one named by ?agent=.",
+      "required": [
+        "agents"
+      ],
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ModelCatalogAgent"
+          }
+        }
+      }
+    }
+  }
+}

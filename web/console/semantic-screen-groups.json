@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14541,
-  "riskKeys": 6190,
-  "nonRiskCount": 8351,
+  "englishContentKeys": 14551,
+  "riskKeys": 6191,
+  "nonRiskCount": 8360,
   "groups": [
     {
       "name": "acp / other",
@@ -570,7 +570,7 @@
         "botsSettings.modelDefaultNamed",
         "botsSettings.modelDefaultPlain",
         "botsSettings.modelLoading",
-        "botsSettings.modelNoBot",
+        "botsSettings.modelOlderComputer",
         "botsSettings.open",
         "botsSettings.problemDisabled",
         "botsSettings.problemUnsupported",
@@ -636,7 +636,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 771,
+      "count": 780,
       "sources": [
         null
       ],
@@ -855,6 +855,15 @@
         "capacityRow.cache.claude_usage_refresh_seconds.what",
         "capacityRow.cache.claude_usage_reply_bytes.what",
         "capacityRow.cache.claude_usage_request_seconds.what",
+        "capacityRow.cache.model_catalog_models.full",
+        "capacityRow.cache.model_catalog_models.what",
+        "capacityRow.cache.model_catalog_probe_seconds.full",
+        "capacityRow.cache.model_catalog_probe_seconds.what",
+        "capacityRow.cache.model_catalog_refresh_seconds.full",
+        "capacityRow.cache.model_catalog_refresh_seconds.what",
+        "capacityRow.cache.model_catalog_retry_seconds.full",
+        "capacityRow.cache.model_catalog_retry_seconds.what",
+        "capacityRow.cache.model_name_bytes.what",
         "capacityRow.cache.provider_quota.what",
         "capacityRow.cache.provider_quota_refresh_seconds.full",
         "capacityRow.cache.provider_quota_refresh_seconds.what",
