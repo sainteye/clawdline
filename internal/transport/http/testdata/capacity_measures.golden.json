@@ -445,6 +445,11 @@
     "Note": true
   },
   {
+    "Name": "bots.decision_answer_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.decision_offer_seconds",
     "Known": true,
     "Note": true

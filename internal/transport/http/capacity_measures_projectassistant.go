@@ -171,6 +171,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.decision_offers":              pure,
 		"bots.decision_suggested_replies":   pure,
 		"bots.decision_question_bytes":      pure,
+		"bots.decision_answer_bytes":        pure,
 		"bots.decision_reply_bytes":         pure,
 		"bots.decision_request_quote_bytes": pure,
 		"bots.decision_offer_seconds":       unobserved,
