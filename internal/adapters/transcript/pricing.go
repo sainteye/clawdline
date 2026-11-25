@@ -123,7 +123,7 @@ func CodexModels(home string) []Model {
 func Models(home, assistant string) []Model {
 	switch assistant {
 	case "claude":
-		return claudeModels(home, claudeExecutable(home))
+		return cachedClaudeModels(home)
 	case "codex":
 		return CodexModels(home)
 	case "antigravity":

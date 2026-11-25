@@ -66,16 +66,55 @@ func compareClaudeVersion(a, b claudeVersion) int {
 	return a.minor - b.minor
 }
 
+// claudeModelsMemo keeps the one last answer of claudeModels. Reading it
+// scans the whole Claude Code executable, so every session-info and model
+// picker read used to pay for that scan; the answer only changes when
+// ~/.claude.json or the executable does, so their identity is the key.
+var claudeModelsMemo struct {
+	sync.Mutex
+	key    claudeModelsKey
+	models []Model
+}
+
+type claudeModelsKey struct {
+	state, executable  string
+	stateAt, binaryAt  time.Time
+	stateSize, binSize int64
+}
+
+func claudeStatePath(home string) string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, ".claude.json")
+	}
+	return filepath.Join(home, ".claude.json")
+}
+
+func cachedClaudeModels(home string) []Model {
+	key := claudeModelsKey{state: claudeStatePath(home), executable: claudeExecutable(home)}
+	if info, err := os.Stat(key.state); err == nil {
+		key.stateAt, key.stateSize = info.ModTime(), info.Size()
+	}
+	if key.executable != "" {
+		if info, err := os.Stat(key.executable); err == nil {
+			key.binaryAt, key.binSize = info.ModTime(), info.Size()
+		}
+	}
+	claudeModelsMemo.Lock()
+	defer claudeModelsMemo.Unlock()
+	if claudeModelsMemo.models != nil && claudeModelsMemo.key == key {
+		return append([]Model(nil), claudeModelsMemo.models...)
+	}
+	models := claudeModels(home, key.executable)
+	claudeModelsMemo.key, claudeModelsMemo.models = key, append([]Model{}, models...)
+	return models
+}
+
 // claudeModels reconstructs the versioned rows Claude Code's /model picker
 // can select without starting a second assistant or making a provider call.
 // The account cache says which newest family versions are actually exposed;
 // the installed executable supplies the legacy rows that cache omits.
 func claudeModels(home, executable string) []Model {
-	state := filepath.Join(home, ".claude.json")
-	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
-		state = filepath.Join(dir, ".claude.json")
-	}
-	account := readClaudeAccountVersions(state)
+	account := readClaudeAccountVersions(claudeStatePath(home))
 	installed := readClaudeVersions(executable)
 	if len(account) == 0 && len(installed) == 0 {
 		return []Model{

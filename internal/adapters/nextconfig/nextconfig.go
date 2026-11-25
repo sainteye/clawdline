@@ -36,6 +36,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
+	"github.com/sainteye/clawdline/internal/domain/modelcatalog"
 )
 
 // FileName is the settings file inside this app's directory.
@@ -559,11 +560,13 @@ var Settables = []Settable{
 		Refusal: "invalid_terminal", Because: "auto, iterm, iterm_native or tmux"},
 	{Name: "codex_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
-	{Name: "codex_default_effort", Kind: "string", Choices: []string{"", "high", "xhigh"},
+	{Name: "codex_default_effort", Kind: "string", Choices: append([]string{""}, modelcatalog.Efforts(modelcatalog.Codex)...),
 		Refusal: "invalid_default_effort", Because: "empty, high or xhigh"},
 	{Name: "antigravity_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},
-	{Name: "antigravity_default_effort", Kind: "string", Check: func(value string) bool { return value == "" || projects.KnownAntigravityEffort(value) },
+	{Name: "antigravity_default_effort", Kind: "string", Check: func(value string) bool {
+		return value == "" || modelcatalog.KnownEffort(modelcatalog.Antigravity, value)
+	},
 		Refusal: "invalid_default_effort", Because: "empty, low, medium, high, xhigh or max"},
 	{Name: "claude_default_model", Kind: "string", Check: ValidDefaultModel,
 		Refusal: "invalid_default_model", Because: "empty, or a model name made of lower-case letters, digits, dot, dash or underscore"},

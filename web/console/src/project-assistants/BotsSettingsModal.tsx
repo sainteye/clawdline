@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import type * as W from "@clawdline/contract"
 import { catalogWord } from "../catalog.js"
 import { useModalBackdrop } from "../modal-backdrop.js"
 import { AgentMark } from "./AgentMark"
 import { agentName } from "./fallback-settings"
 import { PaSelect, type PaSelectStatus } from "./PaSelect"
-import { dispatchModels, type DispatchModels } from "./dispatch-models"
+import { useModelCatalog, type ModelCatalog } from "../model-catalog/useModelCatalog"
 import { errorCode, failure, type SharedSettingsAnswer, type SourceClient } from "./client"
 import "./bots-settings.css"
 
@@ -121,64 +121,25 @@ export function ScopePicker({ scope, projects, onChange }: { scope: SharedScope;
   </div>
 }
 
-type CatalogState = { status: "loading" | "ready" | "error" | "unavailable"; models?: DispatchModels }
-type Catalogs = { state: Readonly<Record<string, CatalogState>>; load: (agent: string, again?: boolean) => void }
+type Catalogs = ModelCatalog
 
-/**
- * Each agent's model list, asked of the agent itself through one of this
- * machine's Bots (the same discovery a Bot's own settings use). Requests run
- * one at a time, as the source has a single discovery slot, and each answer
- * is kept while the dialog is open.
- */
-function useModelCatalogs(source: SourceClient | undefined, bot: W.ProjectAssistantBot | undefined): Catalogs {
-  const [state, setState] = useState<Record<string, CatalogState>>({})
-  const asked = useRef(new Set<string>())
-  const queue = useRef(Promise.resolve())
-  const generation = useRef(0)
-  const control = useRef(new AbortController())
-  useEffect(() => {
-    generation.current++
-    asked.current = new Set()
-    setState({})
-    return () => control.current.abort()
-  }, [source, bot?.key.bot_id, bot?.conversation_id])
-  const load = useCallback((agent: string, again = false) => {
-    if (asked.current.has(agent) && !again) return
-    asked.current.add(agent)
-    const set = (next: CatalogState) => setState(s => ({ ...s, [agent]: next }))
-    if (!source?.configuration || !bot) { set({ status: "unavailable" }); return }
-    const mine = generation.current
-    set({ status: "loading" })
-    queue.current = queue.current.then(async () => {
-      if (mine !== generation.current) return
-      control.current = new AbortController()
-      try {
-        const answer = await source.configuration!(bot.key, bot.conversation_id, agent as W.ProjectAssistantAgent, "", control.current.signal)
-        if (mine === generation.current) set(answer.catalog.agent === agent ? { status: "ready", models: dispatchModels(answer.catalog) } : { status: "error" })
-      } catch {
-        if (mine === generation.current && !control.current.signal.aborted) set({ status: "error" })
-      }
-    })
-  }, [source, bot])
-  return { state, load }
-}
-
-/** A model drop-down for one agent: the agent's own list, with its loading and failure states inside the list. */
+/** A model drop-down for one agent: the machine's model catalog, with its loading and failure states inside the list. */
 function ModelSelect({ agent, value, onChange, catalogs, disabled }: { agent: string; value?: string; onChange: (model?: string) => void; catalogs: Catalogs; disabled?: boolean }) {
-  const { load } = catalogs
-  useEffect(() => { if (!disabled) load(agent) }, [agent, disabled, load])
-  const current = catalogs.state[agent]
-  const models = current?.models
+  const current = catalogs.get(agent)
+  const catalog = current.status === "ready" ? current.catalog : undefined
   const name = agentName(agent)
-  const loading = !disabled && (!current || current.status === "loading")
-  const options = [{ value: "", label: models?.defaultName ? word("modelDefaultNamed").replace("{name}", models.defaultName) : word("modelDefaultPlain") }, ...(models?.choices ?? [])]
+  const models = catalog?.models ?? []
+  // Still asking the agent, with nothing to show yet: the list waits inside itself.
+  const loading = !disabled && (current.status === "loading" || current.status === "ready" && current.waiting && !models.length)
+  const options = [{ value: "", label: catalog?.default_name ? word("modelDefaultNamed").replace("{name}", catalog.default_name) : word("modelDefaultPlain") },
+    ...models.map(m => ({ value: m.value, label: m.name, hint: m.description || undefined }))]
   // A saved model stays visible while the list loads, and after it if the agent no longer lists it.
-  if (value && !options.some(o => o.value === value)) options.push({ value, label: value, hint: current?.status === "ready" ? word("modelMissing") : undefined })
+  if (value && !options.some(o => o.value === value)) options.push({ value, label: value, hint: catalog && !loading ? word("modelMissing") : undefined })
   let status: PaSelectStatus | undefined
   if (loading) status = { kind: "loading", text: word("modelLoading").replace("{agent}", name) }
-  else if (current?.status === "error") status = { kind: "error", text: word("modelFailed").replace("{agent}", name), retryLabel: word("retry"), onRetry: () => load(agent, true) }
-  else if (current?.status === "unavailable") status = { kind: "error", text: word("modelNoBot") }
-  else if (current?.status === "ready" && !models?.choices.length) status = { kind: "empty", text: word("modelEmpty").replace("{agent}", name) }
+  else if (current.status === "failed") status = { kind: "error", text: word("modelFailed").replace("{agent}", name), retryLabel: word("retry"), onRetry: catalogs.retry }
+  else if (current.status === "unsupported") status = { kind: "empty", text: word("modelOlderComputer") }
+  else if (catalog && !models.length) status = { kind: "empty", text: word("modelEmpty").replace("{agent}", name) }
   return <PaSelect compact ariaLabel={`${name} ${word("model")}`} value={value ?? ""} options={options} busy={loading} status={status} disabled={disabled} onChange={next => onChange(next || undefined)}/>
 }
 
@@ -305,10 +266,8 @@ export type SettingsMachine = { source: SourceClient; name: string }
 
 type Tab = "dispatch" | "memory"
 
-export function BotsSettingsModal({ projects, onClose, machines, initialMachine, catalogBots }: {
+export function BotsSettingsModal({ projects, onClose, machines, initialMachine }: {
   projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string
-  /** One Bot per machine whose source asks each agent for its model list. */
-  catalogBots?: ReadonlyMap<string, W.ProjectAssistantBot>
 }) {
   const panel = useRef<HTMLElement>(null)
   const opener = useRef<Element | null>(typeof document === "undefined" ? null : document.activeElement)
@@ -323,7 +282,7 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine,
   const [attempt, setAttempt] = useState(0)
   const [tab, setTab] = useState<Tab>("dispatch")
   const [editing, setEditing] = useState<string | null>(null)
-  const catalogs = useModelCatalogs(source, catalogBots?.get(machine))
+  const catalogs = useModelCatalog(source)
   const close = () => { onClose(); (opener.current as HTMLElement | null)?.focus?.() }
   const backdrop = useModalBackdrop(close)
   useEffect(() => {

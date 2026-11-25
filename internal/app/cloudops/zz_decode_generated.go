@@ -80,6 +80,7 @@ var generatedDecoders = map[string]genDecoder{
 	"jira-projects":                      genDecodeJiraProjects,
 	"key":                                genDecodeKey,
 	"machine-usage":                      genDecodeMachineUsage,
+	"model-catalog":                      genDecodeModelCatalog,
 	"native-terminal-input":              genDecodeNativeTerminalInput,
 	"native-terminal-screen":             genDecodeNativeTerminalScreen,
 	"notification-rules":                 genDecodeNotificationRules,
@@ -2103,6 +2104,27 @@ func genDecodeMachineUsage(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/machine/usage"
 	req := LocalRequest{Method: "GET", Path: path}
+	return p, req, true
+}
+
+// genDecodeModelCatalog is the `model-catalog` row's decode.
+func genDecodeModelCatalog(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+		[]string{"type", "agent", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("agent", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/model-catalog"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"agent": genValue{from: "agent"}})
 	return p, req, true
 }
 

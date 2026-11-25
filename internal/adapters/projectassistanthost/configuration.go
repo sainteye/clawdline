@@ -31,3 +31,14 @@ func (h *Host) configuration(ctx context.Context, bot pa.Bot, dir, model string)
 }
 
 func (h *Host) ConfigurationUsage() int { return len(h.configurationSlots) }
+
+// DiscoverModels asks agent for its configuration under the machine's own
+// model-catalog identity, in dir, which must be that identity's personal
+// workspace. It takes the same discovery slot a Bot's model dialog does, so
+// it never runs beside one; a busy slot is a CapacityFull refusal.
+func (h *Host) DiscoverModels(ctx context.Context, agent pa.Agent, dir string) (pa.ConfigurationCatalog, error) {
+	if !agent.Valid() {
+		return pa.ConfigurationCatalog{}, failure(pa.Unsupported, "agent")
+	}
+	return h.configuration(ctx, pa.ModelCatalogBot(h.o.MachineID, agent), dir, "")
+}

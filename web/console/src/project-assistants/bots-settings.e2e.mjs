@@ -1,6 +1,7 @@
 // Bots settings modal in a real browser: the side navigation, the default agent
 // tiles, the work-kind table and a kind's page; every drop-down list stays inside
-// the dialog, model lists show their loading and failure states, focus stays
+// the dialog, model lists come from the machine's model catalog and show its
+// loading, still-asking and failure states, focus stays
 // inside, Esc and the backdrop close it, and saving writes the whole document.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> BOTS_ARTIFACTS=<dir> node bots-settings.e2e.mjs
 import assert from "node:assert/strict"
@@ -49,7 +50,7 @@ async function listInsideDialog(page,label){
 try{
   for(const [name,viewport] of [["desktop",{width:1280,height:900}],["390",{width:390,height:844}]]){
     const touch=name==="390",page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:touch,hasTouch:touch})
-    await page.goto(origin+"/?geminiFails")
+    await page.goto(origin+"/?fails")
     await page.click("#opener")
     const dialog=page.getByRole("dialog")
     await dialog.waitFor()
@@ -70,12 +71,17 @@ try{
     await page.locator(".pa-bs-body").evaluate(e=>e.scrollTop=0)
     await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-${name}.png`)})
 
-    // The default's model list: loading first, inside the list, then the agent's models.
+    // The default's model list: loading first, inside the list; the first read fails
+    // with a retry inside the list; the retry reads the machine's catalog.
     const modelButton=page.locator(".pa-bs-group").first().locator(".pa-select-button").first()
     await modelButton.click()
     await page.locator(".pa-select-status[data-kind=loading]").waitFor()
     await listInsideDialog(page,`${name} default model loading`)
     await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-model-loading-${name}.png`)})
+    await page.locator(".pa-select-status[data-kind=error]").waitFor()
+    await listInsideDialog(page,`${name} default model failed`)
+    await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-model-failed-${name}.png`)})
+    await page.locator(".pa-select-retry").click()
     await page.locator(".pa-select-status").waitFor({state:"detached"})
     const claudeModels=await page.locator(".pa-select-list [role=option]").allTextContents()
     assert.deepEqual(claudeModels,["Agent 預設（Opus）","Opus","Sonnet","Haiku"],"Claude's default names what it runs and is not listed twice")
@@ -85,15 +91,19 @@ try{
     // Choosing Codex as the default resets its model, and its per-effort list collapses.
     await tiles.nth(1).click()
     assert.equal(await tiles.nth(1).getAttribute("aria-checked"),"true")
+    // The daemon is still asking Codex: the list waits inside itself, then fills in by itself.
     await modelButton.click()
-    await page.locator(".pa-select-status").waitFor({state:"detached"})
+    await page.locator(".pa-select-status[data-kind=loading]").waitFor()
+    await listInsideDialog(page,`${name} codex model refreshing`)
+    await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-model-refreshing-${name}.png`)})
+    await page.locator(".pa-select-status").waitFor({state:"detached",timeout:15000})
     assert.deepEqual(await page.locator(".pa-select-list [role=option]").allTextContents(),["Agent 預設（model-a）","model-a","model-b-mini"])
     await listInsideDialog(page,`${name} codex model`)
     await page.keyboard.press("Escape")
     await page.locator(".pa-select-list").waitFor({state:"detached"})
     assert.equal(await dialog.isVisible(),true,"Esc closes the list first")
 
-    // A kind's page: the four agents, order by selection, a failing model list with a retry.
+    // A kind's page: the four agents, order by selection, each with the catalog's list.
     await page.locator(".pa-bs-kind-row").nth(1).click()
     await page.locator(".pa-bs-detail").waitFor()
     assert.equal(await page.locator(".pa-bs-order-item").count(),4,"all four agents are listed on a kind's page")
@@ -102,12 +112,8 @@ try{
     const geminiModel=page.locator(".pa-bs-order-item").nth(2).locator(".pa-select-button").first()
     await geminiModel.scrollIntoViewIfNeeded()
     await geminiModel.click()
-    await page.locator(".pa-select-status[data-kind=error]").waitFor()
-    await listInsideDialog(page,`${name} gemini failed`)
-    await page.screenshot({path:path.join(BOTS_ARTIFACTS,`bots-settings-model-failed-${name}.png`)})
-    await page.locator(".pa-select-retry").click()
-    await page.locator(".pa-select-status").waitFor({state:"detached"})
-    assert.deepEqual(await page.locator(".pa-select-list [role=option]").allTextContents(),["Agent 預設（Pro）","Flash"],"retry reads the list")
+    assert.deepEqual(await page.locator(".pa-select-list [role=option]").allTextContents(),["Agent 預設（Pro）","Flash"],"Gemini reads the same catalog")
+    await listInsideDialog(page,`${name} gemini model`)
     await page.keyboard.press("Escape")
     // The last agent's lists sit near the bottom of the pane and must still stay inside.
     const codexEffort=page.locator(".pa-bs-order-item").nth(1).locator(".pa-select-button").nth(1)

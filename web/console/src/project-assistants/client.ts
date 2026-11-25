@@ -32,6 +32,9 @@ export interface SourceClient {
  /** The machine's Bots shared settings, read and saved whole with the version read. */
  sharedSettings?(signal:AbortSignal):Promise<SharedSettingsAnswer>
  saveSharedSettings?(request:SharedSettingsWrite,signal:AbortSignal):Promise<SharedSettingsAnswer>
+ /** The daemon's one model catalog (API 120): every agent, or the one named. */
+ canModelCatalog?():boolean
+ modelCatalog?(agent:string|undefined,signal:AbortSignal):Promise<W.ModelCatalogAnswer>
  towerFloors?(signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean

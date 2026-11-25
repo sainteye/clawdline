@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/sainteye/clawdline/internal/domain/modelcatalog"
 )
 
 // Machine-wide Bots settings: dispatch rules that pick the agent for a work
@@ -131,16 +133,11 @@ func DispatchChoiceFrom(ctx context.Context) DispatchChoice {
 	return c
 }
 
+// validModel is the launcher's own rule, so a saved choice is never one a
+// dispatch would then refuse. maxDispatchModel is the same 64 bytes.
 func validModel(m string) bool {
-	if m == "" || len(m) > maxDispatchModel {
-		return false
-	}
-	for _, r := range m {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
-			return false
-		}
-	}
-	return true
+	_, ok := modelcatalog.ModelName(m)
+	return ok && len(m) <= maxDispatchModel
 }
 
 func agentNames(options []DispatchAgentOption) []string {

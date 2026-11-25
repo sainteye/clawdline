@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/sainteye/clawdline/internal/config"
+	"github.com/sainteye/clawdline/internal/domain/modelcatalog"
 	"github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
@@ -40,18 +41,9 @@ func KnownAssistant(name string) bool {
 func OwnedAssistant(name string) bool { return name == AssistantAntigravity || name == AssistantGrok }
 
 // ModelName is SessionLaunchPolicy.modelName: `[a-z0-9._-]`, 1…64, never
-// opening with `-`. No string it admits holds a character a shell reads.
-func ModelName(raw string) (string, bool) {
-	if raw == "" || len(raw) > 64 || strings.HasPrefix(raw, "-") {
-		return "", false
-	}
-	for _, r := range raw {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '.' || r == '_' || r == '-') {
-			return "", false
-		}
-	}
-	return raw, true
-}
+// opening with `-`. The rule itself is modelcatalog.ModelName, which every
+// launcher and saved model choice shares.
+func ModelName(raw string) (string, bool) { return modelcatalog.ModelName(raw) }
 
 // ReasoningEfforts is `ReasoningEffort.allCases`: the only two names Codex's
 // `model_reasoning_effort` is set to from here, and the order the refusal
@@ -62,16 +54,11 @@ func ModelName(raw string) (string, bool) {
 // permission — a name that is not on it is refused, never passed through — and
 // the two on it are the two that mean something to somebody writing a task
 // down: the default is already what an unset field gets.
-var ReasoningEfforts = []string{"high", "xhigh"}
+var ReasoningEfforts = modelcatalog.Efforts(modelcatalog.Codex)
 
 // KnownReasoningEffort is `ReasoningEffort(rawValue:)`: exact, and two cases.
 func KnownReasoningEffort(name string) bool {
-	for _, e := range ReasoningEfforts {
-		if e == name {
-			return true
-		}
-	}
-	return false
+	return modelcatalog.KnownEffort(modelcatalog.Codex, name)
 }
 
 // SessionName is SessionLaunchPolicy.sessionID: a UUID as the CLIs write it,
@@ -444,11 +431,7 @@ func Admit(req LaunchRequest) (Launch, error) {
 
 // KnownAntigravityEffort is the standalone CLI's closed --effort vocabulary.
 func KnownAntigravityEffort(value string) bool {
-	switch value {
-	case "low", "medium", "high", "xhigh", "max":
-		return true
-	}
-	return false
+	return modelcatalog.KnownEffort(modelcatalog.Antigravity, value)
 }
 
 const (

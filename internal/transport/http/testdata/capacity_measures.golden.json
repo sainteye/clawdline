@@ -1256,6 +1256,31 @@
     "Note": true
   },
   {
+    "Name": "cache.model_catalog_models",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.model_catalog_probe_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.model_catalog_refresh_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.model_catalog_retry_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "cache.model_name_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "cache.pinned_read",
     "Known": true,
     "Note": true

@@ -72,13 +72,13 @@ document keeps the earlier behavior.
   `high`/`xhigh`, Gemini `low`–`max`; Claude Code and Grok none). **Selection is ordered fallback**:
   the first listed agent available here runs the work. When none of a rule's agents is available,
   dispatch fails with `pa_unsupported` `dispatch_rule_agents` instead of silently running another.
-- **Model drop-downs** list what the agent itself reports, asked through one of the machine's Bots
-  (the lead first) with the same discovery a Bot's own settings use, one request at a time. The
-  first entry is "Agent default (<what it runs>)", meaning no model is named. Codex's per-effort
-  entries collapse to one model each, and names the launcher's model rule would refuse are not
-  offered. The list shows its loading state, a failure with a retry, or that the agent reported no
-  other models; it opens upward when the pane has no room below. A saved model the agent no longer
-  lists stays selected and is marked.
+- **Model drop-downs** read the machine's [model catalog](model-catalog.md) through
+  `useModelCatalog`: one read answers every agent, no Bot is chosen, and the phone reads it over
+  the Cloud word `model-catalog`. The first entry is "Agent default (<what it runs>)", meaning no
+  model is named. The list shows its loading state (also while the daemon is still asking the
+  agent), a failure with a retry, that the agent reported no other models, or that an older
+  machine cannot list models; it opens upward when the pane has no room below. A saved model the
+  agent no longer lists stays selected and is marked.
 - **Precedence in `dispatch_work`**: explicit `agent`/`model`/`effort` > the rule for `kind` > the
   saved default > Claude Code. With no rule and no default, dispatch is exactly as before.
 - **Permission.** A Bot's dispatch carries no permission of its own: it is admitted exactly as a

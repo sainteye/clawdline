@@ -1,8 +1,20 @@
 package capacity
 
+import mc "github.com/sainteye/clawdline/internal/domain/modelcatalog"
+
 // cacheBounds is every registered row named cache.*.
 func cacheBounds() []Entry {
 	return []Entry{
+		// The daemon's one model catalog (docs/model-catalog.md): at most 64
+		// models kept per agent, an agent answer served for ten minutes, a
+		// failed discovery retried after a minute, ninety seconds for one
+		// discovery, and the 64-byte launchable model name every picker,
+		// launcher and saved choice shares.
+		{Name: "cache.model_catalog_models", Class: Buffer, Unit: Rows, Limit: mc.MaxCatalogModels, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/modelcatalog.MaxCatalogModels"}},
+		{Name: "cache.model_catalog_refresh_seconds", Class: Cache, Unit: Seconds, Limit: mc.MaxRefreshSeconds, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/modelcatalog.MaxRefreshSeconds"}},
+		{Name: "cache.model_catalog_retry_seconds", Class: Observation, Unit: Seconds, Limit: mc.MaxRetrySeconds, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/modelcatalog.MaxRetrySeconds"}},
+		{Name: "cache.model_catalog_probe_seconds", Class: Observation, Unit: Seconds, Limit: mc.MaxProbeSeconds, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/modelcatalog.MaxProbeSeconds"}},
+		{Name: "cache.model_name_bytes", Class: Buffer, Unit: Bytes, Limit: mc.MaxModelNameBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/modelcatalog.MaxModelNameBytes"}},
 		{Name: "cache.transcript_delta_pages", Class: Cache, Unit: Rows, Limit: 128, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaPagesLimit"}},
 		{Name: "cache.transcript_delta_bytes", Class: Cache, Unit: Bytes, Limit: 8 << 20, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/transport/http.transcriptDeltaBytesLimit"}},
 		{Name: "cache.provider_quota", Class: Cache, Unit: Rows, Limit: 4, AtLimit: EvictOldest,

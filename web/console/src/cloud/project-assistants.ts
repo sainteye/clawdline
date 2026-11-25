@@ -73,6 +73,8 @@ export const PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL = 97
 export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
 // Machine-named Bots shared settings, carried over Cloud, arrive at 116.
 export const PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL = 116
+// The daemon's one model catalog, GET /v1/model-catalog and its Cloud word, arrives at 120.
+export const MODEL_CATALOG_API_LEVEL = 120
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -624,6 +626,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canTowerFloors(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL);return true}catch{return false}}
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   saveTowerFloor(r:W.ProjectAssistantTowerFloorRequest,s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors",s,r,"POST",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
+  canModelCatalog(){return (this.grant.apiLevel??0)>=MODEL_CATALOG_API_LEVEL}
+  modelCatalog(agent:string|undefined,s:AbortSignal){return this.request<W.ModelCatalogAnswer>("/v1/model-catalog"+(agent?query({agent}):""),s,undefined,"GET",true,MODEL_CATALOG_API_LEVEL)}
   sharedSettings(s:AbortSignal){return this.request<SharedSettingsAnswer>("/v1/project-assistant-shared-settings"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL)}
   saveSharedSettings(r:SharedSettingsWrite,s:AbortSignal){return this.request<SharedSettingsAnswer>("/v1/project-assistant-shared-settings",s,r,"PUT",true,PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL)}
   canNetworkSettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_NETWORK_API_LEVEL);return true}catch{return false}}
@@ -697,6 +701,15 @@ function browserRelayRequest(url: URL, method: string, body?: Record<string,unkn
 }
 
 /** Route metadata used by the captured encrypted transport; never a second UI model. */
+/** GET /v1/model-catalog[?agent=] is the Cloud word model-catalog; any other path is null. */
+export function modelCatalogRelayRequest(input: string, init?: RequestInit) {
+  const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
+  if (url.pathname !== "/v1/model-catalog") return null
+  const agent=url.searchParams.get("agent")
+  if (method !== "GET" || init?.body != null || [...url.searchParams.keys()].some(key=>key!=="agent") || url.searchParams.getAll("agent").length>1 || agent==="") throw failure("pa_invalid")
+  return {word:"model-catalog",kind:"read" as const,fields:agent?{agent}:{},id:""}
+}
+
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
   if(url.pathname.startsWith("/v1/browser/"))return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
@@ -909,7 +922,7 @@ export function capturedAssistantRelayFetch(machineID: string, current: () => As
     let request: ReturnType<typeof assistantRelayRequest>, client: AssistantRelayConnection | null
     // Everything before the encrypted request is a refusal that sent nothing.
     try {
-      request = assistantRelayRequest(input,init); client = current()
+      request = modelCatalogRelayRequest(input,init) ?? assistantRelayRequest(input,init); client = current()
       if (!carried.includes(request.word)) return Response.json({error:{code:"cloud_not_carried"}},{status:501})
       if (!client) throw failure("pa_offline")
       if (init?.signal?.aborted) throw new DOMException("Aborted","AbortError")

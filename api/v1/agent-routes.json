@@ -590,6 +590,11 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/model-catalog",
+      "guide": "connect"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/settings/dispatch-policy",
       "guide": "connect"
     },

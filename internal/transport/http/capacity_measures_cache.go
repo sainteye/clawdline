@@ -14,6 +14,23 @@ import (
 // (capacity.AreaOf), one reading per row.
 func (s *Server) cacheCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"cache.model_catalog_models": func() capacity.Reading {
+			entries, _, _ := s.modelCatalog().Usage()
+			return capacity.Reading{Known: true, Note: fmt.Sprintf("per-agent ceiling on catalog models; %d agents read so far, the rest of a longer answer is dropped", entries)}
+		},
+		"cache.model_catalog_refresh_seconds": func() capacity.Reading {
+			_, oldest, refreshing := s.modelCatalog().Usage()
+			return capacity.Reading{Known: true, Used: oldest, Note: fmt.Sprintf("age of the oldest agent answer served; %d discoveries queued or running", refreshing)}
+		},
+		"cache.model_catalog_retry_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "minimum wait after a failed agent discovery; the last good list is served meanwhile"}
+		},
+		"cache.model_catalog_probe_seconds": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "deadline for one agent discovery, one at a time on the machine, in the Bots discovery slot"}
+		},
+		"cache.model_name_bytes": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "longest launchable model name; a longer name is refused, never offered"}
+		},
 		"cache.transcript_delta_pages": func() capacity.Reading { return s.transcriptBaselines.reading(true) },
 		"cache.transcript_delta_bytes": func() capacity.Reading { return s.transcriptBaselines.reading(false) },
 		"cache.provider_quota":         func() capacity.Reading { return s.providerQuotaReader().Reading() },

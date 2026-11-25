@@ -143,6 +143,10 @@ func init() {
 
 		op{name: "default-models-update"},
 
+		// The daemon's one model catalog, read by every model picker on a
+		// paired phone as on this machine. A read, and machine-wide.
+		op{name: "model-catalog", read: true},
+
 		// The voice cards and a transcription-only client grant for dictation.
 		op{name: "voice-live-transcription"},
 		op{name: "voice-preview"},

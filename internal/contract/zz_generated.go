@@ -3926,6 +3926,37 @@ type MachineUsageOther struct {
 	RssBytes   int64   `json:"rss_bytes"`
 }
 
+// One agent's catalog. A picker offers "Agent default (default_name)" first,
+// then models. source native is the fast tier read from the agent's own files
+// or CLI; agent is the agent's own answer. While refreshing is true a reader
+// polls again. problem names why the last agent discovery failed while the list
+// shown is the last good one.
+type ModelCatalogAgent struct {
+	Agent        string              `json:"agent"`
+	DefaultName  string              `json:"default_name"`
+	Efforts      []string            `json:"efforts"`
+	Models       []ModelCatalogModel `json:"models"`
+	ObservedAt   string              `json:"observed_at"`
+	Problem      string              `json:"problem,omitempty"`
+	ProblemField string              `json:"problem_field,omitempty"`
+	Refreshing   bool                `json:"refreshing"`
+	Source       string              `json:"source"`
+}
+
+// Every agent in claude, codex, antigravity, grok order, or the one named by
+// ?agent=.
+type ModelCatalogAnswer struct {
+	Agents []ModelCatalogAgent `json:"agents"`
+}
+
+// One model a picker offers. value is launchable as it stands
+// (projects.ModelName); the agent's own default is never an entry.
+type ModelCatalogModel struct {
+	Description string `json:"description,omitempty"`
+	Name        string `json:"name"`
+	Value       string `json:"value"`
+}
+
 type Mover struct {
 	ID   string    `json:"id"`
 	Kind MoverKind `json:"kind"`
