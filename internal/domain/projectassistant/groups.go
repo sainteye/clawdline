@@ -581,8 +581,7 @@ type RoomEntry struct {
 	// Quote is captured from this room's stored line by the Host. It is not
 	// supplied by the client and is kept apart from the person's own text.
 	Quote *RoomQuote `json:"quote,omitempty"`
-	// Attachments are the pictures the person sent with the line, stored
-	// under the group's own key; each member asked receives its own copy.
+	// Attachments are the pictures on this line, stored under the group's key.
 	Attachments []Attachment `json:"attachments,omitempty"`
 	// Mentions is a read projection from RoomMentions, never stored.
 	Mentions []RoomMention `json:"-"`
@@ -711,17 +710,19 @@ func RoomSpeakers(g Group, catalog GroupCatalog) []RoomSpeaker {
 	return out
 }
 
-// PublishRoomAnswer turns a member's final text into the room line it
-// publishes, after the ticket is checked against current state. A pass
-// publishes nothing (ok false).
-func PublishRoomAnswer(g Group, s RoomState, t RoomTicket, seq int64, text string) (RoomEntry, bool, error) {
+// PublishRoomAnswer publishes a member's final text and pictures after the
+// ticket is checked. A pass without pictures produces no line.
+func PublishRoomAnswer(g Group, s RoomState, t RoomTicket, seq int64, text string, pictures []Attachment) (RoomEntry, bool, error) {
 	if err := CheckRoomTicket(g, s, t); err != nil {
 		return RoomEntry{}, false, err
 	}
 	if IsRoomPass(text) {
-		return RoomEntry{}, false, nil
+		if len(pictures) == 0 {
+			return RoomEntry{}, false, nil
+		}
+		text = ""
 	}
-	return RoomEntry{Seq: seq, Kind: RoomMemberEntry, Author: t.Member, Text: text}, true, nil
+	return RoomEntry{Seq: seq, Kind: RoomMemberEntry, Author: t.Member, Text: text, Attachments: pictures}, true, nil
 }
 
 const RoomPass = "(pass)"

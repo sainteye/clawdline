@@ -52,6 +52,18 @@ func (r *Engine) admitRoomTurn(ctx context.Context, t pa.RoomTicket) error {
 	return gate.Admit(ctx, t)
 }
 
+func roomOutputAttachment(t pa.Turn, e ProtocolEvent) ([]pa.Attachment, error) {
+	if e.RoomPicture == nil {
+		return nil, nil
+	}
+	if t.Room == nil || e.Message == "" || e.Output == nil || e.Output.ArtifactID != "" ||
+		e.RoomPicture.ID != e.Output.SHA256 || e.RoomPicture.Bytes != e.Output.Bytes {
+		return nil, runtimeFailure(pa.Invalid, "room_output_picture")
+	}
+	pictures := []pa.Attachment{*e.RoomPicture}
+	return pictures, pa.ValidateSend("", pictures)
+}
+
 // finishRoomTurn commits the member's terminal facts and the room line in
 // one transaction, then tells the room what happened. A refused ticket is
 // reported, not returned: the member's own turn did finish.

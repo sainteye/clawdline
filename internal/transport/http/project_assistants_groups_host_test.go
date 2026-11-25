@@ -1,10 +1,16 @@
 package http
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -524,6 +530,128 @@ func TestGroupsRootWiringStopsRoomsAndKeepsMembers(t *testing.T) {
 	}
 	if err := f.s.StopProjectAssistants(t.Context()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGroupMemberPublishOutputReturnsPicture(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	png, err := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAGAAAABACAIAAABqVuVZAAAAeklEQVR42u3QMQ0AIAwAMCTuRtOUIAI53EjAAfcgTaqgLXKVskeU0gQJEiRIkCBBggQJEiRIkCBBggQJEiRIkCBBggQJEvRcUJ/JhSBBggQJEiRIkCAECRIkSJAgQYIQJEiQIEGCvnAAOMhQd3tmNc8AAAAASUVORK5CYII=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(f.project, "snapshot.png")
+	if err = os.WriteFile(path, png, 0600); err != nil {
+		t.Fatal(err)
+	}
+	want := contract.ProjectAssistantAttachment{ID: fmt.Sprintf("%x", sha256.Sum256(png)), MediaType: "image/png", Bytes: int64(len(png))}
+	staged, finish := make(chan struct{}), make(chan struct{})
+	provider := &groupsManagerProvider{outcome: make(chan error, 1), run: func(ctx context.Context, tools app.NativeTools) error {
+		publish := tools.(app.OutputTools).PublishOutput
+		request := app.OutputRequest{Path: path}
+		out, err := publish(ctx, "room-image", request)
+		if err != nil {
+			return err
+		}
+		if out.SHA256 != want.ID || out.Bytes != want.Bytes {
+			return fmt.Errorf("wrong snapshot: %+v", out)
+		}
+		// A room attachment must read the snapshot, even after its source is gone.
+		if err = os.Remove(path); err != nil {
+			return err
+		}
+		if replay, replayErr := publish(ctx, "room-image", request); replayErr != nil || replay != out {
+			return fmt.Errorf("snapshot retry = %+v, %v", replay, replayErr)
+		}
+		close(staged)
+		select {
+		case <-finish:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}}
+	f.s.projectAssistants.provider = func() (app.Provider, error) { return provider, nil }
+	f.enable(t)
+	bot := f.create()
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, bot))
+	server := httptest.NewServer(f.h)
+	t.Cleanup(server.Close)
+	cmd := f.command(pa.CreateOperation, "picture-room")
+	cmd.Key.BotID = "picture-room"
+	const rooms = "/v1/project-assistants/rooms/groups"
+	status, body := routineHumanTCP(t, f, server, "POST", rooms, f.local, contract.ProjectAssistantGroupCreateRequest{
+		Command: cmd, Settings: contract.ProjectAssistantGroupCreateSettings{
+			Target: bot.Settings.Target, Name: "Snapshot Review", Members: []contract.ProjectAssistantBotKey{bot.Command.Key},
+		},
+	})
+	if status != http.StatusOK {
+		t.Fatal(status, string(body))
+	}
+	var created contract.ProjectAssistantGroupResponse
+	if err = json.Unmarshal(body, &created); err != nil {
+		t.Fatal(err)
+	}
+	cmd = f.command(pa.SendOperation, "request-picture")
+	cmd.Key = created.Group.Key
+	roomPath := rooms + "/" + cmd.Key.BotID
+	status, body = routineHumanTCP(t, f, server, "POST", roomPath+"/messages", f.local, contract.ProjectAssistantGroupSendRequest{Command: cmd, Text: "Share a PNG snapshot."})
+	if status != http.StatusOK {
+		t.Fatal(status, string(body))
+	}
+	select {
+	case <-staged:
+	case err = <-provider.outcome:
+		t.Fatalf("the room member did not stage its snapshot: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the room member never published its snapshot")
+	}
+	picturePath := "/v1/project-assistants/" + cmd.Key.BotID + "/attachments/" + want.ID + "?machine_id=" + f.key.MachineID
+	status, _ = routineHumanTCP(t, f, server, "GET", picturePath, f.local, nil)
+	close(finish)
+	if status != http.StatusNotFound {
+		t.Fatalf("picture was readable before a member line owned it: HTTP %d", status)
+	}
+	var line contract.ProjectAssistantRoomEntry
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline) && line.Seq == 0; {
+		status, body = routineHumanTCP(t, f, server, "GET", roomPath+"?machine_id="+f.key.MachineID+"&before_seq=0&page_size=20", f.local, nil)
+		if status != http.StatusOK {
+			t.Fatal(status, string(body))
+		}
+		var page contract.ProjectAssistantGroupHistoryResponse
+		if err = json.Unmarshal(body, &page); err != nil {
+			t.Fatal(err)
+		}
+		for _, candidate := range page.Lines {
+			if candidate.Kind == "member" {
+				line = candidate
+				break
+			}
+		}
+		if line.Seq == 0 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	if line.Author == nil || *line.Author != bot.Command.Key || line.Text != "Synthetic manager finished" {
+		t.Fatalf("wrong member line: %+v", line)
+	}
+	if script := os.Getenv("CLAWDLINE_GROUP_OUTPUT_BROWSER"); script != "" {
+		capture := exec.CommandContext(t.Context(), "node", script)
+		capture.Env = append(os.Environ(), "ROOM_FIXTURE_ORIGIN="+server.URL, "ROOM_FIXTURE_TOKEN="+f.local, "ROOM_FIXTURE_MACHINE="+f.key.MachineID)
+		if log, captureErr := capture.CombinedOutput(); captureErr != nil {
+			t.Fatalf("browser capture: %v\n%s", captureErr, log)
+		} else {
+			t.Log(string(log))
+		}
+	}
+	if len(line.Attachments) != 1 {
+		t.Fatalf("member line has %d attachments, want 1", len(line.Attachments))
+	}
+	if line.Attachments[0] != want {
+		t.Fatalf("attachment = %+v, want %+v", line.Attachments[0], want)
+	}
+	status, body = routineHumanTCP(t, f, server, "GET", picturePath, f.local, nil)
+	if status != http.StatusOK || !bytes.Equal(body, png) {
+		t.Fatalf("room attachment did not return the exact PNG: status %d, %d bytes", status, len(body))
 	}
 }
 
