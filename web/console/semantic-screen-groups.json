@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 14595,
-  "riskKeys": 6205,
-  "nonRiskCount": 8390,
+  "riskKeys": 6206,
+  "nonRiskCount": 8389,
   "groups": [
     {
       "name": "acp / other",
@@ -8403,7 +8403,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 243,
+      "count": 242,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8423,7 +8423,6 @@
         "transparency.card.browser-use.condition",
         "transparency.card.browser-use.summary",
         "transparency.card.browser-use.title",
-        "transparency.card.child.effect",
         "transparency.card.child.how",
         "transparency.card.child.title",
         "transparency.card.claude-language.condition",

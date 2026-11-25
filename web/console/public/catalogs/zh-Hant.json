@@ -13325,7 +13325,7 @@
   "transparency.card.browser-use.summary": "說明自動選用排序與本次 Session 的明確指定，並保留設定、接手與緊急停止的限制。",
   "transparency.card.browser-use.title": "瀏覽器使用守則",
   "transparency.card.child.condition": "這個 Session 是 child、排程執行、持續 Bot 的工作者，或 Cloud 配對協助任務",
-  "transparency.card.child.effect": "任務全程。",
+  "transparency.card.child.effect": "作用於任務全程。有 Git 寫入權限的工作階段會提交到自己的派工分支。macOS 上的 Codex 在編輯和完整權限模式中，可以寫入該工作樹的 Git 目錄、共用物件庫，以及派工分支的參照、鎖定檔和參照紀錄。Linux 沿用 bubblewrap 可用的儲存庫中繼資料權限設定。Codex 的詢問模式依其原生權限設定執行。",
   "transparency.card.child.how": "第一則訊息要求讀檔。",
   "transparency.card.child.summary": "讀取 CHILD.md 與 guide child、簽收工作說明，再透過 result.json 與 task finish 回報。回報摘要用短段落說明成果、驗證結果和待處理事項。持續 Bot 的工作者將結果與落地事實回傳來源 Bot 對話，不能代替使用者核准、認領或完成看板項目。Cloud 配對助理使用既有遠端存取權限，包括已登入的 InstaBox 控制台終端機。助理確認目標的 Cloud 機器 ID，並回報機器已接受交接及指令印出的指紋。瀏覽器收到並核對交接後才確認配對。關閉配對視窗後，瀏覽器仍可核對配對提議、機器和指紋。一般 root 不會收到這份工作說明。工作說明會分開成果、暫用二進位與原始紀錄；暫存須到保留期限且安全條件通過後才回收。",
   "transparency.card.child.title": "Child／排程任務的 briefing",

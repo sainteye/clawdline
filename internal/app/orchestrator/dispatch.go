@@ -1106,15 +1106,8 @@ func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 // specific entry winning; everything else `:workspace` protects stays as it
 // was.
 //
-// Measured with codex-cli 0.162.1 on macOS, in a repository and a linked
-// worktree made for the purpose: `:workspace` alone refuses `git add`; naming
-// only the common directory still refuses the worktree's index.lock; naming
-// only the worktree's gitdir refuses the object write; naming both stages and
-// commits, while the main checkout's files and a path outside the workspace
-// are still refused. A `sandbox_mode` in the person's config.toml did not win
-// over `-c default_permissions` on the command line, so a machine configured
-// for full access is not widened further. The same four cases measured alike
-// with codex-cli 0.161.0 under bubblewrap on the Ubuntu host.
+// The metadata paths depend on whether the task owns a linked worktree and
+// whether the platform can grant a file-level write (see codexGitWritePaths).
 //
 // The launch does not use --strict-config. It refuses the person's whole
 // config.toml for any key that Codex version does not know: 0.161.0 stopped on
@@ -1125,22 +1118,10 @@ func permissionArgs(r Record, taskRoot, cwd, taskExecutable string) []string {
 // `/status` read "Profile clawdline-workspace" with that fallback present; the
 // `--sandbox` flag, by contrast, replaced the profile ("Custom"), so it is not
 // used.
-//
-// Only directories this launch can check are granted: the toplevel's `.git`
-// directory, and a worktree gitdir only when it lies inside it. A repository
-// whose metadata is elsewhere (a submodule, a linked worktree used as the
-// project) keeps the legacy flags.
 func workspaceProfileArgs(r Record, taskRoot, cwd string, network bool) []string {
-	if r.Repository == "" || !filepath.IsAbs(r.Repository) {
+	writable := codexGitWritePaths(r, cwd)
+	if len(writable) == 0 {
 		return nil
-	}
-	metadata := filepath.Join(r.Repository, ".git")
-	if info, err := os.Lstat(metadata); err != nil || !info.IsDir() {
-		return nil
-	}
-	writable := []string{metadata}
-	if gitdir := worktreeGitdir(cwd, metadata); gitdir != "" {
-		writable = append(writable, gitdir)
 	}
 	if taskRoot != "" && filepath.IsAbs(taskRoot) {
 		// --add-dir already names it; the profile says so too rather than
@@ -1169,6 +1150,72 @@ func workspaceProfileArgs(r Record, taskRoot, cwd string, network bool) []string
 		args = append(args, "-c", projects.ShellQuoted(value))
 	}
 	return args
+}
+
+func codexGitWritePaths(r Record, cwd string) []string {
+	if !filepath.IsAbs(r.Repository) {
+		return nil
+	}
+	metadata := filepath.Join(r.Repository, ".git")
+	if info, err := os.Lstat(metadata); err != nil || !info.IsDir() {
+		return nil
+	}
+	w := r.Worktree
+	if w == nil {
+		paths := []string{metadata}
+		if gitdir := worktreeGitdir(cwd, metadata); gitdir != "" {
+			paths = append(paths, gitdir)
+		}
+		return paths
+	}
+	if w.Detached || !IsTaskID(r.ID) || w.Branch != BranchName(r.ID) {
+		return nil
+	}
+	// The launch can start below the worktree root, where there is no .git file.
+	gitdir := worktreeGitdir(w.Path, metadata)
+	if gitdir == "" {
+		return nil
+	}
+	refName := "refs/heads/" + w.Branch
+	head, err := os.ReadFile(filepath.Join(gitdir, "HEAD"))
+	if err != nil || strings.TrimSpace(string(head)) != "ref: "+refName {
+		return nil
+	}
+	if runtime.GOOS != "darwin" {
+		// Preserve the existing directory profile. Codex 0.166.0 on Linux
+		// treats a writable file as a mount root, failing before Git runs.
+		return []string{metadata, gitdir}
+	}
+	return macOSWorktreeGitPaths(metadata, gitdir, filepath.FromSlash(refName))
+}
+
+func macOSWorktreeGitPaths(metadata, gitdir, refName string) []string {
+	objects := filepath.Join(metadata, "objects")
+	ref := filepath.Join(metadata, refName)
+	reflog := filepath.Join(metadata, "logs", refName)
+	for _, dir := range []string{gitdir, objects, filepath.Dir(ref)} {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err != nil || resolved != dir {
+			return nil
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return nil
+		}
+	}
+	// A loose ref is replaced atomically by renaming its adjacent lock.
+	paths := []string{gitdir, objects, ref, ref + ".lock"}
+	if resolved, err := filepath.EvalSymlinks(filepath.Dir(reflog)); err == nil && resolved == filepath.Dir(reflog) {
+		paths = append(paths, reflog)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	for _, path := range paths[2:] {
+		info, err := os.Lstat(path)
+		if !errors.Is(err, os.ErrNotExist) && (err != nil || !info.Mode().IsRegular()) {
+			return nil
+		}
+	}
+	return paths
 }
 
 // worktreeGitdir is the gitdir a linked worktree's `.git` file names, when it

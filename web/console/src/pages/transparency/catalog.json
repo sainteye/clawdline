@@ -1318,7 +1318,11 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/brief.go",
-          "line": 70
+          "line": 71
+        },
+        {
+          "path": "internal/app/orchestrator/dispatch.go",
+          "line": 1155
         },
         {
           "path": "internal/app/orchestrator/child_guide.go",
@@ -1507,11 +1511,7 @@
         "\t}\n",
         "\tif r.Worktree != nil {\n",
         "\t\tw(\"- A fresh checkout of commit `%s` on branch `%s`.\", r.Worktree.Base, r.Worktree.Branch)\n",
-        "\t\tif r.Assistant == \"claude\" {\n",
-        "\t\t\tw(\"  **Commit early and often, on this branch only.** The branch is the delivery.\")\n",
-        "\t\t} else {\n",
-        "\t\t\tw(\"  **Do not commit**: this sandbox cannot write the worktree's git metadata. The root commits.\")\n",
-        "\t\t}\n",
+        "\t\tw(\"  %s\", worktreeCommitInstruction(r))\n",
         "\t\tw(\"  Do not push, switch branches, rebase, merge, hard-reset, stash, or run any `git worktree` command.\")\n",
         "\t}\n",
         "\tw(\"\")\n",
@@ -1607,6 +1607,32 @@
         "\tw(\"%s\", b.finishCommand(dir, port))\n",
         "\tw(\"```\")\n",
         "\treturn s.String()\n",
+        "}\n",
+        "\n",
+        "func worktreeCommitInstruction(r Record) string {\n",
+        "\tif canCommitWorktree(r) {\n",
+        "\t\treturn \"**Commit early and often, on this branch only.** The branch is the delivery.\"\n",
+        "\t}\n",
+        "\tif !r.Worktree.Detached && r.Assistant == projects.AssistantCodex && r.PermissionMode == \"ask\" {\n",
+        "\t\treturn \"Commit on this branch only if your native Git permissions allow it. Otherwise the root commits.\"\n",
+        "\t}\n",
+        "\treturn \"**Do not commit**: this launch has no verified worktree Git write capability. The root commits.\"\n",
+        "}\n",
+        "\n",
+        "func canCommitWorktree(r Record) bool {\n",
+        "\tif r.Worktree == nil || r.Worktree.Detached {\n",
+        "\t\treturn false\n",
+        "\t}\n",
+        "\tswitch r.Assistant {\n",
+        "\tcase projects.AssistantClaude:\n",
+        "\t\treturn true\n",
+        "\tcase projects.AssistantGrok:\n",
+        "\t\treturn r.PermissionMode == \"full\"\n",
+        "\tcase projects.AssistantCodex:\n",
+        "\t\treturn (r.PermissionMode == \"edits\" || r.PermissionMode == \"full\") && len(codexGitWritePaths(r, r.Worktree.Path)) > 0\n",
+        "\tdefault:\n",
+        "\t\treturn false\n",
+        "\t}\n",
         "}\n",
         "\n",
         "// Match the result preflight's review requirement, including graph review nodes.\n",
@@ -1842,9 +1868,9 @@
         "\tw(\"A dispatched checkout is fresh: uncommitted files from the base repository are deliberately\")\n",
         "\tw(\"absent, and so is anything gitignore hides — dependencies, build caches, local environment files.\")\n",
         "\tw(\"When CHILD.md says to commit, commit early and often on your branch only: the branch is the\")\n",
-        "\tw(\"delivery, and uncommitted changes can be lost when the checkout is cleaned. When it says not to,\")\n",
-        "\tw(\"a linked worktree's git metadata lives outside what your sandbox may write, so every commit fails\")\n",
-        "\tw(\"on `index.lock`; leave the changes in the working tree and the root commits them.\")\n",
+        "\tw(\"delivery, and uncommitted changes can be lost when the checkout is cleaned. If the briefing\")\n",
+        "\tw(\"assigns the commit to the root, or Git refuses a required write, leave your changes in the\")\n",
+        "\tw(\"worktree for the root. Report any permission error in your result.\")\n",
         "\tw(\"\")\n",
         "\tw(\"## Verification budget\")\n",
         "\tw(\"\")\n",
@@ -3322,7 +3348,7 @@
       "sources": [
         {
           "path": "internal/app/orchestrator/brief.go",
-          "line": 323
+          "line": 346
         },
         {
           "path": "internal/domain/snippet/default_playbook.go",
@@ -5375,7 +5401,7 @@
         },
         {
           "path": "internal/app/orchestrator/brief.go",
-          "line": 118
+          "line": 114
         },
         {
           "path": "internal/app/orchestrator/assistant_work_completion.go",
@@ -5685,12 +5711,12 @@
     "internal/app/botnetwork/service.go": "41e78b7e53c91425b9431bc179e5997d554f49036fd303b13cb190792b2aa13f",
     "internal/app/browserbridge/profiles.go": "f41aacbc491f0cb2bbb95008d09bf358b0664ffb01b0b515364f348b550f3834",
     "internal/app/orchestrator/assistant_work_completion.go": "84c92cffc95a9c7021dc12f9ef3f721705d5096bfaf078909580255d403d5f62",
-    "internal/app/orchestrator/brief.go": "3685236a26e16da5f343064ade707523de1409eda320f929e9c13d41592c0428",
-    "internal/app/orchestrator/child_guide.go": "c54f3d5ace461f5ba20f3804d0a177d34ddb2c528b23c3b4d099ace667c154e6",
+    "internal/app/orchestrator/brief.go": "377f14064588fedfd8687e416f1b51af14b58ea6c556b8451feb5046f09f5885",
+    "internal/app/orchestrator/child_guide.go": "563bf49d06f4b75a42be2a7ca6c49af1ea764e13c0a670dbbc019600e3737f80",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
     "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
-    "internal/app/orchestrator/dispatch.go": "ee8eff8e65c00487ac082507457b88549a057b6b03ea6e2d20f04e4734e885b7",
+    "internal/app/orchestrator/dispatch.go": "f3ec408299803d4c24aee9023ce249ac3dca7260b86d93a9c907242a897c2328",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "42f47816a31086355748893a1ba90d327ee4b7bf5dbedf916bb3d9603aeb70a5",
     "internal/app/orchestrator/language.go": "5b2af9e92e8935aff531f981ea7d6282705f0f2a2853109c523c6ba4971657cc",
@@ -5887,7 +5913,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "4fc1ce59d3812bca535d4e4ef8b0c603da5e07ef9784b42a6b9cdc09a52a7495",
-    "zh-Hant": "6859ccf77a385922abf852e3fa909709ae0f59fe5ce80bac8c7100373a44c14b"
+    "en": "0f5c07d522dca7400344ea47f31c5e9546651954d9f55effd859682f03dd8d7a",
+    "zh-Hant": "3eb85c3f8b29c2fc7d84589cd6f91f2bd4922126c22cbeb8b10e95d9b04a2fec"
   }
 }
