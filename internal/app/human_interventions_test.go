@@ -151,3 +151,35 @@ func TestBrowserTakeoverNoteSurvivesReading(t *testing.T) {
 		t.Fatalf("browser note lost: %+v %v", rows, err)
 	}
 }
+
+// Another device marking a Note read must not make a copy loaded before the
+// read conflict; resolving and reopening still race on the version.
+func TestHumanInterventionReadDoesNotBlockResolveFromOlderCopy(t *testing.T) {
+	st, err := store.Open(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	h := NewHumanInterventions(st)
+	c := CreateHumanIntervention{SourceConversation: "source", TargetConversation: "target", TargetSession: "pane-17",
+		Kind: "answer", Title: "Choose a date", Summary: "A date is needed.", Action: "Choose the date.", Reason: "Only the person knows it."}
+	row, _, err := h.Create(context.Background(), c, store.ReceiptKey{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read, _, err := h.Update(context.Background(), row.ID, "target", "read", "", row.Version, store.ReceiptKey{}, nil)
+	if err != nil || read.ReadAt == nil {
+		t.Fatalf("read: %+v %v", read, err)
+	}
+	if _, _, err = h.Update(context.Background(), row.ID, "target", "read", "", row.Version, store.ReceiptKey{}, nil); err != nil {
+		t.Fatalf("second read from an older copy: %v", err)
+	}
+	resolved, _, err := h.Update(context.Background(), row.ID, "target", "resolve", "done", row.Version, store.ReceiptKey{}, nil)
+	if err != nil || resolved.ResolvedAt == nil {
+		t.Fatalf("resolve from the copy loaded before the read: %+v %v", resolved, err)
+	}
+	var typed *WorkError
+	if _, _, err = h.Update(context.Background(), row.ID, "target", "reopen", "", row.Version, store.ReceiptKey{}, nil); !errors.As(err, &typed) || typed.Code != "version_conflict" {
+		t.Fatalf("reopen against a resolution it did not see: %v", err)
+	}
+}

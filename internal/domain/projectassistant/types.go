@@ -535,6 +535,9 @@ type WorkLink struct {
 	// LandingNote is the broker's note on that landing, such as why it is
 	// still pending.
 	LandingNote string `json:"landing_note,omitempty"`
+	// FailureReason is the broker's stable code for why the Session never
+	// started; set only when its task ended spawn_failed.
+	FailureReason string `json:"failure_reason,omitempty"`
 }
 
 // SettledLanding reports a landing state after which nothing more is owed.

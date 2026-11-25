@@ -71,7 +71,7 @@ type NetworkSettingsView struct {
 type NetworkSettingsWrite struct {
 	Scope              NetworkScope         `json:"scope"`
 	Fence              Fence                `json:"fence"`
-	ExpectedBotVersion int64                `json:"expected_bot_version"`
+	ExpectedBotVersion int64                `json:"expected_bot_version"` // accepted from old callers; not an edit guard
 	ExpectedRevision   int64                `json:"expected_revision"`
 	Patch              NetworkSettingsPatch `json:"patch"`
 }

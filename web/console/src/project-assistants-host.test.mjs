@@ -28,3 +28,18 @@ test("task-only results keep their real receipt without an Open action, while Bo
     assert.match(board,/real-board-id/);assert.match(board,/<button/)
   }
 })
+
+test("a work card whose Session never started says why in the reader's language, and nothing more otherwise",async () => {
+  const {outputFiles} = await build({stdin:{contents:'export {WorkResultCard} from "./project-assistants/WorkResultCard";export {words} from "./project-assistants/words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic"})
+  const compiled={exports:{}}
+  new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
+  const {WorkResultCard,words}=compiled.exports
+  const work={board_item_id:"",task_id:"task",state:"failed",landing_commit:"",id:"link"}
+  const wants={en:/A dialog in the Session&#x27;s tab was never answered/,"zh-Hant":/Session 分頁裡有對話框一直沒人回答/}
+  for (const [language,want] of Object.entries(wants)) {
+    const failed=renderToStaticMarkup(React.createElement(WorkResultCard,{work:{...work,failure_reason:"dialog_unanswered"},w:words(language)}))
+    assert.match(failed,want);assert.match(failed,/pa-work-task-failure/);assert.doesNotMatch(failed,/dialog_unanswered/)
+    const plain=renderToStaticMarkup(React.createElement(WorkResultCard,{work,w:words(language)}))
+    assert.doesNotMatch(plain,/pa-work-task-failure/)
+  }
+})

@@ -85,9 +85,9 @@ export function LeadSetup({ setup, w, choose }: {
     {setup.checking ? <p role="status">{w.leadChecking}</p> : unsupported ? <p>{w.leadUnsupported}</p> : <>
       <p>{setup.rows.length ? w.leadSetupTitle : w.leadCheckFailed}</p>
       {needsNode && <a href={guide.node} target="_blank" rel="noreferrer">{w.leadInstallNode}</a>}
-      {setup.rows.map(row => <Step key={row.agent} row={row} w={w} choosing={choosing || error === "pa_outcome_unknown" || error === "pa_stale_version" || error === "pa_stale_generation"} choose={() => void chooseAgent(row.agent)}/>)}
-      {error && <p role="alert">{settingsSaveFailure({code:error},w)}</p>}
-      <button type="button" onClick={setup.check} disabled={choosing}>{w.leadCheckAgain}</button>
+      {setup.rows.map(row => <Step key={row.agent} row={row} w={w} choosing={choosing || error === "pa_outcome_unknown" || error === "pa_stale_generation"} choose={() => void chooseAgent(row.agent)}/>)}
+      {error && <p role="alert">{settingsSaveFailure({code:error},w,w.leadSetupStale)}</p>}
+      <button type="button" onClick={() => { setError(""); setup.check() }} disabled={choosing}>{w.leadCheckAgain}</button>
     </>}
   </div>
 }

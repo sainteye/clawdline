@@ -307,6 +307,7 @@ func paWireWorkLink(value pa.WorkLink) contract.ProjectAssistantWorkLink {
 	out.Project = value.Project
 	out.Landing = value.Landing
 	out.LandingNote = value.LandingNote
+	out.FailureReason = contract.BrokerSpawnFailureReason(value.FailureReason)
 	if !value.StartedAt.IsZero() {
 		out.StartedAt = value.StartedAt.UTC().Format(time.RFC3339Nano)
 	}

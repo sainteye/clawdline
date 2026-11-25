@@ -210,15 +210,20 @@ func TestManagerRootCanPostToAnotherSessionWithoutSendingAReply(t *testing.T) {
 	if marked.Note.ReadAt == nil || marked.Note.ResolvedAt != nil {
 		t.Fatalf("read must not resolve: %+v", marked.Note)
 	}
-	stale := httptest.NewRecorder()
-	s.workV2Route(stale, personWorkV2Request(http.MethodPost, actionPath+"/resolve", fmt.Sprintf(`{"expected_version":%d}`, created.Note.Version), "human-stale"))
-	if stale.Code != http.StatusConflict {
-		t.Fatalf("stale: %d %s", stale.Code, stale.Body)
+	if marked.Note.Version != created.Note.Version {
+		t.Fatalf("a read advanced the version: %d -> %d", created.Note.Version, marked.Note.Version)
 	}
+	// A copy loaded before the read resolves; a reopen against that
+	// resolution it never saw still conflicts.
 	resolve := httptest.NewRecorder()
-	s.workV2Route(resolve, personWorkV2Request(http.MethodPost, actionPath+"/resolve", fmt.Sprintf(`{"expected_version":%d}`, marked.Note.Version), "human-resolve"))
+	s.workV2Route(resolve, personWorkV2Request(http.MethodPost, actionPath+"/resolve", fmt.Sprintf(`{"expected_version":%d}`, created.Note.Version), "human-resolve"))
 	if resolve.Code != http.StatusOK {
 		t.Fatalf("resolve: %d %s", resolve.Code, resolve.Body)
+	}
+	stale := httptest.NewRecorder()
+	s.workV2Route(stale, personWorkV2Request(http.MethodPost, actionPath+"/reopen", fmt.Sprintf(`{"expected_version":%d}`, created.Note.Version), "human-stale"))
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale: %d %s", stale.Code, stale.Body)
 	}
 	_ = json.Unmarshal(resolve.Body.Bytes(), &marked)
 	if marked.Note.ResolvedAt == nil {

@@ -133,3 +133,27 @@ func texts(t *testing.T, w *WorkSystemV2) []string {
 	}
 	return out
 }
+
+// The Session reading its queue records read_at, not an edit, so a person's
+// text edit made from the copy loaded before that read still saves.
+func TestASessionReadingItsTodosDoesNotBlockTheirEdit(t *testing.T) {
+	w := newWorkV2Test(t)
+	todo, err := w.CreateDirectTodo(context.Background(), NewDirectTodoV2{SessionID: "session-a", Text: "Check the release notes", Actor: "local"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := w.DirectTodos(context.Background(), "session-a", false, true)
+	if err != nil || len(rows) != 1 || rows[0].ReadAt.IsZero() {
+		t.Fatalf("agent read: %+v %v", rows, err)
+	}
+	edited, err := w.EditDirectTodo(context.Background(), todo.ID, "session-a", "local", "Check the release notes twice", todo.Version, nil)
+	if err != nil || edited.Text != "Check the release notes twice" {
+		t.Fatalf("edit after the Session read it: %+v %v", edited, err)
+	}
+	if _, err = w.EditDirectTodo(context.Background(), todo.ID, "session-a", "local", "A third text", todo.Version, nil); !errors.Is(err, store.ErrConflict) {
+		var typed *WorkError
+		if !errors.As(err, &typed) || typed.Code != "version_conflict" {
+			t.Fatalf("an edit over another edit: %v", err)
+		}
+	}
+}

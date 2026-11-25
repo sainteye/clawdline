@@ -34,6 +34,9 @@ var rosterLiveRows = []struct{ id, name, phase string }{
 type rosterLiveFixture struct {
 	f  *rosterHTTPFixture
 	mu sync.Mutex
+	// messageEvents journals each message and turn the way the runtime does,
+	// so an open chat's events read can observe them.
+	messageEvents bool
 }
 
 func (l *rosterLiveFixture) command(key pa.BotKey, op pa.Operation) pa.Command {
@@ -148,6 +151,13 @@ func (l *rosterLiveFixture) change(ctx context.Context, key pa.BotKey, phase str
 	}
 	if c.ActiveTurnID != "" {
 		m.Events = []pa.Event{{Version: pa.ContractVersion, ID: id, Fence: fence, Kind: pa.TraceUpdated, Trace: &trace}}
+	}
+	if l.messageEvents {
+		for i := range m.Messages {
+			m.Messages[i].Seq = c.LastMessageSeq + int64(i) + 1
+			m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: id + "/message/" + m.Messages[i].ID, Fence: fence, Kind: pa.MessageCreated, Message: &m.Messages[i], At: time.Now().UTC()})
+		}
+		m.Events = append(m.Events, pa.Event{Version: pa.ContractVersion, ID: id + "/turn", Fence: fence, Kind: pa.TurnUpdated, Turn: m.Turn, At: time.Now().UTC()})
 	}
 	c.Version++
 	m.Conversation = &c
@@ -340,5 +350,33 @@ func TestProjectAssistantRosterLiveHTTP(t *testing.T) {
 		if err != nil {
 			t.Fatalf("browser: %v\n%s", err, log)
 		}
+	}
+}
+
+// Measurement only: runs the real Bots UI against the same-store fixture and
+// records how soon an open chat shows a committed reply.
+func TestBotChatPushMeasurement(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_BOT_CHAT_PUSH_E2E_DIR")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_BOT_CHAT_PUSH_E2E_DIR to measure")
+	}
+	f := newRosterHTTPFixture(t, nil, nil)
+	live := &rosterLiveFixture{f: f, messageEvents: true}
+	if err := live.reset(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(live)
+	defer server.Close()
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("node", "../../../web/console/src/project-assistants/bot-chat-push.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN=fixture-only", "BOTS_MACHINE=machine", "BOTS_ARTIFACTS="+dir)
+	log, err := cmd.CombinedOutput()
+	if e := os.WriteFile(filepath.Join(dir, "browser.log"), log, 0600); e != nil {
+		t.Fatal(e)
+	}
+	if err != nil {
+		t.Fatalf("browser: %v\n%s", err, log)
 	}
 }

@@ -10,6 +10,14 @@ English and Taiwan Traditional Chinese `voice-work` explanations confirms that
 model context, tools, consent and execution behavior are unchanged. Only that
 source receipt is refreshed; this review does not deploy the public website.
 
+Person edits of Bot settings, memory notes, routines, lead setup, login
+profiles and connector credentials no longer fail merely because chat
+activity advanced a version: each now compares only what the person edited.
+Reviewed the cards that cite those sources in English and Taiwan Traditional
+Chinese: model context, tools, approvals and execution are unchanged. Only
+those source receipts are refreshed; this review does not deploy the public
+website.
+
 A Session report now shows its first sentence before it is opened, and the
 Bots list says when its preview comes from one. Reviewed the persistent-bot-lead
 and persistent-bot-review cards in English and Taiwan Traditional Chinese: the

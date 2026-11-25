@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14474,
-  "riskKeys": 6160,
-  "nonRiskCount": 8314,
+  "englishContentKeys": 14481,
+  "riskKeys": 6166,
+  "nonRiskCount": 8315,
   "groups": [
     {
       "name": "acp / other",
@@ -6293,7 +6293,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 695,
+      "count": 696,
       "sources": [
         null
       ],
@@ -6533,6 +6533,7 @@
         "projectAssistants.leadChecking",
         "projectAssistants.leadInstallAgent",
         "projectAssistants.leadInstallNode",
+        "projectAssistants.leadSetupStale",
         "projectAssistants.leadSetupTitle",
         "projectAssistants.leadStarterMessage",
         "projectAssistants.leadUnsupported",

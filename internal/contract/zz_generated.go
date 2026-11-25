@@ -661,6 +661,37 @@ type BrokerBeatPanic struct {
 	Value string `json:"value"`
 }
 
+// How typing the briefing into the child went, as the child's own screen showed
+// it. Absent when nothing was seen arriving.
+type BrokerBriefing struct {
+	// Enter presses on the briefing: the send's own press, plus every press a beat
+	// retried.
+	Attempts int64               `json:"attempts"`
+	Blocked  BrokerBriefingBlock `json:"blocked,omitempty"`
+
+	// A daemon that started after the briefing was held read it still held, so the
+	// briefing waited for that restart.
+	DeferredByRestart bool `json:"deferred_by_restart,omitempty"`
+
+	// When the last press happened, in Unix seconds. Absent when none did.
+	LastAttemptAt int64 `json:"last_attempt_at,omitempty"`
+}
+
+// What last stood in the briefing's way: `dialog` is a dialog seen over it,
+// `held_in_composer` is the composer still holding it after Enter,
+// `enter_failed` is a retried press that failed. Absent when nothing was seen
+// blocking it.
+type BrokerBriefingBlock string
+
+const (
+	BrokerBriefingBlockDialog         BrokerBriefingBlock = "dialog"
+	BrokerBriefingBlockHeldInComposer BrokerBriefingBlock = "held_in_composer"
+	BrokerBriefingBlockEnterFailed    BrokerBriefingBlock = "enter_failed"
+)
+
+// BrokerBriefingBlockValues is every value the contract allows, in contract order.
+var BrokerBriefingBlockValues = []BrokerBriefingBlock{BrokerBriefingBlockDialog, BrokerBriefingBlockHeldInComposer, BrokerBriefingBlockEnterFailed}
+
 // POST /v1/orchestrator/tasks/:id/cancel: stop a child its root dispatched by
 // mistake (wrong brief, wrong scope, a duplicate). `reason` is required, at
 // most 500 bytes once its whitespace is collapsed, and becomes the task's
@@ -1681,6 +1712,23 @@ type BrokerSourceReading struct {
 	Source   string `json:"source"`
 }
 
+// Why a spawn_failed task never started, as a stable code a reader can show in
+// words: `dialog_unanswered` a dialog in the child's tab was never answered,
+// `restarted` a daemon restart lost the briefing, `briefing_not_submitted` the
+// briefing stayed in the composer, `could_not_open` the child could not be
+// opened or briefed for any other reason. Absent on every other state.
+type BrokerSpawnFailureReason string
+
+const (
+	BrokerSpawnFailureReasonCouldNotOpen         BrokerSpawnFailureReason = "could_not_open"
+	BrokerSpawnFailureReasonDialogUnanswered     BrokerSpawnFailureReason = "dialog_unanswered"
+	BrokerSpawnFailureReasonRestarted            BrokerSpawnFailureReason = "restarted"
+	BrokerSpawnFailureReasonBriefingNotSubmitted BrokerSpawnFailureReason = "briefing_not_submitted"
+)
+
+// BrokerSpawnFailureReasonValues is every value the contract allows, in contract order.
+var BrokerSpawnFailureReasonValues = []BrokerSpawnFailureReason{BrokerSpawnFailureReasonCouldNotOpen, BrokerSpawnFailureReasonDialogUnanswered, BrokerSpawnFailureReasonRestarted, BrokerSpawnFailureReasonBriefingNotSubmitted}
+
 // The store's own account. `writes` counts write transactions that committed
 // something since this process opened the store, and `changes` is SQLite's
 // count of rows this process changed in any table: both stand still while the
@@ -1798,7 +1846,8 @@ type BrokerTask struct {
 	// `auto_compact_window` when it named one, the machine's
 	// `claude_auto_compact_window` otherwise — and 0 when none was applied. Null for
 	// a Codex task, which is never given one, and for a task not launched yet.
-	AutoCompactWindow *int64 `json:"auto_compact_window"`
+	AutoCompactWindow *int64          `json:"auto_compact_window"`
+	Briefing          *BrokerBriefing `json:"briefing,omitempty"`
 
 	// A callback's declared purpose: wait or heavy. Absent for children and callbacks
 	// made before intent was recorded.
@@ -1848,14 +1897,15 @@ type BrokerTask struct {
 	RespawnGeneration int64                `json:"respawn_generation,omitempty"`
 
 	// The spawn_failed task this one retried.
-	RespawnOf  string        `json:"respawn_of,omitempty"`
-	Result     *BrokerResult `json:"result,omitempty"`
-	Root       *BrokerRoot   `json:"root,omitempty"`
-	SpawnError string        `json:"spawn_error,omitempty"`
-	SpawnedAt  int64         `json:"spawnedAt,omitempty"`
-	State      TaskState     `json:"state"`
-	Summary    string        `json:"summary,omitempty"`
-	Tab        *BrokerTab    `json:"tab,omitempty"`
+	RespawnOf          string                   `json:"respawn_of,omitempty"`
+	Result             *BrokerResult            `json:"result,omitempty"`
+	Root               *BrokerRoot              `json:"root,omitempty"`
+	SpawnError         string                   `json:"spawn_error,omitempty"`
+	SpawnFailureReason BrokerSpawnFailureReason `json:"spawn_failure_reason,omitempty"`
+	SpawnedAt          int64                    `json:"spawnedAt,omitempty"`
+	State              TaskState                `json:"state"`
+	Summary            string                   `json:"summary,omitempty"`
+	Tab                *BrokerTab               `json:"tab,omitempty"`
 
 	// The task's whole budget, on the wall clock, counted from `created` — when the
 	// dispatch was admitted, not when the child was briefed — with no grace and no
@@ -7070,8 +7120,9 @@ type ProjectAssistantWorkLink struct {
 	BoardItemID string `json:"board_item_id"`
 
 	// Committed worktree head recorded for a successful delivery.
-	DeliveryCommit string                `json:"delivery_commit,omitempty"`
-	Fence          ProjectAssistantFence `json:"fence"`
+	DeliveryCommit string                   `json:"delivery_commit,omitempty"`
+	FailureReason  BrokerSpawnFailureReason `json:"failure_reason,omitempty"`
+	Fence          ProjectAssistantFence    `json:"fence"`
 
 	// When the broker task reached a terminal state. Absent while it runs and on older
 	// sources.

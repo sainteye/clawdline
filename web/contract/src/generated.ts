@@ -771,6 +771,42 @@ export interface BrokerBeatPanic {
 }
 
 /**
+ * How typing the briefing into the child went, as the child's own screen showed it.
+ * Absent when nothing was seen arriving.
+ */
+export interface BrokerBriefing {
+  /**
+   * Enter presses on the briefing: the send's own press, plus every press a beat
+   * retried.
+   */
+  attempts: number
+  blocked?: BrokerBriefingBlock
+
+  /**
+   * A daemon that started after the briefing was held read it still held, so the
+   * briefing waited for that restart.
+   */
+  deferred_by_restart?: boolean
+
+  /**
+   * When the last press happened, in Unix seconds. Absent when none did.
+   */
+  last_attempt_at?: number
+}
+
+/**
+ * What last stood in the briefing's way: `dialog` is a dialog seen over it,
+ * `held_in_composer` is the composer still holding it after Enter, `enter_failed`
+ * is a retried press that failed. Absent when nothing was seen blocking it.
+ */
+export type BrokerBriefingBlock =
+    "dialog"
+  | "held_in_composer"
+  | "enter_failed"
+
+export const BrokerBriefingBlockValues: readonly BrokerBriefingBlock[] = ["dialog", "held_in_composer", "enter_failed"] as const
+
+/**
  * POST /v1/orchestrator/tasks/:id/cancel: stop a child its root dispatched by
  * mistake (wrong brief, wrong scope, a duplicate). `reason` is required, at most
  * 500 bytes once its whitespace is collapsed, and becomes the task's verdict.
@@ -1940,6 +1976,21 @@ export interface BrokerSourceReading {
 }
 
 /**
+ * Why a spawn_failed task never started, as a stable code a reader can show in
+ * words: `dialog_unanswered` a dialog in the child's tab was never answered,
+ * `restarted` a daemon restart lost the briefing, `briefing_not_submitted` the
+ * briefing stayed in the composer, `could_not_open` the child could not be opened
+ * or briefed for any other reason. Absent on every other state.
+ */
+export type BrokerSpawnFailureReason =
+    "could_not_open"
+  | "dialog_unanswered"
+  | "restarted"
+  | "briefing_not_submitted"
+
+export const BrokerSpawnFailureReasonValues: readonly BrokerSpawnFailureReason[] = ["could_not_open", "dialog_unanswered", "restarted", "briefing_not_submitted"] as const
+
+/**
  * The store's own account. `writes` counts write transactions that committed
  * something since this process opened the store, and `changes` is SQLite's count of
  * rows this process changed in any table: both stand still while the beat only
@@ -2078,6 +2129,7 @@ export interface BrokerTask {
    * for a Codex task, which is never given one, and for a task not launched yet.
    */
   auto_compact_window: number | null
+  briefing?: BrokerBriefing
 
   /**
    * A callback's declared purpose: wait or heavy. Absent for children and callbacks
@@ -2147,6 +2199,7 @@ export interface BrokerTask {
   result?: BrokerResult
   root?: BrokerRoot
   spawn_error?: string
+  spawn_failure_reason?: BrokerSpawnFailureReason
   spawnedAt?: number
   state: TaskState
   summary?: string
@@ -8145,6 +8198,7 @@ export interface ProjectAssistantWorkLink {
    * Committed worktree head recorded for a successful delivery.
    */
   delivery_commit?: string
+  failure_reason?: BrokerSpawnFailureReason
   fence: ProjectAssistantFence
 
   /**

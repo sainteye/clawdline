@@ -451,6 +451,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `cloud.viewer_rekey_cooldown` | 120 | `seconds` | `expire` | `diagnostics` | — |
 | `cloud.viewer_rekey_pending` | 1 | `rows` | `refuse` | `diagnostics` | — |
 | `console.assistant_facts_read_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
+| `console.bot_chat_pushed_fallback_milliseconds` | 15000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `console.carrier_receive_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `console.carrier_receive_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `console.closed_session_receipts` | 512 | `rows` | `evict_oldest` | `diagnostics` | — |

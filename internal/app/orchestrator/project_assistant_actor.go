@@ -502,6 +502,7 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	case StateFailure, StateCancelled, StateSpawnFailed:
 		s.Link.State = pa.WorkFailed
 	}
+	s.Link.FailureReason = SpawnFailureReason(&r)
 	if r.Landing != nil {
 		s.Link.Landing, s.Link.LandingNote = string(r.Landing.State), r.Landing.Note
 	}

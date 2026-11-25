@@ -113,7 +113,7 @@ func (h *Host) anchorPeerDispatch(ctx context.Context, r *app.Engine, owner pa.F
 	if owner.Key.BotID == "" || q.TargetProject != (pa.ProjectScope{}) {
 		return failure(pa.ScopeDenied, "work_owner")
 	}
-	text := app.PeerDispatchNoticeText(h.peerRequester(ctx, q.Command.Key, turn), q.Title)
+	text := app.PeerDispatchNoticeText(h.productLanguage(), h.peerRequester(ctx, q.Command.Key, turn), q.Title)
 	fence, turnID, err := r.AnchorPeerDispatch(ctx, owner.Key, orchestrator.AssistantTaskID(q.Command), text)
 	if err != nil {
 		return err
@@ -123,6 +123,15 @@ func (h *Host) anchorPeerDispatch(ctx context.Context, r *app.Engine, owner pa.F
 	}
 	q.OwnerFence, q.OwnerTurnID = fence, turnID
 	return nil
+}
+
+// productLanguage is the language a chat notice is written in when it is
+// recorded; an absent reader means English.
+func (h *Host) productLanguage() string {
+	if h.o.ProductLanguage == nil {
+		return "en"
+	}
+	return h.o.ProductLanguage()
 }
 
 func (w NativeWork) MessageWork(ctx context.Context, taskID, text, key string) (pa.WorkMessageReceipt, error) {

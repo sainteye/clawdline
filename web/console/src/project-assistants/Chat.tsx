@@ -16,6 +16,7 @@ import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
 import {hostedConsole} from "../pages/terminal/api"
 import {serialSnapshotRefresh} from "./snapshot-roster"
+import {chatEventDelay,chatPushSignal} from "./chat-push"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
@@ -75,7 +76,7 @@ import { BackgroundCapsule, BackgroundDuration, BackgroundList, BackgroundStop, 
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
 import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
-export const EventRefreshMs = 3000
+export {EventRefreshMs,PushedEventFallbackMs} from "./chat-push"
 
 function transientChatRead(error:unknown) {
   const code=errorCode(error)
@@ -115,14 +116,14 @@ export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,c
 export interface ChatProps {
   summary: W.ProjectAssistantBotSummary; source:SourceClient; current:()=>readonly SourceClient[];
   accountKey:string;readerID?:string;projectName?:string;projectIcon?:W.Icon;machineName?:string;view:ViewState;w:Words;language:string;onBack:()=>void;
-  openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;
+  openedAt?:number;showBack?:boolean;backLabel?:string;voiceShortcut?:number;thread?:BackgroundTask;editProfileRequest?:number;roster?:readonly W.ProjectAssistantBot[];projectNameOf?:(bot:W.ProjectAssistantBot)=>string|undefined;projectIconOf?:(bot:W.ProjectAssistantBot)=>W.Icon|undefined;pushed?:boolean;
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const canReadProgress=source.canReadProgress?.()===true
@@ -287,6 +288,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
   const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
+  const pushedRef=useRef(pushed);pushedRef.current=pushed
   const checkForUpdates=async()=>{
     setCheckingUpdates(true)
     try{await refresh(true)}finally{setCheckingUpdates(false)}
@@ -449,7 +451,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // it into an immediate loop; the existing cadence still owns later reads.
     if(manual)observation.finalSnapshot=false
     const control=new AbortController(),rebuilding=recovery.current||!currentData.current
-    let snapshotValidated=false,nextReadDelay=EventRefreshMs
+    let snapshotValidated=false,nextReadDelay=chatEventDelay(pushedRef.current,observation.active)
     eventControl.current=control
     const settleCollections=async(modes:("permissions"|"traces")[])=>{
       // A projection failing at an older fence is retried on the next poll.
@@ -556,6 +558,20 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show);window.addEventListener("online",visibility)
     return()=>{alive.current=false;observation.stop();uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show);window.removeEventListener("online",visibility)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
+  // A changed roster row for this Bot runs the existing single-flight cursor read.
+  const pushSignal=chatPushSignal(summary)
+  const lastPushSignal=useRef(pushSignal),lastPushed=useRef(pushed)
+  useEffect(()=>{
+    // Losing the stream replaces the slow fallback timer with a catch-up read,
+    // after which the ordinary cadence resumes.
+    const lost=lastPushed.current&&!pushed
+    lastPushed.current=pushed
+    if(lastPushSignal.current===pushSignal&&!lost)return
+    lastPushSignal.current=pushSignal
+    if(!pushed&&!lost||!currentData.current||recovery.current||document.visibilityState==="hidden")return
+    if(timer.current){clearTimeout(timer.current);timer.current=null}
+    void refresh(false)
+  },[pushSignal,pushed,refresh])
   // A send made by a Chat that was left lands in the host journal by its own
   // command identity; this Chat shows that outcome once and never resends.
   const refreshRef=useRef(refresh);refreshRef.current=refresh
@@ -2029,7 +2045,7 @@ ${currentDraft}`:submitted)
       </div>}
       {leadSetup.show&&leadSetupBot&&<LeadSetup setup={leadSetup} w={w} choose={agent=>editBot({
         expected_version:leadSetupBot.version, name:leadSetupBot.name, appearance:leadSetupBot.appearance, instructions:leadSetupBot.instructions.text, agent,
-      })}/>}
+      },leadSetupBot)}/>}
       <Composer key={draftKey} mentions={mentions} plain={!!thread} call={callStart.canStart?{label:callStart.label,disabled:!callStart.ready,start:callStart.start}:undefined} callActive={call.active||botVoice.active} text={legacyLocked?"":text} onText={changeText} onSend={()=>void send()} onStop={!thread&&data?.conversation.active_turn_id?()=>void stop():undefined} stopDisabled={!enabled||!!currentStop} stopBusy={currentStop==="sending"} disabled={!enabled||unknown||legacyLocked} draftEditable={!thread&&!unknown&&!legacyLocked&&(reconnecting||canTryText)} sendTextDuringRecovery={canTryText} sendBlocked={readingImages>0||leadSetup.blocked||filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))||editingHandoff||handoff.busy||!!handoff.error} busy={busy} quote={!legacyLocked&&quote?messages.find(m=>m.id===quote)?.text??w.quoteMissing:undefined} onClearQuote={()=>{setQuote("");view.quotes.delete(draftKey)}} w={thread?{...w,compose:w.backgroundCompose}:w} images={images} onAttach={canAttach||canInput?attach:undefined} acceptFiles={canInput} onRemoveImage={id=>setImages(old=>old.filter(picture=>picture.id!==id))}
         onReplaceImage={(id,url)=>setImages(old=>old.map(picture=>picture.id===id?{...picture,url}:picture))} files={files} onRemoveFile={id=>{const next=files.filter(f=>f.id!==id);setFiles(next);rememberFiles(!!next.length)}} uploading={uploading} onCancelUpload={()=>uploadControl.current?.abort()}/>
     </div>

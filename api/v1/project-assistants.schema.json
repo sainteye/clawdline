@@ -1183,7 +1183,8 @@
           "enum": ["pending", "landed", "incorporated", "abandoned", "nothing_to_land"],
           "description": "Broker landing state of the task. Absent before the broker opens a landing record and on older sources."
         },
-        "landing_note": { "type": "string", "description": "Broker note on the landing, such as why it is still pending." }
+        "landing_note": { "type": "string", "description": "Broker note on the landing, such as why it is still pending." },
+        "failure_reason": { "$ref": "orchestrator.schema.json#/$defs/BrokerSpawnFailureReason" }
       },
       "required": [
         "id",

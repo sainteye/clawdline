@@ -56,7 +56,7 @@ func TestPersonEditsDirectTodoAndMustSendTheRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "/v1/work/v2/session-todos/pane-4/" + id + "/edit"
-	body := `{"text":"  handle the revised task  ","expected_version":` + strconv.FormatInt(first.Version+1, 10) + `}`
+	body := `{"text":"  handle the revised task  ","expected_version":` + strconv.FormatInt(first.Version, 10) + `}`
 	rec := httptest.NewRecorder()
 	s.workV2Route(rec, personWorkV2Request(http.MethodPost, path, body, "todo-edit"))
 	if rec.Code != http.StatusOK {
@@ -69,7 +69,7 @@ func TestPersonEditsDirectTodoAndMustSendTheRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	if answer.Todo.Text != "handle the revised task" || answer.Todo.SentAt != nil || answer.Todo.ReadAt != nil ||
-		answer.Todo.Version != first.Version+2 {
+		answer.Todo.Version != first.Version+1 {
 		t.Fatalf("revised todo: %+v", answer.Todo)
 	}
 	stale := httptest.NewRecorder()

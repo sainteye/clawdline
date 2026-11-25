@@ -97,7 +97,11 @@ func (s *Store) Save(ctx context.Context, in app.MemoryWrite) (pa.MemoryRevision
 	unlock := s.lock(in.Command.Key)
 	defer unlock()
 	return s.changeMemory(ctx, in.Command, func(a *aggregate) error {
-		if err := pa.ValidateMemoryWrite(in.Entry, a.Memory, in.ExpectedRevision); err != nil {
+		expected, entry := in.ExpectedRevision, in.Entry
+		if rebased, ok := rebaseMemoryRevision(a, expected, entry.ID); ok && entry.Revision == expected {
+			expected, entry.Revision = rebased, rebased
+		}
+		if err := pa.ValidateMemoryWrite(entry, a.Memory, expected); err != nil {
 			return err
 		}
 		old, exists := a.Entries[in.Entry.ID]
@@ -116,13 +120,30 @@ func (s *Store) Save(ctx context.Context, in app.MemoryWrite) (pa.MemoryRevision
 			}
 		}
 		a.Memory.Revision++
-		entry := in.Entry
 		entry.UpdatedAt = time.Now().UTC()
 		entry.Revision = a.Memory.Revision
 		a.Entries[entry.ID] = entry
 		return nil
 	})
 }
+
+// rebaseMemoryRevision lets a write read at an older index revision proceed
+// at the current one when none of the notes it names was written since:
+// other notes saved in between, by the Bot or a person, are not a conflict.
+// A revision from the future, or a named note rewritten after the read, is
+// left for the strict check to refuse.
+func rebaseMemoryRevision(a *aggregate, expected int64, ids ...string) (int64, bool) {
+	if expected < 1 || expected >= a.Memory.Revision {
+		return expected, false
+	}
+	for _, id := range ids {
+		if e, ok := a.Entries[id]; ok && e.Revision > expected {
+			return expected, false
+		}
+	}
+	return a.Memory.Revision, true
+}
+
 func (s *Store) Forget(ctx context.Context, in app.ForgetRequest) (pa.MemoryRevision, error) {
 	if in.Command.Operation != pa.ForgetOperation {
 		return pa.MemoryRevision{}, failure(pa.Invalid, "forget_command")
@@ -133,7 +154,11 @@ func (s *Store) Forget(ctx context.Context, in app.ForgetRequest) (pa.MemoryRevi
 		if in.Project != a.Bot.Project {
 			return failure(pa.ScopeDenied, "forget_project")
 		}
-		next, err := pa.Forget(a.Memory, in.ExpectedRevision, in.SourceIDs)
+		expected := in.ExpectedRevision
+		if rebased, ok := rebaseMemoryRevision(a, expected, in.SourceIDs...); ok {
+			expected = rebased
+		}
+		next, err := pa.Forget(a.Memory, expected, in.SourceIDs)
 		if err != nil {
 			return err
 		}

@@ -173,7 +173,8 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		DispatchPolicy: s.projectAssistantDispatchPolicy, SharedMemory: s.projectAssistantSharedMemory, ManageBots: s.manageBots,
 		// Browser tools use the same Profiles and Bridge as the CLI, under an
 		// owner Host derives from the Bot conversation; see project_assistants_browser.go.
-		Browser: s.projectAssistantBrowser(),
+		Browser:         s.projectAssistantBrowser(),
+		ProductLanguage: s.productLanguage,
 	})
 	if err != nil {
 		p.mu.Lock()

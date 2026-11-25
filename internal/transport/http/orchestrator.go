@@ -1099,6 +1099,8 @@ func (s *Server) brokerTaskRow(ctx context.Context, r orchestrator.Record) contr
 	if r.AssistantQuota != nil {
 		row.AssistantQuota = brokerAssistantQuotaDecision(r.AssistantQuota)
 	}
+	row.Briefing = brokerBriefing(r.Briefing)
+	row.SpawnFailureReason = contract.BrokerSpawnFailureReason(orchestrator.SpawnFailureReason(&r))
 	if declared, known := r.DeclaredWrites(); known {
 		row.DeclaredWrites = declared
 	}
@@ -1320,6 +1322,27 @@ func sortedStrings(in []string) []string {
 		for j := i; j > 0 && out[j] < out[j-1]; j-- {
 			out[j], out[j-1] = out[j-1], out[j]
 		}
+	}
+	return out
+}
+
+// brokerBriefing is the briefing's typing as a summary: how many times Enter
+// was pressed on it, when last, what blocked it and whether it waited for a
+// restart. Nil when nothing was seen arriving.
+func brokerBriefing(b *orchestrator.Briefing) *contract.BrokerBriefing {
+	if b == nil {
+		return nil
+	}
+	out := &contract.BrokerBriefing{Attempts: int64(b.Enters), Blocked: contract.BrokerBriefingBlock(orchestrator.BriefingBlock(b)), DeferredByRestart: !b.ResumedAt.IsZero()}
+	last := b.LastEnterAt
+	if !b.EnteredAt.IsZero() {
+		out.Attempts++
+		if b.EnteredAt.After(last) {
+			last = b.EnteredAt
+		}
+	}
+	if !last.IsZero() {
+		out.LastAttemptAt = last.Unix()
 	}
 	return out
 }
