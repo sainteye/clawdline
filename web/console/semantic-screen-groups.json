@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14521,
-  "riskKeys": 6182,
-  "nonRiskCount": 8339,
+  "englishContentKeys": 14536,
+  "riskKeys": 6189,
+  "nonRiskCount": 8347,
   "groups": [
     {
       "name": "acp / other",
@@ -6311,7 +6311,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 702,
+      "count": 707,
       "sources": [
         null
       ],
@@ -6985,6 +6985,11 @@
         "projectAssistants.traceThought",
         "projectAssistants.traceTool",
         "projectAssistants.turnRepliesKept",
+        "projectAssistants.turnReviewAccepted",
+        "projectAssistants.turnReviewAction",
+        "projectAssistants.turnReviewQueue",
+        "projectAssistants.turnReviewSending",
+        "projectAssistants.turnReviewTitle",
         "projectAssistants.turnUnknownNext",
         "projectAssistants.unhideBot",
         "projectAssistants.unnamedProject",
@@ -8346,7 +8351,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 240,
+      "count": 243,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8360,6 +8365,9 @@
         "transparency.card.board.effect",
         "transparency.card.board.how",
         "transparency.card.board.title",
+        "transparency.card.bot-interrupted-turn-review.how",
+        "transparency.card.bot-interrupted-turn-review.summary",
+        "transparency.card.bot-interrupted-turn-review.title",
         "transparency.card.browser-use.condition",
         "transparency.card.browser-use.summary",
         "transparency.card.browser-use.title",

@@ -60,7 +60,7 @@ import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
 import { WorkingTransition } from "./WorkingTransition"
 import { providerSetupFailure, readOnlyReason } from "./source-errors"
-import { TurnInterruption } from "./TurnInterruption"
+import { TurnInterruption, TurnReviewNotice } from "./TurnInterruption"
 import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
@@ -93,6 +93,8 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
 }
 
 type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}
+
+const TURN_REVIEW_PREFIX = "review-interrupted-"
 
 function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
   // Only a validated decision may have an empty turn ID. It belongs to the chat.
@@ -842,13 +844,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const sendAuthorityLost=["pa_revoked","pa_unpaired","pa_scope_denied","pa_unsupported","pa_disabled"].includes(error)&&!(error==="pa_unsupported"&&errorField==="steering")
   const canTryText=textOnlyDraft&&!thread&&!unknown&&!legacyBlocked()&&!sendAuthorityLost
   const sendInFlight=useRef(false)
-  const send=async(artifact?:{message:W.ProjectAssistantMessage;text:string}):Promise<ArtifactSendResult>=>{
+  const send=async(additional?:{message?:W.ProjectAssistantMessage;text:string}):Promise<ArtifactSendResult>=>{
     const refused={state:"refused"} as const
-    const plain=artifact
-      ?!thread&&!sendAuthorityLost&&handoff.card?.state!=="draft"&&!!artifact.text.trim()
+    const artifact=additional?.message
+    const review=!!additional&&!artifact
+    const plain=additional
+      ?!thread&&!sendAuthorityLost&&handoff.card?.state!=="draft"&&!!additional.text.trim()
       :canTryText&&!!text.trim()
-    if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||imageReads.current>0||unknown||legacyBlocked()||(!artifact&&(filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))))||editingHandoff||handoff.mutating()
-      ||(!artifact&&!text.trim()&&images.length===0&&files.length===0)
+    if(!valid()||leadSetup.blocked||call.active||busy||sendInFlight.current||imageReads.current>0||unknown||legacyBlocked()||(!additional&&(filesLost||(!skipMissing&&(missingPictures>0||missingFiles>0))))||editingHandoff||handoff.mutating()
+      ||(!additional&&!text.trim()&&images.length===0&&files.length===0)
       ||handoff.error||(!plain&&!currentData.current))return refused
     const earlier=view.heldOutcomes.get(draftKey)
     if(earlier){
@@ -856,14 +860,16 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       view.heldOutcomes.setAside(draftKey)
     }
     const handoffRef=handoff.card?.state==="draft"?handoff.card.ref:undefined
-    if(artifact&&(!artifact.text.trim()||handoffRef||!artifact.message.output?.artifact_id||!sameConversation(artifact.message.fence,scope)))return refused
-    const submitted=artifact?.text??text,pictures=artifact?[]:images,selected=artifact?[]:files
+    if(additional&&(!additional.text.trim()||handoffRef))return refused
+    if(artifact&&(!artifact.output?.artifact_id||!sameConversation(artifact.fence,scope)))return refused
+    const submitted=additional?.text??text,pictures=additional?[]:images,selected=additional?[]:files
     const captured=headRef.current?.current_fence??(currentData.current?fence(currentData.current):{...scope,binding_id:"",generation:0})
-    const recovered=artifact?undefined:recovering
+    const recovered=additional?undefined:recovering
     const originalID=recovered?.intent.command.idempotency_key
-    const sendCommand=command(key,"send",recovered&&!recovered.superseded?originalID:undefined)
+    const idempotencyKey=review?TURN_REVIEW_PREFIX+crypto.randomUUID():recovered&&!recovered.superseded?originalID:undefined
+    const sendCommand=command(key,"send",idempotencyKey)
     if(recovered&&!recovered.superseded&&source.canRecoverSend?.())sendCommand.client_attempt_id=crypto.randomUUID()
-    const intent:W.ProjectAssistantSendRequest={command:sendCommand,fence:captured,text:submitted,quote_message_id:artifact?.message.id??quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures.map(picture=>picture.url)}:{})}
+    const intent:W.ProjectAssistantSendRequest={command:sendCommand,fence:captured,text:submitted,quote_message_id:additional?artifact?.id??"":quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures.map(picture=>picture.url)}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
     let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;sendInFlight.current=true;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null)
@@ -896,7 +902,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // change: an unknown one is shown there, disabled, and never resent. The
     // durable copy is only cleared once the send is accepted.
     const restore=()=>{
-      if(artifact)return
+      if(additional)return
       const currentDraft=view.draft(draftKey)
       if(currentDraft!==submitted)view.stage(draftKey,currentDraft?`${submitted}
 
@@ -905,7 +911,7 @@ ${currentDraft}`:submitted)
       if(!valid())return
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures);setFiles(old=>old.length?old:selected)
     }
-    if(!artifact){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)}
+    if(!additional){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)}
     try{
       const deliver=async(s:AbortSignal)=>{
         if(view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
@@ -928,7 +934,7 @@ ${currentDraft}`:submitted)
           return await attempt()
         }catch(e){
           const refusal=e as Partial<W.ProjectAssistantErrorResponse>
-          if(!plain||effect.signal.aborted||!valid()||refusal.error?.code!=="pa_stale_generation"||refusal.error.field!=="fence")throw e
+          if(!plain||review||effect.signal.aborted||!valid()||refusal.error?.code!=="pa_stale_generation"||refusal.error.field!=="fence")throw e
           // Only the source's explicit admission refusal permits a retry.
           // Rebind within the same authenticated conversation, once.
           const fresh=await read(request("snapshot"),effect.signal)
@@ -938,7 +944,9 @@ ${currentDraft}`:submitted)
           return await attempt()
         }finally{s.removeEventListener("abort",follow)}
       }
-      const result=plain?await authorized(source,current,deliver,new AbortController().signal):await mutate(async(d,s)=>{
+      const result=plain&&!review?await authorized(source,current,deliver,new AbortController().signal):await mutate(async(d,s,page)=>{
+        if(review&&(page.head.unknown_turn_count===0||page.snapshot!.pending_turns.some(turn=>turn.state==="running"||turn.state==="waiting_permission")||
+          page.snapshot!.queued_messages.some(message=>message.notice?.key==="restart_continuation")))throw failure("pa_stale_version")
         if(selected.length){
           const upload=new AbortController();uploadControl.current=upload;const cancel=()=>upload.abort();s.addEventListener("abort",cancel,{once:true})
           try{setUploading("0%");intent.fence=fence(d);intent.upload_ids=await uploadInputs(source,intent.fence,selected,upload.signal,(n,total)=>{if(valid()&&!upload.signal.aborted)setUploading((total?Math.floor(n*100/total):100)+"%")},d.bot.instructions.revision)}
@@ -946,19 +954,19 @@ ${currentDraft}`:submitted)
           if(s.aborted||!valid()||recovery.current)throw failure("pa_revoked")
         }
         return deliver(s)
-      })
+      },{reportReadFailure:!review})
       const owner=land(result.receipt.state==="unknown"||admittedReceipt(result.receipt)?hold(result.receipt):null)
       observation.accept(result.receipt)
       const uncertainRecovery=result.receipt.state==="unknown"&&!!recovered
       if((result.receipt.state==="failed"&&owner==="active")||uncertainRecovery)restore()
       if(!uncertainRecovery&&(admittedReceipt(result.receipt)||result.receipt.state==="unknown")){
-        clearRecovery();if(!artifact){rememberFiles(false);view.flush(draftKey)}
+        clearRecovery();if(!additional){rememberFiles(false);view.flush(draftKey)}
       }
       const accepted=admittedReceipt(result.receipt)
       const outcome:ArtifactSendResult=accepted?{state:"accepted",turn:result.receipt.resource_id}:{state:result.receipt.state==="unknown"?"unknown":"refused"}
       if(!valid())return outcome
       setReceipt(result.receipt);setUnknown(uncertain())
-      if(!uncertainRecovery&&(accepted||result.receipt.state==="unknown")&&!artifact){setFiles([]);rememberFiles(false);flush()}
+      if(!uncertainRecovery&&(accepted||result.receipt.state==="unknown")&&!additional){setFiles([]);rememberFiles(false);flush()}
       void refresh(!accepted)
       return outcome
     }catch(e){
@@ -966,9 +974,9 @@ ${currentDraft}`:submitted)
       const kept=answered as W.ProjectAssistantReceiptResponse|null
       if(kept&&admittedReceipt(kept.receipt)){
         const owner=land(hold(kept.receipt))
-        if(owner==="active"&&!artifact){clearRecovery();rememberFiles(false);view.flush(draftKey)}
+        if(owner==="active"&&!additional){clearRecovery();rememberFiles(false);view.flush(draftKey)}
         observation.accept(kept.receipt)
-        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!artifact)setFiles([]);setError("");await refresh()}
+        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!additional)setFiles([]);setError("");await refresh()}
         return {state:"accepted",turn:kept.receipt.resource_id}
       }
       // Only a refusal that provably sent nothing releases the hold; anything
@@ -979,9 +987,9 @@ ${currentDraft}`:submitted)
       if(valid()&&handoffRefused)handoff.conflict(code)
       const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
       if(!attempted||!unresolved&&owner==="active"||unresolved&&recovered)restore()
-      if(unresolved&&!recovered&&!artifact){rememberFiles(false);view.flush(draftKey);if(valid())setFiles([])}
-      if(unresolved&&recovered&&!artifact)view.flush(draftKey)
-      if(valid()&&!unresolved){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else fail(e);setUnknown(uncertain())}
+      if(unresolved&&!recovered&&!additional){rememberFiles(false);view.flush(draftKey);if(valid())setFiles([])}
+      if(unresolved&&recovered&&!additional)view.flush(draftKey)
+      if(valid()&&!unresolved){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else if(!review)fail(e);setUnknown(uncertain())}
       if(valid()&&unresolved){setUnknown(uncertain());setError("");void refresh(true)}
       return {state:unresolved?"unknown":"refused",code}
     }finally{sendInFlight.current=false;if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
@@ -1728,11 +1736,19 @@ ${currentDraft}`:submitted)
   const userTurns=new Set(messages.filter(message=>message.kind==="user").map(message=>message.turn_id))
   const restartWaitingCount=turns.filter(turn=>["queued","accepted"].includes(turn.state)&&userTurns.has(turn.id)).length
   const queuePaused=queuedCount>0&&unknownCount>0&&!restartNotice
+  const requestTurnReview=async()=>{
+    const result=await send({text:w.turnReviewPrompt})
+    if(valid()&&result.state==="accepted")toast(w.turnReviewAccepted)
+    if(valid()&&result.state==="refused"&&["pa_stale_version","pa_stale_generation"].includes(result.code??""))void refresh(true)
+    return result.state
+  }
+  const showTurnReview=!thread&&unknownCount>0&&!restartNotice&&!reconnecting
+  const canRequestTurnReview=enabled&&!unknown&&!busy&&!legacyBlocked()&&!call.active&&!activeTurn
+    &&!editingHandoff&&!handoff.busy&&!handoff.error&&handoff.card?.state!=="draft"
   const exchangeReplyTurns=new Set(messages.flatMap(message=>message.exchange&&message.turn_id===message.exchange.reply_turn_id?[message.turn_id]:[]))
   const visibleInterruptions=turns.filter(turn=>!["queued","accepted","running","waiting_permission"].includes(turn.state)
     &&turn.failure_field!=="restart_resumed"&&!(restartNotice&&turn.id===restartInterruption?.id)
     &&!(turn.state==="cancelled"&&(!turn.failure_code&&!turn.started_at||exchangeReplyTurns.has(turn.id))))
-  const shownUnknown=visibleInterruptions.filter(turn=>turn.state==="unknown").length
   const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
   const waitingTurn=!visibleTurn&&live?turns.find(turn=>(turn.state==="accepted"||turn.state==="queued")&&messages.at(-1)?.id===turn.message_id):undefined
   const browserAvailable=!thread&&botBrowserSupported(source)
@@ -1835,6 +1851,7 @@ ${currentDraft}`:submitted)
   }:undefined
   const heldOutcome=unknown?view.heldOutcomes.get(draftKey):null
   const heldSend=heldOutcome?.intent.command.operation==="send"?heldOutcome:null
+  const reviewPending=[heldSend,...pendingRows].some(row=>row?.intent.command.idempotency_key.startsWith(TURN_REVIEW_PREFIX)&&!admittedReceipt(row.receipt))
 
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
@@ -1918,14 +1935,8 @@ ${currentDraft}`:submitted)
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
       {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
       {visibleInterruptions.map(turn=>
-        <TurnInterruption key={turn.id} turn={turn} w={w} checking={checkingUpdates}
-          onCheck={turn.state==="unknown"&&!(turn.failure_field==="restart"||turn.failure_field==="restart_confirmed")&&!reconnecting&&!error?checkForUpdates:undefined}
-          queueCount={turn.id===restartInterruption?.id?restartWaitingCount:0}
-          onProgress={(turn.failure_field==="restart"||turn.failure_field==="restart_confirmed")?()=>{
-            const original=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-message-id]")??[]).find(node=>node.dataset.messageId===turn.message_id)
-            original?.scrollIntoView({block:"center"})
-            original?.focus({preventScroll:true})
-          }:undefined}/>)}
+        <TurnInterruption key={turn.id} turn={turn} w={w}
+          onProgress={turn===restartInterruption&&messages.some(message=>message.id===turn.message_id)?()=>viewHandoffHistory(turn.message_id):undefined}/>)}
       <FallbackProgress primary={bot.agent} turn={activeTurn??turns.find(t=>t.attempts?.length)} w={w}/>
       <WorkingTransition turn={visibleTurn} activity={currentActivity} stopStatus={stopText} waiting={mood==="needsInput"} live={live} ready={!!data} w={w}
         steps={liveSteps.length||deferredTrace?expanded=><Trace inline expanded={expanded} summaries={liveSteps.filter(row=>!projectedSteps.has(row.id))} details={details} more={!!traceMore&&(liveTraceTurn===moreTraceTurn||!liveSteps.length)} onMore={loadMoreTraces}
@@ -2028,10 +2039,8 @@ ${currentDraft}`:submitted)
       {restartNotice&&!restartNotice.notice?.cause&&<p className="pa-turn pa-restart-state" role="status">
         {w.restartRestoring}{restartWaitingCount>0&&` · ${w.restartQueueKept.replace("{count}",String(restartWaitingCount))}`}
       </p>}
-      {!restartNotice&&((queuePaused&&!restartInterruption)||unknownCount>shownUnknown)&&!(reconnecting&&restartInterruption)&&<div className="pa-chat-error" role="status">
-        <span>{(queuePaused?w.queuePausedUnknown:w.previousTurnUnknown).replace("{count}",String(queuePaused?queuedCount:unknownCount))}</span>
-        <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates}>{w.refresh}</button>
-      </div>}
+      {showTurnReview&&<TurnReviewNotice w={w} restarted={!!restartInterruption&&unknownCount===1} queued={queuedCount}
+        enabled={enabled} canRequest={canRequestTurnReview} pending={reviewPending} onReview={requestTurnReview}/>}
       {!heldSend&&unknown&&<p role="status">{w.unknown}</p>}
       {heldSend&&isBotCallSend(heldSend.intent.command.idempotency_key)&&<p role="status">{w.unknown} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}
       {view.heldOutcomes.problem(draftKey)==="unreadable"&&<p role="alert">{w.heldUnreadable} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}

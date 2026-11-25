@@ -12,6 +12,22 @@
 .project-assistants .pa-chat-surface .pa-chat-error { flex:none;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;padding:4px 12px;border-bottom:1px solid var(--pa-line);color:var(--warning,#f0a030);overflow-wrap:anywhere; }
 .project-assistants .pa-chat-surface .pa-chat-error[data-reconnecting] { color:var(--pa-dim); }
 .project-assistants .pa-chat-surface .pa-chat-error button { min-height:44px; }
+.project-assistants .pa-turn-review {
+  display:grid;
+  justify-items:start;
+  gap:12px;
+  margin:0 0 8px;
+  padding:12px 14px;
+  border:1px solid var(--pa-line);
+  border-radius:14px;
+  background:var(--pa-card);
+  color:var(--pa-text,#fafafa);
+  font-size:13px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+.project-assistants .pa-turn-review p { margin:4px 0 0;color:var(--pa-dim); }
+.project-assistants .pa-turn-review button { min-height:44px; }
 .project-assistants .pa-chat-surface .pa-info-panel { padding:18px 20px;background:var(--pa-bg); }
 .project-assistants .pa-chat-surface .pa-info-identity { padding:24px 0 18px;gap:8px; }
 .project-assistants .pa-chat-surface .pa-info-identity h2 { font-size:18px;line-height:1.35; }
@@ -307,8 +323,7 @@
 .project-assistants .pa-interruption-copy p { margin-top:3px; color:var(--pa-dim); font-size:12px; line-height:1.55; }
 .project-assistants .pa-interruption-actions { display:flex; flex-wrap:wrap; align-items:flex-start; gap:0 10px; margin-top:2px; }
 .project-assistants .pa-interruption-actions details { min-inline-size:0; flex:1 1 110px; }
-.project-assistants .pa-interruption-actions summary,
-.project-assistants .pa-interruption-actions button {
+.project-assistants .pa-interruption-actions summary {
   min-height:44px;
   font-size:12px;
   line-height:20px;
@@ -334,15 +349,7 @@
 }
 .project-assistants .pa-interruption-actions details[open] summary::before { transform:rotate(135deg); }
 .project-assistants .pa-interruption-actions code { display:block; padding-bottom:8px; color:var(--pa-dim); font-size:10px; }
-.project-assistants .pa-interruption-actions button {
-  margin-inline-start:auto;
-  padding:0 2px;
-  border:0;
-  border-radius:6px;
-  background:transparent;
-  color:var(--pa-text,#fafafa);
-}
-.project-assistants .pa-interruption-actions :is(summary,button):hover { color:var(--pa-text,#fafafa); text-decoration:underline; }
+.project-assistants .pa-interruption-actions summary:hover { color:var(--pa-text,#fafafa);text-decoration:underline; }
 .project-assistants .pa-chat-surface .pa-chat-error .pa-chat-error-risk { flex-basis:100%;color:var(--pa-dim);font-size:12px; }
 
 
