@@ -99,7 +99,7 @@ func (s *Server) ensureProjectAssistantHost(ctx context.Context, allowLocalSetup
 		return nil, paHTTPFailure(pa.Disabled, "server_store")
 	}
 	limits := app.RuntimeLimits{
-		MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses,
+		MaxBots:        capacity.MaximumBotActors,
 		CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond,
 		CleanupRetries: capacity.MaximumBotCleanupRetries, CleanupRetryDelay: time.Duration(capacity.MaximumBotCleanupFirstRetryMilliseconds) * time.Millisecond, CleanupSlowRetryDelay: time.Duration(capacity.MaximumBotCleanupSlowRetryMilliseconds) * time.Millisecond, CleanupSlowRetries: capacity.MaximumBotCleanupSlowRetries,
 	}

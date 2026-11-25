@@ -103,7 +103,7 @@ func newRoutineIsolationFixture(t *testing.T) *routineIsolationFixture {
 	}
 	f.r, err = app.NewRuntime(app.RuntimeOptions{Repository: f.s, Memory: f.s, WorkBridge: routineIsolationBridge{}, ProjectResolver: routineIsolationResolver{f.b.Project}, Provider: f.p, Clock: func() time.Time { return f.now }, ID: func() string { return fmt.Sprintf("generated-%d", f.seq.Add(1)) }, Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 		return pa.FeatureState{Enabled: true}, f.source(), nil
-	}, Limits: app.RuntimeLimits{MaxBots: 1, MaxProcesses: 1, CleanupTimeout: time.Second}})
+	}, Limits: app.RuntimeLimits{MaxBots: 1, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}

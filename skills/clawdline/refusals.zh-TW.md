@@ -27,6 +27,7 @@
 | `board_store_unreadable` | `internal/transport/http/board_settings.go` |
 | `board_unavailable` | `internal/transport/http/board.go` |
 | `body_too_large` | `internal/transport/http/body.go`, `internal/transport/http/ops_documents.go`, `internal/transport/http/project_files.go`, `internal/transport/http/project_memory.go`, `internal/transport/http/project_sync.go`, `internal/transport/http/projects.go`, `internal/transport/http/session_restore.go`, `internal/transport/http/snippets.go`, `internal/transport/http/squad.go`, `internal/transport/http/squad_packages.go`, `internal/transport/http/squad_role_draft.go`, `internal/transport/http/tool_library.go`, `internal/transport/http/work.go`, `internal/transport/http/work_v2.go`, `internal/transport/http/work_v2_session_name.go` |
+| `bot_request_unavailable` | `internal/transport/http/bot_request_http.go` |
 | `broker_unavailable` | `internal/transport/http/cloud_agent.go` |
 | `browser_bad_request` | `internal/transport/http/browser.go`, `internal/transport/http/browser_launch.go`, `internal/transport/http/settings.go` |
 | `browser_chromium_missing` | `internal/transport/http/browser_launch.go` |
@@ -213,7 +214,7 @@
 | `not_a_repo` | `internal/transport/http/git.go` |
 | `not_an_agent_session` | `internal/transport/http/agent_session_only.go` |
 | `not_epic_owner` | `internal/domain/work/v2.go` |
-| `not_found` | `internal/transport/http/agents.go`, `internal/transport/http/auth.go`, `internal/transport/http/cloud_agent.go`, `internal/transport/http/cloud_browser_invite.go`, `internal/transport/http/git.go`, `internal/transport/http/issue_sync.go`, `internal/transport/http/links.go`, `internal/transport/http/page.go`, `internal/transport/http/project_sync.go`, `internal/transport/http/proposals.go`, `internal/transport/http/pwa.go`, `internal/transport/http/runs.go`, `internal/transport/http/schedules.go`, `internal/transport/http/session_callbacks.go`, `internal/transport/http/shells.go`, `internal/transport/http/skills.go`, `internal/transport/http/snippets.go`, `internal/transport/http/verify.go` |
+| `not_found` | `internal/transport/http/agents.go`, `internal/transport/http/auth.go`, `internal/transport/http/bot_request_http.go`, `internal/transport/http/cloud_agent.go`, `internal/transport/http/cloud_browser_invite.go`, `internal/transport/http/git.go`, `internal/transport/http/issue_sync.go`, `internal/transport/http/links.go`, `internal/transport/http/page.go`, `internal/transport/http/project_sync.go`, `internal/transport/http/proposals.go`, `internal/transport/http/pwa.go`, `internal/transport/http/runs.go`, `internal/transport/http/schedules.go`, `internal/transport/http/session_callbacks.go`, `internal/transport/http/shells.go`, `internal/transport/http/skills.go`, `internal/transport/http/snippets.go`, `internal/transport/http/verify.go` |
 | `not_subscribed` | `internal/transport/http/push.go` |
 | `notification_rule_conflict` | `internal/transport/http/notification_rules.go` |
 | `notification_rules_invalid` | `internal/transport/http/notification_rules.go` |

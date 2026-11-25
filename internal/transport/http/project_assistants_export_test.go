@@ -54,7 +54,7 @@ func TestProjectAssistantExportIncludesStoredRoutinesAndGroupsWithoutSecrets(t *
 	}
 	groupKey := pa.BotKey{MachineID: bot.Key.MachineID, BotID: "export-group"}
 	groups := store.NewGroupStore(db)
-	_, err = groups.CreateGroup(ctx, pa.Command{Key: groupKey, Operation: pa.CreateOperation, IdempotencyKey: "export-group-create", ContentHash: fmt.Sprintf("%x", sha256.Sum256([]byte("synthetic-group")))}, pa.GroupDraft{Key: groupKey, Project: bot.Project, ConversationID: "room/export", Name: "Synthetic export room", Members: []pa.BotKey{bot.Key}}, pa.GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}, now)
+	_, err = groups.CreateGroup(ctx, pa.Command{Key: groupKey, Operation: pa.CreateOperation, IdempotencyKey: "export-group-create", ContentHash: fmt.Sprintf("%x", sha256.Sum256([]byte("synthetic-group")))}, pa.GroupDraft{Key: groupKey, Project: bot.Project, ConversationID: "room/export", Name: "Synthetic export room", Members: []pa.BotKey{bot.Key}}, pa.GroupLimits{MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}, now)
 	if err != nil {
 		t.Fatal(err)
 	}

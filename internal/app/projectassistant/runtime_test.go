@@ -336,7 +336,7 @@ func newRuntimeFixture(t *testing.T) *runtimeFixture {
 			s.State = pa.SourceRevoked
 		}
 		return pa.FeatureState{Enabled: true}, s, nil
-	}, Limits: RuntimeLimits{MaxBots: 2, MaxProcesses: 1, PromptTimeout: time.Second * 5, CleanupTimeout: time.Second}})
+	}, Limits: RuntimeLimits{MaxBots: 2, PromptTimeout: time.Second * 5, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -597,7 +597,10 @@ func TestRuntimeFreshRevocationPreventsIncomingEffects(t *testing.T) {
 
 func TestRuntimeLongQueueCanBeStoppedBeforeNativeExecution(t *testing.T) {
 	f := newRuntimeFixture(t)
-	f.r.slots <- struct{}{} // Hold the process slot; admission still persists.
+	if _, err := f.submit(t, "active", "active"); err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
 	for i := range 25 {
 		if _, err := f.submit(t, "queued", fmt.Sprint(i)); err != nil {
 			t.Fatal(i, err)
@@ -609,10 +612,9 @@ func TestRuntimeLongQueueCanBeStoppedBeforeNativeExecution(t *testing.T) {
 	if _, err := f.r.Stop(context.Background(), StopRequest{Command: pa.Command{Key: f.key, Operation: pa.StopOperation, IdempotencyKey: "stop-all", ContentHash: strings.Repeat("d", 64)}, Fence: fence}); err != nil {
 		t.Fatal(err)
 	}
-	<-f.r.slots
 	eventually(t, func() bool { f.r.mu.Lock(); defer f.r.mu.Unlock(); return len(f.r.actors) == 0 })
-	if f.provider.count() != 0 {
-		t.Fatal("stopped queue launched a process")
+	if f.provider.count() != 1 {
+		t.Fatal("stopped queue launched another process")
 	}
 }
 

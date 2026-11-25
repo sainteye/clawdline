@@ -59,9 +59,9 @@ They do not establish native read-only or memory isolation by themselves.
 Submit checks current source access, content, capabilities and queue capacity,
 then atomically persists a user message, queued turn and accepted receipt before
 returning. First send mints the initial binding; metadata reads never launch an
-engine. Each active Bot has one worker and one turn at a time. Process slots are
-global to the Engine, so other Bots can run up to the configured concurrency.
-Waiting for a slot is cancellable and already durable. Idle actors are reclaimed.
+engine. Each active Bot has one worker and one turn at a time. Independent Bots
+can start without waiting for one another's native processes. Idle actors are
+reclaimed. The existing actor admission limit still applies.
 
 Admission captures ownership, not instructions. Queued-to-running is the single
 allowed rebind: immutable key/Project/conversation/message/idempotency identity
@@ -141,8 +141,7 @@ measurement wiring, translated notices and its selected integration values.
 | Required field | Integration candidate | At the bound |
 | --- | ---: | --- |
 | RuntimeLimits.MaxBots | 64 | Refuse a new active actor before durable acceptance; idle actors are reclaimed. This is not the saved Bot count. |
-| RuntimeLimits.MaxProcesses | 4 | Keep accepted turns durably queued; wait cancellably. |
-| Ordinary chat, follow-ups in the main conversation, and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Isolated routines use their configured timeout after acquiring a process slot. |
+| Ordinary chat, follow-ups in the main conversation, and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Isolated routines use their configured timeout when their worker starts the turn. |
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
 | Limits.RPCPending | 32 | Bound concurrent owned HTTP tool requests. Native protocol RPCs do not use this pool. |
 | Native permission requests | No fixed local count ceiling | Each offer is scoped to its live turn and must be resolved under its permission policy. |

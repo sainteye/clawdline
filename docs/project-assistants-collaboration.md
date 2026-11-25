@@ -127,8 +127,8 @@ runtime waiter now waits on owner/capacity changes, without raising the bound or
 creating a waiter per request. A full source chat queue originally rejected the
 recipient's completed result. Completion now commits its payload and a waiting
 delivery atomically; the source worker promotes one typed reply when existing
-queue space is available. It neither reserves a process slot for a completed
-result nor exceeds the registered chat queue. Promotion is idempotent. Explicit
+queue space is available. Only promotion places the completed result in the
+registered chat queue. Promotion is idempotent. Explicit
 Stop drops unstarted waiting replies while retaining completed text. A planned
 shutdown preserves queued and waiting replies. Startup wakes their senders
 through the normal queue so even a status created during shutdown can be

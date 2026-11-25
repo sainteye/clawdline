@@ -190,7 +190,7 @@ func newHostFixture(t *testing.T) *hostFixture {
 	broker := f.broker(t, dir)
 	// Functional SQLite cleanup uses the product budget; deadline faults opt in
 	// to a short limit in their own test instead of imposing it on every stop.
-	f.o = Options{Database: f.st.ProjectAssistantDatabase(), MachineID: "source", Projects: fixtureResolver{f}, Broker: broker, Clock: time.Now, ID: func() string { return fmt.Sprintf("host-%d", f.seq.Add(1)) }, Limits: app.RuntimeLimits{MaxBots: 4, MaxProcesses: 1, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond},
+	f.o = Options{Database: f.st.ProjectAssistantDatabase(), MachineID: "source", Projects: fixtureResolver{f}, Broker: broker, Clock: time.Now, ID: func() string { return fmt.Sprintf("host-%d", f.seq.Add(1)) }, Limits: app.RuntimeLimits{MaxBots: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond},
 		Source: func(context.Context, pa.BotKey, bool) (pa.SourceStatus, error) {
 			s := pa.SourceStatus{MachineID: "source", State: pa.SourceOnline, Readable: true, Writable: true, Fresh: true, Access: pa.Interactive}
 			if f.revoked.Load() {
@@ -218,6 +218,60 @@ func newHostFixture(t *testing.T) *hostFixture {
 }
 
 // broker builds the fixture's broker; a new daemon process builds its own.
+func TestHostStartsIndependentBotTurnsWithoutGlobalProcessQueue(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Limits.MaxBots = 8
+	f.o.Limits.PromptTimeout = 30 * time.Second
+	f.start(t)
+	f.enable(t)
+	r, err := f.h.runtime()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Four automatic turns reproduce the previous machine-wide saturation.
+	// Keep every provider turn open until both later turns reach native Send.
+	var sessions []*fixtureSession
+	for i := range 6 {
+		bot := f.create(t, fmt.Sprintf("concurrent-%d", i))
+		var receipt pa.Receipt
+		if i == 4 {
+			receipt, err = f.send(t, bot, "A person asks a question.")
+		} else {
+			conversation, readErr := f.h.store.Conversation(ctx, bot.Key, bot.ConversationID)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			fence := pa.Fence{Key: bot.Key, Project: bot.Project, ConversationID: conversation.ID, BindingID: conversation.BindingID, Generation: conversation.Generation}
+			source, _ := f.o.Source(ctx, bot.Key, true)
+			receipt, err = r.Submit(ctx, app.Submission{
+				Command: pa.Command{Key: bot.Key, Operation: pa.SendOperation, IdempotencyKey: "automatic", ContentHash: strings.Repeat("a", 64)},
+				Message: pa.SendMessage{Fence: fence, Text: "An automatic Bot follow-up."},
+				Source:  source, Feature: pa.FeatureState{Enabled: true}, Notice: true,
+			})
+		}
+		if err != nil {
+			t.Fatalf("accept turn %d: %v", i+1, err)
+		}
+		sessions = append(sessions, fixtureReceive(t, f.p.sessions))
+		prompt := fixtureReceive(t, f.p.sent)
+		if prompt.Turn.ID != receipt.ResourceID || prompt.Turn.Fence.Key != bot.Key {
+			t.Fatalf("started wrong turn %d: %+v", i+1, prompt.Turn)
+		}
+	}
+	if usage := f.h.Usage(); usage.ActiveActors != len(sessions) || usage.Processes != len(sessions) {
+		t.Fatalf("independent process ownership: %+v", usage)
+	}
+	for _, session := range sessions {
+		session.reply <- app.PromptResult{FinalText: "Finished independently."}
+	}
+	fixtureEventually(t, func() bool {
+		usage := f.h.Usage()
+		return usage.Known && usage.ActiveActors == 0 && usage.Processes == 0
+	})
+}
+
 func (f *hostFixture) broker(t *testing.T, dir string) *orchestrator.Broker {
 	t.Helper()
 	broker := &orchestrator.Broker{Store: f.st, Tasks: taskdir.New(dir), Git: gitadapter.New(), Dir: dir, Launcher: f.launcher, ScreenReadEvery: time.Millisecond, Terminal: func() projects.TerminalChoice { return projects.TerminalTmux }, Live: func(context.Context) []session.Session {

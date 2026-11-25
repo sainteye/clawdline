@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "bot-request.schema.json",
+  "title": "Bot request cards",
+  "description": "GET /v1/bot-request/cards, GET /v1/bot-request/cards/{id} and the person's POST /v1/bot-request/cards/{id}/handoff|check|complete|cancel|reopen (docs/bot-request-cards.md §8.3). Times are RFC 3339 strings. A refusal is a BotRequestRefusal whose `error` is a bot_request_* code.",
+  "$defs": {
+    "BotRequestAuthority": {
+      "description": "The person's message a card roots in.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bot", "conversation_id", "message_id", "turn_id"],
+      "properties": {
+        "bot": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "message_id": { "type": "string" },
+        "turn_id": { "type": "string" }
+      }
+    },
+    "BotRequestBaton": {
+      "description": "The card's one holder: `bot` is the holder Bot's id, `role` maker, reviewer or integrator.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bot", "role"],
+      "properties": {
+        "bot": { "type": "string" },
+        "role": { "type": "string" }
+      }
+    },
+    "BotRequestEntry": {
+      "description": "One checklist entry. `state` is open, done or not_needed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "label", "state"],
+      "properties": {
+        "key": { "type": "string" },
+        "label": { "type": "string" },
+        "note": { "type": "string" },
+        "reported_at": { "description": "RFC 3339; absent while the entry is open.", "type": "string" },
+        "reported_by": { "type": "string" },
+        "state": { "type": "string" }
+      }
+    },
+    "BotRequestVerdict": {
+      "description": "One reviewer Bot's recorded verdict (pass, conditional_pass, reject). Never edited.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["at", "id", "reviewer_bot", "verdict"],
+      "properties": {
+        "at": { "type": "string" },
+        "commit": { "type": "string" },
+        "id": { "type": "string" },
+        "reviewer_bot": { "type": "string" },
+        "text": { "type": "string" },
+        "verdict": { "type": "string" }
+      }
+    },
+    "BotRequestEvent": {
+      "description": "One row of a card's history, oldest first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["actor", "at", "id", "kind", "version"],
+      "properties": {
+        "actor": { "description": "`person` or `bot:<id>`.", "type": "string" },
+        "at": { "type": "string" },
+        "detail": { "type": "string" },
+        "id": { "type": "integer" },
+        "kind": { "type": "string" },
+        "version": { "type": "integer" }
+      }
+    },
+    "BotRequestView": {
+      "description": "One card as the console reads it. `done` of `total` checklist entries are done or not_needed; `progress_state` is the card's light. `events` is present only on a single-card read and a write's answer.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["authority", "baton", "chain", "checklist", "created_at", "created_by", "cycle", "done", "id", "progress_state", "project_id", "project_path", "state", "title", "total", "updated_at", "version"],
+      "properties": {
+        "authority": { "type": "array", "items": { "$ref": "#/$defs/BotRequestAuthority" } },
+        "baton": { "$ref": "#/$defs/BotRequestBaton" },
+        "board_item_id": { "type": "string" },
+        "chain": { "description": "Every Bot the card has reached, in order.", "type": "array", "items": { "type": "string" } },
+        "checklist": { "type": "array", "items": { "$ref": "#/$defs/BotRequestEntry" } },
+        "closed_at": { "type": "string" },
+        "created_at": { "type": "string" },
+        "created_by": { "type": "string" },
+        "cycle": { "description": "1 for the first completion, one more after each reopen.", "type": "integer" },
+        "description": { "type": "string" },
+        "done": { "type": "integer" },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/BotRequestEvent" } },
+        "id": { "type": "string" },
+        "kind": { "type": "string" },
+        "merged_into": { "type": "string" },
+        "progress_state": { "type": "string" },
+        "project_id": { "type": "string" },
+        "project_path": { "type": "string" },
+        "split_from": { "type": "string" },
+        "state": { "description": "open, done, cancelled or merged.", "type": "string" },
+        "title": { "type": "string" },
+        "total": { "type": "integer" },
+        "updated_at": { "description": "The time of the card's last event.", "type": "string" },
+        "verdicts": { "type": "array", "items": { "$ref": "#/$defs/BotRequestVerdict" } },
+        "version": { "type": "integer" },
+        "waiting": { "description": "The ask_person question id the holder waits on, when it waits.", "type": "string" }
+      }
+    },
+    "BotRequestPage": {
+      "description": "GET /v1/bot-request/cards?bot=&project=&state=&cursor=: at most 100 cards, most recently updated first.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cards"],
+      "properties": {
+        "cards": { "type": "array", "items": { "$ref": "#/$defs/BotRequestView" } },
+        "next_cursor": { "type": "string" }
+      }
+    },
+    "BotRequestMark": {
+      "description": "One checklist mark in a check: `state` done or not_needed with a `note`; a label not on the card adds an entry.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label"],
+      "properties": {
+        "label": { "type": "string" },
+        "note": { "type": "string" },
+        "state": { "type": "string" }
+      }
+    },
+    "BotRequestPersonWrite": {
+      "description": "The body of a person's POST, with an Idempotency-Key header. handoff takes to_bot, role and note; check takes entries; complete, cancel and reopen take an optional reason.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected_version"],
+      "properties": {
+        "entries": { "type": "array", "items": { "$ref": "#/$defs/BotRequestMark" } },
+        "expected_version": { "type": "integer" },
+        "note": { "type": "string" },
+        "reason": { "type": "string" },
+        "role": { "type": "string" },
+        "to_bot": { "type": "string" }
+      }
+    },
+    "BotRequestWriteResult": {
+      "description": "A person's write: the card as it now stands. `replayed` when the Idempotency-Key answered an earlier write and nothing was written.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["card", "changed"],
+      "properties": {
+        "card": { "$ref": "#/$defs/BotRequestView" },
+        "changed": { "type": "boolean" },
+        "replayed": { "type": "boolean" }
+      }
+    },
+    "BotRequestRefusal": {
+      "description": "A refused card read or write. `error` is a bot_request_* code, `detail` the field it is about, and `version` the card's current version on bot_request_version_conflict.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["detail", "error"],
+      "properties": {
+        "detail": { "type": "string" },
+        "error": { "type": "string" },
+        "version": { "type": "integer" }
+      }
+    }
+  }
+}

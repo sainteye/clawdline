@@ -135,7 +135,7 @@ func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: c
 // exposing its read service. A fresh default-off source still creates no
 // feature tables, runtime, provider, actor authority or broker subscription.
 func New(ctx context.Context, o Options) (*Host, error) {
-	if o.Database == nil || o.MachineID == "" || o.Projects == nil || o.Broker == nil || o.Clock == nil || o.ID == nil || o.Authority == nil || o.Source == nil || o.Limits.MaxBots < 1 || o.Limits.MaxProcesses < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
+	if o.Database == nil || o.MachineID == "" || o.Projects == nil || o.Broker == nil || o.Clock == nil || o.ID == nil || o.Authority == nil || o.Source == nil || o.Limits.MaxBots < 1 || o.Limits.PromptTimeout < 0 || o.Limits.CleanupTimeout <= 0 {
 		return nil, failure(pa.Invalid, "host_options")
 	}
 	h := &Host{o: o, configurationSlots: make(chan struct{}, pa.MaxConfigurationProbes)}
@@ -451,6 +451,7 @@ func (h *Host) connect() error {
 	h.authority, h.bridge = a, b
 	h.o.Broker.AssistantWorkChanged = b.Sync
 	h.o.Broker.AssistantWorkCompleted = h.completeWork
+	h.o.Broker.BotRequestNotice = h.botRequestNotice
 	return nil
 }
 

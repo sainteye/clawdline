@@ -13,7 +13,6 @@ const (
 	MaximumBotErrorKindBytes   = 40
 	MaximumBotOwnedDescendants = 256
 	MaximumBotActors           = 64
-	MaximumBotProcesses        = 4
 	MaximumBotRPCPending       = 32
 	MaximumBotFrameBytes       = 1048576
 	// Existing process-identity inventory budget; never limits native ACP text.
@@ -70,7 +69,7 @@ const (
 	MaximumBotRulesFileBytes = 1 << 20
 	// Group rooms, CodyNC 9f67eb09 host/src/chat/group.rs and group/rooms.rs.
 	MaximumBotGroupRounds            = 3   // MAX_ROUNDS
-	MaximumBotGroupReplies           = 10  // MAX_REPLIES
+	MaximumBotGroupReplies           = 10  // Bot-initiated follow-up replies per room turn
 	MaximumBotGroupLateTurns         = 3   // rooms.rs MAX_LATE_TURNS
 	MaximumBotGroupMemberWaitSeconds = 600 // MEMBER_TIMEOUT; not a retry or permission deadline
 	MaximumBotGroupHistoryLines      = 24  // HISTORY_LINES shown to a member
@@ -100,11 +99,7 @@ const (
 	BotsManagerPending         = "bots.manager_pending"
 )
 
-// groupBounds: a room turn that reaches a bound ends or shows less; nothing
-// is refused to the person. Group members have no upstream bound: a room
-// asks members one at a time, each through a runtime actor, so composition
-// passes BotsActors (MaximumBotActors) as pa.GroupLimits.MaxMembers rather
-// than inventing a number; that row already covers it.
+// Group activity and presentation bounds. Membership is defined by the room.
 func groupBounds() []Entry {
 	return []Entry{
 		{Name: BotsDispatchedStripRows, Class: Buffer, Unit: Rows, Limit: MaximumBotDispatchedStripRows, AtLimit: Coalesce, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotDispatchedStripRows"}},
@@ -230,9 +225,6 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsActors, Class: Buffer, Unit: Rows, Limit: MaximumBotActors, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotActors"}},
-		{Name: BotsProcesses, Class: Buffer, Unit: Rows, Limit: MaximumBotProcesses, AtLimit: Refuse,
-			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
-			Sources: []string{"internal/domain/capacity.MaximumBotProcesses", "internal/app/projectassistant.NewRuntime:chan(o.Limits.MaxProcesses)"}},
 		{Name: BotsRPCPending, Class: Buffer, Unit: Rows, Limit: MaximumBotRPCPending, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCPending", "internal/adapters/projectassistantacp.newClient:chan(l.RPCPending)"}},

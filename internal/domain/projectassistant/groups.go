@@ -36,13 +36,8 @@ type GroupMember struct {
 	JoinedRevision int64  `json:"joined_revision"`
 }
 
-const DefaultMaxGroupMembers = 64
-
-// GroupLimits are supplied by the caller that registers the product bounds.
-// Upstream has no member maximum; MaxMembers can be dynamically defaulted to
-// DefaultMaxGroupMembers when omitted or non-positive.
+// GroupLimits bounds automatic room activity. The room asks members in order.
 type GroupLimits struct {
-	MaxMembers   int `json:"max_members"`
 	MaxRounds    int `json:"max_rounds"`
 	MaxReplies   int `json:"max_replies"`
 	MaxLateTurns int `json:"max_late_turns"`
@@ -53,13 +48,6 @@ func (l GroupLimits) Validate() error {
 		return fail(Invalid, "group_limits")
 	}
 	return nil
-}
-
-func (l GroupLimits) EffectiveMaxMembers() int {
-	if l.MaxMembers > 0 {
-		return l.MaxMembers
-	}
-	return DefaultMaxGroupMembers
 }
 
 // GroupCatalog is what the source machine actually stores, read in the same
@@ -132,9 +120,6 @@ func ValidateGroupMembers(group BotKey, scope ProjectScope, requested []BotKey, 
 	deduped := DeduplicateGroupMembers(requested)
 	if len(deduped) == 0 {
 		return fail(Invalid, "group_members")
-	}
-	if len(deduped) > limits.EffectiveMaxMembers() {
-		return fail(CapacityFull, "group_members")
 	}
 	for _, key := range deduped {
 		switch {
@@ -858,14 +843,15 @@ func mentions(text, handle string) bool {
 	}
 }
 
-// RoomRun counts one room turn's rounds and replies: at most MaxRounds
-// rounds and MaxReplies replies, and a round in which nobody spoke ends it.
+// RoomRun gives each addressed member a chance to answer the person. Later
+// rounds and late-answer turns share a follow-up reply budget within the run.
 type RoomRun struct {
-	Round   int
-	Replies int
-	Spoke   int
-	Done    bool
-	Last    *RoomEntry
+	Round           int
+	FollowUpReplies int
+	Spoke           int
+	Done            bool
+	Last            *RoomEntry
+	Late            bool
 }
 
 // Answered records one asked member's outcome; it reports whether the turn
@@ -873,11 +859,13 @@ type RoomRun struct {
 func (r *RoomRun) Answered(entry *RoomEntry, l GroupLimits) bool {
 	if entry != nil {
 		r.Spoke++
-		r.Replies++
+		if r.Round > 0 || r.Late {
+			r.FollowUpReplies++
+		}
 		e := *entry
 		r.Last = &e
 	}
-	if r.Replies >= l.MaxReplies {
+	if r.FollowUpReplies >= l.MaxReplies {
 		r.Done = true
 	}
 	return !r.Done

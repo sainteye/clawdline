@@ -97,8 +97,7 @@ func (r *Engine) QualifyNativeMaintenance(ctx context.Context, intent NativeMain
 	defer func() {
 		r.mu.Lock()
 		if !a.retained {
-			a.slot = false
-			<-r.slots
+			a.processOwned = false
 		}
 		r.mu.Unlock()
 	}()
@@ -204,13 +203,8 @@ func (r *Engine) reserveNativeMaintenance(fence pa.Fence) (*runtimeActor, error)
 	if len(r.actors) >= r.o.Limits.MaxBots {
 		return nil, runtimeFailure(pa.CapacityFull, "active_bots")
 	}
-	select {
-	case r.slots <- struct{}{}:
-	default:
-		return nil, runtimeFailure(pa.CapacityFull, "native_maintenance_process")
-	}
 	lifetime, stop := context.WithCancel(context.Background())
-	a := &runtimeActor{key: fence.Key, project: fence.Project, users: 1, lifetime: lifetime, stop: stop, slot: true, maintenance: true}
+	a := &runtimeActor{key: fence.Key, project: fence.Project, users: 1, lifetime: lifetime, stop: stop, processOwned: true, maintenance: true}
 	r.actors[a.key] = a
 	return a, nil
 }

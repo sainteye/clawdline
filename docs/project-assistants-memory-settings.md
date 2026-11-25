@@ -201,7 +201,7 @@ Cancellation or connection failure makes the reading unusable.
 
 The Host can now read that optional state through the owned-session wrapper
 and an existing runtime actor. This read never calls the runtime factory,
-allocates an actor or process slot, or opens/resumes a provider. The current
+allocates an actor or opens/resumes a provider. The current
 human reader, background source, canonical Project, complete execution fence,
 active turn, native ID, binding and memory/instruction revisions are checked;
 authority and binding are rechecked after the native cached read. An absent,

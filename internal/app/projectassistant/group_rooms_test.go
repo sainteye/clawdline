@@ -97,7 +97,7 @@ func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 			}
 			var err error
 			provider := &responsibleRoomPeer{roomPeer: h.peer, pass: tc.pass, fail: tc.fail, quota: tc.quota, refuse: tc.refuse, probes: map[string]int{}}
-			h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, Provider: provider, ProjectResolver: roomResolver{h.scope}, Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+			h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, Provider: provider, ProjectResolver: roomResolver{h.scope}, Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver, Limits: app.RuntimeLimits{MaxBots: 8, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -164,7 +164,7 @@ func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 }
 
 // Codync's room values; MaxMembers is this test's own bound.
-var roomLimits = pa.GroupLimits{MaxMembers: 8, MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
+var roomLimits = pa.GroupLimits{MaxRounds: 3, MaxReplies: 10, MaxLateTurns: 3}
 
 func openRoomDB(t *testing.T, path string) *sql.DB {
 	t.Helper()
@@ -272,7 +272,7 @@ func TestGroupRoomFromStoredBotsThroughReopen(t *testing.T) {
 		}
 		run.EndRound(roomLimits)
 	}
-	if run.Round != 1 || run.Replies != 1 || run.Last == nil || run.Last.Author != alice.Key {
+	if run.Round != 1 || run.FollowUpReplies != 0 || run.Last == nil || run.Last.Author != alice.Key {
 		t.Fatalf("run %+v", run)
 	}
 	if len(answers[bob.Key]) != 0 {

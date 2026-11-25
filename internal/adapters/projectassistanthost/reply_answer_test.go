@@ -27,7 +27,6 @@ func assertWholeAnswer(t *testing.T, where, got string) {
 func TestPeerReplyCarriesTheWholeAnswer(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	a, b := f.create(t, "requester"), f.create(t, "recipient")
@@ -66,7 +65,6 @@ func TestPeerReplyCarriesTheWholeAnswer(t *testing.T) {
 func TestForwardedDecisionCarriesTheWholeAnswer(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	a, b, x, offer := startPeerQuestion(t, f)

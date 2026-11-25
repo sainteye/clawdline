@@ -24,6 +24,9 @@ import (
 // may come from model arguments or an HTTP request. DispatchAllowed is distinct
 // from native read-only permissions and from any human approval of Board work.
 type AssistantCurrent struct {
+	// BotRequestID is the card a dispatch attaches to after the broker
+	// followed merged_into; only checkAssistantRequest sets it.
+	BotRequestID  string
 	Fence         pa.Fence
 	Source        pa.SourceStatus
 	Feature       pa.FeatureState
@@ -253,7 +256,9 @@ func AssistantRequestHash(q pa.WorkRequest) string {
 		// Omitted when the actor owns the work, so earlier receipts keep their hash.
 		OwnerFence  pa.Fence `json:"owner_fence,omitzero"`
 		OwnerTurnID string   `json:"owner_turn_id,omitempty"`
-	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice, q.OwnerFence, q.OwnerTurnID})
+		// Omitted when empty so receipts written before Bot request cards keep their hash.
+		BotRequestID string `json:"bot_request_id,omitempty"`
+	}{q.Command, q.Actor.Fence, q.TurnID, q.Brief, q.Claims, q.Title, q.TargetProject, q.Persona, q.BoardItemID, q.ContinueOnCompletion, q.Choice, q.OwnerFence, q.OwnerTurnID, q.BotRequestID})
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:])
 }
@@ -318,6 +323,13 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 		if err != nil || item.ProjectID != c.Project.Scope.ProjectID || item.ProjectPath != c.Project.Directory {
 			return c, assistantFailure(pa.ScopeDenied, "board_item_id")
 		}
+	}
+	if q.BotRequestID != "" {
+		card, err := b.botRequestCard(ctx, q.BotRequestID, q.Actor.Fence.Key.BotID)
+		if err != nil {
+			return c, err
+		}
+		c.BotRequestID = card
 	}
 	claims, err := admitClaims(q.Claims)
 	if err != nil {
@@ -405,6 +417,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 		return Dispatched{}, err
 	}
 	r.WorkID = q.BoardItemID
+	r.BotRequestID = c.BotRequestID
 	ownerFence, ownerTurn := q.Owner()
 	r.AssistantOwner = &AssistantOwner{Fence: ownerFence, BotName: c.BotName, TurnID: ownerTurn, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion}
 	if pa.ValidateAppearance(c.BotAppearance) == nil {
@@ -457,7 +470,7 @@ func AssistantWorkSnapshotOf(r Record) AssistantWorkSnapshot {
 	}
 	s := AssistantWorkSnapshot{Owner: *r.AssistantOwner, Link: pa.WorkLink{
 		ID: r.ID, TaskID: r.ID, Fence: r.AssistantOwner.Fence, TurnID: r.AssistantOwner.TurnID,
-		BoardItemID: r.WorkID, State: pa.WorkUnknown, Title: r.Title,
+		BoardItemID: r.WorkID, BotRequestID: r.BotRequestID, State: pa.WorkUnknown, Title: r.Title,
 		TargetProjectID: r.AssistantOwner.TargetProject.ProjectID,
 	}}
 	if r.ChildTerminalID != "" && r.ChildConversationID != "" {

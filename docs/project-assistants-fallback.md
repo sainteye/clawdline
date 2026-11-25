@@ -226,8 +226,8 @@ message ID and logical Turn ID remain unchanged. `ExecutionBinding.Agent`,
 `OpenRequest.Bot.Agent` and the fresh handoff identify the effective Agent;
 `OpenRequest.PrimaryAgent` separately retains the configured primary. The
 existing two-Agent router receives the effective configuration. Every attempt
-has its own binding and increasing generation. One existing prompt deadline
-and process slot cover the entire logical turn, including cleanup and switching.
+has its own binding and increasing generation. A single prompt context and Bot process owner cover the logical turn,
+including cleanup and switching.
 
 A provider may return `PreSendRefusal` from **Open**, with an owned cleanup
 handle, only when it can authoritatively guarantee no prompt or external
@@ -245,8 +245,8 @@ may it mint another fence and tools. It rechecks stop, feature/source access,
 Project resolution, configuration, memory and the current binding before Open
 and before Send. A configuration change between attempts refuses the switch.
 Old events, tools and permission answers remain fenced out. Missing handles or
-failed cleanup retain the original owner and process slot. A separate host-only
-`OpenNotStarted` fact can reclaim an unused slot when provider Open was never
+failed cleanup retain the original process owner. A separate host-only
+`OpenNotStarted` fact can release the owner when provider Open was never
 entered and setup registrations were reclaimed; it never permits fallback. Providers never
 share an MCP lifetime. There is no same-Agent Send retry.
 

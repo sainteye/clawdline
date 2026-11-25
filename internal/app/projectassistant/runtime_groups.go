@@ -149,12 +149,9 @@ func (r *Engine) BusyElsewhere(ctx context.Context, member, group pa.BotKey) (bo
 	return false, nil
 }
 
-// DefaultGroupLimits are the registered room bounds (internal/domain/capacity,
-// CodyNC group.rs and rooms.rs). Upstream has no member maximum: a room asks
-// members one at a time, each through a runtime actor, so the actor bound is
-// the most members a room can be served by.
+// DefaultGroupLimits supplies the registered room activity bounds.
 func DefaultGroupLimits() pa.GroupLimits {
-	return pa.GroupLimits{MaxMembers: capacity.MaximumBotActors, MaxRounds: capacity.MaximumBotGroupRounds, MaxReplies: capacity.MaximumBotGroupReplies, MaxLateTurns: capacity.MaximumBotGroupLateTurns}
+	return pa.GroupLimits{MaxRounds: capacity.MaximumBotGroupRounds, MaxReplies: capacity.MaximumBotGroupReplies, MaxLateTurns: capacity.MaximumBotGroupLateTurns}
 }
 
 // DefaultRoomLimits are the registered driver bounds.
@@ -467,7 +464,7 @@ func (d *RoomDriver) since(ctx context.Context, key pa.BotKey, turn pa.RoomTurn)
 
 func (d *RoomDriver) runTurn(ctx context.Context, key pa.BotKey, turn pa.RoomTurn, asked map[pa.BotKey]int64) {
 	limits := d.o.Rooms.limits
-	var run pa.RoomRun
+	run := pa.RoomRun{Late: turn.Late != 0}
 	later := map[pa.BotKey]bool{}
 	for {
 		g, err := d.o.Rooms.store.Group(ctx, key)
@@ -481,9 +478,6 @@ func (d *RoomDriver) runTurn(ctx context.Context, key pa.BotKey, turn pa.RoomTur
 		}
 		for _, s := range pa.RoomSpeakersFor(speakers, since, turn.Late != 0, run.Round, asked) {
 			if ctx.Err() != nil || !d.current(ctx, key, turn.Epoch) {
-				return
-			}
-			if run.Replies >= limits.MaxReplies {
 				return
 			}
 			if later[s.Key] {

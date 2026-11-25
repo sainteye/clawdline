@@ -14,8 +14,7 @@ import (
 // RuntimeLimits are host-owned operational bounds, deliberately without defaults.
 // The host registers its selected values in domain/capacity.
 type RuntimeLimits struct {
-	MaxBots      int
-	MaxProcesses int
+	MaxBots int
 	// PromptTimeout is optional for hosts that explicitly bound ordinary turns.
 	// Production leaves it zero; scheduled routines carry their own deadline.
 	PromptTimeout  time.Duration
@@ -93,6 +92,12 @@ type PersonaDispatchTools interface {
 }
 
 // BoardDispatchTools associates a dispatch with a Board item the person named.
+// BotRequestTools runs the Bot request card tools (docs/bot-request-cards.md §8.2)
+// for the turn that holds the tools.
+type BotRequestTools interface {
+	BotRequest(ctx context.Context, tool string, arguments json.RawMessage) (any, error)
+}
+
 type BoardDispatchTools interface {
 	DispatchWithBoard(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
 }

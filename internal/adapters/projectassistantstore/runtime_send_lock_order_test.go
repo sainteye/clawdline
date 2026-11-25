@@ -59,7 +59,7 @@ func TestSendDoesNotWaitForActorDuringToolJournalCommit(t *testing.T) {
 		Authorize: func(context.Context, pa.BotKey) (pa.FeatureState, pa.SourceStatus, error) {
 			return pa.FeatureState{Enabled: true}, recoverySource(bot.Key), nil
 		},
-		Limits: app.RuntimeLimits{MaxBots: 1, MaxProcesses: 1, PromptTimeout: 10 * time.Second, CleanupTimeout: time.Second},
+		Limits: app.RuntimeLimits{MaxBots: 1, PromptTimeout: 10 * time.Second, CleanupTimeout: time.Second},
 	})
 	if err != nil {
 		t.Fatal(err)

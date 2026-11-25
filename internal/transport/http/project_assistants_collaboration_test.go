@@ -275,7 +275,7 @@ func collaborationRealTCPMCPRequestAndReply(t *testing.T, maxActors int) {
 		return collaborationProvider{Provider: p, t: t}, e
 	}
 	makeHost := func(s *Server) (*host.Host, error) {
-		return host.New(context.Background(), host.Options{Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: f.key.MachineID, Projects: resolver, Broker: s.broker, Clock: time.Now, ID: projectAssistantID, Limits: app.RuntimeLimits{MaxBots: maxActors, MaxProcesses: 4, PromptTimeout: 20 * time.Second, CleanupTimeout: 2 * time.Second}, Authority: s.projectAssistantAuthority, Source: s.projectAssistantSource, Provider: provider, ReadViewByteLimit: 1 << 20})
+		return host.New(context.Background(), host.Options{Database: s.store.ProjectAssistantDatabase(), Reader: s.store.ProjectAssistantReader(), MachineID: f.key.MachineID, Projects: resolver, Broker: s.broker, Clock: time.Now, ID: projectAssistantID, Limits: app.RuntimeLimits{MaxBots: maxActors, PromptTimeout: 20 * time.Second, CleanupTimeout: 2 * time.Second}, Authority: s.projectAssistantAuthority, Source: s.projectAssistantSource, Provider: provider, ReadViewByteLimit: 1 << 20})
 	}
 	hosted, err := makeHost(f.s)
 	if err != nil {

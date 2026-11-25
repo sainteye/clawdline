@@ -113,7 +113,7 @@ type ownedCleanupFailure struct{ error }
 func (f *ownedCleanupFailure) Unwrap() error { return f.error }
 
 // The execution owner alone closes its session. A failed close keeps both the
-// handle and process slot, including after its prompt caller has timed out.
+// handle and process ownership, including after its prompt caller has timed out.
 func (r *Engine) closeSession(a *runtimeActor, session ProviderSession) error {
 	a.mu.Lock()
 	a.closing = true
@@ -538,11 +538,11 @@ func (r *Engine) retryCleanupWith(a *runtimeActor, force bool) {
 	completion := a.completion != nil
 	a.mu.Unlock()
 	// A provider reported an unknown Open without a cleanup handle. Keep the
-	// owner/slot; inventing a successful close would discard that uncertainty.
+	// owner; inventing a successful close would discard that uncertainty.
 	r.mu.Lock()
-	slot := a.slot
+	processOwned := a.processOwned
 	r.mu.Unlock()
-	if session == nil && slot && !completion {
+	if session == nil && processOwned && !completion {
 		return
 	}
 	if session != nil {
@@ -575,9 +575,6 @@ func (r *Engine) retryCleanupWith(a *runtimeActor, force bool) {
 	}
 	r.mu.Lock()
 	a.retained, a.cleanupErr = false, nil
-	if a.slot {
-		a.slot = false
-		<-r.slots
-	}
+	a.processOwned = false
 	r.mu.Unlock()
 }

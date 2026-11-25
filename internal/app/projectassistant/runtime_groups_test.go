@@ -118,6 +118,7 @@ type roomHarness struct {
 	peer    *roomPeer
 	scope   pa.ProjectScope
 	person  app.PersonAuthority
+	limits  pa.GroupLimits
 	members []pa.Bot
 	ids     atomic.Int64
 }
@@ -126,7 +127,12 @@ var roomRuntimeLimits = app.RoomLimits{MemberWait: 2 * time.Second, HistoryLines
 
 func newRoomHarness(t *testing.T, names ...string) *roomHarness {
 	t.Helper()
-	h := &roomHarness{path: filepath.Join(t.TempDir(), "rooms.db"), peer: newRoomPeer(), person: app.PersonAuthority{Principal: "person", Machine: "m"},
+	return newRoomHarnessWithLimits(t, roomLimits, names...)
+}
+
+func newRoomHarnessWithLimits(t *testing.T, limits pa.GroupLimits, names ...string) *roomHarness {
+	t.Helper()
+	h := &roomHarness{path: filepath.Join(t.TempDir(), "rooms.db"), peer: newRoomPeer(), limits: limits, person: app.PersonAuthority{Principal: "person", Machine: "m"},
 		scope: pa.ProjectScope{MachineID: "m", ProjectID: "p", CanonicalID: "repo", Kind: pa.RepositoryProject}}
 	h.db = openRoomDB(t, h.path)
 	h.bots = projectassistantstore.New(h.db)
@@ -141,7 +147,7 @@ func (h *roomHarness) start(t *testing.T) {
 	t.Helper()
 	var err error
 	h.groups = projectassistantstore.NewGroupStore(h.db)
-	if h.rooms, err = app.NewGroupRooms(h.groups, roomLimits, func() time.Time { return roomAt }); err != nil {
+	if h.rooms, err = app.NewGroupRooms(h.groups, h.limits, func() time.Time { return roomAt }); err != nil {
 		t.Fatal(err)
 	}
 	// Unique across restarts, as the host's generated IDs are.
@@ -154,7 +160,7 @@ func (h *roomHarness) start(t *testing.T) {
 	}
 	h.engine, err = app.NewRuntime(app.RuntimeOptions{Repository: h.bots, Memory: h.bots, WorkBridge: h.peer, ProjectResolver: roomResolver{h.scope}, Provider: h.peer,
 		Clock: time.Now, ID: id, Authorize: authorize, Rooms: h.driver,
-		Limits: app.RuntimeLimits{MaxBots: 8, MaxProcesses: 4, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
+		Limits: app.RuntimeLimits{MaxBots: 8, PromptTimeout: 5 * time.Second, CleanupTimeout: time.Second}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -490,9 +496,44 @@ func TestOwnChatStopKeepsALateRoomTurn(t *testing.T) {
 	h.driver.Idle()
 }
 
-func TestDefaultRoomBoundsAreCodyNCs(t *testing.T) {
+func TestRoomFirstPassReachesEveryoneThePersonAsked(t *testing.T) {
+	h := newRoomHarnessWithLimits(t, app.DefaultGroupLimits(),
+		"Alice", "Bob", "Carol", "Dan", "Emma", "Fran", "Grace", "Hank", "Isaac", "Jin", "Kim", "Lea")
+	g := h.group(t, "all", h.members...)
+	for _, bot := range h.members {
+		h.peer.reply(bot.Key.BotID, "Answer from "+bot.Name)
+	}
+	if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "say-all"), "@everyone status", pa.BotKey{}, nil); err != nil {
+		t.Fatal(err)
+	}
+	h.driver.Idle()
+	lines := h.lines(t, g)
+	if len(lines) != len(h.members)+1 {
+		t.Fatalf("room has %d replies, want %d", len(lines)-1, len(h.members))
+	}
+	for _, bot := range h.members {
+		if n := len(h.peer.asked(bot.Key.BotID)); n != 1 {
+			t.Errorf("%s was asked %d times, want once", bot.Name, n)
+		}
+	}
+}
+
+func TestRoomCanContainMoreMembersThanActiveActors(t *testing.T) {
+	h := newRoomHarnessWithLimits(t, app.DefaultGroupLimits())
+	for i := range 65 {
+		id := fmt.Sprintf("member-%d", i)
+		h.members = append(h.members, storeBot(t, h.bots, id, id, h.scope))
+	}
+	key := h.group(t, "large", h.members...)
+	group, err := h.groups.Group(roomCtx, key)
+	if err != nil || len(group.Members) != len(h.members) {
+		t.Fatalf("stored %d of %d members: %v", len(group.Members), len(h.members), err)
+	}
+}
+
+func TestDefaultRoomActivityBounds(t *testing.T) {
 	g := app.DefaultGroupLimits()
-	if g.MaxRounds != 3 || g.MaxReplies != 10 || g.MaxLateTurns != 3 || g.MaxMembers < 1 || g.Validate() != nil {
+	if g.MaxRounds != 3 || g.MaxReplies != 10 || g.MaxLateTurns != 3 || g.Validate() != nil {
 		t.Fatalf("group limits %+v", g)
 	}
 	r := app.DefaultRoomLimits()

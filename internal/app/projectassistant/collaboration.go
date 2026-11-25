@@ -138,7 +138,7 @@ func (r *Engine) wakeBot(key pa.BotKey) {
 
 // A committed request remains queued when every actor is occupied. One
 // runtime waiter rechecks after owner release; it never allocates a waiter per
-// request, reserves another process slot, or bypasses retained cleanup.
+// request or bypasses retained cleanup.
 func (r *Engine) drainCollaborationWakes() {
 	for {
 		r.mu.Lock()

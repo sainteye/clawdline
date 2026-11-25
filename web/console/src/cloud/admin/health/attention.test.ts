@@ -86,8 +86,19 @@ const doc = (state = "visible") => {
   }
 }
 const tick = (ms: number) => new Promise((r) => setTimeout(r, ms))
+// A watcher reschedules itself after every read, so one left running keeps this file's process
+// alive after a failed assertion. Each test stops its watcher in t.after, and waits for what it
+// expects to happen instead of assuming a fixed delay is long enough on a loaded machine.
+async function until(ok: () => boolean, ms = 10_000) {
+  const end = Date.now() + ms
+  while (!ok()) {
+    if (Date.now() > end) return false
+    await tick(2)
+  }
+  return true
+}
 
-test("nothing is read until someone watches, and many watchers share one read", async () => {
+test("nothing is read until someone watches, and many watchers share one read", async (t) => {
   const f = fakeFetch(json(ok([item()])))
   const w = attentionWatch("https://api.test", f.get, doc(), 60_000)
   await tick(5)
@@ -95,33 +106,34 @@ test("nothing is read until someone watches, and many watchers share one read", 
   const seen: unknown[] = []
   const stopA = w.subscribe((a: unknown) => seen.push(a))
   const stopB = w.subscribe(() => {})
-  await tick(10)
+  t.after(() => { stopA(); stopB() })
+  assert.ok(await until(() => attentionCount(w.current()) === 1))
   assert.equal(f.calls.length, 1)
-  assert.equal(attentionCount(w.current()), 1)
-  stopA(); stopB()
 })
 
-test("a hidden page does not read until it is shown", async () => {
+test("a hidden page does not read until it is shown", async (t) => {
   const f = fakeFetch(json(ok([])))
   const d = doc("hidden")
   const stop = attentionWatch("https://api.test", f.get, d, 60_000).subscribe(() => {})
+  t.after(stop)
   await tick(10)
   assert.equal(f.calls.length, 0)
   d.show()
-  await tick(10)
-  assert.equal(f.calls.length, 1)
-  stop()
+  assert.ok(await until(() => f.calls.length === 1))
 })
 
-test("a failure waits the whole interval before reading again", async () => {
+test("a failure waits the whole interval before reading again", async (t) => {
   const f = fakeFetch(json({}, 503))
-  const stop = attentionWatch("https://api.test", f.get, doc(), 80).subscribe(() => {})
-  await tick(40)
-  assert.equal(f.calls.length, 1)
-  await tick(80)
-  assert.equal(f.calls.length, 2)
+  const at: number[] = []
+  const get = (async (url: string) => { at.push(Date.now()); return f.get(url) }) as unknown as typeof fetch
+  const stop = attentionWatch("https://api.test", get, doc(), 80).subscribe(() => {})
+  t.after(stop)
+  assert.ok(await until(() => f.calls.length === 1))
+  assert.ok(await until(() => f.calls.length === 2))
+  // The watcher counts from just before its request, on a millisecond clock.
+  assert.ok(at[1] - at[0] >= 78, `read again after ${at[1] - at[0]} ms`)
   stop()
-  await tick(120)
+  await tick(200)
   assert.equal(f.calls.length, 2)
 })
 

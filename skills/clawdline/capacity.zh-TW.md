@@ -54,6 +54,9 @@
 | `artifacts.video_chunk_bytes` | 524288 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `audit.security` | 8388608 | `bytes` | `rotate` | `diagnostics, notice, health` | — |
 | `board.receipts` | 4096 | `rows` | `refuse` | `diagnostics, notice` | — |
+| `botrequest.merge_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `botrequest.page_rows` | 100 | `rows` | `coalesce` | `diagnostics, sender` | — |
+| `botrequest.receipts` | 4096 | `rows` | `expire` | `diagnostics` | — |
 | `bots.actors` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.adapter_install_seconds` | 300 | `seconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.agent_rest_seconds` | 21600 | `seconds` | `expire` | `diagnostics` | — |
@@ -166,7 +169,6 @@
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.process_census_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
-| `bots.processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.reaction_emoji_bytes` | 32 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.read_view_cursor_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.refresh_ms` | 3000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |

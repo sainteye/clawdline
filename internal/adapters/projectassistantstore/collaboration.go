@@ -492,7 +492,7 @@ func (s *Store) FinishExchange(ctx context.Context, m app.Mutation, text string)
 			x.ReplyTurnID = x.ID + "-reply-turn"
 			if collaborationQueueFull(b) {
 				// Completion has already happened. Retain the reply durably
-				// without occupying a native slot or exceeding the chat queue.
+				// outside the chat queue until space becomes available.
 				x.Delivery = "waiting"
 			} else {
 				reply = exchangeReplyTurn(b, x)

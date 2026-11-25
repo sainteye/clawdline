@@ -630,7 +630,7 @@ func (paServerPending) Wait(ctx context.Context) (app.PromptResult, error) {
 
 func TestProjectAssistantServerFirstSendIsLazyAndCleanupDeadlineRetainsOwner(t *testing.T) {
 	f := newPAServerFixture(t, true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, MaxProcesses: capacity.MaximumBotProcesses, PromptTimeout: time.Second, CleanupTimeout: 50 * time.Millisecond}
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Second, CleanupTimeout: 50 * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	session := &paServerSession{sent: make(chan struct{})}
 	session.closeFails.Store(true)
@@ -804,7 +804,7 @@ func TestProjectAssistantServerUnreadableInstalledSchemaIsNotKnownZero(t *testin
 	if err := f.s.StartProjectAssistants(context.Background()); pa.Code(err) != pa.Unsupported {
 		t.Fatal("unknown schema accepted", err)
 	}
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsAutomationBacklog} {
+	for _, name := range []string{capacity.BotsActors, capacity.BotsAutomationBacklog} {
 		if got := f.s.projectAssistantCapacityMeasures()[name](); got.Known {
 			t.Fatalf("%s reported known zero after failed installed schema inspection: %+v", name, got)
 		}
@@ -821,7 +821,7 @@ func TestProjectAssistantServerExistingHostInspectionFailureRetainsUnknownUntilF
 	if _, err := f.s.projectAssistantFeature(context.Background()); pa.Code(err) != pa.Unsupported {
 		t.Fatal("existing Host accepted changed schema", err)
 	}
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses, capacity.BotsAutomationBacklog} {
+	for _, name := range []string{capacity.BotsActors, capacity.BotsAutomationBacklog} {
 		if got := f.s.projectAssistantCapacityMeasures()[name](); got.Known {
 			t.Errorf("%s reported known zero after existing Host inspection failed: %+v", name, got)
 		}
@@ -831,18 +831,14 @@ func TestProjectAssistantServerExistingHostInspectionFailureRetainsUnknownUntilF
 	}
 	// A measurement must not query SQL per row or silently clear the observed
 	// failure just because the underlying file may have been repaired.
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses} {
-		if got := f.s.projectAssistantCapacityMeasures()[name](); got.Known {
-			t.Errorf("%s cleared inspection failure without fresh success", name)
-		}
+	if got := f.s.projectAssistantCapacityMeasures()[capacity.BotsActors](); got.Known {
+		t.Errorf("actor capacity cleared inspection failure without fresh success: %+v", got)
 	}
 	if _, err := f.s.projectAssistantFeature(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{capacity.BotsActors, capacity.BotsProcesses} {
-		if got := f.s.projectAssistantCapacityMeasures()[name](); !got.Known || got.Used != 0 {
-			t.Errorf("%s did not recover after fresh successful inspection: %+v", name, got)
-		}
+	if got := f.s.projectAssistantCapacityMeasures()[capacity.BotsActors](); !got.Known || got.Used != 0 {
+		t.Errorf("actor capacity did not recover after fresh successful inspection: %+v", got)
 	}
 }
 

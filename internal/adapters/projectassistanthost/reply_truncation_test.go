@@ -49,7 +49,6 @@ func assertPromptRefusesPartialConclusion(t *testing.T, where, prompt string) {
 func TestOverLimitPeerReplyIsMarkedForTheRequester(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	a, b := f.create(t, "requester"), f.create(t, "recipient")
@@ -94,7 +93,6 @@ func TestOverLimitPeerReplyIsMarkedForTheRequester(t *testing.T) {
 func TestOverLimitDecisionAnswerIsMarkedForTheRequester(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
-	f.o.Limits.MaxProcesses = 2
 	f.start(t)
 	f.enable(t)
 	a, b, x, offer := startPeerQuestion(t, f)
