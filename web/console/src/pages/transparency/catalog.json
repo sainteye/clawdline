@@ -4089,6 +4089,10 @@
           "line": 295
         },
         {
+          "path": "internal/adapters/projectassistanthost/tools.go",
+          "line": 501
+        },
+        {
           "path": "internal/adapters/projectassistantstore/outputs.go",
           "line": 1
         },
@@ -4277,6 +4281,10 @@
           "line": 1
         },
         {
+          "path": "internal/adapters/projectassistanthost/tools.go",
+          "line": 1
+        },
+        {
           "path": "internal/adapters/projectassistantacp/mcp.go",
           "line": 1
         },
@@ -4412,6 +4420,10 @@
         },
         {
           "path": "internal/adapters/projectassistanthost/provider.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/tools.go",
           "line": 1
         },
         {
@@ -4597,8 +4609,8 @@
           "line": 839
         },
         {
-          "path": "internal/adapters/projectassistanthost/provider.go",
-          "line": 526
+          "path": "internal/adapters/projectassistanthost/tools.go",
+          "line": 192
         },
         {
           "path": "internal/transport/http/project_assistants_lead_control.go",
@@ -5492,6 +5504,10 @@
           "line": 1
         },
         {
+          "path": "internal/adapters/projectassistanthost/tools.go",
+          "line": 1
+        },
+        {
           "path": "internal/adapters/projectassistantacp/mcp.go",
           "line": 1
         },
@@ -5714,9 +5730,10 @@
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "372546a42dfdaa9051d0095231438452b3e2ae61b4a4c9a60759b364eb06774e",
+    "internal/adapters/projectassistanthost/provider.go": "1a414029318d79ac71366a6d093136281a18d7790c80319f1cc5b5aaea875401",
     "internal/adapters/projectassistanthost/provider_message.go": "b0bee11362592c648cc1e611fcf135ddd0c4ca32755620f4c14c79f11ed666e6",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
+    "internal/adapters/projectassistanthost/tools.go": "9992ee550a5add26e6f39ac17d3aeea9df3f3dd1fcf94f102292247c7d9c49bb",
     "internal/adapters/projectassistanthost/work_completion.go": "53f0b16b1251c50ecf1275d0ecf790ba3600028ec8363979c7acefce6523dc8c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "4eca7f2fcd21ae79433f3280a723dfe07f3e4a5e90d82f1bc8ff8bff8313e2d3",
