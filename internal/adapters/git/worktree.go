@@ -166,6 +166,25 @@ func (g *Git) PatchesIn(ctx context.Context, repo, upstream, head, base string) 
 	return missing, total, nil
 }
 
+// UpstreamEquivalents names the commits on upstream, past base, whose patch
+// matches one of head's (git log --cherry-mark, which compares patch-ids as
+// git cherry does): the commits a cherry-picked or rebased delivery reached
+// its target as. Merge commits are not compared.
+func (g *Git) UpstreamEquivalents(ctx context.Context, repo, upstream, head, base string) ([]string, error) {
+	out, err := g.run(ctx, repo, "log", "--cherry-mark", "--left-only", "--no-merges", "--format=%m %H",
+		"--end-of-options", upstream+"..."+head, "^"+base)
+	if err != nil {
+		return nil, err
+	}
+	var commits []string
+	for _, line := range strings.Split(out, "\n") {
+		if c, ok := strings.CutPrefix(strings.TrimSpace(line), "= "); ok && c != "" {
+			commits = append(commits, c)
+		}
+	}
+	return commits, nil
+}
+
 // Dirty reports uncommitted changes in a checkout, tracked or not.
 func (g *Git) Dirty(ctx context.Context, worktree string) (dirty bool, known bool) {
 	out, err := g.runIn(ctx, worktree, "status", "--porcelain")

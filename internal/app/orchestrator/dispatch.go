@@ -1525,6 +1525,9 @@ func (b *Broker) settleOnce(ctx context.Context, id string, state State, why str
 	// own branch and checkout show it wrote — read here, outside the write
 	// right, because a read-only child owes no landing unless they show one.
 	readOnly, wrote := b.readOnlyEvidence(ctx, id, state)
+	// And for one failing before its tab opened, the same reading: nobody ran
+	// in that checkout, so declared writes are not owed (settleEmpty).
+	unopened, unopenedWrote := b.unopenedEvidence(ctx, id, state)
 	// The settlement's event says what the end did to the child's tab and by
 	// which rule (tabPolicy), so "why is this tab still open" has an answer
 	// in the store rather than only in this code.
@@ -1561,15 +1564,19 @@ func (b *Broker) settleOnce(ctx context.Context, id string, state State, why str
 		// until then every reader treats the target as not decided — never as
 		// whatever the repository's HEAD happens to be.
 		//
-		// A child that declared `"claims": []` and whose branch and checkout
-		// show nothing is recorded nothing_to_land as it ends, with the note
-		// that says why; one that wrote anyway, or could not be read, owes the
+		// A child that declared `"claims": []`, or whose tab never opened,
+		// and whose branch and checkout show nothing is recorded
+		// nothing_to_land as it ends, with the note that says why; one that wrote anyway, or could not be read, owes the
 		// landing and its note names the evidence. Unknown is never empty.
 		writes, known := r.DeclaredWrites()
 		if r.Gate == nil && r.Landing == nil {
 			switch {
 			case readOnly && wrote == "" && known && len(writes) == 0:
 				r.Landing = &Landing{State: LandingNothingToLand, Note: landingEmptyNote, At: now,
+					Settlement: settlement}
+				extra["landing"] = string(LandingNothingToLand)
+			case unopened && unopenedWrote == "" && settlement == SettlementEmpty && tabNeverOpened(*r):
+				r.Landing = &Landing{State: LandingNothingToLand, Note: landingUnopenedNote, At: now,
 					Settlement: settlement}
 				extra["landing"] = string(LandingNothingToLand)
 			case readOnly && wrote != "" && known && len(writes) == 0:

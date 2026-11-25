@@ -225,6 +225,10 @@ type LandingRequest struct {
 	Machine bool
 	// Secret is the task secret, header only on this route.
 	Secret string
+	// equivalent is the broker's own detector asking for incorporated with
+	// no carrier task, on patch equivalence and per-path presence alone
+	// (proveEquivalent). Unexported, so no route can ask for it.
+	equivalent bool
 }
 
 // Land settles the obligation a delivery leaves behind.
@@ -428,7 +432,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 			return Record{}, refuse(http.StatusBadRequest, "bad_request",
 				"target is required when state is incorporated.")
 		}
-		if next.CarrierTask == "" {
+		if next.CarrierTask == "" && !(req.equivalent && req.Machine) {
 			return Record{}, unverified(UnverifiedCarrierRequired,
 				"incorporated must name the other task whose verified landing carried this delivery.")
 		}
@@ -443,7 +447,11 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 			}
 		}
 		var proof landingProof
-		proof, head, err = b.proveIncorporated(ctx, r, next.CarrierTask, req.Commit, next.Target)
+		if next.CarrierTask == "" {
+			proof, head, err = b.proveEquivalent(ctx, r, req.Commit, next.Target)
+		} else {
+			proof, head, err = b.proveIncorporated(ctx, r, next.CarrierTask, req.Commit, next.Target)
+		}
 		if err != nil {
 			return Record{}, err
 		}
@@ -570,6 +578,12 @@ func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
 	} else {
 		// Taken by the sweep, which recorded what it held (reclaim.go).
 		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
+		// Gone with no record of it, from a task whose tab never opened: no
+		// assistant ever ran there, so the checkout held its base and nothing
+		// else. Its branch is still asked, above.
+		if !dirtyKnown && tabNeverOpened(r) {
+			dirty, kept, dirtyKnown = false, "", true
+		}
 	}
 	return deliveryEvidence(commits, commitsKnown, dirty, dirtyKnown, kept)
 }

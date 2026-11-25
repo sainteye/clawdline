@@ -99,23 +99,20 @@ func TestADetectedLandingUsesTheTargetTheRootNamed(t *testing.T) {
 	}
 }
 
-// ③ Unmerged, cherry-picked, empty: pending, untouched.
+// ③ Unmerged, empty: pending, untouched. (A cherry-picked delivery is
+// incorporated now; landing_equivalent_test.go.)
 func TestADeliveryThatIsNotOnItsTargetStaysPending(t *testing.T) {
 	b, ctx := newTestBroker(t)
 	repo := gitRepo(t)
 	unmerged := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000003")
-	picked := deliveredTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000004")
 	empty := checkedOutTask(t, b, ctx, repo, "d0000000-0000-4000-8000-000000000005")
 	if _, err := b.Settle(ctx, empty.ID, StateSuccess, "done", nil); err != nil {
 		t.Fatal(err)
 	}
-	// Another commit on main first: a pick onto the very parent its original
-	// had, in the same second, is the same commit, not a copy.
 	commitFile(t, repo, "between.go", "package a\n")
-	gitIn(t, repo, "cherry-pick", picked.Worktree.Branch)
 
 	before := map[string]Landing{}
-	for _, id := range []string{unmerged.ID, picked.ID, empty.ID} {
+	for _, id := range []string{unmerged.ID, empty.ID} {
 		before[id] = landingOf(t, b, ctx, id)
 	}
 	if n := b.detectLandings(ctx); n != 0 {
