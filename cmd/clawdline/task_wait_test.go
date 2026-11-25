@@ -184,12 +184,15 @@ func TestTaskWaitArgs(t *testing.T) {
 	if got, _ := waitArgs([]string{"a"}); got.timeout != 9*time.Minute {
 		t.Fatalf("default timeout %s", got.timeout)
 	}
+	if got, err := waitArgs([]string{"--timeout", "3h20m", "a"}); err != nil || got.timeout != waitTimeoutLimit || got.requested != 200*time.Minute {
+		t.Fatalf("a longer wait was not shortened to the limit: %+v %v", got, err)
+	}
 	many := make([]string, waitIDLimit+1)
 	for i := range many {
 		many[i] = strings.Repeat("x", i+1)
 	}
 	for _, bad := range [][]string{nil, {"--timeout", "0s", "a"}, {"--timeout", "-1m", "a"},
-		{"--timeout", "3h", "a"}, {"--bogus", "a"}, many} {
+		{"--bogus", "a"}, many} {
 		if _, err := waitArgs(bad); err == nil {
 			t.Errorf("waitArgs(%v) was accepted", bad)
 		}

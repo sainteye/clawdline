@@ -69,6 +69,9 @@ type waitOptions struct {
 	ids     []string
 	timeout time.Duration
 	any     bool
+	// requested is a --timeout longer than waitTimeoutLimit, which the
+	// wait shortened to the limit; zero when it was within the limit.
+	requested time.Duration
 }
 
 // waitArgs reads the command line. Flags may come before, between or after
@@ -103,10 +106,14 @@ func waitArgs(args []string) (waitOptions, error) {
 		return waitOptions{}, fmt.Errorf(cliCopy("misc", "task_wait.too_many_ids", "%d task ids; one wait follows at most %d"), len(ids), waitIDLimit)
 	case *timeout <= 0:
 		return waitOptions{}, fmt.Errorf("%s", cliCopy("misc", "task_wait.timeout_positive", "--timeout must be positive"))
-	case *timeout > waitTimeoutLimit:
-		return waitOptions{}, fmt.Errorf(cliCopy("misc", "task_wait.timeout_too_long", "--timeout %s is longer than %s"), *timeout, waitTimeoutLimit)
 	}
-	return waitOptions{port: *port, ids: ids, timeout: *timeout, any: *anyOne}, nil
+	// A longer wait is shortened to the limit and said, not refused: the
+	// caller wanted to wait, and refusing ended the wait before it began.
+	opts := waitOptions{port: *port, ids: ids, timeout: *timeout, any: *anyOne}
+	if opts.timeout > waitTimeoutLimit {
+		opts.requested, opts.timeout = opts.timeout, waitTimeoutLimit
+	}
+	return opts, nil
 }
 
 func waitCommand(args []string) {
@@ -114,6 +121,9 @@ func waitCommand(args []string) {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, cliCopy("misc", "task_wait.clawdline_task_wait.758f95fb", "clawdline task wait:"), err)
 		taskUsage()
+	}
+	if opts.requested > 0 {
+		fmt.Fprintf(os.Stderr, cliCopy("misc", "task_wait.timeout_shortened", "clawdline task wait: --timeout %s is longer than the %s limit; waiting %s. Run it again if the tasks are still running.")+"\n", opts.requested, waitTimeoutLimit, opts.timeout)
 	}
 	b, err := openBroker(opts.port)
 	if err != nil {
