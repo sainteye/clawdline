@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -763,7 +764,12 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if request.OfferID != route.offer {
 			return nil, paHTTPFailure(pa.ScopeDenied, "offer_id")
 		}
-		return paHTTPReceipt(s.Answer(ctx, command, pa.PermissionAnswer{Fence: fence, OfferID: request.OfferID, OptionID: request.OptionID, TurnID: request.TurnID, Text: request.Text}))
+		answer := pa.PermissionAnswer{Fence: fence, OfferID: request.OfferID, OptionID: request.OptionID, TurnID: request.TurnID, Text: request.Text}
+		logDecisionAnswer("arrived", command.Key.BotID, request.OfferID, request.OptionID, command.IdempotencyKey, request.Text != "", 0, "", nil)
+		started := time.Now()
+		receipt, err := s.Answer(ctx, command, answer)
+		logDecisionAnswer("returned", command.Key.BotID, request.OfferID, request.OptionID, command.IdempotencyKey, request.Text != "", time.Since(started).Milliseconds(), string(receipt.State), err)
+		return paHTTPReceipt(receipt, err)
 	case "read":
 		request, err := paDecodeHTTP[contract.ProjectAssistantReadRequest](w, r)
 		if err != nil {

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14536,
-  "riskKeys": 6189,
-  "nonRiskCount": 8347,
+  "englishContentKeys": 14538,
+  "riskKeys": 6190,
+  "nonRiskCount": 8348,
   "groups": [
     {
       "name": "acp / other",
@@ -636,7 +636,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 770,
+      "count": 771,
       "sources": [
         null
       ],
@@ -716,6 +716,7 @@
         "capacityRow.bots.decision_request_quote_bytes.full",
         "capacityRow.bots.decision_request_quote_bytes.what",
         "capacityRow.bots.decision_suggested_replies.what",
+        "capacityRow.bots.decision_trace_bytes.what",
         "capacityRow.bots.dispatch_hint_bytes.what",
         "capacityRow.bots.dispatch_kind_bytes.what",
         "capacityRow.bots.dispatch_kind_rules.what",

@@ -6,7 +6,7 @@ Clawdline 介面將這個助理稱為 **Gemini**；目前預覽版透過所選�
 Antigravity ACP CLI 執行。Gemini CLI 與 Antigravity 是不同產品，安裝或登入其中一個，
 不代表另一個也已可用。
 
-機器擁有者啟用個人預覽後，已連線的使用者都能看到入口。預覽使用已登入的個人 Google
+在 macOS 與 Linux 上，只要機器安裝了相容的獨立 Antigravity CLI（`agy`），入口就會自動出現，不需要手動建立設定檔。此功能使用已登入的個人 Google
 帳號，並維持 **AI Credits 關閉**。免費帳號仍有額度限制；額度用完時，Clawdline
 不會自行切換到 API key 或付費備援。
 

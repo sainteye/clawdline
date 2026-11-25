@@ -7,8 +7,9 @@ Antigravity ACP CLI on the selected machine. Gemini CLI and Antigravity are
 separate products; installing or signing into one does not establish that the
 other is ready.
 
-The preview appears for connected users when the machine owner has enabled
-it. It uses an already signed-in personal Google account, with **AI Credits off**.
+The preview appears automatically on macOS and Linux once a compatible standalone
+Antigravity CLI (`agy`) is installed on the machine; no manual configuration file
+is required. It uses an already signed-in personal Google account, with **AI Credits off**.
 Keep those settings when using the preview. Free-account quota can still run out;
 Clawdline does not switch to an API key or a paid fallback.
 

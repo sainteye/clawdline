@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -72,11 +73,33 @@ func NewResolverWithFingerprint(candidates []string, run Runner, fingerprint fun
 // which can contain the unrelated editor launcher. No shell/PATH is modified.
 func DefaultCandidates() []string {
 	home, _ := os.UserHomeDir()
-	paths := []string{filepath.Join(home, ".local", "bin", "agy")}
-	if path, err := exec.LookPath("agy"); err == nil {
+	var paths []string
+	seen := make(map[string]bool, 6)
+	add := func(path string) {
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
 		paths = append(paths, path)
 	}
-	return append(paths, "/opt/homebrew/bin/agy", "/usr/local/bin/agy")
+	if home != "" {
+		add(filepath.Join(home, ".local", "bin", "agy"))
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(home, ".local", "bin", "agy.exe"))
+		}
+		add(filepath.Join(home, ".antigravity", "bin", "agy"))
+		if runtime.GOOS == "windows" {
+			add(filepath.Join(home, ".antigravity", "bin", "agy.exe"))
+		}
+	}
+	if path, err := exec.LookPath("agy"); err == nil {
+		add(path)
+	}
+	if runtime.GOOS != "windows" {
+		add("/opt/homebrew/bin/agy")
+		add("/usr/local/bin/agy")
+	}
+	return paths
 }
 
 func safePath(path string) bool {
@@ -141,7 +164,7 @@ func (r *Resolver) Snapshot(parent context.Context) Installation {
 			continue
 		}
 		st, err := os.Stat(absolute)
-		if err != nil || !st.Mode().IsRegular() || st.Mode()&0111 == 0 {
+		if err != nil || !st.Mode().IsRegular() || (runtime.GOOS != "windows" && st.Mode()&0111 == 0) {
 			continue
 		}
 		result.Installed = true

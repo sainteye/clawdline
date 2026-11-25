@@ -1974,6 +1974,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.decision_trace_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2048,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "sender",
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.maxDecisionTraceBodyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.dispatch_hint_bytes",
     "Class": "buffer",
     "Unit": "bytes",

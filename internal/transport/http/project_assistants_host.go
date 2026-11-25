@@ -470,6 +470,10 @@ func (p projectAssistantProjects) Resolve(ctx context.Context, target pa.Project
 
 func (s *Server) projectAssistantsRoute(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if r.URL.Path == decisionTracePath {
+		decisionTrace(w, r)
+		return
+	}
 	p := &s.projectAssistants
 	p.mu.RLock()
 	h := p.host

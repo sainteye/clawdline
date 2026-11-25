@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -76,6 +77,9 @@ func (s *Server) openOwnedAssistant(ctx context.Context, starter app.Starter, pl
 	prepared, err := starter.PrepareOwnedContextFor(ctx, place, persona, assistant)
 	if err != nil {
 		return session.Session{}, err
+	}
+	if assistant == projects.AssistantAntigravity {
+		s.ensureAutoAntigravitySessions()
 	}
 	h := s.ownedHost(session.Assistant(assistant))
 	if h == nil {
@@ -222,13 +226,101 @@ func ownedAntigravityUnavailable() error {
 	return &antigravitysession.Error{Code: "unavailable", Delivery: "not_written"}
 }
 
-// StartAntigravitySessions enables an explicitly configured local preview. It
-// neither signs in nor starts a process. The daemon owns shutdown and joins all
-// of its prompts before returning. No global account or Cloud entitlement is added.
+const defaultAntigravityPersonalSettings = `{"useG1Credits":false,"auth":{"type":"oauth-personal"}}`
+
+func ownedAntigravityPlatformSupported() bool {
+	return runtime.GOOS == "darwin" || runtime.GOOS == "linux"
+}
+
+// ensureDefaultAntigravityAccountDir creates the daemon-owned personal settings
+// directory used when no explicit antigravity-acp-pilot.json is present. It
+// publishes the personal-OAuth, AI-Credits-off policy once without overwriting
+// an existing settings.json.
+func ensureDefaultAntigravityAccountDir(stateDir string) (string, error) {
+	if !filepath.IsAbs(stateDir) {
+		return "", ownedAntigravityUnavailable()
+	}
+	accountDir := filepath.Join(stateDir, "antigravity-account")
+	settingsDir := filepath.Join(accountDir, "antigravity-acp")
+	if err := os.MkdirAll(settingsDir, 0700); err != nil {
+		return "", ownedAntigravityUnavailable()
+	}
+	settingsPath := filepath.Join(settingsDir, "settings.json")
+	if _, err := os.Lstat(settingsPath); errors.Is(err, os.ErrNotExist) {
+		tmp, err := os.CreateTemp(settingsDir, "settings-*.json")
+		if err != nil {
+			return "", ownedAntigravityUnavailable()
+		}
+		tmpName := tmp.Name()
+		defer os.Remove(tmpName)
+		if err := tmp.Chmod(0600); err != nil {
+			_ = tmp.Close()
+			return "", ownedAntigravityUnavailable()
+		}
+		_, writeErr := io.WriteString(tmp, defaultAntigravityPersonalSettings)
+		if closeErr := tmp.Close(); writeErr != nil || closeErr != nil {
+			return "", ownedAntigravityUnavailable()
+		}
+		if err := os.Link(tmpName, settingsPath); err != nil && !os.IsExist(err) {
+			return "", ownedAntigravityUnavailable()
+		}
+	} else if err != nil {
+		return "", ownedAntigravityUnavailable()
+	}
+	st, err := os.Stat(settingsPath)
+	if err != nil || !st.Mode().IsRegular() {
+		return "", ownedAntigravityUnavailable()
+	}
+	return accountDir, nil
+}
+
+// StartAntigravitySessions enables the local owned Antigravity host. When
+// antigravity-acp-pilot.json exists, its explicit executable and accountDir are
+// honored strictly (never silently replaced on error). When the file is absent
+// on a supported platform, a compatible standalone agy CLI is enabled
+// automatically with a personal-OAuth, AI-Credits-off settings directory. It
+// neither signs in nor starts a child process until a Session is opened.
 func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
-	f, err := os.Open(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json"))
+	pilotPath := filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json")
+	f, err := os.Open(pilotPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return func() {}, nil
+		if !ownedAntigravityPlatformSupported() {
+			return func() {}, nil
+		}
+		runCtx, cancel := context.WithCancel(ctx)
+		s.antigravityOwnedMu.Lock()
+		s.antigravityOwnedCtx = runCtx
+		s.antigravityOwnedCancel = cancel
+		s.antigravityOwnedAuto = true
+		startErr := s.startDefaultAntigravitySessionsLocked(ctx)
+		if startErr != nil {
+			s.antigravityOwnedAuto = false
+			s.antigravityOwnedCtx = nil
+			s.antigravityOwnedCancel = nil
+			s.antigravityOwnedMu.Unlock()
+			cancel()
+			return nil, startErr
+		}
+		s.antigravityOwnedMu.Unlock()
+		var once sync.Once
+		return func() {
+			once.Do(func() {
+				s.antigravityOwnedMu.Lock()
+				s.antigravityOwnedAuto = false
+				if s.antigravityOwnedCancel != nil {
+					s.antigravityOwnedCancel()
+					s.antigravityOwnedCancel = nil
+				}
+				s.antigravityOwnedCtx = nil
+				h := s.antigravitySessions.Swap(nil)
+				s.antigravityOwnedMu.Unlock()
+				if h != nil {
+					if err := h.Shutdown(); err != nil {
+						log.Print("antigravity: owned_session_cleanup_failed")
+					}
+				}
+			})
+		}, nil
 	}
 	if err != nil {
 		return nil, ownedAntigravityUnavailable()
@@ -277,6 +369,65 @@ func (s *Server) StartAntigravitySessions(ctx context.Context) (func(), error) {
 	}, nil
 }
 
+func (s *Server) ensureAutoAntigravitySessions() {
+	if s.antigravitySessions.Load() != nil {
+		return
+	}
+	s.antigravityOwnedMu.Lock()
+	defer s.antigravityOwnedMu.Unlock()
+	if s.antigravitySessions.Load() != nil || !s.antigravityOwnedAuto || s.antigravityOwnedCtx == nil || s.antigravityOwnedCtx.Err() != nil {
+		return
+	}
+	probeCtx, cancel := context.WithTimeout(s.antigravityOwnedCtx, antigravity.CLIProbeTimeLimit)
+	defer cancel()
+	if err := s.startDefaultAntigravitySessionsLocked(probeCtx); err != nil {
+		log.Print("antigravity: owned_session_auto_start_failed")
+	}
+}
+
+func (s *Server) startDefaultAntigravitySessionsLocked(probeCtx context.Context) error {
+	if s.antigravitySessions.Load() != nil || !s.antigravityOwnedAuto || s.antigravityOwnedCtx == nil || s.antigravityOwnedCtx.Err() != nil {
+		return nil
+	}
+	// If an explicit pilot file appeared later, never override it with defaults.
+	if _, err := os.Stat(filepath.Join(s.cfg.Dir, "antigravity-acp-pilot.json")); err == nil {
+		return nil
+	}
+	installation := s.antigravityInstallation
+	if installation == nil {
+		installation = func(ctx context.Context) antigravity.Installation { return antigravityResolver().Snapshot(ctx) }
+	}
+	info := installation(probeCtx)
+	if !info.InstalledKnown || !info.Installed || !info.Compatible || !filepath.IsAbs(info.Path) {
+		return nil
+	}
+	accountDir, err := ensureDefaultAntigravityAccountDir(s.cfg.Dir)
+	if err != nil {
+		return err
+	}
+	args := []string{"acp", "--app-data-dir", "antigravity-acp"}
+	h, err := antigravitysession.New(s.antigravityOwnedCtx, antigravitysession.Options{
+		Executable:     info.Path,
+		AccountDir:     accountDir,
+		Args:           args,
+		StateDir:       filepath.Join(s.cfg.Dir, "antigravity-sessions"),
+		NewSessionMode: "yolo",
+		TurnComplete:   s.automaticOwnedTitle,
+		PromptAccepted: s.automaticOwnedTitle,
+	})
+	if err != nil {
+		return err
+	}
+	if !s.antigravitySessions.CompareAndSwap(nil, h) {
+		_ = h.Shutdown()
+		return ownedAntigravityUnavailable()
+	}
+	if n := h.ContinueInterrupted(s.antigravityOwnedCtx); n > 0 {
+		log.Printf("antigravity: continuing %d conversation(s) a restart interrupted", n)
+	}
+	return nil
+}
+
 // Older pilots pinned an extracted server inside a disposable evaluation tree.
 // Recover only that known default, using the installed CLI's public ACP entry
 // point. Custom executables, arguments and profiles are never silently replaced.
@@ -302,6 +453,7 @@ func (s *Server) resolveOwnedAntigravityExecutable(ctx context.Context, executab
 }
 
 func (s *Server) availableAssistants() []contract.StartAssistant {
+	s.ensureAutoAntigravitySessions()
 	rows := installedAssistants()
 	for _, assistant := range []session.Assistant{session.AssistantAntigravity, session.AssistantGrok} {
 		if h := s.ownedHost(assistant); h != nil {

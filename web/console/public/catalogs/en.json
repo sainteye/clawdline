@@ -1101,6 +1101,8 @@
   "capacityRow.bots.hook_response_bytes.what": "The machine webhook client reads at most 128 KiB for one Cloud response.",
   "capacityRow.bots.hook_revision.full": "At the ceiling, a changed snapshot is refused instead of wrapping or overwriting a higher Cloud revision.",
   "capacityRow.bots.hook_revision.what": "Enrollment revisions are positive integers within the JavaScript safe-integer range.",
+  "capacityRow.bots.decision_trace_bytes.full": "The console sends only the step and ids of a decision card; a larger trace is dropped and the card is unaffected.",
+  "capacityRow.bots.decision_trace_bytes.what": "One decision-card step the local console writes to this machine's log.",
   "capacityRow.bots.human_reactions.full": "Remove one of your emoji before adding another.",
   "capacityRow.bots.human_reactions.what": "Distinct emoji retained for each person on one message.",
   "capacityRow.bots.inline_image_bytes.full": "A larger picture stays a file card; open it to view or download it.",

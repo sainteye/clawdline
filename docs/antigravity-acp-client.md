@@ -384,9 +384,16 @@ that arrive after visible assistant text. Context occupancy is not billing. The 
 context snapshot supply the existing Session info route without inventing prices
 or offering an unverified terminal model picker.
 
-The preview is disabled unless the machine's state directory contains
-`antigravity-acp-pilot.json`, with absolute `executable` and `accountDir` paths and
-optional `args`. These paths select an already authenticated personal profile;
+On macOS and Linux, when `antigravity-acp-pilot.json` is absent and a compatible
+standalone Antigravity CLI (`agy`) is installed, the daemon enables the owned
+runtime automatically using a daemon-owned personal settings directory
+(`antigravity-account/antigravity-acp/settings.json` with `useG1Credits: false`
+and `auth.type: "oauth-personal"`, written once without overwriting existing
+settings) and `args: ["acp", "--app-data-dir", "antigravity-acp"]`. When the
+machine's state directory contains an explicit `antigravity-acp-pilot.json`,
+with absolute `executable` and `accountDir` paths and optional `args`, that
+explicit configuration remains authoritative and is never silently replaced on
+error. These paths select an already authenticated personal profile;
 configuration does not copy credentials or launch a process. Keep both paths outside disposable task or evaluation directories. For the installed standalone CLI, use its absolute executable path and `args: ["acp", "--app-data-dir", "antigravity-acp"]`, retaining the same persistent personal `accountDir`. If an old pilot's default `agy_acp_server.par` has disappeared, the daemon resolves the installed compatible CLI and this public subcommand instead; custom commands and arguments are never substituted. A missing account directory is a setup failure, not permission to switch profiles. It must be restored or explicitly configured and signed in again before Sessions can start. The console reports missing setup separately from an unavailable operation. Daemon shutdown
 cancels and joins the owned processes and prompts. Entry visibility follows the
 machine's advertised assistant capabilities for all users, with no administrator-only gate.
