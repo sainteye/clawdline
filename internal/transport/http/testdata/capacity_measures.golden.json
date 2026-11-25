@@ -480,6 +480,11 @@
     "Note": true
   },
   {
+    "Name": "bots.decision_trace_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.dispatch_hint_bytes",
     "Known": true,
     "Note": true

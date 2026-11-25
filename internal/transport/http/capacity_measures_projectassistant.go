@@ -369,6 +369,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsGroupReplies:           pure,
 		capacity.BotsGroupLateTurns:         pure,
 		capacity.BotsGroupMemberWaitSeconds: pure,
+		"bots.decision_trace_bytes":         pure,
 		"bots.human_reactions":              pure,
 		"bots.reaction_emoji_bytes":         pure,
 		capacity.BotsGroupHistoryLines:      pure,

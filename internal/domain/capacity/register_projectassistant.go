@@ -124,7 +124,7 @@ func groupBounds() []Entry {
 // measurement; PA-05 installs those measurements with the disabled module.
 // No absent module reports an invented zero queue depth.
 func projectAssistantBounds() []Entry {
-	return append(append(append(append(reactionBounds(), groupBounds()...), botServerBounds()...), append(append(botRoutineHookBounds(), memorySettingsBounds()...), sharedSettingsBounds()...)...), []Entry{
+	return append(append(append(append(append(reactionBounds(), decisionTraceBounds()...), groupBounds()...), botServerBounds()...), append(append(botRoutineHookBounds(), memorySettingsBounds()...), sharedSettingsBounds()...)...), []Entry{
 		{Name: "bots.archive_bytes", Class: Buffer, Unit: Bytes, Limit: MaximumBotArchiveBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/capacity.MaximumBotArchiveBytes"}},
 		{Name: BotsContinuationMessages, Class: Buffer, Unit: Rows, Limit: MaximumBotContinuationMessages, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationMessages"}},
 		{Name: BotsContinuationQuoteBytes, Class: Buffer, Unit: Bytes, Limit: MaximumBotContinuationQuoteBytes, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.MaximumBotContinuationQuoteBytes"}},

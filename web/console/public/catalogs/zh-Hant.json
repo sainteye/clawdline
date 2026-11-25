@@ -1101,6 +1101,8 @@
   "capacityRow.bots.hook_response_bytes.what": "機器的 Webhook client 每次最多讀取 128 KiB 的 Cloud 回覆。",
   "capacityRow.bots.hook_revision.full": "達上限後會拒絕變更的快照，不會溢位或覆寫 Cloud 較新的版本。",
   "capacityRow.bots.hook_revision.what": "登錄版本必須是 JavaScript 安全整數範圍內的正整數。",
+  "capacityRow.bots.decision_trace_bytes.full": "主控台只送決策卡的步驟與 ID；超過上限的紀錄會被丟棄，卡片本身不受影響。",
+  "capacityRow.bots.decision_trace_bytes.what": "本機主控台寫進這台電腦紀錄的一筆決策卡步驟。",
   "capacityRow.bots.human_reactions.full": "請先移除自己的一個表情，再加入其他表情。",
   "capacityRow.bots.human_reactions.what": "每個人在同一則訊息保留的不同表情數。",
   "capacityRow.bots.inline_image_bytes.full": "更大的圖片維持檔案卡片，點開後可檢視或下載。",

@@ -4,6 +4,8 @@ import {errorCode,errorField,provablyNotSent,sendBlockedByInterruptedTurn} from 
 import {permissionState,samePermission} from "./view-state"
 import type { Words } from "./words"
 import type {DecisionFollowUp} from "./decision-focus"
+import {DECISION_TRACE_SLOW_MS,newDecisionAttempt} from "./decision-trace"
+import {traceDecision} from "./decision-trace-send"
 
 /** The daemon's bound on a typed answer, MaxDecisionAnswerBytes (512 KiB minus the quoted question). */
 export const DECISION_ANSWER_BYTES=512*1024-16*1024
@@ -56,18 +58,20 @@ export function decisionFailureText(f:DecisionFailure,w:Words,checking:boolean,d
 // A question a Bot asked with ask_person. The suggested replies are the
 // Bot's words; pressing one sends that full text as the person's own message
 // in this chat, so the card shows exactly what will be sent.
-export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,requesterName,followUp,highlight,w}:{
+export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,requesterName,followUp,highlight,botID="",w}:{
   summary:W.ProjectAssistantReadPermissionSummary
   offer?:W.ProjectAssistantPermissionOffer
   enabled:boolean
   onDetail?:()=>Promise<boolean>
-  onAnswer:(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption|null,text?:string)=>Promise<void>
+  onAnswer:(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption|null,text?:string,attempt?:string)=>Promise<void>
   askerName:string
   requesterName?:string
   /** The Bot's progress on the turn this page's reply started; absent when unobserved. */
   followUp?:DecisionFollowUp
   /** The card a push notification opened the chat at. */
   highlight?:boolean
+  /** Names the Bot in this card's send-path trace. */
+  botID?:string
   w:Words
 }) {
   const [busy,setBusy]=useState(false),[error,setError]=useState<DecisionFailure|null>(null),[own,setOwn]=useState(false),[draft,setDraft]=useState("")
@@ -78,6 +82,9 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
   // it is, "failed" when it was not. A reload shows the server's answer.
   const [choice,setChoice]=useState<{option:string|null;text:string;phase:"sending"|"sent"|"failed"}|null>(null)
   const pending=useRef(false),requested=useRef("")
+  // The press being traced, so a card unmounted mid-send says so in the log.
+  const traced=useRef<{attempt:string;at:number;option:string}|null>(null)
+  useEffect(()=>()=>{const t=traced.current;if(pending.current&&t)traceDecision({attempt:t.attempt,phase:"unmounted",bot_id:botID,offer_id:summary.id,option:t.option,ms:performance.now()-t.at})},[])
   const summaryState=permissionState(summary)
   const state=summaryState==="pending"&&offer&&samePermission(summary,offer)?permissionState(offer):summaryState
   const decision=offer?.decision
@@ -90,9 +97,13 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
     if(!offer||!enabled||pending.current||state!=="pending")return
     if(!option&&text!==undefined&&utf8Bytes(text)>DECISION_ANSWER_BYTES){setError({kind:"tooLong",code:"pa_capacity_full",retry:false});setOwn(true);return}
     pending.current=true;setBusy(true)
+    if(check<0||!traced.current)traced.current={attempt:newDecisionAttempt(),at:performance.now(),option:option?.id??""}
+    const trace=traced.current
+    traceDecision({attempt:trace.attempt,phase:check<0?"press":"check",bot_id:botID,offer_id:offer.id,option:trace.option,ms:performance.now()-trace.at})
+    const slow=setTimeout(()=>{if(pending.current&&traced.current===trace)traceDecision({attempt:trace.attempt,phase:"timeout",bot_id:botID,offer_id:offer.id,option:trace.option,ms:performance.now()-trace.at})},DECISION_TRACE_SLOW_MS)
     if(check<0){setError(null);setChecks(null)}
     setChoice({option:option?.id??null,text:option?.label??text??"",phase:"sending"})
-    try{await onAnswer(offer,option,text);setError(null);setChecks(null);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
+    try{await onAnswer(offer,option,text,trace.attempt);setError(null);setChecks(null);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
     catch(e){
       const f=decisionFailure(e)
       // A check that finds the card answered means this reply (or another
@@ -100,7 +111,7 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
       setError(f);setChoice(c=>c&&{...c,phase:"failed"});if(!option)setOwn(true)
       setChecks(f.kind==="check"?check+1:null)
     }
-    finally{pending.current=false;setBusy(false)}
+    finally{clearTimeout(slow);pending.current=false;setBusy(false)}
   }
   const checking=error?.kind==="check"&&checks!==null&&checks<DECISION_CHECK_DELAYS_MS.length
   useEffect(()=>{
