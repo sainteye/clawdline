@@ -1,20 +1,46 @@
-/** Actual Bots UI and Cloud SourceClient against the send-lifetime Go fixture. */
-import React from "react"
-import {createRoot} from "react-dom/client"
-import {Bots} from "./Bots"
-import {ProjectAssistantSourceClient} from "../cloud/project-assistants"
+/** Production Bots UI and source clients backed by the owned Go fixture. */
+import { useSyncExternalStore } from "react"
+import { createRoot } from "react-dom/client"
+import { Bots } from "./Bots"
+import { capturedAssistantRelayFetch, ProjectAssistantRegistry, type AssistantFetch, type AssistantRelayConnection } from "../cloud/project-assistants"
+import { bootCatalog } from "../catalog"
+import "../legacy/tokens.css"
+import "../legacy/base.css"
 import "./styles.css"
 
-const config=await fetch("/fixture.json").then(r=>r.json())
-const grant={accountKey:"fixture-cloud",readerID:"reader",machineID:config.machine,authorizationRevision:"send-lifetime-1",apiLevel:71,paired:true,online:true,writable:true}
-const source=new ProjectAssistantSourceClient(grant,(input,init)=>fetch(input,init),()=>grant)
-createRoot(document.querySelector("#app")!).render(<Bots sources={[source]} language="en" accountKey="send-lifetime" readerID="reader" onClose={()=>{}} manageHistory/>)
-// The product's own back control; its label is an icon the harness cannot click by text.
-for(const [label,run] of [["Fixture revoke",()=>source.revoke()],["Fixture reload",()=>location.reload()],["Fixture leave chat",()=>document.querySelector<HTMLButtonElement>(".pa-chat-back")?.click()]] as const){const b=document.createElement("button");b.textContent=label;b.onclick=run;document.body.append(b)}
-// One line the harness reads: what the person can see and do in the chat now.
-const report=document.createElement("output");report.id="fixture-observation";document.body.append(report)
-setInterval(()=>{
-  const box=document.querySelector<HTMLTextAreaElement>(".pa-composer textarea"),replies=[...document.querySelectorAll(".pa-message")].filter(m=>m.textContent?.includes("Scripted reply to")).length
-  const value=`obs chat=${box?1:0} composer=${box?(box.disabled?"disabled":"enabled"):"none"} held=${document.querySelectorAll(".pa-held-send").length} sending=${document.querySelectorAll(".pa-sending").length} replies=${replies} draft=[${box?.value??""}] end`
-  if(report.textContent!==value)report.textContent=value
-},100)
+const query = new URLSearchParams(location.search)
+const cloud = query.get("mode") === "cloud"
+const language = query.get("lang") ?? "en"
+localStorage.setItem("ui_language", language)
+await bootCatalog(tag => "/catalog/" + tag + ".json")
+const { machine } = await fetch("/fixture.json").then(r => r.json())
+const accountKey = cloud ? "fixture-cloud" : "local"
+const grant = { accountKey, readerID: "reader", machineID: machine, authorizationRevision: "send-lifetime-1", apiLevel: 112, paired: true, online: true, writable: true }
+const carried = ["status", "list", "view", "get", "handoff-card", "read", "send", "send-pictures", "send-receipt", "observed", "attachment"]
+  .map(word => "project-assistants." + word)
+const call = async (word: string, fields: unknown, signal?: AbortSignal, correlation?: string) => {
+  const response = await fetch("/relay/" + word.slice("project-assistants.".length), {
+    method: "POST", body: JSON.stringify(fields), signal, headers: correlation ? { "X-Fixture-Correlation": correlation } : {},
+  })
+  return response.json()
+}
+const relay = {
+  machineDescriptor: () => ({ machine: { commands: carried } }),
+  _machineRequest: (_machine, word, fields, _kind, _timeout, options) => call(word, fields, options?.signal),
+  _machineRequestAs: (id, _machine, word, fields, _kind, _timeout, options) => call(word, fields, options?.signal, id),
+} satisfies AssistantRelayConnection
+const transport: AssistantFetch = cloud ? capturedAssistantRelayFetch(machine, () => relay, carried) : (input, init) => fetch(input, init)
+const registry = new ProjectAssistantRegistry(accountKey, "reader")
+function sync(authorizationRevision: string) {
+  registry.sync([{ ...grant, authorizationRevision }], () => transport)
+  // This fixture exercises HTTP reads and writes without a roster event stream.
+  for (const source of registry.getSnapshot()) source.canRoster = () => false
+}
+sync(grant.authorizationRevision)
+window.addEventListener("fixture-renew-grant", () => sync("send-lifetime-2"))
+
+function LifetimeFixture() {
+  const sources = useSyncExternalStore(registry.subscribe, registry.getSnapshot)
+  return <Bots sources={sources} viewState={registry.viewState} language={language} accountKey={accountKey} readerID="reader" onClose={() => {}} manageHistory />
+}
+createRoot(document.querySelector("#app")!).render(<LifetimeFixture />)

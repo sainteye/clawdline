@@ -71,7 +71,7 @@ import { decodeBotMentions, encodeBotMentions } from "./bot-mentions"
 import { canMarkConversationRead, markConversationRead } from "./conversation-read"
 import type { Words } from "./words"
 import { ChatSkeleton, useShowAfter } from "./PaLoading"
-import { UnsentActions, retryOnce, unsentDiscardKind, type RetryFailure } from "./UnsentRetry"
+import { UnsentActions, retryAllowed, retryOnce, unsentDiscardKind, type RetryFailure, type RetryOutcome } from "./UnsentRetry"
 import { memoryOpener } from "./loading"
 import { BackgroundCapsule, BackgroundHandoff, BackgroundDuration, BackgroundList, BackgroundStop, backgroundTaskLabel, liveBackgroundTask, type BackgroundStopOutcome, type BackgroundTask } from "./BackgroundTasks"
 import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
@@ -83,6 +83,35 @@ function transientChatRead(error:unknown) {
   const code=errorCode(error)
   return code==="pa_offline"||code==="pa_cursor_expired"||code==="pa_stale_generation"
 }
+
+// These facts belong to the page's journal rows. A full reload restores a row
+// for receipt lookup or manual retry, without borrowing the old page's grant.
+const sendReplay = new WeakMap<HeldOutcome,{source:SourceClient;origin:ChatObservation}>()
+const sendFailure = new WeakMap<HeldOutcome,RetryFailure>()
+
+async function transmitChatSend(
+  source:SourceClient, current:()=>readonly SourceClient[], intent:W.ProjectAssistantSendRequest,
+  prepare:(signal:AbortSignal)=>Promise<void>, rebind?: (signal:AbortSignal)=>Promise<boolean>,
+):Promise<{attempted:boolean;receipt:W.ProjectAssistantReceipt|null;error:unknown}> {
+  const signal=new AbortController().signal
+  let attempted=false, receipt:W.ProjectAssistantReceipt|null=null
+  const post=()=>authorized(source,current,async s=>{
+    attempted=true
+    const answer=await source.send(intent,s)
+    if(!sendAcknowledgement(answer,intent))throw failure("pa_outcome_unknown")
+    receipt=answer.receipt
+  },signal)
+  try{
+    await prepare(signal)
+    try{await post()}
+    catch(error){
+      const refusal=(error as Partial<W.ProjectAssistantErrorResponse>|null)?.error
+      if(receipt||refusal?.code!=="pa_stale_generation"||refusal.field!=="fence"||!await rebind?.(signal).catch(()=>false))throw error
+      await post()
+    }
+    return {attempted,receipt,error:undefined}
+  }catch(error){return {attempted,receipt,error}}
+}
 /** Re-read a stale permission view without replaying the answer. */
 export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>boolean,recover:()=>void):Promise<T> {
   try{return await run()}
@@ -91,6 +120,20 @@ export async function withPermissionRecovery<T>(run:()=>Promise<T>,current:()=>b
     if(current()&&(code==="pa_cursor_expired"||code==="pa_stale_generation"))recover()
     throw error
   }
+}
+
+function retryOnReentry(row:HeldOutcome,source:SourceClient,observation:ChatObservation,recovering:string) {
+  const replay=sendReplay.get(row)
+  return replay?.source===source&&replay.origin!==observation&&row.intent.command.idempotency_key!==recovering
+}
+
+function settledRetry(held:HeldOutcome,outcome:RetryOutcome):HeldOutcome {
+  if(outcome.kind==="admitted")return {...held,receipt:outcome.receipt}
+  const rejected=outcome.kind==="rejected"
+  const refusal=rejected?{code:"pa_declined",at:Date.now()}:outcome.failure
+  const row={...held,...(rejected||outcome.editable&&!retryAllowed(refusal)?{needsEdit:true}:{}),...(rejected?{superseded:true}:{})}
+  sendFailure.set(row,refusal)
+  return row
 }
 
 type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:W.ProjectAssistantPermissionOffer}
@@ -235,7 +278,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const permissionDetailTail=useRef(Promise.resolve())
   const [permissionMore,setPermissionMore]=useState(""),[traceMore,setTraceMore]=useState("")
   const [head,setHead]=useState<W.ProjectAssistantReadViewHead|null>(null),headRef=useRef(head)
-  // A held send read back after a reload shows its own text and quote, locked, whatever the draft store says.
+  // The journal identifies the previous send independently of the entry draft.
   const heldAtMount=useRef(view.heldOutcomes.get(draftKey)).current,heldSendAtMount=heldAtMount?.intent.command.operation==="send"?heldAtMount.intent as W.ProjectAssistantSendRequest:null
   // A send this page still has a request open for, from a Chat that was left: shown as sending until its own answer lands.
   const awaiting=useRef(heldSendAtMount&&view.heldOutcomes.transporting(draftKey,heldSendAtMount.command.idempotency_key)?heldSendAtMount:null),inFlightAtMount=awaiting.current
@@ -260,7 +303,6 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [paused,setPaused]=useState(()=>!!view.draft(pausedKey))
   const [pendingAttachments,setPendingAttachments]=useState<Record<string,SendAttachments|null>>({})
   const [retrying,setRetrying]=useState("")
-  const [retryFailures,setRetryFailures]=useState<Record<string,RetryFailure>>({})
   const [discardFailed,setDiscardFailed]=useState("")
   const [receiptCheckRevision,requestReceiptCheck]=useState(0)
   const retryInFlight=useRef(false)
@@ -542,8 +584,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       setUnknown(false);repaintJournal()
     }
     // Initial entry uses only the new consistent bounded snapshot.
-    // Reopening a Bot retries only its bounded read. Keep the recovery latch
-    // until that snapshot validates; unknown effects are never replayed.
+    // Keep the recovery latch until the bounded snapshot validates.
     void refresh(true)
     // pagehide may run while visibilityState is still visible. Leaving must
     // pause IO rather than start a refresh that the unloading page cannot read.
@@ -551,7 +592,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const visibility=()=>{if(document.visibilityState==="hidden"){if(!observation.active)pause()}else {requestReceiptCheck(n=>n+1);void refresh(true)}}
     const show=(event:PageTransitionEvent)=>{if(event.persisted)visibility()}
     document.addEventListener("visibilitychange",visibility);window.addEventListener("pagehide",pause);window.addEventListener("pageshow",show);window.addEventListener("online",visibility)
-    return()=>{alive.current=false;observation.stop();uploadControl.current?.abort();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show);window.removeEventListener("online",visibility)}
+    return()=>{alive.current=false;observation.stop();control.abort();eventControl.current?.abort();activeMutations.current.forEach(control=>control.abort());for(const read of reads.current)read.abort();if(timer.current)clearTimeout(timer.current);view.flush(draftKey);document.removeEventListener("visibilitychange",visibility);window.removeEventListener("pagehide",pause);window.removeEventListener("pageshow",show);window.removeEventListener("online",visibility)}
   },[identity,source,current,refresh,valid,fail,draftKey,view,recoverSnapshot,collection,lock])
   // A changed roster row for this Bot runs the existing single-flight cursor read.
   const pushSignal=chatPushSignal(summary)
@@ -567,8 +608,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(timer.current){clearTimeout(timer.current);timer.current=null}
     void refresh(false)
   },[pushSignal,pushed,refresh])
-  // A send made by a Chat that was left lands in the host journal by its own
-  // command identity; this Chat shows that outcome once and never resends.
+  // A send made by a Chat that was left settles in the host journal.
   const refreshRef=useRef(refresh);refreshRef.current=refresh
   useEffect(()=>{
     const landed=(id:string,answer:W.ProjectAssistantReceipt|null)=>{
@@ -576,7 +616,6 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(!alive.current||!was||was.command.idempotency_key!==id)return
       awaiting.current=null
       const held=view.heldOutcomes.get(draftKey)
-      // The left Chat already put an unsettled or failed message back in an empty box; a delivered one leaves the box as the person has it.
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"")
       setReceipt(held?.receipt??answer);setUnknown(uncertain())
       setBusy(false);setSending(admittedReceipt(answer)?was.text:null);if(answer)observation.accept(answer);repaintJournal()
@@ -585,7 +624,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const stop=view.heldOutcomes.subscribe(draftKey,n=>{if(alive.current)repaintJournal();landed(n.idempotency_key,n.receipt)})
     // It may have landed between this Chat's first render and this subscription.
     const was=awaiting.current
-    if(was&&!view.heldOutcomes.transporting(draftKey,was.command.idempotency_key))landed(was.command.idempotency_key,null)
+    const settled=view.heldOutcomes.find(draftKey,was?.command.idempotency_key??"")
+    if(was&&!view.heldOutcomes.transporting(draftKey,was.command.idempotency_key))landed(was.command.idempotency_key,settled?.receipt??null)
     return stop
   },[view,draftKey,valid])
 
@@ -629,23 +669,25 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   useEffect(()=>{markVisible()},[messages,data])
   useEffect(()=>{identityButton.current?.focus({preventScroll:true})},[identity])
   const onScroll=()=>{const el=scroll.current;if(!el)return;const end=el.scrollHeight-el.scrollTop-el.clientHeight<=1;followingRef.current=end;setFollowing(end);view.position.set(draftKey,{top:el.scrollTop,following:end});markVisible()}
-  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal,head:W.ProjectAssistantReadViewResponse)=>Promise<T>,{reportReadFailure=true}={}):Promise<T>=>{
+  const mutate=async<T,>(operation:(d:W.ProjectAssistantGetResponse,s:AbortSignal,head:W.ProjectAssistantReadViewResponse)=>Promise<T>,{reportReadFailure=true,lifetime}:{reportReadFailure?:boolean;lifetime?:AbortSignal}={}):Promise<T>=>{
     const captured=currentData.current,capturedEpoch=epoch.current
     if(recovery.current||!captured||!canWrite(captured.source)||!valid())throw failure("pa_read_only")
-    const control=new AbortController();activeMutations.current.add(control)
+    const control=lifetime?null:new AbortController()
+    if(control)activeMutations.current.add(control)
+    const currentView=()=>!recovery.current&&epoch.current===capturedEpoch&&(!!lifetime||valid())
     try{return await authorized(source,current,async s=>{
       let page:W.ProjectAssistantReadViewResponse
       try{page=await read(request("snapshot"),s)}catch(e){if(reportReadFailure&&!s.aborted)readFailed(e);throw e}
-      if(recovery.current||s.aborted||!valid()||epoch.current!==capturedEpoch)throw failure("pa_read_only")
+      if(s.aborted||!currentView())throw failure("pa_read_only")
       if(!canWrite(page.source))throw failure("pa_read_only")
       const stale=page.source_epoch!==capturedEpoch?"pa_cursor_expired":!sameFence(fence(captured),page.head.current_fence)?"pa_stale_generation":null
       if(stale){const error=failure(stale);if(reportReadFailure)readFailed(error);throw error}
-      adoptHead(page)
+      if(valid())adoptHead(page)
       const fresh:W.ProjectAssistantGetResponse={contract_version:page.contract_version,bot:page.snapshot!.bot,conversation:page.head.conversation,source:page.source}
       // Preflight cannot replace the visible window or advance replay past unseen facts.
-      if(recovery.current||s.aborted||!valid()||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence))throw failure("pa_read_only")
+      if(s.aborted||!currentView()||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence))throw failure("pa_read_only")
       return operation(fresh,s,page)
-    },control.signal)}finally{activeMutations.current.delete(control)}
+    },lifetime??control!.signal)}finally{if(control)activeMutations.current.delete(control)}
   }
   const [images,setImages]=useState<MarkupPicture[]>([])
   const editBot=async(settings:W.ProjectAssistantEditSettings,original?:W.ProjectAssistantBot)=>{
@@ -731,6 +773,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
     const assets=pendingAttachments[attachmentsFor(held)]
     if(busy||recoveringID||paused||!valid()||!sameConversation(intent.fence,scope))return
+    sendReplay.delete(held)
     pauseComposer()
     changeText(intent.text);setQuote(intent.quote_message_id)
     if(intent.quote_message_id)view.quotes.set(draftKey,intent.quote_message_id);else view.quotes.delete(draftKey)
@@ -865,7 +908,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const intent:W.ProjectAssistantSendRequest={command:sendCommand,fence:captured,text:submitted,quote_message_id:additional?artifact?.id??"":quote,...(handoffRef?{handoff:handoffRef}:{}),...(pictures.length?{images:pictures.map(picture=>picture.url)}:{})}
     const id=intent.command.idempotency_key
     sendBaselineSeq.current=messages.reduce((max,m)=>m.seq>max?m.seq:max,0)
-    let attempted=false,answered:W.ProjectAssistantReceiptResponse|null=null;sendInFlight.current=true;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null)
+    sendInFlight.current=true;setBusy(true);setSending(submitted);setLocalSend(id);setReceipt(null)
     followingRef.current=true;setFollowing(true)
     const hold=(receipt:W.ProjectAssistantReceipt|null):HeldOutcome=>({intent,receipt,...(pictures.length?{pictures:pictures.length}:{}),...(selected.length?{files:selected.map(f=>f.file.name)}:{})})
     // This send's own answer changes only its own journal entry: never a newer
@@ -873,119 +916,81 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     // Bot, including one opened after this one was left, is told once.
     const land=(outcome:HeldOutcome|null)=>{
       const replacement=outcome??(originalID===id?recovered:null)??null
-      const owner=view.heldOutcomes.settle(draftKey,id,replacement)
-      if(owner==="active"&&replacement&&!admittedReceipt(replacement.receipt))view.heldOutcomes.setAside(draftKey)
+      if(view.heldOutcomes.settle(draftKey,id,replacement)==="active"&&replacement&&!admittedReceipt(replacement.receipt))view.heldOutcomes.setAside(draftKey)
       if(!outcome&&(!replacement||attachmentsFor(replacement)!==attachmentsFor(hold(null))))clearPendingAttachments(hold(null))
       if(outcome&&recovered&&attachmentsFor(recovered)!==attachmentsFor(outcome)){
         if(originalID!==id)view.heldOutcomes.settleAside(draftKey,originalID!)
         clearPendingAttachments(recovered)
       }
-      view.heldOutcomes.endTransport(draftKey,id,answered?.receipt??outcome?.receipt??null);repaintJournal()
-      return owner
     }
     const clearRecovery=()=>{
       if(!recovered)return
       view.stage(recoveryKey,"");view.flush(recoveryKey)
       if(valid())setRecovery("")
     }
-    // The message leaves the box at once and shows above as sending, as in a
-    // messaging app. A send that failed outright gives it back to the box.
-    const quoted=quote
-    // Anything but an accepted send puts the message back, as before this
-    // change: an unknown one is shown there, disabled, and never resent. The
-    // durable copy is only cleared once the send is accepted.
     const restore=()=>{
       if(additional)return
       const currentDraft=view.draft(draftKey)
       if(currentDraft!==submitted)view.stage(draftKey,currentDraft?`${submitted}
 
 ${currentDraft}`:submitted)
-      if(quoted&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quoted)
+      if(quote&&!view.quotes.get(draftKey))view.quotes.set(draftKey,quote)
+      if(selected.length)rememberFiles(true)
       if(!valid())return
       setText(view.draft(draftKey));setQuote(view.quotes.get(draftKey)??"");setImages(old=>old.length?old:pictures);setFiles(old=>old.length?old:selected)
     }
-    if(!additional){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey)}
-    try{
-      const deliver=async(s:AbortSignal)=>{
-        if(view.heldOutcomes.has(draftKey)||legacyBlocked())throw failure("pa_read_only")
-        attempted=true;view.heldOutcomes.activate(draftKey,hold(null));view.heldOutcomes.beginTransport(draftKey,id);repaintJournal()
-        if(pictures.length||selected.length){
-          const assets={images:pictures,files:selected}
-          if(valid())setPendingAttachments(old=>({...old,[attachmentsFor(hold(null))]:assets}))
-          await saveSendAttachments(attachmentsFor(hold(null)),assets).catch(()=>{if(valid())setDraftDurable(false)})
-        }
-        // A journaled send settles even if the person leaves this chat.
-        const effect=new AbortController(),follow=()=>{if(alive.current)effect.abort()}
-        if(s.aborted)follow();else s.addEventListener("abort",follow,{once:true})
-        const attempt=async()=>{
-          const answer=await source.send(intent,effect.signal)
-          if(!sendAcknowledgement(answer,intent))throw Object.assign(failure("pa_outcome_unknown"),{response:answer})
-          answered=answer
-          return answer
-        }
-        try{
-          return await attempt()
-        }catch(e){
-          const refusal=e as Partial<W.ProjectAssistantErrorResponse>
-          if(!plain||review||effect.signal.aborted||!valid()||refusal.error?.code!=="pa_stale_generation"||refusal.error.field!=="fence")throw e
-          // Only the source's explicit admission refusal permits a retry.
-          // Rebind within the same authenticated conversation, once.
-          const fresh=await read(request("snapshot"),effect.signal)
-          if(!sameConversation(fresh.head.current_fence,scope)||sameFence(intent.fence,fresh.head.current_fence))throw e
-          intent.fence=fresh.head.current_fence
-          view.heldOutcomes.set(draftKey,hold(null))
-          return await attempt()
-        }finally{s.removeEventListener("abort",follow)}
-      }
-      const result=plain&&!review?await authorized(source,current,deliver,new AbortController().signal):await mutate(async(d,s,page)=>{
+    // Journal at submission, before the attachment preflight can yield to navigation.
+    view.heldOutcomes.activate(draftKey,hold(null));view.heldOutcomes.beginTransport(draftKey,id)
+    if(!additional){changeText("");setImages([]);setQuote("");view.quotes.delete(draftKey);rememberFiles(false);view.flush(draftKey)}
+    const asset=attachmentsFor(hold(null)),assets={images:pictures,files:selected}
+    const saved=pictures.length||selected.length?saveSendAttachments(asset,assets).catch(()=>{if(valid())setDraftDurable(false)}):undefined
+    const prepare=async(lifetime:AbortSignal)=>{
+      const prepared=plain&&!review?undefined:mutate(async(d,s,page)=>{
         if(review&&(page.head.unknown_turn_count===0||page.snapshot!.pending_turns.some(turn=>turn.state==="running"||turn.state==="waiting_permission")||
           page.snapshot!.queued_messages.some(message=>message.notice?.key==="restart_continuation")))throw failure("pa_stale_version")
+        intent.fence=fence(d)
         if(selected.length){
           const upload=new AbortController();uploadControl.current=upload;const cancel=()=>upload.abort();s.addEventListener("abort",cancel,{once:true})
-          try{setUploading("0%");intent.fence=fence(d);intent.upload_ids=await uploadInputs(source,intent.fence,selected,upload.signal,(n,total)=>{if(valid()&&!upload.signal.aborted)setUploading((total?Math.floor(n*100/total):100)+"%")},d.bot.instructions.revision)}
+          try{if(valid())setUploading("0%");intent.upload_ids=await uploadInputs(source,intent.fence,selected,upload.signal,(n,total)=>{if(valid()&&!upload.signal.aborted)setUploading((total?Math.floor(n*100/total):100)+"%")},d.bot.instructions.revision)}
           finally{s.removeEventListener("abort",cancel);uploadControl.current=null;if(valid())setUploading("")}
-          if(s.aborted||!valid()||recovery.current)throw failure("pa_revoked")
         }
-        return deliver(s)
-      },{reportReadFailure:!review})
-      const owner=land(result.receipt.state==="unknown"||admittedReceipt(result.receipt)?hold(result.receipt):null)
-      observation.accept(result.receipt)
-      const uncertainRecovery=result.receipt.state==="unknown"&&!!recovered
-      if((result.receipt.state==="failed"&&owner==="active")||uncertainRecovery)restore()
-      if(!uncertainRecovery&&(admittedReceipt(result.receipt)||result.receipt.state==="unknown")){
-        clearRecovery();if(!additional){rememberFiles(false);view.flush(draftKey)}
-      }
-      const accepted=admittedReceipt(result.receipt)
-      const outcome:ArtifactSendResult=accepted?{state:"accepted",turn:result.receipt.resource_id}:{state:result.receipt.state==="unknown"?"unknown":"refused"}
-      if(!valid())return outcome
-      setReceipt(result.receipt);setUnknown(uncertain())
-      if(!uncertainRecovery&&(accepted||result.receipt.state==="unknown")&&!additional){setFiles([]);rememberFiles(false);flush()}
-      void refresh(!accepted)
-      return outcome
-    }catch(e){
-      // The source's own receipt outlives a later authority or abort check.
-      const kept=answered as W.ProjectAssistantReceiptResponse|null
-      if(kept&&admittedReceipt(kept.receipt)){
-        const owner=land(hold(kept.receipt))
-        if(owner==="active"&&!additional){clearRecovery();rememberFiles(false);view.flush(draftKey)}
-        observation.accept(kept.receipt)
-        if(valid()){setReceipt(kept.receipt);setUnknown(uncertain());if(!additional)setFiles([]);setError("");await refresh()}
-        return {state:"accepted",turn:kept.receipt.resource_id}
-      }
-      // Only a refusal that provably sent nothing releases the hold; anything
-      // that may have crossed the transport stays unknown and is never resent.
-      const code=errorCode(e),unresolved=attempted&&!provablyNotSent(e)&&!sendBlockedByInterruptedTurn(e)&&(kept?.receipt.state==="unknown"||code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError")
-      const field=(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field
-      const handoffRefused=field?.startsWith("handoff_")
-      if(valid()&&handoffRefused)handoff.conflict(code)
-      const owner=attempted?land(!unresolved?null:kept?hold(kept.receipt):view.heldOutcomes.find(draftKey,id)??null):"none"
-      if(!attempted||!unresolved&&owner==="active"||unresolved&&recovered)restore()
-      if(unresolved&&!recovered&&!additional){rememberFiles(false);view.flush(draftKey);if(valid())setFiles([])}
-      if(unresolved&&recovered&&!additional)view.flush(draftKey)
-      if(valid()&&!unresolved){if(handoffRefused||(!attempted||provablyNotSent(e))&&(e as Error)?.name==="AbortError")setError("");else if(!review)fail(e);setUnknown(uncertain())}
-      if(valid()&&unresolved){setUnknown(uncertain());setError("");void refresh(true)}
-      return {state:unresolved?"unknown":"refused",code}
-    }finally{sendInFlight.current=false;if(valid()){setBusy(false);if(!admittedReceipt((answered as W.ProjectAssistantReceiptResponse|null)?.receipt))setSending(null)}}
+        view.heldOutcomes.set(draftKey,hold(null))
+      },{reportReadFailure:!review,lifetime})
+      try{await prepared}finally{await saved}
+    }
+    const rebind=plain&&!review?async(s:AbortSignal)=>{
+      const fresh=await read(request("snapshot"),s)
+      if(!sameConversation(fresh.head.current_fence,scope)||sameFence(intent.fence,fresh.head.current_fence))return false
+      intent.fence=fresh.head.current_fence;view.heldOutcomes.set(draftKey,hold(null))
+      return true
+    }:undefined
+    const {receipt:answer,error:sendError,attempted}=await transmitChatSend(source,current,intent,prepare,rebind)
+    const accepted=admittedReceipt(answer),unresolved=answer?.state==="unknown"||!answer&&attempted&&uncertainAfterSend(sendError)
+    const code=answer?.state==="failed"?"pa_declined":errorCode(sendError)
+    const handoffRefused=(sendError as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field?.startsWith("handoff_")
+    const refusedSend=!accepted&&!unresolved&&!additional&&!recovered&&!handoffRefused
+      &&(attempted&&!provablyNotSent(sendError)||!valid())
+    const row=accepted||unresolved||refusedSend?hold(answer?.state==="failed"?null:answer):null
+    if(row&&unresolved&&!recovered&&!additional)sendReplay.set(row,{source,origin:observation})
+    if(row&&refusedSend){
+      const refusal:RetryFailure={code,at:Date.now(),initial:true,...(sendBlockedByInterruptedTurn(sendError)?{interrupted:true}:{})}
+      if(!retryAllowed(refusal)&&!refusal.interrupted)row.needsEdit=true
+      sendFailure.set(row,refusal)
+    }
+    land(row)
+    if(accepted||unresolved&&!recovered)clearRecovery()
+    if(!row||unresolved&&recovered)restore()
+    view.flush(draftKey)
+    view.heldOutcomes.endTransport(draftKey,id,answer);sendInFlight.current=false
+    if(valid()){
+      if(answer)observation.accept(answer)
+      setReceipt(answer);setUnknown(uncertain());setBusy(false);repaintJournal()
+      if(!accepted)setSending(null)
+      if(handoffRefused)handoff.conflict(code)
+      if(!row&&!review&&!handoffRefused)fail(sendError);else setError("")
+      if(row)void refresh(!accepted)
+    }
+    return accepted?{state:"accepted",turn:answer!.resource_id}:{state:unresolved?"unknown":"refused",code}
   }
 
   const pendingRows=view.heldOutcomes.aside(draftKey).filter(row=>
@@ -1010,7 +1015,7 @@ ${currentDraft}`:submitted)
     }
   },[timeline,journalRevision,draftKey])
   useEffect(()=>{
-    if(!enabled||busy||retrying||!source.sendReceipt||source.canRecoverSend?.()===false||document.visibilityState==="hidden")return
+    if(!enabled||busy||retrying||document.visibilityState==="hidden")return
     const control=new AbortController()
     reads.current.add(control)
     void (async()=>{
@@ -1018,13 +1023,18 @@ ${currentDraft}`:submitted)
       try{
         for(const row of pendingRows){
           if(control.signal.aborted)break
-          if(row.superseded||admittedReceipt(row.receipt))continue
+          if(row.superseded||admittedReceipt(row.receipt)||sendFailure.get(row)?.initial)continue
           const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
           if(view.heldOutcomes.transporting(draftKey,id))continue
-          const answer=await authorized(source,current,s=>source.sendReceipt!(intent,s),control.signal).catch(()=>null)
-          if(!answer||control.signal.aborted||!valid()||view.heldOutcomes.find(draftKey,id)!==row)continue
-          const actual=answer.receipt?.command?.client_attempt_id
-          if(!sendAcknowledgement(answer,{...intent,command:{...intent.command,client_attempt_id:actual}})||!admittedReceipt(answer.receipt))continue
+          const answer=source.sendReceipt&&source.canRecoverSend?.()!==false
+            ?await authorized(source,current,s=>source.sendReceipt!(intent,s),control.signal).catch(()=>null):null
+          if(control.signal.aborted||!valid()||view.heldOutcomes.find(draftKey,id)!==row)continue
+          const actual=answer?.receipt?.command?.client_attempt_id
+          if(!sendAcknowledgement(answer,{...intent,command:{...intent.command,client_attempt_id:actual}})||!admittedReceipt(answer.receipt)){
+            if(!retryOnReentry(row,source,observation,view.draft(recoveryKey)))continue
+            void retrySend(row)
+            break
+          }
           const different=actual!==intent.command.client_attempt_id
           const editing=view.draft(recoveryKey)===id
           if(different&&intent.command.client_attempt_id&&!editing){
@@ -1053,29 +1063,20 @@ ${currentDraft}`:submitted)
   },[enabled,busy,retrying,head?.event_frontier,pendingKey,journalRevision,receiptCheckRevision,draftKey,source,current,valid])
   const retrySend=async(held:HeldOutcome)=>{
     const intent=held.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
-    if(!enabled||busy||retryInFlight.current||!valid()||view.heldOutcomes.find(draftKey,id)!==held)return
+    if(!enabled||busy||retryInFlight.current||!valid()||view.heldOutcomes.transporting(draftKey,id)||view.heldOutcomes.find(draftKey,id)!==held)return
     const pictures=intent.images??pendingAttachments[attachmentsFor(held)]?.images.map(picture=>picture.url)??[]
     if(pictures.length!==(held.pictures??0))return
-    retryInFlight.current=true;setRetrying(id);view.heldOutcomes.beginTransport(draftKey,id)
-    setRetryFailures(rows=>{const next={...rows};delete next[id];return next})
-    let outcome:Awaited<ReturnType<typeof retryOnce>>|null=null
-    try{
-      const q={...intent,...(pictures.length?{images:pictures}:{})}
-      outcome=await retryOnce(()=>authorized(source,current,s=>source.send(q,s),new AbortController().signal),
-        answer=>!sendAcknowledgement(answer,q)?null:admittedReceipt(answer.receipt)?answer.receipt:answer.receipt.state==="failed"?"rejected":null)
-      if(outcome.kind==="admitted"){
-        view.heldOutcomes.settle(draftKey,id,{...held,receipt:outcome.receipt})
-        if(valid())observation.accept(outcome.receipt)
-      }else if(outcome.kind==="rejected")view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true,superseded:true})
-      else if(outcome.editable)view.heldOutcomes.settle(draftKey,id,{...held,needsEdit:true})
-    }finally{
-      retryInFlight.current=false;view.heldOutcomes.endTransport(draftKey,id,null)
-      if(valid()){
-        setRetrying("")
-        const failed=outcome?.kind==="failed"?outcome.failure:null
-        if(failed)setRetryFailures(rows=>({...rows,[id]:failed}))
-        repaintJournal();void refresh(true)
-      }
+    retryInFlight.current=true;setRetrying(id);view.heldOutcomes.beginTransport(draftKey,id);sendReplay.delete(held)
+    const q={...intent,...(pictures.length?{images:pictures}:{})}
+    const outcome=await retryOnce(()=>authorized(source,current,s=>source.send(q,s),new AbortController().signal),
+      answer=>!sendAcknowledgement(answer,q)?null:admittedReceipt(answer.receipt)?answer.receipt:answer.receipt.state==="failed"?"rejected":null)
+    const accepted=outcome.kind==="admitted"?outcome.receipt:null
+    const replacement=settledRetry(held,outcome)
+    view.heldOutcomes.settle(draftKey,id,replacement)
+    retryInFlight.current=false;view.heldOutcomes.endTransport(draftKey,id,accepted)
+    if(valid()){
+      if(accepted)observation.accept(accepted)
+      setRetrying("");void refresh(true)
     }
   }
   /** Removes one provisional send from this device's journal. */
@@ -1087,7 +1088,6 @@ ${currentDraft}`:submitted)
     if(active){setSending(null);setUnknown(false)}
     if(admittedReceipt(held.receipt))observation.stop(held.receipt!.resource_id)
     setDiscardFailed("");clearPendingAttachments(held)
-    setRetryFailures(rows=>{if(!(id in rows))return rows;const next={...rows};delete next[id];return next})
     repaintJournal()
   }
   const leaveUnreadable=()=>{
@@ -1854,7 +1854,7 @@ ${currentDraft}`:submitted)
           {!!intent.quote_message_id&&<small>{w.heldQuoted}</small>}
           {!!row.files?.length&&<small>{row.files.join(" · ")}</small>}
           {!!row.pictures&&<small>{w.outgoingPictureCount.replace("{count}",String(row.pictures))}</small>}
-          <UnsentActions retrying={retrying===id} accepted={admittedReceipt(row.receipt)} failure={retryFailures[id]} restore={restore}
+          <UnsentActions retrying={view.heldOutcomes.transporting(draftKey,id)} accepted={admittedReceipt(row.receipt)} failure={sendFailure.get(row)} restore={restore}
             canRestore={!recoveringID&&!paused} canRetry={enabled&&loaded} disabled={busy||(!restore&&!!retrying)}
             onRestore={()=>restoreSend(row)} onRetry={()=>void retrySend(row)}
             discard={unsentDiscardKind(row,{accepted:admittedReceipt(row.receipt),transporting:retrying===id||view.heldOutcomes.transporting(draftKey,id)})}

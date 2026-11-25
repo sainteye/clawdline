@@ -4,7 +4,7 @@ import { errorCode, sendBlockedByInterruptedTurn } from "./client"
 import type { HeldOutcome } from "./view-state"
 import type { Words } from "./words"
 
-export type RetryFailure = { code: string, at: number, interrupted?: true }
+export type RetryFailure = { code: string, at: number, interrupted?: true, initial?: true }
 export type RetryOutcome =
   | { kind: "admitted", receipt: W.ProjectAssistantReceipt }
   | { kind: "rejected" }
@@ -56,13 +56,14 @@ export function retryAllowed(failure: RetryFailure | undefined): boolean {
 
 export function retryFailureText(failure: RetryFailure, w: Words, language: string) {
   const time = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(failure.at)
+  const title = (reason: string) => failure.initial ? reason : w.retryFailedAt.replace("{time}", time).replace("{reason}", reason)
   if (failure.interrupted) {
-    return { title: w.retryFailedAt.replace("{time}", time).replace("{reason}", w.sendInterrupted), next: "" }
+    return { title: title(w.sendInterrupted), next: "" }
   }
   const kind = retryFailureKind(failure.code)
-  const reason = { again: w.retryReasonUnknown, later: w.retryReasonUnreachable, reload: w.retryReasonChanged, settings: w.retryReasonRefused, edit: w.retryReasonNotAccepted }[kind]
+  const reason = { again: w.retryReasonUnknown, later: failure.initial ? w.retryReasonRefused : w.retryReasonUnreachable, reload: w.retryReasonChanged, settings: w.retryReasonRefused, edit: w.retryReasonNotAccepted }[kind]
   const next = { again: w.retryNextAgain, later: w.retryNextLater, reload: w.retryNextReload, settings: w.retryNextSettings, edit: w.retryNextEdit }[kind]
-  return { title: w.retryFailedAt.replace("{time}", time).replace("{reason}", reason), next }
+  return { title: title(reason), next }
 }
 
 /**

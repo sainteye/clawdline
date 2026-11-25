@@ -207,9 +207,9 @@ func TestProjectAssistantSendLifetimeSourceKeepsAdmittedTurnWhenClientLeaves(t *
 	}
 }
 
-// The actual Bots UI and Cloud SourceClient in a real browser against this
-// source. Set CLAWDLINE_SEND_LIFETIME_E2E_DIR to an empty artifact directory
-// and BOTS_BROWSER_CLAWDLINE_DIR to the browser broker's directory.
+// The actual Bots UI over direct HTTP and the Cloud client's carry adapter.
+// Set CLAWDLINE_SEND_LIFETIME_E2E_DIR to an empty artifact directory and
+// PLAYWRIGHT_MODULE and PLAYWRIGHT_BROWSERS_PATH to an existing installation.
 func TestProjectAssistantSendLifetimeBrowser(t *testing.T) {
 	dir := os.Getenv("CLAWDLINE_SEND_LIFETIME_E2E_DIR")
 	if dir == "" {

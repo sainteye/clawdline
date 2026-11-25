@@ -100,27 +100,21 @@ read-only refusal. No recovery read replays a message, work or permission.
 Other Bots and new account namespaces do not inherit the latch.
 
 Mutation preflight uses a fresh bounded snapshot, then checks the still-current
-source, epoch, recovery latch and full fence immediately before the effect.
-It does not adopt that snapshot's frontier without replacing the window. A
-source that ignores cancellation still cannot publish or perform an effect
-after authorization replacement, unmount or recovery. A newly discovered
-unknown barrier also blocks Send after preflight.
+source, epoch, recovery latch and full fence before the effect. It does not
+adopt that snapshot's frontier without replacing the window. Source
+authorization is checked again before a send.
 
-The existing host-owned ViewState retains one unresolved intent and receipt
-per account/Bot. It does not persist them to browser storage or maintain an
-operation history. Returning/remounting or publishing a receipt-free snapshot
-cannot replay that effect. Known source refusals remain separate from an
-uncertain execution outcome.
+The host-owned ViewState retains send intents and receipts per account and Bot.
+The browser journal survives a reload. The page tracks open requests only in
+memory. See [A send's receipt after leaving its Chat](#a-sends-receipt-after-leaving-its-chat)
+for the one-retry behavior on reentry.
 
-Every active mutation has its own tracked AbortController until its promise
-settles. Recovery, snapshot replacement and unmount abort all of them, except
-that unmount no longer cancels a Send request already handed to the transport
-(see "A send's receipt after leaving its Chat"); a later
-mutation cannot replace the only cancellation handle of an earlier preflight.
-The complete permission attempt runs through `withPermissionRecovery`, so
-cursor expiry or a changed generation from the second detail await also
-latches recovery before the error reaches the display handler. A successful same-fence recovery snapshot cannot
-revive either an aborted Send preflight or a parallel settings preflight.
+Each chat-bound mutation has its own AbortController until its promise settles.
+Recovery, snapshot replacement and unmount abort those mutations. The complete
+permission attempt runs through `withPermissionRecovery`, so cursor expiry or
+a changed generation from the second detail await also latches recovery
+before the error reaches the display handler. A successful same-fence
+recovery snapshot cannot revive an aborted settings preflight.
 
 ## Permission and trace collections
 
@@ -405,20 +399,18 @@ while the person had already returned to the roster. Reopening the chat still
 held that message as unknown with a disabled composer: unmount had aborted the
 Send request, so the client lost a receipt the source had already written.
 
-The Send request now belongs to the host ViewState lifetime once its bytes may
-cross. Chat journals the intent, opens the request and passes it a signal that
-recovery, snapshot replacement and unwritable-source events still abort while
-the Chat is shown; leaving the Chat does not. Preflight reads and uploads are
-before the effect and are still cancelled by leaving, returning the draft.
-`HeldOutcomes.settle` applies the answer by the command's idempotency key only:
-a newer held send, a set-aside send's place, and the person's new draft and
-quote are never replaced. `endTransport` then tells any Chat for that
-account/Bot, including one opened after leaving, which shows the send as
-sending until then and adopts the journal's outcome once. The SourceClient
-still turns a revoked or changed grant into outcome unknown, so a late answer
-after revocation never reattaches. The open-request record is memory only: a
-full reload or a lost connection keeps the journaled send genuinely unknown,
-with the explicit check and set-aside; nothing is resent.
+Pressing Send journals the intent under the host ViewState before attachment
+preflight or upload. The page keeps that work running when the person returns
+to the roster. `HeldOutcomes.settle` applies the answer to its own idempotency
+key and `endTransport` informs any Chat currently watching that journal.
+The reopened Chat shows sending until the request settles, then takes the
+message from source history or shows its refusal and available recovery actions.
+
+An unconfirmed send in the same page can retry once on reentry under the same
+source grant and conversation, after checking for admission evidence. It uses
+the original command and payload. The source deduplicates admission by key.
+A definite refusal does not trigger automatic retry. A full reload can recover
+the admission receipt or offer manual retry from the stored journal.
 
 This follows Codync's ownership, where the send task and its local
 `clientNonce` entry live in the per-computer `BotStore`
@@ -427,19 +419,21 @@ This follows Codync's ownership, where the send task and its local
 reuses Clawdline's existing receipt and journal instead of Codync's nonce
 protocol.
 
-`TestProjectAssistantSendLifetimeBrowser` runs the actual Bots UI and Cloud
-SourceClient in a real browser against a real TCP Go Host, SQLite and a
-scripted provider. It holds the send's HTTP answer after admission, leaves and
-reopens the chat, then releases it; it also leaves during preflight, reloads
-during a held answer, and revokes after leaving. Before the fix the reopened
-chat stayed held with a locked composer; after it, four messages produce four
-provider sends and replies and nothing is resent.
+`TestProjectAssistantSendLifetimeBrowser` runs the Bots UI over direct HTTP
+and the Cloud client's carried-command adapter. A controlled connection
+forwards requests to the test Go Host, SQLite and scripted provider.
+It checks navigation during attachment preflight and during a held answer,
+an explicit refusal, reply loss on either side of admission, duplicate
+submission under the same key, the automatic retry limit, and manual retry
+after a full reload or grant replacement. The Cloud fixture runs at 390px in
+Traditional Chinese.
 `TestProjectAssistantSendLifetimeSourceKeepsAdmittedTurnWhenClientLeaves`
 covers the source half without a browser.
 
 ```sh
 CLAWDLINE_SEND_LIFETIME_E2E_DIR=/absolute/task-owned/evidence-directory \
-BOTS_BROWSER_CLAWDLINE_DIR=/absolute/configured/browser-broker-directory \
+PLAYWRIGHT_MODULE=/absolute/path/to/existing/playwright/index.mjs \
+PLAYWRIGHT_BROWSERS_PATH=/absolute/path/to/existing/browser-cache \
 go test ./internal/transport/http -run '^TestProjectAssistantSendLifetime' -count=1
 ```
 
