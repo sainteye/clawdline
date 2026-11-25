@@ -126,7 +126,11 @@ func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 		if target.Kind != RepositoryProject || target.MachineID != current.Key.MachineID {
 			return fail(ScopeDenied, "dispatch_project")
 		}
-	} else if len(request.Claims) == 0 && !request.ContinueOnCompletion {
+	} else if len(request.Claims) == 0 && !request.ContinueOnCompletion && request.OwnerTurnID == "" {
+		// Claimless work in the Bot's own Project is read-only work whose
+		// result the Bot reads back: through a completion turn, or, for work
+		// dispatched at another Bot's request (OwnerTurnID), through the
+		// main chat's review turn.
 		return fail(Invalid, "work")
 	}
 	if request.Title != "" {

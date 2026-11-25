@@ -5568,7 +5568,7 @@
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "647c05a8d5783522e4e439f63fabd1f07bc14176e776c8602cc2406cdcd63e7f",
+    "internal/adapters/projectassistanthost/provider.go": "f70c8a8143db6e3f001ceca25820472335b45963febfce21eb13261c1c7ff570",
     "internal/adapters/projectassistanthost/provider_message.go": "4bfc67c80ff79ccf13b52d4f9bd1870633e33188119b9ff61c1cec6a39267bcc",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
     "internal/adapters/projectassistanthost/work_completion.go": "77c002f4a0e57812ae8d406bbe0aaf997010a3079c81cd6ba6dba7541161aeed",
