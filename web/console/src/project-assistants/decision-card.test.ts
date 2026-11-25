@@ -87,7 +87,7 @@ test("an answered decision shows the person's reply and no longer offers choices
   assert.doesNotMatch(html,/Ship it today|Reply yourself/)
 })
 
-test("memory proposals use localized controls and wait for the persisted answer",async()=>{
+test("memory proposals use localized controls and show the confirmed detail while the summary catches up",async()=>{
   const {DecisionCard,words}=await load()
   const fact="The maintenance window starts on Wednesday."
   const memorySummary={...summary(),title:"Save this to memory?"}
@@ -109,14 +109,15 @@ test("memory proposals use localized controls and wait for the persisted answer"
     const pending=render(memorySummary,memoryOffer)
     for(const value of [title,fact,`<span>${save}</span>`,`<span>${skip.replace("'", "&#x27;")}</span>`])assert.ok(pending.includes(value),value)
     assert.doesNotMatch(pending,/pa-decision-own|pa-decision-dismiss/)
-    assert.ok(!render(memorySummary,saved).includes(stored),"a detail ahead of the collection does not announce a saved outcome")
     const answeredSummary={...memorySummary,state:"answered" as const}
     assert.ok(!render(answeredSummary,memoryOffer).includes(declined),"a stale detail does not imply a skip")
-    for(const [answer,label] of [[saved,stored],[skipped,declined]] as const){
-      const answered=render(answeredSummary,answer)
-      assert.ok(answered.includes(label),label)
-      assert.ok(answered.includes(fact))
-      assert.doesNotMatch(answered,/<button/)
+    for(const cardSummary of [memorySummary,answeredSummary]){
+      for(const [answer,label] of [[saved,stored],[skipped,declined]] as const){
+        const answered=render(cardSummary,answer)
+        assert.ok(answered.includes(label),`${label} with a ${cardSummary.state} summary`)
+        assert.ok(answered.includes(fact))
+        assert.doesNotMatch(answered,/<button|aria-busy|pa-decision-spinner/)
+      }
     }
   }
 })

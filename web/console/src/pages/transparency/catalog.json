@@ -5950,7 +5950,7 @@
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "892639ae541f880084f147db8711672db043d40491bb6e7d6679b2fd514958ca",
     "web/console/src/project-assistants/ChatRows.tsx": "4fed12e7c4105dd526dd2a4778fa38e7d55d99cd12c29d46d139f2a5a62a0cb9",
-    "web/console/src/project-assistants/DecisionCard.tsx": "d13335a03c51be11d1d14ea81e7d86c9947466da36d8ceef1d64285e6ca9ddc9",
+    "web/console/src/project-assistants/DecisionCard.tsx": "7d1a34b815d803b6f878d7c0d7198fdf58ff277f57747ab051f62c153a59bc1f",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
