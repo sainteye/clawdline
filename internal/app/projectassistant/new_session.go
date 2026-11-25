@@ -6,7 +6,16 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-func (r *Engine) newSession(ctx context.Context, command pa.Command, expected int64) (pa.Receipt, error) {
+// SessionResetter starts a fresh provider session for a Bot's conversation.
+// It is exported so a runtime wrapped in another package, such as the Host's
+// facade, can forward it; an unexported method can only be satisfied here.
+type SessionResetter interface {
+	NewSession(context.Context, pa.Command, int64) (pa.Receipt, error)
+}
+
+var _ SessionResetter = (*Engine)(nil)
+
+func (r *Engine) NewSession(ctx context.Context, command pa.Command, expected int64) (pa.Receipt, error) {
 	a, err := r.acquire(command.Key)
 	if err != nil {
 		return pa.Receipt{}, err

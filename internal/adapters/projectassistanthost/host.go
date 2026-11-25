@@ -879,6 +879,8 @@ func (h *Host) RecoverWork(ctx context.Context, key pa.BotKey, taskID string, ex
 
 type runtimeFacade struct{ h *Host }
 
+var _ app.SessionResetter = runtimeFacade{}
+
 func (f runtimeFacade) Submit(ctx context.Context, q app.Submission) (pa.Receipt, error) {
 	r, e := f.h.runtime()
 	if e != nil {
@@ -892,6 +894,14 @@ func (f runtimeFacade) EditQueue(ctx context.Context, q app.QueueEditRequest, ch
 		return pa.Receipt{}, err
 	}
 	return r.EditQueue(ctx, q, check)
+}
+
+func (f runtimeFacade) NewSession(ctx context.Context, c pa.Command, expected int64) (pa.Receipt, error) {
+	r, err := f.h.runtime()
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	return r.NewSession(ctx, c, expected)
 }
 
 func (f runtimeFacade) SendNow(ctx context.Context, q app.SendNowRequest) (pa.Receipt, error) {

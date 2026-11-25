@@ -1489,6 +1489,29 @@ func TestHostBotPermissionSettingChangesAfterCreation(t *testing.T) {
 	}
 }
 
+// The sidebar's New session reaches the engine through the Host's runtime
+// facade, as it does in the running daemon, instead of refusing every Bot
+// with pa_unsupported.
+func TestHostNewSessionReachesTheEngine(t *testing.T) {
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	s, e := f.h.Service()
+	if e != nil {
+		t.Fatal(e)
+	}
+	ctx := context.Background()
+	_, r, e := s.Edit(ctx, pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "fresh"}, pa.EditBot{ExpectedVersion: b.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, Roster: &pa.RosterEdit{NewSession: true}})
+	if e != nil || r.State != pa.EffectAccepted {
+		t.Fatalf("new session: receipt=%+v err=%v", r, e)
+	}
+	chat, e := f.h.store.Conversation(ctx, b.Key, b.ConversationID)
+	if e != nil || chat.SessionResetGeneration != chat.Generation {
+		t.Fatalf("session reset not recorded: %+v %v", chat, e)
+	}
+}
+
 // A Claude Code Bot's standing rules are read from and revoked in its own
 // Project's local settings, alongside source rules available to either agent.
 func TestHostListsAndRevokesAClaudeBotsProjectRules(t *testing.T) {
