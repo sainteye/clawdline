@@ -174,11 +174,14 @@ type ProviderSession interface {
 // SteeringSession is a native session that can take a message into the turn
 // it is running (ACP _session/steering), as Codync steers.
 type SteeringSession interface {
-	Steer(context.Context, string) (SteerOutcome, error)
+	// SupportsSteering reflects the session's declared transport capabilities.
+	// A pending permission or a changed turn can still keep the input queued.
+	SupportsSteering(images bool) bool
+	Steer(context.Context, PromptRequest) (SteerOutcome, error)
 }
 
-// SteerOutcome is the agent's answer to a steer: joined the running turn, or
-// that turn had just ended and the message needs a prompt of its own.
+// SteerOutcome states whether the adapter joined the running turn or the
+// message stays queued for a normal prompt.
 type SteerOutcome string
 
 const (

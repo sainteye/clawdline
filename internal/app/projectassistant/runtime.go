@@ -708,13 +708,10 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		a.handoffAuthority = handoffInputAuthority{TurnID: turn.ID, Check: afterRequest(ctx, s.AuthorityCheck)}
 	}
 	r.setProject(a, bot.Project)
-	if !a.working {
-		a.working = true
-		r.mu.Lock()
-		a.users++
-		r.mu.Unlock()
-		go r.work(a)
+	if receipt.ResourceID == turn.ID {
+		r.trySteerFollowUpLocked(ctx, a, bot, c, turn, message, s)
 	}
+	r.kickLocked(a)
 	return receipt, nil
 }
 
@@ -1475,16 +1472,9 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 		return err
 	}
 
-	var files []PromptFile
-	for _, file := range input.Files {
-		if r.o.Inputs == nil {
-			return runtimeFailure(pa.Unsupported, "input_files")
-		}
-		path, e := r.o.Inputs.SentPath(ctx, input.Fence, file)
-		if e != nil {
-			return e
-		}
-		files = append(files, PromptFile{File: file, Path: path})
+	files, err := r.promptFiles(ctx, input)
+	if err != nil {
+		return err
 	}
 	if err = r.appendAttempt(ctx, a, &t, pa.AttemptSending, nil, nil); err != nil {
 		return err
@@ -2424,6 +2414,21 @@ func (r *Engine) unqueueLocked(ctx context.Context, a *runtimeActor, bot pa.Bot,
 
 func (r *Engine) Disable(ctx context.Context, project pa.ProjectSelection) error {
 	return r.shutdown(ctx, &project)
+}
+
+func (r *Engine) promptFiles(ctx context.Context, input *pa.Message) ([]PromptFile, error) {
+	var files []PromptFile
+	for _, file := range input.Files {
+		if r.o.Inputs == nil {
+			return nil, runtimeFailure(pa.Unsupported, "input_files")
+		}
+		path, e := r.o.Inputs.SentPath(ctx, input.Fence, file)
+		if e != nil {
+			return nil, e
+		}
+		files = append(files, PromptFile{File: file, Path: path})
+	}
+	return files, nil
 }
 
 // images reads a message's pictures; a picture that cannot be read fails the

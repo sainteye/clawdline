@@ -154,8 +154,13 @@ func TestACPTestPeer(t *testing.T) {
 					version = "wrong"
 				}
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": name, "version": version}, "agentCapabilities": map[string]any{"loadSession": true, "mcpCapabilities": map[string]bool{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "_meta": map[string]any{"claudeCode": map[string]any{}}}})})
-			} else if mode == "steer" {
-				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}, "_meta": map[string]any{"steering": map[string]bool{"supported": true}}})})
+			} else if strings.HasPrefix(mode, "steer") {
+				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1,
+					"agentInfo": map[string]string{"name": adapterPackage(pa.Codex), "version": CodexAdapterVersion},
+					"agentCapabilities": map[string]any{"loadSession": true, "promptCapabilities": map[string]bool{"image": mode != "steer-no-image"},
+						"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}},
+
+					"_meta": map[string]any{"steering": map[string]bool{"supported": mode != "steer-unsupported"}}})})
 			} else {
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentCapabilities": map[string]bool{"loadSession": true}})})
 			}
@@ -328,10 +333,10 @@ func TestACPTestPeer(t *testing.T) {
 			if mode == "delayed-prompt" {
 				time.Sleep(100 * time.Millisecond)
 			}
-			if mode == "silent" || mode == "steer" {
+			if mode == "silent" || strings.HasPrefix(mode, "steer") && mode != "steer-permission" {
 				continue
 			}
-			if mode == "permission" {
+			if mode == "permission" || mode == "steer-permission" {
 				send(frame{ID: raw("permission-rpc"), Method: "session/request_permission", Params: raw(map[string]any{"sessionId": "scripted-session", "toolCall": map[string]string{"kind": "read"}, "options": []any{map[string]string{"optionId": "read-once", "name": "Read once", "kind": "allow_once"}, map[string]string{"optionId": "always", "name": "Always", "kind": "allow_always"}, map[string]string{"optionId": "reject", "name": "Reject", "kind": "reject_once"}}})})
 				continue
 			}
@@ -393,7 +398,10 @@ func TestACPTestPeer(t *testing.T) {
 			var steer struct {
 				SessionID string `json:"sessionId"`
 				Prompt    []struct {
-					Text string `json:"text"`
+					Type  string `json:"type"`
+					Text  string `json:"text"`
+					Data  string `json:"data"`
+					Media string `json:"mimeType"`
 				} `json:"prompt"`
 				Meta struct {
 					Steering struct {
@@ -401,7 +409,28 @@ func TestACPTestPeer(t *testing.T) {
 					} `json:"steering"`
 				} `json:"_meta"`
 			}
-			if json.Unmarshal(f.Params, &steer) != nil || steer.SessionID != "scripted-session" || len(steer.Prompt) != 1 || steer.Prompt[0].Text != "also this" || steer.Meta.Steering.IdleBehavior != "promptRequired" {
+			if json.Unmarshal(f.Params, &steer) != nil || steer.SessionID != "scripted-session" || steer.Meta.Steering.IdleBehavior != "promptRequired" {
+				os.Exit(9)
+			}
+			switch mode {
+			case "steer":
+				if len(steer.Prompt) != 1 || steer.Prompt[0].Text != "also this" {
+					os.Exit(9)
+				}
+			case "steer-image", "steer-image-rejected", "steer-later":
+				if len(steer.Prompt) != 2 || steer.Prompt[0].Type != "image" || steer.Prompt[0].Media != "image/png" || steer.Prompt[0].Data != "AAEC" ||
+					steer.Prompt[1].Type != "text" || !strings.Contains(steer.Prompt[1].Text, "Attached files") || !strings.Contains(steer.Prompt[1].Text, "note.txt") {
+					os.Exit(9)
+				}
+				if mode == "steer-image-rejected" {
+					send(frame{ID: f.ID, Error: &rpcError{Code: -32600, Message: "Invalid request", Data: raw("The current model does not support image input")}})
+					continue
+				}
+				if mode == "steer-later" {
+					send(frame{ID: f.ID, Result: raw(map[string]string{"outcome": "later"})})
+					continue
+				}
+			default:
 				os.Exit(9)
 			}
 			send(frame{ID: f.ID, Result: raw(map[string]string{"outcome": "injected"})})
@@ -493,6 +522,11 @@ func openLimitedTestClient(t *testing.T, mode string, sink func(context.Context,
 	q := app.OpenRequest{Directory: t.TempDir()}
 	if mode == "provider-claude-terminal-quota" {
 		q.Bot.Agent = pa.ClaudeCode
+	}
+	if mode == "steer-image-rejected" {
+		c.adapterVersion = CodexAdapterVersion
+		// The guard also verifies the adapter identity from initialize.
+		q.Bot.Agent = pa.Codex
 	}
 	if err = c.initialize(context.Background(), q); err != nil {
 		t.Fatal(err)
@@ -824,10 +858,60 @@ func TestAToolCallTitleIsTheBotsActivity(t *testing.T) {
 // As Codync hands a queued message to the agent, Send now uses ACP
 // _session/steering when the adapter advertises it, asking a turn that already
 // ended to say so rather than start one.
+func TestACPSteeringCarriesWholeInputOnlyWhenReady(t *testing.T) {
+	for _, tt := range []struct {
+		mode string
+		want app.SteerOutcome
+		code pa.ErrorCode
+	}{
+		{mode: "steer-image", want: app.SteerJoined},
+		{mode: "steer-image-rejected", want: app.SteerNext},
+		{mode: "steer-no-image", code: pa.Unsupported},
+		{mode: "steer-unsupported", code: pa.Unsupported},
+		{mode: "steer-permission", want: app.SteerNext},
+		{mode: "steer-later", want: app.SteerNext},
+	} {
+		t.Run(tt.mode, func(t *testing.T) {
+			permission := make(chan struct{}, 1)
+			c, _ := openTestClient(t, tt.mode, func(_ context.Context, event app.ProtocolEvent) error {
+				if event.Permission != nil {
+					permission <- struct{}{}
+				}
+				return nil
+			})
+			pending := sendTestPrompt(t, c)
+			if tt.mode == "steer-permission" {
+				select {
+				case <-permission:
+				case <-time.After(time.Second):
+					t.Fatal("native permission did not reach the client")
+				}
+			}
+			request := app.PromptRequest{
+				Turn: pa.Turn{ID: "turn", Fence: testFence()}, Text: "also this",
+				Images: []app.PromptImage{{MediaType: "image/png", Data: []byte{0, 1, 2}}},
+				Files: []app.PromptFile{{Path: filepath.Join(t.TempDir(), "note.txt"), File: pa.InputFile{
+					ID: "11111111-1111-4111-8111-111111111111", Name: "note.txt", SHA256: strings.Repeat("a", 64),
+				}}},
+			}
+			got, err := c.Steer(t.Context(), request)
+			if got != tt.want || (tt.code == "" && err != nil) || (tt.code != "" && pa.Code(err) != tt.code) {
+				t.Fatalf("steering outcome %q, error %v", got, err)
+			}
+			if tt.want == app.SteerJoined {
+				if result, err := pending.Wait(t.Context()); err != nil || result.FinalText != "both done" {
+					t.Fatalf("active reply %+v, %v", result, err)
+				}
+			}
+		})
+	}
+}
+
 func TestSendNowSteersIntoTheRunningTurn(t *testing.T) {
 	c, _ := openTestClient(t, "steer", func(context.Context, app.ProtocolEvent) error { return nil })
 	pending := sendTestPrompt(t, c)
-	outcome, err := c.Steer(context.Background(), "also this")
+	q := app.PromptRequest{Turn: pa.Turn{ID: "turn", Fence: testFence()}, Text: "also this"}
+	outcome, err := c.Steer(context.Background(), q)
 	if err != nil || outcome != app.SteerJoined {
 		t.Fatalf("steer: %q %v", outcome, err)
 	}
@@ -835,7 +919,7 @@ func TestSendNowSteersIntoTheRunningTurn(t *testing.T) {
 	if err != nil || result.FinalText != "both done" {
 		t.Fatalf("reply=%+v %v", result, err)
 	}
-	if outcome, err = c.Steer(context.Background(), "after"); err != nil || outcome != app.SteerNext {
+	if outcome, err = c.Steer(context.Background(), q); err != nil || outcome != app.SteerNext {
 		t.Fatalf("a steer after the turn: %q %v", outcome, err)
 	}
 }

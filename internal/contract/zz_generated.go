@@ -4772,11 +4772,15 @@ type ProjectAssistantBot struct {
 	Notify           string                           `json:"notify,omitempty"`
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	Project          ProjectAssistantProjectScope     `json:"project"`
-	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
-	SidebarPinned    ProjectAssistantSidebarPin       `json:"sidebar_pinned,omitempty"`
-	SidebarSection   string                           `json:"sidebar_section,omitempty"`
-	UpdatedAt        string                           `json:"updated_at"`
-	Version          int64                            `json:"version"`
+
+	// How this Bot handles a message sent while it is replying. New Bots steer; Bots
+	// saved before this setting queue.
+	ReplyInput      string                           `json:"reply_input,omitempty"`
+	RuntimeSettings *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
+	SidebarPinned   ProjectAssistantSidebarPin       `json:"sidebar_pinned,omitempty"`
+	SidebarSection  string                           `json:"sidebar_section,omitempty"`
+	UpdatedAt       string                           `json:"updated_at"`
+	Version         int64                            `json:"version"`
 
 	// Whether finished, failed or waiting dispatched work queues one review turn.
 	// Omitted means on.
@@ -5075,6 +5079,7 @@ type ProjectAssistantEditBase struct {
 	Name              string                              `json:"name"`
 	Notify            string                              `json:"notify,omitempty"`
 	PermissionPolicy  ProjectAssistantPermissionPolicy    `json:"permission_policy,omitempty"`
+	ReplyInput        string                              `json:"reply_input,omitempty"`
 	RuntimeSettings   *ProjectAssistantRuntimeSettings    `json:"runtime_settings,omitempty"`
 }
 
@@ -5120,8 +5125,12 @@ type ProjectAssistantEditSettings struct {
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
-	Roster           *ProjectAssistantRosterEdit      `json:"roster,omitempty"`
-	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
+
+	// How this Bot handles a message sent while it is replying. New Bots steer; Bots
+	// saved before this setting queue.
+	ReplyInput      string                           `json:"reply_input,omitempty"`
+	Roster          *ProjectAssistantRosterEdit      `json:"roster,omitempty"`
+	RuntimeSettings *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 
 	// Whether finished, failed or waiting dispatched work queues one review turn.
 	// Omitted means on.
@@ -6497,11 +6506,14 @@ type ProjectAssistantReadViewHead struct {
 type ProjectAssistantReadViewItem struct {
 	// Immutable admission message anchor for timeline rows; zero for other
 	// collections.
-	AnchorMessageSeq int64                        `json:"anchor_message_seq"`
-	Event            *ProjectAssistantEvent       `json:"event,omitempty"`
-	ID               string                       `json:"id"`
-	Kind             ProjectAssistantReadItemKind `json:"kind"`
-	Message          *ProjectAssistantMessage     `json:"message,omitempty"`
+	AnchorMessageSeq int64                  `json:"anchor_message_seq"`
+	Event            *ProjectAssistantEvent `json:"event,omitempty"`
+	ID               string                 `json:"id"`
+
+	// The running turn that accepted this message as steering.
+	JoinedTurnID string                       `json:"joined_turn_id,omitempty"`
+	Kind         ProjectAssistantReadItemKind `json:"kind"`
+	Message      *ProjectAssistantMessage     `json:"message,omitempty"`
 
 	// Observation frontier, or the event sequence. An older page cannot downgrade a
 	// newer work fact.
@@ -7038,6 +7050,7 @@ type ProjectAssistantTeamEditSettings struct {
 
 	// Maximum simultaneous background threads selected for this Bot.
 	BackgroundThreads int64                               `json:"background_threads,omitempty"`
+	Base              *ProjectAssistantEditBase           `json:"base,omitempty"`
 	ExpectedVersion   int64                               `json:"expected_version"`
 	Extensions        *ProjectAssistantExtensionSelection `json:"extensions,omitempty"`
 
@@ -7051,12 +7064,14 @@ type ProjectAssistantTeamEditSettings struct {
 
 	// The agent mode the Bot works in: auto (or empty) for the agent's Auto mode,
 	// otherwise one the agent offers (API level 65).
-	Mode   string `json:"mode,omitempty"`
-	Name   string `json:"name"`
-	Notify string `json:"notify,omitempty"`
+	Mode               string `json:"mode,omitempty"`
+	Name               string `json:"name"`
+	Notify             string `json:"notify,omitempty"`
+	OverwriteConflicts bool   `json:"overwrite_conflicts,omitempty"`
 
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
+	ReplyInput       string                           `json:"reply_input,omitempty"`
 	RuntimeSettings  *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 }
 

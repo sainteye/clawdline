@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"encoding/json"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -59,4 +60,46 @@ func TestProjectAssistantSettingsBrowser(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("Production Chat settings -> authenticated HTTP/Host/SQLite -> scripted ACP; desktop/mobile; external model requests=0")
+}
+
+func TestProjectAssistantSteeringBrowser(t *testing.T) {
+	dir := os.Getenv("CLAWDLINE_STEERING_BROWSER_DIR")
+	if dir == "" {
+		t.Skip("set CLAWDLINE_STEERING_BROWSER_DIR for the isolated mobile browser")
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CLAWDLINE_NEXT_DIR", t.TempDir())
+	f, record := memorySettingsFixture(t)
+	server := httptest.NewServer(f.h)
+	defer server.Close()
+	cmd := exec.Command("node", "../../../web/console/tools/project-assistants-settings.e2e.mjs")
+	cmd.Env = append(os.Environ(), "BOTS_STEERING=1", "BOTS_ORIGIN="+server.URL, "BOTS_TOKEN="+f.local, "BOTS_READ_TOKEN="+f.readonly, "BOTS_MACHINE="+f.key.MachineID, "BOTS_BOT="+f.key.BotID, "BOTS_ARTIFACTS="+dir)
+	output, err := cmd.CombinedOutput()
+	_ = os.WriteFile(filepath.Join(dir, "browser.log"), output, 0600)
+	if err != nil {
+		t.Fatalf("mobile browser: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var prompts, steers int
+	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+		var frame struct{ Method string }
+		if err := json.Unmarshal([]byte(line), &frame); err != nil {
+			t.Fatal(err)
+		}
+		switch frame.Method {
+		case "session/prompt":
+			prompts++
+		case "_session/steering":
+			steers++
+		}
+	}
+	if prompts != 1 || steers != 1 {
+		t.Fatalf("scripted ACP recorded %d prompts and %d steers", prompts, steers)
+	}
+	t.Log("390px production Chat: settings persisted, picture steered once, status retained after reload; vendor requests=0")
 }

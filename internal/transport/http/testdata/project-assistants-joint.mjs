@@ -247,6 +247,26 @@ for(const [index,agent,choice] of [
 }
 checks.push("Cloud create approval settings")
 
+const replyInputKey=boot.fixtures.create.key
+const replyInputSource=sourceFor("create","owner",{apiLevel:121}).source
+await replyInputSource.status(signal())
+assert.equal(replyInputSource.canReplyInput(),true)
+const replyInputBot=(await replyInputSource.get(replyInputKey,signal())).bot
+assert.equal(replyInputBot.reply_input,"steer")
+const editBase={name:replyInputBot.name,appearance:replyInputBot.appearance,instructions:replyInputBot.instructions.text,reply_input:replyInputBot.reply_input}
+const editInput={command:command(replyInputKey,"edit","joint-reply-input"),settings:{...editBase,expected_version:replyInputBot.version,base:editBase,reply_input:"queue"}}
+assert.equal(createSource.canReplyInput(),false)
+await assert.rejects(createSource.edit(editInput,signal()),e=>errorCode(e)==="pa_unsupported")
+const inputEdited=await replyInputSource.edit(editInput,signal())
+assert.equal(inputEdited.bot.reply_input,"queue")
+assert.equal((await replyInputSource.get(replyInputKey,signal())).bot.reply_input,"queue")
+const teamEdited=await replyInputSource.edit({command:command(replyInputKey,"edit","joint-team-reply-input"),settings:{
+ ...editInput.settings,manage_team:true,base:{...editBase,reply_input:"queue"},reply_input:"steer",expected_version:inputEdited.bot.version,
+}},signal())
+assert.equal(teamEdited.bot.reply_input,"steer")
+assert.equal(teamEdited.bot.manage_team,true)
+checks.push("Cloud Bot reply input setting")
+
 const legacySuffixes=["status","projects","list","get","history","events","export","create","edit","send","stop","answer","read","observed","forget","memory"]
 const legacyWords=new Set(legacySuffixes.map(word=>"project-assistants."+word))
 const rows=JSON.parse(readFileSync(root+"/internal/domain/cloudvocab/vocabulary.json","utf8")).operations.filter(row=>legacyWords.has(row.op))
@@ -294,7 +314,7 @@ assert.equal(allMethods.size,19)
 assert.equal(trace.filter(row=>row.word==="project-assistants.export").length,0,"View scenarios must not use archive fallback")
 assert.deepEqual(new Set(trace.filter(row=>row.word==="project-assistants.view"&&row.status===200).map(row=>row.fields.mode)),new Set(["snapshot","history","events","permissions","traces","detail"]))
 checks.push("JRV-08")
-assert.equal(new Set(checks).size,9)
+assert.equal(new Set(checks).size,10)
 await exchange({kind:"report",report:{checks:checks.sort(),successful_modes:6,strict_single_field_mutants:mutants,actual_methods:allMethods.size,legacy_api58_methods:captured.length,carried_words:words.length,handoff_read_methods:1,handoff_mutation_calls:0,real_source_responses:trace.length,archive_fallback_calls:0,native_model_calls:0}})
 lines.close()
 process.stdin.destroy()

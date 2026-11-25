@@ -120,6 +120,23 @@ type InstructionSnapshot struct {
 	Text            string `json:"text"`
 	RoleSnapshotRef string `json:"role_snapshot_ref"`
 }
+
+type ReplyInput string
+
+const (
+	ReplyInputQueue ReplyInput = "queue"
+	ReplyInputSteer ReplyInput = "steer"
+)
+
+func (v ReplyInput) Effective() ReplyInput {
+	if v == "" {
+		return ReplyInputQueue
+	}
+	return v
+}
+
+func (v ReplyInput) Valid() bool { return v.Effective() == ReplyInputQueue || v == ReplyInputSteer }
+
 type Bot struct {
 	Extensions      ExtensionSelection `json:"extensions,omitempty,omitzero"`
 	LoginProfile    string             `json:"login_profile,omitempty"`
@@ -128,6 +145,7 @@ type Bot struct {
 	// WorkReview is "off" when finished, failed or waiting dispatched work
 	// only publishes its result. Empty and "on" queue one review turn.
 	WorkReview       string             `json:"work_review,omitempty"`
+	ReplyInput       ReplyInput         `json:"reply_input,omitempty"`
 	Key              BotKey             `json:"key"`
 	Project          ProjectScope       `json:"project"`
 	ConversationID   string             `json:"conversation_id"`
@@ -192,6 +210,7 @@ type EditBot struct {
 	RuntimeSettings *RuntimeSettings    `json:"runtime_settings,omitempty"`
 	Notify          string              `json:"notify,omitempty"`
 	WorkReview      string              `json:"work_review,omitempty"`
+	ReplyInput      ReplyInput          `json:"reply_input,omitempty"`
 	FallbackAgents  *[]Agent            `json:"fallback_agents,omitempty"`
 	FallbackSteps   *[]FallbackStep     `json:"fallback_steps,omitempty"`
 	ExpectedVersion int64               `json:"expected_version"`
@@ -228,6 +247,7 @@ type EditBase struct {
 	FallbackAgents    []Agent
 	FallbackSteps     []FallbackStep
 	Notify            string
+	ReplyInput        ReplyInput `json:",omitempty"`
 	BackgroundThreads int
 	ManageTeam        bool
 }

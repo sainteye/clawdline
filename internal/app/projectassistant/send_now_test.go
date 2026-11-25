@@ -1,6 +1,7 @@
 package projectassistant
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -14,12 +15,89 @@ import (
 // steers that reached the agent.
 type steerSession struct {
 	*runtimeSession
-	refuse  error
-	outcome SteerOutcome
-	native  *atomic.Int32
+	refuse   error
+	outcome  SteerOutcome
+	native   *atomic.Int32
+	noImages bool
 }
 
-func (s *steerSession) Steer(context.Context, string) (SteerOutcome, error) {
+func TestPersonFollowUpSteersByBotPreference(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		preference   pa.ReplyInput
+		permission   bool
+		notSupported bool
+		wantJoined   bool
+		outcome      SteerOutcome
+	}{
+		{name: "existing Bot"},
+		{name: "working Bot with pictures", preference: pa.ReplyInputSteer, wantJoined: true, outcome: SteerJoined},
+		{name: "permission card", preference: pa.ReplyInputSteer, permission: true},
+		{name: "incapable session", preference: pa.ReplyInputSteer, notSupported: true},
+		{name: "adapter deferred input", preference: pa.ReplyInputSteer, outcome: SteerNext},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newRuntimeFixture(t)
+			f.store.bot.ReplyInput = tt.preference
+			native := &atomic.Int32{}
+			f.provider.wrap = func(s *runtimeSession) ProviderSession {
+				return &steerSession{runtimeSession: s, native: native, outcome: tt.outcome, noImages: tt.notSupported}
+			}
+			first, err := f.submit(t, "first", "first")
+			if err != nil {
+				t.Fatal(err)
+			}
+			prompt := receivePrompt(t, f.provider)
+			if tt.permission {
+				offer := pa.PermissionOffer{ID: "offer", TurnID: prompt.Turn.ID, Fence: prompt.Turn.Fence,
+					NativeRequestID: "native", Options: []pa.PermissionOption{{ID: "allow", Label: "Allow once", Kind: pa.AllowOnce, Allow: true}}}
+				if err := f.provider.session().sink(t.Context(), ProtocolEvent{ID: "offer", Fence: offer.Fence, TurnID: offer.TurnID, Permission: &offer}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			picture := []byte("synthetic picture")
+			id := strings.Repeat("42", 32)
+			f.r.o.Attachments = runtimeAttachments{id: picture}
+			submission := Submission{
+				Command: pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "follow-up", ContentHash: strings.Repeat("a", 64)},
+				Message: pa.SendMessage{Fence: f.fence(), Text: "follow up",
+					Attachments: []pa.Attachment{{ID: id, MediaType: "image/png", Bytes: int64(len(picture))}}},
+				Feature: pa.FeatureState{Enabled: true}, Source: f.source, AuthorityCheck: func(context.Context) error { return nil },
+			}
+			receipt, err := f.r.Submit(t.Context(), submission)
+			if err != nil {
+				t.Fatal(err)
+			}
+			turn := f.turn(t, receipt.ResourceID)
+			if tt.wantJoined {
+				if turn.State != pa.TurnSucceeded || turn.JoinedTurnID != first.ResourceID || native.Load() != 1 {
+					t.Fatalf("follow-up did not join the active turn: %+v, native writes %d", turn, native.Load())
+				}
+				replay, err := f.r.Submit(t.Context(), submission)
+				if err != nil || replay != receipt || native.Load() != 1 {
+					t.Fatalf("idempotent retry: %+v, %v, native writes %d", replay, err, native.Load())
+				}
+				return
+			}
+			var wantWrites int32
+			if tt.outcome == SteerNext {
+				wantWrites = 1
+			}
+			if turn.State != pa.TurnQueued || turn.Steering || turn.JoinedTurnID != "" || native.Load() != wantWrites {
+				t.Fatalf("the entire message must queue: %+v, native writes %d", turn, native.Load())
+			}
+			f.provider.session().reply <- PromptResult{FinalText: "first"}
+			next := receivePrompt(t, f.provider)
+			if next.Turn.ID != turn.ID || next.Text != "follow up" || len(next.Images) != 1 || !bytes.Equal(next.Images[0].Data, picture) {
+				t.Fatalf("queued follow-up lost content: %+v", next)
+			}
+		})
+	}
+}
+
+func (s *steerSession) SupportsSteering(images bool) bool { return !images || !s.noImages }
+
+func (s *steerSession) Steer(context.Context, PromptRequest) (SteerOutcome, error) {
 	if s.refuse != nil {
 		return "", s.refuse
 	}

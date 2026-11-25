@@ -216,6 +216,12 @@ func ApplyEdit(bot Bot, in EditBot) (Bot, error) {
 		}
 		bot.WorkReview = in.WorkReview
 	}
+	if !in.ReplyInput.Valid() {
+		return bot, fail(Invalid, "reply_input")
+	}
+	if in.ReplyInput != "" {
+		bot.ReplyInput = in.ReplyInput
+	}
 	if in.ExpectedVersion != bot.Version {
 		return bot, fail(StaleVersion, "bot")
 	}

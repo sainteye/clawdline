@@ -47,7 +47,8 @@ func (h *Host) ensureLead(ctx context.Context) error {
 		Key: key, Project: workspace.Scope, ConversationID: h.o.ID(), Name: "Clawdline",
 		Appearance: pa.Appearance{Shape: pa.Blob, Color: "#87878a"}, Agent: agent,
 		PermissionPolicy: pa.Ask, Lead: true, Instructions: pa.InstructionSnapshot{Revision: 1},
-		Version: 1, CreatedAt: now, UpdatedAt: now,
+		ReplyInput: pa.ReplyInputSteer,
+		Version:    1, CreatedAt: now, UpdatedAt: now,
 	}
 	conversation := pa.Conversation{Key: key, ID: bot.ConversationID, MemoryRevision: 1, Version: 1}
 	trigger := pa.RoutineTrigger{Type: "cron", Expression: "0 9,18 * * *", TimeZone: h.o.LeadTimeZone}

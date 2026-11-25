@@ -130,6 +130,11 @@ export function queuedLabel(messageID:string, turns:readonly QueueTurn[], paused
   const ahead=queueAhead(messageID,turns)
   return (paused?w.queuePaused:w.queued)+(ahead>0?" · "+w.queuedAhead.replace("{count}",String(ahead)):"")
 }
+export function queuedAttachments(message:W.ProjectAssistantMessage, pictureCount:string):string {
+  const files=message.files?.map(file=>file.name).join(" · ")
+  const pictures=message.attachments?.length
+  return files||(pictures?pictureCount.replace("{count}",String(pictures)):"")
+}
 export function partitionMessages(messages: readonly W.ProjectAssistantMessage[], turns: readonly QueueTurn[]) {
   const waiting = turns.some(t=>t.state==="running" || t.state==="waiting_permission" || t.state==="queued" && t.queue_edit_id || t.state==="unknown" && (t.failure_field==="restart"||t.failure_field==="restart_confirmed"))
   // A message with other work ahead of it is waiting even while nothing

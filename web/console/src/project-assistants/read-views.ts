@@ -44,6 +44,7 @@ export function readSource(value:unknown,machineID:string):W.ProjectAssistantSou
 }
 function metadata(b:W.ProjectAssistantBot,scope:ReadScope) {
   if(!object(b)||!key(b.key)||!project(b.project)||!text(b.conversation_id)||!text(b.name)||!integer(b.version,1)||!oneOf(b.agent,ProjectAssistantAgentValues)||!oneOf(b.permission_policy,ProjectAssistantPermissionPolicyValues)||!object(b.appearance)||!oneOf(b.appearance.shape,ProjectAssistantShapeValues)||typeof b.appearance.color!=="string"||!object(b.instructions)||!integer(b.instructions.revision,1)||typeof b.instructions.text!=="string"||typeof b.instructions.role_snapshot_ref!=="string"||!date(b.created_at)||!date(b.updated_at))throw failure("pa_invalid")
+  if(b.reply_input!==undefined&&b.reply_input!=="queue"&&b.reply_input!=="steer")throw failure("pa_invalid")
   if(!sameConversation({key:b.key,project:b.project,conversation_id:b.conversation_id},scope))throw failure("pa_scope_denied")
 }
 export function readBotMetadata(b:W.ProjectAssistantBot,scope:ReadScope) { metadata(b,scope) }
@@ -106,6 +107,12 @@ export function readViewRequest(q:W.ProjectAssistantReadViewRequest):W.ProjectAs
 }
 
 /** Refuse malformed or foreign successful envelopes before they can release a recovery latch. */
+function validateTimelineMessage(row:W.ProjectAssistantReadViewItem,scope:ReadScope) {
+  const m=row.message
+  if(row.joined_turn_id!==undefined&&(!text(row.joined_turn_id)||m?.kind!=="user"||row.joined_turn_id===m.turn_id))throw failure("pa_invalid")
+  if(m){message(m,scope);if(row.anchor_message_seq!==m.seq)throw failure("pa_invalid")}
+}
+
 export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAssistantReadViewRequest,scope:ReadScope):W.ProjectAssistantReadViewResponse {
   readViewRequest(q)
   if(q.key.machine_id!==scope.key.machine_id||q.key.bot_id!==scope.key.bot_id||q.conversation_id!==scope.conversation_id)throw failure("pa_scope_denied")
@@ -156,7 +163,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     if(kinds.filter(kind=>row[kind]!==undefined).length!==1||!row[row.kind])throw failure("pa_invalid")
     const payloadID=row.message?.id??row.work?.id??row.permission_summary?.id??row.trace_summary?.id??row.permission?.id??(row.trace?JSON.stringify([row.trace.turn_id,row.trace.id||row.trace.category]):row.event?.id)
     const identity=JSON.stringify([row.kind,payloadID]);if(identities.has(identity))throw failure("pa_invalid");identities.add(identity)
-    if(row.message){message(row.message,scope);if(row.anchor_message_seq!==row.message.seq)throw failure("pa_invalid")}
+    validateTimelineMessage(row,scope)
     if(row.work)work(row.work,scope)
     if(row.permission_summary){
       const p=row.permission_summary
@@ -236,6 +243,11 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
     const e=row.event;if(!e)continue
     if(e.turn?.state==="cancelled"&&!e.turn.failure&&!e.turn.started_at){
       next=next.filter(r=>r.message?.id!==e.turn!.message_id)
+    }
+    if(e.turn?.state==="succeeded"&&e.turn.joined_turn_id){
+      const turn=e.turn
+      next=next.map(r=>r.message?.kind==="user"&&r.message.id===turn.message_id&&r.message.turn_id===turn.id&&e.seq>=r.observed_event_seq
+        ?{...r,observed_event_seq:e.seq,joined_turn_id:turn.joined_turn_id}:r)
     }
     if(e.kind==="reactions_changed"&&e.message){
       // A metadata event cannot introduce unloaded content or overwrite a title.

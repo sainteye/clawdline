@@ -9,16 +9,14 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-// SteerNotSent is a Steer refusal that provably happened before anything was
-// written to the native agent: it could not steer, or a check before the
-// native call refused. The queued message keeps its turn; only an error after
-// the native call may leave its outcome unknown.
+// SteerNotSent proves the agent did not consume the input. A refusal can
+// happen before the write or come from an adapter that rejected the request.
 type SteerNotSent struct{ Err error }
 
 func (e *SteerNotSent) Error() string { return e.Err.Error() }
 func (e *SteerNotSent) Unwrap() error { return e.Err }
 
-// SteerRefused marks err as a Steer refusal before the native write.
+// SteerRefused marks err as proof the agent did not consume the input.
 func SteerRefused(err error) error {
 	if err == nil {
 		return nil
@@ -54,12 +52,7 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	}
 	defer r.release(a)
 	a.mu.Lock()
-	locked := true
-	defer func() {
-		if locked {
-			a.mu.Unlock()
-		}
-	}()
+	defer a.mu.Unlock()
 	bot, err := r.o.Repository.Bot(ctx, a.key)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -90,14 +83,36 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	if t.State != pa.TurnQueued || t.Steering || t.QueueEditID != "" || a.steering[t.ID] {
 		return pa.Receipt{}, runtimeFailure(pa.StaleVersion, "send_now_turn")
 	}
-	running := a.turnID
-	if running == "" || c.ActiveTurnID != running {
-		// The running turn just ended: the message runs in its turn, next.
-		return r.acceptSendNowLocked(ctx, a, q.Command, t.ID)
+	return r.steerQueuedLocked(ctx, a, bot, c, q.Command, t, nil, nil)
+}
+
+// trySteerFollowUpLocked runs only after admitting a person's message. Its
+// original receipt remains replayable; the turn records the steering result.
+func (r *Engine) trySteerFollowUpLocked(ctx context.Context, a *runtimeActor, bot pa.Bot, c pa.Conversation, t pa.Turn, m pa.Message, s Submission) {
+	if bot.ReplyInput != pa.ReplyInputSteer || c.ActiveTurnID == "" || a.session == nil ||
+		!personMessage(s) || s.Message.Handoff != nil || s.Decision != nil {
+		return
 	}
-	steerer, ok := a.session.(SteeringSession)
-	if !ok {
-		return pa.Receipt{}, runtimeFailure(pa.Unsupported, SteeringField)
+	bot, err := r.o.Repository.Bot(ctx, a.key)
+	if err != nil || bot.ReplyInput != pa.ReplyInputSteer {
+		return
+	}
+	command := r.command(a.key, pa.SendNowOperation, "runtime-auto-steer-"+t.ID, s.Command)
+	// Admission already succeeded. A pre-write refusal leaves the full message
+	// queued. An ambiguous write is recorded on the turn and never replayed.
+	_, _ = r.steerQueuedLocked(ctx, a, bot, c, command, t, &m, s.AuthorityCheck)
+}
+
+func (r *Engine) steerQueuedLocked(ctx context.Context, a *runtimeActor, bot pa.Bot, c pa.Conversation, command pa.Command, t pa.Turn, m *pa.Message, check func(context.Context) error) (pa.Receipt, error) {
+	staysQueued := func() (pa.Receipt, error) {
+		if m != nil { // automatic follow-up already has its send receipt
+			return pa.Receipt{}, nil
+		}
+		return r.acceptSendNowLocked(ctx, a, command, t.ID)
+	}
+	running := a.turnID
+	if running == "" || c.ActiveTurnID != running || a.closing || a.stopped.Load() || a.pendingPermissions != 0 || len(a.steering) != 0 {
+		return staysQueued()
 	}
 	active, err := r.o.Repository.Turn(ctx, a.key, running)
 	if err != nil {
@@ -106,29 +121,33 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	if pa.RestartSourceTurn(active) != "" {
 		return pa.Receipt{}, runtimeFailure(pa.ReadOnly, "restart_continuation")
 	}
-	// A native session is shared across chats; steering is still a message
-	// delivery to the running transcript, so both turns must name that chat.
-	if (t.Room == nil) != (active.Room == nil) || t.Room != nil && t.Room.Group != active.Room.Group {
+	if active.State != pa.TurnRunning || active.RoutineRunID != "" || active.Origin == pa.CompactOrigin {
+		return staysQueued()
+	}
+	// The agent belongs to the running chat. Do not inject input across the
+	// boundaries the regular prompt and transcript paths enforce.
+	if (t.Room == nil) != (active.Room == nil) || t.Room != nil && t.Room.Group != active.Room.Group ||
+		active.Network != nil && t.Network == nil {
 		return pa.Receipt{}, runtimeFailure(pa.ScopeDenied, "send_now_scope")
 	}
-	export, err := r.o.Repository.Export(ctx, a.key)
+	steerer, ok := a.session.(SteeringSession)
+	if !ok || !steerer.SupportsSteering(false) {
+		return pa.Receipt{}, runtimeFailure(pa.Unsupported, SteeringField)
+	}
+	input, err := r.steeringInput(ctx, t, active, m)
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	var text string
-	for _, m := range export.Messages {
-		if m.ID == t.MessageID {
-			if len(m.Attachments) > 0 || len(m.Files) > 0 {
-				return pa.Receipt{}, runtimeFailure(pa.Unsupported, "send_now_pictures")
-			}
-			text = m.Text
+	if len(input.Images) > 0 && !steerer.SupportsSteering(true) {
+		return staysQueued()
+	}
+	if check != nil {
+		if err := check(ctx); err != nil {
+			return pa.Receipt{}, err
 		}
 	}
-	if text == "" {
-		return pa.Receipt{}, runtimeFailure(pa.NotFound, "send_now_message")
-	}
 	t.Steering = true
-	started := r.command(a.key, pa.SendNowOperation, "runtime-steer-start", q.Command)
+	started := r.command(a.key, pa.SendNowOperation, "runtime-steer-start", command)
 	// A refused steer leaves no receipt under the person's command, so the
 	// same press can come again; each attempt's own records are its own.
 	attempt := r.o.ID()
@@ -145,49 +164,51 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 	// Any native steer may have changed the input the active Agent saw.
 	steered := a.steeredTurnID
 	a.steeredTurnID = running
-	a.mu.Unlock()
-	locked = false
-	// The agent's answer travels apart from its turn's events, which need
-	// actor.mu, so it is awaited unlocked and bounded as Codync's STEER_ANSWER.
-	answerCtx, cancel := context.WithTimeout(ctx, time.Duration(capacity.MaximumBotSteerAnswerMilliseconds)*time.Millisecond)
-	outcome, steerErr := steerer.Steer(answerCtx, text)
-	cancel()
-	a.mu.Lock()
-	locked = true
+	outcome, steerErr := steerWhileUnlocked(ctx, a, steerer, input)
+	if steerErr == nil && outcome != SteerNext && outcome != SteerJoined {
+		steerErr = runtimeFailure(pa.OutcomeUnknown, "steering_answer")
+	}
 	delete(a.steering, t.ID)
 	defer r.kickLocked(a)
-	// Once the native call could have seen the text, a lost reply leaves
+	// The client may disconnect after the native reply. Finish settling the
+	// durable intent on the existing cleanup budget.
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.o.Limits.CleanupTimeout)
+	defer cancel()
+	// Once the native call could have seen the input, a lost reply leaves
 	// the durable intent behind. A later restart must not send it again.
 	var notSent *SteerNotSent
 	if errors.As(steerErr, &notSent) {
 		// Nothing reached the agent: the message keeps its place in the queue.
 		a.steeredTurnID = steered
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.o.Limits.CleanupTimeout)
-		defer cancel()
 		refusal := notSent.Err
 		if pa.Code(refusal) == pa.Unsupported {
 			refusal = runtimeFailure(pa.Unsupported, SteeringField)
 		}
-		if err := r.unsteerLocked(settleCtx, a, q.Command, attempt, t.ID); err != nil {
+		if err := r.unsteerLocked(settleCtx, a, command, attempt, t.ID); err != nil {
 			return pa.Receipt{}, errors.Join(refusal, err)
 		}
 		return pa.Receipt{}, refusal
 	}
 	if steerErr != nil {
-		settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), r.o.Limits.CleanupTimeout)
-		defer cancel()
 		latest, err := r.o.Repository.Turn(settleCtx, a.key, t.ID)
 		if err == nil && latest.State == pa.TurnQueued && latest.Steering {
 			err = r.finishLocked(settleCtx, a, latest, pa.TurnUnknown, "", runtimeFailure(pa.ExecutionEffectUnknown, pa.SteerUnknownField))
 		}
 		return pa.Receipt{}, errors.Join(steerErr, err)
 	}
+	if outcome == SteerNext {
+		a.steeredTurnID = steered
+	}
+	return r.settleSteeringLocked(settleCtx, a, command, t.ID, running, outcome)
+}
+
+func (r *Engine) settleSteeringLocked(ctx context.Context, a *runtimeActor, command pa.Command, turnID, running string, outcome SteerOutcome) (pa.Receipt, error) {
 	for {
-		bot, err = r.o.Repository.Bot(ctx, a.key)
+		bot, err := r.o.Repository.Bot(ctx, a.key)
 		if err != nil {
 			return pa.Receipt{}, err
 		}
-		t, err = r.o.Repository.Turn(ctx, a.key, q.TurnID)
+		t, err := r.o.Repository.Turn(ctx, a.key, turnID)
 		if err != nil {
 			return pa.Receipt{}, err
 		}
@@ -199,12 +220,64 @@ func (r *Engine) SendNow(ctx context.Context, q SendNowRequest) (pa.Receipt, err
 		if outcome == SteerJoined {
 			t.State, t.JoinedTurnID, effect = pa.TurnSucceeded, running, pa.EffectDelivered
 		}
-		receipt, err := r.mutate(ctx, bot, Mutation{Command: q.Command, Turn: &t, Receipt: pa.Receipt{State: effect, ResourceID: t.ID},
+		receipt, err := r.mutate(ctx, bot, Mutation{Command: command, Turn: &t, Receipt: pa.Receipt{State: effect, ResourceID: t.ID},
 			Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})
 		if !collaborationAggregateConflict(err) || ctx.Err() != nil {
 			return receipt, err
 		}
 	}
+}
+
+// Turn and tool events also take a.mu. Wait for the receipt without
+// that lock, while the durable steering fact keeps the worker off this input.
+func steerWhileUnlocked(ctx context.Context, a *runtimeActor, session SteeringSession, input PromptRequest) (SteerOutcome, error) {
+	a.mu.Unlock()
+	defer a.mu.Lock()
+	answerCtx, cancel := context.WithTimeout(ctx, time.Duration(capacity.MaximumBotSteerAnswerMilliseconds)*time.Millisecond)
+	defer cancel()
+	return session.Steer(answerCtx, input)
+}
+
+func (r *Engine) steeringInput(ctx context.Context, queued, active pa.Turn, message *pa.Message) (PromptRequest, error) {
+	var export Export
+	if message == nil || message.QuoteMessageID != "" {
+		var err error
+		export, err = r.o.Repository.Export(ctx, queued.Fence.Key)
+		if err != nil {
+			return PromptRequest{}, err
+		}
+	}
+	if message == nil {
+		for _, m := range export.Messages {
+			if m.ID == queued.MessageID {
+				message = &m
+				break
+			}
+		}
+	}
+	if message == nil {
+		return PromptRequest{}, runtimeFailure(pa.NotFound, "send_now_message")
+	}
+	images, err := r.images(queued.Fence.Key, message.Attachments)
+	if err != nil {
+		return PromptRequest{}, err
+	}
+	files, err := r.promptFiles(ctx, message)
+	if err != nil {
+		return PromptRequest{}, err
+	}
+	input := PromptRequest{Turn: active, Text: message.Text, Images: images, Files: files}
+	if message.QuoteMessageID != "" {
+		memory, err := r.o.Memory.Current(ctx, queued.Fence.Key)
+		if err != nil {
+			return PromptRequest{}, err
+		}
+		input.Quote, err = resolvePromptQuote(export, message.QuoteMessageID, active.Fence, memory)
+		if err != nil {
+			return PromptRequest{}, err
+		}
+	}
+	return input, nil
 }
 
 // acceptSendNowLocked answers a Send now whose message needs no steer, as

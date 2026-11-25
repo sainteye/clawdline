@@ -288,6 +288,15 @@ native-hook consent. The English and Traditional Chinese Antigravity original
 launch context explanations were reviewed against the same launch-store and
 managed-hook calls; their source link follows the moved startup location.
 
+The Bot follow-up card covers the reply input setting introduced at API 121.
+New Bots start with steering enabled and earlier Bots read as queued. The
+source saves each follow-up before requesting an injection into the current
+turn. The request carries the person's content, with picture blocks first and
+verified paths for attached files. The English and Taiwan Traditional Chinese
+cards describe queue fallback, permission checks, and the distinction between
+a confirmed injection and an unconfirmed delivery. An isolated browser and
+scripted ACP peer verify the transport and the persisted chat label.
+
 ## Updating an instruction or entry
 
 1. Change the implementation and update the matching entry, original excerpt, runtime path and source location. Add an entry for a new behavior; do not squeeze a new trigger into an unrelated existing card.

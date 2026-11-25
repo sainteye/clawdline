@@ -33,6 +33,7 @@ func TestMemorySettingsACPFixture(t *testing.T) {
 		return
 	}
 	model, effort, fast := "synthetic-small", "low", false
+	var waitingSteer json.RawMessage
 	config := func() any {
 		return map[string]any{"configOptions": []any{
 			map[string]any{"id": "model", "category": "model", "type": "select", "name": "Model", "currentValue": model, "options": []any{map[string]string{"value": "synthetic-small", "name": "Synthetic small"}, map[string]string{"value": "synthetic-large", "name": "Synthetic large"}}},
@@ -58,7 +59,9 @@ func TestMemorySettingsACPFixture(t *testing.T) {
 		var result any = map[string]any{}
 		switch f.Method {
 		case "initialize":
-			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "@agentclientprotocol/codex-acp", "version": "fixture"}, "agentCapabilities": map[string]any{"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}}}
+			result = map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": "@agentclientprotocol/codex-acp", "version": "fixture"},
+				"agentCapabilities": map[string]any{"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "promptCapabilities": map[string]bool{"image": true}},
+				"_meta":             map[string]any{"steering": map[string]bool{"supported": true}}}
 		case "session/new":
 			v := config().(map[string]any)
 			v["sessionId"] = "synthetic-config-session"
@@ -82,9 +85,32 @@ func TestMemorySettingsACPFixture(t *testing.T) {
 			}
 			result = config()
 		case "session/prompt":
+			if strings.Contains(string(f.Params["prompt"]), "STEER-FIXTURE-BEGIN") {
+				waitingSteer = f.ID
+				continue
+			}
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{"sessionId": "synthetic-config-session", "update": map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]string{"type": "text", "text": fmt.Sprintf("Synthetic runtime selected %s / %s / %t", model, effort, fast)}}}})
 			result = map[string]string{"stopReason": "end_turn"}
+		case "_session/steering":
+			var blocks []struct {
+				Type, Text, MimeType, Data string
+			}
+			if len(waitingSteer) == 0 || json.Unmarshal(f.Params["prompt"], &blocks) != nil || len(blocks) != 2 ||
+				blocks[0].Type != "image" || blocks[0].MimeType != "image/png" || blocks[0].Data == "" ||
+				blocks[1].Type != "text" || !strings.Contains(blocks[1].Text, "STEER-FIXTURE-FOLLOW-UP") {
+				os.Exit(4)
+			}
+			encoder := json.NewEncoder(os.Stdout)
+			_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": f.ID, "result": map[string]string{"outcome": "injected"}})
+			_ = encoder.Encode(map[string]any{"jsonrpc": "2.0", "id": waitingSteer, "result": map[string]string{"stopReason": "end_turn", "text": "Synthetic picture steer accepted"}})
+			waitingSteer = nil
+			continue
 		case "session/cancel":
+			if len(waitingSteer) != 0 {
+				f.ID, waitingSteer = waitingSteer, nil
+				result = map[string]string{"stopReason": "cancelled"}
+				break
+			}
 			continue
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"jsonrpc": "2.0", "id": f.ID, "result": result})

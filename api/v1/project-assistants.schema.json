@@ -512,6 +512,11 @@
             "off"
           ]
         },
+        "reply_input": {
+          "type": "string",
+          "enum": ["queue", "steer"],
+          "description": "How this Bot handles a message sent while it is replying. New Bots steer; Bots saved before this setting queue."
+        },
         "work_review": {
           "type": "string",
           "enum": [
@@ -623,6 +628,7 @@
         "fallback_agents": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/ProjectAssistantAgent" } },
         "fallback_steps": { "type": "array", "maxItems": 3, "items": { "$ref": "#/$defs/ProjectAssistantFallbackStep" } },
         "notify": { "type": "string" },
+        "reply_input": { "type": "string", "enum": ["queue", "steer"] },
         "background_threads": { "type": "integer" },
         "manage_team": { "type": "boolean" }
       },
@@ -687,6 +693,11 @@
             "on",
             "off"
           ]
+        },
+        "reply_input": {
+          "type": "string",
+          "enum": ["queue", "steer"],
+          "description": "How this Bot handles a message sent while it is replying. New Bots steer; Bots saved before this setting queue."
         },
         "work_review": {
           "type": "string",
@@ -2986,6 +2997,10 @@
           "minimum": 0,
           "maximum": 9007199254740991,
           "description": "Observation frontier, or the event sequence. An older page cannot downgrade a newer work fact."
+        },
+        "joined_turn_id": {
+          "type": "string",
+          "description": "The running turn that accepted this message as steering."
         },
         "message": {
           "$ref": "#/$defs/ProjectAssistantMessage"

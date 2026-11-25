@@ -166,6 +166,37 @@ func (f *paServerFixture) get(t *testing.T, token string) contract.ProjectAssist
 	return got
 }
 
+func TestNewBotDefaultsToSteeringAndReplyInputSettingPersists(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	created := f.request(t, "POST", "/v1/project-assistants", f.local, f.create())
+	paServerOK(t, created)
+	assertReplyInput := func(body []byte, want string) {
+		t.Helper()
+		var got struct {
+			Bot struct {
+				ReplyInput string `json:"reply_input"`
+			}
+		}
+		if err := json.Unmarshal(body, &got); err != nil || got.Bot.ReplyInput != want {
+			t.Fatalf("reply_input = %q, want %q; decode error %v", got.Bot.ReplyInput, want, err)
+		}
+	}
+	assertReplyInput(created.Body.Bytes(), "steer")
+	original := f.get(t, f.local).Bot
+	update := map[string]any{"command": f.command(pa.EditOperation, "queue-replies"), "settings": map[string]any{
+		"name": original.Name, "appearance": original.Appearance, "instructions": original.Instructions.Text, "expected_version": original.Version,
+		"reply_input": "queue", "base": map[string]any{"name": original.Name, "appearance": original.Appearance, "instructions": original.Instructions.Text, "reply_input": "steer"},
+	}}
+	path := "/v1/project-assistants/" + f.key.BotID
+	edited := f.request(t, "PATCH", path, f.local, update)
+	paServerOK(t, edited)
+	assertReplyInput(edited.Body.Bytes(), "queue")
+	read := f.request(t, "GET", path+"?machine_id="+f.key.MachineID, f.local, nil)
+	paServerOK(t, read)
+	assertReplyInput(read.Body.Bytes(), "queue")
+}
+
 func TestProjectAssistantServerExplicitOffAndTrueGateLifecycle(t *testing.T) {
 	f := newPAServerFixture(t, true)
 	if _, err := f.s.settingsFile().Set(map[string]any{"project_assistants_enabled": false}); err != nil {

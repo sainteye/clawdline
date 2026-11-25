@@ -34,7 +34,7 @@ export function sameEditableSettings(a:W.ProjectAssistantBot,b:W.ProjectAssistan
   const fields=(bot:W.ProjectAssistantBot)=>[
     bot.name,bot.appearance,bot.instructions.text,bot.agent,bot.permission_policy,bot.mode,
     bot.runtime_settings,bot.login_profile,bot.extensions,bot.fallback_agents,bot.fallback_steps,
-    bot.notify,bot.work_review,bot.background_threads,bot.manage_team,
+    bot.notify,bot.work_review,bot.reply_input??"queue",bot.background_threads,bot.manage_team,
   ]
   return JSON.stringify(fields(a))===JSON.stringify(fields(b))
 }
@@ -54,6 +54,7 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
   if(attempted.agent!==undefined&&attempted.agent!==bot.agent)return false
   if(attempted.runtime_settings!==undefined&&!same(attempted.runtime_settings,bot.runtime_settings??{model:"",options:{}}))return false
   if(attempted.notify!==undefined&&(attempted.notify==="off")!==(bot.notify==="off"))return false
+  if(attempted.reply_input!==undefined&&attempted.reply_input!==(bot.reply_input??"queue"))return false
   if(attempted.work_review!==undefined&&(attempted.work_review==="off")!==(bot.work_review==="off"))return false
   if(attempted.login_profile!==undefined&&(attempted.login_profile.id||"")!==(bot.login_profile??""))return false
   if(attempted.extensions!==undefined&&!same(attempted.extensions,bot.extensions??{skills:[],connectors:[]}))return false
@@ -62,6 +63,16 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
   if(attempted.fallback_agents!==undefined&&!same(attempted.fallback_agents,bot.fallback_agents??[]))return false
   if(attempted.fallback_steps!==undefined&&!same(attempted.fallback_steps,bot.fallback_steps??(bot.fallback_agents??[]).map(agent=>({agent}))))return false
   return true
+}
+
+function settingsFallbackPatch(
+  original: W.ProjectAssistantBot, agent: W.ProjectAssistantAgent, defaultAgents: W.ProjectAssistantAgent[],
+  steps: W.ProjectAssistantFallbackStep[], initialSteps: W.ProjectAssistantFallbackStep[],
+  selectedProfiles: boolean, available: ReturnType<typeof useFallbackSource>,
+) {
+  if(!selectedProfiles)return fallbackEdit(agent===original.agent?original.fallback_agents:[],defaultAgents,available)
+  if(agent===original.agent&&JSON.stringify(initialSteps)===JSON.stringify(steps))return {}
+  return {fallback_steps:steps,...(steps.length===0?{fallback_agents:[]}: {})}
 }
 
 /** The outcome of reading the source after an unconfirmed save. */
@@ -80,6 +91,8 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [fallbacks,setFallbacks]=useState(bot.fallback_agents??[]),[fallbackSteps,setFallbackSteps]=useState<W.ProjectAssistantFallbackStep[]>(originalSteps)
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
   const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
+  const [replyInput,setReplyInput]=useState(bot.reply_input??"queue")
+  const replyInputChanged=replyInput!==(original.reply_input??"queue")
   const [workReview,setWorkReview]=useState(bot.work_review!=="off")
   const sharedMemory=useSharedMemorySwitch(source,bot.key.bot_id)
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
@@ -95,19 +108,16 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const awaitingModel=runtimeChanged&&discovery.pending
   const validFallbacks=fallbacks.filter(step=>step!==agent)
   const validSteps=fallbackSteps.filter(step=>step.agent!==agent||(step.login_profile??"")!==loginProfile)
-  const fallbackFields=()=>{
-    if(!selectedFallbacks)return fallbackEdit(agent===original.agent?original.fallback_agents:[],validFallbacks,available)
-    if(agent===original.agent&&JSON.stringify(originalSteps)===JSON.stringify(validSteps))return {}
-    return {fallback_steps:validSteps,...(validSteps.length===0?{fallback_agents:[]}: {})}
-  }
   const rebased=source?.canSettingsBase?.()===true
   const save=async(overwrite=false)=>{
     if(!enabled||busy||unknown||check==="diverged"||(check==="confirmed"&&!dirty)||awaitingModel||!name.trim())return
     setBusy(true);setError(undefined);setCheck("")
-    const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,...fallbackFields(),
+    const settings:W.ProjectAssistantEditSettings={name:name.trim(),appearance,instructions,expected_version:original.version,...approval,
+        ...settingsFallbackPatch(original,agent,validFallbacks,validSteps,originalSteps,selectedFallbacks,available),
         ...(rebased?{base:settingsBase(original),...(overwrite?{overwrite_conflicts:true}:{})}:{}),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
+        ...(replyInputChanged?{reply_input:replyInput}:{}),
         ...(workReview!==(original.work_review!=="off")?{work_review:workReview?"on" as const:"off" as const}:{}),
         ...(backgroundThreads!==(original.background_threads??3)?{background_threads:backgroundThreads}:{}),
         ...(teamChanged?{manage_team:manageTeam}:{})}
@@ -146,6 +156,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     if(has("login_profile")||has("agent"))setLoginProfile(fresh.login_profile??"")
     if(has("extensions")||has("agent"))setExtensions(fresh.extensions??{skills:[],connectors:[]})
     if(has("fallbacks")||has("agent")){setFallbacks(fresh.fallback_agents??[]);setFallbackSteps(fresh.fallback_steps??(fresh.fallback_agents??[]).map(agent=>({agent})))}
+    if(has("reply_input"))setReplyInput(fresh.reply_input??"queue")
     if(has("notify"))setNotify(fresh.notify!=="off")
     if(has("background_threads"))setBackgroundThreads(fresh.background_threads??3)
     if(has("manage_team"))setManageTeam(fresh.manage_team??false)
@@ -162,7 +173,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     }catch(e){setError({code:errorCode(e),field:(e as Partial<W.ProjectAssistantErrorResponse>|null)?.error?.field})}
     finally{setResolving(false)}
   }
-  const conflictLabel=(field:string)=>({name:w.name,appearance:w.appearance,instructions:w.instructions,agent:w.settingsAgentHeading,approval:w.policy,runtime_settings:w.model,login_profile:w.loginProfile,extensions:w.extensions,fallbacks:w.fallbacks,notify:w.botNotify,background_threads:w.backgroundConcurrency,manage_team:catalogWord("projectAssistants","teamManage")} as Record<string,string>)[field]??w.settings
+  const conflictLabel=(field:string)=>({name:w.name,appearance:w.appearance,instructions:w.instructions,agent:w.settingsAgentHeading,approval:w.policy,runtime_settings:w.model,login_profile:w.loginProfile,extensions:w.extensions,fallbacks:w.fallbacks,notify:w.botNotify,reply_input:w.botReplyInput,background_threads:w.backgroundConcurrency,manage_team:catalogWord("projectAssistants","teamManage")} as Record<string,string>)[field]??w.settings
   const conflictText=w.settingsSaveConflict.replace("{fields}",conflicts.length?conflicts.map(conflictLabel).join(w.settingsConflictSeparator):w.settings)
   const checkText=check==="confirmed"?w.settingsCheckConfirmed:check==="unchanged"?w.settingsCheckUnchanged:check==="diverged"?w.settingsCheckDiverged:check==="failed"?w.settingsCheckFailed:check==="superseded"?w.settingsCheckSuperseded:""
   const chooseAgent=(next:W.ProjectAssistantAgent)=>{
@@ -170,7 +181,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
     setRuntime({model:"",options:{}})
     setApproval({permission_policy:approval.permission_policy})
   }
-  const dirty=workReview!==(original.work_review!=="off")||backgroundThreads!==(original.background_threads??3)||name!==original.name||JSON.stringify(appearance)!==JSON.stringify(original.appearance)||instructions!==original.instructions.text||agent!==original.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(original.mode?{permission_policy:original.permission_policy,mode:original.mode}:{permission_policy:original.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(original.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(originalSteps)||notify!==(original.notify!=="off")||teamChanged||loginProfile!==(original.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(original.extensions??{skills:[],connectors:[]})
+  const dirty=replyInputChanged||workReview!==(original.work_review!=="off")||backgroundThreads!==(original.background_threads??3)||name!==original.name||JSON.stringify(appearance)!==JSON.stringify(original.appearance)||instructions!==original.instructions.text||agent!==original.agent||runtimeChanged||JSON.stringify(approval)!==JSON.stringify(original.mode?{permission_policy:original.permission_policy,mode:original.mode}:{permission_policy:original.permission_policy})||JSON.stringify(fallbacks)!==JSON.stringify(original.fallback_agents??[])||JSON.stringify(fallbackSteps)!==JSON.stringify(originalSteps)||notify!==(original.notify!=="off")||teamChanged||loginProfile!==(original.login_profile??"")||JSON.stringify(extensions)!==JSON.stringify(original.extensions??{skills:[],connectors:[]})
   const agentChoices:W.ProjectAssistantAgent[]=["claude","codex",...(agent==="grok"||source?.canGrok?.()?["grok" as const]:[]),...(agent==="antigravity"||source?.canGemini?.()?["antigravity" as const]:[])]
   const chain=selectedFallbacks?validSteps.map(step=>step.agent):validFallbacks
   // Titled groups with one row per control; long lists open on demand.
@@ -212,6 +223,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
           <div className="pa-settings-value"><span>{w.machine}</span><strong>{workspace.machine||w.thisMachine}</strong></div>
         </SettingsGroup>}
         <SettingsGroup title={w.settingsAccess}>
+          {source?.canReplyInput?.()&&switchRow(w.botReplyInput,w.botReplyInputHint,replyInput==="steer",false,on=>setReplyInput(on?"steer":"queue"))}
           {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
           {switchRow(w.botWorkReview,w.botWorkReviewHint,workReview,false,setWorkReview)}
           {sharedMemory.available&&switchRow(catalogWord("botsSettings","useShared"),catalogWord("botsSettings","useSharedHint"),sharedMemory.use,false,sharedMemory.set)}

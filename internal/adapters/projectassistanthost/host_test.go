@@ -114,11 +114,13 @@ func (s *fixtureSession) Answer(_ context.Context, request, option string) error
 	}
 	return nil
 }
-func (s *fixtureSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+func (s *fixtureSession) SupportsSteering(bool) bool { return s.p.steered != nil }
+
+func (s *fixtureSession) Steer(ctx context.Context, q app.PromptRequest) (app.SteerOutcome, error) {
 	if s.p.steered == nil {
-		return "", failure(pa.Unsupported, "steering")
+		return "", app.SteerRefused(failure(pa.Unsupported, "steering"))
 	}
-	s.p.steered <- text
+	s.p.steered <- q.Text
 	if s.p.steerWait {
 		<-ctx.Done()
 		return "", ctx.Err()
@@ -310,6 +312,20 @@ func (f *hostFixture) create(t *testing.T, id string) pa.Bot {
 	}
 	return b
 }
+func (f *hostFixture) queueFollowUps(t *testing.T, b pa.Bot) pa.Bot {
+	t.Helper()
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated, _, err := service.Edit(t.Context(), pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "prefer-queue"},
+		pa.EditBot{ExpectedVersion: b.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, ReplyInput: pa.ReplyInputQueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return updated
+}
+
 func (f *hostFixture) send(t *testing.T, b pa.Bot, id string) (pa.Receipt, error) {
 	t.Helper()
 	s, e := f.h.Service()
@@ -1346,7 +1362,7 @@ func TestHostSendNowJoinsTheRunningTurnOrWaits(t *testing.T) {
 		f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
 		f.start(t)
 		f.enable(t)
-		b := f.create(t, "bot")
+		b := f.queueFollowUps(t, f.create(t, "bot"))
 		ctx := context.Background()
 		first, e := f.send(t, b, "one")
 		if e != nil {
@@ -1407,7 +1423,7 @@ func TestRestartDoesNotResendAnUnconfirmedSteer(t *testing.T) {
 	f.p.steered, f.p.steerWait = make(chan string, 1), true
 	f.start(t)
 	f.enable(t)
-	b := f.create(t, "bot")
+	b := f.queueFollowUps(t, f.create(t, "bot"))
 	ctx := t.Context()
 	if _, err := f.send(t, b, "first"); err != nil {
 		t.Fatal(err)

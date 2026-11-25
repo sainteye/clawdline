@@ -24,7 +24,7 @@ internal/adapters/codegraph/build.go	Builder.build	101	29
 internal/adapters/codegraph/view.go	View	118	28
 internal/adapters/memory/import.go	ReadClaude	125	41
 internal/adapters/projectassistantacp/client.go	Client.handle	104	31
-internal/adapters/projectassistantacp/client.go	Client.initializeSession	118	43
+internal/adapters/projectassistantacp/client.go	Client.initializeSession	117	43
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.ServeHTTP	133	34
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	243	95
 internal/adapters/projectassistanthost/devservers.go	Host.bindServerTools	181	54
@@ -32,7 +32,7 @@ internal/adapters/projectassistanthost/provider.go	Host.tools	598	164
 internal/adapters/projectassistantstore/collaboration.go	Store.FinishExchange	134	46
 internal/adapters/projectassistantstore/export.go	Store.Restore	144	64
 internal/adapters/projectassistantstore/repository.go	applyMutation	116	45
-internal/adapters/projectassistantstore/repository.go	validateAggregate	241	105
+internal/adapters/projectassistantstore/repository.go	validateAggregate	235	102
 internal/adapters/projectassistantstore/routines.go	applyRoutines	139	56
 internal/adapters/projectassistantstore/routines_human.go	ViewStore.ReadRoutines	109	34
 internal/adapters/projects/launch.go	Admit	98	45
@@ -56,11 +56,10 @@ internal/app/orchestrator/handoffs.go	Broker.openSession	108	36
 internal/app/orchestrator/leases.go	Broker.Acquire	139	35
 internal/app/orchestrator/lifecycle.go	Broker.land	140	54
 internal/app/projectassistant/routines.go	Engine.TickRoutines	115	31
-internal/app/projectassistant/runtime.go	Engine.Submit	248	91
-internal/app/projectassistant/runtime.go	Engine.executeAttempt	489	139
+internal/app/projectassistant/runtime.go	Engine.Submit	245	91
+internal/app/projectassistant/runtime.go	Engine.executeAttempt	484	137
 internal/app/projectassistant/runtime.go	Engine.finishOnceLocked	141	53
 internal/app/projectassistant/runtime.go	Engine.work	119	31
-internal/app/projectassistant/send_now.go	Engine.SendNow	113	34
 internal/app/projectassistant/service_team.go	TeamCoordinator.Call	264	82
 internal/app/projectassistant/session_handoff.go	sessionContinuationBefore	116	42
 internal/app/proposals.go	Participation.Propose	171	55

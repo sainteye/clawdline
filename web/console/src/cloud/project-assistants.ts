@@ -79,6 +79,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
+const PROJECT_ASSISTANTS_REPLY_INPUT_API_LEVEL = 121
 const PROJECT_ASSISTANTS_PROGRESS_API_LEVEL = 118
 const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
 type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
@@ -492,7 +493,19 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canGrok() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROK_API_LEVEL }
   canGemini() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GEMINI_API_LEVEL }
   canFallbacks() { try { this.check(this.lifetime.signal,false,false,PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL); return true } catch { return false } }
-  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) { const modern=r.settings?.agent!==undefined||r.settings?.runtime_settings!==undefined||r.settings?.notify!==undefined||r.settings?.work_review!==undefined; const team=r.settings?.manage_team!==undefined;return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,r.settings?.agent==="antigravity"?PROJECT_ASSISTANTS_GEMINI_API_LEVEL:r.settings?.agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:r.settings?.roster!==undefined?PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL:r.settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:r.settings?.login_profile!==undefined||r.settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:r.settings?.fallback_agents !== undefined ? PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL : PROJECT_ASSISTANTS_API_LEVEL) }
+  canReplyInput() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_REPLY_INPUT_API_LEVEL }
+  edit(r: W.ProjectAssistantEditRequest,s: AbortSignal) {
+    const settings=r.settings
+    const modern=settings?.agent!==undefined||settings?.runtime_settings!==undefined||settings?.notify!==undefined||settings?.work_review!==undefined
+    const team=settings?.manage_team!==undefined
+    const replyInput=settings?.reply_input!==undefined||settings?.base?.reply_input!==undefined
+    const minimum=replyInput?PROJECT_ASSISTANTS_REPLY_INPUT_API_LEVEL:
+      settings?.agent==="antigravity"?PROJECT_ASSISTANTS_GEMINI_API_LEVEL:settings?.agent==="grok"?PROJECT_ASSISTANTS_GROK_API_LEVEL:
+      settings?.roster!==undefined?PROJECT_ASSISTANTS_ROSTER_ACTIONS_API_LEVEL:settings?.fallback_steps!==undefined?PROJECT_ASSISTANTS_KEY_PROFILES_API_LEVEL:
+      settings?.login_profile!==undefined||settings?.extensions!==undefined?PROJECT_ASSISTANTS_LOGIN_API_LEVEL:
+      modern?PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL:team?PROJECT_ASSISTANTS_GROUPS_API_LEVEL:settings?.fallback_agents!==undefined?PROJECT_ASSISTANTS_FALLBACKS_API_LEVEL:PROJECT_ASSISTANTS_API_LEVEL
+    return this.request<W.ProjectAssistantBotResponse>(endpoint(r.command.key,team?"/team-settings":""),s,r,team?"POST":"PATCH",true,minimum)
+  }
   history(r: W.ProjectAssistantHistoryRequest,s: AbortSignal) { this.key(r.key); return this.request<W.ProjectAssistantHistoryResponse>(endpoint(r.key,"/messages")+query({machine_id:this.machineID,conversation_id:r.conversation_id,before_seq:r.before_seq,page_size:r.page_size}),s) }
   beginReadObservation(mode: BotReadMode, start: number, interactionID?: string) {
     const report = this.reportRead

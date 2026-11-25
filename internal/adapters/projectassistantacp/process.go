@@ -562,6 +562,10 @@ func StartProcess(ctx context.Context, o ProcessOptions) (*Process, error) {
 var errWriteNotStarted = errors.New("ACP write not started")
 
 func (p *Process) Write(ctx context.Context, b []byte) error {
+	return p.writeWhen(ctx, b, nil)
+}
+
+func (p *Process) writeWhen(ctx context.Context, b []byte, before func() error) error {
 	select {
 	case p.write <- struct{}{}:
 	case <-ctx.Done():
@@ -590,6 +594,11 @@ func (p *Process) Write(ctx context.Context, b []byte) error {
 			<-interrupted
 		}
 	}()
+	if before != nil {
+		if err := before(); err != nil {
+			return errors.Join(errWriteNotStarted, err)
+		}
+	}
 	n, err := p.stdin.Write(b)
 	if n == 0 && ctx.Err() != nil {
 		return errors.Join(errWriteNotStarted, ctx.Err())

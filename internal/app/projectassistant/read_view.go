@@ -120,6 +120,7 @@ type ReadViewItem struct {
 	ObservedEventSeq  int64
 	OccurredAt        time.Time
 	Message           *pa.Message
+	JoinedTurnID      string
 	Work              *pa.WorkLink
 	PermissionSummary *ReadPermissionSummary
 	TraceSummary      *ReadTraceSummary

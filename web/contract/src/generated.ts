@@ -5604,6 +5604,12 @@ export interface ProjectAssistantBot {
   notify?: string
   permission_policy: ProjectAssistantPermissionPolicy
   project: ProjectAssistantProjectScope
+
+  /**
+   * How this Bot handles a message sent while it is replying. New Bots steer; Bots
+   * saved before this setting queue.
+   */
+  reply_input?: string
   runtime_settings?: ProjectAssistantRuntimeSettings
   sidebar_pinned?: ProjectAssistantSidebarPin
   sidebar_section?: string
@@ -5961,6 +5967,7 @@ export interface ProjectAssistantEditBase {
   name: string
   notify?: string
   permission_policy?: ProjectAssistantPermissionPolicy
+  reply_input?: string
   runtime_settings?: ProjectAssistantRuntimeSettings
 }
 
@@ -6020,6 +6027,12 @@ export interface ProjectAssistantEditSettings {
    * Empty leaves the permission setting unchanged (API level 65).
    */
   permission_policy?: ProjectAssistantPermissionPolicy
+
+  /**
+   * How this Bot handles a message sent while it is replying. New Bots steer; Bots
+   * saved before this setting queue.
+   */
+  reply_input?: string
   roster?: ProjectAssistantRosterEdit
   runtime_settings?: ProjectAssistantRuntimeSettings
 
@@ -7510,6 +7523,11 @@ export interface ProjectAssistantReadViewItem {
   anchor_message_seq: number
   event?: ProjectAssistantEvent
   id: string
+
+  /**
+   * The running turn that accepted this message as steering.
+   */
+  joined_turn_id?: string
   kind: ProjectAssistantReadItemKind
   message?: ProjectAssistantMessage
 
@@ -8115,6 +8133,7 @@ export interface ProjectAssistantTeamEditSettings {
    * Maximum simultaneous background threads selected for this Bot.
    */
   background_threads?: number
+  base?: ProjectAssistantEditBase
   expected_version: number
   extensions?: ProjectAssistantExtensionSelection
 
@@ -8135,11 +8154,13 @@ export interface ProjectAssistantTeamEditSettings {
   mode?: string
   name: string
   notify?: string
+  overwrite_conflicts?: boolean
 
   /**
    * Empty leaves the permission setting unchanged (API level 65).
    */
   permission_policy?: ProjectAssistantPermissionPolicy
+  reply_input?: string
   runtime_settings?: ProjectAssistantRuntimeSettings
 }
 

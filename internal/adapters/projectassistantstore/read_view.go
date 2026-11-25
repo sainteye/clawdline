@@ -357,10 +357,14 @@ func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 		item := app.ReadViewItem{ID: id, AnchorMessageSeq: anchor, ObservedEventSeq: out.Head.EventFrontier}
 		switch kind {
 		case 0:
-			item.Kind, item.Message = app.ReadItemMessage, &pa.Message{}
-			if json.Unmarshal([]byte(raw.String), item.Message) != nil || item.Message.ID != id || item.Message.Seq != anchor {
+			var message struct {
+				pa.Message
+				JoinedTurnID string `json:"joined_turn_id"`
+			}
+			if json.Unmarshal([]byte(raw.String), &message) != nil || message.ID != id || message.Seq != anchor {
 				return failure(pa.Invalid, "read_view_message")
 			}
+			item.Kind, item.Message, item.JoinedTurnID = app.ReadItemMessage, &message.Message, message.JoinedTurnID
 			if err = viewCheckFence(item.Message.Fence, out.Head, false); err != nil {
 				return err
 			}

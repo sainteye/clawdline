@@ -44,8 +44,9 @@ type incoming struct {
 	err error
 }
 type pendingResponse struct {
-	ch      chan response
-	ordered bool
+	ch       chan response
+	ordered  bool
+	steering bool
 }
 type nativePermission struct {
 	turnID  string
@@ -54,33 +55,34 @@ type nativePermission struct {
 }
 
 type Client struct {
-	extensionFiles string
-	discovery      bool
-	discoveryApply bool
-	configuration  pa.ConfigurationCatalog
-	p              *Process
-	l              Limits
-	fence          pa.Fence
-	sink           func(context.Context, app.ProtocolEvent) error
-	readOnly       func([]byte) bool
-	mu             sync.Mutex
-	next           uint64
-	pending        map[string]pendingResponse
-	permissions    map[string]nativePermission
-	queue          []incoming
-	queueReady     *sync.Cond
-	done           chan struct{}
-	workerDone     chan struct{}
-	stop           sync.Once
-	failure        error
-	sessionID      string
-	observedModel  string
-	nativeContext  app.NativeContextState
-	compaction     *nativeCompaction
-	turnID         string
-	partial        string
-	traceSegment   pa.Trace
-	traceTools     map[string]nativeToolTrace
+	extensionFiles  string
+	discovery       bool
+	discoveryApply  bool
+	configuration   pa.ConfigurationCatalog
+	p               *Process
+	l               Limits
+	fence           pa.Fence
+	sink            func(context.Context, app.ProtocolEvent) error
+	readOnly        func([]byte) bool
+	mu              sync.Mutex
+	next            uint64
+	pending         map[string]pendingResponse
+	permissions     map[string]nativePermission
+	permissionInbox int
+	queue           []incoming
+	queueReady      *sync.Cond
+	done            chan struct{}
+	workerDone      chan struct{}
+	stop            sync.Once
+	failure         error
+	sessionID       string
+	observedModel   string
+	nativeContext   app.NativeContextState
+	compaction      *nativeCompaction
+	turnID          string
+	partial         string
+	traceSegment    pa.Trace
+	traceTools      map[string]nativeToolTrace
 	// reply segments, as Codync's text segments: a tool call or a new message
 	// closes one, and the next starts after a blank line.
 	segmentStart  int
@@ -192,6 +194,7 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	}
 	c.mu.Lock()
 	c.steering = initialized.Meta.Steering.Supported
+	c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
 	c.mu.Unlock()
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
@@ -216,13 +219,11 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 		if err := c.authenticateGrok(ctx, b); err != nil {
 			return err
 		}
-		c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
 	}
 	if q.Bot.Agent == pa.Gemini {
 		if err := c.authenticateGemini(ctx, b); err != nil {
 			return err
 		}
-		c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
 		if !c.discovery {
 			c.openingInstructions = systemPrompt(q)
 		}
@@ -454,13 +455,17 @@ func (c *Client) fail(err error) {
 	})
 }
 func (c *Client) write(ctx context.Context, f frame) error {
+	return c.writeWhen(ctx, f, nil)
+}
+
+func (c *Client) writeWhen(ctx context.Context, f frame, before func() error) error {
 	f.JSONRPC = "2.0"
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	err = c.p.Write(ctx, b)
+	err = c.p.writeWhen(ctx, b, before)
 	if err != nil && !errors.Is(err, errWriteNotStarted) {
 		c.fail(err)
 	}
@@ -469,11 +474,15 @@ func (c *Client) write(ctx context.Context, f frame) error {
 func raw(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 
 func (c *Client) begin(ctx context.Context, method string, params any) (*pendingRPC, error) {
+	return c.beginChecked(ctx, method, params, nil)
+}
+
+func (c *Client) beginChecked(ctx context.Context, method string, params any, before func() error) (*pendingRPC, error) {
 	c.mu.Lock()
 	if c.failure != nil {
 		err := c.failure
 		c.mu.Unlock()
-		return nil, err
+		return nil, errors.Join(errWriteNotStarted, err)
 	}
 	c.next++
 	id := strconv.FormatUint(c.next, 10)
@@ -481,12 +490,12 @@ func (c *Client) begin(ctx context.Context, method string, params any) (*pending
 	// Control replies bypass the event sink, as Codync's reader resolves RPC
 	// waiters directly. Prompt completion and load replay retain a barrier so
 	// prior messages cannot race final text or become a new turn's history.
-	c.pending[id] = pendingResponse{ch: ch, ordered: method == "session/prompt" || method == "session/load"}
+	c.pending[id] = pendingResponse{ch: ch, ordered: method == "session/prompt" || method == "session/load", steering: method == "_session/steering"}
 	if method == "session/prompt" {
 		c.promptID = id
 	}
 	c.mu.Unlock()
-	if err := c.write(ctx, frame{ID: json.RawMessage(id), Method: method, Params: raw(params)}); err != nil {
+	if err := c.writeWhen(ctx, frame{ID: json.RawMessage(id), Method: method, Params: raw(params)}, before); err != nil {
 		c.mu.Lock()
 		c.removePending(id)
 		c.mu.Unlock()
@@ -578,17 +587,8 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 			return nil, err
 		}
 	}
-	var ids []string
-	for _, file := range q.Files {
-		if err := pa.ValidateInput(file.File); err != nil {
-			return nil, err
-		}
-		if !filepath.IsAbs(file.Path) {
-			return nil, refusal(pa.ScopeDenied, "input_path")
-		}
-		ids = append(ids, file.File.ID)
-	}
-	if err := pa.ValidateInputSend(q.Text, promptAttachments(q.Images), ids); err != nil {
+	text, err := promptInputText(q)
+	if err != nil {
 		return nil, err
 	}
 	// As in Codync, a native session hears its instructions and memory once:
@@ -597,14 +597,6 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	// already holds both; when memory changed since, its next prompt carries
 	// all of memory as it is now. Forgetting or new instructions start a fresh
 	// session, so otherwise later prompts carry only the person's text.
-	text := q.Text
-	if len(q.Files) > 0 {
-		text += "\n\nAttached files (explicitly provided for this message; read with your native tools):"
-		for _, file := range q.Files {
-			quoted, _ := json.Marshal(file.Path)
-			text += "\n- " + string(quoted)
-		}
-	}
 	text = withSendFileReminder(text, c.remindFiles, q.Turn.Origin)
 	if q.Handoff != nil {
 		opening, err := q.Handoff.Opening(q.Turn, q.Context)
@@ -642,23 +634,10 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	if instructions != "" {
 		text = "<clawdline_instructions>\n" + instructions + "\n</clawdline_instructions>\n\n" + text
 	}
-	// Only fresh filtered context is sent. Displayed history is never implicit
-	// model input. Instructions belong to this turn's immutable snapshot.
-	blocks := []any{}
-	if q.Quote != nil {
-		if err := pa.ValidateUserMessage(q.Quote.Text); err != nil {
-			return nil, err
-		}
-		if q.Quote.MessageID == "" {
-			return nil, refusal(pa.Invalid, "quote_id")
-		}
-		blocks = append(blocks, map[string]string{"type": "text", "text": "Referenced message (" + q.Quote.MessageID + "):\n" + q.Quote.Text})
+	blocks, err := promptBlocks(text, q.Images, q.Quote)
+	if err != nil {
+		return nil, err
 	}
-	// Pictures go first as native ACP image blocks, as Codync sends them.
-	for _, image := range q.Images {
-		blocks = append(blocks, map[string]string{"type": "image", "mimeType": image.MediaType, "data": base64.StdEncoding.EncodeToString(image.Data)})
-	}
-	blocks = append(blocks, map[string]string{"type": "text", "text": text})
 	p, err := c.begin(ctx, "session/prompt", map[string]any{"sessionId": sid, "prompt": blocks})
 	if err != nil {
 		return nil, err
@@ -667,6 +646,49 @@ func (c *Client) Send(ctx context.Context, q app.PromptRequest) (app.PendingProm
 	c.openingInstructions = ""
 	c.mu.Unlock()
 	return &promptPending{rpc: p, deadline: deadline}, nil
+}
+
+func promptInputText(q app.PromptRequest) (string, error) {
+	var ids []string
+	for _, file := range q.Files {
+		if err := pa.ValidateInput(file.File); err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(file.Path) {
+			return "", refusal(pa.ScopeDenied, "input_path")
+		}
+		ids = append(ids, file.File.ID)
+	}
+	if err := pa.ValidateInputSend(q.Text, promptAttachments(q.Images), ids); err != nil {
+		return "", err
+	}
+	text := q.Text
+	if len(q.Files) > 0 {
+		text += "\n\nAttached files (explicitly provided for this message; read with your native tools):"
+		for _, file := range q.Files {
+			quoted, _ := json.Marshal(file.Path)
+			text += "\n- " + string(quoted)
+		}
+	}
+	return text, nil
+}
+
+func promptBlocks(text string, images []app.PromptImage, quote *app.PromptQuote) ([]any, error) {
+	blocks := make([]any, 0, len(images)+2)
+	// Pictures go first as native ACP image blocks, as Codync sends them.
+	for _, image := range images {
+		blocks = append(blocks, map[string]string{"type": "image", "mimeType": image.MediaType, "data": base64.StdEncoding.EncodeToString(image.Data)})
+	}
+	if quote != nil {
+		if err := pa.ValidateUserMessage(quote.Text); err != nil {
+			return nil, err
+		}
+		if quote.MessageID == "" {
+			return nil, refusal(pa.Invalid, "quote_id")
+		}
+		blocks = append(blocks, map[string]string{"type": "text", "text": "Referenced message (" + quote.MessageID + "):\n" + quote.Text})
+	}
+	return append(blocks, map[string]string{"type": "text", "text": text}), nil
 }
 
 type promptPending struct {
@@ -770,6 +792,9 @@ func (c *Client) enqueue(item incoming) bool {
 	if c.failure != nil {
 		return false
 	}
+	if item.f.Method == "session/request_permission" {
+		c.permissionInbox++
+	}
 	c.queue = append(c.queue, item)
 	c.queueReady.Signal()
 	return true
@@ -789,6 +814,9 @@ func (c *Client) resolve(f frame) {
 			x.err = providerFailure(f.Error)
 			if c.agent == pa.Grok && f.Error.Code == -32003 {
 				x.err = &app.ProviderFailure{Reason: app.ProviderRateLimited, RPCCode: f.Error.Code, Cause: refusal(pa.Unsupported, "rpc_-32003")}
+			}
+			if p.steering && c.adapterVersion == CodexAdapterVersion && codexSteerImageRefusal(f.Error) {
+				x.err = errSteerNext
 			}
 		}
 		p.ch <- x
@@ -822,7 +850,13 @@ func (c *Client) consume() {
 			c.resolve(f)
 			continue
 		}
-		if err := c.handle(f); err != nil {
+		err := c.handle(f)
+		if f.Method == "session/request_permission" {
+			c.mu.Lock()
+			c.permissionInbox--
+			c.mu.Unlock()
+		}
+		if err != nil {
 			if len(f.ID) > 0 {
 				_ = c.write(c.ctx, frame{ID: f.ID, Error: &rpcError{Code: -32603, Message: string(pa.Code(err))}})
 			}
@@ -1145,30 +1179,53 @@ func (c *Client) closeSegment() {
 	c.segmentClosed = false
 }
 
+func (c *Client) SupportsSteering(images bool) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.steering && (!images || c.promptImages)
+}
+
 // Steer is Codync's hand_to_agent: the message goes into the running turn
 // through ACP _session/steering; a turn that just ended answers
 // promptRequired instead of starting one. What the agent writes next starts a
 // new paragraph of the reply.
-func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
-	// Every refusal before _session/steering is sent leaves the message
-	// queued (app.SteerRefused); only an error after it is unknown.
-	if err := pa.ValidateUserMessage(text); err != nil {
+func (c *Client) Steer(ctx context.Context, q app.PromptRequest) (app.SteerOutcome, error) {
+	if err := pa.CheckFence(q.Turn.Fence, c.fence); err != nil {
 		return "", app.SteerRefused(err)
 	}
-	c.mu.Lock()
-	steering, sid, active := c.steering, c.sessionID, c.turnID != ""
-	if active && steering {
-		c.segmentClosed = true
-	}
-	c.mu.Unlock()
-	if !steering {
+	if !c.SupportsSteering(len(q.Images) != 0) {
 		return "", app.SteerRefused(refusal(pa.Unsupported, app.SteeringField))
 	}
-	if !active {
+	text, err := promptInputText(q)
+	if err != nil {
+		return "", app.SteerRefused(err)
+	}
+	blocks, err := promptBlocks(text, q.Images, q.Quote)
+	if err != nil {
+		return "", app.SteerRefused(err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, c.l.RPCTimeout)
+	defer cancel()
+	p, err := c.beginChecked(ctx, "_session/steering", map[string]any{
+		"sessionId": c.SessionID(), "prompt": blocks, "_meta": map[string]any{"steering": map[string]string{"idleBehavior": "promptRequired"}},
+	}, func() error { return c.beforeSteer(q.Turn.ID) })
+	switch {
+	case errors.Is(err, errSteerNext):
+		return app.SteerNext, nil
+	case errors.Is(err, errWriteNotStarted):
+		return "", app.SteerRefused(err)
+	case err != nil:
+		return "", err
+	}
+	b, err := p.waitResult(ctx)
+	if errors.Is(err, errSteerNext) {
 		return app.SteerNext, nil
 	}
-	b, err := c.call(ctx, "_session/steering", map[string]any{"sessionId": sid, "prompt": []any{map[string]string{"type": "text", "text": text}}, "_meta": map[string]any{"steering": map[string]string{"idleBehavior": "promptRequired"}}})
 	if err != nil {
+		var rpc *app.ProviderFailure
+		if errors.As(err, &rpc) && rpc.RPCCode == -32601 {
+			return "", app.SteerRefused(refusal(pa.Unsupported, app.SteeringField))
+		}
 		return "", err
 	}
 	var answer struct {
@@ -1178,10 +1235,42 @@ func (c *Client) Steer(ctx context.Context, text string) (app.SteerOutcome, erro
 		return "", refusal(pa.OutcomeUnknown, "steering_answer")
 	}
 	switch app.SteerOutcome(answer.Outcome) {
-	case app.SteerJoined, app.SteerNext:
-		return app.SteerOutcome(answer.Outcome), nil
+	case app.SteerJoined:
+		return app.SteerJoined, nil
+	case app.SteerNext, "later":
+		return app.SteerNext, nil
+	default:
+		return "", refusal(pa.OutcomeUnknown, "steering_answer")
 	}
-	return "", refusal(pa.OutcomeUnknown, "steering_answer")
+}
+
+// Codex ACP 2.6.0 checks this model limit before invoking turn/steer.
+func codexSteerImageRefusal(err *rpcError) bool {
+	if err.Code != -32600 {
+		return false
+	}
+	const message = "The current model does not support image input"
+	var detail string
+	_ = json.Unmarshal(err.Data, &detail)
+	return err.Message == message || detail == message
+}
+
+var errSteerNext = errors.New("steering needs a later prompt")
+
+// Check at the native writer, after waiting for the pipe. A permission the
+// reader has received still counts while its event is waiting for the actor.
+func (c *Client) beforeSteer(turnID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.failure != nil {
+		return c.failure
+	}
+	if turnID == "" || c.turnID != turnID || c.promptID == "" || c.permissionsSealed ||
+		c.permissionInbox != 0 || len(c.permissions) != 0 {
+		return errSteerNext
+	}
+	c.segmentClosed = true
+	return nil
 }
 
 // SendFileReminder follows a person's message in a resumed session, whose

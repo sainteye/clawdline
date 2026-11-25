@@ -5,7 +5,7 @@ export function settingsBase(bot:W.ProjectAssistantBot):W.ProjectAssistantEditBa
   return {name:bot.name,appearance:bot.appearance,instructions:bot.instructions.text,agent:bot.agent,permission_policy:bot.permission_policy,
     ...(bot.mode?{mode:bot.mode}:{}),...(bot.runtime_settings?{runtime_settings:bot.runtime_settings}:{}),...(bot.login_profile?{login_profile:bot.login_profile}:{}),
     ...(bot.extensions?{extensions:bot.extensions}:{}),...(bot.fallback_agents?{fallback_agents:bot.fallback_agents}:{}),...(bot.fallback_steps?{fallback_steps:bot.fallback_steps}:{}),
-    ...(bot.notify?{notify:bot.notify}:{}),...(bot.background_threads?{background_threads:bot.background_threads}:{}),...(bot.manage_team?{manage_team:true}:{})}
+    ...(bot.reply_input?{reply_input:bot.reply_input}:{}),...(bot.notify?{notify:bot.notify}:{}),...(bot.background_threads?{background_threads:bot.background_threads}:{}),...(bot.manage_team?{manage_team:true}:{})}
 }
 
 /** The fields a pa_stale_version refusal names as changed both here and elsewhere; empty when it names none. */

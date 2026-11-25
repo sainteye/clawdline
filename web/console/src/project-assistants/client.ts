@@ -67,6 +67,7 @@ export interface SourceClient {
   canReadProgress?(): boolean
   /** The source rebases a settings save on its base and names conflicting fields (API 117). */
   canSettingsBase?(): boolean
+  canReplyInput?(): boolean
   canLeadTeamDefault?(): boolean
   canGroupContext?(): boolean
   canGroupDescription?(): boolean

@@ -299,6 +299,8 @@ func viewTimelineSQL() string {
  ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?
 ), exchange_state AS MATERIALIZED (
  SELECT c.anchor,c.kind,c.id,CASE
+ WHEN json_extract(c.j,'$.kind')='user' AND json_extract(t.j,'$.joined_turn_id') IS NOT NULL
+ THEN json_set(c.j,'$.joined_turn_id',json_extract(t.j,'$.joined_turn_id'))
  WHEN json_valid(CAST(e.data AS TEXT))=1 THEN CASE
  WHEN e.revision>=json_extract(c.j,'$.exchange.revision')
  AND json_extract(CAST(e.data AS TEXT),'$.source')=json_extract(c.j,'$.exchange.source')
@@ -311,6 +313,7 @@ func viewTimelineSQL() string {
  ELSE c.j END j
  FROM bounded c LEFT JOIN project_assistant_exchanges e ON c.kind=0 AND e.machine=?
  AND e.id=json_extract(c.j,'$.exchange.id') AND (e.source=? OR e.target=?)
+ LEFT JOIN turns t ON c.kind=0 AND t.id=json_extract(c.j,'$.turn_id') AND t.message_id=c.id
 ), sized AS (
  SELECT *,length(CAST(j AS BLOB)) n FROM exchange_state
 ), budget AS (
