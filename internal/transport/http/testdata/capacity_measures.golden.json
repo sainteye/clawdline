@@ -843,6 +843,16 @@
     "Note": true
   },
   {
+    "Name": "bots.review_quote_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.review_quote_rounds",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.review_reply_bytes",
     "Known": true,
     "Note": true

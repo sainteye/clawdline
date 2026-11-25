@@ -167,6 +167,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.page_rows` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.peer_note_bytes` | 2000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.peer_notes_per_request` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.permission_action_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.process_census_attempts` | 4 | `rows` | `refuse` | `diagnostics` | — |
 | `bots.process_census_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics` | — |
@@ -176,8 +178,11 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.review_hops` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_pending` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_per_sender` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.review_quote_bytes` | 96000 | `bytes` | `coalesce` | `diagnostics` | — |
+| `bots.review_quote_rounds` | 4 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.review_reply_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.review_request_bytes` | 32000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.room_pictures` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.roster_check_ms` | 250 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_client_rows` | 1000 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |

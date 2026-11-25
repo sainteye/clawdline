@@ -82,19 +82,19 @@ func TestServiceGroupOperationsUseThePersonsAuthority(t *testing.T) {
 
 	h.peer.reply("a", "On it.")
 	say := roomCommand(key, pa.SendOperation, "say")
-	entry, step, err := s.SendGroup(roomCtx, say, "@Alice status?", pa.BotKey{})
+	entry, step, err := s.SendGroup(roomCtx, say, "@Alice status?", nil, pa.BotKey{})
 	if err != nil || step.Turn == nil || entry.Kind != pa.RoomPersonEntry {
 		t.Fatalf("send %+v %+v %v", entry, step, err)
 	}
 	awaitRoom(t, "Alice's room answer", func() bool { return len(h.lines(t, key)) == 2 })
 	h.driver.Idle()
-	if replay, step, err := s.SendGroup(roomCtx, say, "@Alice status?", pa.BotKey{}); err != nil || step.Turn != nil || replay.Seq != entry.Seq {
+	if replay, step, err := s.SendGroup(roomCtx, say, "@Alice status?", nil, pa.BotKey{}); err != nil || step.Turn != nil || replay.Seq != entry.Seq {
 		t.Fatalf("replayed send %+v %+v %v", replay, step, err)
 	}
 	if len(h.lines(t, key)) != 2 || len(h.roomTurns(t, alice)) != 1 {
 		t.Fatal("a replayed send ran the room again")
 	}
-	if _, _, err = s.SendGroup(roomCtx, say, "something else", pa.BotKey{}); pa.Code(err) != pa.IdempotencyConflict {
+	if _, _, err = s.SendGroup(roomCtx, say, "something else", nil, pa.BotKey{}); pa.Code(err) != pa.IdempotencyConflict {
 		t.Fatalf("a changed send under the same key: %v", err)
 	}
 
@@ -102,7 +102,7 @@ func TestServiceGroupOperationsUseThePersonsAuthority(t *testing.T) {
 	auth.mu.Lock()
 	auth.after, auth.afterCall = "2", auth.calls+2
 	auth.mu.Unlock()
-	if _, _, err = s.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "repaired"), "hello?", pa.BotKey{}); pa.Code(err) != pa.StaleVersion {
+	if _, _, err = s.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "repaired"), "hello?", nil, pa.BotKey{}); pa.Code(err) != pa.StaleVersion {
 		t.Fatalf("a send across a re-pairing: %v", err)
 	}
 	if len(h.lines(t, key)) != 2 {
@@ -118,7 +118,7 @@ func TestServiceGroupOperationsUseThePersonsAuthority(t *testing.T) {
 	if err != nil || len(page.Lines) != 2 || page.Lines[1].Author != alice.Key || page.Group.Key != key {
 		t.Fatalf("history %+v %v", page, err)
 	}
-	if _, _, err = viewer.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "viewer"), "hi", pa.BotKey{}); pa.Code(err) != pa.ScopeDenied {
+	if _, _, err = viewer.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "viewer"), "hi", nil, pa.BotKey{}); pa.Code(err) != pa.ScopeDenied {
 		t.Fatalf("a read-only device sent: %v", err)
 	}
 	if _, err = viewer.StopGroup(roomCtx, key); pa.Code(err) != pa.ScopeDenied {
@@ -142,7 +142,7 @@ func TestServiceGroupOperationsUseThePersonsAuthority(t *testing.T) {
 			t.Fatalf("deleting the group touched %s: %v", b.Name, err)
 		}
 	}
-	if _, _, err = s.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "after-delete"), "anyone?", pa.BotKey{}); pa.Code(err) != pa.NotFound {
+	if _, _, err = s.SendGroup(roomCtx, roomCommand(key, pa.SendOperation, "after-delete"), "anyone?", nil, pa.BotKey{}); pa.Code(err) != pa.NotFound {
 		t.Fatalf("a send to a deleted group: %v", err)
 	}
 }

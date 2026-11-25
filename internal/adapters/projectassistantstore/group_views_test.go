@@ -26,7 +26,7 @@ func TestUnquotedRoomCommandKeepsItsPreviousDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = rooms.Send(testContext, app.PersonAuthority{Principal: "person", Machine: "machine"}, command(key, pa.SendOperation, "legacy"), 0, "hello", pa.BotKey{}); err != nil {
+	if _, _, err = rooms.Send(testContext, app.PersonAuthority{Principal: "person", Machine: "machine"}, command(key, pa.SendOperation, "legacy"), 0, "hello", nil, pa.BotKey{}); err != nil {
 		t.Fatal(err)
 	}
 	var raw []byte
@@ -56,7 +56,7 @@ func TestGroupPreviewsKeepSourceTimeAndFitTheReadBudget(t *testing.T) {
 		if _, err := groups.CreateGroup(testContext, groupCmd(key, pa.CreateOperation, "create-"+key.BotID, ""), draft, groupLimits, groupTime); err != nil {
 			t.Fatal(err)
 		}
-		entry, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "say-"+key.BotID), 0, "real latest message", pa.BotKey{})
+		entry, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "say-"+key.BotID), 0, "real latest message", nil, pa.BotKey{})
 		if err != nil || entry.At.IsZero() {
 			t.Fatalf("new source line has no write time: %+v %v", entry, err)
 		}
@@ -100,7 +100,7 @@ func TestRoomHistoryShowsOnlyCurrentMemberExecution(t *testing.T) {
 	if _, err := groups.CreateGroup(testContext, groupCmd(key, pa.CreateOperation, "create", ""), draft, groupLimits, groupTime); err != nil {
 		t.Fatal(err)
 	}
-	_, room, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "say"), 0, "hello", pa.BotKey{})
+	_, room, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "say"), 0, "hello", nil, pa.BotKey{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestRoomOutcomeDoesNotRevealForeignOrUnverifiedCompletion(t *testing.T) {
 	if _, err := groups.CreateGroup(testContext, groupCmd(key, pa.CreateOperation, "create", ""), draft, groupLimits, groupTime); err != nil {
 		t.Fatal(err)
 	}
-	_, room, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "first"), 0, "hello", pa.BotKey{})
+	_, room, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "first"), 0, "hello", nil, pa.BotKey{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestRoomOutcomeDoesNotRevealForeignOrUnverifiedCompletion(t *testing.T) {
 		len(page.Lines) != 1 || strings.Contains(page.Lines[0].Text, "private") {
 		t.Fatalf("wrong room evidence: %+v %v", page, err)
 	}
-	if _, _, _, err = groups.PersonWrote(testContext, command(key, pa.SendOperation, "second"), room.Revision, "new round", pa.BotKey{}); err != nil {
+	if _, _, _, err = groups.PersonWrote(testContext, command(key, pa.SendOperation, "second"), room.Revision, "new round", nil, pa.BotKey{}); err != nil {
 		t.Fatal(err)
 	}
 	page, err = groups.History(testContext, key, 0, 100)
@@ -227,10 +227,10 @@ func TestRoomQuoteKeepsTheSourceAuthorAndBoundedUnicodeExcerpt(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO project_assistant_group_lines(machine,grp,seq,data) VALUES('machine','room',1,?)`, raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "forged-author"), 0, "reply", b.Key, 1); pa.Code(err) != pa.Invalid {
+	if _, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "forged-author"), 0, "reply", nil, b.Key, 1); pa.Code(err) != pa.Invalid {
 		t.Fatalf("a forged quote author was accepted: %v", err)
 	}
-	entry, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "reply"), 0, "@Bot b please review", pa.BotKey{}, 1)
+	entry, _, _, err := groups.PersonWrote(testContext, command(key, pa.SendOperation, "reply"), 0, "@Bot b please review", nil, pa.BotKey{}, 1)
 	if err != nil || entry.Quote == nil || entry.Quote.Author != a.Key || entry.ReplyToAuthor != a.Key || entry.Quote.Seq != 1 || !entry.Quote.Truncated || len(entry.Quote.Text) > pa.MaxMessageBytes || !utf8.ValidString(entry.Quote.Text) || !strings.HasPrefix(original.Text, entry.Quote.Text) {
 		t.Fatalf("quote lost its source or byte boundary: %+v %v", entry, err)
 	}

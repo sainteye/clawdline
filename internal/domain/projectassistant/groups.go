@@ -581,6 +581,9 @@ type RoomEntry struct {
 	// Quote is captured from this room's stored line by the Host. It is not
 	// supplied by the client and is kept apart from the person's own text.
 	Quote *RoomQuote `json:"quote,omitempty"`
+	// Attachments are the pictures the person sent with the line, stored
+	// under the group's own key; each member asked receives its own copy.
+	Attachments []Attachment `json:"attachments,omitempty"`
 	// Mentions is a read projection from RoomMentions, never stored.
 	Mentions []RoomMention `json:"-"`
 }
@@ -591,6 +594,26 @@ type RoomMention struct {
 	Start, End int
 	Member     BotKey
 	Everyone   bool
+}
+
+// MaxRoomPictures is how many pictures one person line in a room carries,
+// the same four a one-to-one Bot send allows.
+const MaxRoomPictures = 4
+
+// ValidateRoomMessage admits the person's room line: text, pictures or both.
+// Text keeps the room's own line budget; each picture is checked as a
+// one-to-one send checks it.
+func ValidateRoomMessage(text string, attachments []Attachment) error {
+	if len(attachments) == 0 {
+		return ValidateMessage(text)
+	}
+	if len(attachments) > MaxRoomPictures {
+		return fail(CapacityFull, "images")
+	}
+	if len(text) > MaxMessageBytes {
+		return fail(CapacityFull, "text")
+	}
+	return ValidateSend(text, attachments)
 }
 
 type RoomQuote struct {

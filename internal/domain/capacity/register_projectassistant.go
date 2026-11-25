@@ -136,6 +136,10 @@ func projectAssistantBounds() []Entry {
 		// One settings save rebases on a fresh read when a turn or memory write
 		// won the commit race; at the bound it is refused and the draft is kept.
 		{Name: BotsSettingsRebaseAttempts, Class: Buffer, Unit: Rows, Limit: pa.MaxSettingsRebaseAttempts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSettingsRebaseAttempts"}},
+		{Name: "bots.peer_notes_per_request", Class: Buffer, Unit: Rows, Limit: pa.MaxPeerNotesPerRequest, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxPeerNotesPerRequest"}},
+		{Name: "bots.peer_note_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxPeerNoteBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxPeerNoteBytes"}},
+		{Name: BotsReviewQuoteRounds, Class: Buffer, Unit: Rows, Limit: pa.MaxCollaborationQuoteRounds, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationQuoteRounds"}},
+		{Name: BotsReviewQuoteBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxCollaborationQuoteBytes, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCollaborationQuoteBytes"}},
 		{Name: BotsFallbacks, Class: Buffer, Unit: Rows, Limit: pa.MaxFallbackAgents, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxFallbackAgents"}},
 		{Name: BotsAgentRestSeconds, Class: Cache, Unit: Seconds, Limit: pa.MaxFallbackCreditsRestSeconds, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxFallbackCreditsRestSeconds", "internal/domain/projectassistant.MaxFallbackUsageRestSeconds", "internal/domain/projectassistant.MaxFallbackSignedOutRestSeconds", "internal/domain/projectassistant.MaxFallbackBackoffOneSeconds", "internal/domain/projectassistant.MaxFallbackBackoffTwoSeconds", "internal/domain/projectassistant.MaxFallbackBackoffThreeSeconds", "internal/domain/projectassistant.MaxFallbackBackoffMaxSeconds"}},
 		{Name: "bots.routine_preview_field_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxRoutinePreviewFieldBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxRoutinePreviewFieldBytes"}},
@@ -310,5 +314,8 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsAttachmentBytes, Class: Buffer, Unit: Bytes, Limit: pa.MaxAttachmentBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxAttachmentBytes"}},
+		{Name: BotsRoomPictures, Class: Buffer, Unit: Rows, Limit: pa.MaxRoomPictures, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxRoomPictures"}},
 	}...)
 }

@@ -104,7 +104,7 @@ func TestRoomGreetingHasAResponsibleParticipant(t *testing.T) {
 			t.Cleanup(func() { _ = h.engine.Close(roomCtx) })
 			h.driver.Attach(h.engine)
 			g := h.group(t, "g", h.members...)
-			if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "greeting"), tc.text, pa.BotKey{}, nil); err != nil {
+			if _, _, err := h.driver.Send(roomCtx, h.person, roomCommand(g, pa.SendOperation, "greeting"), tc.text, nil, pa.BotKey{}, nil); err != nil {
 				t.Fatal(err)
 			}
 			h.driver.Idle()

@@ -151,6 +151,22 @@ type CollaborationRepository interface {
 	DropExchangeReplies(context.Context, pa.BotKey, time.Time) error
 }
 
+// PeerNoteRepository delivers a short message a Bot sends its own person
+// while it handles another Bot's request. The store admits it only into the
+// recipient's main chat, for the exchange's outstanding request turn.
+type PeerNoteRepository interface {
+	PostPeerNote(context.Context, PeerNote) (pa.Message, error)
+}
+
+type PeerNote struct {
+	Caller     pa.Fence
+	TurnID     string
+	ExchangeID string
+	ID         string
+	Text       string
+	At         time.Time
+}
+
 // DecisionRepository holds questions a Bot asks the person. Only the
 // console's authorized answer route resolves one, through Submit.
 type DecisionRepository interface {

@@ -9,6 +9,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -193,6 +194,9 @@ func paWireRoomEntry(e pa.RoomEntry) contract.ProjectAssistantRoomEntry {
 			wire.Member = &k
 		}
 		out.Mentions = append(out.Mentions, wire)
+	}
+	for _, a := range e.Attachments {
+		out.Attachments = append(out.Attachments, contract.ProjectAssistantAttachment{ID: a.ID, MediaType: a.MediaType, Bytes: a.Bytes})
 	}
 	return out
 }
@@ -466,11 +470,21 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 	case "group-react":
 		return h.reactToGroupLine(w, r, route)
 	case "group-send":
-		v, err := paDecodeHTTP[contract.ProjectAssistantGroupSendRequest](w, r)
+		v, err := paDecodeHTTPLimit[contract.ProjectAssistantGroupSendRequest](w, r, capacity.MaximumBotSendBodyBytes)
 		if err != nil {
 			return nil, err
 		}
 		c, err := h.command(r, route, v.Command, pa.SendOperation)
+		if err != nil {
+			return nil, err
+		}
+		// The count is refused before any picture is decoded or stored.
+		if len(v.Images) > pa.MaxRoomPictures {
+			return nil, paHTTPFailure(pa.CapacityFull, "images")
+		}
+		// The room's pictures are kept under the group's own key, where the
+		// room history reads them back; each member asked gets its own copy.
+		attachments, err := h.storePictures(r.Context(), c.Key, v.Images)
 		if err != nil {
 			return nil, err
 		}
@@ -482,7 +496,7 @@ func (h *projectAssistantHTTP) writeGroup(w http.ResponseWriter, r *http.Request
 		if v.Quote != nil {
 			quoted = []int64{v.Quote.Seq}
 		}
-		e, st, err := h.options.Service.SendGroup(r.Context(), c, v.Text, reply, quoted...)
+		e, st, err := h.options.Service.SendGroup(r.Context(), c, v.Text, attachments, reply, quoted...)
 		if err != nil {
 			return nil, err
 		}
