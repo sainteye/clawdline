@@ -263,6 +263,16 @@ func (s *Server) browserCommandRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeBrowserError(w http.ResponseWriter, err error) {
+	// A refused argument names its field; a missing label keeps the page's words.
+	var arg *browserbridge.ArgError
+	if errors.As(err, &arg) {
+		status := http.StatusBadRequest
+		if arg.Code == browserbridge.NotFound {
+			status = http.StatusUnprocessableEntity
+		}
+		writeRawRefusal(w, status, string(arg.Code), arg.Field+": "+arg.Message)
+		return
+	}
 	if refusal, ok := browserbridge.IsRefusal(err); ok {
 		switch refusal {
 		case browserbridge.SetupRequired:

@@ -113,6 +113,8 @@ const (
 	Tokens      Unit = "tokens"
 	Rows        Unit = "rows"
 	Multipliers Unit = "multipliers"
+	// Pixels are CSS pixels of a browser viewport an agent may ask for.
+	Pixels Unit = "pixels"
 	// Seconds is the age of an observation whose honesty depends on a time
 	// horizon. It is a capacity in the literal sense: once filled, the held
 	// observation expires and the reader must say it does not know.

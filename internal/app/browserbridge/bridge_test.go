@@ -3,6 +3,7 @@ package browserbridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -312,7 +313,7 @@ func TestViewportChangesRespectTheControlOwnerAndOnlyAcceptPresets(t *testing.T)
 		t.Fatal(err)
 	}
 	for _, bad := range []json.RawMessage{nil, json.RawMessage(`{"mode":"unknown"}`), json.RawMessage(`{"width":999999}`)} {
-		if _, err := b.Do(ctx, "c1", "viewport", bad); err != BadRequest {
+		if _, err := b.Do(ctx, "c1", "viewport", bad); !errors.Is(err, BadRequest) {
 			t.Fatalf("bad agent preset %s: %v", bad, err)
 		}
 		if _, err := b.PersonDo(ctx, "viewport", 5, bad); err != BadRequest {
@@ -487,7 +488,7 @@ func TestTakeoverDropsQueuedAgentInput(t *testing.T) {
 	b.owner[1] = "c1"
 	b.current["c1"] = 1
 	done := make(chan error, 1)
-	go func() { _, err := b.Do(ctx, "c1", "click", nil); done <- err }()
+	go func() { _, err := b.Do(ctx, "c1", "click", json.RawMessage(`{"x":1,"y":1}`)); done <- err }()
 	for b.Status().Pending == 0 {
 		time.Sleep(time.Millisecond)
 	}

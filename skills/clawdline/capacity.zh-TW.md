@@ -246,6 +246,7 @@
 | `browser.activity_picture_rows` | 40 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_rows` | 2000 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `browser.audit_text_characters` | 2000 | `characters` | `coalesce` | `diagnostics` | — |
+| `browser.click_coordinate` | 16384 | `pixels` | `refuse` | `diagnostics, sender` | — |
 | `browser.close_receipt_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.close_receipt_rows` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.command_arg_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -257,6 +258,8 @@
 | `browser.result_bytes` | 6291456 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `browser.session_choices` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `browser.stdin_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `browser.viewport_height` | 2160 | `pixels` | `refuse` | `diagnostics, sender` | — |
+| `browser.viewport_width` | 3840 | `pixels` | `refuse` | `diagnostics, sender` | — |
 | `cache.assistant_quota` | 32 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.background_agents` | 256 | `rows` | `evict_oldest` | `diagnostics, notice` | — |
 | `cache.claude_usage_refresh_seconds` | 900 | `seconds` | `evict_oldest` | `diagnostics` | — |
