@@ -229,7 +229,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 98
+          "line": 97
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -273,7 +273,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 98
+          "line": 97
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -308,7 +308,7 @@
       "sources": [
         {
           "path": "web/console/src/session/Start.tsx",
-          "line": 98
+          "line": 97
         },
         {
           "path": "internal/app/squad_launch.go",
@@ -3583,7 +3583,7 @@
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 605
+          "line": 607
         },
         {
           "path": "web/console/src/voice-work/observations.ts",
@@ -4790,7 +4790,7 @@
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 2661
+          "line": 2663
         },
         {
           "path": "web/console/src/pages/settings/window/CopilotSettingsCard.tsx",
@@ -4859,7 +4859,7 @@
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 1404
+          "line": 1406
         },
         {
           "path": "web/console/src/realtime/copilot-reports.ts",
@@ -4903,11 +4903,11 @@
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 2219
+          "line": 2221
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 1180
+          "line": 1182
         },
         {
           "path": "web/console/src/realtime/realtime-copilot.ts",
@@ -4953,7 +4953,7 @@
         },
         {
           "path": "web/console/src/realtime/copilot-tools.ts",
-          "line": 1796
+          "line": 1798
         },
         {
           "path": "web/console/src/realtime/copilot-live.ts",
@@ -5585,7 +5585,7 @@
     "internal/adapters/projectassistantacp/mcp_message_work.go": "e9e14f3bf32c392deec5dd90da0761cd82ebbde981752cfe4b11370969f92ca0",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
     "internal/adapters/projectassistantacp/mcp_work_receipt.go": "48c01a3b1225b0860cffd6be5fd70b2b82a7625b60dde3f390202a3f4d37b176",
-    "internal/adapters/projectassistantacp/model_configuration.go": "4c8888e4689e9504e441e91152edf40277e38c09740fbc6b354678c93681dd0f",
+    "internal/adapters/projectassistantacp/model_configuration.go": "c846597ed1d80ba642caba47aaba92d66888783487a70dd3796246283d8bbbf1",
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "0962f0ca837a7b1f6a520e250cd3562c064abb5394bf85080d05f0f5745d51c0",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
@@ -5781,11 +5781,11 @@
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
     "web/console/src/cloud/project-assistants.ts": "3f95899a6c7fbfbbb89ac74d347037bb0a7917f79d2e18c2b0aed5889f9445a0",
-    "web/console/src/cloud/relay-writer.ts": "9e13ed3493954116d110ca44608f2264a26dc6d3c9bf718847adfcb7792b015d",
+    "web/console/src/cloud/relay-writer.ts": "404454109041686971ec0498d45ad471ae5b170d0ddca077f364457433cbe8dd",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
     "web/console/src/next-strings.ts": "697556466e1282a66a1bc53f55efc51e53e3efc3e61747daa452e31aa3943383",
-    "web/console/src/overlays/info.ts": "d6ab6abbc1a57be3e7f76baeb0e73575c77496ef6e48cd14dbb27ab0998465dc",
+    "web/console/src/overlays/info.ts": "e7a0e7cdfe6b225b5629c646bb1a3f3652e2e8a773be83fc4a068f7f24807fda",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
@@ -5831,11 +5831,11 @@
     "web/console/src/realtime/copilot-reports.ts": "fab8d50097148fca089bd64286e8e3d7b162ad1cd9ed7e3f7147043c073af598",
     "web/console/src/realtime/copilot-session-boards.ts": "160620f182f4024e6a5a7b5e2efbf08797b1dcfb1863eefc7db1354d3bcdebc2",
     "web/console/src/realtime/copilot-speech.ts": "8b8eb91730f934c0081bbce5dc176f400cd279653b1a18e543ac71e6688fa502",
-    "web/console/src/realtime/copilot-tools.ts": "7676a026b82ba31d3aa74f6d3d4a62414123b4b6265d146c51bfbf830b6a899f",
+    "web/console/src/realtime/copilot-tools.ts": "00d4b7fbfe5630170c12ae43c758f6e34ea33adcd79bf46b6068cd37c90efd65",
     "web/console/src/realtime/realtime-copilot.ts": "85f57c0aed8034ff6264f8d0c16324cc1ad3229562c4307fa3329516f062b441",
     "web/console/src/session/Composer.tsx": "71334656025bc65a305c4c4f59d9e8a0af651618133205aa5a577c9b6eeb3128",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
-    "web/console/src/session/Start.tsx": "a9b95f00d6d418b931d67a72ceba0ae1e399c7408286d512f03b0d7d86558608",
+    "web/console/src/session/Start.tsx": "c801dc98c4cc759166c5277e0ff9f54bf0c29f737af906edbdfe0e21f3d3e09e",
     "web/console/src/session/live-dictation.ts": "dea94a7d7489a087b1bd11a54a08fbe6de3199cb748e3d3971107023972215b3",
     "web/console/src/session/pending.ts": "7d1b8eb14bf21dc90a6032ad134a2d7621a4338e066f7499459b17c27cb50cab",
     "web/console/src/session/persist.ts": "5f5a34d27c3c5639d30ae611200bd9dcd091d44ac341cf6dc3b6873227e0fb21",

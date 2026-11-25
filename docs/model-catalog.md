@@ -92,7 +92,12 @@ Consumers:
   session no live adapter speaks for (`catalogSessionModels` in
   `internal/transport/http/transcript.go`); a live owned Gemini or Grok session lists its own
   offer, which is the truth for that session.
-- Bot runtime pickers: see [Bots](bots.md).
+- Bot runtime pickers (`project-assistants/AgentModelPicker.tsx`, `ChatModel.tsx`,
+  `BotSettings.tsx`, `agent-model-summary.ts`) for Claude Code, Codex and Grok. The pick is a
+  catalog model plus an effort, saved as `model` or `model/effort`;
+  `modelcatalog.ToConfiguration`, the inverse of `FromConfiguration`, maps it to the agent's ACP
+  value where the daemon validates and applies it, and `FromChoice` reads a saved value back as
+  its catalog entry. Gemini stays on the Bot's own ACP list. See [Bots](bots.md).
 
 ## Not pickers
 

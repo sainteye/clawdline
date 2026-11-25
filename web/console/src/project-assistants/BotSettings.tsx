@@ -9,7 +9,8 @@ import {FallbackSettings,SelectedFallbackSettings,useFallbackSource,useSettingsS
 import {agentName,fallbackEdit} from "./fallback-settings"
 import {ExtensionSettings} from "./ExtensionSettings"
 import {LoginProfiles} from "./LoginProfiles"
-import {configurationError,useModelCatalog} from "./RuntimeSettings"
+import {configurationError,useBotConfiguration} from "./RuntimeSettings"
+import {useModelCatalog} from "../model-catalog/useModelCatalog"
 import {AgentModelPicker} from "./AgentModelPicker"
 import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
@@ -87,8 +88,9 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
   const [extensions,setExtensions]=useState<W.ProjectAssistantExtensionSelection>(bot.extensions??{skills:[],connectors:[]})
   const [loginProfile,setLoginProfile]=useState(bot.login_profile??""),[loginState,setLoginState]=useState("")
   const selectedFallbacks=source?.canFallbackProfiles?.()===true
-  // As in Codync, the model list loads with the editor so the summary names the model in use.
-  const discovery=useModelCatalog(source,bot,agent,runtime.model,loginProfile,loginState,enabled)
+  // As in Codync, the model list loads with the editor so the summary names the model in use:
+  // the machine's model catalog for the models, this Bot's ACP answer for its other options.
+  const discovery=useBotConfiguration(source,bot,agent,runtime.model,loginProfile,loginState,enabled),catalogs=useModelCatalog(source)
   const runtimeChanged=JSON.stringify(runtime)!==JSON.stringify(original.runtime_settings??{model:"",options:{}})
   const awaitingModel=runtimeChanged&&discovery.pending
   const validFallbacks=fallbacks.filter(step=>step!==agent)
@@ -195,7 +197,7 @@ export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage
           <label className="pa-settings-instructions">{w.instructions}<small>{w.settingsInstructionsHint}</small><textarea value={instructions} onChange={e=>setInstructions(e.target.value)} rows={4}/></label>
         </SettingsGroup>
         <SettingsGroup title={w.settingsAgentHeading}>
-          <AgentModelPicker agent={agent} agents={agentChoices} onAgent={chooseAgent} agentEditable={modern} discovery={discovery} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
+          <AgentModelPicker agent={agent} agents={agentChoices} onAgent={chooseAgent} agentEditable={modern} discovery={discovery} models={catalogs.get(agent)} modelsRetry={catalogs.retry} editable={enabled} reason={reason} value={runtime} onChange={setRuntime} w={w}/>
           {agent==="grok"||agent==="antigravity"?<p className="pa-approval-detail">{agent==="grok"?w.grokUsesExistingLogin:w.geminiUsesExistingLogin}</p>:<LoginProfiles compact source={source} bot={bot} agent={agent} value={loginProfile} onChange={setLoginProfile} onStatusChange={setLoginState} w={w}/>}
           <SettingsDisclosure title={w.fallbacks} summary={chain.length?chain.map(agentName).join(" → "):w.settingsNoFallbacks}>
             {selectedFallbacks?<SelectedFallbackSettings bot={{...bot,agent,login_profile:loginProfile}} steps={validSteps} onChange={setFallbackSteps} mode={approval.mode} w={w}/>:<FallbackSettings bot={{...bot,agent}} agents={validFallbacks} onChange={setFallbacks} available={available} mode={approval.mode} w={w}/>}

@@ -212,7 +212,17 @@ message for execution, the source refuses an edit.
 
 Above the message box, a running Bot shows the model selection reported by its
 native session. A Bot with no active turn shows its saved setting or the Agent
-default. Choose the model label to open the same model list as Bot settings.
+default. Choose the model label to open the model list. For Claude Code, Codex
+and Grok it is the machine's [model catalog](model-catalog.md), the same list as
+Bots settings, with an effort beside it when the agent has no effort option of
+its own; the choice is saved as `model` or `model/effort`. The daemon maps it to
+the agent's ACP value when it validates and applies it
+(`modelcatalog.ToConfiguration`), and a value saved before the catalog keeps
+working and shows as its catalog entry (`gpt-5.5/high` as gpt-5.5 with high,
+Claude's `default` as the agent default). A choice the agent does not offer is
+refused, not guessed. Gemini keeps the Bot's own ACP list: the catalog's
+`agy models` slugs are not proven to be the ACP adapter's model ids. Other
+switches (fast and the like) still come from the Bot's own configuration answer.
 Saving applies the selection when the next turn starts, including when a reply
 is already in progress. Model discovery sends no prompt.
 

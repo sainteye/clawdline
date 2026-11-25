@@ -2,12 +2,13 @@ import { useLayoutEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import { bindNativeModalBackdrop } from "../modal-backdrop.js"
 import { errorCode, type SourceClient } from "./client"
-import { AgentModelSelect } from "./AgentModelPicker"
+import { AgentModelSelect, CatalogModelSelect } from "./AgentModelPicker"
 import { settingsSaveFailure } from "./BotSettings"
 import { settingsBase, settingsConflicts } from "./settings-conflicts"
 import { SelectChevron } from "./PaSelect"
-import { nativeDefault, resolvedDefault } from "./agent-model-summary"
-import { configurationError, useModelCatalog } from "./RuntimeSettings"
+import { catalogRuntime, choiceLabel, nativeDefault, resolvedDefault, splitChoice } from "./agent-model-summary"
+import { configurationError, useBotConfiguration } from "./RuntimeSettings"
+import { useModelCatalog } from "../model-catalog/useModelCatalog"
 import { retryableSourceError } from "./source-errors"
 import type { Words } from "./words"
 
@@ -24,8 +25,10 @@ export function ChatModel({bot, source, enabled, activeTurn, reported, save, w}:
   reported?: string; save: SaveModel; w: Words
 }) {
   const [opener, setOpener] = useState<HTMLButtonElement|null>(null)
-  const label = activeTurn ? reported || w.modelNotReported : bot.runtime_settings?.model || w.nativeDefault
-  const editable = enabled && source.canMemorySettings?.() === true && !!source.configuration
+  // A saved catalog choice or older ACP value reads as its catalog entry: "gpt-5.5/high" as gpt-5.5 · high, "default" as the Agent default.
+  const label = activeTurn ? reported || w.modelNotReported : choiceLabel(bot.runtime_settings?.model, w.nativeDefault)
+  // A catalog Agent's choice is checked by the daemon when it is saved; Gemini still needs its own ACP list.
+  const editable = enabled && source.canMemorySettings?.() === true && (catalogRuntime(bot.agent) || !!source.configuration)
   return <>
     {editable ? <button className="pa-chat-model" type="button" title={label}
       aria-label={`${w.changeModel} · ${label}`} aria-haspopup="dialog" aria-expanded={!!opener} onClick={event=>setOpener(event.currentTarget)}>
@@ -48,11 +51,16 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
   const [error, setError] = useState<{code:string;field?:string}>()
   const busy = useRef(false)
   const dialog = useRef<HTMLDialogElement>(null)
+  // The machine's model catalog lists the models; Gemini keeps its own ACP list (catalogRuntime).
+  const fromCatalog = catalogRuntime(baseline.agent)
+  const catalogs = useModelCatalog(fromCatalog && enabled && !saved ? source : undefined)
   // Omitting a draft login profile makes discovery use the Bot's stored profile.
-  const {catalog, pending, error:catalogError, field, retry} = useModelCatalog(source, baseline, baseline.agent, "", undefined, "", enabled && !saved)
+  const {catalog, pending, error:catalogError, field, retry} = useBotConfiguration(source, baseline, baseline.agent, "", undefined, "", !fromCatalog && enabled && !saved)
   const model = catalog?.options.find(option=>option.category==="model")
   const defaultName = model && resolvedDefault(model)
-  const changed = choice!==original && (choice!=="" || !model || nativeDefault(model)?.value!==original)
+  const changed = fromCatalog ? choice!==original && !(splitChoice(choice).model==="" && splitChoice(original).model==="")
+    : choice!==original && (choice!=="" || !model || nativeDefault(model)?.value!==original)
+  const ready = fromCatalog || !!model
   // A turn, memory write or routine while the dialog is open does not block saving; the source decides by field.
   const conflict = error?.code==="pa_stale_version"
   const blocked = conflict || error?.code==="pa_outcome_unknown" || error?.code==="pa_stale_generation"
@@ -68,7 +76,7 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
     }
   },[opener])
   const saveChoice = async(overwrite=false)=>{
-    if(!enabled || busy.current || saved || (blocked && !(overwrite && conflict)) || !model || !changed) return
+    if(!enabled || busy.current || saved || (blocked && !(overwrite && conflict)) || !ready || !changed) return
     busy.current = true
     setSaving(true)
     setError(undefined)
@@ -94,6 +102,7 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
     <h2>{w.changeModel}</h2>
     {saved ? <p role="status">{w.chatModelSaved}</p> : <>
       {!enabled ? <p role="status">{w.cannotEdit}</p> :
+        fromCatalog ? <CatalogModelSelect agent={baseline.agent} models={catalogs.get(baseline.agent)} retry={catalogs.retry} value={choice} onChange={setChoice} w={w} disabled={saving||blocked}/> :
         pending ? <p role="status">{w.nativeLoading}</p> :
         catalogError ? <div><p role="status">{configurationError(catalogError,w,field)}</p>
           {retryableSourceError(catalogError)&&<button type="button" onClick={retry}>{w.nativeRetry}</button>}
@@ -109,7 +118,7 @@ function ModelDialog({bot, source, opener, enabled, w, save, onClose}: {
     </>}
     <div className="pa-actions">
       <button type="button" disabled={saving} onClick={onClose}>{saved?w.close:w.cancel}</button>
-      {!saved&&<button type="button" disabled={!enabled||saving||blocked||!model||!changed}
+      {!saved&&<button type="button" disabled={!enabled||saving||blocked||!ready||!changed}
         aria-busy={saving||undefined} onClick={()=>void saveChoice()}>{saving?w.loading:w.save}</button>}
     </div>
   </dialog>

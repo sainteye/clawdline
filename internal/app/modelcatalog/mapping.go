@@ -131,3 +131,130 @@ func FromNative(rows []NativeModel) []mc.Model {
 	}
 	return out
 }
+
+// effortWords are the effort names an ACP model value may carry after "/"
+// (Codex's per-effort entries) and a saved Bot choice may name. Only these
+// split a value: a model id that merely contains "/" stays one model.
+var effortWords = map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true, "max": true}
+
+// Choice is what a Bot's saved runtime model holds when a person picks a
+// catalog model and an effort: the model alone, or "model/effort". It is the
+// same spelling as Codex's per-effort ACP values, so a saved ACP value and a
+// saved catalog choice read alike.
+func Choice(model, effort string) string {
+	if model == "" || effort == "" {
+		return model
+	}
+	return model + "/" + effort
+}
+
+// FromChoice reads a saved runtime model as the catalog entry a picker shows:
+// "gpt-5.5/high" is model gpt-5.5 with effort high; the agent's own "default"
+// entry is no model (the agent default); anything else is a model as saved.
+func FromChoice(value string) (model, effort string) {
+	if value == "default" {
+		return "", ""
+	}
+	if i := strings.LastIndex(value, "/"); i > 0 && effortWords[value[i+1:]] {
+		return value[:i], value[i+1:]
+	}
+	return value, ""
+}
+
+// Configured is what one saved choice asks of the agent's ACP session.
+type Configured struct {
+	// Model is the ACP model value to set; "" sets none (the agent default).
+	Model string
+	// Options are further ACP options the choice implies: an effort the agent
+	// takes as its own option rather than inside the model value.
+	Options map[string]string
+}
+
+func choiceOffered(o *pa.ConfigOption, value string) bool {
+	for _, c := range o.Choices {
+		if c.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+// effortOption is the agent's own effort option that offers effort, if any.
+func effortOption(catalog pa.ConfigurationCatalog, effort string) string {
+	for i := range catalog.Options {
+		o := &catalog.Options[i]
+		if o.Category == "model" {
+			continue
+		}
+		if o.Category == "thought_level" || o.ID == "reasoning_effort" || o.ID == "reasoning-effort" || o.ID == "effort" || o.ID == "thought_level" {
+			if choiceOffered(o, effort) {
+				return o.ID
+			}
+		}
+	}
+	return ""
+}
+
+// ToConfiguration is FromConfiguration's inverse for one saved choice: the
+// ACP value (and any effort option) that applies it in this agent's answer.
+//
+// A value the agent lists exactly is applied as it is, so every ACP value
+// saved before the catalog keeps working. A catalog model with an effort is
+// the agent's per-effort entry, or the plain model plus the agent's own
+// effort option. A catalog model without an effort is the per-effort entry
+// the agent runs now for that model, else the one with the effort it runs
+// now, else its "medium" entry (Codex's own default effort), else its only
+// entry. "default" the agent no longer lists is the agent default. Anything
+// else is not ok: the caller refuses rather than guessing.
+func ToConfiguration(catalog pa.ConfigurationCatalog, choice string) (Configured, bool) {
+	if choice == "" {
+		return Configured{}, true
+	}
+	var option *pa.ConfigOption
+	for i := range catalog.Options {
+		if catalog.Options[i].Category == "model" {
+			option = &catalog.Options[i]
+			break
+		}
+	}
+	if option == nil {
+		return Configured{}, false
+	}
+	if choiceOffered(option, choice) {
+		return Configured{Model: choice}, true
+	}
+	model, effort := FromChoice(choice)
+	if model == "" {
+		return Configured{}, true
+	}
+	if effort != "" {
+		if choiceOffered(option, model) {
+			if id := effortOption(catalog, effort); id != "" {
+				return Configured{Model: model, Options: map[string]string{id: effort}}, true
+			}
+		}
+		return Configured{}, false
+	}
+	entries := []string{}
+	for _, c := range option.Choices {
+		if c.Value != model && modelPart(c.Value) == model {
+			entries = append(entries, c.Value)
+		}
+	}
+	if len(entries) == 0 {
+		return Configured{}, false
+	}
+	if modelPart(option.Current) == model && choiceOffered(option, option.Current) {
+		return Configured{Model: option.Current}, true
+	}
+	if _, now := FromChoice(option.Current); now != "" && choiceOffered(option, Choice(model, now)) {
+		return Configured{Model: Choice(model, now)}, true
+	}
+	if choiceOffered(option, Choice(model, "medium")) {
+		return Configured{Model: Choice(model, "medium")}, true
+	}
+	if len(entries) == 1 {
+		return Configured{Model: entries[0]}, true
+	}
+	return Configured{}, false
+}

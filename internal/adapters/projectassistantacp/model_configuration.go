@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/sainteye/clawdline/internal/app/modelcatalog"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"sort"
@@ -148,6 +149,9 @@ func (c *Client) configureModel(ctx context.Context, bot pa.Bot, raw []byte, app
 	if err != nil {
 		return catalog, err
 	}
+	// A saved model is an ACP value or a catalog choice ("model" or
+	// "model/effort"); the catalog's inverse mapping names what to set.
+	var implied map[string]string
 	if bot.RuntimeSettings.Model != "" {
 		var model *pa.ConfigOption
 		for i := range catalog.Options {
@@ -156,48 +160,63 @@ func (c *Client) configureModel(ctx context.Context, bot pa.Bot, raw []byte, app
 				break
 			}
 		}
-		if model == nil || !offers(*model, bot.RuntimeSettings.Model) {
+		configured, ok := modelcatalog.ToConfiguration(catalog, bot.RuntimeSettings.Model)
+		if model == nil || !ok {
 			return catalog, refusal(pa.Unsupported, "model")
 		}
-		var answer []byte
-		if model.ID != "" {
-			answer, err = c.call(ctx, "session/set_config_option", map[string]any{"sessionId": c.SessionID(), "configId": model.ID, "value": bot.RuntimeSettings.Model})
-		} else {
-			answer, err = c.call(ctx, "session/set_model", map[string]string{"sessionId": c.SessionID(), "modelId": bot.RuntimeSettings.Model})
-		}
-		if err != nil {
-			return catalog, err
-		}
-		var changed struct {
-			Options json.RawMessage `json:"configOptions"`
-		}
-		if json.Unmarshal(answer, &changed) != nil {
-			return catalog, refusal(pa.Unsupported, "config_response")
-		}
-		if len(changed.Options) > 0 {
-			catalog, err = parseConfiguration(answer, bot.Agent)
+		implied = configured.Options
+		if value := configured.Model; value != "" {
+			var answer []byte
+			if model.ID != "" {
+				answer, err = c.call(ctx, "session/set_config_option", map[string]any{"sessionId": c.SessionID(), "configId": model.ID, "value": value})
+			} else {
+				answer, err = c.call(ctx, "session/set_model", map[string]string{"sessionId": c.SessionID(), "modelId": value})
+			}
 			if err != nil {
 				return catalog, err
 			}
-		}
-		if model.ID != "" && (len(changed.Options) == 0 || catalog.Model != bot.RuntimeSettings.Model) {
-			return catalog, refusal(pa.Unsupported, "model_not_applied")
-		}
-		catalog.Model = bot.RuntimeSettings.Model
-		if len(changed.Options) > 0 {
-			raw = answer
+			var changed struct {
+				Options json.RawMessage `json:"configOptions"`
+			}
+			if json.Unmarshal(answer, &changed) != nil {
+				return catalog, refusal(pa.Unsupported, "config_response")
+			}
+			if len(changed.Options) > 0 {
+				catalog, err = parseConfiguration(answer, bot.Agent)
+				if err != nil {
+					return catalog, err
+				}
+			}
+			if model.ID != "" && (len(changed.Options) == 0 || catalog.Model != value) {
+				return catalog, refusal(pa.Unsupported, "model_not_applied")
+			}
+			catalog.Model = value
+			if len(changed.Options) > 0 {
+				raw = answer
+			}
 		}
 	}
-	if !apply {
+	// An effort the choice implies is applied, and so validated, even in a
+	// discovery session that applies no saved options.
+	if !apply && len(implied) == 0 {
 		return catalog, nil
 	}
-	ids := make([]string, 0, len(bot.RuntimeSettings.Options))
-	for id := range bot.RuntimeSettings.Options {
+	selected := map[string]string{}
+	if apply {
+		for id, value := range bot.RuntimeSettings.Options {
+			selected[id] = value
+		}
+	}
+	for id, value := range implied {
+		selected[id] = value
+	}
+	ids := make([]string, 0, len(selected))
+	for id := range selected {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
 	for _, id := range ids {
-		value := bot.RuntimeSettings.Options[id]
+		value := selected[id]
 		var found *pa.ConfigOption
 		for i := range catalog.Options {
 			if catalog.Options[i].ID == id && catalog.Options[i].Category != "model" {

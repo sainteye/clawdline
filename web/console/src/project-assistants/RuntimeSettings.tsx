@@ -5,7 +5,14 @@ import {errorCode} from "./client"
 import type {Words} from "./words"
 import {botFailureText,providerSetupFailure} from "./source-errors"
 
-export function useModelCatalog(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string|undefined,loginState:string,active:boolean){
+/**
+ * This Bot's own ACP configuration answer, read in a disposable discovery session: the
+ * Agent's non-model options (effort, fast and other switches) for the drafted model, and,
+ * for an Agent whose runtime model list is not the machine catalog (catalogRuntime), its
+ * model list too. Model lists otherwise come from the daemon model catalog
+ * (../model-catalog/useModelCatalog).
+ */
+export function useBotConfiguration(source:SourceClient|undefined,bot:W.ProjectAssistantBot,agent:W.ProjectAssistantAgent,model:string,loginProfile:string|undefined,loginState:string,active:boolean){
   const {machine_id,bot_id}=bot.key,conversation=bot.conversation_id
   const [revision,setRevision]=useState(0)
   const request=useMemo(()=>({source,machine_id,bot_id,conversation,agent,model,loginProfile,loginState,active,revision}),

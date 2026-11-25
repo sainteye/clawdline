@@ -112,3 +112,94 @@ func TestADefaultEntryCopyingAPerEffortEntrysNoteIsNamedByItsModel(t *testing.T)
 		t.Fatalf("default name = %q", name)
 	}
 }
+
+func claudeAnswer() pa.ConfigurationCatalog {
+	return configuration(pa.ClaudeCode, "default",
+		pa.ConfigChoice{Value: "default", Name: "Default (recommended)", Description: "Opus 4.5"},
+		pa.ConfigChoice{Value: "sonnet", Name: "Sonnet"},
+		pa.ConfigChoice{Value: "haiku", Name: "Haiku"},
+	)
+}
+
+func codexAnswer(current string) pa.ConfigurationCatalog {
+	return configuration(pa.Codex, current,
+		pa.ConfigChoice{Value: "gpt-5.5/low", Name: "gpt-5.5 (low)"},
+		pa.ConfigChoice{Value: "gpt-5.5/medium", Name: "gpt-5.5 (medium)"},
+		pa.ConfigChoice{Value: "gpt-5.5/high", Name: "gpt-5.5 (high)"},
+		pa.ConfigChoice{Value: "gpt-5.4-mini/high", Name: "gpt-5.4-mini (high)"},
+	)
+}
+
+func applies(t *testing.T, catalog pa.ConfigurationCatalog, choice string, want Configured) {
+	t.Helper()
+	got, ok := ToConfiguration(catalog, choice)
+	if !ok || !reflect.DeepEqual(got, want) {
+		t.Fatalf("ToConfiguration(%q) = %#v %v, want %#v", choice, got, ok, want)
+	}
+}
+
+func TestAClaudeCatalogModelIsItsOwnACPValueAndNoModelIsTheDefault(t *testing.T) {
+	applies(t, claudeAnswer(), "sonnet", Configured{Model: "sonnet"})
+	applies(t, claudeAnswer(), "", Configured{})
+	// A value saved before the catalog, the agent's own Default entry, is still applied as it is.
+	applies(t, claudeAnswer(), "default", Configured{Model: "default"})
+	if m, e := FromChoice("default"); m != "" || e != "" {
+		t.Fatalf("saved default reads as %q %q, want the agent default", m, e)
+	}
+	if m, e := FromChoice("sonnet"); m != "sonnet" || e != "" {
+		t.Fatalf("saved sonnet reads as %q %q", m, e)
+	}
+	// An agent that no longer lists its Default entry runs its default for "default".
+	applies(t, configuration(pa.ClaudeCode, "sonnet", pa.ConfigChoice{Value: "sonnet", Name: "Sonnet"}), "default", Configured{})
+}
+
+func TestACodexCatalogModelAndEffortIsItsPerEffortEntry(t *testing.T) {
+	applies(t, codexAnswer("gpt-5.5/high"), Choice("gpt-5.5", "high"), Configured{Model: "gpt-5.5/high"})
+	if got := Choice("gpt-5.5", "high"); got != "gpt-5.5/high" {
+		t.Fatalf("Choice = %q", got)
+	}
+	if m, e := FromChoice("gpt-5.5/high"); m != "gpt-5.5" || e != "high" {
+		t.Fatalf("saved gpt-5.5/high reads as %q %q", m, e)
+	}
+	// A model id with "/" that is not an effort stays one model.
+	if m, e := FromChoice("models/gemini-pro"); m != "models/gemini-pro" || e != "" {
+		t.Fatalf("got %q %q", m, e)
+	}
+}
+
+func TestACodexCatalogModelWithoutAnEffortKeepsTheEffortThatRuns(t *testing.T) {
+	// The model already runs: keep its effort.
+	applies(t, codexAnswer("gpt-5.5/low"), "gpt-5.5", Configured{Model: "gpt-5.5/low"})
+	// Another model runs: the same effort for the chosen model.
+	applies(t, codexAnswer("gpt-5.4-mini/high"), "gpt-5.5", Configured{Model: "gpt-5.5/high"})
+	// No effort runs that the chosen model has: Codex's own default effort.
+	applies(t, codexAnswer("default"), "gpt-5.5", Configured{Model: "gpt-5.5/medium"})
+	// The only entry for a model.
+	applies(t, codexAnswer("gpt-5.5/low"), "gpt-5.4-mini", Configured{Model: "gpt-5.4-mini/high"})
+}
+
+func TestAnEffortTheAgentTakesAsItsOwnOptionIsSetBesideThePlainModel(t *testing.T) {
+	catalog := configuration(pa.Codex, "model-sol",
+		pa.ConfigChoice{Value: "model-sol", Name: "6.2 Sol"}, pa.ConfigChoice{Value: "model-astra", Name: "6.2 Astra"})
+	catalog.Options = append(catalog.Options, pa.ConfigOption{ID: "reasoning_effort", Name: "Effort", Category: "thought_level", Current: "medium",
+		Choices: []pa.ConfigChoice{{Value: "medium", Name: "Medium"}, {Value: "high", Name: "High"}}})
+	applies(t, catalog, "model-astra/high", Configured{Model: "model-astra", Options: map[string]string{"reasoning_effort": "high"}})
+	if _, ok := ToConfiguration(catalog, "model-astra/xhigh"); ok {
+		t.Fatal("an effort the agent does not offer was mapped")
+	}
+}
+
+func TestAnUnmappedSavedValueIsRefusedNotGuessed(t *testing.T) {
+	for _, choice := range []string{"opus", "gpt-5.5/xhigh", "gpt-9"} {
+		if got, ok := ToConfiguration(codexAnswer("gpt-5.5/high"), choice); ok {
+			t.Fatalf("%q mapped to %#v", choice, got)
+		}
+	}
+	if _, ok := ToConfiguration(pa.ConfigurationCatalog{Agent: pa.Grok}, "grok-4"); ok {
+		t.Fatal("a model was mapped for an agent without a model option")
+	}
+	// The value itself is kept for display: it reads back as saved.
+	if m, e := FromChoice("opus[1m]"); m != "opus[1m]" || e != "" {
+		t.Fatalf("got %q %q", m, e)
+	}
+}
