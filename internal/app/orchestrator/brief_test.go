@@ -73,6 +73,41 @@ func TestTheBriefingSignsWithOneCommand(t *testing.T) {
 	}
 }
 
+func TestWorktreeBriefFollowsCommitCapability(t *testing.T) {
+	b := &Broker{Tasks: taskdir.New(t.TempDir())}
+	record := codexCommitFixture(t)
+	for _, tc := range []struct {
+		name, assistant, mode string
+		canCommit             bool
+	}{
+		{"codex edits", "codex", "edits", true},
+		{"codex full", "codex", "full", true},
+		{"codex ask", "codex", "ask", false},
+		{"claude", "claude", "full", true},
+		{"grok", "grok", "full", true},
+		{"gemini", "antigravity", "full", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := record
+			r.Assistant, r.PermissionMode = tc.assistant, tc.mode
+			brief := b.ChildBrief(r, r.Worktree.Path)
+			if got := strings.Contains(brief, "**Commit early and often, on this branch only.**"); got != tc.canCommit {
+				t.Errorf("commit instruction = %v, want %v", got, tc.canCommit)
+			}
+			wantNoCommit := !tc.canCommit && tc.mode != "ask"
+			if got := strings.Contains(brief, "**Do not commit**"); got != wantNoCommit {
+				t.Errorf("no-commit instruction = %v, want %v", got, wantNoCommit)
+			}
+			if tc.mode == "ask" && !strings.Contains(brief, "Commit on this branch only if your native Git permissions allow it.") {
+				t.Error("ask brief does not defer to native Git permissions")
+			}
+			if !strings.Contains(brief, "Do not push, switch branches, rebase, merge, hard-reset, stash, or run any `git worktree` command.") {
+				t.Error("brief omitted the branch restrictions")
+			}
+		})
+	}
+}
+
 // The completion notice's human half is a pointer, not a manual: which task,
 // how it ended, how many leftovers, and the one command. Its machine half
 // keeps what a machine reads and nothing the sentence or the command says

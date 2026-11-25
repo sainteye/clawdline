@@ -173,11 +173,7 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	}
 	if r.Worktree != nil {
 		w("- A fresh checkout of commit `%s` on branch `%s`.", r.Worktree.Base, r.Worktree.Branch)
-		if r.Assistant == "claude" {
-			w("  **Commit early and often, on this branch only.** The branch is the delivery.")
-		} else {
-			w("  **Do not commit**: this sandbox cannot write the worktree's git metadata. The root commits.")
-		}
+		w("  %s", worktreeCommitInstruction(r))
 		w("  Do not push, switch branches, rebase, merge, hard-reset, stash, or run any `git worktree` command.")
 	}
 	w("")
@@ -272,6 +268,32 @@ func (b *Broker) ChildBrief(r Record, cwd string) string {
 	w("%s", b.finishCommand(dir, port))
 	w("```")
 	return s.String()
+}
+
+func worktreeCommitInstruction(r Record) string {
+	if canCommitWorktree(r) {
+		return "**Commit early and often, on this branch only.** The branch is the delivery."
+	}
+	if !r.Worktree.Detached && r.Assistant == projects.AssistantCodex && r.PermissionMode == "ask" {
+		return "Commit on this branch only if your native Git permissions allow it. Otherwise the root commits."
+	}
+	return "**Do not commit**: this launch has no verified worktree Git write capability. The root commits."
+}
+
+func canCommitWorktree(r Record) bool {
+	if r.Worktree == nil || r.Worktree.Detached {
+		return false
+	}
+	switch r.Assistant {
+	case projects.AssistantClaude:
+		return true
+	case projects.AssistantGrok:
+		return r.PermissionMode == "full"
+	case projects.AssistantCodex:
+		return (r.PermissionMode == "edits" || r.PermissionMode == "full") && len(codexGitWritePaths(r, r.Worktree.Path)) > 0
+	default:
+		return false
+	}
 }
 
 // Match the result preflight's review requirement, including graph review nodes.

@@ -4,11 +4,11 @@
   "counts": {
     "negation": 3713,
     "state": 2490,
-    "permission": 868,
+    "permission": 869,
     "deletion": 336,
     "uncertainty": 583
   },
-  "unionCount": 6201,
+  "unionCount": 6202,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7000,6 +7000,7 @@
       "template.5c513a465185",
       "transparency.card.browser-use.effect",
       "transparency.card.child.condition",
+      "transparency.card.child.effect",
       "transparency.card.child.summary",
       "transparency.card.gate-review.how",
       "transparency.card.grok-acp-context.how",
@@ -13821,6 +13822,7 @@
     "transparency.card.browser-use.effect",
     "transparency.card.browser-use.how",
     "transparency.card.child.condition",
+    "transparency.card.child.effect",
     "transparency.card.child.summary",
     "transparency.card.claude-language.summary",
     "transparency.card.claude-role.summary",

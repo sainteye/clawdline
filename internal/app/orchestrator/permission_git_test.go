@@ -4,6 +4,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -95,31 +97,83 @@ func TestAskCodexChildGetsNoMetadataProfile(t *testing.T) {
 	}
 }
 
-// A worktree child's index and refs live in its gitdir under the main
-// repository's metadata, which Codex protects as well; both are named.
-func TestCodexWorktreeChildMayWriteItsGitdir(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git is not installed")
+func TestCodexWorktreeChildMayWriteOnlyItsCommitPaths(t *testing.T) {
+	r := codexCommitFixture(t)
+	tasks := t.TempDir()
+	subdir := filepath.Join(r.Worktree.Path, "pkg")
+	if err := os.Mkdir(subdir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	base := t.TempDir()
-	repo, worktree := filepath.Join(base, "repo"), filepath.Join(base, "wt")
-	for _, args := range [][]string{
-		{"init", "-q", repo},
-		{"-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "base"},
-		{"-C", repo, "worktree", "add", "-q", worktree, "-b", "child"},
-	} {
-		if out, err := exec.Command("git", args...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
+	metadata := filepath.Join(r.Repository, ".git")
+	branch := filepath.FromSlash(r.Worktree.Branch)
+	ref := filepath.Join(metadata, "refs", "heads", branch)
+	gitdir := filepath.Join(metadata, "worktrees", filepath.Base(r.Worktree.Path))
+	paths := []string{metadata, gitdir, tasks}
+	if runtime.GOOS == "darwin" {
+		paths = []string{gitdir, filepath.Join(metadata, "objects"), ref, ref + ".lock",
+			filepath.Join(metadata, "logs", "refs", "heads", branch), tasks}
+	}
+	for i, path := range paths {
+		paths[i] = strconv.Quote(path) + `="write"`
+	}
+	want := `permissions.clawdline-workspace.filesystem={` + strings.Join(paths, ",") + "}"
+	for _, mode := range []string{"edits", "full"} {
+		t.Run(mode, func(t *testing.T) {
+			r.PermissionMode = mode
+			for _, cwd := range []string{r.Worktree.Path, subdir} {
+				args := permissionArgs(r, tasks, cwd, "")
+				if !strings.Contains(strings.Join(args, " "), want) {
+					t.Errorf("cwd %s: want exactly %s; got %v", cwd, want, args)
+				}
+			}
+		})
+	}
+}
+
+func TestCodexWorktreeChildWithoutVerifiedCommitPathsGetsNoMetadataGrant(t *testing.T) {
+	r := codexCommitFixture(t)
+	for _, target := range []string{"", BranchName("another-task")} {
+		copy := *r.Worktree
+		copy.Branch = target
+		record := r
+		record.Worktree = &copy
+		args := permissionArgs(record, "", copy.Path, "")
+		if strings.Contains(strings.Join(args, " "), `permissions.clawdline-workspace.filesystem=`) {
+			t.Errorf("unverified branch %q received a metadata grant: %v", target, args)
 		}
 	}
-	repo, _ = filepath.EvalSymlinks(repo)
-	worktree, _ = filepath.EvalSymlinks(worktree)
-	line := strings.Join(permissionArgs(Record{Assistant: "codex", PermissionMode: "full", Repository: repo}, "", worktree, ""), " ")
-	for _, want := range []string{`"` + filepath.Join(repo, ".git") + `"="write"`, `"` + filepath.Join(repo, ".git", "worktrees", "wt") + `"="write"`} {
-		if !strings.Contains(line, want) {
-			t.Errorf("%q missing from %s", want, line)
-		}
+}
+
+func TestMacOSWorktreeGrantRejectsRedirectedRefLock(t *testing.T) {
+	r := codexCommitFixture(t)
+	metadata := filepath.Join(r.Repository, ".git")
+	gitdir := filepath.Join(metadata, "worktrees", filepath.Base(r.Worktree.Path))
+	ref := filepath.Join("refs", "heads", filepath.FromSlash(r.Worktree.Branch))
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), filepath.Join(metadata, ref)+".lock"); err != nil {
+		t.Skipf("cannot create symbolic link: %v", err)
 	}
+	if paths := macOSWorktreeGitPaths(metadata, gitdir, ref); paths != nil {
+		t.Errorf("redirected lock path was granted: %v", paths)
+	}
+}
+
+func codexCommitFixture(t *testing.T) Record {
+	t.Helper()
+	r := briefTestRecord()
+	r.Assistant, r.PermissionMode = "codex", "full"
+	r.Repository = gitRepo(t)
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, branch := filepath.Join(parent, "wt"), BranchName(r.ID)
+	cmd := exec.Command("git", "-C", r.Repository, "-c", "core.logAllRefUpdates=true", "worktree", "add", "-q", "-b", branch, path)
+	cmd.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git worktree add: %v\n%s", err, out)
+	}
+	r.Worktree = &Worktree{Repository: r.Repository, Path: path, Branch: branch, Base: "base"}
+	return r
 }
 
 // A `.git` file pointing anywhere but this repository's worktrees grants nothing.
