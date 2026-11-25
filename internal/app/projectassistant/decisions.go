@@ -63,24 +63,43 @@ func (r *Engine) forwardDecision(ctx context.Context, key pa.BotKey, t pa.Turn, 
 
 // answerDecision commits the person's press as their own message in the chat
 // that asked. The offer resolves in the same commit, so it is answered once.
+// A press whose reply was lost replays its receipt before any state check,
+// so the same answer never turns into "already answered". Every refusal
+// before Submit has written nothing and stays a typed, retryable one.
 func (s *Service) answerDecision(ctx context.Context, c pa.Command, answer pa.PermissionAnswer, offer pa.PermissionOffer, a Authority) (pa.Receipt, error) {
-	bot, err := s.opts.Repository.Bot(ctx, c.Key)
+	text, err := pa.DecisionAnswerText(offer, answer)
 	if err != nil {
 		return pa.Receipt{}, err
+	}
+	// One key per offer, hashed over the answer and not the chat's
+	// current fence, which a restart or fallback may have moved: the same
+	// answer replays its receipt, and a different one finds the offer
+	// already answered.
+	cmd := c
+	cmd.Operation, cmd.IdempotencyKey, cmd.ClientAttemptID = pa.SendOperation, "decision-"+offer.ID, ""
+	cmd, err = canonicalCommand(cmd, pa.SendOperation, a.PrincipalID, decisionAnswerPayload{OfferID: offer.ID, OptionID: answer.OptionID, Text: text})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	prior, err := s.replay(ctx, cmd)
+	if pa.Code(err) == pa.IdempotencyConflict {
+		return pa.Receipt{}, serviceFailure(pa.StaleVersion, "decision_answered")
+	}
+	if err != nil {
+		return pa.Receipt{}, pa.NotSent(err, "decision_receipt")
+	}
+	if prior != nil {
+		return *prior, nil
+	}
+	bot, err := s.opts.Repository.Bot(ctx, c.Key)
+	if err != nil {
+		return pa.Receipt{}, pa.NotSent(err, "decision_bot")
 	}
 	conv, err := s.opts.Repository.Conversation(ctx, c.Key, bot.ConversationID)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, pa.NotSent(err, "decision_conversation")
 	}
-	b, err := s.opts.Repository.Binding(ctx, c.Key, conv.BindingID)
-	if err != nil && pa.Code(err) != pa.NotFound {
-		return pa.Receipt{}, err
-	}
-	if err = pa.CheckDecision(offer, answer, bot, b.Revoked, s.opts.Clock()); err != nil {
-		return pa.Receipt{}, err
-	}
-	text, err := pa.DecisionAnswerText(offer, answer)
-	if err != nil {
+	if err = pa.CheckDecision(offer, answer, bot, s.opts.Clock()); err != nil {
 		return pa.Receipt{}, err
 	}
 	resolved := offer
@@ -92,17 +111,16 @@ func (s *Service) answerDecision(ctx context.Context, c pa.Command, answer pa.Pe
 	if err = pa.ValidateInputSend(message.Text, nil, nil); err != nil {
 		return pa.Receipt{}, err
 	}
-	// One key per offer: a second, different answer is a conflicting
-	// command, and the same answer replays its receipt.
-	cmd := c
-	cmd.Operation, cmd.IdempotencyKey, cmd.ClientAttemptID = pa.SendOperation, "decision-"+offer.ID, ""
-	cmd, err = canonicalCommand(cmd, pa.SendOperation, a.PrincipalID, message)
-	if err != nil {
-		return pa.Receipt{}, err
-	}
 	authorityCheck := func(ctx context.Context) error {
 		_, e := s.authorizeEffect(ctx, c.Key, true, a)
 		return e
 	}
 	return s.opts.Runtime.Submit(ctx, Submission{Command: cmd, Message: message, Decision: &resolved, InputOwner: InputOwner{Authority: readViewBinding(a)}, AuthorityCheck: authorityCheck, Feature: a.Feature, Source: a.Source})
+}
+
+// decisionAnswerPayload is what a decision answer's idempotency hash covers.
+type decisionAnswerPayload struct {
+	OfferID  string `json:"offer_id"`
+	OptionID string `json:"option_id,omitempty"`
+	Text     string `json:"text"`
 }

@@ -156,6 +156,10 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	})
 }
 
+// longAnswer is a typed reply of about 700 Chinese characters, longer than
+// the question bound that used to refuse it.
+var longAnswer = strings.Repeat("我同意，但請先在測試環境跑過一次。", 45)
+
 func TestPeerQuestionRefusesExpiredHiddenAndOverflowingOffers(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
@@ -167,7 +171,7 @@ func TestPeerQuestionRefusesExpiredHiddenAndOverflowingOffers(t *testing.T) {
 		t.Fatal(err)
 	}
 	answer := func(key string) error {
-		_, e := service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: key}, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, Text: "My own answer"})
+		_, e := service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: key}, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, Text: longAnswer})
 		return e
 	}
 	// A Bot's own key cannot answer another Bot's offer.
@@ -179,21 +183,18 @@ func TestPeerQuestionRefusesExpiredHiddenAndOverflowingOffers(t *testing.T) {
 		t.Fatal(err)
 	}
 	bot.Hidden = true
-	if err = pa.CheckDecision(offer, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID}, bot, false, offer.ExpiresAt.Add(-1)); pa.Code(err) != pa.ScopeDenied {
+	if err = pa.CheckDecision(offer, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID}, bot, offer.ExpiresAt.Add(-1)); pa.Code(err) != pa.ScopeDenied {
 		t.Fatalf("a hidden Bot's offer stayed answerable: %v", err)
 	}
 	bot.Hidden = false
-	if err = pa.CheckDecision(offer, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID}, bot, true, offer.ExpiresAt.Add(-1)); pa.Code(err) != pa.ScopeDenied {
-		t.Fatalf("a revoked binding's offer stayed answerable: %v", err)
-	}
-	if err = pa.CheckDecision(offer, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID}, bot, false, offer.ExpiresAt); pa.Code(err) != pa.Expired {
+	if err = pa.CheckDecision(offer, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID}, bot, offer.ExpiresAt); pa.Code(err) != pa.Expired {
 		t.Fatalf("an expired offer stayed answerable: %v", err)
 	}
 	if err = answer("own"); err != nil {
 		t.Fatalf("the person's own reply was refused: %v", err)
 	}
 	fixtureReceive(t, f.p.sent)
-	if got := decisionOffers(t, f, b.Key); len(got) != 1 || got[0].Decision.AnswerText != "My own answer" {
+	if got := decisionOffers(t, f, b.Key); len(got) != 1 || got[0].Decision.AnswerText != longAnswer {
 		t.Fatalf("own reply not recorded: %+v", got)
 	}
 	if err = pa.CheckAskPerson(pa.AskPersonRequest{Question: "q", SuggestedReplies: []string{"1", "2", "3", "4"}}); pa.Code(err) != pa.Invalid {
@@ -232,4 +233,63 @@ func TestOrdinaryTurnQuestionsAreBounded(t *testing.T) {
 		}
 		return pending == pa.MaxDecisionOffersPerBot
 	})
+}
+
+// A login or quota fallback revokes the chat's native binding while the card
+// stays pending; the person's press is still their message to the chat.
+func TestDecisionPressSurvivesARevokedBindingAndReplaysItsReceipt(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	_, b, _, offer := startPeerQuestion(t, f)
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unrelated, err := f.send(t, b, "unrelated topic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	fixtureReceive(t, f.p.sessions).reply <- app.PromptResult{FinalText: "Here is the unrelated answer."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, b.Key, unrelated.ResourceID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	x, err := f.h.store.Export(ctx, b.Key)
+	if err != nil || len(x.Bindings) == 0 {
+		t.Fatalf("no binding to revoke: %+v, %v", x.Bindings, err)
+	}
+	conv, err := f.h.store.Conversation(ctx, b.Key, b.ConversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var binding pa.ExecutionBinding
+	for _, candidate := range x.Bindings {
+		if candidate.Fence.BindingID == conv.BindingID {
+			binding = candidate
+		}
+	}
+	if binding.Fence.BindingID == "" {
+		t.Fatalf("the chat's binding %q is not exported", conv.BindingID)
+	}
+	binding.Revoked = true
+	if _, err = f.h.store.Commit(ctx, app.Mutation{Command: projectionCommand(b.Key, "revoke"), ExpectedVersion: x.Bot.Version, Binding: &binding, Receipt: pa.Receipt{ID: "revoke", State: pa.EffectDelivered}}); err != nil {
+		t.Fatal(err)
+	}
+	press := pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, OptionID: "reply-1"}
+	first, err := service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "press"}, press)
+	if err != nil {
+		t.Fatalf("a press after a fallback revoked the binding = %v", err)
+	}
+	fixtureReceive(t, f.p.sent)
+	again, err := service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "press-retry"}, press)
+	if err != nil || again.ID != first.ID {
+		t.Fatalf("the retried press = %+v, %v; want receipt %q", again, err, first.ID)
+	}
+	press.OptionID = "reply-2"
+	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "press-other"}, press); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("a second, different answer = %v", err)
+	}
 }

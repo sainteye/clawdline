@@ -21,6 +21,16 @@ const (
 	MaxDecisionSuggestedReplies = 3
 	MaxDecisionQuestionBytes    = 2000
 	MaxDecisionReplyBytes       = 500
+	// MaxDecisionPromptOverheadBytes is reserved for what DecisionPrompt
+	// adds around the person's answer: the quoted question and request
+	// with their headers. Quoting at most triples a text of empty lines,
+	// so 3*(MaxDecisionQuestionBytes+MaxDecisionRequestQuoteBytes) plus
+	// the headers fits.
+	MaxDecisionPromptOverheadBytes = 16 << 10
+	// MaxDecisionAnswerBytes bounds the person's own typed answer. The
+	// answer becomes their message, so it is the message bound minus the
+	// quoted context, never the much smaller question bound.
+	MaxDecisionAnswerBytes = MaxUserMessageBytes - MaxDecisionPromptOverheadBytes
 	// MaxDecisionRequestQuoteBytes bounds the requester's message the card
 	// and the person's answer quote as context.
 	MaxDecisionRequestQuoteBytes = 1500
@@ -97,15 +107,17 @@ func DecisionAnswerText(offer PermissionOffer, answer PermissionAnswer) (string,
 	if text == "" || !utf8.ValidString(text) {
 		return "", fail(Invalid, "decision_answer")
 	}
-	if len(text) > MaxDecisionQuestionBytes {
+	if len(text) > MaxDecisionAnswerBytes {
 		return "", fail(CapacityFull, "decision_answer_bytes")
 	}
 	return text, nil
 }
 
 // CheckDecision admits an answer only to a pending, unexpired offer in the
-// chat it was raised in, while the Bot is visible and its binding stands.
-func CheckDecision(offer PermissionOffer, answer PermissionAnswer, bot Bot, revoked bool, now time.Time) error {
+// chat it was raised in, while the Bot is visible. The answer is the
+// person's message to the conversation, which outlives a native binding a
+// login or quota fallback revoked; the send fences execution itself.
+func CheckDecision(offer PermissionOffer, answer PermissionAnswer, bot Bot, now time.Time) error {
 	if offer.Kind != DecisionOfferKind || offer.Decision == nil || answer.OfferID != offer.ID {
 		return fail(Invalid, "decision_offer")
 	}
@@ -118,7 +130,7 @@ func CheckDecision(offer PermissionOffer, answer PermissionAnswer, bot Bot, revo
 	if !offer.ExpiresAt.IsZero() && !now.Before(offer.ExpiresAt) {
 		return fail(Expired, "decision_expired")
 	}
-	if bot.Hidden || revoked {
+	if bot.Hidden {
 		return fail(ScopeDenied, "decision_withdrawn")
 	}
 	return nil

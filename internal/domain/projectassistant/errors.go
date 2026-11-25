@@ -70,3 +70,18 @@ func Code(err error) ErrorCode {
 	}
 	return OutcomeUnknown
 }
+
+// NotSent keeps a typed refusal and turns any other error raised before a
+// command committed anything into a retryable Offline refusal naming field.
+// Only a caller that knows nothing was written may use it: after a commit
+// or an external write, an untyped error stays OutcomeUnknown.
+func NotSent(err error, field string) error {
+	if err == nil {
+		return nil
+	}
+	var f *Failure
+	if errors.As(err, &f) {
+		return err
+	}
+	return &Failure{Code: Offline, Field: field, RetryAfterSeconds: 1}
+}
