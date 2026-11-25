@@ -438,8 +438,13 @@ for row in inventory["droppable"]:
     droppable[(norm(row["path"]), row["branch"])] = row
 
 counts = {name: 0 for name in (
-    "landed_clean", "unlanded", "uncommitted", "active_task", "unknown"
+    "landed_clean", "settled_clean", "unlanded", "uncommitted", "active_task", "unknown"
 )}
+# A droppable row names the landing state that finished its delivery. A
+# landed one (or a legacy row with none) is landed_clean; one finished another
+# way is settled_clean. Both are removal candidates; the category says which
+# proof stood behind it.
+other_settlements = {"incorporated", "nothing_to_land", "abandoned"}
 candidates = []
 rows = []
 
@@ -484,9 +489,16 @@ for wt in worktrees:
             owner = "task:" + str(pending.get("task", "unknown"))
             reason = "the broker inventory says its landing is unsettled"
         elif disposable:
-            category = "landed_clean"
             owner = "task:" + str(disposable.get("task", "unknown"))
-            reason = "the broker inventory proves it disposable and Git says it is clean"
+            settlement = disposable.get("settlement")
+            why = disposable.get("why") or "unstated"
+            if settlement in other_settlements:
+                category = "settled_clean"
+                reason = (f"the broker inventory proves it disposable (settlement={settlement}, "
+                          f"why={why}) and Git says it is clean")
+            else:
+                category = "landed_clean"
+                reason = "the broker inventory proves it disposable and Git says it is clean"
             candidates.append(wt)
         elif rooted:
             owner = rooted

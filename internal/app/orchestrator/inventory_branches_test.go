@@ -279,3 +279,128 @@ func TestInventoryMissingCheckoutRestoredDuringRequestStaysVisible(t *testing.T)
 		t.Fatalf("restored task missing from inflight: rows=%+v err=%v", inflight, err)
 	}
 }
+
+// A delivery settled as incorporated, nothing_to_land or abandoned is as
+// finished as a landed one. Its clean checkout must be offered for disposal,
+// named by its settlement, instead of vanishing from the inventory and leaving
+// tools/check-worktrees.sh to call it unknown. Work the checkout still holds
+// keeps it: uncommitted content, commits past what was settled, or a carrier
+// landing that no longer stands.
+func TestInventoryOffersSettledCleanCheckouts(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	b.keepReading(reading{sessions: map[string]session.Session{"%1": {ID: "%1", Assistant: session.AssistantClaude}},
+		sources: map[string]bool{"tmux": true}, complete: true})
+	b.ProcessCWDs = func(context.Context) ([]string, error) { return []string{"/"}, nil }
+
+	// checkout dispatches an isolated task, gives it a checkout on disk,
+	// optionally commits one file in it, and settles it with its tab gone.
+	checkout := func(id, file string) Record {
+		t.Helper()
+		r := isolatedTask(t, b, ctx, repo, id)
+		gitIn(t, repo, "worktree", "add", "-q", r.Worktree.Path, BranchName(id))
+		if file != "" {
+			commitFile(t, r.Worktree.Path, file, file+"\n")
+		}
+		if _, err := b.Settle(ctx, id, StateSuccess, "done", nil); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.mutate(ctx, id, "task.test", func(r *Record) error {
+			r.ChildTerminalID, r.ChildBackend = "%77", "tmux"
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	settle := func(id string, req LandingRequest) {
+		t.Helper()
+		req.Machine = true
+		if _, err := b.Land(ctx, id, req); err != nil {
+			t.Fatalf("%s %s: %v", id, req.State, err)
+		}
+	}
+
+	incorporated := checkout("e1000001-0000-4000-8000-000000000001", "original.go")
+	carrier := checkout("e1000002-0000-4000-8000-000000000002", "carrier.go")
+	gitIn(t, repo, "merge", "-q", "--no-ff", "-m", "integrate", BranchName(carrier.ID))
+	merge := gitIn(t, repo, "rev-parse", "HEAD")
+	settle(carrier.ID, LandingRequest{State: "landed", Target: "main", Commit: merge})
+	settle(incorporated.ID, LandingRequest{State: "incorporated", Target: "main", Commit: merge,
+		CarrierTask: carrier.ID, Note: "the carrier resolved both deliveries"})
+
+	nothing := checkout("e1000003-0000-4000-8000-000000000003", "")
+	settle(nothing.ID, LandingRequest{State: "nothing_to_land"})
+	abandoned := checkout("e1000004-0000-4000-8000-000000000004", "")
+	settle(abandoned.ID, LandingRequest{State: "abandoned", Note: "not wanted"})
+	abandonedWork := checkout("e1000005-0000-4000-8000-000000000005", "kept.go")
+	settle(abandonedWork.ID, LandingRequest{State: "abandoned", Note: "not wanted"})
+	abandonedDirty := checkout("e1000006-0000-4000-8000-000000000006", "")
+	settle(abandonedDirty.ID, LandingRequest{State: "abandoned", Note: "not wanted"})
+	if err := os.WriteFile(filepath.Join(abandonedDirty.Worktree.Path, "scratch.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	droppable := func() map[string]map[string]any {
+		t.Helper()
+		inv, err := b.ReadInventory(ctx, repo, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]map[string]any{}
+		for _, item := range InventoryPayload(inv)["droppable"].([]map[string]any) {
+			out[item["task"].(string)] = item
+		}
+		return out
+	}
+	got := droppable()
+	for _, want := range []struct {
+		id, settlement, why string
+	}{
+		{incorporated.ID, "incorporated", "carried_by_landing"},
+		{carrier.ID, "landed", WhyMergedClean},
+		{nothing.ID, "nothing_to_land", WhyBranchEmpty},
+		{abandoned.ID, "abandoned", WhyBranchEmpty},
+	} {
+		item, ok := got[want.id]
+		if !ok {
+			t.Errorf("%s: a clean %s checkout is not droppable", want.id, want.settlement)
+			continue
+		}
+		if item["settlement"] != want.settlement || item["why"] != want.why || item["path"] == nil {
+			t.Errorf("%s: settlement=%v why=%v path=%v, want %s/%s", want.id, item["settlement"], item["why"], item["path"], want.settlement, want.why)
+		}
+	}
+	for id, reason := range map[string]string{
+		abandonedWork.ID:  "an abandoned checkout with commits nobody landed",
+		abandonedDirty.ID: "an abandoned checkout with uncommitted content",
+	} {
+		if _, ok := got[id]; ok {
+			t.Errorf("%s is droppable: %s", id, reason)
+		}
+	}
+
+	// New work after the settlement keeps the checkout.
+	gitIn(t, nothing.Worktree.Path, "commit", "-q", "--allow-empty", "-m", "later")
+	gitIn(t, incorporated.Worktree.Path, "commit", "-q", "--allow-empty", "-m", "later")
+	got = droppable()
+	for _, id := range []string{nothing.ID, incorporated.ID} {
+		if _, ok := got[id]; ok {
+			t.Errorf("%s is droppable with a commit made after its settlement", id)
+		}
+	}
+	gitIn(t, incorporated.Worktree.Path, "reset", "-q", "--hard", "HEAD~1")
+	if _, ok := droppable()[incorporated.ID]; !ok {
+		t.Fatal("control: the incorporated checkout did not return once the later commit was gone")
+	}
+	// An incorporation is only as good as its carrier's landing.
+	if _, err := b.mutate(ctx, carrier.ID, "task.test", func(r *Record) error {
+		r.Landing.State = LandingPending
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := droppable()[incorporated.ID]; ok {
+		t.Fatal("an incorporated checkout is droppable while its carrier's landing is pending")
+	}
+}

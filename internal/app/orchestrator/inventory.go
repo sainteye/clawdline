@@ -52,6 +52,10 @@ const (
 	WhyMergedClean   = "merged_and_clean"
 	WhyBranchEmpty   = "branch_empty"
 	WhyOrphanedCheck = "checkout_orphaned"
+	// WhyCarriedByLanding is an incorporated delivery whose carrier's landing
+	// still stands on the target and whose branch has nothing past the head
+	// that incorporation proved.
+	WhyCarriedByLanding = "carried_by_landing"
 	// DoInspect is the one `do` no route can carry out: a person has to look
 	// at the row. The safe default while nobody does is that it stays.
 	DoInspect = "inspect"
@@ -129,7 +133,7 @@ type Inventory struct {
 var (
 	DigestSealed   = []string{"section", "task", "branch", "why", "do", "claims"}
 	DigestExcluded = []string{"age_seconds", "created", "state", "head", "dirty", "title", "root_label", "overlaps", "at",
-		"declared_writes", "lease_scope", "stored_state", "cause", "target", "merged", "obligation"}
+		"declared_writes", "lease_scope", "stored_state", "cause", "target", "merged", "obligation", "settlement"}
 )
 
 // ReadInventory builds the answer for one repository.
@@ -380,6 +384,11 @@ func (b *Broker) rowWithBranches(ctx context.Context, r Record, now time.Time, o
 			} else {
 				row.Why = WhyMergedClean
 			}
+		case exists:
+			row.Why = b.settledUnmergedDisposal(ctx, r)
+			if row.Why != "" {
+				row.Do = DoDispose
+			}
 		}
 	}
 	// And never while the session that worked in the checkout may still be
@@ -415,6 +424,49 @@ func (b *Broker) rowWithBranches(ctx context.Context, r Record, now time.Time, o
 	commits, commitsKnown := b.Git.Commits(ctx, r.Worktree.Repository, r.Worktree.Base, r.Worktree.Branch)
 	row.Do, row.Why = landingAdvice(r, commits, commitsKnown, dirty, dirtyKnown, kept)
 	return row
+}
+
+// settledUnmergedDisposal is why a clean checkout whose branch is not on a
+// target may still go, or "" when it may not. The settlement decides what has
+// to be true; the branch is kept either way, so the question is only whether
+// the checkout holds anything the branch and the record do not.
+//
+//   - nothing_to_land and abandoned: the branch carries no commit past its
+//     base. An abandoned delivery that did commit keeps its checkout — "not
+//     wanted" is a person's word, not proof that nothing in it matters.
+//   - incorporated: the named carrier's landing is still landed, on the same
+//     target and commit, and that commit is still on the target; and the
+//     branch has nothing past the delivery head the incorporation proved.
+//
+// Any read that fails answers "".
+func (b *Broker) settledUnmergedDisposal(ctx context.Context, r Record) string {
+	w := r.Worktree
+	if r.Landing == nil || w == nil {
+		return ""
+	}
+	switch r.Landing.State {
+	case LandingNothingToLand, LandingAbandoned:
+		if commits, known := b.Git.Commits(ctx, w.Repository, w.Base, w.Branch); known && commits == 0 {
+			return WhyBranchEmpty
+		}
+	case LandingIncorporated:
+		l := r.Landing
+		if l.CarrierTask == "" || l.Commit == "" || l.Target == "" || l.DeliveryHead == "" {
+			return ""
+		}
+		carrier, _, err := b.Record(ctx, l.CarrierTask)
+		if err != nil || carrier.Landing == nil || carrier.Landing.State != LandingLanded ||
+			carrier.Landing.Commit != l.Commit || carrier.Landing.Target != l.Target {
+			return ""
+		}
+		if on, err := b.Git.IsAncestor(ctx, w.Repository, l.Commit, "refs/heads/"+l.Target); err != nil || !on {
+			return ""
+		}
+		if commits, known := b.Git.Commits(ctx, w.Repository, l.DeliveryHead, w.Branch); known && commits == 0 {
+			return WhyCarriedByLanding
+		}
+	}
+	return ""
 }
 
 // landingAdvice is `nothing_to_land` and the sentence that refuses it.

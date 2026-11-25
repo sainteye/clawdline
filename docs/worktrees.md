@@ -16,6 +16,7 @@ cleanup scope. Every linked checkout receives exactly one of these answers:
 | Classification | Required evidence | Action |
 |---|---|---|
 | `landed_clean` | The broker inventory names the exact path and branch as `droppable`, which already requires a settled landing and an absent owner; or the checkout is a Root checkout (below) whose owner record names it, whose `HEAD` is on the target and inside which `lsof` lists no working process. Git also reports no tracked or untracked changes. | Dry run reports it. `--apply` checks Git again, then asks `git worktree remove` without `--force`. The branch remains. |
+| `settled_clean` | The broker inventory names the exact path and branch as `droppable` with `settlement` `incorporated`, `nothing_to_land` or `abandoned`: the delivery was finished without its own branch being merged. The inventory offers it only when the branch has no commit past its base (`nothing_to_land`, `abandoned`) or nothing past the delivery head an incorporation proved while the carrier's landing still stands on the target (`incorporated`), and the owner is absent. Git also reports no tracked or untracked changes. | Same as `landed_clean`: dry run reports it, `--apply` checks Git again and removes the checkout without `--force`. The branch remains. An abandoned checkout with commits is not offered and stays `unknown`. |
 | `unlanded` | The broker inventory associates the branch with a task whose landing is unsettled, or a Root checkout's `HEAD` is not on the target; Git reports a clean checkout. | Keep it. Land or abandon the task first. |
 | `uncommitted` | Git reports tracked or untracked content different from `HEAD`. | Keep it. Preserve the content as a verifiable patch or branch before any later cleanup. |
 | `active_task` | The broker inventory associates the branch with a non-terminal task, or a process works inside a Root checkout. | Keep it, whether or not it currently looks clean. |
@@ -60,7 +61,7 @@ removing a worktree leaves its branch and commits in the repository.
 
 Run the dry check after each landing is recorded. This timing matters: before the landing record,
 the system must say `unlanded`; after it, the broker can prove both the target and the absent child
-owner. Apply every proved `landed_clean` result after reading the dry run. Remove a root-owned task
+owner. Apply every proved `landed_clean` and `settled_clean` result after reading the dry run. Remove a root-owned task
 checkout when its commit is on `main`, it is clean, and its owner is done with it. Report the count
 removed and the reason for each candidate kept, even if no checkout was removed. The daemon's own
 periodic reclamation remains the backstop for broker-owned task trees. The repository guard is the
