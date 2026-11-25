@@ -98,7 +98,7 @@ func TestActiveWorkCountsUnfinishedLinksAndBackgroundTasksAndWakesTheRoster(t *t
 	}
 
 	cursor := rosterRead(t, views, rosterQuery()).Frame.Cursor
-	wake, _, closeFeed, err := s.SubscribeRoster("machine")
+	wake, closeFeed, err := s.SubscribeRoster("machine")
 	if err != nil {
 		t.Fatal(err)
 	}

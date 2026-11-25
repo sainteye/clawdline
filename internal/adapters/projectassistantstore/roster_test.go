@@ -224,7 +224,7 @@ func TestRosterCursorScopeReaderGrantRestartAndGenerationFences(t *testing.T) {
 
 func TestRosterWakeupsAreBoundedPostCommitAndContentFree(t *testing.T) {
 	db, s, _ := testDB(t)
-	wake, lag, close, err := s.SubscribeRoster("machine")
+	wake, close, err := s.SubscribeRoster("machine")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -272,22 +272,24 @@ func TestRosterWakeupsAreBoundedPostCommitAndContentFree(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-wake
-	if lag() {
-		t.Fatal("drained subscriber marked lagged")
-	}
+	// The reader always reads from its durable cursor, so a wake-up that is
+	// already pending covers later commits; a burst must not cut the feed.
 	seed(t, s, "two")
 	seed(t, s, "three")
-	if !lag() {
-		t.Fatal("slow consumer must resync")
+	<-wake
+	select {
+	case <-wake:
+		t.Fatal("coalesced commits woke the feed twice")
+	default:
 	}
 	for i := 1; i < pa.MaxRosterSubscribers; i++ {
-		_, _, cleanup, e := s.SubscribeRoster("machine")
+		_, cleanup, e := s.SubscribeRoster("machine")
 		if e != nil {
 			t.Fatal(e)
 		}
 		defer cleanup()
 	}
-	_, _, _, err = s.SubscribeRoster("machine")
+	_, _, err = s.SubscribeRoster("machine")
 	requireCode(t, err, pa.CapacityFull)
 	if !strings.Contains(fmt.Sprint(err), "roster_subscribers") {
 		t.Fatal(err)
@@ -303,7 +305,7 @@ func TestRosterMemoryAndRestoreCommitWakeups(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, target, _ := testDB(t)
-	wake, lag, close, err := target.SubscribeRoster("machine")
+	wake, close, err := target.SubscribeRoster("machine")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -329,9 +331,6 @@ func TestRosterMemoryAndRestoreCommitWakeups(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-wake
-	if lag() {
-		t.Fatal("drained memory subscriber lagged")
-	}
 }
 
 func TestRosterProjectionNamesTheLatestMessageKind(t *testing.T) {

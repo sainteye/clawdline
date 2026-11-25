@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"sync"
-	"sync/atomic"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -13,7 +12,6 @@ import (
 type rosterListener struct {
 	machine string
 	wake    chan struct{}
-	lagged  atomic.Bool
 }
 
 type rosterBus struct {
@@ -21,18 +19,18 @@ type rosterBus struct {
 	listeners map[*rosterListener]struct{}
 }
 
-func (s *Store) SubscribeRoster(machine string) (<-chan struct{}, func() bool, func(), error) {
+func (s *Store) SubscribeRoster(machine string) (<-chan struct{}, func(), error) {
 	s.roster.mu.Lock()
 	defer s.roster.mu.Unlock()
 	if len(s.roster.listeners) >= pa.MaxRosterSubscribers {
-		return nil, nil, nil, failure(pa.CapacityFull, "roster_subscribers")
+		return nil, nil, failure(pa.CapacityFull, "roster_subscribers")
 	}
 	if s.roster.listeners == nil {
 		s.roster.listeners = make(map[*rosterListener]struct{})
 	}
 	l := &rosterListener{machine: machine, wake: make(chan struct{}, pa.MaxRosterWakeups)}
 	s.roster.listeners[l] = struct{}{}
-	return l.wake, l.lagged.Load, func() { s.roster.mu.Lock(); delete(s.roster.listeners, l); s.roster.mu.Unlock() }, nil
+	return l.wake, func() { s.roster.mu.Lock(); delete(s.roster.listeners, l); s.roster.mu.Unlock() }, nil
 }
 
 func (s *Store) rosterCommitted(machine string) {
@@ -45,7 +43,8 @@ func (s *Store) rosterCommitted(machine string) {
 		select {
 		case l.wake <- struct{}{}:
 		default:
-			l.lagged.Store(true)
+			// A wake-up is already pending. The feed reads every change after
+			// its durable cursor, so that one wake-up covers this commit too.
 		}
 	}
 }

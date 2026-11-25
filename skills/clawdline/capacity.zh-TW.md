@@ -181,7 +181,7 @@
 | `bots.roster_client_rows` | 1000 | `rows` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_seconds` | 3600 | `seconds` | `disconnect` | `diagnostics, sender` | — |
 | `bots.roster_subs` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
-| `bots.roster_wakes` | 1 | `rows` | `disconnect` | `diagnostics, sender` | — |
+| `bots.roster_wakes` | 1 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.routine_definitions` | 1000 | `rows` | `refuse` | `diagnostics, health, sender` | — |
 | `bots.routine_delivery_id_bytes` | 200 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.routine_event_filters` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

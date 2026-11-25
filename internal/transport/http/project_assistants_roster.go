@@ -86,7 +86,7 @@ func (h *projectAssistantHTTP) rosterEvents(w http.ResponseWriter, r *http.Reque
 				_ = rc.SetWriteDeadline(time.Now())
 				return
 			case <-ticker.C:
-				if sub.Lagged() || check.Load().(func(context.Context) error)(ctx) != nil {
+				if check.Load().(func(context.Context) error)(ctx) != nil {
 					cancel()
 					_ = rc.SetWriteDeadline(time.Now())
 					return
@@ -156,10 +156,6 @@ func (h *projectAssistantHTTP) rosterEvents(w http.ResponseWriter, r *http.Reque
 	}
 	page := initial
 	for {
-		if sub.Lagged() {
-			control(paHTTPFailure(pa.CursorExpired, "roster_lagged"))
-			return
-		}
 		if err = write(page.Page.Frame, page.Revalidate, page.RevalidateAuthority); err != nil {
 			control(err)
 			return

@@ -356,21 +356,25 @@ func TestRosterSSEReadOnlyScopeCursorAndPublicationRevocation(t *testing.T) {
 	}
 }
 
-func TestRosterSSEOverflowExplicitResyncAndIndependentRead(t *testing.T) {
+// Bots that are working commit in bursts. Commits that land while a frame is
+// being published are delivered by the next read; they must not cut the feed,
+// because a cut makes every Bot in the list look idle until it reconnects.
+func TestRosterSSEBurstIsDeliveredWithoutResync(t *testing.T) {
 	var publications atomic.Int64
 	f := newRosterHTTPFixture(t, nil, func(f *rosterHTTPFixture) {
 		if publications.Add(1) == 2 {
-			f.seed(t, "overflow-a")
-			f.seed(t, "overflow-b")
+			f.seed(t, "burst-a")
+			f.seed(t, "burst-b")
 		}
 	})
 	f.seed(t, "one")
 	r := f.stream(t, "", "reader", "")
 	_ = r.next(t)
 	_ = r.next(t)
-	resync := r.next(t)
-	if resync.Type != "resync" || resync.Failure == nil || resync.Failure.Code != pa.CursorExpired {
-		t.Fatal("silent overflow", resync)
+	burst := r.next(t)
+	if burst.Type != "changes" || len(burst.Changes) != 2 ||
+		burst.Changes[0].Key.BotID != "burst-a" || burst.Changes[1].Key.BotID != "burst-b" {
+		t.Fatal("burst was not delivered as one change frame", burst)
 	}
 	if _, err := f.views.ReadRoster(context.Background(), app.RosterQuery{Request: pa.RosterRequest{MachineID: "machine"}, ReaderID: "other", AuthorizationBinding: "other", ByteLimit: cloudops.ReadPlaintextBytesLimit}); err != nil {
 		t.Fatal("unrelated read blocked", err)
@@ -487,7 +491,7 @@ func TestRosterSSEBlockedWriteRevocationClosesAndReleasesResources(t *testing.T)
 	// All slots are available again: HTTP cancellation joined the monitor and
 	// closed the application's subscription, not just its response body.
 	for i := 0; i < pa.MaxRosterSubscribers; i++ {
-		_, _, close, err := f.store.SubscribeRoster("machine")
+		_, close, err := f.store.SubscribeRoster("machine")
 		if err != nil {
 			t.Fatal("subscription leaked", i, err)
 		}
