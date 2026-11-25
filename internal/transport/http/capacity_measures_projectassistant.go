@@ -24,12 +24,6 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		u.Known = u.Known && !failed
 		return u, err == nil
 	}
-	bound := func(read func() pa.BoundUsage, note string) func() capacity.Reading {
-		return func() capacity.Reading {
-			u := read()
-			return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Refused}, Note: note}
-		}
-	}
 	count := func(selectCount func(app.RuntimeUsage) int, note string) func() capacity.Reading {
 		return func() capacity.Reading {
 			u, installed := usage()
@@ -208,9 +202,9 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			u := pa.CollaborationReplyUsage()
 			return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Truncated}, Note: "largest stored Bot reply since start; refused counts replies whose tail was cut and marked for the requester"}
 		},
-		"bots.peer_note_bytes":              bound(pa.PeerNoteBytesUsage, "largest note a Bot sent its own chat while handling another Bot's request since start; refused counts longer notes"),
-		"bots.peer_notes_per_request":       bound(pa.PeerNotesPerRequestUsage, "most notes one request from another Bot has led to since start; refused counts notes past the bound"),
-		capacity.BotsRoomPictures:           bound(pa.RoomPictureUsage, "most pictures on one person line in a room since start; refused counts lines with more"),
+		"bots.peer_note_bytes":              boundReading(pa.PeerNoteBytesUsage, "largest note a Bot sent its own chat while handling another Bot's request since start; refused counts longer notes"),
+		"bots.peer_notes_per_request":       boundReading(pa.PeerNotesPerRequestUsage, "most notes one request from another Bot has led to since start; refused counts notes past the bound"),
+		capacity.BotsRoomPictures:           boundReading(pa.RoomPictureUsage, "most pictures on one person line in a room since start; refused counts lines with more"),
 		capacity.BotsFallbacks:              pure,
 		capacity.BotsSettingsRebaseAttempts: pure,
 		capacity.BotsAgentRestSeconds: func() capacity.Reading {
@@ -410,4 +404,13 @@ func (s *Server) botDispatchRulesMeasure() capacity.Reading {
 		return capacity.Unmeasured("Bot dispatch rules cannot be read")
 	}
 	return capacity.Reading{Known: true, Used: used, Note: "largest saved dispatch permission rule count per Bot"}
+}
+
+// boundReading reports a Bot bound's largest use since start and how many
+// attempts past it were refused.
+func boundReading(read func() pa.BoundUsage, note string) func() capacity.Reading {
+	return func() capacity.Reading {
+		u := read()
+		return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Refused}, Note: note}
+	}
 }

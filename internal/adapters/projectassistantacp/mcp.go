@@ -786,11 +786,11 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		}
 		return map[string]string{"state": "delivered", "idempotency_key": q.ID}, nil
 	case "dispatch_work":
-		q, dispatchCtx, err := decodeDispatchWork(ctx, arguments)
+		// The case's ctx carries the dispatch choice and request card.
+		q, ctx, err := decodeDispatchWork(ctx, arguments)
 		if err != nil {
 			return nil, err
 		}
-		ctx = dispatchCtx
 		if q.ContinueOnCompletion {
 			tools, ok := s.tools.(app.CompletionDispatchTools)
 			if !ok {
@@ -911,10 +911,7 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		if err := s.tools.EditMemory(ctx, q.ID, app.MemoryEdit{Append: q.Append, Old: q.Old, New: q.New, Delete: q.Delete, Note: q.Note}); err != nil {
 			return nil, err
 		}
-		if card, ok := s.tools.(interface{ MemoryNeedsPerson() bool }); ok && card.MemoryNeedsPerson() {
-			return map[string]string{"state": "awaiting_person", "idempotency_key": q.ID, "message": memoryCardMessage}, nil
-		}
-		return map[string]string{"state": "saved", "idempotency_key": q.ID}, nil
+		return s.memoryEditResult(q.ID), nil
 	default:
 		return nil, refusal(pa.Unsupported, "mcp_tool")
 	}
@@ -923,6 +920,15 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 // memoryCardMessage tells a Bot answering another Bot that its new fact
 // waits on a card in its main chat, so it neither retries nor claims it saved.
 const memoryCardMessage = "Not saved yet: this turn answers another Bot, so the fact is shown to the user as a memory card in your main chat. It is saved only if the user presses Save. Do not call edit_memory again for it."
+
+// memoryEditResult is a successful edit_memory's answer: saved, or waiting on
+// the person's memory card in a turn that answers another Bot.
+func (s *ownedMCPServer) memoryEditResult(id string) map[string]string {
+	if card, ok := s.tools.(interface{ MemoryNeedsPerson() bool }); ok && card.MemoryNeedsPerson() {
+		return map[string]string{"state": "awaiting_person", "idempotency_key": id, "message": memoryCardMessage}
+	}
+	return map[string]string{"state": "saved", "idempotency_key": id}
+}
 
 func mcpLeadBotTool() map[string]any {
 	return map[string]any{

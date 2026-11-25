@@ -18,7 +18,7 @@ var decisionRules = []string{
 	"permission, authorization or a choice between options",
 	"irreversible",
 	"Ask ordinary small questions in chat",
-	"never reply asking the requesting Bot to relay",
+	"Never reply asking the requesting Bot to relay",
 	"never ask the user to copy or paste authorization text",
 	"Go to",
 	"do not draft the authorization yourself",

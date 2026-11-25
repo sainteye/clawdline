@@ -26,7 +26,7 @@ internal/adapters/memory/import.go	ReadClaude	125	41
 internal/adapters/projectassistantacp/client.go	Client.handle	104	31
 internal/adapters/projectassistantacp/client.go	Client.initializeSession	118	43
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.ServeHTTP	133	34
-internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	244	95
+internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	243	95
 internal/adapters/projectassistanthost/devservers.go	Host.bindServerTools	181	54
 internal/adapters/projectassistanthost/provider.go	Host.tools	600	165
 internal/adapters/projectassistantstore/collaboration.go	Store.FinishExchange	134	46

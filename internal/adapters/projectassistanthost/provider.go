@@ -557,7 +557,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.RecordToolActivity(ctx, q.Binding.Fence, turnID, id)
 	}
-	tools := NativeWork{}
+	// Only a same-machine exchange puts a card in this Bot's main chat. A
+	// request from another machine's Bot keeps memory refused outright.
+	tools := NativeWork{memoryCard: turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin}
 	if h.o.ManageBots != nil && taskOwner.BotID == "" && pa.DirectUserTurn(turn) {
 		authorize := func(ctx context.Context, key pa.BotKey, write bool) (app.Authority, error) {
 			if key.MachineID != q.Bot.Key.MachineID {
@@ -1003,18 +1005,9 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.MemoryDetail(ctx, q.Bot.Key, id)
 	}
-	// Only a same-machine exchange puts a card in this Bot's main chat. A
-	// request from another machine's Bot keeps memory refused outright.
-	tools.memoryCard = turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
-		if pa.IsPeerRequest(turn.Origin) && !tools.memoryCard {
-			return failure(pa.ScopeDenied, "bot_reply_memory")
-		}
-		// Text from another Bot never becomes memory on a Bot's own say. A
-		// new short fact becomes a card the person saves with one press;
-		// any other change waits for the person's own chat.
-		if tools.memoryCard && (edit.Append == "" || edit.Old != "" || edit.New != "" || edit.Delete || edit.Note != nil) {
-			return failure(pa.ScopeDenied, "bot_reply_memory_card_append_only")
+		if e := peerMemoryEdit(turn.Origin, tools.memoryCard, edit); e != nil {
+			return e
 		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -1024,12 +1017,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		if e = journal(ctx, "edit"); e != nil {
 			return e
 		}
-		if tools.memoryCard {
-			_, e = r.ProposeMemory(ctx, q.Binding.Fence, turnID, edit.Append)
-			return e
-		}
-		_, e = r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
-		return e
+		return writeMemory(ctx, r, tools.memoryCard, q, turnID, id, edit)
 	}
 	owner := BrowserOwner(q.Binding.Fence, q.Binding.ForgottenThrough)
 	browser := h.o.Browser
@@ -1379,4 +1367,30 @@ func dispatchScope(ctx context.Context, cards botRequestStore, bot string, turn 
 		return failure(pa.ScopeDenied, "dispatch_root_origin")
 	}
 	return nil
+}
+
+// peerMemoryEdit refuses what a turn answering another Bot may not change.
+// Text from another Bot never becomes memory on a Bot's own say: a new short
+// fact becomes a card the person saves with one press, any other change waits
+// for the person's own chat, and a request from another machine's Bot keeps
+// memory refused outright.
+func peerMemoryEdit(origin pa.TurnOrigin, card bool, edit app.MemoryEdit) error {
+	if pa.IsPeerRequest(origin) && !card {
+		return failure(pa.ScopeDenied, "bot_reply_memory")
+	}
+	if card && (edit.Append == "" || edit.Old != "" || edit.New != "" || edit.Delete || edit.Note != nil) {
+		return failure(pa.ScopeDenied, "bot_reply_memory_card_append_only")
+	}
+	return nil
+}
+
+// writeMemory changes the Bot's memory, or in a turn answering another Bot
+// puts the new fact on a memory card for the person instead.
+func writeMemory(ctx context.Context, r *app.Engine, card bool, q app.OpenRequest, turnID, id string, edit app.MemoryEdit) error {
+	if card {
+		_, err := r.ProposeMemory(ctx, q.Binding.Fence, turnID, edit.Append)
+		return err
+	}
+	_, err := r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
+	return err
 }

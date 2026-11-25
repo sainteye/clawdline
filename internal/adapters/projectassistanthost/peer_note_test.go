@@ -26,19 +26,20 @@ func chatTexts(t *testing.T, f *hostFixture, key pa.BotKey) []pa.Message {
 // 2026-11-24: Atlas asked Lens to remember an acceptance rule. Lens's
 // edit_memory was refused in the peer turn and only Atlas heard about it; the
 // person opening Lens's chat saw a capsule and "Completed". Lens may now tell
-// its own person, in its own main chat and nowhere else.
+// its own person, in its own main chat and nowhere else. Since the memory
+// card, appending a fact no longer fails, so the refusal here is a deletion.
 func TestPeerRequestTellsTheRecipientsOwnChatWhenMemoryIsRefused(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
 	f.start(t)
 	f.enable(t)
 	a, b := f.create(t, "Atlas"), f.create(t, "Lens")
-	if _, err := f.send(t, a, "Ask Lens to remember the acceptance rule."); err != nil {
+	if _, err := f.send(t, a, "Ask Lens to forget the acceptance rule."); err != nil {
 		t.Fatal(err)
 	}
 	sender := fixtureReceive(t, f.p.sessions)
 	fixtureReceive(t, f.p.sent)
-	x, err := sender.q.Tools.(askingTools).MessageBot(ctx, pa.BotMessageRequest{TargetBotID: b.Key.BotID, Text: "Please write the acceptance rule into your memory.", IdempotencyKey: "remember-rule"})
+	x, err := sender.q.Tools.(askingTools).MessageBot(ctx, pa.BotMessageRequest{TargetBotID: b.Key.BotID, Text: "Please delete the acceptance rule from your memory.", IdempotencyKey: "remember-rule"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,10 +52,12 @@ func TestPeerRequestTellsTheRecipientsOwnChatWhenMemoryIsRefused(t *testing.T) {
 	worker := fixtureReceive(t, f.p.sessions)
 	fixtureReceive(t, f.p.sent)
 	tools := worker.q.Tools.(peerNoteTools)
-	if err := tools.EditMemory(ctx, "rule", app.MemoryEdit{Append: "Acceptance rule"}); pa.Code(err) != pa.ScopeDenied {
+	// A new short fact from a peer turn becomes a memory card the person
+	// saves; any other memory change, such as a deletion, stays refused.
+	if err := tools.EditMemory(ctx, "rule", app.MemoryEdit{Delete: true}); pa.Code(err) != pa.ScopeDenied {
 		t.Fatalf("peer edit_memory = %v, want the refusal this case reproduces", err)
 	}
-	note := "I could not save the rule to memory: edit_memory was refused. Please tell me directly."
+	note := "I could not delete the rule from memory: edit_memory was refused. Please tell me directly."
 	if err := tools.SendMessage(ctx, "memory-refused", note); err != nil {
 		t.Fatalf("send_message from the peer turn was refused: %v", err)
 	}
@@ -69,10 +72,10 @@ func TestPeerRequestTellsTheRecipientsOwnChatWhenMemoryIsRefused(t *testing.T) {
 	if err := tools.SendMessage(ctx, "flood", "One too many."); pa.Code(err) != pa.CapacityFull {
 		t.Fatalf("send_message beyond the per-request bound = %v, want %s", err, pa.CapacityFull)
 	}
-	worker.reply <- app.PromptResult{FinalText: "I could not write it to memory; edit_memory was refused."}
+	worker.reply <- app.PromptResult{FinalText: "I could not delete it from memory; edit_memory was refused."}
 	follow := fixtureReceive(t, f.p.sessions)
 	fixtureReceive(t, f.p.sent)
-	follow.reply <- app.PromptResult{FinalText: "Lens could not save it."}
+	follow.reply <- app.PromptResult{FinalText: "Lens could not delete it."}
 
 	found := 0
 	for _, m := range chatTexts(t, f, b.Key) {

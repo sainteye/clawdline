@@ -288,6 +288,13 @@ func quotedRoundsText(earlier []pa.Exchange, omitted bool) string {
 	return out + "\n\n[End of quoted rounds. 引用結束。]"
 }
 
+// quotedCollaborationPrompt builds a Bot request's prompt with the earlier
+// rounds its follow-up quotes.
+func (r *Engine) quotedCollaborationPrompt(ctx context.Context, t pa.Turn, input *pa.Message) error {
+	earlier, omitted := r.quotedRounds(ctx, t, input)
+	return collaborationPrompt(t, input, earlier, omitted)
+}
+
 func collaborationPrompt(t pa.Turn, input *pa.Message, earlier []pa.Exchange, omitted bool) error {
 	if t.Origin == pa.NetworkRequestOrigin {
 		if t.Network == nil || input.Kind != pa.NoticeMessage {
