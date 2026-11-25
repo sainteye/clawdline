@@ -517,6 +517,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 					}
 				}
 			}
+			if q.Name == "dispatch_work" && result["field"] == "work_title" && result["code"] == string(pa.Invalid) {
+				result["reason"] = dispatchTitleReason(q.Arguments)
+			}
 			if q.Name == "dispatch_work" && result["field"] == "persona" && result["code"] == string(pa.Invalid) {
 				return mcpToolResult(map[string]any{"code": result["code"], "field": "persona", "builtin_personas": persona.IDs(),
 					"custom_personas": "Use a namespaced ID from Settings, Squad, Custom team."}, true), nil
@@ -1163,6 +1166,20 @@ func (s *ownedMCPServer) fit(result any) any {
 		return mcpToolResult(map[string]string{"code": browserResultTooLarge}, true)
 	}
 	return result
+}
+
+// dispatchTitleReason tells a Bot why its title was refused, so the next try
+// can fix it. pa.ValidateWorkTitle also refuses control and separator
+// characters, which the outcome rule does not describe.
+func dispatchTitleReason(arguments json.RawMessage) string {
+	var q struct {
+		Title string `json:"title"`
+	}
+	_ = mcpDecode(arguments, &q)
+	if reason := work.OutcomeTitleRefusal(q.Title); reason != "" {
+		return reason
+	}
+	return "A title is one line of printable text without control or line-separator characters."
 }
 
 func browserFailureResult(err error) any {
