@@ -25,9 +25,13 @@ import (
 // whose delivery branch can be read, when that branch's head is an ancestor of
 // its target, the broker records `landed` through the route's own gate
 // (land): whatever the route would refuse, this refuses too, because it is the
-// same code. It records nothing else. An empty delivery, a cherry-picked one
-// (not an ancestor), a branch that is gone, a repository that cannot be read
-// and a target it cannot name are each left pending, for a root to decide.
+// same code. A delivery that is not an ancestor but whose every commit is on
+// the target by patch-id, and whose paths the target's tree keeps, is
+// recorded `incorporated` the same way (detectEquivalent); an empty one is
+// `nothing_to_land` when settleEmpty may say so. It records nothing else. A
+// branch that is gone, a repository that cannot be read, a delivery git does
+// not find on the target and a target it cannot name are each left pending,
+// for a root to decide.
 //
 // The target is the record's when the root named one (D19). A pending landing
 // opens without one, and the broker does not fill it with the repository's
@@ -175,13 +179,18 @@ func (b *Broker) detectLanding(parent context.Context, r Record) (bool, error) {
 			return false, err
 		}
 		if named == "" {
-			return false, nil
+			// No branch holds the head itself; one may hold its patches.
+			line, err := b.primaryLine(ctx, repo)
+			if err != nil || line == "" {
+				return false, err
+			}
+			return b.detectEquivalent(ctx, r, head.commit, line)
 		}
 		target = named
 	} else if on, err := b.Git.IsAncestor(ctx, repo, head.commit, "refs/heads/"+target); err != nil {
 		return false, errors.New("git could not compare its delivery with " + target + ": " + err.Error())
 	} else if !on {
-		return false, nil
+		return b.detectEquivalent(ctx, r, head.commit, target)
 	}
 	tip, err := b.Git.ResolveCommit(ctx, repo, "refs/heads/"+target)
 	if err != nil {
@@ -210,6 +219,33 @@ func (b *Broker) detectLanding(parent context.Context, r Record) (bool, error) {
 const landingEmptyNote = "recorded by the broker: it declared no writes, its branch carries nothing past " +
 	"its base and its checkout holds no change"
 
+// landingUnopenedNote is the note nothing_to_land carries for a task whose
+// tab never opened.
+const landingUnopenedNote = "recorded by the broker: its tab never opened, its branch carries nothing past " +
+	"its base and its checkout holds no change"
+
+// tabNeverOpened is a task that failed before any tab was opened for it: no
+// assistant ever ran in its checkout, whatever it declared it would write.
+// The same evidence reclaim.go reads as "never_opened".
+func tabNeverOpened(r Record) bool {
+	return r.State == StateSpawnFailed && r.ChildTerminalID == "" && r.SpawnedAt.IsZero()
+}
+
+// unopenedEvidence answers, for a task about to settle spawn_failed before
+// its tab opened, whether it is one and what its own branch and checkout show
+// it wrote — empty when they show nothing (nothingToLandRefusal). Asked
+// before the settling write, as readOnlyEvidence is, since git is slow.
+func (b *Broker) unopenedEvidence(ctx context.Context, id string, state State) (unopened bool, wrote string) {
+	if state != StateSpawnFailed {
+		return false, ""
+	}
+	r, _, err := b.Record(ctx, id)
+	if err != nil || r.Worktree == nil || r.State.Terminal() || r.ChildTerminalID != "" || !r.SpawnedAt.IsZero() {
+		return false, ""
+	}
+	return true, b.nothingToLandRefusal(ctx, r)
+}
+
 // settleEmpty records `nothing_to_land` for a child that had nothing to land,
 // and answers whether it did.
 //
@@ -227,17 +263,28 @@ const landingEmptyNote = "recorded by the broker: it declared no writes, its bra
 // to do its work, and abandoned is the honest word for that, which is the
 // root's to choose. Only for a child that finished by itself, too: one that
 // timed out or was cancelled may still have a tab writing to its checkout.
+//
+// And for a task whose tab never opened (tabNeverOpened), whatever it
+// declared: nobody ran in its checkout, so a declared path unwritten is not
+// work left undone. Read on 2026-11-25: four such tasks, killed with the
+// daemon that admitted them, sat in a Bot's pending-integration count with
+// nothing on their branches.
 func (b *Broker) settleEmpty(ctx context.Context, r Record) (bool, error) {
-	if r.State != StateSuccess && r.State != StateFailure {
-		return false, nil
-	}
 	if r.Landing == nil || r.Landing.State != LandingPending || r.Landing.Target != "" || r.Worktree == nil {
 		return false, nil
 	}
-	if declared, known := r.DeclaredWrites(); !known || len(declared) > 0 {
+	note := landingEmptyNote
+	switch {
+	case tabNeverOpened(r):
+		note = landingUnopenedNote
+	case r.State != StateSuccess && r.State != StateFailure:
 		return false, nil
+	default:
+		if declared, known := r.DeclaredWrites(); !known || len(declared) > 0 {
+			return false, nil
+		}
 	}
-	_, err := b.land(ctx, r.ID, LandingRequest{State: string(LandingNothingToLand), Note: landingEmptyNote,
+	_, err := b.land(ctx, r.ID, LandingRequest{State: string(LandingNothingToLand), Note: note,
 		Machine: true})
 	if err != nil {
 		var ref Refusal
@@ -297,6 +344,27 @@ func (b *Broker) onlyTarget(ctx context.Context, repo, head string) (string, err
 		return "", nil
 	}
 	return named, nil
+}
+
+// primaryLine is the branch the primary checkout has out — the line work
+// lands on — or "" when it has none a delivery could be compared with: a
+// detached checkout, or one of the broker's own task branches. It is the one
+// target a patch-equivalent delivery is looked for on when the record names
+// none (D19): onlyTarget asks which branches hold the head itself, which no
+// branch does once the delivery was cherry-picked.
+func (b *Broker) primaryLine(ctx context.Context, repo string) (string, error) {
+	checkouts, err := b.Git.Worktrees(ctx, repo)
+	if err != nil {
+		return "", errors.New("git could not list the repository's checkouts: " + err.Error())
+	}
+	if len(checkouts) == 0 {
+		return "", nil
+	}
+	line := strings.TrimPrefix(checkouts[0].Branch, "refs/heads/")
+	if line == "" || strings.HasPrefix(line, BranchName("")) {
+		return "", nil
+	}
+	return line, nil
 }
 
 // sayOnce logs what went wrong with one task the first time it is said, and
@@ -374,7 +442,7 @@ func (b *Broker) DetectLandingsFor(ctx context.Context, ids []string) []LandingD
 		case err != nil:
 			d.Reason = err.Error()
 		case !ok:
-			d.Reason = "its delivery branch " + r.Worktree.Branch + " is not yet an ancestor of a target branch the broker can name"
+			d.Reason = "its delivery branch " + r.Worktree.Branch + " is not yet on a target branch the broker can name, by ancestry or by patch-equivalent commits it keeps"
 		}
 		out = append(out, d)
 	}
