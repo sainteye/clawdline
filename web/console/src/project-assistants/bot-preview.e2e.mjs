@@ -99,9 +99,8 @@ try {
         })
         await page.locator('.pa-bot-row[data-bot-key=\'["studio","bot-0"]\']').click()
         const chat=page.locator(".pa-chat")
-        const update=chat.locator(".pa-progress").and(chat.getByRole("group",{name:zh?"進度更新":"Progress update"}))
         await chat.getByText("Verified integration.",{exact:true}).waitFor()
-        assert.equal(await update.count(),0,"completed turns fold narration and post-reply wrap-up out of the main chat")
+        assert.equal(await chat.locator(".pa-progress").count(),0,"narration stays out of the main chat surface")
         assert.equal(await chat.getByText("Post-reply wrap-up summary.",{exact:true}).isVisible(),false)
         assert.equal(await chat.getByText("Run the fixture checks",{exact:true}).isVisible(),false)
         await chat.locator(".pa-trace").first().locator("summary").first().click()
@@ -115,13 +114,9 @@ try {
           window.botsFixture.a.workTurn("running","turn-live")
           window.botsFixture.a.inlineProgress("live","Checking what changed…","2026-11-12T06:22:00Z","agent_message_chunk","turn-live")
         })
-        await update.getByText("Checking what changed…",{exact:true}).waitFor()
-        await page.evaluate(() => {
-          window.botsFixture.a.inlineProgress("live"," confirmed.","2026-11-12T06:22:01Z","agent_message_chunk","turn-live")
-        })
-        await update.getByText("Checking what changed… confirmed.",{exact:true}).waitFor()
-        assert.equal(await update.count(),1)
-        console.log(`PASS ${engine} ${language}: completed narration and post-reply wrap-up fold into processing details while live turns stream inline`)
+        assert.equal(await chat.locator(".pa-progress").count(),0,"live narration stays in processing details without polling mode=progress")
+        assert.equal(await page.evaluate(() => window.botsFixture.log.some(row => row.method === "view" && row.request.mode === "progress")),false)
+        console.log(`PASS ${engine} ${language}: narration and thinking stay in processing details without polling mode=progress`)
         await context.close()
       }
     } finally { await browser.close() }

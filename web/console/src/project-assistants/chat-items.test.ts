@@ -2,7 +2,7 @@ import { test } from "node:test"
 import assert from "node:assert/strict"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error Node executes source extensions.
-import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages,selectInlineProgress } from "./chat-items.ts"
+import { buildChat,buildTimelineChat,isSendingAdmitted,mergeMessages,partitionMessages } from "./chat-items.ts"
 // @ts-expect-error Node executes source extensions.
 import {admittedReceipt,admittedMessage,sendAcknowledgement,ChatObservation} from "./chat-observation.ts"
 const message=(id:string,seq:number,kind:W.ProjectAssistantMessageKind="assistant",at="2026-11-12T00:00:00Z")=>({id,seq,kind,at,text:id}) as W.ProjectAssistantMessage
@@ -114,32 +114,4 @@ test("in-flight sending bubble is suppressed once conversation admits the messag
   const admitted=message("msg-2",2,"user")
   admitted.text="hello"
   assert.equal(isSendingAdmitted("hello",[prior,admitted],1),true)
-})
-
-test("selectInlineProgress folds completed narration and post-reply wrap-up into processing details while keeping live turns inline",()=>{
-  const timeline:W.ProjectAssistantReadViewItem[]=[
-    {id:"u1",kind:"message",anchor_message_seq:1,observed_event_seq:1,message:{...message("u1",1,"user","2026-11-25T05:00:00Z"),turn_id:"turn-done",text:"Check status"}},
-    {id:"a1",kind:"message",anchor_message_seq:2,observed_event_seq:3,message:{...message("a1",2,"assistant","2026-11-25T05:00:02Z"),turn_id:"turn-done",text:"核對完了，沒有重做任何操作。"}},
-    {id:"u2",kind:"message",anchor_message_seq:3,observed_event_seq:6,message:{...message("u2",3,"user","2026-11-25T05:01:00Z"),turn_id:"turn-live",text:"Run next check"}},
-    {id:"a2",kind:"message",anchor_message_seq:4,observed_event_seq:7,message:{...message("a2",4,"assistant","2026-11-25T05:01:02Z"),turn_id:"turn-live",text:"First check finished."}},
-  ]
-  const progressRows:W.ProjectAssistantReadViewItem[]=[
-    {id:"p-mid",kind:"trace",anchor_message_seq:0,observed_event_seq:2,occurred_at:"2026-11-25T05:00:01Z",trace:{id:"mid",turn_id:"turn-done",category:"agent_message_chunk",text:"Checking records...",complete:true}},
-    {id:"p-exact",kind:"trace",anchor_message_seq:0,observed_event_seq:4,occurred_at:"2026-11-25T05:00:03Z",trace:{id:"exact",turn_id:"turn-done",category:"agent_message_chunk",text:"核對完了，沒有重做任何操作。",complete:true}},
-    {id:"p-wrapup",kind:"trace",anchor_message_seq:0,observed_event_seq:5,occurred_at:"2026-11-25T05:00:04Z",trace:{id:"wrapup",turn_id:"turn-done",category:"agent_message_chunk",text:"I checked the records only; nothing was redone.",complete:true}},
-    {id:"p-live-dup",kind:"trace",anchor_message_seq:0,observed_event_seq:8,occurred_at:"2026-11-25T05:01:02Z",trace:{id:"live-dup",turn_id:"turn-live",category:"agent_message_chunk",text:"First check finished.",complete:false}},
-    {id:"p-live",kind:"trace",anchor_message_seq:0,observed_event_seq:9,occurred_at:"2026-11-25T05:01:03Z",trace:{id:"live",turn_id:"turn-live",category:"agent_message_chunk",text:"Checking second part...",complete:false}},
-  ]
-  const selected=selectInlineProgress(progressRows,timeline,{
-    activeTurnID:"turn-live",
-    progressThrough:Date.parse("2026-11-25T05:00:00Z"),
-    isVisible:t=>t.text.trim().length>0,
-  })
-  assert.deepEqual(selected.inlineProgress.map(p=>[p.id,p.text]),[["p-live","Checking second part..."]])
-  assert.equal(selected.projectedSteps.has("p-exact"),true,"exact reply duplicate stays suppressed from Trace")
-  assert.equal(selected.projectedSteps.has("p-wrapup"),false,"post-reply wrap-up returns to collapsible Trace")
-  assert.equal(selected.projectedSteps.has("p-mid"),false,"completed intermediate narration returns to collapsible Trace")
-  assert.equal(selected.projectedSteps.has("p-live"),true,"live inline narration is not duplicated in live Trace")
-  assert.equal(selected.projectedSteps.has("p-live-dup"),true)
-  assert.deepEqual([...selected.completedProgressTurns],["turn-done"])
 })
