@@ -72,7 +72,7 @@ web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
 web/console/src/project-assistants/BotSettings.tsx	BotSettings	124	61
 web/console/src/project-assistants/Bots.tsx	Bots	445	137
-web/console/src/project-assistants/Chat.tsx	Chat	2140	620
+web/console/src/project-assistants/Chat.tsx	Chat	2140	619
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	91	52
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78
 web/console/src/project-assistants/ImageViewer.tsx	useImageZoom	170	45

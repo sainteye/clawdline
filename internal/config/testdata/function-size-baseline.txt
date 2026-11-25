@@ -57,7 +57,7 @@ internal/app/orchestrator/leases.go	Broker.Acquire	139	35
 internal/app/orchestrator/lifecycle.go	Broker.land	140	54
 internal/app/projectassistant/routines.go	Engine.TickRoutines	115	31
 internal/app/projectassistant/runtime.go	Engine.Submit	248	91
-internal/app/projectassistant/runtime.go	Engine.executeAttempt	490	140
+internal/app/projectassistant/runtime.go	Engine.executeAttempt	489	139
 internal/app/projectassistant/runtime.go	Engine.finishOnceLocked	141	53
 internal/app/projectassistant/runtime.go	Engine.work	119	31
 internal/app/projectassistant/send_now.go	Engine.SendNow	113	34

@@ -4,8 +4,8 @@ import { elapsed } from "./working"
 import type { Words } from "./words"
 import { ThinkingOrb } from "./ThinkingOrb"
 
-export function WorkingIndicator({turn,activity,steps,stopStatus,w,animated=true,waiting=turn.state==="waiting_permission"}:{
-  turn:W.ProjectAssistantReadTurnSummary;activity:string;steps?:(expanded:boolean)=>ReactNode;stopStatus?:string;w:Words;animated?:boolean;waiting?:boolean
+export function WorkingIndicator({turn,activity,subject,steps,stopStatus,w,animated=true,waiting=turn.state==="waiting_permission"}:{
+  turn:W.ProjectAssistantReadTurnSummary;activity:string;subject?:string;steps?:(expanded:boolean)=>ReactNode;stopStatus?:string;w:Words;animated?:boolean;waiting?:boolean
 }) {
   const [now,setNow]=useState(Date.now())
   const [expanded,setExpanded]=useState(false)
@@ -33,7 +33,7 @@ export function WorkingIndicator({turn,activity,steps,stopStatus,w,animated=true
   }}>
     <summary className="pa-turn pa-working" data-waiting={waiting||undefined} title={w.trace}>
       <ThinkingOrb state={waiting?"listening":"working"} size={16} color={waiting?"var(--warning,#F0A030)":"var(--pa-dim,#999)"} animated={animated}/>
-      <span className="pa-working-text" role="status">{text}</span>
+      <span className="pa-working-text" role="status">{text}{subject&&<span className="pa-working-subject"> · {subject}</span>}</span>
       {time&&<span className="pa-working-time" aria-hidden="true">{time}</span>}
       <svg className="pa-working-chevron" viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4.5 2.5 3.5 3.5-3.5 3.5"/></svg>
     </summary>

@@ -284,10 +284,14 @@ type Turn struct {
 	// explicit save, cancel, or turn withdrawal releases this hold.
 	QueueEditID string `json:"queue_edit_id,omitempty"`
 	// Steering records a queued message whose Send now has no settled native response.
-	Steering   bool         `json:"steering,omitempty"`
-	Network    *NetworkWork `json:"network,omitempty"`
-	Origin     TurnOrigin   `json:"origin,omitempty"`
-	ExchangeID string       `json:"exchange_id,omitempty"`
+	Steering bool `json:"steering,omitempty"`
+	// ReleasedRestart marks the person's message that released a queue held
+	// by a turn a restart interrupted. It runs before automatic work already
+	// waiting in that queue and first inspects what the interrupted turn did.
+	ReleasedRestart bool         `json:"released_restart,omitempty"`
+	Network         *NetworkWork `json:"network,omitempty"`
+	Origin          TurnOrigin   `json:"origin,omitempty"`
+	ExchangeID      string       `json:"exchange_id,omitempty"`
 	// DecisionExchangeID marks the person's answer to a decision offer that
 	// a peer request raised; its result is forwarded to the requester.
 	DecisionExchangeID string              `json:"decision_exchange_id,omitempty"`

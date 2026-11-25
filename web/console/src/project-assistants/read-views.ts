@@ -64,6 +64,7 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   if(!t||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states)||typeof t.failure_code!=="string"||t.failure_field!==undefined&&typeof t.failure_field!=="string"||t.started_at!==undefined&&typeof t.started_at!=="string")throw failure("pa_invalid")
   own(t.fence,scope,current)
   if(t.queue_edit_id!==undefined&&(!text(t.queue_edit_id)||t.state!=="queued"))throw failure("pa_invalid")
+  if(t.origin!==undefined&&typeof t.origin!=="string"||t.released_restart!==undefined&&typeof t.released_restart!=="boolean")throw failure("pa_invalid")
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
@@ -238,4 +239,4 @@ export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:
   if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
  }
 }
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts,...(t.origin?{origin:t.origin}:{}),...(t.released_restart?{released_restart:true}:{})}}

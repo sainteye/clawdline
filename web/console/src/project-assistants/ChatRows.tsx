@@ -17,7 +17,7 @@ import {errorCode} from "./client"
 import type * as W from "@clawdline/contract"
 import { Fragment, useCallback, useEffect, useState } from "react"
 import type React from "react"
-import { buildTimelineChat } from "./chat-items"
+import { buildTimelineChat, workReviewNotice } from "./chat-items"
 import { chatTimeFormat } from "./chat-time"
 import { WorkResultCard } from "./WorkResultCard"
 import { ExchangePanel } from "./ExchangePanel"
@@ -28,17 +28,6 @@ import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
 import { sessionReportLine } from "./session-report"
-function workReviewNotice(message:W.ProjectAssistantMessage):{task:string;key:string}|undefined {
-  if(message.kind!=="notice")return
-  const notice=message.notice
-  if(notice?.cause&&["work_review","work_review_waiting","work_review_held","restart_continuation"].includes(notice.key))
-    return {task:notice.cause,key:notice.key}
-  const held=/^work-completion-(?:refused|limit)-(.+)$/.exec(message.id)
-  if(held)return {task:held[1],key:"work_review_held"}
-  const review=/^This is a report on work you dispatched, not a new instruction from the user\. Task ([a-z0-9-]+), "/.exec(message.text)
-  if(review)return {task:review[1],key:"work_review"}
-}
-
 export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderExchangeWork,timeline,turns=[],onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,roster,artifactComposer,mentions}: {requestAbove?:(work:W.ProjectAssistantWorkLink)=>React.ReactNode;mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];turns?:readonly W.ProjectAssistantReadTurnSummary[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode;renderExchangeWork?:(exchangeID:string,sender:W.ProjectAssistantBot|undefined,name:string)=>React.ReactNode}) {
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   const byID=new Map(messages.map(m=>[m.id,m]))

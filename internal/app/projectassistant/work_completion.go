@@ -20,8 +20,11 @@ import (
 func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, feature pa.FeatureState, source pa.SourceStatus) error {
 	key := link.Fence.Key
 	command := r.command(key, pa.SendOperation, pa.WorkCompletionPrefix+link.TaskID, link.ResultMessageID)
-	if receipt, err := r.o.Repository.Receipt(ctx, command); err != nil || receipt != nil {
+	if receipt, err := r.o.Repository.Receipt(ctx, command); err != nil {
 		return err
+	} else if receipt != nil {
+		// A replay retries the release a failed earlier attempt left undone.
+		return r.releaseLateReview(ctx, key)
 	}
 	check := func(ctx context.Context) (Export, error) {
 		x, err := r.o.Repository.Export(ctx, key)
@@ -45,7 +48,10 @@ func (r *Engine) WakeWorkCompletion(ctx context.Context, link pa.WorkLink, featu
 			Text: WorkCompletionPrompt(link),
 		},
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	return r.releaseLateReview(ctx, key)
 }
 
 // WorkCompletionPrompt is the whole text of the review turn. It carries no

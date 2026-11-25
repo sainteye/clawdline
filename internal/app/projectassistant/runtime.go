@@ -646,7 +646,8 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		}
 	}
 	fence := currentFence(bot, c)
-	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey}
+	turn := pa.Turn{ID: r.o.ID(), Fence: fence, MessageID: r.o.ID(), State: pa.TurnQueued, IdempotencyKey: s.Command.IdempotencyKey,
+		ReleasedRestart: person && releasesRestart(acknowledge, recoverySource)}
 	turn.Origin = pa.UserOrigin
 	kind := pa.UserMessage
 	if s.Notice {
@@ -1172,9 +1173,7 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	// The first prompt after an interrupted turn was settled unrepeated
 	// inspects what finished before it acts.
-	if !isolatedRoutine && pa.RestartSourceTurn(t) == "" && restartNotRepeatedHeader(export, t) {
-		input.Text = restartNotRepeatedPrompt + "\n\n" + input.Text
-	}
+	input.Text = restartPromptHeader(export, t, isolatedRoutine) + input.Text
 	if isolatedRoutine && (binding.Agent != effectiveAgent || binding.Revoked) {
 		a.mu.Unlock()
 		return runtimeFailure(pa.Unsupported, "routine_effective_agent")

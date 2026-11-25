@@ -2,6 +2,7 @@ package projectassistant
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -13,6 +14,66 @@ const staleResume = time.Hour
 // restartNotRepeatedPrompt opens the first prompt after an interrupted turn
 // was settled without a continuation; it carries the meaning of resumePrompt.
 const restartNotRepeatedPrompt = "[Clawdline restarted on this computer and interrupted your previous turn. It was not repeated. Before acting on the message below, first inspect what finished. Do not repeat a write, send, dispatch or other external action from the interrupted turn. If an action's outcome cannot be verified, explain what is still open.]"
+
+// restartReleasedPrompt opens the person's message that released a queue
+// held by an interrupted turn. It runs ahead of the automatic work that
+// waited in that queue, so it names how much is still to be delivered.
+func restartReleasedPrompt(held int) string {
+	text := "[Clawdline restarted on this computer and interrupted your previous turn. It was not repeated. The person's message below released the waiting queue and runs first. Before acting on it, first inspect what finished. Do not repeat a write, send, dispatch or other external action from the interrupted turn. If an action's outcome cannot be verified, explain what is still open."
+	if held > 0 {
+		text += fmt.Sprintf(" %d automatic item(s), such as work reports or other Bots' messages, are still queued and will be delivered after this message; do not act on their likely contents before you receive them.", held)
+	}
+	return text + "]"
+}
+
+// releasesRestart reports whether acknowledging these unknown turns releases
+// a restart hold. A continuation that still owns recovery keeps its place.
+func releasesRestart(acknowledged []pa.Turn, recoverySource string) bool {
+	for _, t := range acknowledged {
+		if recoverySource == "" && restartInterrupted(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// restartPromptHeader opens the first prompt after an interrupted turn was
+// settled unrepeated, so it inspects what finished before it acts; empty
+// otherwise. It ends with a blank line before the prompt's own text.
+func restartPromptHeader(x Export, t pa.Turn, isolatedRoutine bool) string {
+	switch {
+	case isolatedRoutine:
+		return ""
+	case t.ReleasedRestart:
+		return restartReleasedPrompt(heldAutomaticWork(x, t.ID)) + "\n\n"
+	case pa.RestartSourceTurn(t) == "" && restartNotRepeatedHeader(x, t):
+		return restartNotRepeatedPrompt + "\n\n"
+	}
+	return ""
+}
+
+// heldAutomaticWork counts the automatic work still queued besides turnID.
+func heldAutomaticWork(x Export, turnID string) int {
+	held := 0
+	for _, t := range x.Turns {
+		if t.ID != turnID && pa.HeldAutomaticWork(t) {
+			held++
+		}
+	}
+	return held
+}
+
+// releaseLateReview applies the restart decision again once a review is
+// queued: a review admitted after the restart waits behind the interrupted
+// turn exactly like work already queued when the restart was decided, and
+// is released the same way instead of waiting for the person's next message.
+func (r *Engine) releaseLateReview(ctx context.Context, key pa.BotKey) error {
+	if err := r.ResumeInterrupted(ctx, key); err != nil {
+		return err
+	}
+	r.wakeBot(key)
+	return nil
+}
 
 func restartInterrupted(t pa.Turn) bool {
 	return t.State == pa.TurnUnknown && t.Failure != nil && (t.Failure.Field == RestartField || t.Failure.Field == RestartConfirmedField)
