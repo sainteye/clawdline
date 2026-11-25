@@ -103,6 +103,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.decision_reply_bytes` | 500 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.decision_request_quote_bytes` | 1500 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.decision_suggested_replies` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.decision_trace_bytes` | 2048 | `bytes` | `refuse` | `sender, diagnostics` | — |
 | `bots.dispatch_hint_bytes` | 300 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_kind_bytes` | 64 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.dispatch_kind_rules` | 12 | `rows` | `refuse` | `diagnostics, sender, health` | — |

@@ -15,6 +15,7 @@ import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObse
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
 import {hostedConsole} from "../pages/terminal/api"
+import {traceDecision} from "./decision-trace-send"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import {chatEventDelay,chatPushSignal} from "./chat-push"
 import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
@@ -1260,8 +1261,9 @@ ${currentDraft}`:submitted)
     })
     return()=>{cancelled=true}
   },[traceSummaries,details,recoveryRequired,source])
-  const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption|null,text?:string)=>{
-    let attempted=false
+  const answer=async(offer:W.ProjectAssistantPermissionOffer,option:W.ProjectAssistantPermissionOption|null,text?:string,attempt?:string)=>{
+    let attempted=false,sentAt=0,idempotency=""
+    const trace=(phase:"request"|"settled"|"failed",code="")=>{if(attempt)traceDecision({attempt,phase,bot_id:key.bot_id,offer_id:offer.id,option:option?.id,idempotency_key:idempotency,code,ms:sentAt?performance.now()-sentAt:0})}
     const displayed=()=>detailRows.current[offer.id]===offer||teamCards&&timelineRef.current.some(row=>row.permission===offer)
     try{
       const result=await withPermissionRecovery(()=>mutate(async(d,s)=>{
@@ -1280,12 +1282,13 @@ ${currentDraft}`:submitted)
         // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
         if(option?!live.options.some(o=>o.id===option.id&&o.kind===option.kind):live.kind!=="decision"||!text)throw failure("pa_scope_denied")
         const intent:W.ProjectAssistantPermissionAnswerRequest={command:command(key,"answer"),fence:live.fence,offer_id:live.id,turn_id:live.turn_id,option_id:option?.id??"",...(text?{text}:{})}
-        attempted=true
+        attempted=true;sentAt=performance.now();idempotency=intent.command.idempotency_key;trace("request")
         return source.answer(intent,s)
       },{reportReadFailure:false}),valid,()=>void refresh())
       const receipt=result?.receipt
       if(result?.contract_version!=="project-assistants.v1"||!admittedReceipt(receipt)||!receipt?.resource_id||
         !receipt.command?.key||!sameBot(receipt.command.key,key))throw failure("pa_outcome_unknown")
+      trace("settled",`${receipt.state}${valid()&&!recovery.current?"":"-unapplied"}`)
       if(valid()&&!recovery.current){
         if(displayed()){
           const next={...detailRows.current,[offer.id]:{...offer,state:"answered" as const,selected_option_id:option?.id??"",...(offer.decision?{decision:{...offer.decision,answer_text:option?.label??text??""}}:{})}}
@@ -1296,6 +1299,7 @@ ${currentDraft}`:submitted)
       }
     }catch(e){
       const code=errorCode(e)
+      trace("failed",code||"unknown")
       if(code==="pa_expired"||code==="pa_stale_version")void refresh()
       // Only a request that left and may have taken effect is unknown; a
       // typed refusal from the source keeps its code and field.
@@ -1856,7 +1860,7 @@ ${currentDraft}`:submitted)
   const permissionMachine=machineName||source.machineName||key.machine_id
   const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
   const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
-  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} botID={key.bot_id} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
