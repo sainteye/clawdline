@@ -81,6 +81,12 @@ document keeps the earlier behavior.
   agent no longer lists stays selected and is marked.
 - **Precedence in `dispatch_work`**: explicit `agent`/`model`/`effort` > the rule for `kind` > the
   saved default > Claude Code. With no rule and no default, dispatch is exactly as before.
+- **Child or Root.** `dispatch_work` opens an owned child by default (`mode: "child"`): bounded
+  work that returns a branch for review. `mode: "root"` opens an independently owned Root Session
+  for integration, release or a whole handed-off feature; it may merge, push, deploy and record
+  landings under the ordinary Root rules, and its `clawdline session report` tells the Bot once.
+  Only a turn the person started, or the holder of a request card, may open one
+  (`docs/project-assistants-broker.md`, "Opening a Root").
 - **Permission.** A Bot's dispatch carries no permission of its own: it is admitted exactly as a
   Session's child is, so every agent, Claude Code included, runs with the person's dispatch
   permission setting, and Grok follows the child-dispatch mapping.

@@ -78,7 +78,8 @@ Source authorization is checked again immediately before durable creation.
 Once accepted, revocation prevents new work but does not erase the task or
 claim that an already accepted external effect was cancelled. The Bot actor
 has no landing, approve, claim, finish, Session-management or arbitrary-machine
-operation. Board changes still need the existing human/run authority.
+operation. It can hand whole ownership to an independent Root (see "Opening a
+Root" below); the Root, not the Bot, then integrates. Board changes still need the existing human/run authority.
 
 `AssistantTaskID(command)` derives a stable UUID from source machine, Bot,
 operation and idempotency key. It excludes the content hash intentionally:
@@ -87,6 +88,69 @@ the original command and `AssistantRequestHash(request)`, which independently
 covers the historical fence, turn, claims and brief. Neither digest includes
 the credential. Identical commands return one accepted task; changed payloads
 conflict even if the caller leaves its claimed content hash unchanged.
+
+## Opening a Root
+
+Decided 2026-11-25 (the person, in the COO Bot's chat). An owned child cannot
+integrate: its CHILD.md forbids push, merge and worktree commands, and the Bot
+actor has no landing operation, so nobody on a Bot's line could legitimately
+land work. A Bot therefore chooses per dispatch between a **child** (unchanged:
+bounded work that returns a branch for review) and a **Root** (integration,
+release, or a whole feature handed off end to end).
+
+- **Tool shape.** `dispatch_work` takes `mode: "child" | "root"`, default
+  child, rather than a second tool: the destination, persona, agent rules and
+  idempotency key are the same, and a second tool would duplicate them. The
+  mode travels in `pa.DispatchChoice.Mode` (omitted when empty, so every
+  earlier request hash is unchanged). `claims` may be empty for a Root, and
+  `continue_on_completion` is refused with it. `Broker.DispatchAssistant`
+  refuses a non-empty mode, so a Root never silently becomes a child.
+- **Idempotency.** `Broker.DispatchAssistantRoot` runs the same
+  `checkAssistantRequest` source authority as a child, then calls the
+  ordinary `OpenRootAssignment` with `request_id = AssistantTaskID(command)`.
+  A retry replays that Root Assignment receipt and opens nothing; the same key
+  with different content is `pa_idempotency_conflict`, because the request
+  digest covers the `bot_owner` record including `AssistantRequestHash`.
+- **Authority.** The host admits mode root only on a turn the person started
+  (`directUserTurn`) or, for a request card, a handoff-woken turn of the
+  card's holder working on that card (`botRequestDispatchScope`); anything
+  else is `pa_scope_denied` field `dispatch_root_origin`. A thread worker
+  answering another Bot cannot open one. The destination rules are the
+  child's: the Bot's own Project directly, another Project only through the
+  existing permission card. No approval card is added for the Bot's own
+  Project; the person sees the new Root Session open, as for a child.
+- **Ownership record.** `RootAssignment.BotOwner` (`RootBotOwner`) records the
+  Bot's fence, turn, command, request hash, display name, and optional
+  request card and Board item. It is provenance, not parentage: the record
+  still has no task, secret, timeout, result or landing. The bridge persists
+  `AssistantRootLink(a)` as a work link in the Bot's chat, so the chat strip
+  shows the Root like other work; its `task_id` is the Root Assignment id, and
+  `work_status` does not follow it.
+- **Delivery notice.** `ReportSessionDeliveryWithEvidence` queues
+  `bot.root.delivered` in the same append as the delivery receipt when the
+  reporting terminal is an open, Bot-opened Root whose Bot has not been told.
+  The handler calls `Broker.AssistantRootDelivered`; the host's
+  `rootDelivered` writes the Root's summary as the link's result message and
+  reuses the ordinary work-completion wake (`WakeWorkCompletion`, keyed on the
+  Root id, so a replay queues no second turn), honouring the Bot's work review
+  setting. On success the row records `bot_owner.delivered_at`; later reports
+  from the same Root queue nothing, and a queued duplicate finishes as
+  `bot_already_told`. It fires once per Root, not once per report.
+- **The Root's brief.** The ordinary five-section Root Assignment brief
+  (objective = title, scope = brief, constraints, references, acceptance) plus
+  an `OPENED BY A BOT` section: who opened it, that it is nobody's child and
+  works under the ordinary Root rules, and that `clawdline session report` is
+  what tells the Bot.
+- **Concurrency.** Several Roots may push `main`. The existing protection is
+  enough for now: ordinary pushes only (never forced), the repository's
+  pre-push hook, and re-fetch/merge on rejection. A merge queue is deferred
+  until rejected pushes are observed to cost real time.
+- **Review.** Review verdicts a Bot recorded stay displayed on its request
+  card and are named in the Root's constraints; they are not enforced, as in
+  the request card design.
+
+Not built here: the roster's per-Bot count of open Roots and a request-card
+row for a Root (the chat strip link covers the opening Bot); a merge queue.
 
 ## Receipts and recovery
 
