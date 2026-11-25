@@ -93,7 +93,22 @@ The rule that holds is the first one in [plan.md](plan.md) §3: **`domain` impor
 transport and no app package**. One domain package, `domain/icon`, still reads a file itself. The second rule there, that transport does not
 import adapters, is not true today: `internal/transport/http` is also where the daemon is wired
 together, and the broker in `internal/app/orchestrator` uses the store and terminal adapters
-directly. No guard test enforces either rule yet.
+directly.
+
+`TestLayersImportOnlyDownward` (`internal/config/codeshape_test.go`) enforces these rules on every
+production Go file, for every platform: `domain` imports no app, adapter or transport package;
+`app` imports no adapter or transport package; `adapters` imports no transport package; and
+`transport` imports no adapter package. The imports that broke the last three on 2026-11-25 are
+listed in `internal/config/testdata/layer-baseline.txt`. A new one fails, and a listed one that
+disappears must be removed, so the list only shrinks. No `domain` import may be listed.
+
+`TestFunctionsDoNotGrowPastTheirSize` in the same file limits a production function to 100
+statements and 40 branches, counting its closures. Statements, not lines, are counted, so a data
+table returned as one literal is not long. The functions already over either limit are listed
+with their size in `internal/config/testdata/function-size-baseline.txt`. They may not grow,
+and a shrunken or removed one must be updated. After a refactor, run the guard with
+`CLAWDLINE_TIGHTEN_SHAPE_BASELINES=1` to lower and remove entries. That mode never adds or
+raises one. Both guards run in the uncached repository-copy guards of every `tools/check.sh`.
 
 A port is one thing the platform does: `TerminalHost` (list, open, send, interrupt, close,
 reveal, read the screen), `ProcessHost`, `ScreenHost`, `KeyHost` and others
