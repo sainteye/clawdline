@@ -149,6 +149,38 @@ tree equality 能回答的問題：語意整合本來就會讓兩棵樹不同。
 若 carrier 的 landing 日後被更正，舊 landing 仍由 carrier 的 `corrected_from` 與 `landing.corrected` event 保留；
 `incorporated` 自己也保存當時驗過的 carrier commit、target commit、原 delivery head 與 base，不會只剩一個會漂移的 task id。
 
+**A reverted delivery is not landed (`delivery_reverted`, 2026-11-25).** Ancestry alone said four deliveries had
+landed on `df6468593` — the very commit that backed their merges out — because every commit after a merge descends from
+it, the revert included. A fifth was recorded `incorporated` on the same commit: `git cherry` still found its patches
+upstream of the revert, and the carrier's landing it leaned on was one of the four. The revert's message did not say
+"This reverts commit", and its generated files were regenerated rather than restored, so neither the message nor a
+whole-patch check would have seen it. The proof now also asks the trees (`git.DeliveryPresence`,
+`internal/adapters/git/reverted.go`): for every path the delivery `base..head` changed, the tree of the named commit and
+of the target's current head is classified as *kept* (the path's blob is head's, or the path's own patch applies in
+reverse to a temporary index of that tree), *reverted* (the blob is base's, or the patch applies forwards), or
+*unknown* (neither: later edits, regenerated files). `landed` is refused `unverified_landing` with reason
+`delivery_reverted` when no path is kept and at least one is reverted; `paths_reverted` and `paths_unknown` say how
+many. `incorporated` asks the same of the **carrier's** recorded delivery (its landing's `base` and `delivery_head`),
+not of the original delivery, whose paths an integration may legitimately rewrite. Measured on this repository: the
+four reverted merges read 0 kept and 13–35 reverted at `df6468593`, while each of the 16 most recent first-parent merges
+on `main` reads at least one kept path. What it does not catch, by design: a partial revert (any kept path is enough
+to accept) and a delivery whose every line was later rewritten (all unknown). Git that cannot answer refuses, reason
+`delivery_unknown`. The cost is three name-only diffs plus one or two single-path `git apply --check` runs per path
+that is neither base's nor head's; on this repository a 42-path delivery took well under a second.
+
+**Correcting a wrong landing back to `pending`.** A settled landing still does not move to another state, with one
+exception: `landed` or `incorporated` may be corrected to `pending`, with the orchestrator token only and a non-empty
+`note` saying why (otherwise `403 forbidden` or `400 bad_request`; a different `target` is `landing_conflict`). It is a
+correction like any other: the replaced landing is kept as `corrected_from`, and a `landing.corrected` event records
+`landing: pending` with `previous_commit`. The pending row keeps that `corrected_from`, and so does a landing proved on
+it later; a resend with the same note is a replay. A carried delivery that was `incorporated` on a corrected carrier is not
+reopened automatically; correct it the same way. `abandoned` and `nothing_to_land` are a root's decisions, not claims
+about the repository, and stay final.
+
+```bash
+clawdline task land <task id> pending --note "Its merge was reverted on main by <commit>; the landing was recorded before the broker checked trees."
+```
+
 **承載宣告（`carries`）。** child 的 result.json 可以列出它帶上的其他 task（`carries`，最多
 `orchestrator.result_carries` = 16 個，不能是自己、不能重複；`taskdir.ValidateResult` 整份退回超過的清單）。broker 證明
 這個 carrier 自己的 `landed` 之後（`land()` 結尾的 `incorporateCarried`，`internal/app/orchestrator/landing_carries.go`），
@@ -496,7 +528,7 @@ line was typed, not that the receiver read or completed the work.
 - `result.json.ready` 的收養沒有舊版的 30 秒觀察窗：marker 與 tmp 的 sha256 一致就收。
 - whoami 只讀一次 inventory，沒有舊版的「兩次獨立讀取一致」。
 - `sessions/<terminal>/complete` 不檢查 session 是否 `working`，也不去重（每次 `created:true`）。
-- landing 的 correction（`corrected_from`）與 `namesSameCommit` 前綴比對沒做；已落地的 target 不同一律 `landing_conflict`。
+- landing 的 `namesSameCommit` 前綴比對沒做；已落地的 target 不同一律 `landing_conflict`。Correction（`corrected_from`）已做，包含把錯誤的 `landed`／`incorporated` 更正回 `pending`（見〈Landing ledger 的字〉）。
 - iTerm 分頁那條路有寫、**沒在這台機器上跑過**（驗收用 tmux，以免在使用者的 iTerm 開分頁）。
 - 契約：inventory 本體是 map（原因見 `wire.go`），其他 body 都是 `api/v1/orchestrator.schema.json` 生成的型別。
 
