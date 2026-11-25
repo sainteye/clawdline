@@ -9,6 +9,23 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+func TestProjectAssistantPermissionPublishesTheLiteralMemoryProposal(t *testing.T) {
+	const fact = "The maintenance window starts on Wednesday."
+	wire, err := paWirePermissionOffer(pa.PermissionOffer{
+		Kind: pa.DecisionOfferKind, State: pa.PermissionResolved, SelectedOptionID: pa.MemorySaveOptionID,
+		Decision: &pa.DecisionRequest{Question: pa.MemoryProposalQuestion, Memory: fact},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wire.Decision == nil || wire.Decision.Memory != fact {
+		t.Fatalf("permission omitted its proposed memory: %+v", wire.Decision)
+	}
+	if wire.State != "answered" || wire.SelectedOptionID != pa.MemorySaveOptionID {
+		t.Fatalf("permission lost its saved outcome: %+v", wire)
+	}
+}
+
 func TestProjectAssistantListPublishesDispatchedExecutionCount(t *testing.T) {
 	f := newPAHTTPFixture(t)
 	f.create(t)

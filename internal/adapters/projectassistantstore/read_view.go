@@ -555,13 +555,17 @@ func (c *viewEventFactChecks) verify(ctx context.Context, tx *sql.Tx, e pa.Event
 }
 
 func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
+	// Memory choices stay in the same collection and order after being answered.
+	// The head still counts only pending offers. Memory text belongs to detail.
 	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, candidates AS MATERIALIZED (
  SELECT p.key id,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),
  'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),
  'kind',json_extract(p.value,'$.kind'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision'
  THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
  'expires_at',json_extract(p.value,'$.expires_at')) j
- FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending'
+ FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND (json_extract(p.value,'$.state')='pending'
+ OR (json_extract(p.value,'$.state')='answered' AND json_extract(p.value,'$.kind')='decision'
+ AND coalesce(json_extract(p.value,'$.decision.memory'),'')<>''))
  AND ` + viewPermissionFenceSQL("p.value") + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)
  ORDER BY p.key COLLATE BINARY LIMIT ?
 ), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY id COLLATE BINARY) spent FROM candidates)

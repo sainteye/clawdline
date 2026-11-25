@@ -19,6 +19,7 @@ const utf8Bytes=(text:string)=>new TextEncoder().encode(text).length
  */
 export type DecisionFailureKind="interrupted"|"tooLong"|"answered"|"expired"|"withdrawn"|"format"|"offline"|"check"|"changed"|"refused"|"notSent"
 export type DecisionFailure={kind:DecisionFailureKind;code:string;retry:boolean}
+type DecisionChoice={option:string|null;text:string;phase:"sending"|"sent"|"failed"}
 export function decisionFailure(error:unknown):DecisionFailure{
   const code=errorCode(error),field=errorField(error)
   const kind=((): DecisionFailureKind=>{
@@ -55,6 +56,23 @@ export function decisionFailureText(f:DecisionFailure,w:Words,checking:boolean,d
   }
 }
 
+function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,offer?:W.ProjectAssistantPermissionOffer,onDetail?:()=>Promise<boolean>){
+  const requested=useRef("")
+  // The immutable proposal stays visible while the collection and detail
+  // catch up to one another after an answer.
+  const [knownMemory,setKnownMemory]=useState("")
+  const proposal=offer?.decision?.memory,memory=proposal||knownMemory
+  useEffect(()=>{if(proposal)setKnownMemory(proposal)},[proposal])
+  useEffect(()=>{
+    const needsAnswer=memory&&summary.state==="answered"&&offer?.state!=="answered"
+    const reference=memory||summary.title===MEMORY_PROPOSAL_QUESTION?JSON.stringify([summary.detail_cursor,summary.state]):summary.detail_cursor
+    if(offer&&!needsAnswer||!onDetail||requested.current===reference)return
+    requested.current=reference
+    void onDetail().catch(()=>{})
+  },[offer,onDetail,memory,summary.state,summary.detail_cursor,summary.title])
+  return memory
+}
+
 // A question a Bot asked with ask_person. The suggested replies are the
 // Bot's words; pressing one sends that full text as the person's own message
 // in this chat, so the card shows exactly what will be sent.
@@ -80,19 +98,15 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
   // The reply the person pressed, kept from the press until the server's
   // state replaces it: "sending" before the answer is accepted, "sent" once
   // it is, "failed" when it was not. A reload shows the server's answer.
-  const [choice,setChoice]=useState<{option:string|null;text:string;phase:"sending"|"sent"|"failed"}|null>(null)
-  const pending=useRef(false),requested=useRef("")
+  const [choice,setChoice]=useState<DecisionChoice|null>(null)
+  const pending=useRef(false)
   // The press being traced, so a card unmounted mid-send says so in the log.
   const traced=useRef<{attempt:string;at:number;option:string}|null>(null)
   useEffect(()=>()=>{const t=traced.current;if(pending.current&&t)traceDecision({attempt:t.attempt,phase:"unmounted",bot_id:botID,offer_id:summary.id,option:t.option,ms:performance.now()-t.at})},[])
   const summaryState=permissionState(summary)
   const state=summaryState==="pending"&&offer&&samePermission(summary,offer)?permissionState(offer):summaryState
   const decision=offer?.decision
-  useEffect(()=>{
-    if(offer||!onDetail||requested.current===summary.detail_cursor)return
-    requested.current=summary.detail_cursor
-    void onDetail().catch(()=>{})
-  },[offer,onDetail,summary.detail_cursor])
+  const memory=useDecisionDetail(summary,offer,onDetail)
   const send=async(option:W.ProjectAssistantPermissionOption|null,text?:string,check=-1)=>{
     if(!offer||!enabled||pending.current||state!=="pending")return
     if(!option&&text!==undefined&&utf8Bytes(text)>DECISION_ANSWER_BYTES){setError({kind:"tooLong",code:"pa_capacity_full",retry:false});setOwn(true);return}
@@ -121,7 +135,10 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
     return()=>clearTimeout(timer)
   })
   const draftBytes=own?utf8Bytes(draft.trim()):0,tooLong=draftBytes>DECISION_ANSWER_BYTES
-  if(decision?.memory)return <MemoryCard summary={summary} offer={offer!} memory={decision.memory} state={state} enabled={enabled} busy={busy} error={error?decisionFailureText(error,w,false):""} askerName={askerName} onSend={option=>void send(option)} w={w}/>
+  // The roster can focus the summary before the detail has arrived.
+  if(memory||!offer&&summary.title===MEMORY_PROPOSAL_QUESTION)return <MemoryCard summary={summary} offer={offer} memory={memory}
+    state={summaryState} choice={choice} enabled={enabled} busy={busy} checking={checking} error={error}
+    askerName={askerName} onSend={option=>void send(option)} highlight={highlight} w={w}/>
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
   const sent=state==="pending"&&choice?.phase==="sent"
   const locked=busy||sent
@@ -172,33 +189,54 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
 // A short fact the Bot proposed to remember while answering another Bot.
 // Only Save writes it, as the person's own memory entry; the card offers no
 // typed reply.
-function MemoryCard({summary,offer,memory,state,enabled,busy,error,askerName,onSend,w}:{
+function MemoryCard({summary,offer,memory,state,choice,enabled,busy,checking,error,askerName,onSend,highlight,w}:{
   summary:W.ProjectAssistantReadPermissionSummary
-  offer:W.ProjectAssistantPermissionOffer
+  offer?:W.ProjectAssistantPermissionOffer
   memory:string
-  state:string
+  state:W.ProjectAssistantPermissionState
+  choice:DecisionChoice|null
   enabled:boolean
   busy:boolean
-  error:string
+  checking:boolean
+  error:DecisionFailure|null
   askerName:string
   onSend:(option:W.ProjectAssistantPermissionOption)=>void
+  highlight?:boolean
   w:Words
 }) {
+  // A receipt can update the cached detail before the persisted collection
+  // observes it. The collection confirms whether this card was answered.
+  const selected=state==="answered"&&offer?.state==="answered"?offer.selected_option_id:undefined
+  const awaiting=state==="answered"&&!selected||state==="pending"&&
+    (choice?.phase==="sent"||offer?.state==="answered"||error?.kind==="answered")
+  const problem=state==="pending"&&!awaiting?error:null
+  const retry=problem?.retry&&!checking?offer?.options.find(o=>o.id===choice?.option):undefined
+  const locked=busy||awaiting||checking
   const label=(id:string)=>id===MEMORY_SAVE?w.memoryCardSave:w.memoryCardSkip
-  const status=state==="answered"?(offer.selected_option_id===MEMORY_SAVE?w.memoryCardSaved:w.memoryCardSkipped):state==="expired"?w.decisionExpired:state==="pending"?"":w.decisionWithdrawn
-  return <section className="pa-card pa-permission pa-decision pa-memory-card" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state} aria-label={w.memoryCardTitle} aria-busy={busy||undefined}>
+  const status=state==="answered"?(selected===MEMORY_SAVE?w.memoryCardSaved:selected===MEMORY_SKIP?w.memoryCardSkipped:""):
+    state==="expired"?w.decisionExpired:state==="pending"?"":state==="unknown"?w.unknown:w.decisionWithdrawn
+  const sending=locked&&!status&&!checking
+  const message=problem&&(problem.kind==="notSent"?w.decisionSendFailed:problem.kind==="refused"?w.retryReasonRefused:decisionFailureText(problem,w,checking))
+  return <section className="pa-card pa-permission pa-decision pa-memory-card" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state}
+    aria-label={w.memoryCardTitle} aria-busy={locked||undefined} data-focused={highlight||undefined} tabIndex={highlight?-1:undefined}>
     <h3>{w.memoryCardTitle}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>
     <p className="pa-decision-note">{w.memoryCardFrom.replace("{name}",askerName)}</p>
-    <blockquote className="pa-decision-question">{memory}</blockquote>
-    {status&&<p className="pa-permission-state" role="status">{status}</p>}
-    {state==="pending"&&<div className="pa-permission-options">
-      {offer.options.filter(o=>o.id===MEMORY_SAVE||o.id===MEMORY_SKIP).map(option=><button key={option.id} type="button" data-option-kind="decision" disabled={!enabled||busy} onClick={()=>onSend(option)}><span>{label(option.id)}</span></button>)}
+    {memory&&<blockquote className="pa-decision-question">{memory}</blockquote>}
+    {(status||sending)&&<p className="pa-permission-state" role="status">
+      {sending?<span className="pa-decision-working"><span className="pa-decision-spinner" aria-hidden="true"/>{w.decisionSending}</span>:status}
+    </p>}
+    {state==="pending"&&offer&&<div className="pa-permission-options">
+      {offer.options.filter(o=>o.id===MEMORY_SAVE||o.id===MEMORY_SKIP).map(option=><button key={option.id} type="button" data-option-kind="decision" disabled={!enabled||locked} onClick={()=>onSend(option)}><span>{label(option.id)}</span></button>)}
     </div>}
-    {error&&<p role="alert">{error}</p>}
+    {message&&<div className="pa-decision-failed" role="alert" aria-busy={checking||undefined}>
+      <p>{checking&&<span className="pa-decision-spinner" aria-hidden="true"/>}{message}</p>
+      {retry&&<button type="button" className="pa-pill" disabled={!enabled||locked} onClick={()=>onSend(retry)}>{w.decisionRetry}</button>}
+    </div>}
   </section>
 }
 
-// Mirrors pa.MemorySaveOptionID and pa.MemorySkipOptionID.
+// Mirrors the host's memory proposal question and its two option IDs.
+const MEMORY_PROPOSAL_QUESTION="Save this to memory?"
 const MEMORY_SAVE="reply-memory-save",MEMORY_SKIP="reply-memory-skip"
 
 // The requester's chat only points at the waiting question; it carries no

@@ -791,7 +791,6 @@
   .project-assistants.pa-shell:has(>.pa-room-layout:not([hidden]))>.pa-roster>.pa-roster-scroll>:not(dialog) { visibility:hidden; }
   .project-assistants.pa-shell>.pa-room-layout { position:absolute;inset:var(--pa-room-visible-top,0px) 0 var(--pa-room-visible-bottom,0px);height:auto;z-index:8; }
   .project-assistants .pa-room-layout .pa-chat-header,.project-assistants .pa-room-layout .pa-chat-footer { flex-shrink:0; }
-  .project-assistants .pa-room-layout .pa-chat-footer { padding-bottom:16px; }
 }
 
 .project-assistants .pa-form-scrim { position: absolute; inset: 0; z-index: 20; background: #000a; }
@@ -973,6 +972,7 @@
 /* A pressed decision reply shows at once which one was chosen; the others
    step back. The mark keeps its width in every state so nothing shifts. */
 .project-assistants .pa-decision .pa-permission-options button { flex-direction:row;align-items:center;gap:8px; }
+.project-assistants .pa-decision.pa-memory-card .pa-permission-options { background:none;border:0;border-radius:0;overflow:visible; }
 .project-assistants .pa-decision-mark { display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none; }
 .project-assistants .pa-decision-mark:empty { display:none; }
 .project-assistants .pa-decision button[data-choice="chosen"] { box-shadow:inset 0 0 0 2px var(--accent,currentColor);font-weight:600;opacity:1; }
