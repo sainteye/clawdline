@@ -148,7 +148,8 @@ function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"t
 export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,cards:readonly PermissionViewCard[],now:number) {
   if(!head||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
   // The collection can be paged. Keep counting requests we have yet to read.
-  let count=Math.max(0,head.pending_permission_count-cards.length),nextDeadline=Infinity
+  const loadedPending=cards.filter(({summary})=>summary.state==="pending").length
+  let count=Math.max(0,head.pending_permission_count-loadedPending),nextDeadline=Infinity
   for(const {summary,offer} of cards){
     if(!currentPermission(summary,head)||permissionState(summary,now)!=="pending")continue
     const value=offer&&samePermission(summary,offer)?offer:summary

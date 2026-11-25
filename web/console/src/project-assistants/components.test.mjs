@@ -164,6 +164,8 @@ test("the waiting indicator retires known expired permissions even while the hea
   assert.deepEqual(pendingPermissionView(head,[{summary}],deadline-1),{count:1,nextDeadline:deadline})
   assert.deepEqual(pendingPermissionView(head,[{summary}],deadline),{count:0,nextDeadline:Infinity})
   assert.deepEqual(pendingPermissionView({...head,pending_permission_count:2},[{summary}],deadline),{count:1,nextDeadline:Infinity})
+  const savedMemory={...summary,id:"saved-memory",turn_id:"",tool_kind:"decision",state:"answered"}
+  assert.deepEqual(pendingPermissionView({...head,pending_permission_count:2},[{summary},{summary:savedMemory}],deadline),{count:1,nextDeadline:Infinity})
   assert.equal(pendingPermissionView({...head,conversation:{...head.conversation,active_turn_id:"new-turn"}},[{summary}],deadline-1).count,0)
   const detail=await source.view({...base,mode:"detail",source_epoch:snapshot.source_epoch,cursor:summary.detail_cursor,page_size:1},signal)
   const offer={...detail.items[0].permission,expires_at:new Date(deadline-2).toISOString()}
