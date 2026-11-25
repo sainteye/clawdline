@@ -21,7 +21,7 @@ import { client } from "../client.js"
 import { ModelCatalogReader } from "../model-catalog/reader.js"
 import { machineCatalogSource } from "../model-catalog/machine.js"
 import { catalogPicker } from "../model-catalog/picker.js"
-import { catalogEffortOptions, pickerWords } from "../model-catalog/ui.js"
+import { appendCatalogStatus, catalogEffortOptions, pickerWords } from "../model-catalog/ui.js"
 import { agentName } from "../project-assistants/fallback-settings.js"
 import { ScheduleRecovery, retainScheduleRows } from "./schedules-recovery.js"
 import "../schedule-errors.css"
@@ -769,6 +769,23 @@ export interface SpokenScheduleDraft {
   question?: string
 }
 
+/** The schedule form's model or effort chips, one per choice, the chosen one pressed. */
+function appendChoiceChips(row: HTMLElement, values: readonly { value: string; label: string; hint?: string }[], selected: string, field: "model" | "effort", fieldLabel: string, pick: (value: string) => void): void {
+  for (const m of values) {
+    const chip = document.createElement("button")
+    chip.type = "button"
+    chip.className = "chip" + (m.value === selected ? " on" : "")
+    chip.textContent = m.label
+    if (m.hint) chip.title = m.hint
+    chip.setAttribute("aria-label", fieldLabel + ": " + m.label)
+    chip.setAttribute("aria-pressed", m.value === selected ? "true" : "false")
+    chip.dataset.field = field
+    chip.dataset.value = m.value
+    chip.onclick = () => pick(m.value)
+    row.appendChild(chip)
+  }
+}
+
 const Schedule = (() => {
   const DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"]
   const DAY_KEYS = [
@@ -1034,50 +1051,15 @@ const Schedule = (() => {
     if (!show || !chosenAssistant) return
     if (!catalog) readCatalog()
     const picker = catalogPicker(catalog!.get(chosenAssistant), chosenModel, agentName(chosenAssistant), pickerWords())
-    const chips = (values: { value: string; label: string; hint?: string }[], effort: boolean) => {
-      const selected = effort ? chosenEffort : chosenModel
-      for (const m of values) {
-        const chip = document.createElement("button")
-        chip.type = "button"
-        chip.className = "chip" + (m.value === selected ? " on" : "")
-        chip.textContent = m.label
-        if (m.hint) chip.title = m.hint
-        chip.setAttribute("aria-label", (effort ? effortField : T().webScheduleModel) + ": " + chip.textContent)
-        chip.setAttribute("aria-pressed", m.value === selected ? "true" : "false")
-        chip.dataset.field = effort ? "effort" : "model"
-        chip.dataset.value = m.value
-        chip.onclick = () => {
-          if (effort) chosenEffort = !native && chosenEffort === m.value ? "" : m.value
-          else chosenModel = !native && chosenModel === m.value ? "" : m.value
-          drawModel()
-        }
-        row.appendChild(chip)
-      }
-    }
-    chips(picker.options, false)
-    if (picker.status) {
-      const note = document.createElement("p")
-      note.className = "note model-catalog-status"
-      note.setAttribute("role", picker.status.kind === "failed" ? "alert" : "status")
-      note.dataset.modelCatalog = picker.status.kind
-      if (picker.status.kind === "loading") {
-        const spin = document.createElement("span")
-        spin.className = "model-catalog-spinner"
-        spin.setAttribute("aria-hidden", "true")
-        note.appendChild(spin)
-      }
-      note.appendChild(document.createTextNode(picker.status.text))
-      if (picker.status.kind === "failed") {
-        const retry = document.createElement("button")
-        retry.type = "button"
-        retry.className = "chip"
-        retry.textContent = picker.status.retryLabel
-        retry.onclick = () => catalog?.retry()
-        note.appendChild(retry)
-      }
-      row.appendChild(note)
-    }
-    if (withEffort) chips(catalogEffortOptions(picker.efforts, chosenEffort, nextWord("defaultModelPlaceholder")), true)
+    appendChoiceChips(row, picker.options, chosenModel, "model", T().webScheduleModel, value => {
+      chosenModel = !native && chosenModel === value ? "" : value
+      drawModel()
+    })
+    appendCatalogStatus(row, picker.status, () => catalog?.retry())
+    if (withEffort) appendChoiceChips(row, catalogEffortOptions(picker.efforts, chosenEffort, nextWord("defaultModelPlaceholder")), chosenEffort, "effort", effortField, value => {
+      chosenEffort = !native && chosenEffort === value ? "" : value
+      drawModel()
+    })
     paint()
   }
 

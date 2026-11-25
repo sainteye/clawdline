@@ -17,7 +17,7 @@ web/console/src/cloud/relay-reader.ts	RelayReader.answerFetch	420	181
 web/console/src/cloud/relay-reader.ts	RelayReader.snapshotReading	116	54
 web/console/src/cloud/relay-writer.ts	RelayWriter.carry	739	423
 web/console/src/cloud/relay-writer.ts	spellingOf	8	124
-web/console/src/cloud/relay-writer.ts	writeRoute	379	196
+web/console/src/cloud/relay-writer.ts	writeRoute	378	195
 web/console/src/cloud/status-source.ts	statusSource	387	132
 web/console/src/cloud/terminal-session.ts	CloudTerminalSession.event	89	46
 web/console/src/codegraph/CodeGraphViewer.tsx	CodeGraphViewer	104	30
@@ -59,11 +59,11 @@ web/console/src/pages/projects/ProjectMemory.tsx	ProjectMemory	141	41
 web/console/src/pages/projects/ProjectSetup.tsx	ProjectSetup	152	38
 web/console/src/pages/projects/ProjectSync.tsx	ProjectSync	126	29
 web/console/src/pages/projects/ProjectUnify.tsx	ProjectUnify	103	26
-web/console/src/pages/schedules.tsx	Schedule	846	193
+web/console/src/pages/schedules.tsx	Schedule	838	185
 web/console/src/pages/schedules.tsx	ScheduleHistory	517	115
 web/console/src/pages/schedules.tsx	Schedules	272	65
 web/console/src/pages/settings/BrowserSettingsBlock.tsx	BrowserSettingsBlock	136	38
-web/console/src/pages/settings/window/SettingsWindow.tsx	SettingsWindow	326	144
+web/console/src/pages/settings/window/SettingsWindow.tsx	SettingsWindow	324	142
 web/console/src/pages/terminal/CloudTerminalPage.tsx	CloudTerminalPage	411	111
 web/console/src/pages/terminal/TerminalView.tsx	TerminalView	399	97
 web/console/src/pages/work/WorkV2.tsx	WorkCard	150	56

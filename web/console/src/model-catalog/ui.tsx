@@ -85,3 +85,28 @@ export function CatalogEffortMenu({ id, agent, label, value, defaultLabel, catal
   const picker = usePicker(catalog, agent, undefined)
   return <ChoiceMenu id={id} label={label} value={value} options={catalogEffortOptions(picker.efforts, value, defaultLabel)} disabled={disabled} compact={compact} onPick={onPick} />
 }
+
+/** CatalogStatus for a screen drawn without React: the same line, appended to `row`. */
+export function appendCatalogStatus(row: HTMLElement, status: PickerStatus | undefined, onRetry: () => void): void {
+  if (!status) return
+  const note = document.createElement("p")
+  note.className = "note model-catalog-status"
+  note.setAttribute("role", status.kind === "failed" ? "alert" : "status")
+  note.dataset.modelCatalog = status.kind
+  if (status.kind === "loading") {
+    const spin = document.createElement("span")
+    spin.className = "model-catalog-spinner"
+    spin.setAttribute("aria-hidden", "true")
+    note.appendChild(spin)
+  }
+  note.appendChild(document.createTextNode(status.text))
+  if (status.kind === "failed") {
+    const retry = document.createElement("button")
+    retry.type = "button"
+    retry.className = "chip"
+    retry.textContent = status.retryLabel
+    retry.onclick = onRetry
+    note.appendChild(retry)
+  }
+  row.appendChild(note)
+}

@@ -359,8 +359,8 @@ export type WriteRoute =
   | { op: "notification-settings"; word: Carried<"notification-settings"> }
   | { op: "notification-settings-update"; word: Carried<"notification-settings-update"> }
   | { op: "board-command"; word: Carried<"board-command"> }
-  | { op: "machine-usage"; word: Carried<"machine-usage"> }
-  | { op: "model-catalog"; word: Carried<"model-catalog"> }
+  // A machine-wide read with no parameter: the dashboard's usage, or the one model catalog.
+  | { op: "machine-read"; word: Carried<"machine-usage" | "model-catalog"> }
   | { op: "api-performance"; word: Carried<"api-performance"> }
   | { op: "update"; word: Carried<"update"> }
   | { op: "update-fresh"; word: Carried<"update-fresh"> }
@@ -553,8 +553,7 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "notification-settings",
   "restorable",
   "archived",
-  "machine-usage",
-  "model-catalog",
+  "machine-read",
   "api-performance",
   "copilot-work",
   "update",
@@ -575,6 +574,19 @@ export const CARRIED_READS: ReadonlySet<WriteRoute["op"]> = new Set<WriteRoute["
   "video",
   "session-receipt",
 ])
+
+/**
+ * Machine-wide reads with no parameter: the API performance aggregates, the
+ * dashboard behind the session counts (CPU, memory, each session's share),
+ * and the daemon's one model catalog (docs/model-catalog.md), which every
+ * model picker on the page reads for every agent at once.
+ */
+function machineReadRoute(head: string | undefined, a: string | undefined, length: number): WriteRoute | null {
+  if (head === "api-performance" && length === 1) return { op: "api-performance", word: "api-performance" }
+  if (head === "machine" && a === "usage" && length === 2) return { op: "machine-read", word: "machine-usage" }
+  if (head === "model-catalog" && length === 1) return { op: "machine-read", word: "model-catalog" }
+  return null
+}
 
 /** Parse a console route into the command it stands for, or null for one this file does not carry. */
 export function writeRoute(method: string, path: string): WriteRoute | null {
@@ -671,16 +683,9 @@ export function writeRoute(method: string, path: string): WriteRoute | null {
     if (head === "sessions" && a === "archived" && segments.length === 2) {
       return { op: "archived", word: "archived-sessions" }
     }
-    // The dashboard behind the session counts: the machine's CPU and memory
-    // and each session's share, on the machine's one reply channel.
     if (head === "voice" && a === "copilot-work" && segments.length === 2) return { op: "copilot-work", word: "copilot-work" }
-    if (head === "api-performance" && segments.length === 1) return { op: "api-performance", word: "api-performance" }
-    if (head === "machine" && a === "usage" && segments.length === 2) {
-      return { op: "machine-usage", word: "machine-usage" }
-    }
-    // The daemon's one model catalog (docs/model-catalog.md): every model
-    // picker on the page reads every agent in one read, no query.
-    if (head === "model-catalog" && segments.length === 1) return { op: "model-catalog", word: "model-catalog" }
+    const machineRead = machineReadRoute(head, a, segments.length)
+    if (machineRead) return machineRead
     // Whether this machine trails the cloud's latest build (docs/updates.md),
     // on the machine's one reply channel.
     if (head === "update" && segments.length === 1) {
@@ -1845,8 +1850,7 @@ export class RelayWriter {
       case "issue-tracker-read":
       case "workflow-settings":
       case "notification-settings":
-      case "machine-usage":
-      case "model-catalog":
+      case "machine-read":
       case "update":
       case "update-fresh": {
         if (typeof client._machineRequest !== "function") {
