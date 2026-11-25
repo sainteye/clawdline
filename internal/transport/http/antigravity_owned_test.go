@@ -314,13 +314,16 @@ func TestOwnedSessionUsesExistingStartInventorySendAndTranscript(t *testing.T) {
 	s.terminals = []ports.TerminalHost{host}
 	s.inventory = app.Inventory{Terminals: s.terminals}
 	s.broker = newBroker(s)
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: false, Reason: "provider_cli_missing"}
+	}
 	stop, err := s.StartAntigravitySessions(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	stop()
 	if s.antigravitySessions.Load() != nil {
-		t.Fatal("absent configuration enabled runtime")
+		t.Fatal("absent configuration and missing CLI enabled runtime")
 	}
 	dir := t.TempDir()
 	t.Setenv("CLW_HTTP_TURN_GATE", filepath.Join(dir, "release-turn"))
@@ -772,5 +775,134 @@ func TestLegacyExecutableRecoveryPreservesProfileAndCustomLaunches(t *testing.T)
 		} else if err == nil {
 			t.Fatalf("custom launch %s was replaced", tc.name)
 		}
+	}
+}
+
+func TestOwnedSessionAutoEnablesCompatibleCLIWithoutPilotFile(t *testing.T) {
+	s := capacityServer(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: exe, Version: "1.5.16"}
+	}
+	stop, err := s.StartAntigravitySessions(context.Background())
+	if err != nil {
+		t.Fatalf("auto-enable failed: %v", err)
+	}
+	if s.antigravitySessions.Load() == nil {
+		t.Fatal("compatible CLI did not auto-enable owned runtime")
+	}
+	settingsPath := filepath.Join(s.cfg.Dir, "antigravity-account", "antigravity-acp", "settings.json")
+	raw, err := os.ReadFile(settingsPath)
+	if err != nil {
+		t.Fatalf("default settings missing: %v", err)
+	}
+	if string(raw) != defaultAntigravityPersonalSettings {
+		t.Fatalf("default settings = %q, want %q", string(raw), defaultAntigravityPersonalSettings)
+	}
+	// Existing settings must not be overwritten on a later startup.
+	custom := `{"useG1Credits":false,"auth":{"type":"oauth-personal"},"toolPermission":"always-proceed"}`
+	if err := os.WriteFile(settingsPath, []byte(custom), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ensureDefaultAntigravityAccountDir(s.cfg.Dir); err != nil {
+		t.Fatalf("ensureDefaultAntigravityAccountDir failed: %v", err)
+	}
+	if after, err := os.ReadFile(settingsPath); err != nil || string(after) != custom {
+		t.Fatalf("existing settings overwritten: %q %v", string(after), err)
+	}
+	found := false
+	for _, row := range s.availableAssistants() {
+		if row.ID != "antigravity" {
+			continue
+		}
+		found = true
+		if row.IntegrationState != contract.StartIntegrationStateActive || row.Capabilities == nil || !row.Capabilities.Start {
+			t.Fatalf("auto-enabled assistant not active/startable: %+v", row)
+		}
+	}
+	if !found {
+		t.Fatal("antigravity missing from availableAssistants")
+	}
+	stop()
+	if s.antigravitySessions.Load() != nil {
+		t.Fatal("stop did not clear auto-enabled runtime")
+	}
+}
+
+func TestOwnedSessionAutoEnablesAfterLateCLIInstall(t *testing.T) {
+	s := capacityServer(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	installed := false
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		if !installed {
+			return antigravity.Installation{InstalledKnown: true, Installed: false, Reason: "provider_cli_missing"}
+		}
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: exe, Version: "1.5.16"}
+	}
+	stop, err := s.StartAntigravitySessions(context.Background())
+	if err != nil {
+		t.Fatalf("StartAntigravitySessions failed: %v", err)
+	}
+	defer stop()
+	if s.antigravitySessions.Load() != nil {
+		t.Fatal("missing CLI enabled runtime")
+	}
+	installed = true
+	var got contract.StartAssistant
+	for _, row := range s.availableAssistants() {
+		if row.ID == "antigravity" {
+			got = row
+		}
+	}
+	if s.antigravitySessions.Load() == nil || got.IntegrationState != contract.StartIntegrationStateActive || got.Capabilities == nil || !got.Capabilities.Start {
+		t.Fatalf("late CLI install did not auto-enable runtime: %+v", got)
+	}
+	stop()
+	if s.antigravitySessions.Load() != nil {
+		t.Fatal("stop did not clean up late-started runtime")
+	}
+}
+
+func TestOwnedSessionAutoEnableRefusesIncompatibleCLIAndAccountDirFailure(t *testing.T) {
+	s := capacityServer(t)
+	s.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: false, Reason: "provider_cli_incompatible"}
+	}
+	stop, err := s.StartAntigravitySessions(context.Background())
+	if err != nil {
+		t.Fatalf("incompatible CLI returned startup error: %v", err)
+	}
+	stop()
+	if s.antigravitySessions.Load() != nil {
+		t.Fatal("incompatible CLI enabled runtime")
+	}
+
+	s2 := capacityServer(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	s2.antigravityInstallation = func(context.Context) antigravity.Installation {
+		return antigravity.Installation{InstalledKnown: true, Installed: true, Compatible: true, Path: exe, Version: "1.5.16"}
+	}
+	// Block creation of the default account directory with a regular file.
+	if err := os.WriteFile(filepath.Join(s2.cfg.Dir, "antigravity-account"), []byte("blocked"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	stop2, err := s2.StartAntigravitySessions(context.Background())
+	if stop2 != nil {
+		stop2()
+	}
+	if err == nil {
+		t.Fatal("unwritable default account directory was silently ignored")
+	}
+	if s2.antigravitySessions.Load() != nil {
+		t.Fatal("failed account directory setup still published runtime")
 	}
 }

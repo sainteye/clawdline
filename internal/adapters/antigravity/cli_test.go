@@ -241,3 +241,22 @@ func TestProbeOutputBoundRefusesWithoutRetainingOverflow(t *testing.T) {
 		t.Fatalf("retained %d", len(w.data))
 	}
 }
+
+func TestDefaultCandidatesIncludesStandalonePathsWithoutDuplicates(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", filepath.Join(home, ".local", "bin"))
+	got := DefaultCandidates()
+	wantLocal := filepath.Join(home, ".local", "bin", "agy")
+	wantAlt := filepath.Join(home, ".antigravity", "bin", "agy")
+	seen := map[string]bool{}
+	for _, p := range got {
+		if seen[p] {
+			t.Fatalf("duplicate candidate %q in %v", p, got)
+		}
+		seen[p] = true
+	}
+	if !seen[wantLocal] || !seen[wantAlt] {
+		t.Fatalf("DefaultCandidates() = %v, want %q and %q", got, wantLocal, wantAlt)
+	}
+}

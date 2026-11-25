@@ -5728,7 +5728,7 @@
     "internal/transport/http/antigravity_history.go": "af3efe40f4214a0df012df5ff47904df2e228bfde3011f7ca72cb92bfd5a45ce",
     "internal/transport/http/antigravity_launch_store.go": "319151bb3f53a8ea0d145bd0222b66d822a96b00ae34ac0c11a6c36ba3d1b23d",
     "internal/transport/http/antigravity_managed_hooks.go": "09ee4349f3132962773ff0f0e44b923b038a98eb1d271f2a92608a4e2c751698",
-    "internal/transport/http/antigravity_owned.go": "4799356281b9131714d855c90d091134db8d6128f0e4ae91b1f049e5184f7d3f",
+    "internal/transport/http/antigravity_owned.go": "bb613d276e03da75dd121b00ff95bbc43ab8b017a1c3ba1d2c4a894d4e6af482",
     "internal/transport/http/antigravity_policy.go": "ed646015b98fa641123d74c344225a5ba12db02787ba2d4107d7bd8c2bf67474",
     "internal/transport/http/antigravity_project_owner.go": "65a2d049ab3ace5fd2f07525a79cb75967b7436f3769784ee5b3480cf863f4bb",
     "internal/transport/http/antigravity_runtime.go": "fe7ba75bd09022b78ab6183ddefacf54a115cf04efc0417957629da447a88caf",

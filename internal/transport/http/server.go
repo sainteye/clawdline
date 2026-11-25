@@ -136,6 +136,10 @@ type Server struct {
 	// replaceMachineItemReceipt is a test seam for a failed post-create
 	// receipt refinement. Nil uses the durable store implementation.
 	replaceMachineItemReceipt func(context.Context, store.ReceiptKey, store.ReceiptAnswer) error
+	antigravityOwnedMu        sync.Mutex
+	antigravityOwnedCtx       context.Context
+	antigravityOwnedCancel    context.CancelFunc
+	antigravityOwnedAuto      bool
 	antigravitySessions       atomic.Pointer[antigravitysession.Host]
 	grokSessions              atomic.Pointer[antigravitysession.Host]
 	terminals                 []ports.TerminalHost
