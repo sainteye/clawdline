@@ -302,16 +302,14 @@ func (s *Service) Edit(ctx context.Context, c pa.Command, settings pa.EditBot) (
 		if settings.Roster.DesignateLead || settings.Roster.Pinned != nil || settings.Roster.Section != nil {
 			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Invalid, "new_session")
 		}
-		resetter, ok := s.opts.Runtime.(interface {
-			newSession(context.Context, pa.Command, int64) (pa.Receipt, error)
-		})
+		resetter, ok := s.opts.Runtime.(SessionResetter)
 		if !ok {
 			return pa.Bot{}, pa.Receipt{}, serviceFailure(pa.Unsupported, "new_session")
 		}
 		if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}
-		r, err := resetter.newSession(ctx, c, settings.ExpectedVersion)
+		r, err := resetter.NewSession(ctx, c, settings.ExpectedVersion)
 		if err != nil {
 			return pa.Bot{}, pa.Receipt{}, err
 		}

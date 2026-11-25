@@ -5564,7 +5564,7 @@
     "internal/adapters/projectassistanthost/devservers.go": "43a19faa631826795d39ad8f896e5a5250e696f9ecc8f570cbd393ac0cd9f1ab",
     "internal/adapters/projectassistanthost/devservers_human.go": "9e48dd5991c435e73c2d577ad5fbc6c28a287597e39172adacc1e4f0dbe24484",
     "internal/adapters/projectassistanthost/devservers_ports.go": "3c1a12ecd6dda4701ee14d53660a4004a6a831d3692e0e100cc84d77990fb394",
-    "internal/adapters/projectassistanthost/host.go": "13aa6f23639f38aa4edd8293a1517ce04971fd861c354e6ca498135cc840004d",
+    "internal/adapters/projectassistanthost/host.go": "73221047c7d0ddc6eedeaaa43d69064678c3f6ce4d56f5a8b52887876b6221d9",
     "internal/adapters/projectassistanthost/lead.go": "e33b998121310d910a84a3f1493d9b737646bf9051d256ed17d2b8740484393e",
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
