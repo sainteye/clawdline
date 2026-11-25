@@ -334,7 +334,9 @@ func TestProjectAssistantInvalidEnvelopeNeverReachesLocal(t *testing.T) {
 				missing := cloneBody(base)
 				delete(missing, key)
 				// Optional picture/reply targets may be absent; null still is not.
-				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && (key == "reply_to_author" || key == "quote") || row.Op == "project-assistants.login-profile" && key == "kind" || row.Op == "project-assistants.login-secret" && key == "kind"
+				// A room line keeps either its text or its pictures: the example
+				// carries both, so either one alone is a declared shape.
+				optional := row.Op == "project-assistants.send-files" && key == "images" || row.Op == "project-assistants.group-send" && (key == "reply_to_author" || key == "quote" || key == "images" || key == "text") || row.Op == "project-assistants.login-profile" && key == "kind" || row.Op == "project-assistants.login-secret" && key == "kind"
 				if key == "handoff" || row.Op == "project-assistants.handoff-card-write" && key == "ref" || row.Op == "project-assistants.projects" && key == "include_gemini" || row.Op == "project-assistants.answer" && key == "text" {
 					optional = true
 				}

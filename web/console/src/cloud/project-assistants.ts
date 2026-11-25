@@ -769,6 +769,7 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     const fields=JSON.parse(init.body),cmd=fields.command
     const action=!id&&method==="POST"?"create":id&&!group[2]&&method==="PATCH"?"edit":id&&!group[2]&&method==="DELETE"?"delete":id&&method==="POST"&&group[2]==="messages"?"send":id&&method==="POST"&&group[2]==="stop"?"stop":id&&method==="POST"&&group[2]==="reactions"?"react":""
     if(!action||!cmd?.key?.machine_id||!cmd.key.bot_id||id&&cmd.key.bot_id!==id||cmd.operation!==action||!cmd.idempotency_key||new Headers(init.headers).get("Idempotency-Key")!==cmd.idempotency_key)throw failure("pa_invalid")
+    if(action==="send"&&fields.text===""&&Array.isArray(fields.images)&&fields.images.length)delete fields.text // A picture-only room line has a text-less shape; the relay cannot carry an empty text.
     return {word:"project-assistants.group-"+action,kind:"action" as const,fields:fields as Record<string,unknown>,id:cmd.idempotency_key as string}
   }
   const match = /^\/v1\/project-assistants(?:\/([^/]+))?(.*)$/.exec(url.pathname)

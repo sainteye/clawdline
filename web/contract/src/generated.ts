@@ -6552,6 +6552,13 @@ export interface ProjectAssistantGroupSendRequest {
   command: ProjectAssistantCommand
 
   /**
+   * Pictures as base64 data: URLs, at most four, as a one-to-one send carries them;
+   * each is normalized and stored under the group before the line is accepted. With
+   * pictures the text may be empty. Omission preserves legacy command digests.
+   */
+  images?: string[]
+
+  /**
    * Exact original line in this room; the source derives its author and text.
    * Omission preserves legacy command digests.
    */
@@ -7650,6 +7657,11 @@ export interface ProjectAssistantRoomEntry {
    * Source timestamp for new entries; old undated entries omit it.
    */
   at?: string
+
+  /**
+   * Pictures the person sent with this line, read back from the group's own key.
+   */
+  attachments?: ProjectAssistantAttachment[]
   author?: ProjectAssistantBotKey
   kind: string
 

@@ -179,7 +179,7 @@ func (s *Service) StopGroup(ctx context.Context, key pa.BotKey) (GroupStop, erro
 
 // SendGroup is the person's message into the room. The authority is checked
 // again after the room read and immediately before the write.
-func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
+func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, attachments []pa.Attachment, replyToAuthor pa.BotKey, quoted ...int64) (pa.RoomEntry, RoomStep, error) {
 	_, driver, err := s.groups()
 	if err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
@@ -188,14 +188,14 @@ func (s *Service) SendGroup(ctx context.Context, c pa.Command, text string, repl
 	if err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
-	if err = pa.ValidateMessage(text); err != nil {
+	if err = pa.ValidateRoomMessage(text, attachments); err != nil {
 		return pa.RoomEntry{}, RoomStep{}, err
 	}
 	check := func(ctx context.Context) error {
 		_, e := s.authorizeEffect(ctx, c.Key, true, a)
 		return e
 	}
-	e, step, err := driver.Send(ctx, person(a, c.Key.MachineID), c, text, replyToAuthor, check, quoted...)
+	e, step, err := driver.Send(ctx, person(a, c.Key.MachineID), c, text, attachments, replyToAuthor, check, quoted...)
 	if err == nil {
 		if g, gerr := driver.o.Rooms.store.Group(ctx, c.Key); gerr == nil {
 			e.Mentions = pa.RoomMentions(driver.speakers(ctx, g), e.Author, e.Text)

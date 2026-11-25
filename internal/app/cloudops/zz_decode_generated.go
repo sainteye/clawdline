@@ -3337,10 +3337,21 @@ func genDecodeProjectAssistantsGroupSend(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "command", "reply_to_author", "request", "session", "text"},
 		[]string{"type", "command", "quote", "request", "session", "text"},
 		[]string{"type", "command", "quote", "reply_to_author", "request", "session", "text"},
+		[]string{"type", "command", "images", "request", "session", "text"},
+		[]string{"type", "command", "images", "reply_to_author", "request", "session", "text"},
+		[]string{"type", "command", "images", "quote", "request", "session", "text"},
+		[]string{"type", "command", "images", "quote", "reply_to_author", "request", "session", "text"},
+		[]string{"type", "command", "images", "request", "session"},
+		[]string{"type", "command", "images", "reply_to_author", "request", "session"},
+		[]string{"type", "command", "images", "quote", "request", "session"},
+		[]string{"type", "command", "images", "quote", "reply_to_author", "request", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("command", genRule{kind: "object", properties: map[string]genRule{"content_hash": genRule{kind: "string"}, "idempotency_key": genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}, "key": genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}, "operation": genRule{kind: "string", enum: []string{"send"}}}, required: []string{"content_hash", "idempotency_key", "key", "operation"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("images", genRule{kind: "list", items: &genRule{kind: "string", nonEmpty: true}, minItems: genCount(1)}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("quote", genRule{kind: "object", properties: map[string]genRule{"seq": genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}}, required: []string{"seq"}, closed: true}) {
@@ -3362,7 +3373,7 @@ func genDecodeProjectAssistantsGroupSend(b body) (plan, LocalRequest, bool) {
 	if v, sent := b.genSource(genValue{from: "command.idempotency_key"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "quote": genValue{from: "quote"}, "reply_to_author": genValue{from: "reply_to_author"}, "text": genValue{from: "text"}})
+	req.Body = b.genFields(map[string]genValue{"command": genValue{from: "command"}, "images": genValue{from: "images"}, "quote": genValue{from: "quote"}, "reply_to_author": genValue{from: "reply_to_author"}, "text": genValue{from: "text"}})
 	return p, req, true
 }
 

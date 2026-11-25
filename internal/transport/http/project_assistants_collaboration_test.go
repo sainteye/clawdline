@@ -171,7 +171,9 @@ func TestCollaborationACPSubprocess(t *testing.T) {
 				write(q.ID, map[string]string{"stopReason": "end_turn"})
 			} else {
 				log("B request")
-				call("send_message", map[string]any{"idempotency_key": "forbidden-message", "text": "Hidden recipient answer"}, true)
+				// A request turn may tell its own person a short note; it lands in
+				// the recipient's main chat, never in the requester's.
+				call("send_message", map[string]any{"idempotency_key": "peer-note", "text": "Reviewing for review-a"}, false)
 				call("message_bot", map[string]any{"idempotency_key": "forbidden-recursion", "target_bot_id": "review-a", "text": "Recurse"}, true)
 				call("send_file", map[string]any{"idempotency_key": "forbidden-file", "path": "missing"}, true)
 				call("publish_artifact", map[string]any{"idempotency_key": "forbidden-artifact", "path": "missing", "title": "Review"}, true)
@@ -378,10 +380,18 @@ func collaborationRealTCPMCPRequestAndReply(t *testing.T, maxActors int) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notes := 0
 	for _, m := range bx.Messages {
+		if m.Kind == pa.AssistantMessage && strings.HasPrefix(m.ID, "peer-note-") && strings.HasSuffix(m.Text, "request:\nReviewing for review-a") {
+			notes++
+			continue
+		}
 		if m.Kind == pa.UserMessage || m.Kind == pa.AssistantMessage {
 			t.Fatal("recipient leaked normal chat", m)
 		}
+	}
+	if notes != 1 {
+		t.Fatal("recipient's own note", notes)
 	}
 	if len(bx.Turns) != 1 || bx.Turns[0].Origin != pa.BotRequestOrigin || bx.Turns[0].State != pa.TurnSucceeded {
 		t.Fatal("recipient request", bx.Turns)

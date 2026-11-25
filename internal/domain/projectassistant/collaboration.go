@@ -24,6 +24,15 @@ const (
 	MaxCollaborationHops                    = 8
 	MaxCollaborationRequestBytes            = 32000
 	MaxCollaborationReplyBytes              = 32000
+	// A Bot handling another Bot's request may tell its own person a few
+	// short things in its main chat; more is refused so it cannot flood it.
+	MaxPeerNotesPerRequest = 3
+	MaxPeerNoteBytes       = 2000
+	// A follow-up quotes at most this many earlier rounds of the same pair,
+	// newest first, and at most this many request and reply bytes in total.
+	// One round always fits: it is bounded by one request and one reply.
+	MaxCollaborationQuoteRounds = 4
+	MaxCollaborationQuoteBytes  = 3 * (MaxCollaborationRequestBytes + MaxCollaborationReplyBytes) / 2
 )
 
 type ExchangeOutcome string
@@ -63,6 +72,9 @@ type Exchange struct {
 	Outcome         ExchangeOutcome  `json:"outcome"`
 	Revision        int64            `json:"revision"`
 	Hops            int              `json:"hops"`
+	// ReplyTo names the earlier exchange of the same pair this request
+	// follows up, as the requester chose it with reply_to_exchange_id.
+	ReplyTo string `json:"reply_to,omitempty"`
 	// Delivery concerns the source reply turn; it does not assert observation/read.
 	Delivery string `json:"delivery,omitempty"`
 }
@@ -121,6 +133,9 @@ type BotMessageRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	TargetBotID    string `json:"target_bot_id"`
 	Text           string `json:"text"`
+	// ReplyToExchangeID quotes an earlier finished exchange this Bot sent to
+	// the same target. Without it the request carries no earlier round.
+	ReplyToExchangeID string `json:"reply_to_exchange_id,omitempty"`
 }
 
 func CheckCollaborationRequest(q BotMessageRequest, origin TurnOrigin, hops int) error {
@@ -139,6 +154,43 @@ func CheckCollaborationRequest(q BotMessageRequest, origin TurnOrigin, hops int)
 	return nil
 }
 
+// CheckReplyTo admits a follow-up only for the requester of an earlier
+// exchange with the same target whose reply is final. The quote is built from
+// stored records, so text a sender writes can never stand in for it.
+func CheckReplyTo(prior Exchange, source, target BotKey) error {
+	if prior.Source.Key != source {
+		return fail(ScopeDenied, "reply_to_exchange_requester")
+	}
+	if prior.Target.Key != target {
+		return fail(ScopeDenied, "reply_to_exchange_pair")
+	}
+	switch prior.Outcome {
+	case ExchangeCompleted, ExchangeFailed, ExchangeCancelled, ExchangeUnknown:
+		return nil
+	case ExchangeNeedsPerson:
+		return fail(ScopeDenied, "reply_to_exchange_waiting_person")
+	default:
+		return fail(ScopeDenied, "reply_to_exchange_open")
+	}
+}
+
+// QuoteRounds keeps the newest earlier rounds within the round and byte
+// budget. chain starts with the referenced exchange and continues through
+// each one's ReplyTo; it stops at the first round that does not fit or that
+// is not a finished round of the same pair. omitted reports a cut chain.
+func QuoteRounds(chain []Exchange, source, target BotKey) (kept []Exchange, omitted bool) {
+	total := 0
+	for _, x := range chain {
+		size := len(x.Request) + len(x.Reply)
+		if len(kept) == MaxCollaborationQuoteRounds || CheckReplyTo(x, source, target) != nil || total+size > MaxCollaborationQuoteBytes {
+			return kept, true
+		}
+		total += size
+		kept = append(kept, x)
+	}
+	return kept, len(kept) > 0 && kept[len(kept)-1].ReplyTo != ""
+}
+
 func (x Exchange) Outstanding() bool { return x.Outcome == ExchangeQueued || x.Outcome == ExchangeSent }
 
 // ReplyTruncatedMarker begins the line CollaborationReply appends when it had
@@ -151,6 +203,46 @@ const ReplyTruncatedMarker = "[Clawdline: reply truncated"
 type ReplyUsage struct{ Largest, Truncated int64 }
 
 var replyLargest, replyTruncated atomic.Int64
+
+// BoundUsage is what one per-message bound has seen since this process
+// started: the largest value it admitted and how many it refused.
+type BoundUsage struct{ Largest, Refused int64 }
+
+type boundUsage struct{ largest, refused atomic.Int64 }
+
+// admit counts n against limit and reports whether it fits.
+func (u *boundUsage) admit(n, limit int) bool {
+	if n > limit {
+		u.refused.Add(1)
+		return false
+	}
+	for {
+		old := u.largest.Load()
+		if int64(n) <= old || u.largest.CompareAndSwap(old, int64(n)) {
+			return true
+		}
+	}
+}
+
+func (u *boundUsage) usage() BoundUsage {
+	return BoundUsage{Largest: u.largest.Load(), Refused: u.refused.Load()}
+}
+
+var peerNoteBytes, peerNotesPerRequest boundUsage
+
+// PeerNoteBytesFit reports whether a peer note of n UTF-8 bytes is within
+// MaxPeerNoteBytes, and counts it for bots.peer_note_bytes.
+func PeerNoteBytesFit(n int) bool { return peerNoteBytes.admit(n, MaxPeerNoteBytes) }
+
+// PeerNoteFits reports whether one more peer note fits a request that has
+// already sent sent of them, and counts it for bots.peer_notes_per_request.
+func PeerNoteFits(sent int) bool { return peerNotesPerRequest.admit(sent+1, MaxPeerNotesPerRequest) }
+
+// PeerNoteBytesUsage is the diagnostics reading for bots.peer_note_bytes.
+func PeerNoteBytesUsage() BoundUsage { return peerNoteBytes.usage() }
+
+// PeerNotesPerRequestUsage is the diagnostics reading for bots.peer_notes_per_request.
+func PeerNotesPerRequestUsage() BoundUsage { return peerNotesPerRequest.usage() }
 
 // CollaborationReplyUsage is the diagnostics reading for bots.review_reply_bytes.
 func CollaborationReplyUsage() ReplyUsage {

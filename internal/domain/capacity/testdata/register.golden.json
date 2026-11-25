@@ -3255,6 +3255,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.peer_note_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxPeerNoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.peer_notes_per_request",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 3,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxPeerNotesPerRequest"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.permission_action_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -3433,6 +3473,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.review_quote_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 96000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationQuoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.review_quote_rounds",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCollaborationQuoteRounds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.review_reply_bytes",
     "Class": "buffer",
     "Unit": "bytes",
@@ -3469,6 +3547,26 @@
     "QuietRecovery": false,
     "Sources": [
       "internal/domain/projectassistant.MaxCollaborationRequestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.room_pictures",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxRoomPictures"
     ]
   },
   {
