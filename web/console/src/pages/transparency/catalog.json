@@ -5648,7 +5648,7 @@
     "internal/app/projectassistant/network_settings.go": "5f7f7015a86297610321507d1808dd0e30eb76de7b93063fa4c810b7acc28cdf",
     "internal/app/projectassistant/provider_failure.go": "5db159084d21b5b0924bbaa4fa624236388e4debcf82f9abaeec8000f539cb78",
     "internal/app/projectassistant/queue_edit.go": "e5c38f755ed206faaf166670e98e526786141b982c14ac7c0b6290f52b37c45e",
-    "internal/app/projectassistant/restart.go": "5a275281025d683e1ffc516553cd9644c427bf70b71793c3ebc9a42d1bc177fa",
+    "internal/app/projectassistant/restart.go": "1472afc6117d3eb9a60fa6fa4b80cde7f80864f60f77b63dc97cc295f7556602",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
     "internal/app/projectassistant/runtime.go": "e8d3ea8e8d25f9cc3314d54d914193dd6c965f55e975a45e0624f6b888e314fe",
