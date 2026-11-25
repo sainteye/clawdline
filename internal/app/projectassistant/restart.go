@@ -19,8 +19,11 @@ func restartOrigin(t pa.Turn) bool {
 		t.Room == nil && t.Network == nil && t.DecisionExchangeID == "" && t.RoutineRunID == ""
 }
 
+// canContinueRestartQueue admits the person's own message behind a queue a
+// restart paused. A suggested-reply press is such a message: refusing it left
+// the answer card failing on every retry until the person typed the reply.
 func canContinueRestartQueue(s Submission, c pa.Conversation, unknown []pa.Turn) bool {
-	if s.Notice || s.Compact || s.Decision != nil || s.Room != nil || s.Network != nil || s.AuthorityCheck == nil || s.Message.Handoff != nil {
+	if s.Notice || s.Compact || s.Room != nil || s.Network != nil || s.AuthorityCheck == nil || s.Message.Handoff != nil {
 		return false
 	}
 	for _, t := range unknown {
