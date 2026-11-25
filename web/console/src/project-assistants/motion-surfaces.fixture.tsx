@@ -14,6 +14,7 @@ const source=fixtureSource("motion"),baseList=source.list.bind(source),baseView=
 const failureField=new URL(location.href).searchParams.get("failure")??""
 let phase:"idle"|"working"|"needsInput"|"error"=failureField?"error":"working",revision=1
 let background:"waiting"|"active"|"waiting_permission"|undefined,backgroundActivity=""
+let handoff:"active"|"succeeded"|undefined
 const listeners=new Set<(frame:W.ProjectAssistantRosterFrame)=>void>()
 const disconnects=new Set<()=>void>()
 const query={machine_id:source.machineID,cursor:"",query:"",page_size:100}
@@ -35,6 +36,18 @@ source.view=async(r,s)=>{
       ...(backgroundActivity?{activity:backgroundActivity}:{}),
       ...(background==="waiting"?{}:{started_at:new Date().toISOString(),worker:{...r.key,bot_id:"thread-fixture-background"}}),
     }]
+  }
+  if(handoff){
+    // Another Bot's message answered in a background thread.
+    const peer=source.bots[1],at="2026-11-12T06:21:00Z",seq=page.head.conversation.last_message_seq+1
+    const exchange:W.ProjectAssistantExchange={id:"fixture-exchange",hops:1,outcome:handoff==="active"?"queued":"completed",project:peer.project,
+      request:"Please review today's three cards.",request_turn_id:"fixture-exchange-request-turn",revision:1,source_turn_id:"peer-turn",
+      source:{key:peer.key,conversation_id:peer.conversation_id},target:{key:r.key,conversation_id:page.head.conversation.id}}
+    const message:W.ProjectAssistantMessage={id:"fixture-exchange-request",seq,kind:"notice",text:exchange.request,at,fence:page.head.current_fence,turn_id:"",quote_message_id:"",exchange}
+    page.head.conversation.last_message_seq=seq
+    page.items=[...page.items,{id:message.id,kind:"message",anchor_message_seq:seq,observed_event_seq:page.head.event_frontier,message}]
+    page.head.background_tasks=[...(page.head.background_tasks??[]),{id:"fixture-exchange",title:peer.name,origin_message_id:message.id,state:handoff,
+      started_at:new Date(Date.now()-192000).toISOString(),...(handoff==="active"?{activity:"writing"}:{ended_at:new Date().toISOString()}),worker:{...r.key,bot_id:"thread-fixture-exchange"}}]
   }
   if(page.snapshot){
     const turn:W.ProjectAssistantReadTurnSummary={id:"motion-turn",message_id:"motion-message",fence:page.head.current_fence,state:phase==="error"?"unknown":phase==="idle"?"succeeded":phase==="needsInput"?"waiting_permission":"running",started_at:"2026-11-16T00:00:00Z",failure_code:phase==="error"?"execution_effect_unknown":"",failure_field:failureField}
@@ -65,6 +78,7 @@ async function publish(){
 const fixture={
   phase(next:typeof phase){phase=next;return publish()},
   background(next:typeof background,activity=""){background=next;backgroundActivity=activity;return publish()},
+  handoff(next:typeof handoff){handoff=next;return publish()},
   offline(){source.setState("offline");for(const disconnect of [...disconnects])disconnect()},
   subscribers:()=>listeners.size,
   writes:()=>source.log.filter(row=>["send","stop","answer","create"].includes(row.method)).length,

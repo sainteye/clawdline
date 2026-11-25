@@ -76,6 +76,16 @@ test("chat avatars require a current readable source and a live turn or pending 
   for(const delta of [{fresh:false},{state:"offline"},{readable:false},{access:"hidden"}])assert.equal(chatMood({...source,...delta} as never,{state:"running"} as never,1),"idle")
 })
 
+test("a quiet chat's avatar follows the Bot's live background threads",()=>{
+  const source={machine_id:"machine",fresh:true,state:"online",readable:true,access:"interactive"} as W.ProjectAssistantSourceStatus
+  const task=(state:string)=>({state}) as W.ProjectAssistantBackgroundTaskSummary
+  assert.equal(chatMood(source,undefined,0,[task("active")]),"working")
+  assert.equal(chatMood(source,undefined,0,[task("active"),task("waiting_permission")]),"needsInput")
+  assert.equal(chatMood(source,undefined,0,[task("waiting"),task("succeeded")]),"idle")
+  assert.equal(chatMood(source,{state:"waiting_permission"} as never,0,[task("active")]),"needsInput")
+  assert.equal(chatMood({...source,fresh:false},undefined,0,[task("active")]),"idle")
+})
+
 test("tool detail stays out of the activity caption and thought events become thinking",()=>{
   assert.equal(activityOf(trace("tool_call","Read source\ncompleted\nSource found")),"Read source")
   assert.equal(activityOf(trace("agent_thought_chunk","Check source")),"thinking")

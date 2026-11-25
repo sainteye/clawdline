@@ -19,10 +19,14 @@ export function rosterMood(item:W.ProjectAssistantBotSummary,showDispatched=fals
   const state=item.status||(item.pending_permissions>0||item.activity==="waiting_permission"?"needsInput":["running","accepted","queued"].includes(item.activity)?"working":"idle")
   return state==="needsInput"?"needsInput":state==="working"?"working":"idle"
 }
-/** The detail head owns the active turn; historical running rows cannot animate a finished chat. */
-export function chatMood(source:W.ProjectAssistantSourceStatus,turn:W.ProjectAssistantReadTurnSummary|undefined,pending:number):BotMood {
+/** The detail head owns the active turn; historical running rows cannot animate a finished chat.
+ * A background thread at work is this Bot at work while its own chat is quiet. */
+export function chatMood(source:W.ProjectAssistantSourceStatus,turn:W.ProjectAssistantReadTurnSummary|undefined,pending:number,
+  background:readonly Pick<W.ProjectAssistantBackgroundTaskSummary,"state">[]=[]):BotMood {
   if(!liveActivity(source))return "idle"
-  return pending>0||turn?.state==="waiting_permission"?"needsInput":turn?.state==="running"?"working":"idle"
+  const own=pending>0||turn?.state==="waiting_permission"?"needsInput":turn?.state==="running"?"working":"idle"
+  if(own!=="idle")return own
+  return background.some(task=>task.state==="waiting_permission")?"needsInput":background.some(task=>task.state==="active")?"working":"idle"
 }
 
 /**

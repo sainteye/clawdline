@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14481,
+  "englishKeys": 14486,
   "counts": {
     "negation": 3692,
-    "state": 2471,
+    "state": 2472,
     "permission": 867,
     "deletion": 336,
     "uncertainty": 578
   },
-  "unionCount": 6166,
+  "unionCount": 6167,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5723,6 +5723,7 @@
       "projectAssistants.artifactLinks",
       "projectAssistants.artifactSent",
       "projectAssistants.backgroundCompleted",
+      "projectAssistants.backgroundHandoffStopped",
       "projectAssistants.backgroundQueue",
       "projectAssistants.backgroundQueued",
       "projectAssistants.backgroundRunningCommand",
@@ -13036,6 +13037,7 @@
     "projectAssistants.artifactSent",
     "projectAssistants.auto_read",
     "projectAssistants.backgroundCompleted",
+    "projectAssistants.backgroundHandoffStopped",
     "projectAssistants.backgroundQueue",
     "projectAssistants.backgroundQueued",
     "projectAssistants.backgroundRunningCommand",

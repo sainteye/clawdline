@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14481,
-  "riskKeys": 6166,
-  "nonRiskCount": 8315,
+  "englishContentKeys": 14486,
+  "riskKeys": 6167,
+  "nonRiskCount": 8319,
   "groups": [
     {
       "name": "acp / other",
@@ -6293,7 +6293,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 696,
+      "count": 700,
       "sources": [
         null
       ],
@@ -6322,7 +6322,11 @@
         "projectAssistants.backgroundBrief",
         "projectAssistants.backgroundCompose",
         "projectAssistants.backgroundConcurrency",
+        "projectAssistants.backgroundCount",
         "projectAssistants.backgroundFree",
+        "projectAssistants.backgroundHandoffDone",
+        "projectAssistants.backgroundHandoffFailed",
+        "projectAssistants.backgroundHandoffMessage",
         "projectAssistants.backgroundLabel",
         "projectAssistants.backgroundPermission",
         "projectAssistants.backgroundRecent",

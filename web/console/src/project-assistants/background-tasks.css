@@ -1,13 +1,19 @@
+/* The chip sizes to its content and never runs past the conversation column. */
 .pa-background-capsule {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  width: 100%;
+  flex-direction: column;
+  align-self: flex-start;
+  max-width: 100%;
+  min-width: 0;
   border: 1px solid var(--pa-line);
   border-radius: 16px;
   background: var(--pa-card);
   margin-bottom: 8px;
+  overflow: hidden;
 }
+.pa-background-item { display: flex; flex-wrap: wrap; align-items: center; min-width: 0; }
+.pa-background-items > .pa-background-item + .pa-background-item { border-top: 1px solid var(--pa-line); }
+.pa-background-items { border-bottom: 1px solid var(--pa-line); }
 .project-assistants .pa-background-open,
 .project-assistants .pa-background-row {
   display: flex;
@@ -20,11 +26,60 @@
   background: transparent;
   color: var(--pa-dim);
 }
-/* State, label, duration, +N and stop never shrink; the activity and title give way first. */
-.pa-background-open span, .pa-background-open time { flex-shrink: 0; white-space: nowrap; }
-.pa-background-open .pa-background-kind { margin-inline-end: -5px; }
+.project-assistants .pa-background-open { padding: 6px 4px 6px 10px; min-height: 40px; }
+.project-assistants .pa-background-toggle {
+  display: inline-flex; align-items: center; gap: 8px; align-self: flex-start;
+  min-height: 40px; padding: 4px 14px 4px 8px; border: 0; border-radius: 0;
+  background: transparent; color: var(--pa-ink,currentColor); font-size: 13px;
+}
+.pa-background-toggle svg:last-child { color: var(--pa-dim); }
+/* Avatar, state, duration and stop never shrink; the activity and title give way first. */
+.pa-background-open > svg, .pa-background-open span, .pa-background-open time { flex-shrink: 0; white-space: nowrap; }
 .pa-background-open .pa-background-activity { flex: 0 1 auto; max-width: 55%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.pa-background-open .pa-background-title { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-open .pa-background-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Another Bot's message being answered: a small centred card under that message. */
+.pa-background-handoff {
+  position: relative; align-self: center; display: flex; flex-direction: column; align-items: center;
+  max-width: 100%; margin: 4px auto 10px; border: 1px solid var(--pa-line); border-radius: 20px; background: var(--pa-card);
+}
+.project-assistants .pa-background-handoff-open {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%;
+  padding: 14px 52px 10px 18px; border: 0; border-radius: 20px; background: transparent; color: var(--pa-dim);
+}
+.pa-background-handoff-cast { display: flex; align-items: center; gap: 14px; }
+.pa-background-handoff-party { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.pa-background-handoff-party small { font-size: 11px; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-handoff-party:last-child small { color: var(--pa-ink,currentColor); }
+.pa-background-handoff-unknown { width: 36px; height: 36px; border: 1.5px dashed var(--pa-line); border-radius: 12px; box-sizing: border-box; }
+.pa-background-handoff-line { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; font-size: 14px; }
+.pa-background-handoff-line strong { color: var(--pa-ink,currentColor); font-weight: 600; white-space: nowrap; }
+.pa-background-handoff-line span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-handoff-line time { font-size: 13px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.pa-background-handoff > .pa-background-stop { position: absolute; inset-inline-end: 6px; bottom: 4px; }
+.pa-background-handoff > .pa-background-stop-status { text-align: center; }
+.pa-background-flow { display: flex; gap: 6px; padding-bottom: 16px; }
+.pa-background-flow i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--pa-dim); opacity: 0; animation: pa-background-flow 1.4s linear infinite; }
+.pa-background-flow i:nth-child(2) { animation-delay: .35s; }
+.pa-background-flow i:nth-child(3) { animation-delay: .7s; }
+.pa-background-flow i:nth-child(4) { animation-delay: 1.05s; }
+.pa-background-handoff[data-returning] .pa-background-flow i { animation-name: pa-background-flow-back; }
+@keyframes pa-background-flow { 0% { opacity: 0; transform: translateX(-10px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(10px); } }
+@keyframes pa-background-flow-back { 0% { opacity: 0; transform: translateX(10px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(-10px); } }
+@media (prefers-reduced-motion: reduce) { .pa-background-flow i { animation: none; opacity: .55; } }
+.project-assistants .pa-background-handoff-done {
+  align-self: center; display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px;
+  margin: 2px auto 10px; padding: 0 14px; border: 1px solid var(--pa-line); border-radius: 999px;
+  background: transparent; color: var(--pa-dim); font-size: 13px;
+}
+.pa-background-handoff-done > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pa-background-handoff-done time { font-variant-numeric: tabular-nums; }
+.pa-background-handoff-done[data-state="failed"] .pa-background-handoff-mark,
+.pa-background-handoff-done[data-state="unknown"] .pa-background-handoff-mark { color: var(--warning,#F0A030); }
+@media (max-width: 480px) {
+  .pa-background-handoff-cast { gap: 8px; }
+  .pa-background-flow { gap: 4px; }
+}
 .pa-background-mark { width: 8px; height: 8px; border: 1px solid currentColor; border-radius: 50%; flex: none; }
 .pa-background-mark[data-active] { background: currentColor; animation: pa-background-pulse 1.8s ease-in-out infinite; }
 @keyframes pa-background-pulse { 50% { opacity: .35; } }
