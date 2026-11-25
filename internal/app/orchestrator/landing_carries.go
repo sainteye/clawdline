@@ -232,3 +232,13 @@ func (b *Broker) proveEquivalent(ctx context.Context, r Record, commit, target s
 	}
 	return landingProof{commit: c, repo: repo, targetCommit: t, deliveryHead: resolvedHead, base: base}, head, nil
 }
+
+// proveCarried proves an incorporated settlement: through the named carrier
+// task when there is one, otherwise (the broker's own detector, already
+// gated in land) by patch equivalence and per-path presence.
+func (b *Broker) proveCarried(ctx context.Context, r Record, carrierID, commit, target string) (landingProof, branchHead, error) {
+	if carrierID == "" {
+		return b.proveEquivalent(ctx, r, commit, target)
+	}
+	return b.proveIncorporated(ctx, r, carrierID, commit, target)
+}

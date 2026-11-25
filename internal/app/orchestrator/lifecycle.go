@@ -447,11 +447,7 @@ func (b *Broker) land(ctx context.Context, id string, req LandingRequest) (Recor
 			}
 		}
 		var proof landingProof
-		if next.CarrierTask == "" {
-			proof, head, err = b.proveEquivalent(ctx, r, req.Commit, next.Target)
-		} else {
-			proof, head, err = b.proveIncorporated(ctx, r, next.CarrierTask, req.Commit, next.Target)
-		}
+		proof, head, err = b.proveCarried(ctx, r, next.CarrierTask, req.Commit, next.Target)
 		if err != nil {
 			return Record{}, err
 		}
