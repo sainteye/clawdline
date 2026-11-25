@@ -715,24 +715,27 @@ func (s *Service) SendNow(ctx context.Context, request SendNowRequest) (pa.Recei
 }
 
 func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.PermissionAnswer) (pa.Receipt, error) {
+	// Nothing before the runtime port commits anything, so an untyped
+	// failure here (a cancelled request, a store read) is a refusal the
+	// caller may retry, never an unknown outcome.
 	ctx, _, err := s.backgroundChannel(ctx, c.Key)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, pa.NotSent(err, "answer_channel")
 	}
 	a, err := s.authorize(ctx, c.Key, true)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, pa.NotSent(err, "answer_authority")
 	}
 	if c.Key != answer.Fence.Key {
 		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "permission_key")
 	}
 	c, err = canonicalCommand(c, pa.AnswerOperation, a.PrincipalID, answer)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, pa.NotSent(err, "answer_command")
 	}
 	a, err = s.authorizeEffect(ctx, c.Key, true, a)
 	if err != nil {
-		return pa.Receipt{}, err
+		return pa.Receipt{}, pa.NotSent(err, "answer_authority")
 	}
 	// Only a decision answer carries text or a suggested-reply option; a
 	// native permission answer goes to the runtime unchanged.
@@ -740,6 +743,11 @@ func (s *Service) Answer(ctx context.Context, c pa.Command, answer pa.Permission
 		offer, e := s.opts.Repository.Permission(ctx, c.Key, answer.OfferID)
 		if e == nil && offer.Kind == pa.DecisionOfferKind {
 			return s.answerDecision(ctx, c, answer, offer, a)
+		}
+		// A suggested-reply id belongs to a decision card. When the card
+		// cannot be read, say so instead of trying it as a native answer.
+		if e != nil {
+			return pa.Receipt{}, pa.NotSent(e, "decision_offer")
 		}
 		if answer.Text != "" {
 			return pa.Receipt{}, serviceFailure(pa.Invalid, "permission_text")

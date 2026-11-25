@@ -96,6 +96,7 @@
 | `bots.connector_credentials` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.decision_answer_bytes` | 507904 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.decision_offer_seconds` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `bots.decision_offers` | 8 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.decision_question_bytes` | 2000 | `bytes` | `refuse` | `diagnostics, sender` | — |

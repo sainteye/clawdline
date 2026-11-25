@@ -1834,6 +1834,27 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.decision_answer_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 507904,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxDecisionAnswerBytes",
+      "internal/domain/projectassistant.MaxDecisionPromptOverheadBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.decision_offer_seconds",
     "Class": "cache",
     "Unit": "seconds",
