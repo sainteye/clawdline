@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14496,
-  "riskKeys": 6174,
-  "nonRiskCount": 8322,
+  "englishContentKeys": 14507,
+  "riskKeys": 6179,
+  "nonRiskCount": 8328,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 770,
+      "count": 775,
       "sources": [
         null
       ],
@@ -760,14 +760,19 @@
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
         "capacityRow.bots.owned_children.what",
+        "capacityRow.bots.peer_note_bytes.what",
+        "capacityRow.bots.peer_notes_per_request.what",
         "capacityRow.bots.process_census_attempts.what",
         "capacityRow.bots.reaction_emoji_bytes.what",
         "capacityRow.bots.refresh_ms.what",
         "capacityRow.bots.review_hops.what",
         "capacityRow.bots.review_pending.what",
         "capacityRow.bots.review_per_sender.what",
+        "capacityRow.bots.review_quote_bytes.what",
+        "capacityRow.bots.review_quote_rounds.full",
         "capacityRow.bots.review_reply_bytes.what",
         "capacityRow.bots.review_request_bytes.what",
+        "capacityRow.bots.room_pictures.what",
         "capacityRow.bots.roster_check_ms.what",
         "capacityRow.bots.roster_seconds.what",
         "capacityRow.bots.roster_subs.what",
@@ -6294,7 +6299,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 702,
+      "count": 703,
       "sources": [
         null
       ],
@@ -6509,6 +6514,7 @@
         "projectAssistants.groupOlder",
         "projectAssistants.groupPerson",
         "projectAssistants.groupPersonalWorkspace",
+        "projectAssistants.groupPicturesLimit",
         "projectAssistants.groupProject",
         "projectAssistants.groupReply",
         "projectAssistants.groupReplyTo",
