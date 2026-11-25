@@ -3148,6 +3148,21 @@
         "cause": {
           "type": "string",
           "description": "For cleanup_released: degraded when the bounded re-checks ran out, person when the person released the Bot."
+        },
+        "requester": {
+          "type": "string"
+        },
+        "requester_appearance": {
+          "$ref": "#/$defs/ProjectAssistantAppearance"
+        },
+        "task_title": {
+          "type": "string"
+        },
+        "failure_code": {
+          "type": "string"
+        },
+        "failure_field": {
+          "type": "string"
         }
       },
       "required": [

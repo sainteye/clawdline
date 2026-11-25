@@ -96,7 +96,7 @@ func (b *BrokerWorkBridge) Dispatch(ctx context.Context, q pa.WorkRequest) (pa.W
 		link := orchestrator.AssistantRootLink(a)
 		b.syncMu.Lock()
 		defer b.syncMu.Unlock()
-		return link, b.persistLink(ctx, a.BotOwner.Fence, link, "")
+		return link, b.persistLink(ctx, a.BotOwner.Fence, link, "", nil)
 	}
 	id := orchestrator.AssistantTaskID(q.Command)
 	// A task accepted before a crash is recovered from broker facts even if
@@ -167,7 +167,7 @@ func (b *BrokerWorkBridge) SyncRootDelivery(ctx context.Context, d orchestrator.
 	}
 	b.syncMu.Lock()
 	defer b.syncMu.Unlock()
-	return link, b.persistLink(ctx, a.BotOwner.Fence, link, result)
+	return link, b.persistLink(ctx, a.BotOwner.Fence, link, result, nil)
 }
 
 func (b *BrokerWorkBridge) Status(ctx context.Context, actor pa.AssistantExecutionActor, taskID string) (pa.WorkLink, error) {
@@ -195,12 +195,12 @@ func (b *BrokerWorkBridge) Sync(ctx context.Context, snapshot orchestrator.Assis
 		return bridgeFailure(pa.ScopeDenied, "work_snapshot")
 	}
 	snapshot = orchestrator.AssistantWorkSnapshotOf(r)
-	return b.persistLink(ctx, snapshot.Owner.Fence, snapshot.Link, snapshot.Result)
+	return b.persistLink(ctx, snapshot.Owner.Fence, snapshot.Link, snapshot.Result, &r)
 }
 
 // persistLink writes one broker-derived link, and its result message once,
 // into the owning Bot's chat. Callers hold syncMu.
-func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link pa.WorkLink, result string) error {
+func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link pa.WorkLink, result string, record *orchestrator.Record) error {
 	export, err := b.o.Repository.Export(ctx, owner.Key)
 	if err != nil {
 		return err
@@ -223,7 +223,36 @@ func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link
 	// Include the complete canonical projection digest; identical snapshots
 	// retain one receipt, while each new durable projection has its own key.
 	command.IdempotencyKey += "-" + command.ContentHash
-	m := Mutation{Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: link.ID}, WorkLinks: []pa.WorkLink{link}, Events: []pa.Event{{ID: "work", Fence: link.Fence, Kind: pa.WorkUpdated, Work: &link}}}
+	m := Mutation{Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: link.ID}, WorkLinks: []pa.WorkLink{link}}
+	conversation := export.Conversation
+	var anchorSeq int64
+	anchorMessageID := ""
+	for _, turn := range export.Turns {
+		if turn.ID == link.TurnID {
+			anchorMessageID = turn.MessageID
+			break
+		}
+	}
+	if anchorMessageID != "" {
+		for _, message := range export.Messages {
+			if message.ID == anchorMessageID {
+				anchorSeq = message.Seq
+				break
+			}
+		}
+	} else if record != nil && link.TurnID == PeerDispatchNoticePrefix+link.TaskID {
+		turn, message := peerDispatchNotice(export, owner, link.TurnID, link.TaskID, link.Title, record.AssistantOwner.PeerDispatch, record.CreatedAt.UTC(), "", "")
+		conversation.LastMessageSeq++
+		anchorSeq = conversation.LastMessageSeq
+		message.Seq = anchorSeq
+		m.Turn = &turn
+		m.Messages = append(m.Messages, message)
+		m.Events = append(m.Events,
+			pa.Event{ID: "peer-dispatch", Fence: owner, Kind: pa.MessageCreated, Message: &message},
+			pa.Event{ID: "peer-turn", Fence: owner, Kind: pa.TurnUpdated, Turn: &turn},
+		)
+	}
+	m.Events = append(m.Events, pa.Event{ID: "work", Fence: link.Fence, Kind: pa.WorkUpdated, Work: &link, WorkAnchorMessageSeq: anchorSeq})
 	if result != "" {
 		found := false
 		for _, message := range export.Messages {
@@ -236,13 +265,14 @@ func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link
 			if err = pa.ValidateMessage(result); err != nil {
 				return err
 			}
-			conversation := export.Conversation
 			conversation.LastMessageSeq++
 			message := pa.Message{ID: link.ResultMessageID, Fence: link.Fence, TurnID: link.TurnID, Seq: conversation.LastMessageSeq, Kind: pa.WorkMessage, Text: result, At: b.o.Clock()}
-			m.Conversation = &conversation
-			m.Messages = []pa.Message{message}
+			m.Messages = append(m.Messages, message)
 			m.Events = append(m.Events, pa.Event{ID: "result", Fence: link.Fence, Kind: pa.MessageCreated, Message: &message})
 		}
+	}
+	if len(m.Messages) > 0 {
+		m.Conversation = &conversation
 	}
 	_, err = b.commit(ctx, export.Bot, m)
 	return err

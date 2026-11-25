@@ -28,7 +28,7 @@ internal/adapters/projectassistantacp/client.go	Client.initializeSession	118	43
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.ServeHTTP	133	34
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	243	95
 internal/adapters/projectassistanthost/devservers.go	Host.bindServerTools	181	54
-internal/adapters/projectassistanthost/provider.go	Host.tools	600	165
+internal/adapters/projectassistanthost/provider.go	Host.tools	598	164
 internal/adapters/projectassistantstore/collaboration.go	Store.FinishExchange	134	46
 internal/adapters/projectassistantstore/export.go	Store.Restore	144	64
 internal/adapters/projectassistantstore/repository.go	applyMutation	116	45

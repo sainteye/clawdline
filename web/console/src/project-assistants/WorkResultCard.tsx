@@ -5,6 +5,35 @@ import { ChevronIcon } from "../ui/ChevronIcon.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import type { SourceClient } from "./client"
 import type { Words } from "./words"
+import { BotAvatar } from "./BotAvatar"
+import { peerDispatchRequester, type PeerDispatch } from "./chat-items"
+import { chatTimeFormat } from "./chat-time"
+
+function WorkCardStatus({ status, dispatch, w }: { status: string; dispatch?: PeerDispatch; w: Words }) {
+  const pill = <span className="pa-work-task-state">{status}</span>
+  if (!dispatch) return pill
+  const name = peerDispatchRequester(dispatch.requester, w)
+  return <div className="pa-work-task-head-row">
+    {pill}
+    <span className="pa-work-task-requester" title={dispatch.requester.trim() || name}>
+      <BotAvatar appearance={dispatch.appearance ?? {shape:"blob",color:"#9ca6b3"}} size={18}/>
+      <span>{w.peerDispatchRequestedBy.replace("{requester}", () => name)}</span>
+    </span>
+  </div>
+}
+
+export function PeerDispatchStatusCard({ dispatch, showRequester, w }: { dispatch: PeerDispatch; showRequester: boolean; w: Words }) {
+  const failed = !!dispatch.failureCode
+  const reason = [dispatch.failureCode, dispatch.failureField].filter(Boolean).join(" · ")
+  return <article className="pa-work-task" data-state={failed ? "failed" : "missing"}
+    data-message-id={dispatch.messageID} data-message-seq={dispatch.messageSeq}>
+    <header className="pa-work-task-head">
+      <WorkCardStatus status={failed ? w.peerDispatchFailed : w.peerDispatchMissing} dispatch={showRequester ? dispatch : undefined} w={w}/>
+      <strong>{dispatch.title || w.sessionTask}</strong>
+      {failed ? <p><code>{reason}</code></p> : <p>{w.peerDispatchMissingDetail}</p>}
+    </header>
+  </article>
+}
 
 function WorkStep({ label, detail, tone, commit }: {
   label: string; detail?: string; tone: "done" | "active" | "pending"; commit?: string
@@ -16,9 +45,11 @@ function WorkStep({ label, detail, tone, commit }: {
   </li>
 }
 
-export function WorkResultCard({ work, review, w, source, onOpen }: {
+export function WorkResultCard({ work, review, dispatch, language = "en", w, source, onOpen }: {
   work: ProjectAssistantWorkLink
   review?: { text?: string; details?: string }
+  dispatch?: PeerDispatch
+  language?: string
   w: Words
   source?: SourceClient
   onOpen?: (work: ProjectAssistantWorkLink, view?: "session") => void
@@ -76,18 +107,21 @@ export function WorkResultCard({ work, review, w, source, onOpen }: {
   const landed = work.state === "landed"
   const waiting = work.state === "waiting_for_person"
   const unknown = work.state === "unknown"
+  const failedDispatch = work.state === "failed" && !!work.failure_reason && work.turn_id?.startsWith("peer-dispatch-")
   const status = landed && work.landing_target ? w.workLandedIn.replace("{branch}", work.landing_target)
-    : running ? w.workVerification : waiting || decision ? w.rosterBackgroundNeedsYou : unknown ? w.serverUnknown : w[work.state]
+    : running ? w.workVerification : waiting || decision ? w.rosterBackgroundNeedsYou : unknown ? w.serverUnknown : failedDispatch ? w.peerDispatchFailed : w[work.state]
   const hasWorker = !!onOpen && !!work.worker_terminal && !!work.worker_session
   const failure = work.state === "failed" && work.failure_reason ? w[`workFailure_${work.failure_reason}`] : undefined
+  const dispatchTime = dispatch && Date.parse(dispatch.at)
 
-  return <article ref={node} className="pa-work-task" data-state={work.state} data-verifying={running || undefined}>
+  return <article ref={node} className="pa-work-task" data-state={work.state} data-verifying={running || undefined}
+    data-message-id={dispatch?.messageID} data-message-seq={dispatch?.messageSeq}>
     <header className="pa-work-task-head">
-      <span className="pa-work-task-state">{status}</span>
+      <WorkCardStatus status={status} dispatch={dispatch} w={w}/>
       <strong>{work.title || item?.title || w.sessionTask}</strong>
       {item?.project.label && <small>{item.project.label}</small>}
       {(waiting || unknown) && <p>{w[work.state]}</p>}
-      {failure && <p className="pa-work-task-failure">{failure}</p>}
+      {(failure || failedDispatch) && <p className="pa-work-task-failure">{failure}{failedDispatch && <>{failure && " "}<code>{work.failure_reason}</code></>}</p>}
       {review?.text&&<p role="status">{review.text}</p>}
     </header>
     {(completed || verifies) && <ol className="pa-work-task-steps">
@@ -106,6 +140,8 @@ export function WorkResultCard({ work, review, w, source, onOpen }: {
       <div className="pa-work-task-reference">
         {boardID && <small>{boardID}</small>}
         <small>{work.task_id}</small>
+        {dispatch && dispatchTime !== undefined && Number.isFinite(dispatchTime) &&
+          <small><time dateTime={dispatch.at}>{w.peerDispatchTime.replace("{time}", chatTimeFormat(language).format(dispatchTime))}</time></small>}
         {review?.details&&<small>{review.details}</small>}
         {work.landing_commit && <code>{work.landing_commit}</code>}
         {verifies && round?.candidate_commit && <span>{w.workVerification} <code>{round.candidate_commit}</code></span>}

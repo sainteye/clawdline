@@ -16,6 +16,11 @@
 .project-assistants .pa-bs-note,.project-assistants .pa-bs-empty { margin:0 0 12px;color:var(--pa-dim);font-size:12.5px;line-height:1.55; }
 .project-assistants .pa-bs-warn { color:#e8b57a;margin:10px 0 0; }
 .project-assistants .pa-bs-dim { color:var(--pa-dim); }
+.project-assistants .pa-bs-display-setting { display:flex;align-items:center;gap:12px;min-height:44px; }
+.project-assistants .pa-bs-display-setting>div { flex:1;min-width:0;display:grid;gap:3px;overflow-wrap:anywhere; }
+.project-assistants .pa-bs-display-setting strong { font-size:14px;font-weight:600; }
+.project-assistants .pa-bs-display-setting small { color:var(--pa-dim);font-size:12px;line-height:1.45; }
+.project-assistants .pa-bs-display-setting .pa-switch:focus-visible { outline:2px solid #e39567;outline-offset:3px; }
 
 /* Default agent: four tiles, one per agent, the chosen one outlined. */
 .project-assistants .pa-bs-tiles { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px; }

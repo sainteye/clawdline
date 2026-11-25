@@ -13,7 +13,7 @@ export function botFromFragment(hash: string): {bot:string;conversation:string;m
 }
 
 /** One machine's Bots shared settings (dispatch rules and shared memory), API 116. */
-export type SharedSettingsDocument={version:number;rules:unknown[];memory:unknown[];memory_opt_out?:string[];project_overrides?:unknown}
+export type SharedSettingsDocument={version:number;rules:unknown[];memory:unknown[];memory_opt_out?:string[];project_overrides?:unknown;peer_dispatch_cards?:boolean}
 export type SharedSettingsAnswer<S=SharedSettingsDocument>={contract_version:"project-assistants.v1";machine_id:string;settings:S;agents:{agent:string;efforts:string[]}[];limits:Record<string,number>}
 export type SharedSettingsWrite<S=SharedSettingsDocument>={machine_id:string;idempotency_key:string;expected_version:number;settings:S}
 

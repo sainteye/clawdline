@@ -46,23 +46,23 @@ func TestProjectAssistantMachineSettingsAreReadAndSavedByAnyDeviceThatMayAct(t *
 	paAssertHTTPFailure(t, f.request(t, "GET", read, f.local, nil), 403, pa.Disabled)
 	f.enable(t)
 	empty := paMachineSettingsAnswer(t, f.request(t, "GET", read, f.readonly, nil))
-	if empty.MachineID != f.key.MachineID || empty.Settings.Version != 0 || empty.Agents == nil || empty.Limits["rules"] != pa.MaxDispatchRules {
+	if empty.MachineID != f.key.MachineID || empty.Settings.Version != 0 || empty.Settings.PeerDispatchCards || empty.Agents == nil || empty.Limits["rules"] != pa.MaxDispatchRules {
 		t.Fatalf("empty document: %+v", empty)
 	}
 	memory := []map[string]any{{"id": "m1", "text": "Answer with the conclusion first", "scope": map[string]any{"all": true}}}
 	save := map[string]any{"machine_id": f.key.MachineID, "idempotency_key": "save-one", "expected_version": 0,
-		"settings": map[string]any{"version": 0, "rules": []any{}, "memory": memory}}
+		"settings": map[string]any{"version": 0, "rules": []any{}, "memory": memory, "peer_dispatch_cards": true}}
 	if w := paMachineSettingsPut(t, f, f.readonly, save, "save-one"); w.Code != 403 {
 		t.Fatalf("a read-only device saved shared settings: HTTP %d %s", w.Code, w.Body)
 	}
 	saved := paMachineSettingsAnswer(t, paMachineSettingsPut(t, f, f.lan, save, "save-one"))
-	if saved.Settings.Version != 1 || len(saved.Settings.Memory) != 1 || saved.Settings.Memory[0].Text != "Answer with the conclusion first" {
+	if saved.Settings.Version != 1 || !saved.Settings.PeerDispatchCards || len(saved.Settings.Memory) != 1 || saved.Settings.Memory[0].Text != "Answer with the conclusion first" {
 		t.Fatalf("saved: %+v", saved)
 	}
 	// The machine's own route reads the same document.
 	var local sharedSettingsReply
 	w := f.request(t, "GET", "/v1/project-assistants/shared-settings", f.local, nil)
-	if err := json.Unmarshal(w.Body.Bytes(), &local); err != nil || local.Settings.Version != 1 {
+	if err := json.Unmarshal(w.Body.Bytes(), &local); err != nil || local.Settings.Version != 1 || !local.Settings.PeerDispatchCards {
 		t.Fatalf("local route: %v %s", err, w.Body)
 	}
 	paAssertHTTPFailure(t, paMachineSettingsPut(t, f, f.local, save, "save-one"), 409, pa.StaleVersion)

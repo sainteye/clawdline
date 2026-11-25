@@ -79,8 +79,9 @@ type WorkRequest struct {
 	// that owns work a Bot's thread worker dispatched at another Bot's
 	// request: the turn is the host notice written there for it. Zero means
 	// the actor's own conversation and turn own the work.
-	OwnerFence  Fence
-	OwnerTurnID string
+	OwnerFence   Fence
+	OwnerTurnID  string
+	PeerDispatch PeerDispatchAttribution
 }
 
 // Owner is the conversation and turn that own the requested work.

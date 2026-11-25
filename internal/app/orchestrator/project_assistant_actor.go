@@ -207,15 +207,16 @@ func (a *AssistantAuthority) checkCurrent(ctx context.Context, actor pa.Assistan
 // AssistantOwner contains only public provenance. It grants no execution or
 // Board authority. The credential is deliberately absent from Record and Brief.
 type AssistantOwner struct {
-	Fence                pa.Fence        `json:"fence"`
-	BotName              string          `json:"bot_name,omitempty"`
-	BotAppearance        pa.Appearance   `json:"bot_appearance,omitzero"`
-	TurnID               string          `json:"turn_id"`
-	Command              pa.Command      `json:"command"`
-	RequestHash          string          `json:"request_hash"`
-	TargetProject        pa.ProjectScope `json:"target_project,omitzero"`
-	Persona              string          `json:"persona,omitempty"`
-	ContinueOnCompletion bool            `json:"continue_on_completion,omitempty"`
+	Fence                pa.Fence                   `json:"fence"`
+	BotName              string                     `json:"bot_name,omitempty"`
+	BotAppearance        pa.Appearance              `json:"bot_appearance,omitzero"`
+	TurnID               string                     `json:"turn_id"`
+	Command              pa.Command                 `json:"command"`
+	RequestHash          string                     `json:"request_hash"`
+	TargetProject        pa.ProjectScope            `json:"target_project,omitzero"`
+	Persona              string                     `json:"persona,omitempty"`
+	ContinueOnCompletion bool                       `json:"continue_on_completion,omitempty"`
+	PeerDispatch         pa.PeerDispatchAttribution `json:"peer_dispatch,omitzero"`
 }
 
 type assistantAdmission struct {
@@ -419,7 +420,7 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 	r.WorkID = q.BoardItemID
 	r.BotRequestID = c.BotRequestID
 	ownerFence, ownerTurn := q.Owner()
-	r.AssistantOwner = &AssistantOwner{Fence: ownerFence, BotName: c.BotName, TurnID: ownerTurn, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion}
+	r.AssistantOwner = &AssistantOwner{Fence: ownerFence, BotName: c.BotName, TurnID: ownerTurn, Command: q.Command, RequestHash: AssistantRequestHash(q), TargetProject: q.TargetProject, Persona: q.Persona, ContinueOnCompletion: q.ContinueOnCompletion, PeerDispatch: q.PeerDispatch}
 	if pa.ValidateAppearance(c.BotAppearance) == nil {
 		r.AssistantOwner.BotAppearance = c.BotAppearance
 	}

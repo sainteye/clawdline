@@ -1429,12 +1429,12 @@ test("handoff routes and send versions require the captured API 93 source", asyn
 
 test("Bots shared settings cross the Cloud relay on the named machine and save with the version read",async () => {
   const calls:{machine:string;word:string;body:Record<string,unknown>;ref?:string}[]=[]
-  const settings={version:3,rules:[],memory:[{id:"m",text:"Answer first",scope:{all:true}}]}
+  let settings={version:3,rules:[],memory:[{id:"m",text:"Answer first",scope:{all:true}}],peer_dispatch_cards:false}
   const answer=(machine:string)=>({contract_version:"project-assistants.v1",machine_id:machine,settings,agents:[],limits:{}})
   const client={
     machineDescriptor:() => ({machine:{commands:["project-assistants.shared-settings","project-assistants.shared-settings-save"]}}),
     async _machineRequest(machine:string,word:string,body:Record<string,unknown>) {calls.push({machine,word,body});return answer(machine)},
-    async _machineRequestAs(ref:string,machine:string,word:string,body:Record<string,unknown>) {calls.push({machine,word,body,ref});return answer(machine)},
+    async _machineRequestAs(ref:string,machine:string,word:string,body:Record<string,unknown>) {calls.push({machine,word,body,ref});settings={...(body.settings as typeof settings),version:4};return answer(machine)},
   }
   const g={...grant("two"),apiLevel:116}
   const source=new ProjectAssistantSourceClient(g,capturedAssistantRelayFetch("two",() => client,Object.keys(CARRIED)),() => g)
@@ -1442,10 +1442,13 @@ test("Bots shared settings cross the Cloud relay on the named machine and save w
   ;(source as unknown as {access:string}).access="interactive"
   const read=await source.sharedSettings(signal())
   assert.equal(read.machine_id,"two")
-  await source.saveSharedSettings({machine_id:"two",idempotency_key:"stable-save",expected_version:3,settings},signal())
+  assert.equal(read.settings.peer_dispatch_cards,false)
+  const draft={...read.settings,peer_dispatch_cards:true}
+  const saved=await source.saveSharedSettings({machine_id:"two",idempotency_key:"stable-save",expected_version:3,settings:draft},signal())
   assert.deepEqual(calls.map(c => [c.machine,c.word]),[["two","project-assistants.shared-settings"],["two","project-assistants.shared-settings-save"]])
   assert.deepEqual(calls[0].body,{machine_id:"two"})
-  assert.equal(calls[1].ref,"stable-save");assert.equal(calls[1].body.expected_version,3);assert.deepEqual(calls[1].body.settings,settings)
+  assert.equal(calls[1].ref,"stable-save");assert.equal(calls[1].body.expected_version,3);assert.deepEqual(calls[1].body.settings,draft)
+  assert.equal(saved.settings.peer_dispatch_cards,true)
   // Another machine's document is never written through this source.
   await assert.rejects(source.saveSharedSettings({machine_id:"one",idempotency_key:"k",expected_version:3,settings},signal()),error => errorCode(error) === "pa_scope_denied")
   assert.equal(calls.length,2)

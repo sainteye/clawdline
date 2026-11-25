@@ -7,7 +7,7 @@ import { agentName } from "./fallback-settings"
 import { PaSelect } from "./PaSelect"
 import { useModelCatalog, type ModelCatalog } from "../model-catalog/useModelCatalog"
 import { catalogPicker, paSelectStatus } from "../model-catalog/picker"
-import { errorCode, failure, type SharedSettingsAnswer, type SourceClient } from "./client"
+import { errorCode, failure, type SharedSettingsAnswer, type SharedSettingsDocument, type SourceClient } from "./client"
 import "./bots-settings.css"
 
 // Machine-wide Bots settings: the default agent, dispatch rules and memory
@@ -18,7 +18,7 @@ export type SharedScope = { all: boolean; projects?: string[] }
 export type RuleAgent = { agent: string; model?: string; effort?: string }
 export type DispatchRule = { id: string; kind: string; hint?: string; agents: RuleAgent[]; scope: SharedScope }
 export type SharedMemory = { id: string; text: string; scope: SharedScope }
-export type SharedSettings = { version: number; default?: RuleAgent; rules: DispatchRule[]; memory: SharedMemory[]; memory_opt_out?: string[]; project_overrides?: unknown }
+export type SharedSettings = Omit<SharedSettingsDocument, "rules" | "memory"> & { default?: RuleAgent; rules: DispatchRule[]; memory: SharedMemory[] }
 export type AgentOption = { agent: string; efforts: string[] }
 export type SharedSettingsReply = { machine_id?: string; settings: SharedSettings; agents: AgentOption[]; limits: Record<string, number> }
 export type ProjectChoice = { id: string; name: string }
@@ -32,6 +32,7 @@ const MAX_RULE_AGENTS = 4
 
 const word = (key: string) => catalogWord("botsSettings", key)
 const newID = () => Math.random().toString(36).slice(2, 12)
+const displaySettingsListeners = new Set<(source: SourceClient, enabled: boolean) => void>()
 
 /** Why one machine's settings could not be read or saved, in words a person can act on. */
 export function sharedSettingsProblem(error: unknown, saving: boolean): string {
@@ -54,7 +55,8 @@ export function sharedSettingsProblem(error: unknown, saving: boolean): string {
 export async function readSharedSettings(source: SourceClient, signal: AbortSignal = new AbortController().signal): Promise<SharedSettingsReply> {
   if (typeof source.sharedSettings !== "function") throw failure("pa_unsupported")
   const answer = await source.sharedSettings(signal) as SharedSettingsAnswer<SharedSettings>
-  if (answer.machine_id !== source.machineID || !answer.settings || !Array.isArray(answer.settings.rules) || !Array.isArray(answer.settings.memory)) throw failure("pa_invalid")
+  if (answer.machine_id !== source.machineID || !answer.settings || !Array.isArray(answer.settings.rules) || !Array.isArray(answer.settings.memory) ||
+    answer.settings.peer_dispatch_cards !== undefined && typeof answer.settings.peer_dispatch_cards !== "boolean") throw failure("pa_invalid")
   return answer
 }
 
@@ -64,7 +66,27 @@ export async function writeSharedSettings(source: SourceClient, settings: Shared
   const id = crypto.randomUUID()
   const answer = await source.saveSharedSettings({ machine_id: source.machineID, idempotency_key: id, expected_version: settings.version, settings }, signal) as SharedSettingsAnswer<SharedSettings>
   if (answer.machine_id !== source.machineID || !answer.settings) throw failure("pa_invalid")
+  for (const listener of displaySettingsListeners) listener(source, answer.settings.peer_dispatch_cards === true)
   return answer
+}
+
+export function usePeerDispatchCards(source: SourceClient | undefined): boolean {
+  const [setting, setSetting] = useState<{ source: SourceClient; enabled: boolean }>()
+  useEffect(() => {
+    if (!source?.sharedSettings) return
+    const read = new AbortController()
+    const saved = (changed: SourceClient, enabled: boolean) => {
+      if (changed.machineID !== source.machineID || changed.authorizationRevision !== source.authorizationRevision) return
+      read.abort()
+      setSetting({ source, enabled })
+    }
+    displaySettingsListeners.add(saved)
+    void readSharedSettings(source, read.signal).then(answer => {
+      if (!read.signal.aborted) setSetting({ source, enabled: answer.settings.peer_dispatch_cards === true })
+    }, () => {})
+    return () => { read.abort(); displaySettingsListeners.delete(saved) }
+  }, [source])
+  return !!setting && setting.source === source && setting.enabled
 }
 
 /** Tab and Shift+Tab stay inside the dialog while it is open. */
@@ -349,6 +371,15 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
               onDelete={() => { setRules(draft.rules.filter(r => r.id !== rule.id)); setEditing(null) }}
               onBack={() => setEditing(null)}/>
             : <>
+              {reply?.settings.peer_dispatch_cards !== undefined && <div className="pa-bs-display-setting">
+                <div>
+                  <strong id="pa-bs-peer-dispatch-title">{word("peerDispatchCards")}</strong>
+                  <small id="pa-bs-peer-dispatch-detail">{word("peerDispatchCardsHint")}</small>
+                </div>
+                <button type="button" role="switch" className="pa-switch" aria-checked={draft.peer_dispatch_cards === true}
+                  aria-labelledby="pa-bs-peer-dispatch-title" aria-describedby="pa-bs-peer-dispatch-detail" disabled={saving}
+                  onClick={() => setDraft({ ...draft, peer_dispatch_cards: !draft.peer_dispatch_cards })}><span/></button>
+              </div>}
               <DefaultAgent value={draft.default} agents={agents} catalogs={catalogs} onChange={next => setDraft({ ...draft, default: next })}/>
               <section className="pa-bs-group" aria-labelledby="pa-bs-rules">
                 <h3 id="pa-bs-rules">{word("kindsTitle")}</h3>

@@ -606,6 +606,9 @@ func ValidateEvent(e Event) error {
 	if e.Version != ContractVersion || e.ID == "" || e.Seq < 1 || e.Fence.Key.MachineID == "" || e.Fence.Key.BotID == "" {
 		return fail(Invalid, "event")
 	}
+	if e.WorkAnchorMessageSeq < 0 || e.WorkAnchorMessageSeq > 0 && e.Kind != WorkUpdated {
+		return fail(Invalid, "work_anchor_message_seq")
+	}
 	count := 0
 	for _, present := range []bool{e.Message != nil, e.Turn != nil, e.Permission != nil, e.Work != nil, e.Memory != nil, e.Bot != nil, e.Read != nil, e.Trace != nil, e.Source != nil} {
 		if present {
