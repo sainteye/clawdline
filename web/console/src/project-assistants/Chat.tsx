@@ -10,7 +10,7 @@ import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
-import { isSendingAdmitted, partitionMessages, type ChatProgress } from "./chat-items"
+import { isSendingAdmitted, partitionMessages, selectInlineProgress, type ChatProgress } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
@@ -1655,23 +1655,12 @@ ${currentDraft}`:submitted)
     void load().catch(()=>{}).finally(()=>reads.current.delete(control))
     return()=>control.abort()
   },[canReadProgress,progressThrough,progressRevision,recoveryRequired,valid,read,request])
-  const inlineProgress:ChatProgress[]=[]
-  const projectedSteps=new Set<string>()
-  const replyTexts=new Map<string,Set<string>>()
-  for(const row of chatTimeline){
-    const message=row.message
-    if(message?.kind!=="assistant"||message.output||message.exchange)continue
-    const seen=replyTexts.get(message.turn_id)??new Set<string>()
-    seen.add(message.text.trim())
-    replyTexts.set(message.turn_id,seen)
-  }
-  for(const row of progressRows){
-    const step=row.trace!,at=row.occurred_at!
-    if(progressThrough===null||Date.parse(at)<progressThrough||!visibleTrace(step))continue
-    projectedSteps.add(row.id)
-    if(!replyTexts.get(step.turn_id)?.has(step.text.trim()))
-      inlineProgress.push({id:row.id,text:step.text,at,eventSeq:row.observed_event_seq})
-  }
+  const liveTraceTurn=live?visibleTurn?.id:undefined
+  const {inlineProgress,projectedSteps,completedProgressTurns}=selectInlineProgress(progressRows,chatTimeline,{
+    activeTurnID:liveTraceTurn,
+    progressThrough,
+    isVisible:visibleTrace,
+  })
   const requests=useMemo(()=>placeBotRequests(requestCards??[],chatTimeline.flatMap(row=>row.work?[row.work]:[])),[requestCards,timeline,parts.queued])
   const pendingSend=view.heldOutcomes.get(draftKey)
   const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
@@ -1690,7 +1679,6 @@ ${currentDraft}`:submitted)
   for(const message of messages){
     if(!queuedIDs.has(message.id)&&(message.kind==="user"||message.kind==="assistant"&&!turnAnchors.has(message.turn_id)))turnAnchors.set(message.turn_id,message.id)
   }
-  const liveTraceTurn=live?visibleTurn?.id:undefined
   const liveSteps=liveTraceTurn?traceGroups.get(liveTraceTurn)??[]:[]
   const latestStep=liveSteps.find(row=>workingCategory(row.category))
   const currentActivity=liveTraceTurn?activity[liveTraceTurn]||(latestStep?traceLabel(latestStep.category,w):""):""
@@ -1712,7 +1700,7 @@ ${currentDraft}`:submitted)
   const afterMessage=(message:W.ProjectAssistantMessage)=>{
     const rows=traceGroups.get(message.turn_id)
     if(message.turn_id===liveTraceTurn||turnAnchors.get(message.turn_id)!==message.id)return
-    const deferred=message.id===latestTraceAnchor?deferredTrace:undefined
+    const deferred=message.id===latestTraceAnchor||completedProgressTurns.has(message.turn_id)?deferredTrace:undefined
     if(!rows?.length&&!deferred&&(deferTraceCount||!head?.trace_category_count))return
     const more=message.turn_id===moreTraceTurn||!!deferred&&!rows?.length&&!!traceMore
     return <div className="pa-turn-trace" data-trace-turn={message.turn_id}>{rows?.length||deferred?

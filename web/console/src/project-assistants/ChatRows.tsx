@@ -115,6 +115,7 @@ export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderEx
   }
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
   return <>{chat.map(item=>item.kind==="progress"?<div className="pa-progress" key={JSON.stringify([item.kind,item.id])} role="group" aria-label={w.traceNarration} onClick={onArticleClick}>
+    <span className="pa-progress-label">{w.traceNarration}</span>
     <BotMessageMarkdown text={item.progress.text} w={w}/>
   </div>:item.kind==="separator"?<div className="pa-separator" key={JSON.stringify([item.kind,item.id])}><time dateTime={item.at}>{timeFormat.format(Date.parse(item.at))}</time></div>:item.kind==="work"?<Fragment key={JSON.stringify([item.kind,item.id])}>{requestAbove?.(item.work)}<WorkResultCard work={item.work} review={reviews.get(item.work.task_id)} w={w} source={source} onOpen={onOpenWork}/></Fragment>:item.kind==="permission"?<Fragment key={JSON.stringify([item.kind,item.id])}>{renderPermission?.(item.offer)}</Fragment>:item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)

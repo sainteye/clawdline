@@ -63,6 +63,58 @@ export function partitionMessages(messages: readonly W.ProjectAssistantMessage[]
 }
 
 /**
+ * Select inline progress rows for the chat surface.
+ * Only the currently active turn streams narration inline; completed turns fold
+ * their narration (including any post-send_message wrap-up) back into the
+ * turn's single-line collapsible processing disclosure, while exact duplicates
+ * of visible reply bubbles stay suppressed from both surfaces.
+ */
+export function selectInlineProgress(
+  progressRows: readonly W.ProjectAssistantReadViewItem[],
+  timeline: readonly W.ProjectAssistantReadViewItem[],
+  options: {
+    activeTurnID?: string
+    progressThrough: number | null
+    isVisible: (trace: W.ProjectAssistantTrace) => boolean
+  },
+): {
+  inlineProgress: ChatProgress[]
+  projectedSteps: Set<string>
+  completedProgressTurns: Set<string>
+} {
+  const inlineProgress: ChatProgress[] = []
+  const projectedSteps = new Set<string>()
+  const completedProgressTurns = new Set<string>()
+  const replyTexts = new Map<string, Set<string>>()
+  for (const row of timeline) {
+    const message = row.message
+    if (message?.kind !== "assistant" || message.output || message.exchange) continue
+    const seen = replyTexts.get(message.turn_id) ?? new Set<string>()
+    seen.add(message.text.trim())
+    replyTexts.set(message.turn_id, seen)
+  }
+  for (const row of progressRows) {
+    const step = row.trace
+    const at = row.occurred_at
+    if (!step || !at || options.progressThrough === null || Date.parse(at) < options.progressThrough || !options.isVisible(step)) continue
+    const duplicateReply = !!replyTexts.get(step.turn_id)?.has(step.text.trim())
+    if (options.activeTurnID && step.turn_id === options.activeTurnID) {
+      projectedSteps.add(row.id)
+      if (!duplicateReply) {
+        inlineProgress.push({ id: row.id, text: step.text, at, eventSeq: row.observed_event_seq })
+      }
+      continue
+    }
+    if (duplicateReply) {
+      projectedSteps.add(row.id)
+      continue
+    }
+    completedProgressTurns.add(step.turn_id)
+  }
+  return { inlineProgress, projectedSteps, completedProgressTurns }
+}
+
+/**
  * A message being sent is shown in an optimistic sending bubble only until
  * the conversation admits it. Once the message appears in the timeline above
  * the baseline sequence number from when sending began, the sending bubble is

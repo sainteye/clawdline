@@ -72,7 +72,7 @@ web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
 web/console/src/project-assistants/BotSettings.tsx	BotSettings	124	61
 web/console/src/project-assistants/Bots.tsx	Bots	449	139
-web/console/src/project-assistants/Chat.tsx	Chat	2215	643
+web/console/src/project-assistants/Chat.tsx	Chat	2199	638
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	91	53
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78
 web/console/src/project-assistants/ImageViewer.tsx	useImageZoom	170	45
@@ -81,7 +81,7 @@ web/console/src/project-assistants/MessageReactions.tsx	MessageReactions	120	40
 web/console/src/project-assistants/OutputViewer.tsx	OutputViewer	126	39
 web/console/src/project-assistants/PaMenu.tsx	PaMenu	110	29
 web/console/src/project-assistants/Routines.tsx	RoutinePanel	224	87
-web/console/src/project-assistants/fixtures.ts	fixtureSource	513	140
+web/console/src/project-assistants/fixtures.ts	fixtureSource	511	140
 web/console/src/project-assistants/read-views.ts	readView	175	84
 web/console/src/project-assistants/tower/BotTower.tsx	BotTower	368	109
 web/console/src/project-assistants/tower/tower-draw.ts	drawBot	173	36

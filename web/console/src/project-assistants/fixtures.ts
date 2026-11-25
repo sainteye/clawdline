@@ -313,18 +313,23 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
         this.scriptMessage(bot,`progress-filler-${i}`,"assistant",`Earlier reply ${i}`,"history-turn",new Date(Date.parse(at)+(i+2)*1000).toISOString())
       }
       this.scriptMessage(bot,"progress-question","user","Check this integration","turn-1","2026-11-12T06:21:00Z")
-      this.inlineProgress("start","Checking the integration.","2026-11-12T06:21:01Z")
-      this.inlineProgress("thought","Private scratch note","2026-11-12T06:21:02Z","agent_thought_chunk")
-      this.inlineProgress("tool","Run the fixture checks","2026-11-12T06:21:03Z","tool_call")
+      ;([
+        ["start","Checking the integration.","2026-11-12T06:21:01Z"],
+        ["thought","Private scratch note","2026-11-12T06:21:02Z","agent_thought_chunk"],
+        ["tool","Run the fixture checks","2026-11-12T06:21:03Z","tool_call"],
+      ] as const).forEach(([id,text,time,category])=>this.inlineProgress(id,text,time,category))
       this.scriptMessage(bot,"progress-ack","assistant","One check has finished.","turn-1","2026-11-12T06:21:04Z")
-      this.inlineProgress("finding","I found another result.","2026-11-12T06:21:05Z")
-      this.inlineProgress("final","Verified integration.","2026-11-12T06:21:06Z")
+      ;([
+        ["finding","I found another result.","2026-11-12T06:21:05Z"],
+        ["final","Verified integration.","2026-11-12T06:21:06Z"],
+      ] as const).forEach(([id,text,time])=>this.inlineProgress(id,text,time))
       this.scriptMessage(bot,"progress-final","assistant","Verified integration.","turn-1","2026-11-12T06:21:07Z")
+      this.inlineProgress("wrapup","Post-reply wrap-up summary.","2026-11-12T06:21:08Z")
     },
-    inlineProgress(id:string,text:string,time:string,category="agent_message_chunk"){
+    inlineProgress(id:string,text:string,time:string,category="agent_message_chunk",turnID="turn-1"){
       const f=fence(bots[0])
       push({id:`inline-${id}-${seq}`,seq:0,at:time,version:contractVersion,kind:"trace_updated",
-        fence:f,trace:{id,turn_id:"turn-1",category,text,complete:false}})
+        fence:f,trace:{id,turn_id:turnID,category,text,complete:false}})
     },
     seedCollections(count:number,withPermissions=true){
       const bot=bots[0],f=fence(bot)
@@ -365,9 +370,9 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       }
       decisionTurn="turn-1"
     },
-    workTurn(state:W.ProjectAssistantTurnState){
+    workTurn(state:W.ProjectAssistantTurnState,turnID="turn-1"){
       const bot=bots[0],f=fence(bot)
-      const turn:W.ProjectAssistantTurn={id:"turn-1",fence:f,message_id:"bot-0-user",state,started_at:at,
+      const turn:W.ProjectAssistantTurn={id:turnID,fence:f,message_id:"bot-0-user",state,started_at:at,
         idempotency_key:"fixture-work",memory_revision:1,
         instructions:{revision:1,role_snapshot_ref:"",text:""}}
       push({id:"fixture-work-"+state,seq:0,at,version:contractVersion,kind:"turn_updated",fence:f,turn})
