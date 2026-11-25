@@ -5848,6 +5848,12 @@ export interface ProjectAssistantDecisionRequest {
    * peer request.
    */
   exchange_id?: string
+
+  /**
+   * The literal short fact a Bot proposed to remember while answering another Bot.
+   * Only the person's Save press writes it to memory.
+   */
+  memory?: string
   question: string
 
   /**

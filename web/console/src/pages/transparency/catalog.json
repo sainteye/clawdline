@@ -4495,6 +4495,14 @@
         {
           "path": "internal/adapters/projectassistantacp/session_configuration.go",
           "line": 1
+        },
+        {
+          "path": "internal/app/projectassistant/decisions.go",
+          "line": 1
+        },
+        {
+          "path": "web/console/src/project-assistants/DecisionCard.tsx",
+          "line": 1
         }
       ],
       "original": [
@@ -4503,7 +4511,9 @@
         "\"\\nThe other Bot did not finish this request (interrupted, for example by a Clawdline restart, or stopped), and part of it may already have run. Tell the user plainly what happened. Do not resend the request on your own; ask the user whether to try again.\"\n",
         "\"\\nThe other Bot's reply exceeded Clawdline's reply limit and was truncated, as its last line says. Do not treat it as the complete answer or act on its conclusions yet: ask that Bot to send the part after the kept text, or tell the user the reply was cut.\"\n",
         "Decisions for the user: when you need the user's permission, authorization or a choice between options, or the next step is irreversible, costs money, or changes or deletes data, call ask_person with the question and 1-3 complete suggested replies, then end your turn; the user answers with one press on the card in your chat. Ask ordinary small questions in chat instead. In a request from another Bot, ask_person is the only way to reach the user: never reply asking the requesting Bot to relay the question, and never ask the user to copy or paste authorization text. When another Bot is waiting for the user's decision, tell the user only which Bot's chat to answer in, where a Go to shortcut leads; do not draft the authorization yourself. The user's answer on your card is their own direct message in your chat: within the scope of your question and their reply it authorizes the work, including steps that need the user's authorization such as a deployment. Anything beyond that scope needs a new question. 需要使用者決定時：需要使用者允許、授權或在選項中做決定，或下一步不可逆、會花錢、會修改或刪除資料時，呼叫 ask_person，寫明問題並附 1 到 3 個完整的建議回覆，然後結束本回合；使用者在你聊天裡的卡片按一下就能回答。一般的小問題直接在聊天問。處理其他 Bot 的請求時，ask_person 是聯絡使用者的唯一方式：不要回覆請發起的 Bot 轉述，也不要請使用者複製貼上授權文字。其他 Bot 在等使用者決定時，只要告訴使用者到哪個 Bot 的聊天回答（「前往」捷徑會帶過去），不要自己代擬授權文字。使用者在你卡片上的回答就是本人在你聊天裡的直接訊息：在問題與回答的範圍內即為授權，包含需要使用者授權的步驟（例如部署）；超出範圍要再問一次。",
-        "\"mcp__clawdline__ask_person\""
+        "\"mcp__clawdline__ask_person\"",
+        "While answering another Bot, only append works: it shows the user a memory card in your main chat and returns state awaiting_person; it is saved only when the user presses Save.",
+        "Not saved yet: this turn answers another Bot, so the fact is shown to the user as a memory card in your main chat. It is saved only if the user presses Save. Do not call edit_memory again for it."
       ],
       "locations": [
         "Turn-bound owned MCP Bot directory and review tools",
@@ -5578,7 +5588,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "8fcc47573c1c812de1b4a82fb04009876c51b62d3183c4d32d589c56f4b012f2",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "083319097ceedcaaaa33fbd13c89966d2b736c9e20f0a338f1fe59a917aa15c1",
+    "internal/adapters/projectassistantacp/mcp.go": "94adbac5c69deef53dd5894d7ae5b1851097f05f0cdf3f6b0dc8dc78f0b11d3b",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5606,7 +5616,7 @@
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "85e27995557ac2e9907c807c99a205f802b0c0dfc9fb3b947dc2b019cd483f6d",
+    "internal/adapters/projectassistanthost/provider.go": "f69b7de8b7001460b0809cc3c804f9d49ac34bc61d51f6a14afc6ee1003a0783",
     "internal/adapters/projectassistanthost/provider_message.go": "599aca530041e41b4f3541b49f6e7c4a0f5d3984ad37930e7fe9b5481a10ddda",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
     "internal/adapters/projectassistanthost/work_completion.go": "77c002f4a0e57812ae8d406bbe0aaf997010a3079c81cd6ba6dba7541161aeed",
@@ -5671,6 +5681,7 @@
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
     "internal/app/projectassistant/collaboration.go": "c27b128f0aa8a97c288e40e33a27600a0b8c2d4a658aee7c2fe6329e626b24fe",
     "internal/app/projectassistant/configuration.go": "39df67333a7764f211f57d430aad5b54863bd1854a78ac5025f5155189d77e4b",
+    "internal/app/projectassistant/decisions.go": "0ac452d84571a861bb75d2fb5ce8bfbf5fd3706586b7ebc097950b6243cf12d8",
     "internal/app/projectassistant/devservers.go": "2a19527d6f761db0671724814146be097b722bfda64706181a8dbd3b843fab91",
     "internal/app/projectassistant/extensions.go": "6ca199c90ddca176590e5d03b8fd769ed04686266aef6a192babb77a7c9e54ff",
     "internal/app/projectassistant/fallback.go": "35ef8d81a19ec9ef0811ae740948e65356f6b99d481147f4035ddfc4841d3819",
@@ -5793,6 +5804,7 @@
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "3995ca50f7e482e012a6481f1d35da08c9e964e6dfd0eb3457e97d839a1a5280",
     "web/console/src/project-assistants/ChatRows.tsx": "0e3428626e172c929890fa03b3443b6569cf4477320fe25ccb2226fb4e25f680",
+    "web/console/src/project-assistants/DecisionCard.tsx": "96baf4809f8c2666600101c9dc2bcfeb57e4af52883b241caeda71cf2a3a7093",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
@@ -5816,7 +5828,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "afd0e51341c6875fae0254bdf8f394d7c238cdd7c847025f4867ed6107730348",
+    "web/console/src/project-assistants/words.ts": "2a65a76684bb689d2ea5be363c1f81e452f7365c93d6de574aba8682ea1cc6dd",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
@@ -5849,7 +5861,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "8e74548168f36f69d0b01698cd058c7f8d73d645376044a633370804ba017f05",
-    "zh-Hant": "85600b58f23a7e30834dc6c17fa45972e65481aabbe962ecb99cf7cfea58e025"
+    "en": "17f3bff3b11ffcab6e52232f6e5d802d39aea39f90bb826c468a378269f49cb6",
+    "zh-Hant": "b75b1ff11b9512afa9d0504784f324ca9b7df529140f2a0b06609f30fe386a75"
   }
 }

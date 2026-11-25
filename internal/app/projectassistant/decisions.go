@@ -2,6 +2,9 @@ package projectassistant
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"strings"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -44,6 +47,18 @@ func (r *Engine) AskPerson(ctx context.Context, fence pa.Fence, turnID string, q
 	return p.OfferDecision(ctx, fence, turnID, q, r.o.Clock())
 }
 
+// ProposeMemory turns a short fact a Bot wants to remember while answering
+// another Bot into a memory card in its visible main chat. Text from a peer
+// never reaches memory on the Bot's own say: only the person's press on the
+// card writes it.
+func (r *Engine) ProposeMemory(ctx context.Context, fence pa.Fence, turnID, text string) (pa.PermissionOffer, error) {
+	text = strings.TrimSpace(text)
+	if err := pa.CheckMemoryProposal(text); err != nil {
+		return pa.PermissionOffer{}, err
+	}
+	return r.AskPerson(ctx, fence, turnID, pa.AskPersonRequest{Question: pa.MemoryProposalQuestion, SuggestedReplies: []string{"Save", "Don't save"}, Memory: text})
+}
+
 // forwardDecision sends the result of the person's answer turn back to the
 // Bot that was waiting for it.
 func (r *Engine) forwardDecision(ctx context.Context, key pa.BotKey, t pa.Turn, text string) error {
@@ -67,6 +82,9 @@ func (r *Engine) forwardDecision(ctx context.Context, key pa.BotKey, t pa.Turn, 
 // so the same answer never turns into "already answered". Every refusal
 // before Submit has written nothing and stays a typed, retryable one.
 func (s *Service) answerDecision(ctx context.Context, c pa.Command, answer pa.PermissionAnswer, offer pa.PermissionOffer, a Authority) (pa.Receipt, error) {
+	if offer.Kind == pa.DecisionOfferKind && offer.Decision != nil && offer.Decision.Memory != "" {
+		return s.answerMemoryProposal(ctx, c, answer, offer, a)
+	}
 	text, err := pa.DecisionAnswerText(offer, answer)
 	if err != nil {
 		return pa.Receipt{}, err
@@ -123,4 +141,98 @@ type decisionAnswerPayload struct {
 	OfferID  string `json:"offer_id"`
 	OptionID string `json:"option_id,omitempty"`
 	Text     string `json:"text"`
+}
+
+// answerMemoryProposal writes the card's literal fact as the person's own
+// memory entry when they press Save, then resolves the card. Don't save only
+// resolves it. A memory card sends no message, so it never reaches Submit.
+// As for any decision, a repeated press replays its receipt before any state
+// check; the entry is written before the card resolves, and a retried press
+// finds the entry already there, so a failed resolve never loses it.
+func (s *Service) answerMemoryProposal(ctx context.Context, c pa.Command, answer pa.PermissionAnswer, offer pa.PermissionOffer, a Authority) (pa.Receipt, error) {
+	if answer.Text != "" || answer.OptionID != pa.MemorySaveOptionID && answer.OptionID != pa.MemorySkipOptionID {
+		return pa.Receipt{}, serviceFailure(pa.Invalid, "memory_answer")
+	}
+	cmd := c
+	cmd.Operation, cmd.IdempotencyKey, cmd.ClientAttemptID = pa.AnswerOperation, "memory-card-"+offer.ID, ""
+	cmd, err := canonicalCommand(cmd, pa.AnswerOperation, a.PrincipalID, answer)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	prior, err := s.replay(ctx, cmd)
+	if pa.Code(err) == pa.IdempotencyConflict {
+		return pa.Receipt{}, serviceFailure(pa.StaleVersion, "decision_answered")
+	}
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if prior != nil {
+		return *prior, nil
+	}
+	bot, err := s.opts.Repository.Bot(ctx, c.Key)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if err = pa.CheckDecision(offer, answer, bot, s.opts.Clock()); err != nil {
+		return pa.Receipt{}, err
+	}
+	if answer.OptionID == pa.MemorySaveOptionID {
+		if err = s.saveProposedMemory(ctx, c, offer, bot, a); err != nil {
+			return pa.Receipt{}, err
+		}
+		// Saving advanced the Bot's version; resolve against the current one.
+		if bot, err = s.opts.Repository.Bot(ctx, c.Key); err != nil {
+			return pa.Receipt{}, err
+		}
+	}
+	if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return pa.Receipt{}, err
+	}
+	resolved := offer
+	resolved.State, resolved.SelectedOptionID = pa.PermissionResolved, answer.OptionID
+	now := s.opts.Clock()
+	next := bot
+	next.Version++
+	next.UpdatedAt = now
+	copy := resolved
+	m := Mutation{Command: cmd, ExpectedVersion: bot.Version, Bot: &next, Permissions: []pa.PermissionOffer{resolved},
+		Receipt: pa.Receipt{ID: s.opts.ID(), Command: cmd, State: pa.EffectDelivered, ResourceID: offer.ID},
+		Events:  []pa.Event{{Version: pa.ContractVersion, ID: s.opts.ID(), At: now, Fence: offer.Fence, Kind: pa.PermissionAnswered, Permission: &copy}}}
+	return s.opts.Repository.Commit(ctx, m)
+}
+
+func (s *Service) saveProposedMemory(ctx context.Context, c pa.Command, offer pa.PermissionOffer, bot pa.Bot, a Authority) error {
+	sum := sha256.Sum256([]byte(offer.ID))
+	id := "card-" + hex.EncodeToString(sum[:8])
+	x, err := s.opts.Repository.Export(ctx, bot.Key)
+	if err != nil {
+		return err
+	}
+	for _, e := range x.MemoryEntries {
+		if e.ID == id && !e.Forgotten {
+			return nil
+		}
+	}
+	current, err := s.opts.Memory.Current(ctx, bot.Key)
+	if err != nil {
+		return err
+	}
+	// The person chose this entry on their own card, so it carries their
+	// authorship, as an entry they typed in memory settings would.
+	entry := pa.MemoryEntry{ID: id, Key: bot.Key, Project: bot.Project, Text: offer.Decision.Memory, Revision: current.Revision,
+		Sources: []pa.MemorySource{{ID: "manual:" + id, Key: bot.Key, Project: bot.Project, Kind: "human", Revision: current.Revision}}}
+	cmd := c
+	cmd.Operation, cmd.IdempotencyKey, cmd.ClientAttemptID = pa.MemorySaveOperation, "memory-card-save-"+offer.ID, ""
+	cmd, err = canonicalCommand(cmd, pa.MemorySaveOperation, a.PrincipalID, struct {
+		Entry            pa.MemoryEntry
+		ExpectedRevision int64
+	}{entry, current.Revision})
+	if err != nil {
+		return err
+	}
+	if _, err = s.authorizeEffect(ctx, c.Key, true, a); err != nil {
+		return err
+	}
+	_, err = s.opts.Memory.Save(ctx, MemoryWrite{Command: cmd, Entry: entry, ExpectedRevision: current.Revision})
+	return err
 }
