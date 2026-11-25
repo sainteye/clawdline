@@ -12,8 +12,10 @@ import (
 	"errors"
 	"fmt"
 	br "github.com/sainteye/clawdline/internal/domain/botrequest"
+	"image/jpeg"
 	"io"
 	"log"
+	"math"
 	"mime"
 	"net"
 	"net/http"
@@ -1047,8 +1049,8 @@ func mcpTools() []any {
 		tool("publish_artifact", "Publish self-contained HTML (inline CSS and JavaScript; up to 5 MiB). New artifacts need a title. To update one subject, reuse its artifact ID and publish the whole HTML. Set notify to false to refresh its existing chat card without posting another. Reuse the idempotency key on retry.", map[string]any{"idempotency_key": text(), "path": text(), "title": text(), "artifact": text(), "notify": map[string]any{"type": "boolean"}}, "idempotency_key", "path"),
 		tool("list_artifacts", "List your published HTML artifacts, newest first. Use the artifact ID to publish an updated whole snapshot.", map[string]any{}),
 		tool("browser_status", "Read your own browser state: the selected browser profile, whether the person stopped the browser channel, and only the tabs you opened. 讀取自己的瀏覽器狀態：選用的瀏覽器、是否被停止，以及只有自己開的分頁。", map[string]any{}),
-		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label or args.x/args.y), type (args.text), key (args.key), scroll, screenshot, viewport, release or close. args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
-			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": map[string]any{"type": "object"}, "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
+		tool("browser_command", "Run one browser operation in the Clawdline browser the person allowed for automatic use: open (args.url), read, click (args.label: the element's visible text, or args.x and args.y), type (args.text), key (args.key), scroll (args.direction up or down), screenshot, viewport (args.mode mobile or desktop, or args.width and args.height with optional args.mobile and args.touch), release or close. Coordinates and sizes are CSS pixels of the viewport, measured from its top-left; a screenshot's caption gives its CSS width and height and its scale, so divide a screenshot pixel by scale to get the CSS pixel. A click answers with what sat under the point (value.at). A wrong argument is browser_bad_request naming the field; a label the page does not show is browser_element_not_found: read the page for the exact labels. 座標與尺寸都是 viewport 的 CSS 像素，截圖像素除以截圖說明裡的 scale 就是 CSS 像素；參數錯誤會指出欄位，找不到 label 會回 browser_element_not_found。 args.tab is optional and must be a tab you opened; omit it for your current tab. browser_mode may name only a browser automatic selection already allows. A refusal keeps its code: browser_stopped and browser_person_controlling mean wait for the person; browser_setup_required means ask them to set the browser up in Settings, Chrome. After browser_timeout the action may have happened: read the page before repeating it, and never repeat it in another browser.",
+			map[string]any{"op": map[string]any{"type": "string", "enum": []string{"open", "read", "click", "type", "key", "scroll", "screenshot", "viewport", "release", "close"}}, "args": browserArgsSchema(), "browser_mode": map[string]any{"type": "string", "enum": []string{"isolated", "user_chrome"}}}, "op"),
 		tool("send_message", "Send the user one Markdown chat message immediately as its own bubble. Send several for several thoughts in the same turn; use a different idempotency key for each distinct message. After sending any message, final reply text stays in the trace: send all user-facing results here. Reuse the same key and text after an uncertain response; do not invent a replacement key. 立即傳送一則獨立的 Markdown 訊息；同一回合可傳多則，不同訊息各用自己的冪等鍵。傳送後最後文字只留在處理過程，所有要讓使用者看到的結果都要在此傳送。結果不確定時沿用相同鍵與文字。", map[string]any{"idempotency_key": text(), "text": text()}, "idempotency_key", "text"),
 		tool("dispatch_work", "Open an isolated work Session. Its result arrives in this chat. End your turn after acceptance. Unless the Bot's work review setting is off, the daemon starts one review turn when the work finishes, fails or first waits for the user. Set continue_on_completion when you must use the result to finish this user request even if that setting is off. Do not poll. Set project when the user explicitly names another destination: the lead Bot dispatches directly; any other Bot first shows the user a permission card and waits for the answer, unless they saved an always-allow rule. pa_declined means the user refused; do not retry. Only a turn the user started by talking to you can ask; field dispatch_project_direct means ask the user to tell you directly. After pa_outcome_unknown, never switch to a new key: follow task_id with work_status when the reply has one; otherwise call work_status with the same idempotency_key. Resend the same key and content only when it answers safe_to_resend_same_key. 開啟隔離工作階段。結果會回到聊天，收到收據後就結束回合。必須接著用結果才能完成使用者要求時，設定 continue_on_completion，常駐程式會在完成後啟動一次接續回合。請勿輪詢。使用者明確指定其他目的 Project 時填入 project：大總管直接派工；其他 Bot 會先在聊天跳出權限卡等使用者回答（已存「一律允許」則不問）。pa_declined 代表使用者拒絕，不要重試；dispatch_project_direct 代表請使用者直接跟你說。結果不明時不要換新鍵：回覆有 task_id 就用 work_status 追蹤，沒有就用同一個 idempotency_key 呼叫 work_status 查收據，只有回答可安全重送時才用同一個鍵與內容重送。", map[string]any{
 			"idempotency_key": text(),
@@ -1098,6 +1100,57 @@ func mcpMemoryLines(entries []pa.MemoryEntry) []map[string]string {
 
 var _ http.Handler = (*ownedMCPServer)(nil)
 
+// browserArgsSchema describes browser_command's args; sizes and points are
+// CSS pixels, bounded as internal/app/browserbridge bounds them.
+func browserArgsSchema() map[string]any {
+	px := func(about string, minimum, maximum int) map[string]any {
+		return map[string]any{"type": "number", "minimum": minimum, "maximum": maximum, "description": about}
+	}
+	side := func(about string, maximum int) map[string]any {
+		return map[string]any{"type": "integer", "minimum": browserViewportMin, "maximum": maximum, "description": about}
+	}
+	return map[string]any{"type": "object", "properties": map[string]any{
+		"tab":       map[string]any{"type": "integer", "minimum": 1, "description": "A tab you opened; omit for your current tab."},
+		"url":       map[string]any{"type": "string", "description": "open: the http or https address."},
+		"label":     map[string]any{"type": "string", "minLength": 1, "description": "click: the element's visible text, aria-label, placeholder or title."},
+		"x":         px("click: CSS pixels from the viewport's left edge.", 0, browserClickMax),
+		"y":         px("click: CSS pixels from the viewport's top edge.", 0, browserClickMax),
+		"text":      map[string]any{"type": "string", "description": "type: the text for the focused field."},
+		"key":       map[string]any{"type": "string", "description": "key: Enter, Tab, Backspace, Escape, ArrowDown, ArrowUp, ArrowLeft, ArrowRight, PageDown or PageUp."},
+		"direction": map[string]any{"type": "string", "enum": []string{"down", "up"}},
+		"mode":      map[string]any{"type": "string", "enum": []string{"mobile", "desktop"}, "description": "viewport: a preset; do not combine with width and height."},
+		"width":     side("viewport: CSS pixels.", browserViewportMaxWidth),
+		"height":    side("viewport: CSS pixels.", browserViewportMaxHeight),
+		"mobile":    map[string]any{"type": "boolean", "description": "viewport with width and height: emulate a phone (mobile user agent and touch)."},
+		"touch":     map[string]any{"type": "boolean", "description": "viewport with width and height: emulate touch input."},
+	}}
+}
+
+// The browser bounds, in CSS pixels; TestBrowserArgsSchemaMatchesTheBridge
+// keeps them equal to internal/app/browserbridge's.
+const (
+	browserViewportMin       = 200
+	browserViewportMaxWidth  = 3840
+	browserViewportMaxHeight = 2160
+	browserClickMax          = 16384
+)
+
+// screenshotCaption tells a Bot how the picture's pixels map to the CSS
+// pixels its clicks use: scale is image pixels per CSS pixel.
+func screenshotCaption(url string, cssWidth, cssHeight float64, data []byte) map[string]any {
+	caption := map[string]any{"op": "screenshot", "url": url, "coordinates": "css_px"}
+	if cssWidth > 0 && cssHeight > 0 {
+		caption["width"], caption["height"] = cssWidth, cssHeight
+	}
+	if img, err := jpeg.DecodeConfig(bytes.NewReader(data)); err == nil {
+		caption["image_width"], caption["image_height"] = img.Width, img.Height
+		if cssWidth > 0 {
+			caption["scale"] = math.Round(float64(img.Width)/cssWidth*1000) / 1000
+		}
+	}
+	return caption
+}
+
 // browserResultTooLarge refuses a page result that cannot fit in one owned MCP
 // frame. The command already ran; nothing was cut to make it fit.
 const browserResultTooLarge = "browser_result_too_large"
@@ -1136,16 +1189,19 @@ func (s *ownedMCPServer) browserTool(ctx context.Context, name string, arguments
 	}
 	if q.Op == "screenshot" {
 		var shot struct {
-			Data string `json:"data"`
-			URL  string `json:"url"`
+			Data   string  `json:"data"`
+			URL    string  `json:"url"`
+			Width  float64 `json:"width"`
+			Height float64 `json:"height"`
 		}
 		if json.Unmarshal(result.Value, &shot) != nil || shot.Data == "" {
 			return mcpToolResult(map[string]string{"code": "browser_page_error", "message": "the extension returned no image"}, true)
 		}
-		if _, e := base64.StdEncoding.DecodeString(shot.Data); e != nil {
+		picture, e := base64.StdEncoding.DecodeString(shot.Data)
+		if e != nil {
 			return mcpToolResult(map[string]string{"code": "browser_page_error", "message": "the image was not valid base64"}, true)
 		}
-		caption, _ := json.Marshal(map[string]string{"op": "screenshot", "url": shot.URL})
+		caption, _ := json.Marshal(screenshotCaption(shot.URL, shot.Width, shot.Height, picture))
 		return s.fit(map[string]any{"isError": false, "content": []any{
 			map[string]string{"type": "text", "text": string(caption)},
 			map[string]string{"type": "image", "data": shot.Data, "mimeType": "image/jpeg"},

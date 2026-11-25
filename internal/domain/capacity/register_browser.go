@@ -15,6 +15,9 @@ const (
 	BrowserStdinText         = "browser.stdin_text_bytes"
 	BrowserActivityRows      = "browser.activity_picture_rows"
 	BrowserActivityBytes     = "browser.activity_picture_bytes"
+	BrowserViewportWidth     = "browser.viewport_width"
+	BrowserViewportHeight    = "browser.viewport_height"
+	BrowserClickCoordinate   = "browser.click_coordinate"
 )
 
 // browserBounds is every registered row named browser.*.
@@ -86,6 +89,26 @@ func browserBounds() []Entry {
 			Limit: 96 << 10, AtLimit: Refuse,
 			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/browserbridge.MaxThumbBytes"},
+		},
+		{
+			// An agent's emulated viewport size, in CSS pixels; a larger one is refused with the field named.
+			Name: BrowserViewportWidth, Class: Buffer, Unit: Pixels,
+			Limit: 3840, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/browserbridge.MaxViewportWidth"},
+		},
+		{
+			Name: BrowserViewportHeight, Class: Buffer, Unit: Pixels,
+			Limit: 2160, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/browserbridge.MaxViewportHeight"},
+		},
+		{
+			// One click coordinate, in CSS pixels; Chrome's own largest window side.
+			Name: BrowserClickCoordinate, Class: Buffer, Unit: Pixels,
+			Limit: 16384, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/browserbridge.MaxClickCoordinate"},
 		},
 		{
 			Name: BrowserArgBytes, Class: Buffer, Unit: Bytes,

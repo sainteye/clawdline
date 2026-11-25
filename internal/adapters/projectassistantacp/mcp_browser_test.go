@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/sainteye/clawdline/internal/app/browserbridge"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -140,5 +141,42 @@ func TestOwnedMCPWithoutBrowserToolsIsUnsupported(t *testing.T) {
 	r := f.call(t, "browser_command", map[string]any{"op": "read"})
 	if !r.Result.IsError || r.Result.Content[0].Text != `{"code":"pa_unsupported"}` {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// A Bot reading a high-density screenshot learns the CSS size its clicks use
+// and the scale between the picture's pixels and those CSS pixels.
+func TestOwnedMCPScreenshotCaptionGivesCSSSizeAndScale(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 32, 20))
+	var b bytes.Buffer
+	if err := jpeg.Encode(&b, img, nil); err != nil {
+		t.Fatal(err)
+	}
+	shot := base64.StdEncoding.EncodeToString(b.Bytes())
+	f := newMCPFixture(t, mcpBrowserTools{command: func(context.Context, app.BrowserCommand) (app.BrowserResult, error) {
+		return app.BrowserResult{Value: json.RawMessage(`{"data":"` + shot + `","url":"https://example.com/","width":16,"height":10}`)}, nil
+	}})
+	f.initialize(t)
+	r := f.call(t, "browser_command", map[string]any{"op": "screenshot"})
+	var caption map[string]any
+	if r.Result.IsError || json.Unmarshal([]byte(r.Result.Content[0].Text), &caption) != nil {
+		t.Fatalf("screenshot: %+v", r)
+	}
+	if caption["width"] != 16.0 || caption["height"] != 10.0 || caption["image_width"] != 32.0 || caption["image_height"] != 20.0 || caption["scale"] != 2.0 || caption["coordinates"] != "css_px" {
+		t.Fatalf("caption = %v", caption)
+	}
+}
+
+// The tool's args schema states the same bounds the bridge enforces.
+func TestBrowserArgsSchemaMatchesTheBridge(t *testing.T) {
+	if browserViewportMin != browserbridge.MinViewportSide || browserViewportMaxWidth != browserbridge.MaxViewportWidth ||
+		browserViewportMaxHeight != browserbridge.MaxViewportHeight || browserClickMax != browserbridge.MaxClickCoordinate {
+		t.Fatal("browser_command's schema bounds differ from internal/app/browserbridge")
+	}
+	props := browserArgsSchema()["properties"].(map[string]any)
+	for _, name := range []string{"label", "x", "y", "width", "height", "mobile", "touch", "mode"} {
+		if props[name] == nil {
+			t.Fatalf("args schema has no %s", name)
+		}
 	}
 }
