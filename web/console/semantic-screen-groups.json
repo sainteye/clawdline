@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14603,
+  "englishContentKeys": 14604,
   "riskKeys": 6209,
-  "nonRiskCount": 8394,
+  "nonRiskCount": 8395,
   "groups": [
     {
       "name": "acp / other",
@@ -6345,7 +6345,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 727,
+      "count": 728,
       "sources": [
         null
       ],
@@ -6788,6 +6788,7 @@
         "projectAssistants.retryNextSettings",
         "projectAssistants.retryReaction",
         "projectAssistants.retryUnsentSend",
+        "projectAssistants.reviewingAction",
         "projectAssistants.roomEveryone",
         "projectAssistants.roomFallbackAttempt",
         "projectAssistants.roomFallbackRestReason",

@@ -1,6 +1,7 @@
 package projectassistantstore
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"strings"
@@ -347,5 +348,40 @@ func TestRosterProjectionNamesTheLatestMessageKind(t *testing.T) {
 	}
 	if len(got.Frame.Changes) != 1 || got.Frame.Changes[0].Summary.LatestMessage != e.Messages[1].Text || got.Frame.Changes[0].Summary.LatestMessageKind != pa.WorkMessage || !reflect.DeepEqual(*got.Frame.Changes[0].Summary, want.Items[0]) {
 		t.Fatalf("a Session report preview must say it is one: got %+v; want %+v", got.Frame.Changes, want.Items)
+	}
+}
+
+func TestRosterKeepsCompactionAndMemoryProposalKinds(t *testing.T) {
+	e, _, current := viewFixture(t, 2, 0, false)
+	e.Messages[1].Kind = pa.NoticeMessage
+	e.Messages[1].Text = "Earlier context was summarized to make room: 26K → 22K"
+	notice := pa.NoticeRef{Key: pa.NoticeCompacted, TokensBefore: 26182, TokensAfter: 22113}
+	e.Messages[1].Notice = &notice
+	e.Events[1].Message = &e.Messages[1]
+	offer := rosterDecision(current, "memory", pa.MemoryProposalQuestion, 2, time.Now().Add(time.Hour))
+	offer.Decision.Memory = "A fact visible only inside the card"
+	e.Permissions = append(e.Permissions, offer)
+	_, s, views, _ := restoreViews(t, e)
+	q := rosterQuery()
+	roster := rosterRead(t, views, q).Frame.Changes[0].Summary
+	list, err := s.ListForReader(testContext, pa.ListBots{MachineID: "machine", PageSize: 1}, q.ReaderID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, row := range map[string]pa.BotSummary{"list": list.Items[0], "roster": *roster} {
+		data, err := json.Marshal(row)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var display struct {
+			Notice   pa.NoticeRef `json:"latest_message_notice"`
+			Decision string       `json:"pending_decision_kind"`
+		}
+		if err := json.Unmarshal(data, &display); err != nil {
+			t.Fatal(err)
+		}
+		if display.Notice != notice || display.Decision != "memory_save" || strings.Contains(string(data), offer.Decision.Memory) {
+			t.Errorf("%s preview should carry typed display facts: got %+v", label, display)
+		}
 	}
 }

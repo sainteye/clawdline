@@ -1422,6 +1422,10 @@
           "type": "string",
           "description": "The kind of the message latest_message came from, such as work for a Session report. Empty or absent on older sources."
         },
+        "latest_message_notice": {
+          "$ref": "#/$defs/ProjectAssistantNoticeRef",
+          "description": "Language-neutral values for a compaction notice that is the latest message."
+        },
         "activity": {
           "type": "string"
         },
@@ -1436,6 +1440,11 @@
         },
         "pending_permissions": {
           "type": "integer"
+        },
+        "pending_decision_kind": {
+          "type": "string",
+          "enum": ["question", "memory_save"],
+          "description": "Distinguishes a pending Bot question from a host-owned memory proposal. Absent on older sources."
         },
         "background_work": {
           "$ref": "#/$defs/ProjectAssistantBackgroundWork",

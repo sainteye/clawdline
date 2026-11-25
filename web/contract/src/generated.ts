@@ -5670,6 +5670,17 @@ export interface ProjectAssistantBotSummary {
    * report. Empty or absent on older sources.
    */
   latest_message_kind?: string
+
+  /**
+   * Language-neutral values for a compaction notice that is the latest message.
+   */
+  latest_message_notice?: ProjectAssistantNoticeRef
+
+  /**
+   * Distinguishes a pending Bot question from a host-owned memory proposal. Absent
+   * on older sources.
+   */
+  pending_decision_kind?: string
   pending_permissions: number
   read_cursor: ProjectAssistantReadCursor
   source: ProjectAssistantSourceStatus

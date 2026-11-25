@@ -1067,6 +1067,10 @@ func summary(a aggregate, reader string) pa.BotSummary {
 		}
 		out.LatestMessage = msg.Text
 		out.LatestMessageKind = msg.Kind
+		out.LatestMessageNotice = nil
+		if msg.Kind == pa.NoticeMessage && msg.Notice != nil && msg.Notice.Key == pa.NoticeCompacted {
+			out.LatestMessageNotice = msg.Notice
+		}
 		if out.LatestMessage == "" {
 			for i, file := range msg.Files {
 				if i > 0 {

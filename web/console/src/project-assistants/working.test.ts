@@ -12,6 +12,34 @@ test("a running Bot shows its latest tool call, or that it is writing",()=>{
   assert.equal(activityOf(undefined),"")
 })
 
+test("system-generated roster captions use the reader's language",()=>{
+  const base={status:"idle",activity:"",pending_permissions:0,source:{fresh:true,state:"online",readable:true,access:"interactive"}}
+  const compacted={...base,latest_message_kind:"notice",latest_message:"English fallback",
+    latest_message_notice:{key:"compacted",tokens_before:26182,tokens_after:22113}} as unknown as W.ProjectAssistantBotSummary
+  const memory={...compacted,status:"needsInput",activity:"Asks: Save this to memory?",pending_decision_kind:"memory_save"} as W.ProjectAssistantBotSummary
+  const ordinary={...memory,pending_decision_kind:"question"} as W.ProjectAssistantBotSummary
+  const legacyNotice={...compacted,latest_message_notice:undefined,latest_message:"Earlier context was summarized to make room: 345K → 41K"}
+  const legacyMemory={...memory,pending_decision_kind:undefined}
+
+  for(const [locale,compaction,proposal,legacy] of [
+    ["en","Earlier context was summarized to make room: 26.2K → 22.1K","Save to memory?","Earlier context was summarized to make room: 345K → 41K"],
+    ["zh-TW","已摘要較早的內容，騰出空間：26.2K → 22.1K","要記下這條嗎？","已摘要較早的內容，騰出空間：345K → 41K"],
+  ]){
+    const w=words(locale)
+    assert.equal(rosterActivity(compacted,w).caption,compaction)
+    assert.equal(rosterActivity(legacyNotice,w).caption,legacy)
+    assert.equal(rosterActivity(memory,w).caption,proposal)
+    assert.equal(rosterActivity(legacyMemory,w).caption,proposal)
+    assert.equal(rosterActivity(ordinary,w).caption,w.decisionActivity.replace("{question}","Save this to memory?"))
+    assert.equal(rosterActivity({...legacyNotice,latest_message_kind:"assistant"},w).caption,legacyNotice.latest_message)
+  }
+})
+
+test("the native approval review has a localized activity label",()=>{
+  assert.equal(rowActivity("Guardian Review",words("zh-TW")),"正在審查操作")
+  assert.equal(rowActivity("guardian_review",words("en")),"Reviewing an action")
+})
+
 test("roster state is independent of unread and cached source activity",()=>{
   const w=words("zh-Hant"),base={latest_message:"Last reply",activity:"Read notes.md",status:"working",pending_permissions:0,unread_count:3,source:{fresh:true,state:"online",readable:true,access:"interactive"}}
   assert.deepEqual(rosterActivity(base as never,w),{state:"working",caption:"Read notes.md",live:true})

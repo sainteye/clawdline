@@ -11,6 +11,12 @@ import (
 // answer it; no Bot tool can.
 const DecisionOfferKind = "decision"
 
+// Roster decision kinds distinguish a Bot's words from a host-owned prompt.
+const (
+	RosterDecisionQuestion   = "question"
+	RosterDecisionMemorySave = "memory_save"
+)
+
 // DecisionOptionPrefix starts every suggested reply's option id.
 const DecisionOptionPrefix = "reply-"
 
