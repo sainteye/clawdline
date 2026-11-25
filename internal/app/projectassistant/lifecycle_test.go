@@ -406,10 +406,21 @@ func TestRuntimeReleaseUnconfirmedFreesARetainedBotAtOnce(t *testing.T) {
 
 func assertReleasedNotice(t *testing.T, f *runtimeFixture, turn, cause string) {
 	t.Helper()
-	x, err := f.store.Export(context.Background(), f.key)
-	if err != nil {
-		t.Fatal(err)
-	}
+	// A degraded release frees the Bot before it writes the notice, so the
+	// notice can trail the usage the caller waited for.
+	var x Export
+	eventually(t, func() bool {
+		var err error
+		if x, err = f.store.Export(context.Background(), f.key); err != nil {
+			return false
+		}
+		for _, m := range x.Messages {
+			if m.ID == cleanupReleasedPrefix+turn {
+				return true
+			}
+		}
+		return false
+	})
 	for _, m := range x.Messages {
 		if m.ID == cleanupReleasedPrefix+turn {
 			if m.Kind != pa.NoticeMessage || m.Notice == nil || m.Notice.Key != pa.NoticeCleanupReleased || m.Notice.Cause != cause {
