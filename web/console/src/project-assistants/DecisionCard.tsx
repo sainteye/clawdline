@@ -1,9 +1,57 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
-import {errorCode} from "./client"
+import {errorCode,errorField,provablyNotSent,sendBlockedByInterruptedTurn} from "./client"
 import {permissionState,samePermission} from "./view-state"
 import type { Words } from "./words"
 import type {DecisionFollowUp} from "./decision-focus"
+
+/** The daemon's bound on a typed answer, MaxDecisionAnswerBytes (512 KiB minus the quoted question). */
+export const DECISION_ANSWER_BYTES=512*1024-16*1024
+const utf8Bytes=(text:string)=>new TextEncoder().encode(text).length
+
+/**
+ * What a failed press means for the person. `retry` offers Try again only
+ * where pressing again can succeed; `check` means the reply may already be
+ * on the computer, and the card asks again with the same answer, which the
+ * daemon replays from its one receipt per card instead of sending twice.
+ */
+export type DecisionFailureKind="interrupted"|"tooLong"|"answered"|"expired"|"withdrawn"|"format"|"offline"|"check"|"changed"|"refused"|"notSent"
+export type DecisionFailure={kind:DecisionFailureKind;code:string;retry:boolean}
+export function decisionFailure(error:unknown):DecisionFailure{
+  const code=errorCode(error),field=errorField(error)
+  const kind=((): DecisionFailureKind=>{
+    if(sendBlockedByInterruptedTurn(error))return "interrupted"
+    if(field==="decision_answer_bytes")return "tooLong"
+    if(field==="decision_answered")return "answered"
+    if(code==="pa_expired")return "expired"
+    if(field==="decision_withdrawn")return "withdrawn"
+    if(code==="pa_invalid"||code==="pa_unsupported"||code==="provider_version_unsupported")return "format"
+    if(code==="pa_offline"||code==="pa_capacity_full"||code==="unavailable"&&provablyNotSent(error))return "offline"
+    if(code==="pa_outcome_unknown"||code==="execution_effect_unknown"||code==="unavailable")return "check"
+    if(code==="pa_stale_generation"||code==="pa_stale_version"||code==="pa_context_stale"||code==="pa_idempotency_conflict")return "changed"
+    if(code==="pa_revoked"||code==="pa_unpaired"||code==="pa_disabled"||code==="pa_read_only"||code==="pa_scope_denied"||code==="pa_not_found"||code.startsWith("auth_")||code==="cli_not_installed"||code==="adapter_not_found")return "refused"
+    return "notSent"
+  })()
+  return {kind,code,retry:kind==="offline"||kind==="check"||kind==="changed"||kind==="notSent"}
+}
+/** Delays before the card asks again about a reply that may have been sent. */
+export const DECISION_CHECK_DELAYS_MS=[1500,4000,10000] as const
+
+export function decisionFailureText(f:DecisionFailure,w:Words,checking:boolean,draftBytes=0){
+  switch(f.kind){
+    case "interrupted":return w.decisionFailInterrupted
+    case "tooLong":return w.decisionFailTooLong.replace("{n}",String(draftBytes)).replace("{limit}",String(DECISION_ANSWER_BYTES))
+    case "answered":return w.decisionHandled
+    case "expired":return w.decisionExpired
+    case "withdrawn":return w.decisionWithdrawn
+    case "format":return w.decisionFailFormat
+    case "offline":return w.decisionFailOffline
+    case "check":return checking?w.decisionFailChecking:w.decisionFailUnconfirmed
+    case "changed":return w.decisionFailChanged
+    case "refused":return w.decisionFailRefused.replace("{code}",f.code)
+    default:return `${w.decisionSendFailed} (${f.code})`
+  }
+}
 
 // A question a Bot asked with ask_person. The suggested replies are the
 // Bot's words; pressing one sends that full text as the person's own message
@@ -22,7 +70,9 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
   highlight?:boolean
   w:Words
 }) {
-  const [busy,setBusy]=useState(false),[error,setError]=useState(""),[own,setOwn]=useState(false),[draft,setDraft]=useState("")
+  const [busy,setBusy]=useState(false),[error,setError]=useState<DecisionFailure|null>(null),[own,setOwn]=useState(false),[draft,setDraft]=useState("")
+  // How many automatic checks a possibly-sent reply has had; null when none is due.
+  const [checks,setChecks]=useState<number|null>(null)
   // The reply the person pressed, kept from the press until the server's
   // state replaces it: "sending" before the answer is accepted, "sent" once
   // it is, "failed" when it was not. A reload shows the server's answer.
@@ -36,14 +86,30 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
     requested.current=summary.detail_cursor
     void onDetail().catch(()=>{})
   },[offer,onDetail,summary.detail_cursor])
-  const send=async(option:W.ProjectAssistantPermissionOption|null,text?:string)=>{
+  const send=async(option:W.ProjectAssistantPermissionOption|null,text?:string,check=-1)=>{
     if(!offer||!enabled||pending.current||state!=="pending")return
-    pending.current=true;setBusy(true);setError("")
+    if(!option&&text!==undefined&&utf8Bytes(text)>DECISION_ANSWER_BYTES){setError({kind:"tooLong",code:"pa_capacity_full",retry:false});setOwn(true);return}
+    pending.current=true;setBusy(true)
+    if(check<0){setError(null);setChecks(null)}
     setChoice({option:option?.id??null,text:option?.label??text??"",phase:"sending"})
-    try{await onAnswer(offer,option,text);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
-    catch(e){setError(errorCode(e));setChoice(c=>c&&{...c,phase:"failed"});if(!option)setOwn(true)}
+    try{await onAnswer(offer,option,text);setError(null);setChecks(null);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
+    catch(e){
+      const f=decisionFailure(e)
+      // A check that finds the card answered means this reply (or another
+      // device's) arrived; the refreshed card shows which.
+      setError(f);setChoice(c=>c&&{...c,phase:"failed"});if(!option)setOwn(true)
+      setChecks(f.kind==="check"?check+1:null)
+    }
     finally{pending.current=false;setBusy(false)}
   }
+  const checking=error?.kind==="check"&&checks!==null&&checks<DECISION_CHECK_DELAYS_MS.length
+  useEffect(()=>{
+    if(!checking||!choice||state!=="pending"||checks===null)return
+    const option=choice.option===null?null:offer?.options.find(x=>x.id===choice.option)??null
+    const timer=setTimeout(()=>void send(option,option?undefined:choice.text,checks),DECISION_CHECK_DELAYS_MS[checks])
+    return()=>clearTimeout(timer)
+  })
+  const draftBytes=own?utf8Bytes(draft.trim()):0,tooLong=draftBytes>DECISION_ANSWER_BYTES
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
   const sent=state==="pending"&&choice?.phase==="sent"
   const locked=busy||sent
@@ -76,16 +142,17 @@ export function DecisionCard({summary,offer,enabled,onDetail,onAnswer,askerName,
         <button type="button" className="pa-decision-own pa-decision-dismiss" data-choice={choice&&choice.phase!=="failed"?"other":undefined} disabled={!enabled||locked} title={w.decisionDismissText} onClick={()=>void send(null,w.decisionDismissText)}><span>{w.decisionDismiss}</span></button>
       </div>
       {own&&<form className="pa-decision-form" onSubmit={e=>{e.preventDefault();const text=draft.trim();if(text)void send(null,text)}}>
-        <textarea value={draft} autoFocus rows={2} maxLength={2000} disabled={!enabled||locked} aria-label={w.decisionOwnPlaceholder.replace("{name}",askerName)} placeholder={w.decisionOwnPlaceholder.replace("{name}",askerName)} onChange={e=>setDraft(e.target.value)}/>
-        <button type="submit" className="pa-pill" data-choice={optionState(null)} disabled={!enabled||locked||!draft.trim()}>
+        <textarea value={draft} autoFocus rows={2} disabled={!enabled||locked} aria-invalid={tooLong||undefined} aria-label={w.decisionOwnPlaceholder.replace("{name}",askerName)} placeholder={w.decisionOwnPlaceholder.replace("{name}",askerName)} onChange={e=>{setDraft(e.target.value);if(error?.kind==="tooLong")setError(null)}}/>
+        {tooLong&&<small className="pa-decision-too-long" role="status">{w.decisionFailTooLong.replace("{n}",String(draftBytes)).replace("{limit}",String(DECISION_ANSWER_BYTES))}</small>}
+        <button type="submit" className="pa-pill" data-choice={optionState(null)} disabled={!enabled||locked||!draft.trim()||tooLong}>
           {choice?.option===null&&busy&&<span className="pa-decision-spinner" aria-hidden="true"/>}
           {choice?.option===null&&busy?w.decisionSending:w.decisionSend}
         </button>
       </form>}
     </>}
-    {error&&state==="pending"&&<div className="pa-decision-failed" role="alert">
-      <p>{error==="pa_outcome_unknown"?w.unknown:`${w.decisionSendFailed} (${error})`}</p>
-      {choice&&choice.option!==null&&<button type="button" className="pa-pill" disabled={!enabled||busy} onClick={()=>{const o=offer?.options.find(x=>x.id===choice.option);if(o)void send(o)}}>{w.decisionRetry}</button>}
+    {error&&state==="pending"&&!(error.kind==="tooLong"&&tooLong)&&<div className="pa-decision-failed" role="alert" data-failure={error.kind} aria-busy={checking||undefined}>
+      <p>{checking&&<span className="pa-decision-spinner" aria-hidden="true"/>}{decisionFailureText(error,w,checking,draftBytes)}</p>
+      {error.retry&&!checking&&choice&&choice.option!==null&&<button type="button" className="pa-pill" disabled={!enabled||busy} onClick={()=>{const o=offer?.options.find(x=>x.id===choice.option);if(o)void send(o)}}>{w.decisionRetry}</button>}
     </div>}
   </section>
 }

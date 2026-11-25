@@ -101,11 +101,31 @@ export class AssistantTransportFailure extends Error {
   readonly contract_version = "project-assistants.v1"
   readonly error: W.ProjectAssistantFailure
   readonly response: unknown
-  constructor(code: W.ProjectAssistantErrorCode, response: unknown) {
+  constructor(code: W.ProjectAssistantErrorCode, response: unknown, field = "") {
     super(code)
-    this.error = failure(code).error
+    this.error = {...failure(code).error, field}
     this.response = response
   }
+}
+
+/** Layers whose refusal is decided before this machine runs anything. */
+const REFUSED_BEFORE_RUNNING = new Set(["mac_preflight", "mac_transport"])
+const PREFLIGHT_CODES: Readonly<Record<string, W.ProjectAssistantErrorCode>> = {
+  malformed_command: "pa_invalid", malformed_read: "pa_invalid", unserializable_read: "pa_invalid",
+  unknown_command: "pa_unsupported", cloud_commands_disabled: "pa_read_only", wrong_machine: "pa_scope_denied",
+}
+/**
+ * A write the machine refused at its door, or the relay could not hand to a
+ * connected machine, never ran: it stays a typed, not-sent refusal whose
+ * field names the layer, instead of becoming outcome unknown.
+ */
+export function refusedBeforeRunning(evidence: unknown): AssistantTransportFailure | null {
+  const e = evidence as {code?: unknown; layer?: unknown} | null
+  if (!e || typeof e !== "object" || typeof e.layer !== "string") return null
+  const code = typeof e.code === "string" ? e.code : ""
+  if (e.layer === "relay" && code === "machine_offline") return notSent(new AssistantTransportFailure("pa_offline",evidence,"relay"))
+  if (!REFUSED_BEFORE_RUNNING.has(e.layer)) return null
+  return notSent(new AssistantTransportFailure(PREFLIGHT_CODES[code] ?? "pa_offline",evidence,e.layer))
 }
 function sourceFailure(value: unknown): value is W.ProjectAssistantErrorResponse {
   return typeof value === "object" && value !== null && "contract_version" in value &&
@@ -250,7 +270,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
       this.recheck(signal,write,content,minimum,answer,mode)
       answered = true
       if (sourceFailure(answer)) throw answer
-      if (!response.ok) throw new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
+      if (!response.ok) throw (write && refusedBeforeRunning(answer)) || new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
       return answer as T
     } catch (error) {
       if (answered || error instanceof AssistantTransportFailure) throw error
@@ -261,6 +281,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
       }
       this.recheck(signal,write,content,minimum,error,mode)
       if (sourceFailure(error)) throw error
+      const refused = write ? refusedBeforeRunning(error) : null
+      if (refused) throw refused
       const unsupportedRead = (mode === "cloud-roster" || mode === "cloud-view") && (error as {code?: unknown} | null)?.code === "unknown_command"
       throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : unsupportedRead ? "pa_unsupported" : "pa_offline",error)
     } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
@@ -588,14 +610,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
       endpoint(r.command.key,"/handoff-card"),signal,r,"POST",true,PROJECT_ASSISTANTS_HANDOFF_API_LEVEL)
   }
   canSendNow() { return (this.grant.apiLevel ?? 0) >= PROJECT_ASSISTANTS_SEND_NOW_API_LEVEL }
-  async answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) {
-    try {
-      return await this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST")
-    } catch (error) {
-      const refusal = error instanceof AssistantTransportFailure ? error.response as {layer?: string; code?: string; status?: number} | undefined : undefined
-      if (refusal?.layer === "mac_preflight" && refusal.code === "malformed_command" && refusal.status === 400) throw new AssistantTransportFailure("pa_invalid",refusal)
-      throw error
-    }
+  answer(r: W.ProjectAssistantPermissionAnswerRequest,s: AbortSignal) {
+    // A machine whose answer route predates this console refuses the shape at
+    // its door (mac_preflight); request() keeps that a typed pa_invalid.
+    return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,`/permissions/${encodeURIComponent(r.offer_id)}/answer`),s,r,"POST")
   }
   markRead(r: W.ProjectAssistantReadRequest,s: AbortSignal) { const request: W.ProjectAssistantReadRequest = {...r,cursor:{...r.cursor,reader_id:this.grant.readerID}}; return this.request<W.ProjectAssistantReadResponse>(endpoint(r.command.key,"/read"),s,request,"POST",false) }
   observe(r: W.ProjectAssistantObserveRequest,s: AbortSignal) { return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/observed"),s,r,"POST",false) }

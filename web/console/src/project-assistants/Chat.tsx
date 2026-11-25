@@ -8,7 +8,7 @@ import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
-import { authorized, command, errorCode, failure, provablyNotSent, sendBlockedByInterruptedTurn } from "./client"
+import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { isSendingAdmitted, partitionMessages, type ChatProgress } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
@@ -780,12 +780,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(regular.length&&!addFiles(regular))return
     if(!pictures.length)return
     setFileError("");setReadingImages(++imageReads.current)
-    void Promise.all(pictures.map(file=>new Promise<string>((resolve,reject)=>{
-      const reader=new FileReader()
-      reader.onload=()=>resolve(String(reader.result))
-      reader.onerror=()=>reject(reader.error)
-      reader.readAsDataURL(file)
-    }))).then(urls=>{
+    // Large photos are downscaled here, before they become part of a send.
+    void Promise.all(pictures.map(pictureDataURL)).then(urls=>{
       if(!valid())return
       const added=urls.map(url=>({id:crypto.randomUUID(),url}))
       setImages(old=>[...old,...added])
@@ -841,7 +837,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   // The host resolves quotes within the conversation and checks memory access
   // when it admits the message, even while this view is catching up.
   const textOnlyDraft=images.length===0&&files.length===0&&handoff.card?.state!=="draft"
-  const sendAuthorityLost=["pa_revoked","pa_unpaired","pa_scope_denied","pa_unsupported","pa_disabled"].includes(error)
+  // An agent that cannot steer refuses Send now with pa_unsupported/steering;
+  // the message stays queued and the composer still sends.
+  const sendAuthorityLost=["pa_revoked","pa_unpaired","pa_scope_denied","pa_unsupported","pa_disabled"].includes(error)&&!(error==="pa_unsupported"&&errorField==="steering")
   const canTryText=textOnlyDraft&&!thread&&!unknown&&!legacyBlocked()&&!sendAuthorityLost
   const sendInFlight=useRef(false)
   const send=async(artifact?:{message:W.ProjectAssistantMessage;text:string}):Promise<ArtifactSendResult>=>{
@@ -1163,6 +1161,7 @@ ${currentDraft}`:submitted)
     }
   }
 
+  const [noSteering,setNoSteering]=useState<readonly string[]>([])
   const actOnQueued=async(id:string,turnID:string,operation:"send_now"|"stop")=>{
     const request=operation==="send_now"?source.sendNow:source.unqueue
     if(!request||queueInFlight.current||busy||!valid()||recovery.current)return
@@ -1172,7 +1171,10 @@ ${currentDraft}`:submitted)
     try{
       const result=await mutate((d,s)=>request.call(source,{command:command(key,operation),fence:fence(d),turn_id:turnID},s))
       if(valid()){setReceipt(result.receipt);await refresh()}
-    }catch(e){fail(e)}
+    }catch(e){
+      if(operation==="send_now"&&steeringRefused(e)){if(valid()){setNoSteering(old=>old.includes(bot.agent)?old:[...old,bot.agent]);void refresh(true)}}
+      else fail(e)
+    }
     finally{
       queueInFlight.current=false
       if(valid()){setQueueAction(null);setBusy(false)}
@@ -1265,6 +1267,7 @@ ${currentDraft}`:submitted)
         if(!canWrite(page.source)||!headRef.current||!sameFence(page.head.current_fence,headRef.current.current_fence)||!sameFence(page.head.current_fence,fence(d)))throw failure("pa_stale_generation")
         if(!live||!samePermission(live,offer))throw failure("pa_stale_generation")
         if(permissionState(live)==="expired")throw failure("pa_expired")
+        if(live.kind==="decision"&&live.state==="answered")throw {contract_version:"project-assistants.v1",error:{code:"pa_stale_version",field:"decision_answered",retry_after_seconds:0}}
         if(live.state!=="pending"||!currentPermission(live,page.head)||!currentPermission(live,headRef.current))throw failure("pa_stale_generation")
         // Any option the agent offered, Always allow and Never included (Codync; decided 2026-11-14).
         if(option?!live.options.some(o=>o.id===option.id&&o.kind===option.kind):live.kind!=="decision"||!text)throw failure("pa_scope_denied")
@@ -1286,7 +1289,9 @@ ${currentDraft}`:submitted)
     }catch(e){
       const code=errorCode(e)
       if(code==="pa_expired"||code==="pa_stale_version")void refresh()
-      if(attempted&&!provablyNotSent(e)&&(code==="execution_effect_unknown"||code==="unavailable"||code==="pa_revoked"||(e as Error)?.name==="AbortError"))
+      // Only a request that left and may have taken effect is unknown; a
+      // typed refusal from the source keeps its code and field.
+      if(attempted&&code!=="pa_outcome_unknown"&&uncertainAfterSend(e))
         throw failure("pa_outcome_unknown")
       throw e
     }
@@ -1417,7 +1422,9 @@ ${currentDraft}`:submitted)
   const permissionCards=permissions.map(summary=>{
     const value=details[summary.id]??timeline.find(row=>row.permission?.id===summary.id)?.permission
     const identity=JSON.stringify([summary.fence,summary.turn_id,summary.id])
-    return {summary,identity,offer:value&&"fence" in value?value:undefined}
+    // A detail read before the chat's fence moved (a restart or fallback) is
+    // not this summary's; the card reads it again instead of answering it.
+    return {summary,identity,offer:value&&"fence" in value&&samePermission(summary,value)?value:undefined}
   })
   const inlinePermissionIds=new Set(timeline.flatMap(row=>row.permission?[row.permission.id]:[]))
   const exchangeDecisions=decisionsUnderCapsules(permissionCards,messages,inlinePermissionIds)
@@ -1956,7 +1963,7 @@ ${currentDraft}`:submitted)
             onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
-          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!!activeTurn&&!restartTurn&&
+          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!noSteering.includes(bot.agent)&&!!activeTurn&&!restartTurn&&
             <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}

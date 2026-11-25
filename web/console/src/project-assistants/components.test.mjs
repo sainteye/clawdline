@@ -12,7 +12,7 @@ globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelec
 // The composer shares the browser recorder; rendering does not open it.
 globalThis.location??=new URL("http://synthetic.invalid/")
 globalThis.window??={document:globalThis.document,location:globalThis.location,navigator:globalThis.navigator,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),addEventListener(){},removeEventListener(){}}
-const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge} from "../cloud/project-assistants"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotOrb} from "./BotOrb";export {DevServers,ServerRow,DevServerTitle,serverTitle,serverState,serverActions,serverControlRequest,serverAddresses,serverPortSummary,localServerSource,serverCopyFailure} from "./DevServers";export {BotRow} from "./BotRow";export {PaSelect} from "./PaSelect";export {PermissionCard} from "./PermissionCard";export {pendingPermissionView,withPermissionRecovery} from "./Chat";export {Trace} from "./Trace";export {readView} from "./read-views";export {ChatRows} from "./ChatRows";export {fixtureSource} from "./fixtures";export {words} from "./words";export {BotRoster} from "./BotRoster";export {MemoryPanel} from "./MemoryPanel";export {ChatSkeleton} from "./PaLoading";export {UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce} from "./UnsentRetry";export {ContextUsage} from "./ContextUsage";export {assistantBadge,ProjectAssistantSourceClient} from "../cloud/project-assistants";export {DecisionCard,decisionFailure,decisionFailureText,DECISION_ANSWER_BYTES} from "./DecisionCard";export {retryAllowed} from "./UnsentRetry";export {uncertainAfterSend,pictureTarget,steeringRefused,provablyNotSent,errorCode,notSent} from "./client"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 // The browser bridge owns singleton clocks. Keep their lifetime inside this SSR fixture.
 const importedTimers=[],nativeTimers={setTimeout:globalThis.setTimeout,setInterval:globalThis.setInterval}
@@ -20,7 +20,7 @@ for(const kind of Object.keys(nativeTimers))globalThis[kind]=(...args)=>{const t
 try{new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)}
 finally{Object.assign(globalThis,nativeTimers)}
 after(()=>{for(const timer of importedTimers)clearTimeout(timer)})
-const {UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
+const {ProjectAssistantSourceClient,DecisionCard,decisionFailure,decisionFailureText,DECISION_ANSWER_BYTES,retryAllowed,uncertainAfterSend,pictureTarget,steeringRefused,provablyNotSent,errorCode,notSent,UnsentActions,UnsentStatusNote,unsentDiscardKind,retryOnce,BotRow,PaSelect,BotOrb,PermissionCard,pendingPermissionView,withPermissionRecovery,Trace,readView,ChatRows,fixtureSource,words,BotRoster,MemoryPanel,ChatSkeleton,ContextUsage,assistantBadge}=compiled.exports
 const render=(component,props)=>renderToStaticMarkup(React.createElement(component,props))
 const timeline=messages=>messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message}))
 test("fixed global entry is bilingual and has no microphone or model side effect",()=>{
@@ -399,7 +399,7 @@ test("a retry that the daemon answers with execution_effect_unknown shows this a
   }
 })
 
-test("a restart admission refusal keeps the retry and explains that the Bot did not queue the message",async()=>{
+test("a restart admission refusal explains that the Bot did not queue the message and offers no retry",async()=>{
   for(const [code,language] of [["pa_outcome_unknown","en"],["pa_stale_version","zh-Hant"]]){
     const w=words(language)
     const refusal={contract_version:"project-assistants.v1",error:{code,field:"inspect_interrupted_turn",retry_after_seconds:0}}
@@ -408,7 +408,7 @@ test("a restart admission refusal keeps the retry and explains that the Bot did 
     assert.equal(outcome.editable,false)
     const html=render(UnsentActions,{accepted:false,failure:outcome.failure,canRetry:true,onRetry(){},w,language})
     assert.match(html,new RegExp(w.sendInterrupted))
-    assert.match(html,new RegExp(w.retryUnsentSend))
+    assert.doesNotMatch(html,new RegExp(">"+w.retryUnsentSend+"<"),"retrying cannot pass a turn that still needs review")
     assert.doesNotMatch(html,new RegExp(w.retryReasonUnknown))
   }
 })
@@ -482,4 +482,109 @@ test("an unconfirmed message shows a small status icon instead of standing text,
     assert.match(note,new RegExp(w.sendUnconfirmed));assert.match(note,new RegExp(w.unsentStatusNext))
     assert.match(render(UnsentActions,{retrying:false,accepted:true,restore:false,canRetry:true,disabled:false,onRetry(){},onRestore(){},w,language}),new RegExp(">"+w.sendAccepted+"<"),"an accepted send still says so")
   }
+})
+
+const refusal=(code,field="")=>({contract_version:"project-assistants.v1",error:{code,field,retry_after_seconds:0}})
+test("a held send offers Retry only where pressing it again can succeed",async()=>{
+  const w=words("en")
+  const row=async error=>{
+    const outcome=await retryOnce(async()=>{throw error},()=>null,()=>0)
+    return render(UnsentActions,{accepted:false,failure:outcome.failure,canRetry:true,onRetry(){},discard:"remove",onDiscard(){},w,language:"en"})
+  }
+  for(const [error,retry] of [[refusal("pa_outcome_unknown"),true],[refusal("pa_offline"),true],[refusal("pa_stale_generation"),true],
+    [refusal("pa_disabled"),false],[refusal("pa_invalid","text"),false],[refusal("pa_stale_version","inspect_interrupted_turn"),false]]){
+    const html=await row(error)
+    assert.equal(html.includes(">"+w.retryUnsentSend+"<"),retry,error.error.code+"/"+error.error.field)
+    assert.match(html,new RegExp(">"+w.unsentClear+"<"),"Clear stays available")
+  }
+  assert.equal(retryAllowed(undefined),true,"an unconfirmed row with no failed retry can be retried")
+})
+
+test("a question card's failure says what happened, and offers Try again only where it can work",()=>{
+  const cases=[
+    [refusal("pa_outcome_unknown","inspect_interrupted_turn"),"interrupted",false],
+    [refusal("pa_capacity_full","decision_answer_bytes"),"tooLong",false],
+    [refusal("pa_stale_version","decision_answered"),"answered",false],
+    [refusal("pa_expired","decision_expired"),"expired",false],
+    [refusal("pa_scope_denied","decision_withdrawn"),"withdrawn",false],
+    [refusal("pa_invalid","mac_preflight"),"format",false],
+    [notSent(refusal("pa_offline","relay")),"offline",true],
+    [refusal("pa_offline","decision_offer"),"offline",true],
+    [refusal("pa_outcome_unknown"),"check",true],
+    [refusal("pa_stale_generation"),"changed",true],
+    [refusal("pa_revoked","source"),"refused",false],
+  ]
+  for(const language of ["en","zh-Hant"]){
+    const w=words(language),seen=new Set()
+    for(const [error,kind,retry] of cases){
+      const f=decisionFailure(error)
+      assert.equal(f.kind,kind,error.error.code+"/"+error.error.field)
+      assert.equal(f.retry,retry,kind)
+      const text=decisionFailureText(f,w,kind==="check",3000)
+      assert.ok(text&&!text.includes(w.decisionSendFailed),kind+" no longer says to check the connection")
+      seen.add(text)
+    }
+    assert.equal(seen.size,cases.length-1,"every kind reads differently (offline appears twice)")
+    assert.match(decisionFailureText(decisionFailure(refusal("pa_capacity_full","decision_answer_bytes")),w,false,600000),new RegExp("600000/"+DECISION_ANSWER_BYTES))
+    assert.notEqual(decisionFailureText(decisionFailure(refusal("pa_outcome_unknown")),w,true),decisionFailureText(decisionFailure(refusal("pa_outcome_unknown")),w,false),"checking, then unconfirmed")
+  }
+})
+
+const decisionOffer=()=>{
+  const key={machine_id:"one",bot_id:"b"},fence={key,project:{machine_id:"one",project_id:"p",canonical_id:"c",kind:"repository"},conversation_id:"c",binding_id:"",generation:0}
+  const offer={id:"d1",native_request_id:"",turn_id:"t",fence,state:"pending",expires_at:"2099-01-01T00:00:00Z",selected_option_id:"",kind:"decision",options:[{id:"reply-1",kind:"allow_once",label:"Ship it",allow:true,read_only:true}],decision:{question:"Ship?"}}
+  const summary={id:"d1",turn_id:"t",fence,state:"pending",expires_at:offer.expires_at,detail_cursor:"c1",tool_kind:"decision",title:"Ship?"}
+  return {offer,summary}
+}
+test("a long typed reply has no 2000-character cap on the card",()=>{
+  const {offer,summary}=decisionOffer(),w=words("zh-Hant")
+  const html=render(DecisionCard,{summary,offer,enabled:true,onAnswer:async()=>{},askerName:"Beacon",w})
+  assert.doesNotMatch(html,/maxlength=/i,"the card counts bytes itself instead of a UTF-16 cap")
+  assert.ok(DECISION_ANSWER_BYTES>3*700*3,"about 700 Chinese characters fit with room to spare")
+})
+
+test("only a write that left and may have taken effect is unknown",()=>{
+  assert.equal(uncertainAfterSend(refusal("execution_effect_unknown")),true)
+  assert.equal(uncertainAfterSend(new TypeError("network lost after write")),true,"no envelope after the request left")
+  assert.equal(uncertainAfterSend(Object.assign(new Error("Aborted"),{name:"AbortError"})),true)
+  assert.equal(uncertainAfterSend(refusal("pa_revoked")),true,"this client's own recheck after the answer came back")
+  assert.equal(uncertainAfterSend(refusal("pa_revoked","source")),false,"the source refused it before doing anything")
+  assert.equal(uncertainAfterSend(refusal("pa_stale_version","inspect_interrupted_turn")),false)
+  assert.equal(uncertainAfterSend(notSent(Object.assign(new Error("Aborted"),{name:"AbortError"}))),false)
+})
+
+test("a Cloud write the machine refused at its door stays a typed, not-sent refusal",async()=>{
+  const grant={accountKey:"account",readerID:"reader",machineID:"one",authorizationRevision:"g",apiLevel:60,paired:true,online:true,writable:true}
+  const status={contract_version:"project-assistants.v1",sources:[{machine_id:"one",access:"interactive",state:"online",fresh:true,readable:true,writable:true,observed_at:"",capabilities:[],dev_servers_supported:true}]}
+  const key={machine_id:"one",bot_id:"b"}
+  const answer=async thrown=>{
+    const source=new ProjectAssistantSourceClient(grant,async path=>{if(path.endsWith("/status"))return Response.json(status);throw thrown},()=>grant)
+    await source.status(new AbortController().signal)
+    try{await source.answer({command:{key,operation:"answer",idempotency_key:"k",content_hash:""},fence:decisionOffer().offer.fence,offer_id:"d1",turn_id:"t",option_id:"reply-1"},new AbortController().signal);return null}
+    catch(e){return e}
+  }
+  const door=await answer(Object.assign(new Error("old route"),{code:"malformed_command",layer:"mac_preflight",status:400}))
+  assert.equal(errorCode(door),"pa_invalid");assert.equal(door.error.field,"mac_preflight");assert.equal(provablyNotSent(door),true)
+  const off=await answer(Object.assign(new Error("off"),{code:"cloud_commands_disabled",layer:"mac_preflight",status:403}))
+  assert.equal(errorCode(off),"pa_read_only");assert.equal(provablyNotSent(off),true)
+  const offline=await answer(Object.assign(new Error("offline"),{code:"machine_offline",layer:"relay"}))
+  assert.equal(errorCode(offline),"pa_offline");assert.equal(provablyNotSent(offline),true)
+  const lost=await answer(new TypeError("socket closed after write"))
+  assert.equal(errorCode(lost),"pa_outcome_unknown");assert.equal(provablyNotSent(lost),false)
+})
+
+test("Send now disappears for an agent that cannot steer, without blocking the composer",()=>{
+  assert.equal(steeringRefused(refusal("pa_unsupported","steering")),true)
+  assert.equal(steeringRefused(refusal("pa_unsupported","send_now")),false)
+  assert.equal(steeringRefused(refusal("pa_offline","steering")),false)
+})
+
+test("large phone photos are downscaled before they are sent, small pictures keep their bytes",()=>{
+  const phone=pictureTarget(4032,3024,6_400_000,"image/jpeg")
+  assert.deepEqual(phone,{width:2048,height:1536,type:"image/jpeg"})
+  assert.deepEqual(pictureTarget(3024,4032,9_000_000,"image/heic"),{width:1536,height:2048,type:"image/jpeg"},"portrait keeps its long edge")
+  assert.equal(pictureTarget(1200,900,300_000,"image/png"),null)
+  assert.deepEqual(pictureTarget(1600,1200,4_000_000,"image/png"),{width:1600,height:1200,type:"image/jpeg"},"a heavy picture is re-encoded at its own size")
+  assert.deepEqual(pictureTarget(3000,2000,900_000,"image/png"),{width:2048,height:1365,type:"image/png"},"a light screenshot stays PNG")
+  assert.equal(pictureTarget(4000,3000,8_000_000,"image/gif"),null,"an animation keeps its frames")
 })

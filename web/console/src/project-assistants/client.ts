@@ -251,3 +251,75 @@ export function command(key: W.ProjectAssistantBotKey, operation: W.ProjectAssis
   // The source recomputes and validates the content hash, per the frozen contract.
   return { key, operation, idempotency_key: id, content_hash: "" }
 }
+
+/** The refusal's field, or "" for an error without an envelope. */
+export function errorField(error: unknown): string {
+  return (error as Partial<W.ProjectAssistantErrorResponse> | null)?.error?.field ?? ""
+}
+
+/**
+ * Whether a write that reached its transport may have taken effect. A typed
+ * refusal from the source wrote nothing; only an envelope that says the
+ * outcome is unknown, a transport failure without one, an abort after the
+ * request left, or this client's own authority recheck after the answer
+ * came back (a fieldless `pa_revoked`) leave the effect uncertain.
+ */
+export function uncertainAfterSend(error: unknown): boolean {
+  if (provablyNotSent(error) || sendBlockedByInterruptedTurn(error)) return false
+  if ((error as Error | null)?.name === "AbortError") return true
+  const code = errorCode(error)
+  if (code === "pa_outcome_unknown" || code === "execution_effect_unknown" || code === "unavailable") return true
+  return code === "pa_revoked" && errorField(error) === ""
+}
+
+/** A picture's long edge after downscaling, and the size worth re-encoding above. */
+export const PICTURE_LONG_EDGE = 2048
+export const PICTURE_KEEP_BYTES = 1_500_000
+export const PICTURE_QUALITY = 0.85
+
+/**
+ * The size a picture is sent at: null keeps the original bytes. Phone photos
+ * are often 4000px or more and several megabytes; sent raw they approach the
+ * daemon's send bound and slow every hop. Animated GIFs and SVG keep theirs.
+ */
+export function pictureTarget(width: number, height: number, bytes: number, type: string): { width: number, height: number, type: "image/jpeg" | "image/png" } | null {
+  if (type === "image/gif" || type === "image/svg+xml" || !(width > 0 && height > 0)) return null
+  const scale = Math.min(1, PICTURE_LONG_EDGE / Math.max(width, height))
+  if (scale === 1 && bytes <= PICTURE_KEEP_BYTES) return null
+  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), type: type === "image/png" && bytes <= PICTURE_KEEP_BYTES ? "image/png" : "image/jpeg" }
+}
+
+function readDataURL(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
+
+/** A picture as a data URL, downscaled when it is large; the original when it cannot be decoded. */
+export async function pictureDataURL(file: File): Promise<string> {
+  let bitmap: ImageBitmap | null = null
+  try {
+    if (typeof createImageBitmap !== "function" || typeof document === "undefined") return await readDataURL(file)
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" })
+    const target = pictureTarget(bitmap.width, bitmap.height, file.size, file.type)
+    if (!target) return await readDataURL(file)
+    const canvas = document.createElement("canvas")
+    canvas.width = target.width; canvas.height = target.height
+    const context = canvas.getContext("2d")
+    if (!context) return await readDataURL(file)
+    if (target.type === "image/jpeg") { context.fillStyle = "#fff"; context.fillRect(0, 0, target.width, target.height) }
+    context.drawImage(bitmap, 0, 0, target.width, target.height)
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, target.type, PICTURE_QUALITY))
+    return blob && blob.size < file.size ? await readDataURL(blob) : await readDataURL(file)
+  } catch {
+    return await readDataURL(file)
+  } finally { bitmap?.close() }
+}
+
+/** The source left the message queued because this agent cannot take it mid-turn. */
+export function steeringRefused(error: unknown): boolean {
+  return errorCode(error) === "pa_unsupported" && errorField(error) === "steering"
+}

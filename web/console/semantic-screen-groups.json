@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14481,
-  "riskKeys": 6166,
-  "nonRiskCount": 8315,
+  "englishContentKeys": 14491,
+  "riskKeys": 6173,
+  "nonRiskCount": 8318,
   "groups": [
     {
       "name": "acp / other",
@@ -619,7 +619,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 769,
+      "count": 770,
       "sources": [
         null
       ],
@@ -692,6 +692,7 @@
         "capacityRow.bots.config_cache_seconds.what",
         "capacityRow.bots.config_choices.what",
         "capacityRow.bots.config_probes.what",
+        "capacityRow.bots.decision_answer_bytes.what",
         "capacityRow.bots.decision_offer_seconds.what",
         "capacityRow.bots.decision_question_bytes.what",
         "capacityRow.bots.decision_reply_bytes.what",
@@ -6293,7 +6294,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 696,
+      "count": 698,
       "sources": [
         null
       ],
@@ -6392,6 +6393,7 @@
         "projectAssistants.decisionBadge",
         "projectAssistants.decisionChosen",
         "projectAssistants.decisionContext",
+        "projectAssistants.decisionFailTooLong",
         "projectAssistants.decisionGo",
         "projectAssistants.decisionHandled",
         "projectAssistants.decisionHandledDismiss",
@@ -6709,6 +6711,7 @@
         "projectAssistants.restartReviewProgress",
         "projectAssistants.resumePreviousDraft",
         "projectAssistants.retry",
+        "projectAssistants.retryNextAgain",
         "projectAssistants.retryNextEdit",
         "projectAssistants.retryNextLater",
         "projectAssistants.retryNextReload",

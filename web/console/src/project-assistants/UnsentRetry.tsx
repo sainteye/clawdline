@@ -41,6 +41,19 @@ export function retryFailureKind(code: string): Kind {
   return "edit"
 }
 
+/**
+ * Whether pressing Retry again can change the answer. A turn awaiting review,
+ * a Bot that refuses messages, or a message the source would not accept
+ * fails the same way every time; those rows offer Clear (and Edit when the
+ * text can go back to the composer), never Retry.
+ */
+export function retryAllowed(failure: RetryFailure | undefined): boolean {
+  if (!failure) return true
+  if (failure.interrupted) return false
+  const kind = retryFailureKind(failure.code)
+  return kind === "again" || kind === "later" || kind === "reload"
+}
+
 export function retryFailureText(failure: RetryFailure, w: Words, language: string) {
   const time = new Intl.DateTimeFormat(language, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(failure.at)
   if (failure.interrupted) {
@@ -103,7 +116,7 @@ export function UnsentActions({ retrying, accepted, failure, restore, canRestore
       ? <button type="button" disabled aria-busy="true" aria-live="polite"><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</button>
       : restore
         ? canRestore && <button type="button" disabled={disabled} onClick={onRestore}>{w.restoreUnsentDraft}</button>
-        : canRetry && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
+        : canRetry && retryAllowed(failure) && <button type="button" disabled={disabled} onClick={onRetry}>{w.retryUnsentSend}</button>)}
     {offer && <button type="button" className="pa-unsent-discard" disabled={disabled} onClick={onDiscard}>{discard === "hide" ? w.dismissHeldNote : w.unsentClear}</button>}
     {unconfirmed && explained && <UnsentStatusNote id={noteID} w={w}/>}
     {discardFailed && <p className="pa-unsent-failure" role="alert">{w.unsentDiscardFailed}</p>}
