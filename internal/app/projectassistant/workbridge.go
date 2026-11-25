@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -85,6 +86,18 @@ func (b *BrokerWorkBridge) Dispatch(ctx context.Context, q pa.WorkRequest) (pa.W
 	if err := b.o.Broker.ValidateAssistantWork(ctx, q); err != nil {
 		return pa.WorkLink{}, bridgeBrokerFailure(err)
 	}
+	if q.Choice.Mode == pa.DispatchModeRoot {
+		// The Root Assignment receipt keyed on this command is the replay
+		// guard: a retry returns the same Root and opens nothing.
+		a, _, err := b.o.Broker.DispatchAssistantRoot(ctx, q)
+		if err != nil {
+			return pa.WorkLink{}, bridgeBrokerFailure(err)
+		}
+		link := orchestrator.AssistantRootLink(a)
+		b.syncMu.Lock()
+		defer b.syncMu.Unlock()
+		return link, b.persistLink(ctx, a.BotOwner.Fence, link, "")
+	}
 	id := orchestrator.AssistantTaskID(q.Command)
 	// A task accepted before a crash is recovered from broker facts even if
 	// the source WorkLink transaction never happened. No launch is repeated.
@@ -134,6 +147,29 @@ func (b *BrokerWorkBridge) Dispatch(ctx context.Context, q pa.WorkRequest) (pa.W
 	return b.Status(ctx, q.Actor, id)
 }
 
+// SyncRootDelivery marks a Bot-opened Root delivered in the Bot's chat, with
+// the Root's report as its result message, so the ordinary completion turn
+// can quote it. It is the host's AssistantRootDelivered step, never a route.
+func (b *BrokerWorkBridge) SyncRootDelivery(ctx context.Context, d orchestrator.AssistantRootDelivery) (pa.WorkLink, error) {
+	a, err := b.o.Broker.RootAssignmentByID(ctx, d.AssignmentID)
+	if err != nil {
+		return pa.WorkLink{}, err
+	}
+	if a.BotOwner == nil || a.BotOwner.Fence != d.Owner.Fence || a.BotOwner.Command != d.Owner.Command {
+		return pa.WorkLink{}, bridgeFailure(pa.ScopeDenied, "work_snapshot")
+	}
+	link := orchestrator.AssistantRootLink(a)
+	link.State, link.ResultMessageID = pa.WorkCompleted, "work-result-"+a.ID
+	link.FinishedAt = d.At.UTC()
+	result := strings.TrimSpace(d.Summary)
+	if result == "" {
+		result = string(pa.WorkCompleted)
+	}
+	b.syncMu.Lock()
+	defer b.syncMu.Unlock()
+	return link, b.persistLink(ctx, a.BotOwner.Fence, link, result)
+}
+
 func (b *BrokerWorkBridge) Status(ctx context.Context, actor pa.AssistantExecutionActor, taskID string) (pa.WorkLink, error) {
 	snapshot, err := b.o.Broker.AssistantStatus(ctx, actor, taskID)
 	if err != nil {
@@ -159,31 +195,36 @@ func (b *BrokerWorkBridge) Sync(ctx context.Context, snapshot orchestrator.Assis
 		return bridgeFailure(pa.ScopeDenied, "work_snapshot")
 	}
 	snapshot = orchestrator.AssistantWorkSnapshotOf(r)
-	export, err := b.o.Repository.Export(ctx, snapshot.Owner.Fence.Key)
+	return b.persistLink(ctx, snapshot.Owner.Fence, snapshot.Link, snapshot.Result)
+}
+
+// persistLink writes one broker-derived link, and its result message once,
+// into the owning Bot's chat. Callers hold syncMu.
+func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link pa.WorkLink, result string) error {
+	export, err := b.o.Repository.Export(ctx, owner.Key)
 	if err != nil {
 		return err
 	}
-	if export.Bot.Project != snapshot.Owner.Fence.Project || export.Bot.ConversationID != snapshot.Owner.Fence.ConversationID {
+	if export.Bot.Project != owner.Project || export.Bot.ConversationID != owner.ConversationID {
 		return bridgeFailure(pa.ScopeDenied, "work_projection")
 	}
 	var previous *pa.WorkLink
 	for i := range export.WorkLinks {
-		if export.WorkLinks[i].ID == snapshot.Link.ID {
+		if export.WorkLinks[i].ID == link.ID {
 			previous = &export.WorkLinks[i]
 			break
 		}
 	}
-	if previous != nil && *previous == snapshot.Link {
+	if previous != nil && *previous == link {
 		return nil
 	}
-	link := snapshot.Link
-	command := bridgeCommand(snapshot.Owner.Fence.Key, "bridge-work-"+link.ID+"-"+string(link.State)+"-"+link.LandingCommit, link)
+	command := bridgeCommand(owner.Key, "bridge-work-"+link.ID+"-"+string(link.State)+"-"+link.LandingCommit, link)
 	// A later Board binding can change a link without changing its work state.
 	// Include the complete canonical projection digest; identical snapshots
 	// retain one receipt, while each new durable projection has its own key.
 	command.IdempotencyKey += "-" + command.ContentHash
 	m := Mutation{Command: command, Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: link.ID}, WorkLinks: []pa.WorkLink{link}, Events: []pa.Event{{ID: "work", Fence: link.Fence, Kind: pa.WorkUpdated, Work: &link}}}
-	if snapshot.Result != "" {
+	if result != "" {
 		found := false
 		for _, message := range export.Messages {
 			if message.ID == link.ResultMessageID {
@@ -192,12 +233,12 @@ func (b *BrokerWorkBridge) Sync(ctx context.Context, snapshot orchestrator.Assis
 			}
 		}
 		if !found {
-			if err = pa.ValidateMessage(snapshot.Result); err != nil {
+			if err = pa.ValidateMessage(result); err != nil {
 				return err
 			}
 			conversation := export.Conversation
 			conversation.LastMessageSeq++
-			message := pa.Message{ID: link.ResultMessageID, Fence: link.Fence, TurnID: link.TurnID, Seq: conversation.LastMessageSeq, Kind: pa.WorkMessage, Text: snapshot.Result, At: b.o.Clock()}
+			message := pa.Message{ID: link.ResultMessageID, Fence: link.Fence, TurnID: link.TurnID, Seq: conversation.LastMessageSeq, Kind: pa.WorkMessage, Text: result, At: b.o.Clock()}
 			m.Conversation = &conversation
 			m.Messages = []pa.Message{message}
 			m.Events = append(m.Events, pa.Event{ID: "result", Fence: link.Fence, Kind: pa.MessageCreated, Message: &message})

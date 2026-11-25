@@ -203,6 +203,11 @@ func TestPeerRequestTurnDispatchesAndUsesItsOwnBrowser(t *testing.T) {
 	if _, err = other.DispatchToProject(ctx, "peer-other", "Elsewhere", "Change only a.go.", []string{"a.go"}, "elsewhere"); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "dispatch_project_direct" {
 		t.Fatalf("a peer-request turn dispatched into another Project: %v", err)
 	}
+	// Whole ownership needs the person's own turn: a peer request cannot open a Root.
+	rootCtx := pa.WithDispatchChoice(ctx, pa.DispatchChoice{Mode: pa.DispatchModeRoot})
+	if _, err = peer.Dispatch(rootCtx, "peer-root", "Integrate the fix", "Merge and push the fix.", []string{}); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "dispatch_root_origin" {
+		t.Fatalf("a peer-request turn opened a Root: %v", err)
+	}
 
 	tools := browserToolsOf(t, worker)
 	if r := chrome.run(t, tools, "open", `{"url":"http://127.0.0.1:9/page"}`); r.err != nil {

@@ -786,30 +786,11 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 		}
 		return map[string]string{"state": "delivered", "idempotency_key": q.ID}, nil
 	case "dispatch_work":
-		var q struct {
-			ID                   string   `json:"idempotency_key"`
-			Title                string   `json:"title"`
-			Brief                string   `json:"brief"`
-			Claims               []string `json:"claims"`
-			Project              string   `json:"project"`
-			Persona              string   `json:"persona"`
-			BoardItemID          string   `json:"board_item_id"`
-			ContinueOnCompletion bool     `json:"continue_on_completion"`
-			Kind                 string   `json:"kind"`
-			Agent                string   `json:"agent"`
-			Model                string   `json:"model"`
-			Effort               string   `json:"effort"`
-			BotRequestID         string   `json:"bot_request_id"`
+		q, dispatchCtx, err := decodeDispatchWork(ctx, arguments)
+		if err != nil {
+			return nil, err
 		}
-		if mcpDecode(arguments, &q) == nil {
-			ctx = pa.WithDispatchChoice(ctx, pa.DispatchChoice{Kind: q.Kind, Agent: q.Agent, Model: q.Model, Effort: q.Effort})
-			if q.BotRequestID != "" {
-				ctx = pa.WithBotRequest(ctx, q.BotRequestID)
-			}
-		}
-		if mcpDecode(arguments, &q) != nil || q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion {
-			return nil, refusal(pa.Invalid, "mcp_dispatch")
-		}
+		ctx = dispatchCtx
 		if q.ContinueOnCompletion {
 			tools, ok := s.tools.(app.CompletionDispatchTools)
 			if !ok {
@@ -1063,6 +1044,7 @@ func mcpTools() []any {
 				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
 			"brief":                  text(),
 			"continue_on_completion": map[string]any{"type": "boolean"},
+			"mode":                   map[string]any{"type": "string", "enum": []string{"child", pa.DispatchModeRoot}, "description": "Optional. child (default) opens bounded work that returns a branch for review. root opens an independently owned Root Session for integration, release, or a whole feature the user hands off end to end: it may merge, push, deploy and record landings under the repository's ordinary rules, and it is nobody's child. Only a turn the user started, or a request card you hold, may open a Root. Claims may be empty; continue_on_completion is not used. Its report arrives in this chat when it runs clawdline session report. 選填。child（預設）開啟有範圍的工作，交回分支供審查。root 開啟獨立負責的 Root 工作階段，用於整合、發版，或使用者交給它從頭到尾負責的整個功能：可依儲存庫一般規則合併、推送、部署與記錄落地，它不是任何人的子任務。只有使用者本人開始的回合、或你持有的交辦卡能開 Root。claims 可為空陣列，不使用 continue_on_completion。它執行 clawdline session report 時，回報會回到這個聊天。"},
 			"bot_request_id":         map[string]any{"type": "string", "description": "Optional Bot request card id this call works on. You must be in the card's chain; in a turn a card handoff woke, it must be that card. 選填，這次呼叫所屬的交辦卡 id；你必須在卡的參與 Bot 中，交棒通知喚醒的回合只能填那張卡。"},
 			"board_item_id":          map[string]any{"type": "string", "description": "Optional UUID of the existing Board item explicitly named in the user's current message. Links this task for evidence without assigning or moving the item. 使用者在本則訊息明確指定既有看板項目時填入 UUID，只連結交付證據。"},
 			"claims":                 map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For read-only work with an explicit project or a completion callback, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。只調查且有指定 Project 或完成回呼時，使用空陣列並在任務說明寫明只調查。"},
@@ -1199,4 +1181,57 @@ func browserFailureResult(err error) any {
 		return mcpToolResult(out, true)
 	}
 	return mcpToolResult(map[string]string{"code": string(pa.Code(err))}, true)
+}
+
+type dispatchWorkArgs struct {
+	ID                   string   `json:"idempotency_key"`
+	Title                string   `json:"title"`
+	Brief                string   `json:"brief"`
+	Claims               []string `json:"claims"`
+	Project              string   `json:"project"`
+	Persona              string   `json:"persona"`
+	BoardItemID          string   `json:"board_item_id"`
+	ContinueOnCompletion bool     `json:"continue_on_completion"`
+	Kind                 string   `json:"kind"`
+	Agent                string   `json:"agent"`
+	Model                string   `json:"model"`
+	Effort               string   `json:"effort"`
+	BotRequestID         string   `json:"bot_request_id"`
+	Mode                 string   `json:"mode"`
+}
+
+// decodeDispatchWork reads dispatch_work's arguments once and carries the
+// dispatch choice and request card on the context, as the host reads them.
+func decodeDispatchWork(ctx context.Context, arguments []byte) (dispatchWorkArgs, context.Context, error) {
+	var q dispatchWorkArgs
+	if mcpDecode(arguments, &q) != nil {
+		return q, ctx, refusal(pa.Invalid, "mcp_dispatch")
+	}
+	q.Mode = dispatchMode(q.Mode)
+	ctx = pa.WithDispatchChoice(ctx, pa.DispatchChoice{Kind: q.Kind, Agent: q.Agent, Model: q.Model, Effort: q.Effort, Mode: q.Mode})
+	if q.BotRequestID != "" {
+		ctx = pa.WithBotRequest(ctx, q.BotRequestID)
+	}
+	if q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion && q.Mode != pa.DispatchModeRoot {
+		return q, ctx, refusal(pa.Invalid, "mcp_dispatch")
+	}
+	return q, ctx, checkDispatchMode(q.Mode, q.ContinueOnCompletion)
+}
+
+// dispatchMode maps dispatch_work's mode argument to DispatchChoice.Mode:
+// "child" is the default and stored as empty, so child hashes are unchanged.
+func dispatchMode(mode string) string {
+	if mode == "child" {
+		return ""
+	}
+	return mode
+}
+
+// checkDispatchMode admits only a child or a Root, and a Root reports through
+// its own delivery rather than a completion turn.
+func checkDispatchMode(mode string, continueOnCompletion bool) error {
+	if mode != "" && mode != pa.DispatchModeRoot || mode == pa.DispatchModeRoot && continueOnCompletion {
+		return refusal(pa.Invalid, "dispatch_mode")
+	}
+	return nil
 }

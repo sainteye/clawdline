@@ -392,6 +392,10 @@ func assistantTaskTitle(q pa.WorkRequest) string {
 // validated draft, then enters Dispatch's existing claims/capacity/quota/
 // worktree/durable-before-spawn pipeline. No Session or user run is fabricated.
 func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispatched, error) {
+	if q.Choice.Mode != "" {
+		// A Root never silently becomes a child: DispatchAssistantRoot owns it.
+		return Dispatched{}, assistantFailure(pa.Invalid, "dispatch_mode")
+	}
 	b.assistantMu.Lock()
 	defer b.assistantMu.Unlock()
 	c, err := b.checkAssistantRequest(ctx, q)
@@ -428,6 +432,68 @@ func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispa
 		return Dispatched{}, err
 	}
 	return b.Dispatch(ctx, DispatchRequest{TaskID: id, Secret: hex.EncodeToString(secret), Generation: inv.Generation, Offered: true, assistant: &assistantAdmission{record: r, actor: q.Actor, request: q}})
+}
+
+// DispatchAssistantRoot is dispatch_work's mode "root": the same source
+// authority as DispatchAssistant, then the ordinary Root Assignment door. The
+// Root has no secret, timeout, result, parent or landing obligation; the Bot
+// is recorded as who opened it. The request id derives from the Bot's command,
+// so a retry replays the Root Assignment receipt and never opens twice.
+func (b *Broker) DispatchAssistantRoot(ctx context.Context, q pa.WorkRequest) (RootAssignment, bool, error) {
+	if q.Choice.Mode != pa.DispatchModeRoot {
+		return RootAssignment{}, false, assistantFailure(pa.Invalid, "dispatch_mode")
+	}
+	b.assistantMu.Lock()
+	defer b.assistantMu.Unlock()
+	c, err := b.checkAssistantRequest(ctx, q)
+	if err != nil {
+		return RootAssignment{}, false, err
+	}
+	// A Root reports to the person, not to a review turn, and a thread
+	// worker answering another Bot does not hand off whole ownership.
+	if q.ContinueOnCompletion || q.OwnerTurnID != "" || q.OwnerFence != (pa.Fence{}) {
+		return RootAssignment{}, false, assistantFailure(pa.ScopeDenied, "dispatch_mode")
+	}
+	title := assistantTaskTitle(q)
+	owner := &RootBotOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q),
+		BotName: c.BotName, BotRequestID: c.BotRequestID, BoardItemID: q.BoardItemID}
+	req := RootAssignmentRequest{RequestID: AssistantTaskID(q.Command), Assistant: c.Assistant, Model: c.Resolved.Model,
+		ProjectDir: c.Project.Directory, Label: title, Persona: q.Persona, Assignment: assistantRootAssignment(q, title, c.BotName), BotOwner: owner}
+	a, replayed, err := b.OpenRootAssignment(ctx, req.RequestID, req)
+	if err != nil {
+		var r Refusal
+		if errors.As(err, &r) && r.Code == "request_conflict" {
+			return RootAssignment{}, false, assistantFailure(pa.IdempotencyConflict, "work_command")
+		}
+		return RootAssignment{}, false, err
+	}
+	return a, replayed, nil
+}
+
+// assistantRootAssignment fills the five Root Assignment sections from a Bot's
+// dispatch. Claims are scope notes for a Root, not a lease.
+func assistantRootAssignment(q pa.WorkRequest, title, bot string) Assignment {
+	if bot == "" {
+		bot = "the Bot"
+	}
+	constraints := "Follow this repository's instruction files and the ordinary Root rules. Review verdicts " + bot +
+		" recorded are shown on its request card; respect them."
+	if len(q.Claims) != 0 {
+		constraints += "\nFiles named by " + bot + ": " + strings.Join(q.Claims, ", ")
+	}
+	var refs []string
+	if q.BotRequestID != "" {
+		refs = append(refs, "Bot request card: "+q.BotRequestID)
+	}
+	if q.BoardItemID != "" {
+		refs = append(refs, "Board item: "+q.BoardItemID)
+	}
+	references := "None beyond the scope."
+	if len(refs) != 0 {
+		references = strings.Join(refs, "\n")
+	}
+	return Assignment{Objective: title, Scope: q.Brief, Constraints: constraints, RelevantReferences: references,
+		Acceptance: "What the scope asks for, verified. Then run `clawdline session report --summary \"...\"`; that receipt tells " + bot + "."}
 }
 
 // ValidateAssistantWork checks the private source authority before the Bridge

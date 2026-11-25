@@ -1114,7 +1114,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
 		botRequestID := pa.BotRequestFrom(ctx)
-		if _, e := botRequestDispatchScope(ctx, h.botRequestCards(), nil, q.Bot.Key.BotID, turn, botRequestID); e != nil {
+		if e := dispatchScope(ctx, h.botRequestCards(), q.Bot.Key.BotID, turn, botRequestID); e != nil {
 			return pa.WorkLink{}, e
 		}
 		// A Bot answering another Bot's message_bot may dispatch into its own
@@ -1364,4 +1364,19 @@ func (h *Host) capturedExtensions(ctx context.Context, q app.OpenRequest) (app.N
 
 func (s *ownedSession) UnconfirmedProcesses() []int {
 	return app.UnconfirmedProcessesOf(s.ProviderSession)
+}
+
+// dispatchScope checks the request card scope of a dispatch_work call, then
+// its mode: a Root is whole ownership handed to an independent Session, so
+// only a turn the person started, or the holder of a person-rooted request
+// card working on that card, may open one.
+func dispatchScope(ctx context.Context, cards botRequestStore, bot string, turn pa.Turn, botRequestID string) error {
+	cardScoped, err := botRequestDispatchScope(ctx, cards, nil, bot, turn, botRequestID)
+	if err != nil {
+		return err
+	}
+	if mode := pa.DispatchChoiceFrom(ctx).Mode; mode != "" && (mode != pa.DispatchModeRoot || !directUserTurn(turn) && !cardScoped) {
+		return failure(pa.ScopeDenied, "dispatch_root_origin")
+	}
+	return nil
 }

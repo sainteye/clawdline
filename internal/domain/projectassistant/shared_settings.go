@@ -103,7 +103,14 @@ type DispatchChoice struct {
 	Agent  string `json:"agent,omitempty"`
 	Model  string `json:"model,omitempty"`
 	Effort string `json:"effort,omitempty"`
+	// Mode is "" for an owned child (the default) or DispatchModeRoot for an
+	// independently owned Root Session (docs/project-assistants-broker.md,
+	// "Opening a Root"). Omitted when empty so earlier hashes are unchanged.
+	Mode string `json:"mode,omitempty"`
 }
+
+// DispatchModeRoot asks dispatch_work for an independently owned Root.
+const DispatchModeRoot = "root"
 
 func (c DispatchChoice) Empty() bool { return c == DispatchChoice{} }
 
