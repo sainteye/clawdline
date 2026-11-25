@@ -263,18 +263,19 @@ func TestServerSendUnblocksQueueAfterUnverifiedRestart(t *testing.T) {
 	if status := client.request(t, "POST", path, q, &replay); status != 200 || replay.Receipt != admitted {
 		t.Fatalf("retry changed the admission: HTTP %d, %+v", status, replay)
 	}
-	after := paSoakAwait(t, f, admitted.ResourceID, pa.TurnSucceeded)
+	_ = paSoakAwait(t, f, admitted.ResourceID, pa.TurnSucceeded)
+	after := paSoakAwait(t, f, exchange.ReplyTurnID, pa.TurnSucceeded)
 	turns := make(map[string]pa.Turn, len(after.Turns))
 	for _, turn := range after.Turns {
 		turns[turn.ID] = turn
 	}
-	if len(turns) != 3 || turns[exchange.ReplyTurnID].State != pa.TurnSucceeded ||
+	if len(turns) != 3 || turns[admitted.ResourceID].State != pa.TurnSucceeded || turns[exchange.ReplyTurnID].State != pa.TurnSucceeded ||
 		turns[original.ID].State != pa.TurnFailed || turns[original.ID].Failure.Code != pa.ExecutionEffectUnknown ||
 		after.Conversation.ID != before.Conversation.ID {
 		t.Fatalf("queue or original history changed unexpectedly: %+v", turns)
 	}
-	if first, second := turns[exchange.ReplyTurnID].StartedAt, turns[admitted.ResourceID].StartedAt; first == nil || second == nil || first.After(*second) {
-		t.Fatalf("queued status did not run first: %v versus %v", first, second)
+	if first, second := turns[admitted.ResourceID].StartedAt, turns[exchange.ReplyTurnID].StartedAt; first == nil || second == nil || first.After(*second) {
+		t.Fatalf("releasing message did not run before held status report: %v versus %v", first, second)
 	}
 	kept, err := repo.Receipt(ctx, receipt.Command)
 	if err != nil || kept == nil || *kept != receipt || provider.sends.Load() != 2 {
