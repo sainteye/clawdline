@@ -10,16 +10,16 @@ assert.ok(PLAYWRIGHT_MODULE&&BOTS_ARTIFACTS,"Set PLAYWRIGHT_MODULE and BOTS_ARTI
 const {chromium}=await import(pathToFileURL(PLAYWRIGHT_MODULE).href)
 await mkdir(BOTS_ARTIFACTS,{recursive:true})
 const bundle=await build({
-  entryPoints:[fileURLToPath(new URL("./fixtures.ts",import.meta.url))],
+  entryPoints:[fileURLToPath(new URL("../src/project-assistants/fixtures.ts",import.meta.url))],
   outfile:"project-assistants-fixture.js",write:false,bundle:true,format:"esm",platform:"browser",
   jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}
 })
 const files=new Map(bundle.outputFiles.map(file=>[
   "/"+path.basename(file.path),[file.path.endsWith(".css")?"text/css":"text/javascript",file.contents]
 ]))
-files.set("/",["text/html",await readFile(new URL("../../tools/fixtures/project-assistants.html",import.meta.url))])
+files.set("/",["text/html",await readFile(new URL("./fixtures/project-assistants.html",import.meta.url))])
 for(const tag of ["en","zh-Hant"]){
-  files.set(`/catalog/${tag}.json`,["application/json",await readFile(new URL(`../../public/catalogs/${tag}.json`,import.meta.url))])
+  files.set(`/catalog/${tag}.json`,["application/json",await readFile(new URL(`../public/catalogs/${tag}.json`,import.meta.url))])
 }
 const server=createServer((req,res)=>{
   const file=files.get(new URL(req.url,"http://fixture").pathname)
@@ -36,7 +36,7 @@ try{
   for(const [width,height] of [[390,844],[1280,800]]){
     const label=`${width}×${height}`
     let page
-try{
+    try{
       page=await browser.newPage({viewport:{width,height}})
       page.setDefaultTimeout(10000)
       const errors=[]
