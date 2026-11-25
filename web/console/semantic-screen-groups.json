@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14496,
-  "riskKeys": 6174,
-  "nonRiskCount": 8322,
+  "englishContentKeys": 14502,
+  "riskKeys": 6176,
+  "nonRiskCount": 8326,
   "groups": [
     {
       "name": "acp / other",
@@ -6294,7 +6294,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 702,
+      "count": 706,
       "sources": [
         null
       ],
@@ -6570,6 +6570,10 @@
         "projectAssistants.memoryAuthorBot",
         "projectAssistants.memoryAuthorHuman",
         "projectAssistants.memoryBot",
+        "projectAssistants.memoryCardFrom",
+        "projectAssistants.memoryCardSave",
+        "projectAssistants.memoryCardSkip",
+        "projectAssistants.memoryCardTitle",
         "projectAssistants.memoryConcepts",
         "projectAssistants.memoryCreateNote",
         "projectAssistants.memoryDreams",

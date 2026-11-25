@@ -87,8 +87,11 @@ type NativeWork struct {
 	memoryIndex   func(context.Context) (app.MemoryIndex, error)
 	memoryDetail  func(context.Context, string) (pa.MemoryDetail, error)
 	edit          func(context.Context, string, app.MemoryEdit) error
-	output        func(context.Context, string, app.OutputRequest) (pa.Output, error)
-	artifacts     func(context.Context) ([]app.ArtifactInfo, error)
+	// memoryCard is true in a turn answering another Bot: edit_memory there
+	// proposes a memory card for the person instead of writing.
+	memoryCard bool
+	output     func(context.Context, string, app.OutputRequest) (pa.Output, error)
+	artifacts  func(context.Context) ([]app.ArtifactInfo, error)
 
 	messageWork func(context.Context, string, string, string) (pa.WorkMessageReceipt, error)
 
@@ -214,6 +217,11 @@ func (w NativeWork) MemoryDetail(ctx context.Context, id string) (pa.MemoryDetai
 	}
 	return w.memoryDetail(ctx, id)
 }
+
+// MemoryNeedsPerson reports that a successful edit_memory in this turn
+// created a memory card for the person rather than changing memory.
+func (w NativeWork) MemoryNeedsPerson() bool { return w.memoryCard }
+
 func (w NativeWork) EditMemory(ctx context.Context, id string, edit app.MemoryEdit) error {
 	if w.edit == nil {
 		return failure(pa.Disabled, "native_memory")
@@ -995,9 +1003,18 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		return r.MemoryDetail(ctx, q.Bot.Key, id)
 	}
+	// Only a same-machine exchange puts a card in this Bot's main chat. A
+	// request from another machine's Bot keeps memory refused outright.
+	tools.memoryCard = turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin
 	tools.edit = func(ctx context.Context, id string, edit app.MemoryEdit) error {
-		if pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
+		if pa.IsPeerRequest(turn.Origin) && !tools.memoryCard {
 			return failure(pa.ScopeDenied, "bot_reply_memory")
+		}
+		// Text from another Bot never becomes memory on a Bot's own say. A
+		// new short fact becomes a card the person saves with one press;
+		// any other change waits for the person's own chat.
+		if tools.memoryCard && (edit.Append == "" || edit.Old != "" || edit.New != "" || edit.Delete || edit.Note != nil) {
+			return failure(pa.ScopeDenied, "bot_reply_memory_card_append_only")
 		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
@@ -1005,6 +1022,10 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		}
 		defer cancel()
 		if e = journal(ctx, "edit"); e != nil {
+			return e
+		}
+		if tools.memoryCard {
+			_, e = r.ProposeMemory(ctx, q.Binding.Fence, turnID, edit.Append)
 			return e
 		}
 		_, e = r.EditMemory(ctx, q.Bot.Key, turnID, id, edit)
