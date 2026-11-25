@@ -62,7 +62,8 @@ import (
 // Machine-named Bots shared settings, carried over Cloud, arrive at API 116.
 // Bot settings saves that name their base, and field conflicts, arrive at API 117.
 // Inline Bot progress history arrives at API 118.
-const APILevel = 118
+// Bot request card reads, the person's card actions and the Bot card tools arrive at API 119.
+const APILevel = 119
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

@@ -399,6 +399,141 @@ type BoardWriteResult struct {
 	Revision int64 `json:"revision"`
 }
 
+// The person's message a card roots in.
+type BotRequestAuthority struct {
+	Bot            string `json:"bot"`
+	ConversationID string `json:"conversation_id"`
+	MessageID      string `json:"message_id"`
+	TurnID         string `json:"turn_id"`
+}
+
+// The card's one holder: `bot` is the holder Bot's id, `role` maker, reviewer
+// or integrator.
+type BotRequestBaton struct {
+	Bot  string `json:"bot"`
+	Role string `json:"role"`
+}
+
+// One checklist entry. `state` is open, done or not_needed.
+type BotRequestEntry struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Note  string `json:"note,omitempty"`
+
+	// RFC 3339; absent while the entry is open.
+	ReportedAt string `json:"reported_at,omitempty"`
+	ReportedBy string `json:"reported_by,omitempty"`
+	State      string `json:"state"`
+}
+
+// One row of a card's history, oldest first.
+type BotRequestEvent struct {
+	// `person` or `bot:<id>`.
+	Actor   string `json:"actor"`
+	At      string `json:"at"`
+	Detail  string `json:"detail,omitempty"`
+	ID      int64  `json:"id"`
+	Kind    string `json:"kind"`
+	Version int64  `json:"version"`
+}
+
+// One checklist mark in a check: `state` done or not_needed with a `note`; a
+// label not on the card adds an entry.
+type BotRequestMark struct {
+	Label string `json:"label"`
+	Note  string `json:"note,omitempty"`
+	State string `json:"state,omitempty"`
+}
+
+// GET /v1/bot-request/cards?bot=&project=&state=&cursor=: at most 100 cards,
+// most recently updated first.
+type BotRequestPage struct {
+	Cards      []BotRequestView `json:"cards"`
+	NextCursor string           `json:"next_cursor,omitempty"`
+}
+
+// The body of a person's POST, with an Idempotency-Key header. handoff takes
+// to_bot, role and note; check takes entries; complete, cancel and reopen take
+// an optional reason.
+type BotRequestPersonWrite struct {
+	Entries         []BotRequestMark `json:"entries,omitempty"`
+	ExpectedVersion int64            `json:"expected_version"`
+	Note            string           `json:"note,omitempty"`
+	Reason          string           `json:"reason,omitempty"`
+	Role            string           `json:"role,omitempty"`
+	ToBot           string           `json:"to_bot,omitempty"`
+}
+
+// A refused card read or write. `error` is a bot_request_* code, `detail` the
+// field it is about, and `version` the card's current version on
+// bot_request_version_conflict.
+type BotRequestRefusal struct {
+	Detail  string `json:"detail"`
+	Error   string `json:"error"`
+	Version int64  `json:"version,omitempty"`
+}
+
+// One reviewer Bot's recorded verdict (pass, conditional_pass, reject). Never
+// edited.
+type BotRequestVerdict struct {
+	At          string `json:"at"`
+	Commit      string `json:"commit,omitempty"`
+	ID          string `json:"id"`
+	ReviewerBot string `json:"reviewer_bot"`
+	Text        string `json:"text,omitempty"`
+	Verdict     string `json:"verdict"`
+}
+
+// One card as the console reads it. `done` of `total` checklist entries are
+// done or not_needed; `progress_state` is the card's light. `events` is present
+// only on a single-card read and a write's answer.
+type BotRequestView struct {
+	Authority   []BotRequestAuthority `json:"authority"`
+	Baton       BotRequestBaton       `json:"baton"`
+	BoardItemID string                `json:"board_item_id,omitempty"`
+
+	// Every Bot the card has reached, in order.
+	Chain     []string          `json:"chain"`
+	Checklist []BotRequestEntry `json:"checklist"`
+	ClosedAt  string            `json:"closed_at,omitempty"`
+	CreatedAt string            `json:"created_at"`
+	CreatedBy string            `json:"created_by"`
+
+	// 1 for the first completion, one more after each reopen.
+	Cycle         int64             `json:"cycle"`
+	Description   string            `json:"description,omitempty"`
+	Done          int64             `json:"done"`
+	Events        []BotRequestEvent `json:"events,omitempty"`
+	ID            string            `json:"id"`
+	Kind          string            `json:"kind,omitempty"`
+	MergedInto    string            `json:"merged_into,omitempty"`
+	ProgressState string            `json:"progress_state"`
+	ProjectID     string            `json:"project_id"`
+	ProjectPath   string            `json:"project_path"`
+	SplitFrom     string            `json:"split_from,omitempty"`
+
+	// open, done, cancelled or merged.
+	State string `json:"state"`
+	Title string `json:"title"`
+	Total int64  `json:"total"`
+
+	// The time of the card's last event.
+	UpdatedAt string              `json:"updated_at"`
+	Verdicts  []BotRequestVerdict `json:"verdicts,omitempty"`
+	Version   int64               `json:"version"`
+
+	// The ask_person question id the holder waits on, when it waits.
+	Waiting string `json:"waiting,omitempty"`
+}
+
+// A person's write: the card as it now stands. `replayed` when the
+// Idempotency-Key answered an earlier write and nothing was written.
+type BotRequestWriteResult struct {
+	Card     BotRequestView `json:"card"`
+	Changed  bool           `json:"changed"`
+	Replayed bool           `json:"replayed,omitempty"`
+}
+
 // The answer to POST /complete: the outcome was recorded. Deliberately bare —
 // what the task did belongs in its result, which the broker already holds.
 type BrokerAccepted struct {

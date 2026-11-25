@@ -2,7 +2,12 @@
 // The source machine owns these facts; a Cloud roster is only a projection.
 package projectassistant
 
-import "time"
+import (
+	"context"
+	"strconv"
+	"strings"
+	"time"
+)
 
 const (
 	ContractVersion = "project-assistants.v1"
@@ -503,11 +508,14 @@ const (
 )
 
 type WorkLink struct {
-	ID              string    `json:"id"`
-	Fence           Fence     `json:"fence"`
-	TurnID          string    `json:"turn_id"`
-	TaskID          string    `json:"task_id"`
-	BoardItemID     string    `json:"board_item_id"`
+	ID          string `json:"id"`
+	Fence       Fence  `json:"fence"`
+	TurnID      string `json:"turn_id"`
+	TaskID      string `json:"task_id"`
+	BoardItemID string `json:"board_item_id"`
+	// BotRequestID is the Bot request card the task works on, when the
+	// dispatch named one (docs/bot-request-cards.md §8.1).
+	BotRequestID    string    `json:"bot_request_id,omitempty"`
 	State           WorkState `json:"state"`
 	ResultMessageID string    `json:"result_message_id"`
 	LandingCommit   string    `json:"landing_commit"`
@@ -820,3 +828,49 @@ type Capabilities struct {
 	SendMessage          bool             `json:"send_message"`
 	Unavailable          *Failure         `json:"unavailable,omitempty"`
 }
+
+// Bot request card notices (docs/bot-request-cards.md §5, §7.2). Each is a
+// host notice whose idempotency key names the card, so one handoff or one
+// completion wakes a Bot once, and a turn can tell which card woke it.
+const (
+	BotRequestHandoffPrefix = "bot-request-handoff-"
+	BotRequestDonePrefix    = "bot-request-done-"
+	botRequestCardIDLength  = 36
+)
+
+// BotRequestHandoffKey is the notice key of the handoff that gave the card's
+// baton to a Bot at that version.
+func BotRequestHandoffKey(cardID string, version int64) string {
+	return BotRequestHandoffPrefix + cardID + "-" + strconv.FormatInt(version, 10)
+}
+
+// BotRequestHandoffCard answers the card a handoff notice turn was woken for,
+// and the card version it named; empty for every other turn.
+func BotRequestHandoffCard(turn Turn) (string, int64) {
+	if turn.Origin != HostNoticeOrigin || turn.RoutineRunID != "" || turn.Room != nil || turn.Network != nil {
+		return "", 0
+	}
+	rest, ok := strings.CutPrefix(turn.IdempotencyKey, BotRequestHandoffPrefix)
+	if !ok || len(rest) < botRequestCardIDLength+2 || rest[botRequestCardIDLength] != '-' {
+		return "", 0
+	}
+	v, err := strconv.ParseInt(rest[botRequestCardIDLength+1:], 10, 64)
+	if err != nil || v <= 0 {
+		return "", 0
+	}
+	return rest[:botRequestCardIDLength], v
+}
+
+// WithBotRequest carries the card a dispatch_work or message_bot call names
+// from the tool call to the host, like WithDispatchChoice.
+func WithBotRequest(ctx context.Context, cardID string) context.Context {
+	return context.WithValue(ctx, botRequestKey{}, cardID)
+}
+
+// BotRequestFrom answers the card the tool call named, or empty.
+func BotRequestFrom(ctx context.Context) string {
+	id, _ := ctx.Value(botRequestKey{}).(string)
+	return id
+}
+
+type botRequestKey struct{}

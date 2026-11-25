@@ -2,7 +2,7 @@ import { ContextMenu, type CompactBlock } from "./ContextMenu"
 import { CompactStatusRow } from "./CompactStatusRow"
 import { compactRefusalCode, followCompaction, type CompactStatus } from "./compact-status"
 import { ChatModel, modelEdit } from "./ChatModel"
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
@@ -20,6 +20,8 @@ import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-view
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
 import { DispatchedWorkStrip } from "./DispatchedWorkStrip"
+import { BotRequestDetail, BotRequestLine, useBotRequests } from "./BotRequestCard"
+import { botOf, placeBotRequests, readsBotRequests } from "./bot-request"
 import { useDispatchedWorkShown } from "./dispatched-work-preference"
 import { AgentBadge } from "./AgentMark"
 import "./chat-presentation.css"
@@ -1562,6 +1564,10 @@ ${currentDraft}`:submitted)
     ready:realtimeCall?canVoiceCall:canCall})
   const visibleTurn=activeTurn?.state==="waiting_permission"&&pendingPermissionCount===0?undefined:activeTurn
   const showDispatched=useDispatchedWorkShown()
+  // Bot request cards (docs/bot-request-cards.md §9): read for this Bot from the local daemon only.
+  const requestReading=useBotRequests({enabled:!thread&&readsBotRequests(source),bot:key.bot_id})
+  const [openRequest,setOpenRequest]=useState<W.BotRequestView>()
+  const requestCards=requestReading.reading.state==="ready"?requestReading.reading.cards:undefined
   const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount):rosterMood(summary)):"idle"
   const mood=ownMood==="idle"&&live&&showDispatched&&rosterMood(summary,true)==="waitingOnWork"?"waitingOnWork":ownMood
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
@@ -1631,6 +1637,7 @@ ${currentDraft}`:submitted)
     if(!replyTexts.get(step.turn_id)?.has(step.text.trim()))
       inlineProgress.push({id:row.id,text:step.text,at,eventSeq:row.observed_event_seq})
   }
+  const requests=useMemo(()=>placeBotRequests(requestCards??[],chatTimeline.flatMap(row=>row.work?[row.work]:[])),[requestCards,timeline,parts.queued])
   const pendingSend=view.heldOutcomes.get(draftKey)
   const sendingAccepted=pendingSend?.intent.command.operation==="send"&&admittedReceipt(pendingSend.receipt)
   const confirmed=sendingAccepted?admittedRow(pendingSend!.intent as W.ProjectAssistantSendRequest,pendingSend!.receipt,messages):undefined
@@ -1858,7 +1865,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} progress={inlineProgress} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} progress={inlineProgress} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1970,7 +1977,8 @@ ${currentDraft}`:submitted)
       </div>}
       {/* Background and dispatched work are the latest facts of the conversation: they scroll at its end instead of sitting over the composer. */}
       {!thread&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={tasks} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
-        return showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule})()}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
+        const loose=requests.loose.length>0&&<div className="pa-request-loose">{requests.loose.map(card=><BotRequestLine key={card.id} card={card} w={w} onOpen={setOpenRequest}/>)}</div>
+        return <>{loose}{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id} card={openRequest} bots={[bot,...(roster??[])]} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=botOf(card.baton.bot,roster??[]);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
       {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
       {/* Hidden while a queued message is edited, so it never covers the message being edited. */}

@@ -12,6 +12,7 @@ var capacityMeasureAreas = []struct {
 	{"antigravity", (*Server).antigravityCapacityMeasures},
 	{"artifacts", (*Server).artifactsCapacityMeasures},
 	{"board", (*Server).boardCapacityMeasures},
+	{"botrequest", (*Server).botRequestCapacityMeasures},
 	{"broker", (*Server).brokerCapacityMeasures},
 	{"browser", (*Server).browserCapacityMeasures},
 	{"cache", (*Server).cacheCapacityMeasures},

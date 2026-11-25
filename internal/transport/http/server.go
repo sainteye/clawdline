@@ -691,6 +691,9 @@ func (s *Server) routeTable() []route {
 		// The v2 work board; participation routes under the same prefix are
 		// registered separately.
 		{Route{"*", "/v1/work/"}, s.workRoute},
+		// Bot request cards: the console's read and the person's actions
+		// (bot_request_http.go, docs/bot-request-cards.md §8.3).
+		{Route{"*", "/v1/bot-request/"}, s.botRequestRoute},
 		// Where a person takes part: proposals, decisions, digests (proposals.go, T4).
 	}
 	table = append(table, s.participationRoutes()...)

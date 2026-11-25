@@ -994,6 +994,65 @@
   },
   {
     "Register": "daemon",
+    "Name": "botrequest.merge_hops",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botrequest.MaxMergeHops"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "botrequest.page_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 100,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botrequest.MaxPageRows"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "botrequest.receipts",
+    "Class": "idempotency",
+    "Unit": "rows",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/botrequest.MaxReceipts"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.actors",
     "Class": "buffer",
     "Unit": "rows",

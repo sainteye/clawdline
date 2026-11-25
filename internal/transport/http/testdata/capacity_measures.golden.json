@@ -236,6 +236,21 @@
     "Known": true
   },
   {
+    "Name": "botrequest.merge_hops",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "botrequest.page_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "botrequest.receipts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.actors",
     "Known": true,
     "Note": true
