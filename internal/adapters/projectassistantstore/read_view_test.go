@@ -193,6 +193,60 @@ func TestReadViewKeepsAnOpenDecisionAfterTheChatRebinds(t *testing.T) {
 	}
 }
 
+func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T) {
+	e, old, current := viewFixture(t, 2, 0, false)
+	memory := pa.PermissionOffer{
+		ID: "a-memory", NativeRequestID: "a-memory", Kind: pa.DecisionOfferKind, Fence: old,
+		Decision: &pa.DecisionRequest{Question: pa.MemoryProposalQuestion, Memory: "The meeting is on Wednesday."},
+		State:    pa.PermissionResolved, SelectedOptionID: pa.MemorySaveOptionID, AnchorMessageSeq: 2,
+		Options: []pa.PermissionOption{
+			{ID: pa.MemorySaveOptionID, Label: "Save", Kind: pa.AllowOnce},
+			{ID: pa.MemorySkipOptionID, Label: "Don't save", Kind: pa.RejectOnce},
+		},
+		ExpiresAt: e.Bot.CreatedAt.Add(time.Hour),
+	}
+	skipped := memory
+	skipped.ID, skipped.NativeRequestID, skipped.SelectedOptionID = "b-memory", "b-memory", pa.MemorySkipOptionID
+	ordinary := memory
+	ordinary.ID, ordinary.NativeRequestID = "c-ordinary", "c-ordinary"
+	ordinary.Decision = &pa.DecisionRequest{Question: "Does this work?", AnswerText: "Yes"}
+	ordinary.Options = []pa.PermissionOption{{ID: "reply-1", Label: "Yes", Kind: pa.AllowOnce}}
+	ordinary.SelectedOptionID = "reply-1"
+	pending := ordinary
+	pending.ID, pending.NativeRequestID, pending.State, pending.SelectedOptionID = "d-pending", "d-pending", pa.PermissionPending, ""
+	pending.Decision = &pa.DecisionRequest{Question: "What happens next?"}
+	e.Permissions = []pa.PermissionOffer{memory, skipped, ordinary, pending}
+	_, _, views, _ := restoreViews(t, e)
+
+	q := viewQuery(e.Bot)
+	snapshot := readView(t, views, q)
+	q.Request.Mode, q.Request.SourceEpoch = pa.ReadViewPermissions, snapshot.SourceEpoch
+	page := readView(t, views, q)
+	if page.Head.PendingPermissionCount != 1 {
+		t.Fatalf("pending count = %d, want 1", page.Head.PendingPermissionCount)
+	}
+	var ids []string
+	for _, item := range page.Items {
+		ids = append(ids, item.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{memory.ID, skipped.ID, pending.ID}) {
+		t.Fatalf("permission summaries = %v, want saved and skipped memory cards alongside the pending offer", ids)
+	}
+	for i, want := range []pa.PermissionOffer{memory, skipped} {
+		summary := page.Items[i].PermissionSummary
+		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question {
+			t.Fatalf("answered memory summary = %+v", summary)
+		}
+		detailQuery := q
+		detailQuery.Request.Mode, detailQuery.Request.Cursor, detailQuery.Request.PageSize = pa.ReadViewDetail, summary.DetailCursor, 1
+		detail := readView(t, views, detailQuery)
+		want.Fence = current
+		if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &want) {
+			t.Fatalf("answer detail = %+v, want %+v", detail.Items, want)
+		}
+	}
+}
+
 func TestReadViewTimelineAndAllControlsStayBounded(t *testing.T) {
 	e, old, _ := viewFixture(t, 600, 101, true)
 	e.Turns[18].State, e.Turns[19].State = pa.TurnAccepted, pa.TurnWaitingPermission

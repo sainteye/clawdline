@@ -87,6 +87,40 @@ test("an answered decision shows the person's reply and no longer offers choices
   assert.doesNotMatch(html,/Ship it today|Reply yourself/)
 })
 
+test("memory proposals use localized controls and wait for the persisted answer",async()=>{
+  const {DecisionCard,words}=await load()
+  const fact="The maintenance window starts on Wednesday."
+  const memorySummary={...summary(),title:"Save this to memory?"}
+  const memoryOffer={...offer(),decision:{question:memorySummary.title,memory:fact},
+    options:[{...offer().options[0],id:"reply-memory-save",label:"Save"},{...offer().options[1],id:"reply-memory-skip",label:"Don't save"}]}
+  const saved={...memoryOffer,state:"answered" as const,selected_option_id:"reply-memory-save"}
+  const skipped={...saved,selected_option_id:"reply-memory-skip"}
+  for(const [language,title,save,skip,stored,declined] of [
+    ["zh-Hant","要記下這條嗎？","記下","不要","已記下","沒有記下"],
+    ["en","Save to memory?","Save","Don't save","Saved to memory","Not saved"],
+  ]){
+    const w=words(language)
+    const render=(s:W.ProjectAssistantReadPermissionSummary,o?:W.ProjectAssistantPermissionOffer)=>
+      renderToStaticMarkup(React.createElement(DecisionCard,{summary:s,offer:o,enabled:true,onAnswer:async()=>assert.fail("rendering only"),askerName:"Beacon",w}))
+    const loading=render(memorySummary)
+    assert.ok(loading.includes(title),"the roster can focus the localized card while its detail loads")
+    assert.ok(!loading.includes(memorySummary.title))
+    assert.doesNotMatch(loading,/<button/)
+    const pending=render(memorySummary,memoryOffer)
+    for(const value of [title,fact,`<span>${save}</span>`,`<span>${skip.replace("'", "&#x27;")}</span>`])assert.ok(pending.includes(value),value)
+    assert.doesNotMatch(pending,/pa-decision-own|pa-decision-dismiss/)
+    assert.ok(!render(memorySummary,saved).includes(stored),"a detail ahead of the collection does not announce a saved outcome")
+    const answeredSummary={...memorySummary,state:"answered" as const}
+    assert.ok(!render(answeredSummary,memoryOffer).includes(declined),"a stale detail does not imply a skip")
+    for(const [answer,label] of [[saved,stored],[skipped,declined]] as const){
+      const answered=render(answeredSummary,answer)
+      assert.ok(answered.includes(label),label)
+      assert.ok(answered.includes(fact))
+      assert.doesNotMatch(answered,/<button/)
+    }
+  }
+})
+
 test("only a decision whose exchange capsule is loaded moves under it; others stay in the permission section",async()=>{
   const {decisionsUnderCapsules}=await load()
   const loaded={summary:summary(),offer:offer()},unread={summary:{...summary(),id:"d2"}},native={summary:{...summary(),id:"p1",tool_kind:"execute"},offer:{...offer(),id:"p1"}}
