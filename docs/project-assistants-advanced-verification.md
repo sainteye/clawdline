@@ -48,7 +48,7 @@ observation ticker are test inputs, not new product capacity limits.
 | Source cursor continuity | Read a source snapshot, then actual HTTP event pages from its frontier across all reconnects. Reject duplicate IDs, nonadvancing pages and events at/before the saved cursor. Compare the observed event set against the SQLite export to detect missing events. This is the source read-view cursor, not a roster SSE cursor or a person's read marker. |
 | No duplicate input, answer or receipt | Assert exact message/turn totals, unique durable message IDs/texts and receipt IDs, and one successful-send receipt per successful turn. The queued and unknown messages have no generated answer. |
 | Lost execution response | Only the final scripted `PendingPrompt.Wait` returns `ExecutionEffectUnknown`, after its `Send` has been counted and after a second HTTP message has been queued. No vendor retry or synthetic successful fallback answer is involved. |
-| Further effects blocked | While unknown and queued turns coexist, a fresh HTTP send must return HTTP 500 `pa_outcome_unknown` / `inspect_interrupted_turn`. Scripted Send stays at 61. This tests the existing typed error mapping, not a newly invented HTTP status. |
+| No replay after unknown | Since 2026-11-25 a fresh HTTP send from the person is admitted behind unknown and queued turns instead of returning HTTP 500 `pa_outcome_unknown` / `inspect_interrupted_turn`. The soak checks this after the cleanup rows: the fresh message acknowledges the unknown turn, runs once, and the unknown prompt is never sent again. The 2026-11-15 run below predates this change and recorded the refusal. |
 | Cleanup and durable reopen | Stop the source with production cleanup budgets, prove known zero owned actors/processes, close the SQL pool, reopen a real Server on the same file, start feature lifecycle and replay the original unknown admission. Messages, turns and receipts remain identical to the post-cleanup snapshot; its receipt is unchanged and Send stays at 61. Unknown stays unknown; orderly cleanup cancels the unsent queued turn. |
 
 The distinction in the last two rows matters. In the current product, when
@@ -56,8 +56,9 @@ The distinction in the last two rows matters. In the current product, when
 them and can start a new turn (`Engine.Submit` in `runtime.go`). It does not
 replay the old prompt. This soak does not assert that every new message must
 be refused after orderly cleanup, and does not change that product behavior.
-It verifies refusal while a queue is held, then exact original-command replay
-after cleanup/reopen without any extra provider Send.
+It verifies exact original-command replay after cleanup/reopen without any
+extra provider Send, then admission of the person's next message without
+resending the unknown prompt.
 
 The real-duration run passed on Darwin/arm64, from
 `2026-11-15T21:06:13.403933Z` through `2026-11-15T21:16:13.558815Z`.

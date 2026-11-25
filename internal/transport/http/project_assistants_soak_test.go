@@ -307,22 +307,6 @@ func paRunHTTPDurableSoak(t *testing.T, count int, duration time.Duration) {
 			t.Fatalf("source event lost on reconnect: %s", e.ID)
 		}
 	}
-	assertBlocked := func() {
-		t.Helper()
-		latest := h.get(t)
-		q := unknownQ
-		q.Command = f.command(pa.SendOperation, "soak-blocked-after-unknown")
-		q.Text = "must not execute"
-		q.Fence = paWireFence(pa.Fence{Key: f.key, Project: paDomainProjectScope(latest.Bot.Project), ConversationID: latest.Conversation.ID, BindingID: latest.Conversation.BindingID, Generation: latest.Conversation.Generation})
-		var failure contract.ProjectAssistantErrorResponse
-		if h.request(t, "POST", "/v1/project-assistants/"+f.key.BotID+"/messages", q, &failure) != http.StatusInternalServerError || string(failure.Error.Code) != string(pa.OutcomeUnknown) {
-			t.Fatalf("unknown allowed effects: %+v", failure)
-		}
-		if p.sends.Load() != int32(count+1) {
-			t.Fatal("extra Send after unknown")
-		}
-	}
-	assertBlocked()
 	if err := f.s.StopProjectAssistants(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +377,23 @@ func paRunHTTPDurableSoak(t *testing.T, count int, duration time.Duration) {
 	if p.sends.Load() != int32(count+1) {
 		t.Fatal("cleanup replayed provider")
 	}
-	evidence := map[string]any{"test": t.Name(), "started_at": started.UTC(), "finished_at": time.Now().UTC(), "wall_seconds": time.Since(started).Seconds(), "goos": runtime.GOOS, "goarch": runtime.GOARCH, "submitted": count + 2, "queued_before_unknown": 1, "completed_send_receipts": len(seenReceipts), "completed": count, "unknown": unknown, "scripted_sends": p.sends.Load(), "opens": p.opens.Load(), "closes": p.closes.Load(), "user_messages": user, "answers": answers, "source_events_observed": len(seenEvents), "source_frontier": frontier, "receipts": len(after.Receipts), "tcp_reconnects": reconnects, "durable_reopens": 1, "unknown_survived_reopen": true, "extra_send_after_unknown": false, "resources": "process RSS/CPU and OS census not measured; provider has no subprocess", "native_vendor_requests": 0, "paid_api_requests": 0}
+	// The person's next message is a new turn. It is admitted behind the
+	// unknown turn, settles it as acknowledged and never resends it.
+	p.lose.Store(false)
+	if status := h.request(t, "POST", "/v1/settings/project-assistants", map[string]bool{"enabled": true}, nil); status != 200 {
+		t.Fatalf("enable again: HTTP %d", status)
+	}
+	_, nextReceipt := h.send(t, "soak-after-unknown")
+	done := paSoakAwait(t, f, nextReceipt.ResourceID, pa.TurnSucceeded)
+	for _, turn := range done.Turns {
+		if turn.ID == unknownReceipt.ResourceID && (turn.State != pa.TurnFailed || turn.Failure == nil || turn.Failure.Code != pa.ExecutionEffectUnknown) {
+			t.Fatalf("the unknown turn was not acknowledged: %s %+v", turn.State, turn.Failure)
+		}
+	}
+	if p.sends.Load() != int32(count+2) {
+		t.Fatalf("the unknown prompt was resent: %d sends", p.sends.Load())
+	}
+	evidence := map[string]any{"test": t.Name(), "started_at": started.UTC(), "finished_at": time.Now().UTC(), "wall_seconds": time.Since(started).Seconds(), "goos": runtime.GOOS, "goarch": runtime.GOARCH, "submitted": count + 3, "queued_before_unknown": 1, "completed_send_receipts": len(seenReceipts), "completed": count, "unknown": unknown, "scripted_sends": p.sends.Load(), "admitted_after_unknown": true, "opens": p.opens.Load(), "closes": p.closes.Load(), "user_messages": user, "answers": answers, "source_events_observed": len(seenEvents), "source_frontier": frontier, "receipts": len(after.Receipts), "tcp_reconnects": reconnects, "durable_reopens": 1, "unknown_survived_reopen": true, "extra_send_after_unknown": false, "resources": "process RSS/CPU and OS census not measured; provider has no subprocess", "native_vendor_requests": 0, "paid_api_requests": 0}
 	raw, err := json.Marshal(evidence)
 	if err != nil {
 		t.Fatal(err)

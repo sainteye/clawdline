@@ -328,6 +328,45 @@ func (r *Engine) checkPlainMessageFence(ctx context.Context, submission Submissi
 	return nil
 }
 
+// personMessage is the person's own input in their chat, checked against
+// their current grant. A host notice, room, network or compaction turn is not.
+func personMessage(s Submission) bool {
+	return s.AuthorityCheck != nil && !s.Notice && s.Room == nil && s.Network == nil && !s.Compact && !s.LeadCall
+}
+
+// reconcileLostWorkerLocked records running rows that no worker owns as
+// unknown (WorkerLostField). The caller holds a.mu with a.working false, so
+// no prompt of this runtime can be executing them.
+func (r *Engine) reconcileLostWorkerLocked(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) {
+	pending, err := r.o.Repository.PendingTurns(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	var lost []pa.Turn
+	for _, t := range pending {
+		if t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
+			continue
+		}
+		x, e := r.o.Repository.Export(ctx, key)
+		if e != nil {
+			return lost, e
+		}
+		for _, current := range x.Turns {
+			if current.ID == t.ID {
+				t = current
+			}
+		}
+		if t.State != pa.TurnRunning && t.State != pa.TurnWaitingPermission {
+			continue
+		}
+		if e = quiesceTurn(ctx, r.o.Repository, r.o.Clock, r.o.ID, key, x, t, WorkerLostField); e != nil {
+			return lost, e
+		}
+		lost = append(lost, t)
+	}
+	return lost, nil
+}
+
 func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	if err := s.Feature.CheckWrite(); err != nil {
 		return pa.Receipt{}, err
@@ -393,6 +432,13 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 		return pa.Receipt{}, notAdmitted(err)
 	}
 	defer r.release(a)
+	// A lost worker's peer reply wakes its sender after this lock is released.
+	var lost []pa.Turn
+	defer func() {
+		for _, t := range lost {
+			r.wakeExchangeReply(t)
+		}
+	}()
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	bot, err := r.o.Repository.Bot(ctx, a.key)
@@ -460,40 +506,52 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, e
 		}
 	}
+	// A running row with no worker lost its owner: the worker ended on an
+	// error, or this start has not recovered it yet. Record it unknown here,
+	// never replaying it, instead of refusing every new message behind it.
+	if !a.working {
+		var e error
+		lost, e = r.reconcileLostWorkerLocked(ctx, a.key)
+		if e != nil {
+			return pa.Receipt{}, e
+		}
+		if len(lost) > 0 {
+			if bot, err = r.o.Repository.Bot(ctx, a.key); err != nil {
+				return pa.Receipt{}, err
+			}
+			if c, err = r.o.Repository.Conversation(ctx, a.key, bot.ConversationID); err != nil {
+				return pa.Receipt{}, err
+			}
+		}
+	}
 	pending, err := r.o.Repository.PendingTurns(ctx, a.key)
 	if err != nil {
 		return pa.Receipt{}, err
 	}
-	// An unknown turn is never replayed. A person can release a queue held
-	// by a restart by sending a new instruction in the same chat.
+	// An unknown turn is never replayed. A new message is a new turn: it
+	// cannot repeat an old one, so the person's own message is never refused
+	// for one. It acknowledges the unknown turns and waits in the queue.
 	var unknown []pa.Turn
 	var recoverySource string
-	var steering bool
 	waiting := 0
 	for _, t := range pending {
 		if t.State == pa.TurnUnknown {
 			unknown = append(unknown, t)
 			continue
 		}
-		if !a.working && (t.State == pa.TurnRunning || t.State == pa.TurnWaitingPermission) {
-			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
-		}
 		if source := pa.RestartSourceTurn(t); source != "" {
 			recoverySource = source
 		}
-		steering = steering || t.Steering || a.steering[t.ID]
 		waiting++
 	}
 	if s.LeadCall && (!bot.Lead || a.working || c.ActiveTurnID != "" || len(pending) > 0) {
 		return pa.Receipt{}, runtimeFailure(pa.ReadOnly, "lead_call_busy")
 	}
-	if len(unknown) > 0 {
-		if s.Network != nil {
-			return pa.Receipt{}, runtimeFailure(pa.ExecutionEffectUnknown, "network_unknown_barrier")
-		}
-		if s.Notice && strings.HasPrefix(s.Command.IdempotencyKey, pa.WorkCompletionPrefix) {
-			return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "work_completion_unknown_barrier")
-		}
+	person := personMessage(s)
+	review := s.Notice && strings.HasPrefix(s.Command.IdempotencyKey, pa.WorkCompletionPrefix)
+	if len(unknown) > 0 && s.Network != nil {
+		// Nothing was admitted; the network sender retries.
+		return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "network_unknown_barrier")
 	}
 	var acknowledge []pa.Turn
 	if s.RestartSource != "" {
@@ -502,16 +560,30 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 			return pa.Receipt{}, runtimeFailure(pa.ContextStale, "restart_source")
 		}
 	} else if len(unknown) > 0 {
-		recovering := len(unknown) == 1 && recoverySource == unknown[0].ID && unknown[0].Failure != nil &&
-			unknown[0].Failure.Field == RestartConfirmedField
-		if waiting > 0 && (steering || !canContinueRestartQueue(s, c, unknown) ||
-			!recovering && (recoverySource != "" || c.ActiveTurnID != "")) {
-			return pa.Receipt{}, runtimeFailure(pa.OutcomeUnknown, "inspect_interrupted_turn")
-		}
-		// A queued or running automatic continuation still owns recovery.
-		// An ordinary message can wait behind it in the existing queue.
-		if !recovering {
+		switch {
+		case person:
+			// A queued or running automatic continuation still owns its
+			// source; the message waits behind it in the existing queue.
+			for _, t := range unknown {
+				if t.ID != recoverySource {
+					acknowledge = append(acknowledge, t)
+				}
+			}
+		case review:
+			// A dispatched task's review waits behind the unknown turn; the
+			// person or a declined restart continuation releases the queue.
+		case waiting == 0:
 			acknowledge = unknown
+		case s.Room != nil:
+			// Nothing was admitted; the room ticket is offered again later.
+			return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "room_unknown_barrier")
+		case !s.Notice:
+			// Compaction and other input without the person's grant does not
+			// settle what the person has not seen. Nothing was admitted.
+			return pa.Receipt{}, runtimeFailure(pa.CapacityFull, "unknown_turn_barrier")
+		default:
+			// A host notice waits behind the queue without settling what the
+			// person has not seen.
 		}
 	}
 	if s.Compact {
@@ -560,6 +632,10 @@ func (r *Engine) Submit(ctx context.Context, s Submission) (pa.Receipt, error) {
 	var acknowledged []string
 	var events []pa.Event
 	for _, t := range acknowledge {
+		if c.ActiveTurnID == t.ID {
+			// A stale pointer at an unknown turn holds no running work.
+			c.ActiveTurnID = ""
+		}
 		t = t.AcknowledgeUnknown()
 		acknowledged = append(acknowledged, t.ID)
 		events = append(events, pa.Event{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t})
@@ -1093,6 +1169,11 @@ func (r *Engine) executeAttempt(ctx context.Context, a *runtimeActor, t pa.Turn,
 	}
 	if t.RoutineRunID != "" || t.Origin == pa.UserOrigin || t.Origin == "" {
 		input.Text = pa.WithBotMentionHint(input.Text)
+	}
+	// The first prompt after an interrupted turn was settled unrepeated
+	// inspects what finished before it acts.
+	if !isolatedRoutine && pa.RestartSourceTurn(t) == "" && restartNotRepeatedHeader(export, t) {
+		input.Text = restartNotRepeatedPrompt + "\n\n" + input.Text
 	}
 	if isolatedRoutine && (binding.Agent != effectiveAgent || binding.Revoked) {
 		a.mu.Unlock()

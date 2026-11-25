@@ -352,7 +352,7 @@ func TestRuntimeSQLiteReopenRetainsUnknownTurnAndWorkReceipt(t *testing.T) {
 	_, err = r.Submit(testContext, input)
 	requireCode(t, err, pa.IdempotencyConflict)
 	_, err = r.Submit(testContext, recoverySubmission(t, s, b, "later"))
-	requireCode(t, err, pa.OutcomeUnknown)
+	requireCode(t, err, pa.CapacityFull)
 	unknown, err := s.Receipt(testContext, work.Command)
 	if err != nil || unknown == nil || unknown.State != pa.EffectUnknown {
 		t.Fatalf("lost work receipt: %+v %v", unknown, err)

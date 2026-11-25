@@ -45,8 +45,15 @@ func TestRestartKeepsACompletedDispatchUntilItsBotCanReview(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := orchestrator.AssistantWorkSnapshotOf(settled)
-	if err = f.h.completeWork(ctx, snapshot); pa.Code(err) != pa.CapacityFull {
-		t.Fatalf("result review did not wait for its source turn: %v", err)
+	// The review is queued behind the recovering source turn and starts
+	// only after that turn is resumed.
+	if err = f.h.completeWork(ctx, snapshot); err != nil {
+		t.Fatalf("result review was not queued behind its source turn: %v", err)
+	}
+	select {
+	case early := <-f.p.sent:
+		t.Fatalf("the review started before its source recovered: %+v", early.Turn)
+	case <-time.After(100 * time.Millisecond):
 	}
 	recoverySession.reply <- app.PromptResult{FinalText: "Recovered previous progress."}
 	fixtureEventually(t, func() bool {

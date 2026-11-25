@@ -382,7 +382,8 @@ func TestFallbackLedgerSQLiteCrashSnapshotDoesNotSendAgain(t *testing.T) {
 	if turn.State != pa.TurnUnknown || p.sends.Load() != 1 || !turn.Attempts[len(turn.Attempts)-1].ToolActivity {
 		t.Fatalf("interrupted effects replayed or were erased: %+v", turn)
 	}
-	if _, err := r.Submit(testContext, recoverySubmission(t, s, b, "fresh-key")); pa.Code(err) != pa.OutcomeUnknown {
+	// Without the person's grant a new key still waits for the person.
+	if _, err := r.Submit(testContext, recoverySubmission(t, s, b, "fresh-key")); pa.Code(err) != pa.CapacityFull {
 		t.Fatalf("new key escaped unknown barrier: %v", err)
 	}
 }
