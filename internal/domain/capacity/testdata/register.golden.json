@@ -3479,11 +3479,10 @@
     "Unit": "rows",
     "Limit": 1,
     "WarnAt": 0,
-    "AtLimit": "disconnect",
+    "AtLimit": "coalesce",
     "Deviation": "",
     "Told": [
-      "diagnostics",
-      "sender"
+      "diagnostics"
     ],
     "EvictedBy": "daemon",
     "Projects": false,

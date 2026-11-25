@@ -10,7 +10,7 @@ import (
 // RosterWakeups is implemented by the same repository instance used by every
 // production writer. It carries no Bot content and is never durable authority.
 type RosterWakeups interface {
-	SubscribeRoster(string) (<-chan struct{}, func() bool, func(), error)
+	SubscribeRoster(string) (<-chan struct{}, func(), error)
 }
 
 type RosterIdentity struct {
@@ -75,7 +75,6 @@ func (r RosterResult) Revalidate(ctx context.Context) error {
 // before the first snapshot read; a commit in that gap cannot be lost.
 type RosterSubscription struct {
 	Wakeups <-chan struct{}
-	Lagged  func() bool
 	close   func()
 	once    sync.Once
 	read    func(context.Context, string) (RosterResult, error)
@@ -136,11 +135,11 @@ func (s *Service) SubscribeRoster(ctx context.Context, request pa.RosterRequest)
 			return nil, err
 		}
 	}
-	ch, lagged, close, err := wakeups.SubscribeRoster(request.MachineID)
+	ch, close, err := wakeups.SubscribeRoster(request.MachineID)
 	if err != nil {
 		return nil, err
 	}
-	sub := &RosterSubscription{Wakeups: ch, Lagged: lagged, close: close, check: check}
+	sub := &RosterSubscription{Wakeups: ch, close: close, check: check}
 	sub.read = func(ctx context.Context, cursor string) (RosterResult, error) {
 		if err := check(ctx); err != nil {
 			return RosterResult{}, err
