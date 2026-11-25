@@ -109,10 +109,15 @@ func (s *isolatedNativeSession) BeginCompaction(ctx context.Context, fence pa.Fe
 	return nil, refusal(pa.Unsupported, "native_compaction")
 }
 
+func (s *isolatedNativeSession) SupportsSteering(images bool) bool {
+	steerer, ok := s.ProviderSession.(app.SteeringSession)
+	return ok && steerer.SupportsSteering(images)
+}
+
 // Steer forwards Send now to the client when it can steer.
-func (s *isolatedNativeSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+func (s *isolatedNativeSession) Steer(ctx context.Context, q app.PromptRequest) (app.SteerOutcome, error) {
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {
-		return steerer.Steer(ctx, text)
+		return steerer.Steer(ctx, q)
 	}
 	return "", refusal(pa.Unsupported, "steering")
 }

@@ -40,7 +40,7 @@ const server=createServer(async(req,res)=>{try{
     }
     if(req.method!=="GET")record.response=JSON.parse(body)
     if(saveFault==="drop"&&req.method==="PATCH"){record.dropped=true;cut(res,record,answer.status);return}
-    res.writeHead(answer.status,{"Content-Type":"application/json"});res.end(body);return
+    res.writeHead(answer.status,{"Content-Type":answer.headers.get("Content-Type")??"application/octet-stream"});res.end(body);return
   }
   if(url.pathname.startsWith("/catalog/")){res.setHeader("Content-Type","application/json");res.end(await readFile(path.join(root,"public/catalogs",path.basename(url.pathname))));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
@@ -132,8 +132,54 @@ async function editFromAnotherClient(suffix,operation,body,method){
   assert.equal(response.status,200,JSON.stringify(result))
   return result.bot
 }
+async function steeringMobile(){
+  const toggle='button[aria-label="回覆中允許插話"]'
+  const checked=on=>`document.querySelector(${JSON.stringify(toggle)})?.getAttribute("aria-checked")==="${on}"`
+  await open("lang=zh-Hant&steering=1",true)
+  assert.equal(await evaluate("innerWidth"),390)
+  await openDetails()
+  await waitFor(checked(true))
+  await evaluate(`document.querySelector(${JSON.stringify(toggle)}).scrollIntoView({block:"center"})`)
+  await capture("390px-steering-setting")
+  for(const [on,preference] of [[false,"queue"],[true,"steer"]]){
+    await hit(toggle);await waitFor(checked(on));await save()
+    await waitFor('document.querySelector(".pa-info-panel").hidden')
+    assert.equal(posts().filter(r=>r.method==="PATCH").at(-1).response.bot.reply_input,preference)
+    if(!on){
+      await close();await open("lang=zh-Hant&steering=1",true)
+      await openDetails();await waitFor(checked(false))
+    }
+  }
+  await fill(".pa-composer textarea","STEER-FIXTURE-BEGIN")
+  await hit(".pa-send")
+  await waitFor('!!document.querySelector(".pa-working-transition[aria-hidden=false] .pa-working")')
+  await waitFor('!!document.querySelector(".pa-composer textarea:not(:disabled)")')
+  await evaluate(`(async()=>{
+    const canvas=document.createElement("canvas");canvas.width=168;canvas.height=96
+    const context=canvas.getContext("2d");context.fillStyle="#364f80";context.fillRect(0,0,168,96)
+    context.font="bold 24px sans-serif";context.fillStyle="white";context.fillText("STEER",40,57)
+    const png=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"))
+    const transfer=new DataTransfer();transfer.items.add(new File([png],"steer.png",{type:"image/png"}))
+    const picker=document.querySelector('.pa-composer input[type="file"]');picker.files=transfer.files
+    picker.dispatchEvent(new Event("change",{bubbles:true}))
+  })()`)
+  await waitFor('!!document.querySelector(".pa-picture-preview img")')
+  await fill(".pa-composer textarea","STEER-FIXTURE-FOLLOW-UP")
+  await hit(".pa-send")
+  await waitText("Synthetic picture steer accepted")
+  await waitText("已加入目前回合")
+  const ready='!![...document.querySelectorAll(".pa-mine .pa-message-bubble")].find(el=>el.querySelector(".pa-steered-status")&&el.querySelector("img")?.naturalWidth>0)'
+  await waitFor(ready)
+  await capture("390px-steered-message")
+  await close();await open("lang=zh-Hant&steering=1",true)
+  await waitFor(ready)
+  await close()
+  results.push({viewport:[390,720],settingRoundTrip:true,steeredMessageAfterReload:true,externalModelRequests:0})
+  console.log("PASS: 390px settings and steered picture, durable after reload")
+}
 try{
  await connect()
+ if(process.env.BOTS_STEERING){await steeringMobile()}else{
  for(const [lang,mobile] of [["en",false],["zh-Hant",true]]){
   const zh=lang!=="en",initial="Synthetic saved instructions "+lang
   await open("lang="+lang,mobile);await openDetails()
@@ -294,9 +340,10 @@ assert.equal(await evaluate('document.querySelector(".pa-settings-save").disable
  assert.equal(posts().filter(r=>r.path.endsWith("/react")).length,0,"opening and dismissing actions does not write reactions")
  results.push({settingsPersisted:true,backgroundVersionRebased:true,conflictKept:true,saveToasts:true,tabDraftPreserved:true,closeDraftPreserved:true,cancelDiscards:true,staleKept:true,unknownLockedNoReplay:true,reconciledCommitted:true,reconciledUncommitted:true,reconciledDiverged:true,checkReadFailureLocked:true,desktop:[1280,900],mobile:[390,720],externalModelRequests:0})
  console.log("PASS: production Chat settings crossed authenticated HTTP/Host/SQLite; unique editor, drafts, reopen, conflict/unknown fences and next scripted ACP turn; external model requests=0")
+ }
 }catch(error){if(tab)await capture("failure").catch(()=>{});throw error}
 finally{
  if(tab)await close().catch(()=>{})
  await writeFile(path.join(artifacts,"operations.json"),JSON.stringify({operations,requests,results},null,2))
- ws?.close();if(chrome.pid&&chrome.exitCode===null&&chrome.signalCode===null){const exited=new Promise(resolve=>chrome.once("exit",resolve));chrome.kill("SIGTERM");await exited}await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true})
+ ws?.close();if(chrome.pid&&chrome.exitCode===null&&chrome.signalCode===null){const exited=new Promise(resolve=>chrome.once("exit",resolve));chrome.kill("SIGTERM");await exited}await new Promise(resolve=>server.close(resolve));await rm(profile,{recursive:true,force:true,maxRetries:5})
 }

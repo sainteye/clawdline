@@ -93,6 +93,7 @@ func paWireReadItem(v app.ReadViewItem) (contract.ProjectAssistantReadViewItem, 
 		var item contract.ProjectAssistantMessage
 		item, err = paWireMessage(*v.Message)
 		out.Message = &item
+		out.JoinedTurnID = v.JoinedTurnID
 	case v.Kind == app.ReadItemWork && v.Work != nil:
 		item := paWireWorkLink(*v.Work)
 		out.Work = &item

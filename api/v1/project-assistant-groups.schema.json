@@ -666,6 +666,9 @@
       "additionalProperties": false,
       "description": "Editable settings; omitted fallback_agents preserves the saved chain, while an empty array clears it. Primary Agent and Project remain immutable.",
       "properties": {
+        "reply_input": { "type": "string", "enum": ["queue", "steer"] },
+        "base": { "$ref": "project-assistants.v1#/$defs/ProjectAssistantEditBase" },
+        "overwrite_conflicts": { "type": "boolean" },
         "expected_version": {
           "type": "integer"
         },

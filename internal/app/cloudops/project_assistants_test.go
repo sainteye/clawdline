@@ -302,6 +302,43 @@ func TestProjectAssistantCapturedLegacy16SourceRoundTrip(t *testing.T) {
 	}
 }
 
+func TestProjectAssistantReplyInputSettingCrossesCloud(t *testing.T) {
+	for _, row := range projectAssistantRows(t) {
+		if row.Op != "project-assistants.edit" && row.Op != "project-assistants.team-settings" {
+			continue
+		}
+		t.Run(row.Op, func(t *testing.T) {
+			fields := projectAssistantExample(t, row)
+			settings := fields["settings"].(map[string]any)
+			settings["reply_input"] = "steer"
+			settings["base"] = map[string]any{"name": settings["name"], "appearance": settings["appearance"], "instructions": "", "reply_input": "queue"}
+			calls := 0
+			bridge := open(projectAssistantRouter(func(_ context.Context, req LocalRequest) (LocalResponse, error) {
+				calls++
+				var form struct {
+					Settings struct {
+						ReplyInput string `json:"reply_input"`
+						Base       struct {
+							ReplyInput string `json:"reply_input"`
+						}
+					}
+				}
+				if err := json.Unmarshal(req.Body, &form); err != nil || form.Settings.ReplyInput != "steer" || form.Settings.Base.ReplyInput != "queue" {
+					t.Fatalf("forwarded settings: %s, %v", req.Body, err)
+				}
+				return LocalResponse{Status: 200, Body: []byte(`{"contract_version":"project-assistants.v1","bot":{"reply_input":"steer"}}`)}, nil
+			}))
+			if answer := bridge.Handle(t.Context(), request(t, ClassCtl, fields)); !answer.OK() || calls != 1 {
+				t.Fatalf("Cloud did not carry the setting: %d, calls %d", answer.Status, calls)
+			}
+			settings["reply_input"] = "unknown"
+			if answer := bridge.Handle(t.Context(), request(t, ClassCtl, fields)); answer.OK() || calls != 1 {
+				t.Fatalf("invalid setting reached the machine: %d, calls %d", answer.Status, calls)
+			}
+		})
+	}
+}
+
 func TestProjectAssistantMemoryViewCloudPage(t *testing.T) {
 	calls := 0
 	bridge := open(projectAssistantRouter(func(_ context.Context, req LocalRequest) (LocalResponse, error) {

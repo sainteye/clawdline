@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14580,
-  "riskKeys": 6201,
-  "nonRiskCount": 8379,
+  "englishContentKeys": 14588,
+  "riskKeys": 6204,
+  "nonRiskCount": 8384,
   "groups": [
     {
       "name": "acp / other",
@@ -6340,7 +6340,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 719,
+      "count": 721,
       "sources": [
         null
       ],
@@ -6386,6 +6386,7 @@
         "projectAssistants.botCreatedIn",
         "projectAssistants.botInformation",
         "projectAssistants.botNotify",
+        "projectAssistants.botReplyInput",
         "projectAssistants.botWorkReview",
         "projectAssistants.botWorkReviewHint",
         "projectAssistants.bots",
@@ -6921,6 +6922,7 @@
         "projectAssistants.statusOffline",
         "projectAssistants.statusOneOk",
         "projectAssistants.statusShow",
+        "projectAssistants.steeredMessage",
         "projectAssistants.stop",
         "projectAssistants.stopSending",
         "projectAssistants.teamAccept",
@@ -8392,7 +8394,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 243,
+      "count": 246,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8532,6 +8534,9 @@
         "transparency.card.persistent-bot-routines.title",
         "transparency.card.persistent-bot-selected-extensions.summary",
         "transparency.card.persistent-bot-selected-extensions.title",
+        "transparency.card.persistent-bot-steering.how",
+        "transparency.card.persistent-bot-steering.summary",
+        "transparency.card.persistent-bot-steering.title",
         "transparency.card.persistent-bot-team.summary",
         "transparency.card.persistent-bot-team.title",
         "transparency.card.persistent-bot-voice.condition",

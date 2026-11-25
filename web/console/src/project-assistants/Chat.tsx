@@ -10,7 +10,7 @@ import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
-import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, workingSubject } from "./chat-items"
+import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
@@ -1887,7 +1887,7 @@ ${currentDraft}`:submitted)
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" role="listitem" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
-          <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:message.files?.map(file=>file.name).join(" · ")}</span>
+          <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:queuedAttachments(message,w.heldPictures)}</span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}
@@ -1910,7 +1910,7 @@ ${currentDraft}`:submitted)
             onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
-          {queuedTurn&&!message.files?.length&&!message.attachments?.length&&source.canSendNow?.()&&!noSteering.includes(bot.agent)&&!!activeTurn&&!restartTurn&&
+          {queuedTurn&&(source.canReplyInput?.()||!message.files?.length&&!message.attachments?.length)&&source.canSendNow?.()&&!noSteering.includes(bot.agent)&&activeTurn?.state==="running"&&!restartTurn&&
             <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}

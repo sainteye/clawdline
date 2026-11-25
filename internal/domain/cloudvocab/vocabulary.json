@@ -3262,6 +3262,16 @@
           "settings": {
             "type": "object",
             "properties": {
+              "reply_input": {
+                "type": "string",
+                "enum": ["queue", "steer"]
+              },
+              "base": {
+                "type": "object"
+              },
+              "overwrite_conflicts": {
+                "type": "bool"
+              },
               "expected_version": {
                 "type": "integer",
                 "min": 0,
@@ -9271,6 +9281,16 @@
           "settings": {
             "type": "object",
             "properties": {
+              "reply_input": {
+                "type": "string",
+                "enum": ["queue", "steer"]
+              },
+              "base": {
+                "type": "object"
+              },
+              "overwrite_conflicts": {
+                "type": "bool"
+              },
               "expected_version": {
                 "type": "integer",
                 "min": 0,

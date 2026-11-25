@@ -423,8 +423,13 @@ func (s *ownedSession) Send(ctx context.Context, q app.PromptRequest) (app.Pendi
 	return s.ProviderSession.Send(context.WithValue(ctx, sendWriteContextKey{}, s.life), q)
 }
 
+func (s *ownedSession) SupportsSteering(images bool) bool {
+	steerer, ok := s.ProviderSession.(app.SteeringSession)
+	return ok && !s.life.closed.Load() && steerer.SupportsSteering(images)
+}
+
 // Steer forwards Send now to a native session that can take it.
-func (s *ownedSession) Steer(ctx context.Context, text string) (app.SteerOutcome, error) {
+func (s *ownedSession) Steer(ctx context.Context, q app.PromptRequest) (app.SteerOutcome, error) {
 	// Both refusals here come before the native session saw the text.
 	if s.life.extensions != nil {
 		if e := s.life.extensions(ctx); e != nil {
@@ -432,7 +437,7 @@ func (s *ownedSession) Steer(ctx context.Context, text string) (app.SteerOutcome
 		}
 	}
 	if steerer, ok := s.ProviderSession.(app.SteeringSession); ok {
-		return steerer.Steer(ctx, text)
+		return steerer.Steer(ctx, q)
 	}
 	return "", app.SteerRefused(failure(pa.Unsupported, app.SteeringField))
 }

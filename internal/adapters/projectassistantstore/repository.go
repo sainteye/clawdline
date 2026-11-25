@@ -633,6 +633,25 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	}
 	return nil
 }
+func validateStoredBotSettings(b pa.Bot) error {
+	if b.BackgroundThreads < 0 || b.BackgroundThreads > pa.MaxBackgroundThreads {
+		return failure(pa.Invalid, "background_threads")
+	}
+	if err := pa.ValidateRuntimeSettings(b.RuntimeSettings); err != nil {
+		return err
+	}
+	if b.Notify != "" && b.Notify != "on" && b.Notify != "off" {
+		return failure(pa.Invalid, "notify")
+	}
+	if b.WorkReview != "" && b.WorkReview != "on" && b.WorkReview != "off" {
+		return failure(pa.Invalid, "work_review")
+	}
+	if !b.ReplyInput.Valid() {
+		return failure(pa.Invalid, "reply_input")
+	}
+	return nil
+}
+
 func validateAggregate(a aggregate) error {
 	if a.BackgroundOwner != nil && (a.BackgroundOwner.MachineID != a.Bot.Key.MachineID ||
 		*a.BackgroundOwner == a.Bot.Key || a.BackgroundOwner.BotID == "" || !a.Bot.Hidden || a.Bot.ManageTeam) {
@@ -655,17 +674,8 @@ func validateAggregate(a aggregate) error {
 		}
 	}
 	b := a.Bot
-	if b.BackgroundThreads < 0 || b.BackgroundThreads > pa.MaxBackgroundThreads {
-		return failure(pa.Invalid, "background_threads")
-	}
-	if err := pa.ValidateRuntimeSettings(b.RuntimeSettings); err != nil {
+	if err := validateStoredBotSettings(b); err != nil {
 		return err
-	}
-	if b.Notify != "" && b.Notify != "on" && b.Notify != "off" {
-		return failure(pa.Invalid, "notify")
-	}
-	if b.WorkReview != "" && b.WorkReview != "on" && b.WorkReview != "off" {
-		return failure(pa.Invalid, "work_review")
 	}
 	if b.Key.MachineID == "" || b.Key.BotID == "" || b.Project.MachineID != b.Key.MachineID || b.ConversationID == "" || b.Version < 1 {
 		return failure(pa.Invalid, "bot")

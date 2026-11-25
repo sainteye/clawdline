@@ -45,7 +45,9 @@ func (s *scopeSteerSession) Send(ctx context.Context, q app.PromptRequest) (app.
 	s.p.sent <- q
 	return s.p, nil
 }
-func (s *scopeSteerSession) Steer(context.Context, string) (app.SteerOutcome, error) {
+func (s *scopeSteerSession) SupportsSteering(bool) bool { return true }
+
+func (s *scopeSteerSession) Steer(context.Context, app.PromptRequest) (app.SteerOutcome, error) {
 	s.p.steers.Add(1)
 	return app.SteerJoined, nil
 }
@@ -62,6 +64,12 @@ func TestGroupTurnCannotTakeQueuedDirectMessageBySteering(t *testing.T) {
 	p := &scopeSteerProvider{sent: make(chan app.PromptRequest, 8), results: make(chan app.PromptResult, 8)}
 	f := newGroupHTTPFixture(t, p)
 	b := f.bots[0]
+	b, _, err := f.service.Edit(t.Context(), pa.Command{Key: b.Key, Operation: pa.EditOperation, IdempotencyKey: "prefer-queue"},
+		pa.EditBot{ExpectedVersion: b.Version, Name: b.Name, Appearance: b.Appearance, Instructions: b.Instructions.Text, ReplyInput: pa.ReplyInputQueue})
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	status, raw := f.request(t, "POST", "/v1/project-assistants/rooms/groups", "person", contract.ProjectAssistantGroupCreateRequest{Command: f.command(pa.CreateOperation, "steer-room"), Settings: contract.ProjectAssistantGroupCreateSettings{Target: contract.ProjectAssistantProjectSelection{MachineID: "machine", ProjectID: "project"}, Name: "Steer scope", Members: []contract.ProjectAssistantBotKey{paWireBotKey(b.Key)}}})
 	if status != 200 {
 		t.Fatal(status, string(raw))

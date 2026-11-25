@@ -290,6 +290,7 @@ func TestRosterSSESubscribeBeforeSnapshotAndReconnectConverges(t *testing.T) {
 	}
 	got, _ := json.Marshal(seen[b.Key].Summary)
 	want.Items[0].Bot.BackgroundThreads = want.Items[0].Bot.BackgroundConcurrency()
+	want.Items[0].Bot.ReplyInput = want.Items[0].Bot.ReplyInput.Effective()
 	// The settings revision fences host writes and is absent from the roster wire contract.
 	want.Items[0].Bot.SettingsVersion = 0
 	expected, _ := json.Marshal(want.Items[0])

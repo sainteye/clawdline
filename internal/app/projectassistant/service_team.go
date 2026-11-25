@@ -392,7 +392,7 @@ func (t *TeamCoordinator) Call(ctx context.Context, fence pa.Fence, turn, action
 		if err != nil {
 			return nil, err
 		}
-		next = pa.Bot{Key: key, Project: plan.Project, ConversationID: t.o.ID(), Name: plan.Name, Appearance: plan.Appearance, Agent: plan.Agent, PermissionPolicy: plan.PermissionPolicy, Mode: plan.Mode, ManageTeam: plan.ManageTeam, CreatedBy: &plan.CreatedBy, Instructions: pa.InstructionSnapshot{Revision: 1, Text: plan.Instructions}, Version: 1, CreatedAt: now, UpdatedAt: now}
+		next = pa.Bot{Key: key, Project: plan.Project, ConversationID: t.o.ID(), Name: plan.Name, Appearance: plan.Appearance, Agent: plan.Agent, PermissionPolicy: plan.PermissionPolicy, Mode: plan.Mode, ManageTeam: plan.ManageTeam, CreatedBy: &plan.CreatedBy, ReplyInput: pa.ReplyInputSteer, Instructions: pa.InstructionSnapshot{Revision: 1, Text: plan.Instructions}, Version: 1, CreatedAt: now, UpdatedAt: now}
 		targetName = next.Name
 		if hidden != nil {
 			next.Hidden = *hidden

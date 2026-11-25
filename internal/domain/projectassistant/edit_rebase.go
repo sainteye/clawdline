@@ -28,6 +28,7 @@ const (
 	ConflictExtensions        = "extensions"
 	ConflictFallbacks         = "fallbacks"
 	ConflictNotify            = "notify"
+	ConflictReplyInput        = "reply_input"
 	ConflictBackgroundThreads = "background_threads"
 	ConflictManageTeam        = "manage_team"
 )
@@ -81,6 +82,9 @@ func RebaseEdit(current Bot, in EditBot) (EditBot, error) {
 	base := in.Base
 	if base == nil {
 		return in, nil
+	}
+	if !base.ReplyInput.Valid() {
+		return in, fail(Invalid, "reply_input")
 	}
 	var conflicts []string
 	// decide reports whether the edit changed the field, recording a conflict
@@ -138,6 +142,10 @@ func RebaseEdit(current Bot, in EditBot) (EditBot, error) {
 	}
 	if in.Notify != "" && !decide(ConflictNotify, notifyOn(in.Notify) != notifyOn(base.Notify), notifyOn(current.Notify) != notifyOn(base.Notify), notifyOn(current.Notify) == notifyOn(in.Notify)) {
 		in.Notify = ""
+	}
+	originalInput, currentInput := base.ReplyInput.Effective(), current.ReplyInput.Effective()
+	if in.ReplyInput != "" && !decide(ConflictReplyInput, in.ReplyInput != originalInput, currentInput != originalInput, currentInput == in.ReplyInput) {
+		in.ReplyInput = ""
 	}
 	if in.BackgroundThreads != 0 && !decide(ConflictBackgroundThreads, in.BackgroundThreads != threadsOf(base.BackgroundThreads), current.BackgroundConcurrency() != threadsOf(base.BackgroundThreads), current.BackgroundConcurrency() == in.BackgroundThreads) {
 		in.BackgroundThreads = 0

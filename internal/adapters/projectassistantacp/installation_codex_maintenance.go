@@ -185,7 +185,9 @@ func (*codexMaintenanceSession) Send(context.Context, app.PromptRequest) (app.Pe
 func (*codexMaintenanceSession) Answer(context.Context, string, string) error {
 	return refusal(pa.ScopeDenied, "native_maintenance_permission")
 }
-func (*codexMaintenanceSession) Steer(context.Context, string) (app.SteerOutcome, error) {
+func (*codexMaintenanceSession) SupportsSteering(bool) bool { return false }
+
+func (*codexMaintenanceSession) Steer(context.Context, app.PromptRequest) (app.SteerOutcome, error) {
 	return "", refusal(pa.ScopeDenied, "native_maintenance_chat")
 }
 func (s *codexMaintenanceSession) BeginCompaction(ctx context.Context, fence pa.Fence) (app.PendingNativeCompaction, error) {

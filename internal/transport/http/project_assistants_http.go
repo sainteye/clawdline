@@ -643,7 +643,7 @@ func (h *projectAssistantHTTP) write(w http.ResponseWriter, r *http.Request, rou
 		if err != nil {
 			return nil, err
 		}
-		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, BackgroundThreads: int(settings.BackgroundThreads), Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, WorkReview: settings.WorkReview, FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Base: paDomainEditBase(settings.Base), OverwriteConflicts: settings.OverwriteConflicts})
+		bot, receipt, err := s.Edit(ctx, command, pa.EditBot{Roster: roster, BackgroundThreads: int(settings.BackgroundThreads), Agent: pa.Agent(settings.Agent), Extensions: paDomainExtensions(settings.Extensions), LoginProfile: paDomainLoginSelection(settings.LoginProfile), RuntimeSettings: paDomainRuntimeSettings(settings.RuntimeSettings), Notify: settings.Notify, WorkReview: settings.WorkReview, ReplyInput: pa.ReplyInput(settings.ReplyInput), FallbackAgents: paDomainOptionalAgents(settings.FallbackAgents), FallbackSteps: paDomainOptionalFallbackSteps(settings.FallbackSteps), ExpectedVersion: settings.ExpectedVersion, Name: settings.Name, Appearance: paDomainAppearance(settings.Appearance), Instructions: settings.Instructions, PermissionPolicy: pa.PermissionPolicy(settings.PermissionPolicy), Mode: settings.Mode, Base: paDomainEditBase(settings.Base), OverwriteConflicts: settings.OverwriteConflicts})
 		return paHTTPBot(bot, receipt, err)
 	case "visibility":
 		request, err := paDecodeHTTP[contract.ProjectAssistantVisibilityRequest](w, r)
@@ -1077,7 +1077,7 @@ func paDomainEditBase(v *contract.ProjectAssistantEditBase) *pa.EditBase {
 	if v == nil {
 		return nil
 	}
-	out := pa.EditBase{Name: v.Name, Appearance: paDomainAppearance(v.Appearance), Instructions: v.Instructions, Agent: pa.Agent(v.Agent), PermissionPolicy: pa.PermissionPolicy(v.PermissionPolicy), Mode: v.Mode, LoginProfile: v.LoginProfile, FallbackAgents: paDomainAgents(v.FallbackAgents), FallbackSteps: paDomainFallbackSteps(v.FallbackSteps), Notify: v.Notify, BackgroundThreads: int(v.BackgroundThreads), ManageTeam: v.ManageTeam}
+	out := pa.EditBase{Name: v.Name, Appearance: paDomainAppearance(v.Appearance), Instructions: v.Instructions, Agent: pa.Agent(v.Agent), PermissionPolicy: pa.PermissionPolicy(v.PermissionPolicy), Mode: v.Mode, LoginProfile: v.LoginProfile, FallbackAgents: paDomainAgents(v.FallbackAgents), FallbackSteps: paDomainFallbackSteps(v.FallbackSteps), Notify: v.Notify, ReplyInput: pa.ReplyInput(v.ReplyInput), BackgroundThreads: int(v.BackgroundThreads), ManageTeam: v.ManageTeam}
 	if r := paDomainRuntimeSettings(v.RuntimeSettings); r != nil {
 		out.RuntimeSettings = *r
 	}

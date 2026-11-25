@@ -249,7 +249,7 @@ func TestCodexMaintenanceUsesOnlyThePinnedLoadAndBareCommand(t *testing.T) {
 	if _, err := s.Send(ctx, app.PromptRequest{Text: "chat must not be sent"}); pa.Code(err) != pa.ScopeDenied {
 		t.Fatal("ordinary prompt escaped", err)
 	}
-	if _, err := s.(app.SteeringSession).Steer(ctx, "chat must not steer"); pa.Code(err) != pa.ScopeDenied {
+	if _, err := s.(app.SteeringSession).Steer(ctx, app.PromptRequest{Text: "chat must not steer"}); pa.Code(err) != pa.ScopeDenied {
 		t.Fatal("steering escaped", err)
 	}
 	if err := s.Answer(ctx, "tool", "allow"); pa.Code(err) != pa.ScopeDenied {

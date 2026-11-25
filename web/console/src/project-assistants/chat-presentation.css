@@ -117,6 +117,7 @@
 .project-assistants .pa-chat-surface .pa-message.pa-group-start { margin-top:22px; }
 .project-assistants .pa-chat-surface .pa-message-bubble { width:fit-content;max-width:100%;padding:8px 10px;border-radius:18px;background:#242426; }
 .project-assistants .pa-chat-surface .pa-mine .pa-message-bubble { margin-left:auto;background:#343436; }
+.pa-steered-status { display:block;color:var(--pa-dim);font-size:11px;margin-top:4px; }
 .project-assistants .pa-chat-surface .pa-notice .pa-message-bubble { background:transparent; }
 .project-assistants .pa-chat-surface .pa-message p { font-size:15px;line-height:1.5;font-weight:400; }
 .project-assistants .pa-chat-surface .pa-session-report>.pa-message-bubble {
