@@ -442,7 +442,7 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	if work := value.DispatchedWork; work != nil {
 		out.DispatchedWork = &contract.ProjectAssistantDispatchedWork{
-			Running: work.Running, NeedsYou: work.NeedsYou, Delivered: work.Delivered,
+			Running: work.Running, Executing: work.Executing, NeedsYou: work.NeedsYou, Delivered: work.Delivered,
 		}
 	}
 	out.Version = value.Version

@@ -648,11 +648,12 @@ type BackgroundWork struct {
 }
 
 // DispatchedWork counts the broker Sessions a Bot dispatched, from its work
-// links: Running is accepted or executing, NeedsYou is waiting for the
-// person, Delivered is finished work whose landing is still owed (Unsettled),
-// however long ago it finished.
+// links. Running includes accepted and executing work. Executing counts only
+// work currently executing. NeedsYou is waiting for the person, and Delivered
+// is finished work whose landing is still owed (Unsettled).
 type DispatchedWork struct {
 	Running   int64 `json:"running"`
+	Executing int64 `json:"executing"`
 	NeedsYou  int64 `json:"needs_you"`
 	Delivered int64 `json:"delivered"`
 }

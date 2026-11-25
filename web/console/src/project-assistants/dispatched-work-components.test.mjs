@@ -31,7 +31,46 @@ test("a roster row shows its clone count under the time only when Sessions are r
 
 test("with the setting off a row renders exactly as it does without dispatched work", () => {
   const plain=render(BotRow,rowProps(item({}),false))
-  assert.equal(render(BotRow,rowProps(item({dispatched_work:{running:2,needs_you:1,delivered:1}}),false)),plain)
+  assert.equal(render(BotRow,rowProps(item({dispatched_work:{running:2,executing:1,needs_you:1,delivered:1}}),false)),plain)
+})
+
+test("a roster preview uses the reply orb only while a dispatched Session is executing", () => {
+  const previewOrb = summary => render(BotRow, rowProps(summary))
+    .match(/class="pa-row-preview"[^>]*>(<canvas[^>]*><\/canvas>)/)?.[1]
+  const replyOrb = previewOrb(item({status:"working", activity:"writing"}))
+  assert.ok(replyOrb)
+  assert.equal(previewOrb(item({dispatched_work:{running:2, executing:1, needs_you:0, delivered:4}})), replyOrb)
+  for (const dispatched_work of [
+    {running:2, executing:0, needs_you:0, delivered:4},
+    {running:0, executing:0, needs_you:0, delivered:4},
+    {running:2, needs_you:0, delivered:4},
+  ]) {
+    assert.equal(previewOrb(item({dispatched_work})), undefined)
+  }
+  assert.equal(previewOrb(item({
+    dispatched_work:{running:1, executing:1, needs_you:0, delivered:0}, source:{...live, fresh:false},
+  })), undefined)
+})
+
+test("the chat strip animates executing work and keeps the clone mark for other states", () => {
+  const queued = {id:"q", task_id:"q", state:"accepted"}
+  const running = {...queued, state:"executing"}
+  const delivered = {id:"d", task_id:"d", state:"completed", landing:"pending"}
+  const needsYou = {id:"n", task_id:"n", state:"waiting_for_person"}
+  const active = render(DispatchedWorkStrip, {links:[queued], work:{running:2, executing:1, needs_you:0, delivered:4}, w})
+  assert.match(active, /<canvas/)
+  assert.doesNotMatch(active, /pa-clone-mark/)
+  for (const props of [
+    {links:[running], work:{running:1, executing:0, needs_you:0, delivered:0}},
+    {links:[running], work:{running:1, needs_you:0, delivered:0}},
+    {links:[running]},
+    {links:[delivered], work:{running:0, executing:0, needs_you:0, delivered:1}},
+    {links:[needsYou]},
+  ]) {
+    const html = render(DispatchedWorkStrip, {...props, w})
+    assert.match(html, /pa-clone-mark/)
+    assert.doesNotMatch(html, /<canvas/)
+  }
 })
 
 test("the chat strip takes no space without work, keeps the background capsule, and opens the Session", () => {

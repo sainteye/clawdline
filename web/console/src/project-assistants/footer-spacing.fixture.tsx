@@ -19,7 +19,7 @@ const sources=[source],view=createViewState()
 function FooterChat(){
   const [summary,setSummary]=React.useState<W.ProjectAssistantBotSummary>()
   const language=new URL(location.href).searchParams.get("lang")??"en"
-  React.useEffect(()=>{void source.list(query,new AbortController().signal).then(page=>setSummary({...page.items[0],dispatched_work:{running:1,needs_you:0,delivered:11}}))},[])
+  React.useEffect(()=>{void source.list(query,new AbortController().signal).then(page=>setSummary({...page.items[0],dispatched_work:{running:1,executing:0,needs_you:0,delivered:11}}))},[])
   return summary?<div className="project-assistants" style={{height:"100vh",display:"flex",flexDirection:"column"}}><FallbackSourceScope source={source}><Chat summary={summary} source={source} current={()=>sources} accountKey="footer" view={view} w={words(language)} language={language} onBack={()=>{}} onBotChanged={()=>{}}/></FallbackSourceScope></div>:null
 }
 createRoot(document.querySelector("#app")!).render(<FooterChat/>)
