@@ -509,11 +509,20 @@ func TestAnIsolatedTaskKeepsItsDeclaredWrites(t *testing.T) {
 		t.Fatalf("a shared dispatch over another root's shared lease answered %v; the arbitration is not running at all", err)
 	}
 
-	// The isolated one finished (its tab never opened here) and owes a
-	// landing. Its record says pending and names no target, so it is unlanded
-	// whatever its branch holds (W3, D01, D19); B1 filed an empty branch as
-	// droppable on the word of the checkout's HEAD. The unlanded row carries
-	// the declared list as its write set.
+	// The isolated one finished and owes a landing. Its tab never opened
+	// here, which alone would settle it nothing_to_land
+	// (landing_equivalent_test.go), so the record is given the tab a real
+	// child has. Its record says pending and names no target, so it is
+	// unlanded whatever its branch holds (W3, D01, D19); B1 filed an empty
+	// branch as droppable on the word of the checkout's HEAD. The unlanded
+	// row carries the declared list as its write set.
+	if _, err := b.mutate(ctx, isolated, "task.test", func(r *Record) error {
+		r.ChildTerminalID = "%3"
+		r.Landing = &Landing{State: LandingPending, Note: settlementNote(SettlementEmpty), Settlement: SettlementEmpty}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	commit := exec.Command("git", "commit", "-q", "--allow-empty", "-m", "work")
 	commit.Dir = r.Worktree.Path
 	commit.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t",
