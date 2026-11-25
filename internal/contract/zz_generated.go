@@ -6071,10 +6071,15 @@ type ProjectAssistantNetworkSettingsView struct {
 type ProjectAssistantNoticeRef struct {
 	// For cleanup_released: degraded when the bounded re-checks ran out, person when
 	// the person released the Bot.
-	Cause        string `json:"cause,omitempty"`
-	Key          string `json:"key"`
-	TokensAfter  int64  `json:"tokens_after,omitempty"`
-	TokensBefore int64  `json:"tokens_before,omitempty"`
+	Cause               string                      `json:"cause,omitempty"`
+	FailureCode         string                      `json:"failure_code,omitempty"`
+	FailureField        string                      `json:"failure_field,omitempty"`
+	Key                 string                      `json:"key"`
+	Requester           string                      `json:"requester,omitempty"`
+	RequesterAppearance *ProjectAssistantAppearance `json:"requester_appearance,omitempty"`
+	TaskTitle           string                      `json:"task_title,omitempty"`
+	TokensAfter         int64                       `json:"tokens_after,omitempty"`
+	TokensBefore        int64                       `json:"tokens_before,omitempty"`
 }
 
 // Authenticated device observation of a receipt/event. It does not advance read

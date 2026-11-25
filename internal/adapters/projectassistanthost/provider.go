@@ -1203,12 +1203,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
 		request := pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, BotRequestID: botRequestID, ContinueOnCompletion: continueOnCompletion, Choice: choice}
 		if taskOwner.BotID != "" && turn.Origin == pa.BotRequestOrigin {
-			// A thread worker answering another Bot dispatches for the Bot
-			// that owns it: a notice in that Bot's main chat owns the task,
-			// so its progress, work_status and review turn are there.
-			if err := h.anchorPeerDispatch(ctx, r, c.WorkOwner, turn, &request); err != nil {
-				return pa.WorkLink{}, err
-			}
+			return h.dispatchPeerWork(ctx, r, c.WorkOwner, turn, request)
 		}
 		return r.DispatchWork(ctx, request)
 	}

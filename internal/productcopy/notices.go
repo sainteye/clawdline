@@ -98,6 +98,7 @@ var notices = map[string][9]string{
 	"note.body":                  {"Open “{title}” in the Session.", "到 Session 查看「{title}」。", "セッションで「{title}」を開いてください。", "在会话中查看“{title}”。", "세션에서 ‘{title}’ 메모를 확인하세요.", "Abre «{title}» en la sesión.", "Abra “{title}” na sessão.", "Ouvrez « {title} » dans la session.", "Öffnen Sie „{title}“ in der Sitzung."},
 	"peer_dispatch.notice":       {"Dispatched task “{title}” at {requester}'s request.", "應 {requester} 的請求派出任務「{title}」。"},
 	"peer_dispatch.another_bot":  {"another Bot", "另一個 Bot"},
+	"peer_dispatch.failed":       {"Dispatch didn’t go through.", "派工沒有成功。"},
 	"push.test":                  {"This is a test notification. Notifications are connected.", "這是一則測試通知，該接的都接好了。", "これはテスト通知です。通知の接続は完了しています。", "这是一条测试通知。通知连接已就绪。", "테스트 알림입니다. 알림 연결이 완료되었습니다.", "Esta es una notificación de prueba. Las notificaciones están conectadas.", "Esta é uma notificação de teste. As notificações estão conectadas.", "Ceci est une notification de test. Les notifications sont connectées.", "Dies ist eine Testbenachrichtigung. Benachrichtigungen sind verbunden."},
 }
 

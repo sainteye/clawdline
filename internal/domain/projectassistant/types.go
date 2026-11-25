@@ -382,6 +382,8 @@ const (
 	NoticeWorkReview          = "work_review"
 	NoticeWorkReviewHeld      = "work_review_held"
 	NoticeWorkReviewWaiting   = "work_review_waiting"
+	NoticePeerDispatch        = "peer_dispatch"
+	NoticePeerDispatchFailed  = "peer_dispatch_failed"
 )
 
 // NoticeCleanupReleased is the key of the notice that a Bot was released
@@ -391,10 +393,23 @@ const NoticeCleanupReleased = "cleanup_released"
 
 // NoticeRef is a language-neutral notice: a key and its values.
 type NoticeRef struct {
-	Key          string `json:"key"`
-	TokensBefore int64  `json:"tokens_before,omitempty"`
-	TokensAfter  int64  `json:"tokens_after,omitempty"`
-	Cause        string `json:"cause,omitempty"`
+	Key                 string      `json:"key"`
+	TokensBefore        int64       `json:"tokens_before,omitempty"`
+	TokensAfter         int64       `json:"tokens_after,omitempty"`
+	Cause               string      `json:"cause,omitempty"`
+	Requester           string      `json:"requester,omitempty"`
+	RequesterAppearance *Appearance `json:"requester_appearance,omitempty"`
+	TaskTitle           string      `json:"task_title,omitempty"`
+	FailureCode         string      `json:"failure_code,omitempty"`
+	FailureField        string      `json:"failure_field,omitempty"`
+}
+
+// PeerDispatchAttribution carries the original requester's display snapshot
+// from the host to the broker's admission record.
+type PeerDispatchAttribution struct {
+	Requester  string     `json:"requester,omitempty"`
+	Appearance Appearance `json:"appearance,omitzero"`
+	Language   string     `json:"language,omitempty"`
 }
 type SendMessage struct {
 	Handoff        *HandoffRef  `json:"handoff,omitempty"`
@@ -733,21 +748,22 @@ type Trace struct {
 // Event cursors are source-local durable sequences, not message sequences.
 // Trace, permission and work events do not increment unread message counts.
 type Event struct {
-	Version    string           `json:"version"`
-	ID         string           `json:"id"`
-	Seq        int64            `json:"seq"`
-	Fence      Fence            `json:"fence"`
-	Kind       EventKind        `json:"kind"`
-	At         time.Time        `json:"at"`
-	Message    *Message         `json:"message,omitempty"`
-	Turn       *Turn            `json:"turn,omitempty"`
-	Permission *PermissionOffer `json:"permission,omitempty"`
-	Work       *WorkLink        `json:"work,omitempty"`
-	Memory     *MemoryRevision  `json:"memory,omitempty"`
-	Bot        *BotSummary      `json:"bot,omitempty"`
-	Read       *ReadCursor      `json:"read,omitempty"`
-	Trace      *Trace           `json:"trace,omitempty"`
-	Source     *SourceStatus    `json:"source,omitempty"`
+	Version              string           `json:"version"`
+	ID                   string           `json:"id"`
+	Seq                  int64            `json:"seq"`
+	Fence                Fence            `json:"fence"`
+	Kind                 EventKind        `json:"kind"`
+	At                   time.Time        `json:"at"`
+	Message              *Message         `json:"message,omitempty"`
+	Turn                 *Turn            `json:"turn,omitempty"`
+	Permission           *PermissionOffer `json:"permission,omitempty"`
+	Work                 *WorkLink        `json:"work,omitempty"`
+	WorkAnchorMessageSeq int64            `json:"work_anchor_message_seq,omitempty"`
+	Memory               *MemoryRevision  `json:"memory,omitempty"`
+	Bot                  *BotSummary      `json:"bot,omitempty"`
+	Read                 *ReadCursor      `json:"read,omitempty"`
+	Trace                *Trace           `json:"trace,omitempty"`
+	Source               *SourceStatus    `json:"source,omitempty"`
 }
 type EventQuery struct {
 	Key      BotKey

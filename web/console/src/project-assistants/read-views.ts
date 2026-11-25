@@ -51,12 +51,25 @@ function work(w:W.ProjectAssistantWorkLink,scope:ReadScope) {
   if(!object(w)||!text(w.id)||!text(w.turn_id)||!oneOf(w.state,ProjectAssistantWorkStateValues)||typeof w.board_item_id!=="string"||typeof w.task_id!=="string"||typeof w.landing_commit!=="string"||typeof w.result_message_id!=="string")throw failure("pa_invalid")
   own(w.fence,scope)
 }
+function eventWork(w:W.ProjectAssistantWorkLink|undefined,scope:ReadScope,anchor:number,lastMessageSeq:number) {
+  if(!w)return
+  work(w,scope)
+  if(anchor>lastMessageSeq)throw failure("pa_invalid")
+}
 
 function message(m:W.ProjectAssistantMessage,scope:ReadScope) {
   if(!m||!text(m.id)||!integer(m.seq,1)||typeof m.text!=="string"||typeof m.turn_id!=="string"||typeof m.quote_message_id!=="string"||!date(m.at)||!oneOf(m.kind,ProjectAssistantMessageKindValues)||(m.attachments!==undefined&&(!Array.isArray(m.attachments)||m.attachments.some(a=>!a||!/^[0-9a-f]{64}$/.test(a.id)||typeof a.media_type!=="string"||!integer(a.bytes,1)))))throw failure("pa_invalid")
   if(m.reactions!==undefined){if(!Array.isArray(m.reactions))throw failure("pa_invalid");const actors=new Set<string>();for(const a of m.reactions){if(!a||!text(a.id)||actors.has(a.id)||!["human","bot"].includes(a.kind)||typeof a.name!=="string"||!integer(a.revision,1)||!Array.isArray(a.emojis)||a.emojis.some(e=>typeof e!=="string"||!e||new TextEncoder().encode(e).length>32)||a.own!==undefined&&typeof a.own!=="boolean"||a.kind==="bot"&&(!key(a.bot)||a.bot.machine_id!==scope.key.machine_id||a.emojis.length!==1)||a.kind==="human"&&(a.bot!==undefined||a.emojis.length>8))throw failure("pa_invalid");if(a.appearance!==undefined&&(!object(a.appearance)||typeof a.appearance.color!=="string"||!oneOf(a.appearance.shape,ProjectAssistantShapeValues)))throw failure("pa_invalid");actors.add(a.id)}}
   if(m.files!==undefined){if(!Array.isArray(m.files)||m.kind!=="user")throw failure("pa_invalid");m.files.forEach(inputMetadata)}
   if(m.output!==undefined){outputMetadata(m.output);if(m.kind!=="assistant")throw failure("pa_invalid")}
+  const notice=m.notice
+  if(notice?.key==="peer_dispatch"||notice?.key==="peer_dispatch_failed"){
+    if(m.kind!=="notice"||!text(notice.cause)||
+      [notice.requester,notice.task_title,notice.failure_field].some(value=>value!==undefined&&typeof value!=="string")||
+      (notice.key==="peer_dispatch_failed"&&!text(notice.failure_code))||
+      (notice.requester_appearance!==undefined&&(!object(notice.requester_appearance)||typeof notice.requester_appearance.color!=="string"||
+        !oneOf(notice.requester_appearance.shape,ProjectAssistantShapeValues))))throw failure("pa_invalid")
+  }
   own(m.fence,scope)
 }
 function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.ProjectAssistantFence) {
@@ -172,7 +185,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
       if(payloads.filter(k=>e[k]!==undefined).length!==(expected?1:0)||expected&&!(e as unknown as Record<string,unknown>)[expected])throw failure("pa_invalid")
       seq=e.seq;own(e.fence,scope)
       if(e.message)message(e.message,scope)
-      if(e.work)work(e.work,scope)
+      eventWork(e.work,scope,row.anchor_message_seq,h.conversation.last_message_seq)
       if(e.turn){const t=e.turn;if(!object(t)||!text(t.id)||!text(t.message_id)||!oneOf(t.state,states))throw failure("pa_invalid");own(t.fence,scope);if(t.failure!==undefined)sourceFailure(t.failure);if(t.attempts!==undefined)validateAttempts(t.attempts,scope)}
       if(e.permission){
         offer(e.permission,scope)
@@ -197,14 +210,26 @@ export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadVie
   for(const row of pages.flat()) {
     if(row.kind!=="message"&&row.kind!=="work"&&row.kind!=="permission")continue
     const id=JSON.stringify([row.kind,row.work?.id??row.message?.id??row.id]),old=rows.get(id)
-    if(!old||row.observed_event_seq>=old.observed_event_seq)rows.set(id,row)
+    if(!old||row.observed_event_seq>=old.observed_event_seq)rows.set(id,row.work&&old?.anchor_message_seq&&!row.anchor_message_seq?{...row,id:old.id,anchor_message_seq:old.anchor_message_seq}:row)
     else if(row.work&&old.anchor_message_seq===0&&row.anchor_message_seq>0)rows.set(id,{...old,id:row.id,anchor_message_seq:row.anchor_message_seq})
   }
   const rank={message:0,work:1,permission:2,event:3,permission_summary:4,trace_summary:5,trace:6}
-  return [...rows.values()].sort((a,b)=>a.anchor_message_seq-b.anchor_message_seq||rank[a.kind]-rank[b.kind]||(a.id<b.id?-1:a.id>b.id?1:0))
+  const turnStarts=new Map<string,number>()
+  for(const {message} of rows.values()){
+    if(message?.kind==="user"||message?.kind==="notice"){
+      const old=turnStarts.get(message.turn_id)
+      if(old===undefined||message.seq<old)turnStarts.set(message.turn_id,message.seq)
+    }
+  }
+  const positioned=[...rows.values()].map(row=>{
+    const anchor=row.work&&!row.anchor_message_seq?turnStarts.get(row.work.turn_id):undefined
+    return anchor?{...row,anchor_message_seq:anchor}:row
+  })
+  const position=(row:W.ProjectAssistantReadViewItem)=>row.work&&!row.anchor_message_seq?Number.MAX_SAFE_INTEGER:row.anchor_message_seq
+  return positioned.sort((a,b)=>position(a)-position(b)||rank[a.kind]-rank[b.kind]||(a.id<b.id?-1:a.id>b.id?1:0))
 }
 
-/** Event work has no invented admission anchor: retain a source anchor when already known. */
+/** Older sources send anchor zero; mergeTimeline can recover it from the loaded turn or history. */
 export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],events:readonly W.ProjectAssistantReadViewItem[]):W.ProjectAssistantReadViewItem[] {
   let next=[...rows]
   for(const row of events){
@@ -224,7 +249,7 @@ export function eventTimeline(rows:readonly W.ProjectAssistantReadViewItem[],eve
     }
     if(e.message)next=mergeTimeline([next,[{id:e.message.id,kind:"message",anchor_message_seq:e.message.seq,observed_event_seq:e.seq,message:e.message}]])
     if(e.permission&&row.anchor_message_seq>0&&teamPermission(e.permission))next=mergeTimeline([next,[{id:e.permission.id,kind:"permission",anchor_message_seq:row.anchor_message_seq,observed_event_seq:e.seq,permission:e.permission}]])
-    if(e.work){const previous=next.find(r=>r.work?.id===e.work!.id);next=mergeTimeline([next,[{id:previous?.id??e.work.id,kind:"work",anchor_message_seq:previous?.anchor_message_seq??0,observed_event_seq:e.seq,work:e.work}]])}
+    if(e.work){const previous=next.find(r=>r.work?.id===e.work!.id);next=mergeTimeline([next,[{id:previous?.id??e.work.id,kind:"work",anchor_message_seq:row.anchor_message_seq||previous?.anchor_message_seq||0,observed_event_seq:e.seq,work:e.work}]])}
   }
   return next
 }

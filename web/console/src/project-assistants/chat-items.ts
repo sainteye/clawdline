@@ -5,7 +5,24 @@ import type * as W from "@clawdline/contract"
 import {mergeTimeline} from "./read-views.ts"
 // @ts-expect-error Node executes source extensions.
 import {chatTimeBreak} from "./chat-time.ts"
-export type ChatItem = { id: string; kind: "separator"; at: string } | { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean } | { id:string; kind:"work"; work:W.ProjectAssistantWorkLink } | {id:string;kind:"permission";offer:W.ProjectAssistantPermissionOffer}
+import type { Words } from "./words"
+
+export type PeerDispatch = {
+  task: string
+  messageID: string
+  messageSeq: number
+  title: string
+  requester: string
+  appearance?: W.ProjectAssistantAppearance
+  at: string
+  failureCode?: string
+  failureField?: string
+}
+export type ChatItem = { id: string; kind: "separator"; at: string } |
+  { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean; dispatch?: PeerDispatch } |
+  { id: string; kind: "work"; work: W.ProjectAssistantWorkLink; dispatch?: PeerDispatch } |
+  { id: string; kind: "dispatch"; dispatch: PeerDispatch } |
+  { id: string; kind: "permission"; offer: W.ProjectAssistantPermissionOffer }
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
   for (const message of pages.flat()) byID.set(message.id,message)
@@ -14,15 +31,76 @@ export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessag
 export function buildChat(messages: readonly W.ProjectAssistantMessage[]): ChatItem[] {
   return buildTimelineChat(messages.map(message=>({id:message.id,kind:"message",anchor_message_seq:message.seq,observed_event_seq:0,message})))
 }
+function peerDispatch(message: W.ProjectAssistantMessage): PeerDispatch | undefined {
+  if (message.kind !== "notice") return
+  const ref = message.notice
+  if (ref?.cause && (ref.key === "peer_dispatch" || ref.key === "peer_dispatch_failed")) {
+    return {
+      task: ref.cause, messageID: message.id, messageSeq: message.seq,
+      title: ref.task_title ?? "", requester: ref.requester ?? "",
+      appearance: ref.requester_appearance, at: message.at,
+      failureCode: ref.key === "peer_dispatch_failed" ? ref.failure_code ?? "dispatch_failed" : undefined, failureField: ref.failure_field,
+    }
+  }
+  const prefix = "peer-dispatch-"
+  if (ref || !message.id.startsWith(prefix)) return
+  // Earlier sources stored both languages, then only the daemon's language.
+  const zh = /(?:^| \/ )應 (.+?) 的請求派出任務「(.+)」。$/.exec(message.text)
+  const en = /^Dispatched task [“"](.+)[”"] at (.+)'s request\.$/.exec(message.text)
+  if (!zh && !en) return
+  const name = zh?.[1] ?? en?.[2] ?? ""
+  return {
+    task: message.id.slice(prefix.length), messageID: message.id, messageSeq: message.seq, title: zh?.[2] ?? en?.[1] ?? "",
+    requester: name === "another Bot" || name === "另一個 Bot" ? "" : name, at: message.at,
+  }
+}
+
+export function peerDispatchRequester(requester: string, w: Words): string {
+  const name = requester.split("\uFF5C", 1)[0].trim()
+  return name || w.peerDispatchAnotherBot
+}
+
+export function peerDispatchNoticeText(dispatch: PeerDispatch, w: Words): string {
+  return w.peerDispatchNotice.replace(/\{(title|requester)\}/g, (_, key) =>
+    key === "title" ? dispatch.title || "–" : peerDispatchRequester(dispatch.requester, w))
+}
+
 /** Work keeps its source admission position even when its result arrives after newer messages. */
-export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewItem[]):ChatItem[] {
+export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewItem[], showRequesters = false):ChatItem[] {
+  const rows = mergeTimeline([timeline])
+  const workTasks = new Map<string, W.ProjectAssistantWorkLink>()
+  const accepted = new Map<string, PeerDispatch>()
+  const notices = new Map<string, PeerDispatch>()
+  for (const row of rows) {
+    if (row.work) workTasks.set(row.work.task_id,row.work)
+    const dispatch = row.message && peerDispatch(row.message)
+    if (!row.message || !dispatch) continue
+    notices.set(row.message.id, dispatch)
+    if (!dispatch.failureCode) accepted.set(dispatch.task, dispatch)
+  }
   const out: ChatItem[] = []
   let lastAt:string|undefined,lastAuthor:string|null=null
-  for (const row of mergeTimeline([timeline])) {
-    if(row.work){out.push({id:row.work.id,kind:"work",work:row.work});lastAuthor=null;continue}
+  for (const row of rows) {
+    if(row.work){out.push({id:row.work.id,kind:"work",work:row.work,dispatch:showRequesters?accepted.get(row.work.task_id):undefined});lastAuthor=null;continue}
     if(row.permission){out.push({id:row.permission.id,kind:"permission",offer:row.permission});lastAuthor=null;continue}
     const message=row.message
     if(!message||message.kind==="notice"&&message.id.startsWith("lead-call-"))continue
+    const dispatch = notices.get(message.id)
+    if (dispatch?.failureCode) {
+      if (!accepted.has(dispatch.task) && !workTasks.has(dispatch.task)) {
+        out.push({id:dispatch.task,kind:"dispatch",dispatch})
+        lastAuthor = null
+      }
+      continue
+    }
+    const linked = dispatch && workTasks.get(dispatch.task)
+    if (dispatch && (showRequesters || linked && linked.state === "failed" && !!linked.failure_reason)) {
+      if (!linked) {
+        out.push({id:dispatch.task,kind:"dispatch",dispatch})
+        lastAuthor = null
+      }
+      continue
+    }
     const conversational=message.kind==="user"||message.kind==="assistant"
     if(conversational){
       if(chatTimeBreak(message.at,lastAt)){
@@ -31,7 +109,7 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
       }
       lastAt=message.at
     }
-    out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor})
+    out.push({id:message.id,kind:"message",message,groupStart:message.kind!==lastAuthor,dispatch})
     lastAuthor=conversational?message.kind:null
   }
   return out
