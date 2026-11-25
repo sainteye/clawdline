@@ -50,7 +50,7 @@ const server=createServer(async(req,res)=>{
       }
       const record={word:envelope.type,mode:envelope.mode,acceptedAt:performance.now()};traffic.push(record)
       if(scenario==="restart-held-mobile"&&envelope.type==="project-assistants.send")record.request=envelope.request
-      if(sent&&failReads&&envelope.type==="project-assistants.view"){
+      if((sent||scenario==="restart-review-mobile")&&failReads&&envelope.type==="project-assistants.view"){
         record.status=503;record.returnedAt=performance.now();res.writeHead(503,{"Content-Type":"application/json"});res.end(JSON.stringify({body:{contract_version:"project-assistants.v1",error:{code:"pa_offline",field:"fixture_read",retry_after_seconds:0}}}));return
       }
       if(scenario==="decision-recovery"&&envelope.type==="project-assistants.answer"){
@@ -77,7 +77,7 @@ const server=createServer(async(req,res)=>{
       const answer=await fetch(cloud,{method:"POST",body:raw});let payload=await answer.text()
       // Capture the first post-send read against the admission fence, then
       // release the provider so later reads see the running fence.
-      if(scenario!=="restart-held-mobile"&&sent&&!started&&envelope.type==="project-assistants.view"&&["events","snapshot"].includes(envelope.mode)){
+      if(!scenario.startsWith("restart-")&&sent&&!started&&envelope.type==="project-assistants.view"&&["events","snapshot"].includes(envelope.mode)){
         started=true
         const transition=await fetch(cloud+"/start",{method:"POST"})
         assert.equal(transition.status,204,"the local provider must reach the new running binding")
@@ -129,11 +129,42 @@ try{
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange","restart-held-mobile"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange","restart-held-mobile","restart-review-mobile"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
-  if(scenario==="restart-held-mobile"){
+  if(scenario==="restart-review-mobile"){
+    await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
+    const notice=".pa-turn-review",button=notice+" button"
+    await until(sessionId,`document.querySelector('${button}')?.innerText==='請 Bot 核對進度'`)
+    const before=await capture(sessionId,"restart-review-before")
+    assert.match(before.text,/Clawdline 在上一輪執行時重新啟動/)
+    assert.match(before.text,/已排隊的 1 則訊息/)
+    assert.equal(await evaluate(sessionId,`getComputedStyle(document.querySelector('${notice}')).rowGap`),"12px")
+    assert.ok(await evaluate(sessionId,`document.querySelector('${button}').getBoundingClientRect().height>=44`))
+    await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
+    await send("Input.insertText",{text:"Keep this draft"},sessionId)
+    await fetch(origin+"/control?fail=1")
+    await evaluate(sessionId,`document.querySelector('${button}').click()`)
+    await until(sessionId,`document.querySelector('${notice}')?.innerText.includes('核對請求未能送出')&&!document.querySelector('${button}').disabled`)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,0)
+    await fetch(origin+"/control?recover=1")
+    await fetch(origin+"/control?hold=1")
+    await evaluate(sessionId,`document.querySelector('${button}').click()`)
+    await until(sessionId,`document.querySelector('${button}')?.disabled&&document.querySelector('${button}')?.innerText==='正在送出核對請求…'`)
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,0)
+    await capture(sessionId,"restart-review-sending")
+    const deadline=Date.now()+5000
+    while(!held&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20))
+    assert.equal(held,true)
+    await fetch(origin+"/control?release=1")
+    await until(sessionId,"document.body.innerText.includes('Answer to 請核對造成這個聊天室暫停的回合')")
+    await until(sessionId,`!document.querySelector('${notice}')`)
+    assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),"Keep this draft")
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1)
+    await capture(sessionId,"restart-review-replied")
+    results.push({scenario,sends:1,draftPreserved:true})
+  }else if(scenario==="restart-held-mobile"){
     await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
     await until(sessionId,"document.body.innerText.includes('上一輪已暫停')")
     await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")

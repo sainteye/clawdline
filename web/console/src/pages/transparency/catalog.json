@@ -4414,6 +4414,43 @@
       ]
     },
     {
+      "id": "bot-interrupted-turn-review",
+      "scope": "conditional",
+      "agents": [
+        "claude",
+        "codex",
+        "antigravity",
+        "grok"
+      ],
+      "stages": [
+        "turn"
+      ],
+      "scenes": [
+        "general"
+      ],
+      "sources": [
+        {
+          "path": "web/console/src/project-assistants/Chat.tsx",
+          "line": 1739
+        },
+        {
+          "path": "web/console/src/project-assistants/words.ts",
+          "line": 498
+        },
+        {
+          "path": "internal/app/projectassistant/runtime.go",
+          "line": 556
+        }
+      ],
+      "original": [
+        "Check the interrupted work that paused this conversation. Review the conversation, tool activity and work reports, then tell me what you can confirm and what remains uncertain. This is a progress review only. Do not repeat any previous operations.\n\n",
+        "請核對造成這個聊天室暫停的回合。查看對話、工具紀錄與工作回報，告訴我哪些事已確認完成、哪些還無法確認。這次只核對進度，請勿重做先前的操作。"
+      ],
+      "locations": [
+        "Bots → Chat → Ask Bot to check progress"
+      ]
+    },
+    {
       "id": "persistent-bot-review",
       "scope": "conditional",
       "agents": [
@@ -5754,7 +5791,7 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "c6d811cc1e34b901973d1b882caff3f9135c265d5d29c6d999fc6c3b4b21c0fe",
+    "web/console/src/project-assistants/Chat.tsx": "2f3f7032018804714238c1313fd3c3abccd6b3b6659679955307450e6e5023a7",
     "web/console/src/project-assistants/ChatRows.tsx": "e840e8dda327f63d9f867543379096cdce1683eec44c956d39936ea9a39995ee",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
@@ -5779,6 +5816,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
+    "web/console/src/project-assistants/words.ts": "a691af28a6bae3e26afff5aeb13db546e60e8476fab9e2bec3f2322c596e757c",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
@@ -5811,7 +5849,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "d3ffe18d9de6f3fffa29f96363fe78fde712558b8f67ac19f18b1a4e1d8607c1",
-    "zh-Hant": "25bc56a839ce2c25293a6d05aefb6c23dfacd75f33f6bffea69e2bcdde078361"
+    "en": "3843c68c3a66fb9c1777d6ab3d5a315317e4c4e1fd81ac479adb9fdf55378486",
+    "zh-Hant": "12de08939579be0c2d1813815c4c73cab96261cafbad91235b0cfe34d27c0e00"
   }
 }

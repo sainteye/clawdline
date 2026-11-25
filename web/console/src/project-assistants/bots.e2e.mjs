@@ -512,9 +512,9 @@ async function boundedChecks(page,origin,language,width,shot,log) {
   assert.equal(await editor().isDisabled(),false)
   assert.equal(await chat.locator(".pa-queued").count(),0)
   assert.equal(await chat.getByText("not copied into summary",{exact:true}).count(),0)
-  const paused=zh?"前一輪結果還無法確認，已收到的 16 則訊息暫停處理。請先核對上一輪已做的事。":"The previous result could not be confirmed. Waiting messages are paused (16). Check what the Bot already did."
-  const queueStatus=chat.locator(".pa-chat-footer").getByRole("status").filter({hasText:paused})
-  await queueStatus.getByRole("button",{name:w.refresh,exact:true}).waitFor()
+  const queueStatus=chat.locator(".pa-turn-review")
+  await queueStatus.getByRole("button",{name:zh?"請 Bot 核對進度":"Ask Bot to check progress",exact:true}).waitFor()
+  assert.match(await queueStatus.innerText(),zh?/已排隊的 16 則訊息/:/16 queued messages/)
   await noLegacy();await shot("queued-16-unknown-17")
 
   // A preflight snapshot that ignores abort must never enter the mutation effect.
