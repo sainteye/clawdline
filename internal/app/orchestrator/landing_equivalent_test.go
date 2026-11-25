@@ -167,3 +167,33 @@ func TestAPartlyRevertedPickStaysPending(t *testing.T) {
 		t.Fatalf("landing = %+v, want pending", l)
 	}
 }
+
+// A never-opened task whose checkout is gone with no sweep record of it is
+// still settled: nobody ran there. One whose tab opened is not.
+func TestANeverOpenedTaskWhoseCheckoutIsGoneHasNothingToLand(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	repo := gitRepo(t)
+	unopened := checkedOutTask(t, b, ctx, repo, "d4000007-0000-4000-8000-000000000007")
+	opened := checkedOutTask(t, b, ctx, repo, "d4000008-0000-4000-8000-000000000008")
+	opened.ChildTerminalID = "%8"
+	if err := b.save(ctx, opened, HashSecret("s"), "task.spawned"); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []Record{unopened, opened} {
+		// Present but dirty as it ends, so it opens pending, then removed.
+		if err := os.WriteFile(filepath.Join(r.Worktree.Path, "stray.go"), []byte("package a\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Settle(ctx, r.ID, StateSpawnFailed, "failed", nil); err != nil {
+			t.Fatal(err)
+		}
+		gitIn(t, repo, "worktree", "remove", "--force", r.Worktree.Path)
+	}
+	b.detectLandings(ctx)
+	if l := landingOf(t, b, ctx, unopened.ID); l.State != LandingNothingToLand {
+		t.Errorf("never opened, checkout gone: landing = %+v, want nothing_to_land", l)
+	}
+	if l := landingOf(t, b, ctx, opened.ID); l.State != LandingPending {
+		t.Errorf("tab opened, checkout gone: landing = %+v, want pending", l)
+	}
+}

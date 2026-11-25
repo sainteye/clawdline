@@ -578,6 +578,12 @@ func (b *Broker) nothingToLandRefusal(ctx context.Context, r Record) string {
 	} else {
 		// Taken by the sweep, which recorded what it held (reclaim.go).
 		dirty, kept, dirtyKnown = b.reclaimedDirty(ctx, r.ID)
+		// Gone with no record of it, from a task whose tab never opened: no
+		// assistant ever ran there, so the checkout held its base and nothing
+		// else. Its branch is still asked, above.
+		if !dirtyKnown && tabNeverOpened(r) {
+			dirty, kept, dirtyKnown = false, "", true
+		}
 	}
 	return deliveryEvidence(commits, commitsKnown, dirty, dirtyKnown, kept)
 }
