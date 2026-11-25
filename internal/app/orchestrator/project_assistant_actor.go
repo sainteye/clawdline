@@ -392,6 +392,10 @@ func assistantTaskTitle(q pa.WorkRequest) string {
 // validated draft, then enters Dispatch's existing claims/capacity/quota/
 // worktree/durable-before-spawn pipeline. No Session or user run is fabricated.
 func (b *Broker) DispatchAssistant(ctx context.Context, q pa.WorkRequest) (Dispatched, error) {
+	if q.Choice.Mode != "" {
+		// A Root never silently becomes a child: DispatchAssistantRoot owns it.
+		return Dispatched{}, assistantFailure(pa.Invalid, "dispatch_mode")
+	}
 	b.assistantMu.Lock()
 	defer b.assistantMu.Unlock()
 	c, err := b.checkAssistantRequest(ctx, q)
