@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	"strings"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/productcopy"
@@ -37,49 +38,75 @@ func PeerDispatchRequesterName(name string) string {
 	return strings.TrimSpace(name)
 }
 
-// AnchorPeerDispatch writes, once per task, a finished host-notice turn into
-// the main chat key and returns its fence and turn. A task a thread worker
-// dispatches is owned by that turn, so it shows, is read and wakes in the
-// main chat exactly as a task dispatched there. Repeating the same task id
-// returns the turn already written; nothing is written twice.
-func (r *Engine) AnchorPeerDispatch(ctx context.Context, key pa.BotKey, taskID, text string) (pa.Fence, string, error) {
-	if taskID == "" {
-		return pa.Fence{}, "", runtimeFailure(pa.Invalid, "peer_dispatch_notice")
-	}
-	if err := pa.ValidateMessage(text); err != nil {
-		return pa.Fence{}, "", err
-	}
-	a, err := r.acquire(key)
+// PeerDispatchFence resolves the main chat before admission without writing
+// a notice. A replay retains the fence of its already admitted dispatch.
+func (r *Engine) PeerDispatchFence(ctx context.Context, owner pa.Fence, turnID string) (pa.Fence, error) {
+	x, err := r.peerDispatchChat(ctx, owner)
 	if err != nil {
-		return pa.Fence{}, "", err
+		return pa.Fence{}, err
+	}
+	for _, t := range x.Turns {
+		if t.ID == turnID {
+			return t.Fence, nil
+		}
+	}
+	return currentFence(x.Bot, x.Conversation), nil
+}
+
+func (r *Engine) peerDispatchChat(ctx context.Context, owner pa.Fence) (Export, error) {
+	x, err := r.o.Repository.Export(ctx, owner.Key)
+	if err != nil {
+		return Export{}, err
+	}
+	if x.Bot.Project != owner.Project || x.Bot.ConversationID != owner.ConversationID {
+		return Export{}, runtimeFailure(pa.StaleVersion, "work_owner")
+	}
+	return x, r.authorized(ctx, owner.Key, x.Bot.Project)
+}
+
+// RecordPeerDispatchFailure writes a separate, finished card for a refusal
+// that left no task in the broker. It cannot own or wake any work.
+func (r *Engine) RecordPeerDispatchFailure(ctx context.Context, q pa.WorkRequest, taskID, code, field string) error {
+	a, err := r.acquire(q.OwnerFence.Key)
+	if err != nil {
+		return err
 	}
 	defer r.release(a)
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	x, err := r.o.Repository.Export(ctx, key)
+	x, err := r.peerDispatchChat(ctx, q.OwnerFence)
 	if err != nil {
-		return pa.Fence{}, "", err
+		return err
 	}
-	if err = r.authorized(ctx, key, x.Bot.Project); err != nil {
-		return pa.Fence{}, "", err
-	}
-	id := PeerDispatchNoticePrefix + taskID
+	id := "peer-dispatch-failed-" + taskID
 	for _, t := range x.Turns {
-		if t.ID == id {
-			return t.Fence, t.ID, nil
+		if t.ID == id || t.ID == q.OwnerTurnID {
+			return nil
 		}
 	}
 	fence := currentFence(x.Bot, x.Conversation)
-	turn := pa.Turn{ID: id, Fence: fence, MessageID: id, State: pa.TurnSucceeded, Origin: pa.HostNoticeOrigin,
-		IdempotencyKey: id, MemoryRevision: x.Memory.Revision, Instructions: x.Bot.Instructions}
-	message := pa.Message{ID: id, Fence: fence, TurnID: id, Kind: pa.NoticeMessage, Text: text, At: r.o.Clock()}
+	turn, message := peerDispatchNotice(x, fence, id, taskID, q.Title, q.PeerDispatch, r.o.Clock(), code, field)
 	_, err = r.mutate(ctx, x.Bot, Mutation{
-		Command: r.command(key, pa.SendOperation, id, text), Turn: &turn, Messages: []pa.Message{message},
+		Command: r.command(fence.Key, pa.SendOperation, id, message.Text), Turn: &turn, Messages: []pa.Message{message},
 		Receipt: pa.Receipt{State: pa.EffectDelivered, ResourceID: id},
 		Events:  []pa.Event{{Fence: fence, Kind: pa.MessageCreated, Message: &message}, {Fence: fence, Kind: pa.TurnUpdated, Turn: &turn}},
 	})
-	if err != nil {
-		return pa.Fence{}, "", err
+	return err
+}
+
+func peerDispatchNotice(x Export, fence pa.Fence, id, taskID, title string, requester pa.PeerDispatchAttribution, at time.Time, code, field string) (pa.Turn, pa.Message) {
+	ref := &pa.NoticeRef{Key: pa.NoticePeerDispatch, Cause: taskID, Requester: requester.Requester, TaskTitle: title}
+	if pa.ValidateAppearance(requester.Appearance) == nil {
+		ref.RequesterAppearance = &requester.Appearance
 	}
-	return fence, id, nil
+	var text string
+	if code == "" {
+		text = PeerDispatchNoticeText(requester.Language, requester.Requester, title)
+	} else {
+		ref.Key, ref.FailureCode, ref.FailureField = pa.NoticePeerDispatchFailed, code, field
+		text = productcopy.Format(requester.Language, "peer_dispatch.failed", nil)
+	}
+	turn := pa.Turn{ID: id, Fence: fence, MessageID: id, State: pa.TurnSucceeded, Origin: pa.HostNoticeOrigin,
+		IdempotencyKey: id, MemoryRevision: x.Memory.Revision, Instructions: x.Bot.Instructions}
+	return turn, pa.Message{ID: id, Fence: fence, TurnID: id, Kind: pa.NoticeMessage, Text: text, Notice: ref, At: at}
 }

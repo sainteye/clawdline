@@ -7026,7 +7026,12 @@ export interface ProjectAssistantNoticeRef {
    * the person released the Bot.
    */
   cause?: string
+  failure_code?: string
+  failure_field?: string
   key: string
+  requester?: string
+  requester_appearance?: ProjectAssistantAppearance
+  task_title?: string
   tokens_after?: number
   tokens_before?: number
 }

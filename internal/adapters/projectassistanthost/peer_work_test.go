@@ -10,6 +10,7 @@ import (
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/adapters/transcript"
+	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
@@ -236,6 +237,8 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 	f, _, _ := browserFixture(t)
 	f.o.Limits.MaxBots = 4
 	f.o.ProductLanguage = func() string { return "zh-Hant" }
+	f.o.Reader = f.st.ProjectAssistantReader()
+	f.o.ReadViewByteLimit = cloudops.ReadPlaintextBytesLimit
 	f.start(t)
 	f.enable(t)
 	atlas, lens := f.create(t, "atlas"), f.create(t, "lens")
@@ -260,6 +263,34 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 		t.Fatal("the request did not run in Atlas's thread worker")
 	}
 	tools := worker.q.Tools.(peerWorkTools)
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := pa.ReadViewRequest{Key: atlas.Key, ConversationID: atlas.ConversationID, Mode: pa.ReadViewSnapshot, PageSize: 100}
+	before, err := service.View(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tools.Dispatch(ctx, "refused-peer-work", "Refused dispatch", "Change only a.go.", []string{"../a.go"}); err == nil {
+		t.Fatal("invalid claims reached admission")
+	}
+	refused, err := f.h.store.Export(ctx, atlas.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var failures int
+	for _, message := range refused.Messages {
+		if strings.HasPrefix(message.ID, "peer-dispatch-") {
+			if message.Notice == nil || message.Notice.Key != pa.NoticePeerDispatchFailed || message.Notice.FailureCode != string(pa.ScopeDenied) || message.Notice.FailureField != "claims" {
+				t.Fatalf("refused dispatch wrote a success notice: %+v", message)
+			}
+			failures++
+		}
+	}
+	if failures != 1 || len(refused.WorkLinks) != 0 {
+		t.Fatalf("refused dispatch should have one failure and no work link: failures=%d links=%d", failures, len(refused.WorkLinks))
+	}
 	link, err := tools.Dispatch(ctx, "peer-work", "Fix the header", "Change only a.go.", []string{"a.go"})
 	if err != nil {
 		t.Fatal(err)
@@ -285,6 +316,39 @@ func TestPeerDispatchedWorkLandsInTheMainChat(t *testing.T) {
 	}
 	if len(notices) != 1 || notices[0].Text != "應 Bot lens 的請求派出任務「Fix the header」。" {
 		t.Fatalf("main-chat notice: %+v", notices)
+	}
+	if notice := notices[0].Notice; notice == nil || notice.Key != pa.NoticePeerDispatch || notice.Cause != link.TaskID || notice.Requester != lens.Name || notice.TaskTitle != link.Title || notice.RequesterAppearance == nil || *notice.RequesterAppearance != lens.Appearance {
+		t.Fatalf("work notice lost its attribution: %+v", notice)
+	}
+	reloaded, err := service.View(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query.Mode, query.SourceEpoch, query.AfterSeq = pa.ReadViewEvents, before.View.SourceEpoch, before.View.Head.EventFrontier
+	live, err := service.View(ctx, query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var snapshotAnchor, liveAnchor, noticeEventSeq int64
+	for _, item := range reloaded.View.Items {
+		if item.Work != nil && item.Work.TaskID == link.TaskID {
+			snapshotAnchor = item.AnchorMessageSeq
+		}
+	}
+	for _, item := range live.View.Items {
+		e := item.Event
+		if e != nil && e.Message != nil && e.Message.ID == notices[0].ID {
+			noticeEventSeq = e.Seq
+		}
+		if e != nil && e.Work != nil && e.Work.TaskID == link.TaskID {
+			if noticeEventSeq == 0 || noticeEventSeq >= e.Seq {
+				t.Fatal("the work event arrived before its owner notice")
+			}
+			liveAnchor = item.AnchorMessageSeq
+		}
+	}
+	if snapshotAnchor != notices[0].Seq || liveAnchor != snapshotAnchor {
+		t.Fatalf("notice sequence %d, snapshot anchor %d, live anchor %d", notices[0].Seq, snapshotAnchor, liveAnchor)
 	}
 	// The worker can still read the work it dispatched for its owner.
 	if got, err := tools.Status(ctx, link.TaskID); err != nil || got.TaskID != link.TaskID {

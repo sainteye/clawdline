@@ -281,6 +281,18 @@ func (s *Service) GroupPublication(ctx context.Context, key pa.BotKey) (func(con
 	}, nil
 }
 
+// AuthorizeAttachmentRead checks the reader and, for a room picture, its
+// publication in the room log.
+func (s *Service) AuthorizeAttachmentRead(ctx context.Context, key pa.BotKey, id string) error {
+	if err := s.AuthorizeRead(ctx, key); err != nil {
+		return err
+	}
+	if s.opts.Groups == nil {
+		return nil
+	}
+	return s.opts.Groups.store.CheckAttachment(ctx, key, id)
+}
+
 // CancelRooms withdraws this Host's room loops before disable/shutdown. It
 // does not publish member replies, replay turns, or allocate replacement work.
 // The Host closes its Engine and then calls Idle outside its own mutex.

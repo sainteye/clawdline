@@ -442,7 +442,12 @@ SELECT seq,CASE WHEN n<=? AND spent<=? THEN event_id ELSE '' END,
 		// Replay the stored metadata patch. Current own-chat activity belongs
 		// to the roster; substituting it here leaks future facts into history.
 		var anchor int64
-		if q.Request.TeamCards && e.Permission != nil && e.Permission.Action != nil && pa.TeamPermissionKind(e.Permission.Action.ToolKind) {
+		if e.Work != nil {
+			anchor = e.WorkAnchorMessageSeq
+			if anchor > out.Head.Conversation.LastMessageSeq {
+				return failure(pa.Invalid, "work_anchor_message_seq")
+			}
+		} else if q.Request.TeamCards && e.Permission != nil && e.Permission.Action != nil && pa.TeamPermissionKind(e.Permission.Action.ToolKind) {
 			anchor = e.Permission.AnchorMessageSeq
 		}
 		out.Items = append(out.Items, app.ReadViewItem{ID: id, Kind: app.ReadItemEvent, AnchorMessageSeq: anchor, ObservedEventSeq: seq, Event: &e})

@@ -83,6 +83,8 @@ type SharedSettings struct {
 	// MemoryOptOut lists Bot IDs whose "use shared memory" switch is off.
 	// Absent means on, the default for every Bot including new ones.
 	MemoryOptOut []string `json:"memory_opt_out,omitempty"`
+	// PeerDispatchCards shows peer requesters in the owning Bot's work cards.
+	PeerDispatchCards bool `json:"peer_dispatch_cards"`
 }
 
 // UsesSharedMemory reports a Bot's switch.

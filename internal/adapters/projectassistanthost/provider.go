@@ -942,15 +942,15 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 				_ = h.o.Outputs.Discard(q.Bot.Key, out)
 			}
 		}()
-		out.ID = outputID
-		out.Name = name
+		out.ID, out.Name = outputID, name
 		out.ArtifactID = artifactID
 		out.Quiet = request.HTML && request.Artifact != "" && request.Notify != nil && !*request.Notify
 		out.RequestHash = requestHash
-		if e = check(); e != nil {
+		event := app.ProtocolEvent{ID: "output-" + id, Fence: q.Binding.Fence, TurnID: turnID, Message: name, Output: &out}
+		if e = h.prepareOutputEvent(ctx, turn.Room, &event, check); e != nil {
 			return pa.Output{}, e
 		}
-		e = r.Publish(ctx, app.ProtocolEvent{ID: "output-" + id, Fence: q.Binding.Fence, TurnID: turnID, Message: name, Output: &out})
+		e = r.Publish(ctx, event)
 		published = e == nil
 		return out, e
 	}
@@ -1203,12 +1203,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		command := pa.Command{Key: q.Bot.Key, Operation: pa.DispatchOperation, IdempotencyKey: id, ContentHash: hex.EncodeToString(hash[:])}
 		request := pa.WorkRequest{Actor: actor, Command: command, TurnID: turnID, Title: title, Brief: brief, Claims: slices.Clone(claims), TargetProject: target, Persona: persona, BoardItemID: boardItemID, BotRequestID: botRequestID, ContinueOnCompletion: continueOnCompletion, Choice: choice}
 		if taskOwner.BotID != "" && turn.Origin == pa.BotRequestOrigin {
-			// A thread worker answering another Bot dispatches for the Bot
-			// that owns it: a notice in that Bot's main chat owns the task,
-			// so its progress, work_status and review turn are there.
-			if err := h.anchorPeerDispatch(ctx, r, c.WorkOwner, turn, &request); err != nil {
-				return pa.WorkLink{}, err
-			}
+			return h.dispatchPeerWork(ctx, r, c.WorkOwner, turn, request)
 		}
 		return r.DispatchWork(ctx, request)
 	}
@@ -1272,6 +1267,39 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 		tools.messageBot = nil
 	}
 	return life, tools, nil
+}
+
+func (h *Host) prepareOutputEvent(ctx context.Context, ticket *pa.RoomTicket, event *app.ProtocolEvent, check func() error) error {
+	if ticket != nil {
+		picture, err := h.stageRoomOutputPicture(ctx, *ticket, *event.Output)
+		if err != nil {
+			return err
+		}
+		event.RoomPicture = picture
+	}
+	return check()
+}
+
+// stageRoomOutputPicture keeps the verified snapshot under the room's key so
+// room history can still render it after the member or its own files are gone.
+// A staged picture can only be downloaded once a committed room line names it.
+func (h *Host) stageRoomOutputPicture(ctx context.Context, ticket pa.RoomTicket, out pa.Output) (*pa.Attachment, error) {
+	pictures := roomPictures(h.o)
+	if pictures == nil {
+		return nil, nil
+	}
+	data, mediaType, err := h.o.Outputs.Picture(ctx, ticket.Member, out)
+	if err != nil || data == nil {
+		return nil, err
+	}
+	if err = h.rooms.Admit(ctx, ticket); err != nil {
+		return nil, err
+	}
+	picture, err := pictures.Put(ticket.Group, mediaType, data)
+	if err != nil {
+		return nil, err
+	}
+	return &picture, nil
 }
 
 // botTabKept answers a Bot's release: the tab stays the Bot's, and the person

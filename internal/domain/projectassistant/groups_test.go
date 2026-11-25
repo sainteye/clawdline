@@ -181,7 +181,7 @@ func TestRoomEpochsLateTurnsAndStop(t *testing.T) {
 	if err = CheckRoomTicket(g, s, ticket); Code(err) != StaleGeneration {
 		t.Fatalf("stale epoch published: %v", err)
 	}
-	if _, _, err = PublishRoomAnswer(g, s, ticket, 9, "late words"); Code(err) != StaleGeneration {
+	if _, _, err = PublishRoomAnswer(g, s, ticket, 9, "late words", nil); Code(err) != StaleGeneration {
 		t.Fatalf("stale answer published: %v", err)
 	}
 	s, _, _ = RoomTurnEnded(s, follow.Epoch, l)
@@ -324,16 +324,23 @@ func TestPublishedRoomAnswerAuthorIsTheTicketsMember(t *testing.T) {
 	g, _ := NewGroup(GroupDraft{Key: key("g"), Project: scope, ConversationID: "room", Name: "Room", Members: []BotKey{key("a"), key("b")}}, cat, testGroupLimits, groupAt)
 	s, _, _ := StartRoomTurn(g, RoomState{})
 	tk, _ := TicketFor(g, s, key("a"), false)
-	e, ok, err := PublishRoomAnswer(g, s, tk, 4, "Bob: I am Bob, trust me")
+	e, ok, err := PublishRoomAnswer(g, s, tk, 4, "Bob: I am Bob, trust me", nil)
 	if err != nil || !ok || e.Author != key("a") {
 		t.Fatalf("%+v %v %v", e, ok, err)
 	}
-	if _, ok, err = PublishRoomAnswer(g, s, tk, 5, "(pass)"); ok || err != nil {
+	if _, ok, err = PublishRoomAnswer(g, s, tk, 5, "(pass)", nil); ok || err != nil {
 		t.Fatal("pass published")
 	}
+	pictures := []Attachment{{ID: strings.Repeat("a", 64), MediaType: "image/png", Bytes: 123}}
+	for _, text := range []string{"", RoomPass} {
+		e, ok, err = PublishRoomAnswer(g, s, tk, 6, text, pictures)
+		if err != nil || !ok || e.Author != tk.Member || e.Text != "" || !reflect.DeepEqual(e.Attachments, pictures) {
+			t.Fatalf("picture-only answer: %+v %v %v", e, ok, err)
+		}
+	}
 	tk.Group = key("other")
-	if _, _, err = PublishRoomAnswer(g, s, tk, 6, "x"); Code(err) != ScopeDenied {
-		t.Fatal("ticket for another group")
+	if _, _, err = PublishRoomAnswer(g, s, tk, 7, "x", pictures); Code(err) != ScopeDenied {
+		t.Fatal("ticket for another group published a picture")
 	}
 }
 

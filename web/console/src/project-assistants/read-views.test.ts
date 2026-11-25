@@ -188,6 +188,22 @@ test("timeline IDs are owned by kind while same-kind duplicate rows remain inval
   assert.deepEqual(mergeTimeline([a.items]).map(r=>[r.kind,r.id]),[["message","shared"],["work","shared"]],"source IDs remain unchanged")
   for(const index of [0,1]){const duplicate=structuredClone(a);duplicate.items.push(duplicate.items[index]);assert.throws(()=>readView(duplicate,request(),fence),e=>errorCode(e)==="pa_invalid","same-kind duplicates still fail")}
 })
+test("work arriving live sorts after its source turn exactly as on reload",()=>{
+  const earlier=row({...message("earlier",4),turn_id:"other"})
+  const notice=row({...message("peer-dispatch-task",5),kind:"notice"})
+  const later=row({...message("later",6),turn_id:"later"})
+  const work:W.ProjectAssistantWorkLink={id:"work",turn_id:"turn",fence,board_item_id:"",task_id:"task",state:"accepted",landing_commit:"",result_message_id:""}
+  const event:W.ProjectAssistantEvent={id:"work-event",seq:604,kind:"work_updated",fence,work,at:"2026-11-12T00:00:00Z",version:"project-assistants.v1"}
+  const live=eventTimeline([earlier,notice,later],[{id:event.id,kind:"event",anchor_message_seq:5,observed_event_seq:604,event}])
+  assert.deepEqual(live.map(r=>r.id),["earlier","peer-dispatch-task","work","later"])
+  assert.equal(live.find(r=>r.work)?.anchor_message_seq,5)
+  const oldEvent={id:event.id,kind:"event" as const,anchor_message_seq:0,observed_event_seq:604,event}
+  const oldSource=eventTimeline([earlier,notice,later],[oldEvent])
+  assert.deepEqual(oldSource,live)
+  const newest=eventTimeline([earlier,later],[oldEvent])
+  assert.deepEqual(newest.map(r=>r.id),["earlier","later","work"])
+  assert.deepEqual(mergeTimeline([newest,[notice]]),live)
+})
 test("view requests enforce each mode and retain complete opaque cursors",()=>{
   for(const mode of ["snapshot","events","history","permissions","traces","detail"] as const)assert.deepEqual(readViewRequest(request(mode)),request(mode))
   for(const q of [{...request(),source_epoch:"epoch"},{...request("events"),cursor:"unused"},{...request("history"),after_seq:1},{...request("detail"),page_size:100},{...request(),page_size:101},{...request("events"),page_size:257},{...request("history"),cursor:"界".repeat(4096)}])assert.throws(()=>readViewRequest(q),e=>errorCode(e)==="pa_invalid")

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14586,
-  "riskKeys": 6204,
-  "nonRiskCount": 8382,
+  "englishContentKeys": 14595,
+  "riskKeys": 6205,
+  "nonRiskCount": 8390,
   "groups": [
     {
       "name": "acp / other",
@@ -528,7 +528,7 @@
     },
     {
       "name": "botsSettings / other",
-      "count": 50,
+      "count": 52,
       "sources": [
         null
       ],
@@ -572,6 +572,8 @@
         "botsSettings.modelLoading",
         "botsSettings.modelOlderComputer",
         "botsSettings.open",
+        "botsSettings.peerDispatchCards",
+        "botsSettings.peerDispatchCardsHint",
         "botsSettings.problemDisabled",
         "botsSettings.problemUnsupported",
         "botsSettings.retry",
@@ -6343,7 +6345,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 719,
+      "count": 725,
       "sources": [
         null
       ],
@@ -6689,6 +6691,12 @@
         "projectAssistants.originalAlreadyReceived",
         "projectAssistants.otherReaction",
         "projectAssistants.outgoingPictureCount",
+        "projectAssistants.peerDispatchAnotherBot",
+        "projectAssistants.peerDispatchFailed",
+        "projectAssistants.peerDispatchMissingDetail",
+        "projectAssistants.peerDispatchNotice",
+        "projectAssistants.peerDispatchRequestedBy",
+        "projectAssistants.peerDispatchTime",
         "projectAssistants.permissionContent",
         "projectAssistants.permissionEdit",
         "projectAssistants.permissionExecute",

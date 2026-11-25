@@ -3,6 +3,7 @@ package projectassistanthost
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -75,18 +76,22 @@ func relayedWorkMessage(requester, text string) string {
 // peerRequester reads the name of the local Bot that sent this peer request
 // from the exchange record. A network request carries no local Bot name.
 func (h *Host) peerRequester(ctx context.Context, key pa.BotKey, turn pa.Turn) string {
+	return h.peerDispatchRequester(ctx, key, turn).Name
+}
+
+func (h *Host) peerDispatchRequester(ctx context.Context, key pa.BotKey, turn pa.Turn) pa.Bot {
 	if turn.Origin != pa.BotRequestOrigin || turn.ExchangeID == "" {
-		return ""
+		return pa.Bot{}
 	}
 	x, err := h.store.Exchange(ctx, key, turn.ExchangeID)
 	if err != nil {
-		return ""
+		return pa.Bot{}
 	}
 	sender, err := h.store.Bot(ctx, x.Source.Key)
 	if err != nil {
-		return ""
+		return pa.Bot{}
 	}
-	return sender.Name
+	return sender
 }
 
 // peerWorkOwner resolves a private thread worker to the conversation of the
@@ -105,24 +110,48 @@ func peerWorkOwner(ctx context.Context, st *featurestore.Store, worker pa.Bot) p
 	return pa.Fence{Key: owner, Project: bot.Project, ConversationID: bot.ConversationID}
 }
 
-// anchorPeerDispatch writes the main chat's notice for work a thread worker
-// dispatches at another Bot's request and names it the work's owner. Without
-// a resolved owner the dispatch is refused rather than left on the hidden
-// thread, where the person would never see it.
-func (h *Host) anchorPeerDispatch(ctx context.Context, r *app.Engine, owner pa.Fence, turn pa.Turn, q *pa.WorkRequest) error {
-	if owner.Key.BotID == "" || q.TargetProject != (pa.ProjectScope{}) {
-		return failure(pa.ScopeDenied, "work_owner")
+// dispatchPeerWork gives the broker a deterministic main-chat owner. That
+// turn is written with the work projection only after durable admission.
+func (h *Host) dispatchPeerWork(ctx context.Context, r *app.Engine, owner pa.Fence, turn pa.Turn, q pa.WorkRequest) (pa.WorkLink, error) {
+	if owner.Key.BotID == "" {
+		return pa.WorkLink{}, failure(pa.ScopeDenied, "work_owner")
 	}
-	text := app.PeerDispatchNoticeText(h.productLanguage(), h.peerRequester(ctx, q.Command.Key, turn), q.Title)
-	fence, turnID, err := r.AnchorPeerDispatch(ctx, owner.Key, orchestrator.AssistantTaskID(q.Command), text)
+	taskID := orchestrator.AssistantTaskID(q.Command)
+	q.OwnerTurnID = app.PeerDispatchNoticePrefix + taskID
+	fence, err := r.PeerDispatchFence(ctx, owner, q.OwnerTurnID)
 	if err != nil {
-		return err
+		return pa.WorkLink{}, err
 	}
-	if fence.Key != owner.Key || fence.Project != owner.Project || fence.ConversationID != owner.ConversationID {
-		return failure(pa.StaleVersion, "work_owner")
+	q.OwnerFence = fence
+	requester := h.peerDispatchRequester(ctx, q.Command.Key, turn)
+	q.PeerDispatch = pa.PeerDispatchAttribution{Requester: requester.Name, Appearance: requester.Appearance, Language: h.productLanguage()}
+	link, dispatchErr := r.DispatchWork(ctx, q)
+	if dispatchErr == nil || link.TaskID != "" {
+		return link, dispatchErr
 	}
-	q.OwnerFence, q.OwnerTurnID = fence, turnID
-	return nil
+	// A lost response must not turn admitted work into a refusal. Read the
+	// durable task even when the native tool's waiting context expired.
+	ctx = context.WithoutCancel(ctx)
+	var refusal orchestrator.Refusal
+	if _, _, probe := h.o.Broker.Record(ctx, taskID); !errors.As(probe, &refusal) || refusal.Status != http.StatusNotFound || refusal.Code != "not_found" {
+		return link, dispatchErr
+	}
+	var typed *pa.Failure
+	code, field := "dispatch_failed", ""
+	switch {
+	case errors.As(dispatchErr, &typed):
+		code, field = string(typed.Code), typed.Field
+	case errors.As(dispatchErr, &refusal):
+		code = refusal.Code
+	case errors.Is(dispatchErr, context.DeadlineExceeded):
+		code = "deadline_exceeded"
+	case errors.Is(dispatchErr, context.Canceled):
+		code = "cancelled"
+	}
+	if err = r.RecordPeerDispatchFailure(ctx, q, taskID, code, field); err != nil {
+		return link, errors.Join(dispatchErr, err)
+	}
+	return link, dispatchErr
 }
 
 // productLanguage is the language a chat notice is written in when it is

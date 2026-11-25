@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,6 +165,28 @@ func (s Outputs) Snapshot(ctx context.Context, key pa.BotKey, directory, path st
 // Chunk hashes the entire snapshot on every read before returning any bytes.
 // The wire reply is bounded even for the largest permitted output.
 func (s Outputs) Chunk(ctx context.Context, key pa.BotKey, out pa.Output, offset int64) ([]byte, error) {
+	return s.read(ctx, key, out, offset, pa.MaxOutputChunkBytes)
+}
+
+// Picture reads a whole verified snapshot only when it fits the room's picture
+// format. Other files and HTML artifacts remain ordinary output publications.
+func (s Outputs) Picture(ctx context.Context, key pa.BotKey, out pa.Output) ([]byte, string, error) {
+	if out.ArtifactID != "" || out.Bytes <= 0 || out.Bytes > pa.MaxAttachmentBytes {
+		return nil, "", nil
+	}
+	data, err := s.read(ctx, key, out, 0, out.Bytes)
+	if err != nil {
+		return nil, "", err
+	}
+	mediaType := http.DetectContentType(data)
+	picture := pa.Attachment{ID: out.SHA256, Bytes: out.Bytes, MediaType: mediaType}
+	if pa.ValidateSend("", []pa.Attachment{picture}) != nil {
+		return nil, "", nil
+	}
+	return data, mediaType, nil
+}
+
+func (s Outputs) read(ctx context.Context, key pa.BotKey, out pa.Output, offset, length int64) ([]byte, error) {
 	if err := pa.ValidateOutput(out); err != nil {
 		return nil, err
 	}
@@ -190,7 +213,7 @@ func (s Outputs) Chunk(ctx context.Context, key pa.BotKey, out pa.Output, offset
 	}
 	h := sha256.New()
 	buffer := make([]byte, pa.MaxOutputChunkBytes)
-	data := make([]byte, min(int64(pa.MaxOutputChunkBytes), out.Bytes-offset))
+	data := make([]byte, min(length, out.Bytes-offset))
 	var read int64
 	for {
 		if ctx.Err() != nil {
