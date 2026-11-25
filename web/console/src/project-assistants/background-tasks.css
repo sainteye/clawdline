@@ -67,12 +67,17 @@
 @keyframes pa-background-flow { 0% { opacity: 0; transform: translateX(-10px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(10px); } }
 @keyframes pa-background-flow-back { 0% { opacity: 0; transform: translateX(10px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(-10px); } }
 @media (prefers-reduced-motion: reduce) { .pa-background-flow i { animation: none; opacity: .55; } }
-.project-assistants .pa-background-handoff-done {
-  align-self: center; display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 36px;
-  margin: 2px auto 10px; padding: 0 14px; border: 1px solid var(--pa-line); border-radius: 999px;
-  background: transparent; color: var(--pa-dim); font-size: 13px;
+.pa-exchange-card > .pa-background-handoff {
+  align-items:flex-start; margin:0; padding:0; border:0; border-radius:0; background:transparent;
 }
-.pa-background-handoff-done > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-assistants .pa-background-handoff-done {
+  display:flex; align-items:center; gap:7px; min-width:0; min-height:36px; padding:4px 10px;
+  border:0; border-top:1px solid var(--pa-line); border-radius:0 0 18px 18px;
+  background:transparent; color:var(--pa-dim); font-size:13px; text-align:start;
+}
+.project-assistants .pa-background-handoff-done:hover:not(:disabled) { background:var(--pa-line); color:var(--pa-ink,currentColor); }
+.pa-background-handoff-done > span:nth-child(2) { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pa-background-handoff-mark, .pa-background-handoff-done time { flex:none; }
 .pa-background-handoff-done time { font-variant-numeric: tabular-nums; }
 .pa-background-handoff-done[data-state="failed"] .pa-background-handoff-mark,
 .pa-background-handoff-done[data-state="unknown"] .pa-background-handoff-mark { color: var(--warning,#F0A030); }

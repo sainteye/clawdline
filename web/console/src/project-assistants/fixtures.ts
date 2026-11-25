@@ -9,6 +9,7 @@ import { BotOrb } from "./BotOrb"
 import { BotAvatar } from "./BotAvatar"
 import { avatarPaths, palette } from "./avatar-paths"
 import { createViewState, sameBot, sameFence } from "./view-state"
+import { turnSummary } from "./read-views"
 import { bootCatalog } from "../catalog"
 export const contractVersion="project-assistants.v1"
 export interface FixtureLog {method:string;machine:string;request:unknown}
@@ -16,6 +17,40 @@ function applyFixtureBotEdit(bot:W.ProjectAssistantBot,settings:W.ProjectAssista
   Object.assign(bot,{name:settings.name,appearance:settings.appearance,instructions:{...bot.instructions,text:settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1,...(settings.background_threads!==undefined?{background_threads:settings.background_threads}:{})})
   return settings.roster?.fresh_context&&contextUsage?.bot===bot.key.bot_id?undefined:contextUsage
 }
+function seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,push}:{
+  language:string;at:string;bots:W.ProjectAssistantBot[];messages:Map<string,W.ProjectAssistantMessage[]>
+  backgroundTasks:Map<string,W.ProjectAssistantBackgroundTaskSummary[]>
+  fence:(bot:W.ProjectAssistantBot)=>W.ProjectAssistantFence;push:(event:W.ProjectAssistantEvent)=>void
+}) {
+  const bot=bots[2]!,peer=bots[3]!,zh=language==="zh-Hant"
+  bot.name="Beacon"
+  bot.agent="codex"
+  peer.name="Clawdline"
+  const {machine_id:machineID}=bot.key,project=bot.project
+  const f=fence(bot),rows:W.ProjectAssistantMessage[]=[],tasks:W.ProjectAssistantBackgroundTaskSummary[]=[]
+  const append=(id:string,text:string,extra:Partial<W.ProjectAssistantMessage>={})=>rows.push({id,seq:rows.length+1,kind:"notice",text,at,fence:f,turn_id:"",quote_message_id:"",...extra})
+  append("exchange-layout-reply",zh?"我會在這裡整理檢查結果。":"I’ll collect the check results here.",{kind:"assistant"})
+  const exchange=(id:string,request:string,reply:string,ended_at:string)=>{
+    const worker:W.ProjectAssistantBot={...bot,hidden:true,key:{machine_id:machineID,bot_id:`thread-${id}`},conversation_id:id}
+    bots.push(worker)
+    messages.set(worker.key.bot_id,[{id:`${id}-brief`,seq:1,kind:"user",text:request,at,fence:fence(worker),turn_id:"",quote_message_id:""},{id:`${id}-reply`,seq:2,kind:"assistant",text:reply,at:ended_at,fence:fence(worker),turn_id:"",quote_message_id:""}])
+    append(`${id}-input`,request,{exchange:{id,project,source:{key:peer.key,conversation_id:peer.conversation_id},target:{key:bot.key,conversation_id:bot.conversation_id},source_turn_id:`${id}-source`,request_turn_id:`${id}-request`,request,reply,outcome:"completed",delivery:"delivered",request_at:at,reply_at:ended_at,revision:3,hops:1}})
+    tasks.push({id,origin_message_id:`${id}-input`,title:request,state:"succeeded",worker:worker.key,started_at:at,ended_at})
+  }
+  exchange("exchange-layout-first",zh?"整理今天的檢查結果。":"Summarize today’s checks.",zh
+    ?"**11 月 12 日（台北時間）**\n\n### 需要處理\n\n1. **今日｜檢查匯出報表**，確認每個欄位都有值，並記錄任何需要補查的項目。\n2. 更新排程清單，先安排仍在等待回覆的項目。\n3. 將檢查結果整理給交接的同事。"
+    :"**November 12 (Taipei time)**\n\n### Needs attention\n\n1. **Today | Review the export**, check that every field has a value, and record anything that still needs investigating.\n2. Update the schedule and prioritize items awaiting a reply.\n3. Summarize the results for the handover.","2026-11-12T06:25:11Z")
+  const turn:W.ProjectAssistantTurn={id:"exchange-layout-compact",message_id:"compact-request",origin:"compact",state:"succeeded",fence:f,started_at:at,idempotency_key:"exchange-layout-compact",memory_revision:1,instructions:bot.instructions}
+  append(turn.message_id,"Compact now / 立即壓縮",{turn_id:turn.id})
+  append(`compacted-${turn.id}`,"Earlier context was summarized to make room",{turn_id:turn.id,notice:{key:"compacted"}})
+  push({id:turn.id,seq:0,at,version:contractVersion,kind:"turn_updated",fence:f,turn})
+  exchange("exchange-layout-second",zh?"核對更新後的清單。":"Check the updated list.",zh
+    ?"### 檢查結果\n\n1. **已確認｜欄位完整**，新舊資料的欄位一致。\n2. **待追蹤｜排程更新**，已把相關時間寫進交接摘要，請在下一次同步時再核對。"
+    :"### Review results\n\n1. **Confirmed | Complete fields** in both versions of the export.\n2. **Follow-up | Schedule update** recorded in the handover notes for the next sync.","2026-11-12T06:22:47Z")
+  messages.set(bot.key.bot_id,rows)
+  backgroundTasks.set(bot.key.bot_id,tasks)
+}
+
 export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   const project:W.ProjectAssistantProjectScope={machine_id:machineID,project_id:"project",canonical_id:"canonical",kind:"repository"}
   const at="2026-11-12T06:20:00Z"
@@ -38,6 +73,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   const created=new Set<string>()
   let lostCreateReply=false
   let contextUsage:{bot:string;usage:W.ProjectAssistantContextUsage}|undefined
+  const backgroundTasks=new Map<string,W.ProjectAssistantBackgroundTaskSummary[]>()
   let sharedFile:{output:W.ProjectAssistantOutput;bytes:Uint8Array;message:W.ProjectAssistantMessage}|undefined
   const capabilities=(bot:W.ProjectAssistantBot):W.ProjectAssistantCapabilities=>({key:bot.key,project,agent:bot.agent,cli_version:"scripted",adapter_version:"fixture",read_only_enforced:false,resume:false,send_message:false,native_memory:"unknown",native_memory_verified:false,evidence:"synthetic metadata; no native provider admitted",unavailable:failure("adapter_not_found").error})
   const status=():W.ProjectAssistantSourceStatus=>({machine_id:machineID,state,access,readable:state!=="revoked"&&state!=="unpaired",writable:state==="online"&&access==="interactive",fresh:state==="online",observed_at:at,capabilities:bots.map(capabilities)})
@@ -78,8 +114,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     const detailID=(trace:W.ProjectAssistantTrace)=>progressEnabled?traceKey(trace):`trace-${trace.turn_id}-${trace.category}`
     const turns=latest(own.flatMap(e=>e.turn?[e.turn]:[]),t=>t.id)
     const pending=turns.filter(t=>["accepted","queued","running","waiting_permission"].includes(t.state))
-    const summarize=(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary=>({id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",...(t.failure?.field?{failure_field:t.failure.field}:{}),started_at:t.started_at??"",...(t.queue_edit_id?{queue_edit_id:t.queue_edit_id}:{})})
-    const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,queued_turn_count:pending.filter(t=>t.state==="queued"||t.state==="accepted").length,pending_permission_count:offers.length,trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
+    const head:W.ProjectAssistantReadViewHead={key:bot.key,project:bot.project,conversation:conversation(bot),current_fence:f,bot_version:bot.version,memory_revision:memory.revision,event_frontier:seq,unknown_turn_count:turns.filter(t=>t.state==="unknown").length,queued_turn_count:pending.filter(t=>t.state==="queued"||t.state==="accepted").length,pending_permission_count:offers.length,background_tasks:backgroundTasks.get(bot.key.bot_id),trace_category_count:r.defer_trace_count&&r.mode!=="traces"?0:traces.length}
     head.conversation.memory_revision=memory.revision
     head.conversation.active_turn_id=pending.find(t=>sameFence(t.fence,f)&&["running","waiting_permission"].includes(t.state))?.id??offers[0]?.turn_id??""
     if(contextUsage?.bot===bot.key.bot_id&&!head.conversation.active_turn_id)head.context_usage={...contextUsage.usage}
@@ -93,7 +128,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       response.items=timeline.slice(start,count);response.has_more=start>0;response.next_cursor=start?`history:${start}`:""
       if(r.mode==="snapshot"){
         const queued=new Set(pending.filter(t=>t.state==="queued"||t.state==="accepted").map(t=>t.message_id)),last=turns.filter(t=>sameFence(t.fence,f)&&!["accepted","queued","running","waiting_permission"].includes(t.state)).at(-1)
-        response.snapshot={bot,pending_turns:pending.map(summarize),queued_messages:(messages.get(bot.key.bot_id)??[]).filter(m=>queued.has(m.id)),...(last?{last_turn:summarize(last)}:{})}
+        response.snapshot={bot,pending_turns:pending.map(turnSummary),queued_messages:(messages.get(bot.key.bot_id)??[]).filter(m=>queued.has(m.id)),...(last?{last_turn:turnSummary(last)}:{})}
       }
     }else if(r.mode==="events"){
       const matching=own.filter(e=>e.seq>r.after_seq);response.items=matching.slice(0,r.page_size).map(event=>({id:event.id,kind:"event",anchor_message_seq:0,observed_event_seq:event.seq,event}));response.has_more=matching.length>response.items.length;response.next_seq=response.items.at(-1)?.event?.seq??r.after_seq
@@ -202,6 +237,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     async export(r,s){if(legacyForbidden)throw new Error("huge legacy Export forbidden");if(exportGate)await exportGate;check("export",r,s);if(exportFailure!=="ok"&&sameBot(r,bots[0].key))throw failure(exportFailure);if(sameBot(r,bots[0].key))expiredCursor=false;const bot=find(r),revision={...memory,key:r},ownEvents=events.filter(e=>sameBot(e.fence.key,r));return{contract_version:contractVersion,schema_version:1,bot,conversation:conversation(bot),messages:messages.get(r.bot_id)??[],memory:revision,memory_entries:[],context:{memory:revision,provenance_complete:true,sources:[],text:""},bindings:[],permissions:ownEvents.flatMap(e=>e.permission?[e.permission]:[]),read_cursors:[],receipts:[...receipts.values()].filter(receipt=>sameBot(receipt.command.key,r)),turns:ownEvents.flatMap(e=>e.turn?[e.turn]:[]),work_links:[...new Map(ownEvents.flatMap(e=>e.work?[[e.work.id,e.work] as const]:[])).values()],events:ownEvents}},
   }
   return Object.assign(api,{configureProjects(options:{count?:number;failure?:W.ProjectAssistantErrorCode|null;invalid?:"duplicate"|"foreign"|"cursor"|"revision"|null}){if(options.count!==undefined){projectCount=options.count;projectRevision++}if("failure" in options)projectFailure=options.failure??null;if("invalid" in options)projectInvalid=options.invalid??null},
+    exchangeLayoutFixture:(language:string)=>seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,push}),
     // A Codex Bot after its first turn: one compaction notice stored with a key,
     // one stored earlier in both languages, and the reading kept from that turn.
     compactionFixture(){
@@ -397,7 +433,9 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
 export function mountFixture() {
   const log:FixtureLog[]=[],a=fixtureSource("studio",log),b=fixtureSource("notebook",log)
   let sourceList:SourceClient[]=[a,b]
-  const root=createRoot(document.getElementById("fixture")!),language=new URLSearchParams(location.search).get("lang")??"zh-Hant"
+  const params=new URLSearchParams(location.search)
+  const root=createRoot(document.getElementById("fixture")!),language=params.get("lang")??"zh-Hant"
+  if(params.has("exchange-layout"))a.exchangeLayoutFixture(language)
   const view=createViewState(window.localStorage)
   let accountKey="fixture-account",hostGeneration=0,opened=false,opener:HTMLElement|null=null
   const paint=()=>root.render(React.createElement(React.Fragment,null,
@@ -418,6 +456,6 @@ export function mountFixture() {
     account(next:string){accountKey=next;hostGeneration++;paint()},
     remount(){hostGeneration++;paint()},open(){opened=true;paint()},revoke(){sourceList=[b];paint()},offline(){a.setState("offline");paint()},readOnly(){a.setState("online","history_only");sourceList=[Object.assign(Object.create(a),{authorizationRevision:"readonly-grant"}),b];paint()},shapes(){root.render(React.createElement("div",{className:"project-assistants fixture-shapes"},Object.keys(avatarPaths).map((shape,i)=>React.createElement("figure",{key:shape},React.createElement(BotAvatar,{appearance:{shape:shape as W.ProjectAssistantShape,color:palette[i]},size:92}),React.createElement("figcaption",null,shape))),React.createElement(BotOrb,{onOpen:()=>{},language})))}}
   const mount=()=>{Object.assign(window,{botsFixture:controls});paint()}
-  if(new URLSearchParams(location.search).has("header"))void bootCatalog(tag=>`/catalog/${tag}.json`).then(mount)
+  if(params.has("header")||params.has("exchange-layout"))void bootCatalog(tag=>`/catalog/${tag}.json`).then(mount)
   else mount()
 }

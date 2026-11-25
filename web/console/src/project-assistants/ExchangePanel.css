@@ -26,17 +26,24 @@
 .pa-exchange-bubble .pa-markdown > :last-child { margin-bottom:0; }
 .pa-exchange-note { margin:0 0 0 12px; color:var(--pa-dim,#aaa); font-size:13px; overflow-wrap:anywhere; }
 .pa-exchange-error, .pa-exchange-entry[data-failed] strong { color:var(--bad,#ef9b9c); }
-.pa-exchange-attribution { display:flex; flex-direction:column; align-items:center; }
-/* A decision an exchange is waiting on sits under that exchange's capsule, chat-wide. */
-.pa-exchange-attribution > .pa-decision { align-self:stretch; margin-top:8px; }
-.pa-exchange-entry {
-  display:flex; align-items:center; justify-content:center; gap:6px; min-width:0; max-width:100%; padding:4px 8px;
-  border:0; border-radius:12px; background:transparent; color:var(--pa-dim,#aaa); cursor:pointer; font-size:12px;
+.pa-exchange-card {
+  display:grid; grid-template-columns:minmax(0,1fr); width:fit-content; max-width:90%;
+  border-radius:18px; background:#242426;
+}
+.pa-exchange-attribution > .pa-decision { margin-top:8px; }
+.project-assistants .pa-exchange-entry {
+  display:flex; align-items:center; gap:6px; min-width:0; min-height:36px; padding:4px 10px;
+  border:0; border-radius:18px 18px 0 0; background:transparent; color:var(--pa-dim); font-size:13px;
+  text-align:start;
   transition:background 140ms ease,color 140ms ease;
 }
-.pa-exchange-entry > span { flex:none; white-space:nowrap; }
+.pa-exchange-card > .pa-exchange-entry:only-child { border-radius:inherit; }
+.pa-exchange-entry > :not(strong) { flex:none; }
 .pa-exchange-entry strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--pa-ink,#eee); }
-.pa-exchange-summary { margin:2px 0 0; max-width:min(520px,100%); padding:0 8px; color:var(--pa-dim,#aaa); font-size:12px; line-height:1.45; text-align:center; overflow-wrap:anywhere; }
-.pa-exchange-entry:hover { background:var(--pa-card,#1d1d1d); }
+.project-assistants .pa-exchange-summary {
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden;
+  margin:0 10px 8px; font-size:14px; line-height:1.45; text-align:start; overflow-wrap:anywhere;
+}
+.project-assistants .pa-exchange-entry:hover { background:var(--pa-line); color:var(--pa-ink,currentColor); }
 @media (max-width:480px){ .pa-exchange-panel { width:calc(100vw - 16px); height:calc(100dvh - 16px); border-radius:19px; } }
 @media (prefers-reduced-motion:reduce){ .pa-exchange-panel,.pa-exchange-entry { transition:none; } }
