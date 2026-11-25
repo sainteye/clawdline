@@ -5828,9 +5828,9 @@
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "d737a4c849b934496078cc6ad600e4473f85e4dfe3161895f9a97cc3bde50f29",
+    "web/console/src/project-assistants/Chat.tsx": "1f08e7cdfe4d2153f58c5914d15b4c5a759d1415630e7918727db014dd0644d6",
     "web/console/src/project-assistants/ChatRows.tsx": "7796c198ee7a386b9f2e947f17b0542022deaa6c1a143b05b973d56f73fee986",
-    "web/console/src/project-assistants/DecisionCard.tsx": "96baf4809f8c2666600101c9dc2bcfeb57e4af52883b241caeda71cf2a3a7093",
+    "web/console/src/project-assistants/DecisionCard.tsx": "d13335a03c51be11d1d14ea81e7d86c9947466da36d8ceef1d64285e6ca9ddc9",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
@@ -5887,7 +5887,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "0901f05109858432b673843b72eba3e418f31567bd1aeb0c15edb20c00779e0a",
-    "zh-Hant": "7ff83573d21ff735e0d641f8a43236dff8c0ed6d0a966e5058d9499b09341377"
+    "en": "80497b52181c01e5797d00ab683bdc81f0634d61b5bbe96db2e019358e439087",
+    "zh-Hant": "2498c98dfe4e494795165d4728c6ba9aaf3a74fa61d859c4c3143dfe42c72535"
   }
 }
