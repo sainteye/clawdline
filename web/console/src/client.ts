@@ -52,6 +52,20 @@ export function quietFleetStream(): () => void {
 const QUIET_READ_MS = 5_000
 const FLEET_STREAM_LOCK = "clawdline-local-fleet-stream"
 
+// Read once per tab, as `native` reads EventSource: a browser tab keeps its document.
+const page = (globalThis as { document?: EventTarget & { visibilityState?: string } }).document
+const hidden = () => page?.visibilityState === "hidden"
+/** A hidden tab that waits for the lease reads nothing; showing it reads or streams at once. */
+const paused: StreamTransport = { open: () => ({ close() {} }) }
+
+interface FleetLease {
+  control: AbortController
+  steal: boolean
+  held: boolean
+  release?: () => void
+  settled?: Promise<unknown>
+}
+
 function quietableTransport(): StreamTransport | undefined {
   const stream = localStream
   if (!stream) return undefined
@@ -61,56 +75,105 @@ function quietableTransport(): StreamTransport | undefined {
       const locks = globalThis.navigator?.locks
       let inner: StreamHandle | undefined
       let using: StreamTransport | undefined
-      let claim: AbortController | undefined
-      let release: (() => void) | undefined
+      let lease: FleetLease | undefined
+      let closed = false
       const use = (transport: StreamTransport) => {
         if (using === transport) return
         inner?.close()
         using = transport
         inner = transport.open(url, handlers)
       }
-      const change = () => {
-        if (quiet > 0) {
-          use(reads)
-          claim?.abort()
-          release?.()
-          claim = undefined
-          release = undefined
-          return
-        }
-        if (!locks) { use(stream); return }
-        if (claim) return
+      const waiting = () => use(hidden() ? paused : reads)
+      const drop = () => {
+        const previous = lease
+        lease = undefined
+        previous?.control.abort()
+        previous?.release?.()
+        return previous
+      }
+      // A visible tab steals the lease so it streams at once. A hidden one
+      // takes it only when nobody holds or waits, and otherwise queues.
+      const claim = (steal: boolean) => {
+        if (!locks) return
+        drop()
         const control = new AbortController()
-        claim = control
+        const current: FleetLease = { control, steal, held: false }
+        lease = current
         const hold = () => {
           if (control.signal.aborted) return
           return new Promise<void>(done => {
-            release = done
+            current.held = true
+            current.release = done
             use(stream)
+            // Hidden while the steal was granted: offer it to a visible tab.
+            if (steal && hidden()) queueMicrotask(change)
           })
         }
-        // The first tab starts the live stream. Followers keep their own
-        // authenticated reads and queue for the lease with no retry timer.
-        let waiting = false
-        void locks.request(FLEET_STREAM_LOCK, { ifAvailable: true }, lock => {
+        const refused = (cause: unknown) => {
+          if (control.signal.aborted || lease !== current) return
+          // Another visible tab stole it: queue behind it without stealing back.
+          if (current.held && (cause as { name?: string } | null)?.name === "AbortError") { claim(false); return }
+          use(stream)
+        }
+        if (steal) {
+          current.settled = locks.request(FLEET_STREAM_LOCK, { steal: true }, hold).catch(refused)
+          return
+        }
+        let queued = false
+        current.settled = locks.request(FLEET_STREAM_LOCK, { ifAvailable: true }, lock => {
           if (control.signal.aborted) return
           if (lock) return hold()
-          waiting = true
-          use(reads)
+          queued = true
+          waiting()
         }).then(async () => {
-          if (waiting && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
-        }).catch(() => {
-          if (!control.signal.aborted) use(stream)
+          if (queued && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
+        }).catch(refused)
+      }
+      // A hidden holder lets the lock go and asks again behind any waiter. The
+      // request settles after the release, so a lone tab gets it straight back
+      // and keeps the stream it has.
+      let yielding: object | undefined
+      const yieldLease = () => {
+        const settled = drop()?.settled
+        const turn = {}
+        yielding = turn
+        void Promise.resolve(settled).then(() => {
+          if (yielding !== turn) return
+          yielding = undefined
+          change()
         })
       }
+      const change = () => {
+        if (closed) return
+        if (quiet > 0) {
+          yielding = undefined
+          drop()
+          waiting()
+          return
+        }
+        if (!locks) { use(stream); return }
+        if (yielding) return
+        const current = lease
+        if (hidden()) {
+          if (current?.held) yieldLease()
+          else if (!current) claim(false)
+          else if (using === reads) waiting()
+          return
+        }
+        if (current?.held || current?.steal) return
+        claim(true)
+      }
       quietChanged.add(change)
+      page?.addEventListener("visibilitychange", change)
       change()
       return {
         close() {
+          closed = true
+          yielding = undefined
           quietChanged.delete(change)
+          page?.removeEventListener("visibilitychange", change)
           inner?.close()
-          claim?.abort()
-          release?.()
+          drop()
         },
       }
     },

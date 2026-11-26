@@ -8,6 +8,13 @@ interface LocalEventConnection {
   tasks?: string
 }
 
+/** EventSource.CLOSED: the browser gave up on this connection and will not retry. */
+const CLOSED = 2
+
+function closedForGood(cause: unknown): boolean {
+  return (cause as { target?: { readyState?: unknown } } | null)?.target?.readyState === CLOSED
+}
+
 /** The local console fans out the daemon's existing event stream within this tab. */
 export function shareLocalEvents(native: StreamTransport): StreamTransport {
   let connection: LocalEventConnection | undefined
@@ -26,6 +33,9 @@ export function shareLocalEvents(native: StreamTransport): StreamTransport {
             onError(cause) {
               current.connected = false
               current.sessions = current.tasks = undefined
+              // A refused answer (an HTTP error, a non-stream body) closes a
+              // native EventSource for good; the next listener opens a new one.
+              if (closedForGood(cause) && connection === current) connection = undefined
               for (const listener of listeners) listener.onError?.(cause)
             },
             onFrame(event, data) {
@@ -45,7 +55,7 @@ export function shareLocalEvents(native: StreamTransport): StreamTransport {
       return {
         close() {
           if (!current.listeners.delete(handlers) || current.listeners.size > 0) return
-          connection = undefined
+          if (connection === current) connection = undefined
           current.handle.close()
         },
       }
