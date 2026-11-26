@@ -15,6 +15,15 @@ fence and active turn, checks the current source/feature/revocation state, and
 uses the existing engine and broker bridge. The model supplies operation data,
 never a Bot/Project identity, actor, human approval or machine credential.
 
+For a read-only child task in its own repository Project, the Bot sends
+`claims: []`, omits `project`, and describes the no-write scope in the brief.
+This works in direct user, local Bot request, Bot reply and work review turns
+that already allow dispatch. The result returns to the dispatching Bot's main
+chat, including when automatic work review is off. In local request, reply and
+review turns, an explicit name or path that resolves to the Bot's own Project
+works the same way. A direct user turn is required to name a different
+Project, link a Board item or request `continue_on_completion`.
+
 During a direct user turn, the designated Lead can set `project` on
 `dispatch_work` to a unique registered repository folder name or absolute
 registered path on this machine. The Host resolves it through the same
@@ -191,9 +200,9 @@ the person had to repeat the request in that Bot's own chat.
 - The browser owner is derived from the worker's own conversation, so the
   turn reaches only the tabs it opened, never the main chat's.
 - A request from another machine (`network_request`) still has neither.
-- The dispatched task belongs to the thread worker: its completion wakes that
-  worker's conversation, not the recipient's main chat, and the main chat's
-  `work_status` does not list it.
+- The dispatched task belongs to the recipient's main chat. A notice there
+  names the requesting Bot, and the main chat receives the result and any
+  work review.
 
 `send_message`, routines and outputs stay blocked on peer-request turns.
 
