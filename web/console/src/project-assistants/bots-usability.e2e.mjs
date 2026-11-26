@@ -1,7 +1,9 @@
-// Bots settings and memory usability in a real browser, at 1280x800 and 390x844:
+// Bots settings and memory usability in a real browser, at 1280x800, 979x605,
+// 1280x600 and 390x844:
 // the shared-memory Project scope list is wholly visible inside the dialog and
 // every checkbox carries its Project's name; the memory forget section's confirm
-// is reachable by scrolling and each entry checkbox carries its entry text;
+// is in view as the section opens, stays reachable by scrolling, and each entry
+// checkbox carries its entry text;
 // forgetting says a fresh conversation follows and, while the Bot works, offers
 // waiting; Cancel in Bot settings discards the draft and keeps the panel open.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> BOTS_ARTIFACTS=<dir> node bots-usability.e2e.mjs
@@ -106,13 +108,20 @@ async function forgetSection(page,name,width){
   await panel.locator(".pa-memory-forget summary").click()
   const confirm=panel.locator(".pa-memory-forget fieldset button",{hasText:"忘記所選來源"}).last()
   await confirm.waitFor()
+  const inView=()=>confirm.evaluate(button=>{const r=button.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===button})
+  // Opening the section shows its confirm at once, before any scrolling by the person.
+  await page.waitForTimeout(200)
+  await page.screenshot({path:path.join(BOTS_ARTIFACTS,`forget-opened-${name}.png`)})
+  const opened=await inView()
+  const scrollers=await page.evaluate(()=>{const p=document.querySelector(".pa-info-panel").getBoundingClientRect();return {panelTop:p.top,panelBottom:p.bottom,innerHeight,pageScroll:document.scrollingElement.scrollTop}})
+  check(`${name} forget confirm in view as the section opens`,()=>assert.equal(opened,true))
+  check(`${name} info panel scrolls within the window`,()=>assert.ok(scrollers.panelTop>=0&&scrollers.panelBottom<=scrollers.innerHeight+0.5&&scrollers.pageScroll===0,JSON.stringify(scrollers)))
   await panel.locator(".pa-memory-forget input[type=checkbox]").first().check()
   // With the section's heading at the top of the panel, the confirm stays in view
   // while the list is longer than the screen; the wheel also reaches it.
   await panel.locator(".pa-memory-forget summary").evaluate(node=>node.scrollIntoView({block:"start"}))
   await page.waitForTimeout(200)
   await page.screenshot({path:path.join(BOTS_ARTIFACTS,`forget-top-${name}.png`)})
-  const inView=()=>confirm.evaluate(button=>{const r=button.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)===button})
   const atStart=await inView()
   check(`${name} forget confirm in view at the section's start`,()=>assert.equal(atStart,true))
   const box=await panel.boundingBox()
@@ -177,7 +186,7 @@ async function settingsCancel(page,name,width){
 }
 
 try{
-  for(const [name,viewport] of [["1280",{width:1280,height:800}],["390",{width:390,height:844}]]){
+  for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["1280x600",{width:1280,height:600}],["390",{width:390,height:844}]]){
     const touch=name==="390"
     const make=()=>browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:touch,hasTouch:touch,reducedMotion:"reduce"})
     for(const run of [scopeList,forgetSection,settingsCancel]){
