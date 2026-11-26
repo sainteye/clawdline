@@ -99,7 +99,7 @@ async function checkRosterDuringConnection(page,language,width,name,tabKey) {
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
   await page.screenshot({path:path.join(artifacts,`${name}-connecting.png`)})
   await connect(false,true,false)
-  assert.equal(await connection.getAttribute("data-state"),"retrying")
+  await page.locator(".conn[data-state=retrying]").waitFor()
   assert.equal(await loading.isVisible(),true)
 
   await page.evaluate(()=>{
