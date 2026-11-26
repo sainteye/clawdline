@@ -66,6 +66,51 @@ interface FleetLease {
   settled?: Promise<unknown>
 }
 
+interface FleetLeaseEvents {
+  /** The lock is held: stream. */
+  held(): void
+  /** Another tab holds or waits for it; this request is queued. */
+  queued(): void
+  /** Another visible tab stole it after it was held. */
+  stolen(): void
+  /** The browser refused the request: stream without the lock. */
+  refused(): void
+}
+
+// A visible tab steals the lease so it streams at once. A hidden one takes it
+// only when nobody holds or waits, and otherwise queues.
+function requestFleetLease(locks: LockManager, steal: boolean, on: FleetLeaseEvents): FleetLease {
+  const control = new AbortController()
+  const lease: FleetLease = { control, steal, held: false }
+  const hold = () => {
+    if (control.signal.aborted) return
+    return new Promise<void>(done => {
+      lease.held = true
+      lease.release = done
+      on.held()
+    })
+  }
+  const failed = (cause: unknown) => {
+    if (control.signal.aborted) return
+    if (lease.held && (cause as { name?: string } | null)?.name === "AbortError") on.stolen()
+    else on.refused()
+  }
+  if (steal) {
+    lease.settled = locks.request(FLEET_STREAM_LOCK, { steal: true }, hold).catch(failed)
+    return lease
+  }
+  let queued = false
+  lease.settled = locks.request(FLEET_STREAM_LOCK, { ifAvailable: true }, lock => {
+    if (control.signal.aborted) return
+    if (lock) return hold()
+    queued = true
+    on.queued()
+  }).then(async () => {
+    if (queued && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
+  }).catch(failed)
+  return lease
+}
+
 function quietableTransport(): StreamTransport | undefined {
   const stream = localStream
   if (!stream) return undefined
@@ -91,43 +136,21 @@ function quietableTransport(): StreamTransport | undefined {
         previous?.release?.()
         return previous
       }
-      // A visible tab steals the lease so it streams at once. A hidden one
-      // takes it only when nobody holds or waits, and otherwise queues.
       const claim = (steal: boolean) => {
         if (!locks) return
         drop()
-        const control = new AbortController()
-        const current: FleetLease = { control, steal, held: false }
-        lease = current
-        const hold = () => {
-          if (control.signal.aborted) return
-          return new Promise<void>(done => {
-            current.held = true
-            current.release = done
+        const current = requestFleetLease(locks, steal, {
+          held() {
             use(stream)
             // Hidden while the steal was granted: offer it to a visible tab.
             if (steal && hidden()) queueMicrotask(change)
-          })
-        }
-        const refused = (cause: unknown) => {
-          if (control.signal.aborted || lease !== current) return
-          // Another visible tab stole it: queue behind it without stealing back.
-          if (current.held && (cause as { name?: string } | null)?.name === "AbortError") { claim(false); return }
-          use(stream)
-        }
-        if (steal) {
-          current.settled = locks.request(FLEET_STREAM_LOCK, { steal: true }, hold).catch(refused)
-          return
-        }
-        let queued = false
-        current.settled = locks.request(FLEET_STREAM_LOCK, { ifAvailable: true }, lock => {
-          if (control.signal.aborted) return
-          if (lock) return hold()
-          queued = true
-          waiting()
-        }).then(async () => {
-          if (queued && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
-        }).catch(refused)
+          },
+          queued: waiting,
+          // Queue behind the tab that took it, without stealing it back.
+          stolen() { if (lease === current) claim(false) },
+          refused() { if (lease === current) use(stream) },
+        })
+        lease = current
       }
       // A hidden holder lets the lock go and asks again behind any waiter. The
       // request settles after the release, so a lone tab gets it straight back
