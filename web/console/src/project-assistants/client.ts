@@ -1,4 +1,5 @@
 import type { BotReadMode, BotReadObservation } from "./read-observation"
+import type {CapabilityGap} from "./source-errors"
 import type { WorkV2Item } from "../pages/work/api"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node's strip-types runner loads the generated source extension.
@@ -68,6 +69,8 @@ export interface SourceClient {
   /** Account-scoped identity for persisting uncertain metadata commands. */
   readonly intentAccount?: string
   canGroups?(): boolean
+  /** Why a capability gated by the source's API level is missing (source-errors.ts). */
+  capabilityGap?(): CapabilityGap
   canTeamCards?(): boolean
   canDeferTraceCount?(): boolean
   canReadProgress?(): boolean

@@ -11880,6 +11880,7 @@
   "projectAssistants.sourceError": "Source could not be read",
   "projectAssistants.sourceIDs": "Source IDs (one per line)",
   "projectAssistants.sourceOffline": "This machine is temporarily unavailable.",
+  "projectAssistants.capabilitiesPending": "This machine hasn't reported which features it supports yet. It may be busy or briefly unreachable; this setting opens once it does.",
   "projectAssistants.sourcePairingRequired": "Check this machine’s pairing and access permissions.",
   "projectAssistants.sourceRetryHint": "We will retry automatically. The Bot list will update when the connection returns.",
   "projectAssistants.sourceRetrying": "Retrying…",

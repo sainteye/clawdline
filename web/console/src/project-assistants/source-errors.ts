@@ -13,10 +13,34 @@ export function shownSourceError(code: string | undefined): boolean {
  */
 export function readOnlyReason(source: { state: string; fresh: boolean; writable: boolean; access: string } | undefined, w: Record<string, string>): string {
   if (!source) return w.loading ?? ""
+  if (source.state === "offline") return w.sourceOffline ?? w.unavailable ?? ""
   if (source.state !== "online" || !source.fresh) return w.unavailable ?? ""
   if (source.access !== "interactive") return w[source.access] ?? source.access
   if (!source.writable) return w.readOnlySource ?? ""
   return ""
+}
+
+/**
+ * The workspace's readable name. Cloud may not have listed the source's
+ * Projects yet; its raw ID is never a name, so the fallback word stands in.
+ */
+export function botWorkspaceName(name: string | undefined, w: { unnamedProject: string }): string {
+  return name?.trim() ? name : w.unnamedProject
+}
+
+/** Why a source has not offered a capability (see SourceClient.capabilityGap). */
+export type CapabilityGap = "pending" | "offline" | "outdated"
+
+/**
+ * The hint beside a setting the source cannot offer. Only a source known to
+ * be older is asked to update; one that is offline or has not yet reported
+ * its capabilities says so.
+ */
+export function capabilityHint(source: { capabilityGap?(): CapabilityGap } | undefined, update: string, w: { capabilitiesPending: string; sourceOffline: string }): string {
+  const gap = source?.capabilityGap?.()
+  if (gap === "pending") return w.capabilitiesPending
+  if (gap === "offline") return w.sourceOffline
+  return update
 }
 
 /**

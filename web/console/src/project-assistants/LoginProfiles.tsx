@@ -5,6 +5,7 @@ import {command,errorCode,provablyNotSent,type SourceClient} from "./client"
 import {routineScopeIdentity} from "./routine-hook-intent"
 import {validLoginIntent} from "./login-profile-intent"
 import type {Words} from "./words"
+import {capabilityHint} from "./source-errors"
 
 /** Native sign-in belongs to the source. Every explicit replay keeps its exact
  * command; mounting or refreshing this component never starts a sign-in. */
@@ -46,7 +47,7 @@ export function LoginProfiles({source,bot,agent,value,onChange,onStatusChange,w,
    ]}/>
    {selected&&<p role="status">{w.loginState}: {({signed_in:selected.kind==="api_key"?w.loginKeyStored:w.loginSignedIn,signed_out:w.loginSignedOut,accepted:w.loginAccepted,running:w.loginRunning,unknown:w.loginUnknown,removed:w.loginMissing} as Record<string,string>)[selected.state]??w.loginUnknown}</p>}
    {compact?<details className="pa-login-management" open={manageOpen} onToggle={event=>setManageOpen(event.currentTarget.open)}><summary>{w.settingsLoginManage}</summary><div className="pa-login-management-body">{management}</div></details>:management}
-  </>:<p>{w.loginUnavailable}</p>}
+  </>:<p>{capabilityHint(source,w.loginUnavailable,w)}</p>}
   {error&&<p role="alert">{w.unavailable} ({error})</p>}
  </section>
 }
