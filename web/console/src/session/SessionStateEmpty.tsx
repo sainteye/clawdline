@@ -2,9 +2,10 @@ import { nextWord } from "../next-strings.js"
 import type { SessionStateFilter } from "./state-filter.js"
 
 /** One compact result, followed by the independent schedule section. */
-export function SessionStateEmpty({ filter, incomplete = false, onReset }: {
+export function SessionStateEmpty({ filter, incomplete, onReset }: {
   filter: Exclude<SessionStateFilter, "all">
-  incomplete?: boolean
+  /** Required: every list must say whether its reading was whole before an empty result is a fact. */
+  incomplete: boolean
   onReset: () => void
 }) {
   const title = incomplete ? "sessionStateFilterIncomplete" : filter === "attention" ? "sessionStateEmptyAttention" :

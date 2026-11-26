@@ -1405,6 +1405,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
         live={fleet.live}
         machineOffline={cloudMachineOffline}
         emptyAuthoritative={fleet.snapshot?.scan.emptyAuthoritative ?? false}
+        scanIncomplete={!fleet.snapshot || !fleet.snapshot.scan.complete}
         readingSource={fleet.snapshot?.scan.source}
         scanNotes={fleet.snapshot?.scan.notes}
         scanSources={fleet.snapshot?.scan.sources}
