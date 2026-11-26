@@ -54,6 +54,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	// request from another machine's Bot keeps memory refused outright.
 	tools := NativeWork{memoryCard: turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin}
 	s.bindLeadTools(&tools)
+	s.bindCharterTool(&tools)
 	s.bindSourceApproval(&tools)
 	if err := h.bindServerTools(q, s.life, &tools, s.bound, s.journal); err != nil {
 		s.life.invalidate()

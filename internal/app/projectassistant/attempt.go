@@ -339,6 +339,18 @@ func (r *Engine) readAttemptInputLocked(ctx context.Context, a *runtimeActor, s 
 	if t.RoutineRunID != "" || t.Origin == pa.UserOrigin || t.Origin == "" {
 		input.Text = pa.WithBotMentionHint(input.Text)
 	}
+	if t.CharterEdit != nil {
+		// The charter the person asked about is read when the turn runs, so
+		// the lead proposes against the version that is current then.
+		if r.o.Charter == nil || !bot.Lead || !pa.DirectUserTurn(t) {
+			return runtimeFailure(pa.ScopeDenied, "charter_edit")
+		}
+		version, text, err := r.o.Charter.CurrentCharter(ctx, pa.ProjectScope{MachineID: bot.Project.MachineID, ProjectID: t.CharterEdit.ProjectID})
+		if err != nil {
+			return err
+		}
+		input.Text = pa.CharterEditContext(t.CharterEdit.ProjectID, version, text, input.Text)
+	}
 	// The first prompt after an interrupted turn was settled unrepeated
 	// inspects what finished before it acts.
 	input.Text = restartPromptHeader(export, t, isolatedRoutine) + input.Text

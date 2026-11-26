@@ -91,6 +91,10 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			if tools, ok := q.Tools.(app.BackgroundTools); ok && tools.BackgroundAvailable() {
 				allowed = append(allowed, "mcp__clawdline__add_work")
 			}
+			// A proposal changes nothing until the person applies it.
+			if _, ok := q.Tools.(app.CharterTools); ok {
+				allowed = append(allowed, "mcp__clawdline__propose_charter_edit")
+			}
 			options["allowedTools"] = allowed
 		}
 		params["_meta"] = map[string]any{

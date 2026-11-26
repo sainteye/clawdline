@@ -142,3 +142,81 @@ func TestBotRequestWorkerWithOnlyACharterFinishes(t *testing.T) {
 		})
 	}
 }
+
+// A change request from a charter page reaches the lead as the person's own
+// turn carrying the Project's current charter; the lead's proposal waits for
+// the person. An ordinary Bot is offered no proposal tool.
+func TestCharterChangeRequestLetsTheLeadPropose(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Projects = leadDispatchResolver{fixtureResolver: fixtureResolver{f}, personal: t.TempDir()}
+	f.o.DefaultLeadAgent = func(time.Time) pa.Agent { return pa.Codex }
+	f.o.LeadTimeZone = "UTC"
+	f.start(t)
+	f.enable(t)
+	member := f.create(t, "member")
+	lead, err := f.h.store.Bot(ctx, pa.BotKey{MachineID: f.o.MachineID, BotID: "default-lead"})
+	if err != nil || !lead.Lead {
+		t.Fatalf("expected the lead: %+v %v", lead, err)
+	}
+	saveFixtureCharter(t, f, member.Project, 0, "Makers build; reviewers review.")
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, c, _, err := service.Get(ctx, lead.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fence := pa.Fence{Key: lead.Key, Project: lead.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
+	edit := pa.CharterEdit{ProjectID: member.Project.ProjectID, Version: 1}
+	// Only the lead accepts a change request.
+	_, mc, _, _ := service.Get(ctx, member.Key)
+	_, err = service.SendCharterEdit(ctx, pa.Command{Key: member.Key, Operation: pa.SendOperation, IdempotencyKey: "not-lead"},
+		pa.Fence{Key: member.Key, Project: member.Project, ConversationID: mc.ID, BindingID: mc.BindingID, Generation: mc.Generation}, "Add a review rule.", edit)
+	if pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("a change request to an ordinary Bot is refused: %v", err)
+	}
+	if _, err = service.SendCharterEdit(ctx, pa.Command{Key: lead.Key, Operation: pa.SendOperation, IdempotencyKey: "charter-request"}, fence, "Add that the lead reviews every change.", edit); err != nil {
+		t.Fatal(err)
+	}
+	prompt := fixtureReceive(t, f.p.sent)
+	session := fixtureReceive(t, f.p.sessions)
+	if prompt.Turn.CharterEdit == nil || prompt.Turn.Origin != pa.UserOrigin ||
+		!strings.Contains(prompt.Text, `<charter_edit_request project="project" version="1">`) ||
+		!strings.Contains(prompt.Text, "Makers build; reviewers review.") || !strings.Contains(prompt.Text, "Add that the lead reviews every change.") {
+		t.Fatalf("the lead's prompt carries the charter edit context: %+v %q", prompt.Turn.CharterEdit, prompt.Text)
+	}
+	tools, ok := session.q.Tools.(app.CharterTools)
+	if !ok || tools.CharterProposalAvailable(ctx) != nil {
+		t.Fatalf("the lead is offered the proposal tool")
+	}
+	_, err = tools.ProposeCharterEdit(ctx, app.CharterEditProposal{Project: member.Project.ProjectID, BaseVersion: 0, NewText: "x", Summary: "stale"})
+	if pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("a proposal on an old base is refused: %v", err)
+	}
+	p, err := tools.ProposeCharterEdit(ctx, app.CharterEditProposal{Project: member.Project.ProjectID, BaseVersion: 1,
+		NewText: "Makers build; reviewers review.\nThe lead reviews every change.", Summary: "Added: the lead reviews every change."})
+	if err != nil || p.ID == "" {
+		t.Fatalf("propose: %+v %v", p, err)
+	}
+	if current, _ := f.h.store.Charter(ctx, member.Project.MachineID, member.Project.ProjectID); current.Version != 1 {
+		t.Fatalf("a proposal changes nothing: %+v", current)
+	}
+	pending, err := f.h.store.CharterProposals(ctx, member.Project.MachineID, member.Project.ProjectID)
+	if err != nil || len(pending) != 1 || pending[0].BotID != lead.Key.BotID || pending[0].TurnID != prompt.Turn.ID {
+		t.Fatalf("the proposal waits for the person: %+v %v", pending, err)
+	}
+	session.reply <- app.PromptResult{FinalText: "Proposed."}
+	fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+
+	if _, err = f.send(t, member, "member"); err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	other := fixtureReceive(t, f.p.sessions)
+	if tools, ok := other.q.Tools.(app.CharterTools); ok && tools.CharterProposalAvailable(ctx) == nil {
+		t.Fatal("an ordinary Bot must not be offered the proposal tool")
+	}
+	other.reply <- app.PromptResult{FinalText: "ok"}
+}

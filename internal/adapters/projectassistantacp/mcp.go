@@ -486,6 +486,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if lead, ok := s.tools.(app.LeadBotTools); ok && lead.LeadBotAvailable(ctx) == nil {
 			list = append(list, mcpLeadBotTool())
 		}
+		if charter, ok := s.tools.(app.CharterTools); ok && charter.CharterProposalAvailable(ctx) == nil {
+			list = append(list, mcpCharterTool())
+		}
 		if _, ok := s.tools.(app.BotRequestTools); ok {
 			list = append(list, mcpBotRequestTools()...)
 		}
@@ -510,7 +513,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
@@ -598,6 +601,20 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			q.Action = "logs"
 		}
 		return tools.DevServers(ctx, q)
+	case "propose_charter_edit":
+		charter, ok := s.tools.(app.CharterTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "charter_tools")
+		}
+		var q app.CharterEditProposal
+		if mcpDecode(arguments, &q) != nil || q.Project == "" || q.BaseVersion < 0 {
+			return nil, refusal(pa.Invalid, "charter_arguments")
+		}
+		p, err := charter.ProposeCharterEdit(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
 	case "manage_bots":
 		lead, ok := s.tools.(app.LeadBotTools)
 		if !ok {
@@ -920,6 +937,24 @@ func (s *ownedMCPServer) memoryEditResult(id string) map[string]string {
 		return map[string]string{"state": "awaiting_person", "idempotency_key": id, "message": memoryCardMessage}
 	}
 	return map[string]string{"state": "saved", "idempotency_key": id}
+}
+
+// mcpCharterTool is offered to the lead Bot in a direct turn from the person,
+// including a change request sent from a charter page.
+func mcpCharterTool() map[string]any {
+	return map[string]any{
+		"name":        "propose_charter_edit",
+		"description": "Propose a new team charter for a Project on this computer when the person asks to change it. project is the Project id from the charter request or list_bots; base_version is the charter version you read (0 when it has none); new_text is the whole new Markdown charter, not a diff; summary says in one line which sentences you removed and added. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. Tell the person briefly what you proposed. 使用者要求修改團隊章程時，為這台電腦上的某個 Project 提出新版章程。project 是章程請求或 list_bots 提供的 Project id；base_version 是你讀到的章程版本（沒有章程時為 0）；new_text 是完整的新 Markdown 章程，不是差異；summary 用一句話說明刪掉與加上的句子。使用者在章程頁按下套用前不會有任何改變；章程若已更新，提案會失效，請重新讀取後再提。簡短告訴使用者你提了什麼。",
+		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
+			"required": []string{"project", "base_version", "new_text", "summary"},
+			"properties": map[string]any{
+				"project":      map[string]any{"type": "string", "minLength": 1},
+				"base_version": map[string]any{"type": "integer", "minimum": 0},
+				"new_text":     map[string]any{"type": "string"},
+				"summary":      map[string]any{"type": "string"},
+			},
+		},
+	}
 }
 
 func mcpLeadBotTool() map[string]any {

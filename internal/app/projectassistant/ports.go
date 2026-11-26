@@ -40,6 +40,9 @@ type Submission struct {
 	// Compact asks for the person's "Compact now": admitted only while the Bot
 	// is idle and already holds a native session (see admitCompaction).
 	Compact bool
+	// CharterEdit marks the person's change request from a charter page; only
+	// Service.SendCharterEdit sets it, and only for the lead Bot.
+	CharterEdit *pa.CharterEdit
 }
 type StopRequest struct {
 	Command pa.Command

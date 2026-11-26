@@ -71,6 +71,22 @@ type ProjectDispatchTools interface {
 	DispatchToProject(ctx context.Context, id, title, brief string, claims []string, project string) (pa.WorkLink, error)
 }
 
+// CharterTools lets the lead Bot, in a direct turn from the person, propose a
+// whole new team charter for a Project. A proposal changes nothing until the
+// person applies it on the charter page.
+type CharterTools interface {
+	CharterProposalAvailable(context.Context) error
+	ProposeCharterEdit(context.Context, CharterEditProposal) (pa.CharterProposal, error)
+}
+
+// CharterEditProposal is the propose_charter_edit tool's arguments.
+type CharterEditProposal struct {
+	Project     string `json:"project"`
+	BaseVersion int64  `json:"base_version"`
+	NewText     string `json:"new_text"`
+	Summary     string `json:"summary"`
+}
+
 // LeadBotTools is a private capability scoped to the current Lead's direct user turn.
 type LeadBotTools interface {
 	LeadBotAvailable(context.Context) error

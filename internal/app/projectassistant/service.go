@@ -611,6 +611,44 @@ func (s *Service) Send(ctx context.Context, c pa.Command, message pa.SendMessage
 	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)}, InputCheck: inputCheck, AuthorityCheck: authorityCheck, Feature: a.Feature, Source: a.Source})
 }
 
+// SendCharterEdit sends the person's words from a charter page to the lead
+// Bot as an ordinary message of theirs, marked as a change request for one
+// Project's charter so the lead's prompt carries that charter and the lead
+// can propose a new version. The mark grants nothing: proposing is the lead's
+// own tool in any direct turn, and only the person applies a proposal.
+func (s *Service) SendCharterEdit(ctx context.Context, c pa.Command, fence pa.Fence, text string, edit pa.CharterEdit) (pa.Receipt, error) {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if fence.Key != c.Key {
+		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")
+	}
+	if err = pa.ValidateCharterRequest(text); err != nil {
+		return pa.Receipt{}, err
+	}
+	if err = pa.ValidateCharterProject(edit.ProjectID); err != nil {
+		return pa.Receipt{}, err
+	}
+	message := pa.SendMessage{Fence: fence, Text: text}
+	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, struct {
+		Message pa.SendMessage
+		Charter pa.CharterEdit
+	}{message, edit})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	check := func(ctx context.Context) error {
+		_, err := s.authorizeEffect(ctx, c.Key, true, a)
+		return err
+	}
+	if err = check(ctx); err != nil {
+		return pa.Receipt{}, err
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)},
+		AuthorityCheck: check, Feature: a.Feature, Source: a.Source, CharterEdit: &edit})
+}
+
 // CompactNow asks an idle Bot to compact its native context now. The prompt
 // is the agent's own command; the person supplies no text.
 func (s *Service) CompactNow(ctx context.Context, c pa.Command, fence pa.Fence) (pa.Receipt, error) {

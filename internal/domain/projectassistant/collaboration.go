@@ -292,6 +292,9 @@ func ValidateTurnOrigin(t Turn) error {
 	if (t.Origin == NetworkRequestOrigin) != (t.Network != nil) {
 		return fail(Invalid, "network_origin")
 	}
+	if t.CharterEdit != nil && t.Origin != UserOrigin {
+		return fail(Invalid, "charter_edit_origin")
+	}
 	switch t.Origin {
 	case LeadCallOrigin:
 		if !ValidLeadCallKey(t.IdempotencyKey) || t.ExchangeID != "" || t.Hops != 0 || t.RoutineRunID != "" || t.Room != nil {
