@@ -74,6 +74,9 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 		"console.schedule_retry_ceiling_milliseconds": true,
 		"console.reads_out_per_target":                true,
 		"console.held_read_lost_milliseconds":         true,
+		"console.local_bot_read_timeout":              true,
+		"console.local_fleet_stream_frames":           true,
+		"console.local_fleet_stream_lease":            true,
 	}
 	for _, e := range capacity.Register() {
 		m := measures[e.Name]
