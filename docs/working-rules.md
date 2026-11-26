@@ -134,7 +134,7 @@ changed-package local gate, integration timing, full checks and profiling are in
 
 ## A push is not a background chore to run beside a build
 
-The pre-push hook asks GitHub about main's latest CI run. It once read the whole history twice too,
+The pre-push hook once asked GitHub about main's latest CI run and read the whole history twice,
 about five minutes a side, and later read only the commits a push would add; historical privacy
 scans are no longer automatic (`docs/privacy-guard.md`). On 2026-10-11 a push started while the
 full check run and an app package build held the machine took **two and a half hours**: its TCP
@@ -155,10 +155,9 @@ on the red; and nobody was told. Each of those now answers differently:
 - `npm test` in `web/` (`tools/console-tests.mjs`) is the console suite in CI and in
   `tools/check.sh`; `tools/check-console-tests.mjs` fails when a test file is run by neither it nor
   `npm run check`.
-- The pre-push hook refuses a push to main while the latest completed CI run on main failed. A push
-  that is the repair carries `CI-Fix: <run id or URL>` as a trailer on one of its commits
-  (`git commit --trailer "CI-Fix: <run id>"`); `CLAWDLINE_PUSH_ON_RED=1` overrides and is printed.
-  When the hook cannot read CI (no `gh`, not logged in, offline) it refuses too.
+- The pre-push hook used to refuse a push to main while main's latest CI run had failed. The person
+  removed that refusal on 2026-11-26 because an unrelated red run kept finished work from landing.
+  Pushing onto a red main is allowed again; read the red run and fix it rather than stacking on it.
 - The last CI job notifies once when main goes from green to red, through the repository secret
   `CLAWDLINE_CI_NOTIFY_URL` (`tools/ci-notify-red.sh`); without it the job prints a notice. With
   the optional secret `CLAWDLINE_CI_NOTIFY_TOKEN` the URL is a Bot routine webhook: the token is
