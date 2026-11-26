@@ -49,6 +49,11 @@ func executionFailureField(cause error) string {
 		if failure.Code == pa.CapacityFull && failure.Field != "" {
 			return failure.Field
 		}
+		// Context checks are local and name the fact that moved; native
+		// adapters never produce this code.
+		if failure.Code == pa.ContextStale && failure.Field != "" {
+			return failure.Field
+		}
 		if failure.Code == pa.Invalid {
 			switch failure.Field {
 			case "update", "tool_content", "tool_terminal_id":

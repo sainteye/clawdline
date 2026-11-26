@@ -130,3 +130,21 @@ func TestUnknownTurnExplainsInterruptionWithoutReplaying(t *testing.T) {
 		})
 	}
 }
+
+// A context refusal names the exact check that refused, so an interrupted
+// turn says which context moved instead of the generic execution field.
+func TestUnknownTurnKeepsTheContextCheckThatRefused(t *testing.T) {
+	stale := fmt.Errorf("send: %w", &pa.Failure{Code: pa.ContextStale, Field: "memory_provenance"})
+	if got := executionFailureField(stale); got != "memory_provenance" {
+		t.Fatalf("context refusal lost its check: %q", got)
+	}
+	for _, other := range []error{
+		&pa.Failure{Code: pa.Unsupported, Field: "private native narrative"},
+		&pa.Failure{Code: pa.ContextStale},
+		errors.New("plain"),
+	} {
+		if got := executionFailureField(other); got != "execution" {
+			t.Fatalf("%v became public field %q", other, got)
+		}
+	}
+}

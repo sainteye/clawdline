@@ -643,16 +643,22 @@ func (r *Engine) sendAttemptPrompt(ctx context.Context, a *runtimeActor, s *atte
 		if err := pa.CheckContext(filtered, s.current); err != nil {
 			return err
 		}
+		// Shared memory is read before the Bot's own memory, which wins. It is
+		// the person's machine setting, not a fact of this Bot's memory, so it
+		// joins the delivered text only after the provenance checks: a Bot with
+		// no memory of its own, such as every request worker, still opens.
+		shared := ""
 		if r.o.SharedMemory != nil {
-			// Shared memory is read before the Bot's own memory, which wins.
-			if shared := r.o.SharedMemory(ctx, s.bot); shared != "" {
-				filtered.Text = "<shared_memory>\n" + shared + "</shared_memory>\n" + filtered.Text
-			}
+			shared = sharedMemoryBlock(r.o.SharedMemory(ctx, s.bot))
 		}
 		promptText, handoff, err := attemptPrompt(s, filtered)
 		if err != nil {
 			return err
 		}
+		if handoff != nil {
+			handoff.shareMemory(shared)
+		}
+		filtered.Text = shared + filtered.Text
 		// WithCurrent may wait behind a memory writer. Check again at the
 		// actual send boundary rather than trusting the pre-lock snapshot.
 		if err = r.authorized(ctx, a.key, s.bot.Project); err != nil {

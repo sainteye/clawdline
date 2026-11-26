@@ -26,6 +26,24 @@ type SessionHandoff struct {
 	verifiedContinuation []SessionContinuation
 	verifiedRecap        *SessionRecap
 	editedSummary        *string
+	// sharedMemory is the shared memory block that precedes the Bot's own
+	// memory in Context.Text. It has no Bot memory provenance of its own.
+	sharedMemory string
+}
+
+// sharedMemoryBlock is the delivered form of the machine's shared memory.
+func sharedMemoryBlock(shared string) string {
+	if shared == "" {
+		return ""
+	}
+	return "<shared_memory>\n" + shared + "</shared_memory>\n"
+}
+
+// shareMemory puts the shared memory block ahead of the Bot's own memory in
+// the opening. Opening separates it again before checking provenance.
+func (h *SessionHandoff) shareMemory(block string) {
+	h.sharedMemory = block
+	h.Context.Text = block + h.Context.Text
 }
 
 // SessionRecap summarizes earlier omitted conversation history when dynamic
@@ -368,7 +386,16 @@ func sessionContinuationBefore(x Export, turn pa.Turn, memory pa.MemoryRevision,
 
 // Opening binds the prepared data to the exact turn and the final memory check.
 // Retained transcripts and provider summaries cannot fill missing provenance.
-func (h SessionHandoff) Opening(turn pa.Turn, filtered pa.ContextSnapshot) (string, error) {
+func (h SessionHandoff) Opening(turn pa.Turn, delivered pa.ContextSnapshot) (string, error) {
+	// Only the Bot's own memory carries provenance. The delivered text must
+	// start with exactly the shared block this handoff was prepared with.
+	own, ok := strings.CutPrefix(delivered.Text, h.sharedMemory)
+	prepared, preparedOK := strings.CutPrefix(h.Context.Text, h.sharedMemory)
+	if !ok || !preparedOK {
+		return "", runtimeFailure(pa.ContextStale, "handoff_shared_memory")
+	}
+	filtered := delivered
+	filtered.Text = own
 	if err := pa.CheckContext(filtered, filtered.Memory); err != nil {
 		return "", err
 	}
@@ -378,12 +405,14 @@ func (h SessionHandoff) Opening(turn pa.Turn, filtered pa.ContextSnapshot) (stri
 	if err := pa.CheckFence(h.Identity, turn.Fence); err != nil {
 		return "", err
 	}
+	preparedContext := h.Context
+	preparedContext.Text = prepared
 	if h.Instructions != turn.Instructions || h.Context.Memory.Revision != turn.MemoryRevision ||
-		h.Context.Text != filtered.Text || !slices.Equal(h.Context.Sources, filtered.Sources) ||
+		prepared != filtered.Text || !slices.Equal(h.Context.Sources, filtered.Sources) ||
 		!slices.Equal(h.Context.Memory.ForgottenSourceIDs, filtered.Memory.ForgottenSourceIDs) {
 		return "", runtimeFailure(pa.ContextStale, "handoff_snapshot")
 	}
-	if err := pa.CheckContext(h.Context, filtered.Memory); err != nil {
+	if err := pa.CheckContext(preparedContext, filtered.Memory); err != nil {
 		return "", err
 	}
 	if !slices.Equal(h.Continuation, h.verifiedContinuation) {
