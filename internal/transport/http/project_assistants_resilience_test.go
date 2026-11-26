@@ -143,7 +143,10 @@ func TestProjectAssistantServerLateOpenRetainsUnknownCleanupHandle(t *testing.T)
 	started, release := make(chan struct{}), make(chan struct{})
 	session := &paServerSession{sent: make(chan struct{})}
 	session.closeFails.Store(true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Minute, CleanupTimeout: 30 * time.Millisecond}
+	// The first disable waits this whole budget for the blocked Open, and the
+	// final successful disable must also fit in it. Unloaded that takes about
+	// 10ms; on a loaded runner it was measured past 100ms, so 30ms flaked.
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Minute, CleanupTimeout: 250 * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
 		return paServerProvider{open: func(context.Context, app.OpenRequest) (app.ProviderSession, error) {
