@@ -505,7 +505,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if q.Name == "browser_status" || q.Name == "browser_command" {
 			return s.browserTool(ctx, q.Name, q.Arguments), nil
 		}
-		value, err := s.tool(ctx, q.Name, q.Arguments)
+		value, err := s.callTool(ctx, q.Name, q.Arguments)
 		var cardRefusal *br.Refusal
 		if err != nil && errors.As(err, &cardRefusal) {
 			// A card refusal keeps its own code, field and current version.
@@ -574,6 +574,14 @@ func mcpToolResult(value any, failed bool) any {
 	return map[string]any{"isError": failed, "content": []any{map[string]string{"type": "text", "text": string(text)}}}
 }
 
+// callTool runs one tools/call by name.
+func (s *ownedMCPServer) callTool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
+	if name == "propose_charter_edit" {
+		return s.charterTool(ctx, arguments)
+	}
+	return s.tool(ctx, name, arguments)
+}
+
 func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
 	// Idempotency IDs are explicit durable operation keys, independent of
 	// transport RPC IDs. HTTP/native SDK retries cannot invent a new effect.
@@ -601,20 +609,6 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			q.Action = "logs"
 		}
 		return tools.DevServers(ctx, q)
-	case "propose_charter_edit":
-		charter, ok := s.tools.(app.CharterTools)
-		if !ok {
-			return nil, refusal(pa.Unsupported, "charter_tools")
-		}
-		var q app.CharterEditProposal
-		if mcpDecode(arguments, &q) != nil || q.Project == "" || q.BaseVersion < 0 {
-			return nil, refusal(pa.Invalid, "charter_arguments")
-		}
-		p, err := charter.ProposeCharterEdit(ctx, q)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
 	case "manage_bots":
 		lead, ok := s.tools.(app.LeadBotTools)
 		if !ok {
@@ -937,6 +931,24 @@ func (s *ownedMCPServer) memoryEditResult(id string) map[string]string {
 		return map[string]string{"state": "awaiting_person", "idempotency_key": id, "message": memoryCardMessage}
 	}
 	return map[string]string{"state": "saved", "idempotency_key": id}
+}
+
+// charterTool records the lead's charter proposal; it changes nothing until
+// the person applies it.
+func (s *ownedMCPServer) charterTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	charter, ok := s.tools.(app.CharterTools)
+	if !ok {
+		return nil, refusal(pa.Unsupported, "charter_tools")
+	}
+	var q app.CharterEditProposal
+	if mcpDecode(arguments, &q) != nil || q.Project == "" || q.BaseVersion < 0 {
+		return nil, refusal(pa.Invalid, "charter_arguments")
+	}
+	p, err := charter.ProposeCharterEdit(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
 }
 
 // mcpCharterTool is offered to the lead Bot in a direct turn from the person,
