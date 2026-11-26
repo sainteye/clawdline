@@ -687,18 +687,9 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refuse := s.relayRefuser(w, r, k)
-	if decision := strings.TrimSpace(body.Via.Decision); decision != "" {
-		if strings.TrimSpace(body.Via.Run) != "" {
-			refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "via_ambiguous",
-				Message: "Name either a run or a question card, not both; nothing was created."})
-			return
-		}
-		if body.Assign != nil {
-			refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
-				Message: "An item a Bot creates on a question card's answer arrives unassigned, for Atlas or the person to assign; nothing was created."})
-			return
-		}
-		s.agentCreateDecisionItem(w, r, k, refuse, decision, body.SessionID, body.ProjectID, app.NewSessionItemV2{
+	if strings.TrimSpace(body.Via.Decision) != "" {
+		s.agentCreateDecisionItem(w, r, k, refuse, decisionItemRequest{decision: body.Via.Decision, run: body.Via.Run,
+			assigned: body.Assign != nil, conversation: body.SessionID, project: body.ProjectID}, app.NewSessionItemV2{
 			Kind: work.Kind(body.Kind), Title: body.Title, Description: body.Description,
 			AcceptanceCriteria: body.AcceptanceCriteria, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy),
 			Steps: body.Steps})

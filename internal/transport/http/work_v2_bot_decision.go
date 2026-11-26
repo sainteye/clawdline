@@ -59,10 +59,27 @@ var decisionRefusals = map[string]string{
 	pa.DecisionExpired: "The person answered that question card more than a day ago; nothing was created. Ask again.",
 }
 
+// decisionItemRequest is what of a create body the card path reads besides
+// the item itself.
+type decisionItemRequest struct {
+	decision, run, conversation, project string
+	assigned                             bool
+}
+
 func (s *Server) agentCreateDecisionItem(w http.ResponseWriter, r *http.Request, k store.ReceiptKey, refuse func(error),
-	decision, conversation, projectID string, n app.NewSessionItemV2) {
-	conversation = strings.TrimSpace(conversation)
-	auth, err := s.decisionAuthority(r.Context(), conversation, decision)
+	req decisionItemRequest, n app.NewSessionItemV2) {
+	if strings.TrimSpace(req.run) != "" {
+		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "via_ambiguous",
+			Message: "Name either a run or a question card, not both; nothing was created."})
+		return
+	}
+	if req.assigned {
+		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
+			Message: "An item a Bot creates on a question card's answer arrives unassigned, for Atlas or the person to assign; nothing was created."})
+		return
+	}
+	conversation := strings.TrimSpace(req.conversation)
+	auth, err := s.decisionAuthority(r.Context(), conversation, strings.TrimSpace(req.decision))
 	if err != nil {
 		var refused *pa.DecisionRefusal
 		if errors.As(err, &refused) {
@@ -74,7 +91,7 @@ func (s *Server) agentCreateDecisionItem(w http.ResponseWriter, r *http.Request,
 		return
 	}
 	catalog := s.workV2Projects(r.Context())
-	project, ok := catalog.resolve(projectID, auth.CanonicalID)
+	project, ok := catalog.resolve(req.project, auth.CanonicalID)
 	if !ok {
 		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "project_not_found", Message: workV2ProjectNotFound})
 		return
