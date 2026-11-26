@@ -15,6 +15,14 @@ test("the phone's hidden list pane takes the section off screen", () => {
   assert.equal(laneOnScreen({ laidOut: true, visibility: "hidden" }), false)
 })
 
+test("a body hidden only while the page's words load leaves the section on screen", () => {
+  // `html.booting body { visibility: hidden }` (legacy/base.css): a second tab
+  // whose catalog came six seconds late skipped its first read and showed the
+  // skeleton until the lane's next tick.
+  assert.equal(laneOnScreen({ laidOut: true, visibility: "hidden", booting: true }), true)
+  assert.equal(laneOnScreen({ laidOut: false, visibility: "hidden", booting: true }), false)
+})
+
 test("a scroller taken out of the layout takes the section off screen", () => {
   assert.equal(laneOnScreen({ laidOut: false, visibility: "visible" }), false)
 })

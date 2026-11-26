@@ -1,6 +1,6 @@
 import { confirmAction } from "../confirm-action.js"
 import { paintActionProgress } from "../ui/ActionProgress.js"
-import { catalogWord } from "../catalog.js"
+import { catalogWord, currentCatalogTag } from "../catalog.js"
 import { assistantAdmits, assistantLabel, isAssistant, type AssistantFacts } from "../session/antigravity-ui.js"
 import { STATUS_FRESH_MS } from "../cloud/status-projection.js"
 import { loadingSkeletonHTML } from "../loading-skeleton.js"
@@ -436,6 +436,7 @@ const Schedules = (() => {
     return laneOnScreen({
       laidOut: host.getClientRects().length > 0,
       visibility: typeof getComputedStyle === "function" ? getComputedStyle(host).visibility : "visible",
+      booting: document.documentElement.classList.contains("booting"),
     })
   }
 
@@ -3000,9 +3001,17 @@ export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen
     return () => { unbind(); host.open = () => {}; host.canOpen = (id) => !!L.byId(id) }
   }, [])
 
+  // The section can start while the page is still booting, before the
+  // selected catalog has arrived; what it drew then is drawn again in the
+  // catalog's words (`Schedules.start` repaints and only reads when owed).
+  const drawnIn = useRef(currentCatalogTag())
   // `static.js` again whenever the catalog has changed.
   useEffect(() => {
     paintStatic()
+    const tag = currentCatalogTag()
+    if (tag === drawnIn.current) return
+    drawnIn.current = tag
+    if (arrived && (!waitForFleet || scheduleFleet())) Schedules.start()
   })
 
   useEffect(() => {
