@@ -5714,6 +5714,204 @@ export interface ProjectAssistantCapabilities {
 }
 
 /**
+ * Apply a pending proposal while the charter is still at expected_version. A
+ * proposal written against another version answers pa_stale_version with field
+ * charter_proposal_base.
+ */
+export interface ProjectAssistantCharterApplyRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+  proposal_id: string
+}
+
+/**
+ * How a charter version came to be.
+ */
+export type ProjectAssistantCharterAuthor =
+    "person"
+  | "lead_proposal"
+  | "restore"
+  | "template"
+
+export const ProjectAssistantCharterAuthorValues: readonly ProjectAssistantCharterAuthor[] = ["person", "lead_proposal", "restore", "template"] as const
+
+/**
+ * The person's words from a charter page, sent to the machine's lead Bot as their
+ * own message. The lead's turn carries the Project's charter and may answer with a
+ * proposal.
+ */
+export interface ProjectAssistantCharterChangeRequest {
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+  text: string
+}
+
+/**
+ * The lead Bot that received the change request and the send receipt.
+ */
+export interface ProjectAssistantCharterChangeResponse {
+  contract_version: string
+  lead_bot_id: string
+  machine_id: string
+  project_id: string
+  receipt: ProjectAssistantReceipt
+}
+
+/**
+ * Dismiss a pending proposal. Dismissing one that is already gone answers the
+ * current list.
+ */
+export interface ProjectAssistantCharterDismissRequest {
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+  proposal_id: string
+}
+
+/**
+ * The charter bounds the source enforces.
+ */
+export interface ProjectAssistantCharterLimits {
+  proposals: number
+  reason_bytes: number
+  request_bytes: number
+  text_bytes: number
+  versions: number
+}
+
+/**
+ * A lead Bot's pending proposal: the whole replacement text. stale says the charter
+ * moved past base_version, so applying it is refused.
+ */
+export interface ProjectAssistantCharterProposal {
+  base_version: number
+  bot_id: string
+  created_at: string
+  id: string
+  stale: boolean
+  summary: string
+  text: string
+  turn_id: string
+}
+
+/**
+ * A Project's pending lead proposals, oldest first.
+ */
+export interface ProjectAssistantCharterProposalsResponse {
+  contract_version: string
+  machine_id: string
+  project_id: string
+  proposals: ProjectAssistantCharterProposal[]
+  version: number
+}
+
+/**
+ * One Bot of the Project: the charter version its most recent prompt carried (0
+ * before any) and whether it has a running or queued turn now.
+ */
+export interface ProjectAssistantCharterReader {
+  bot_id: string
+  hidden: boolean
+  lead: boolean
+  name: string
+  queued: boolean
+  read_at?: string
+  running: boolean
+  turn_id: string
+  version: number
+}
+
+/**
+ * Which charter version each Bot of the Project last worked under.
+ */
+export interface ProjectAssistantCharterReadersResponse {
+  contract_version: string
+  machine_id: string
+  project_id: string
+  readers: ProjectAssistantCharterReader[]
+  version: number
+}
+
+/**
+ * A Project's current charter and its retained history, newest first. Version 0
+ * means it has no charter. selected is the version a read named with version > 0.
+ */
+export interface ProjectAssistantCharterResponse {
+  contract_version: string
+  history: ProjectAssistantCharterVersion[]
+  limits: ProjectAssistantCharterLimits
+  machine_id: string
+  pending_proposals: number
+  project_id: string
+  selected?: ProjectAssistantCharterVersion
+  text: string
+  version: number
+}
+
+/**
+ * Save a copy of a retained earlier version as the next version.
+ */
+export interface ProjectAssistantCharterRestoreRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+  version: number
+}
+
+/**
+ * Save the whole new text as the next version while the charter is still at
+ * expected_version (0 when it has none). A stale base answers pa_stale_version with
+ * field charter_version.
+ */
+export interface ProjectAssistantCharterSaveRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+  reason?: string
+  text: string
+}
+
+/**
+ * One Project's current charter in the machine listing.
+ */
+export interface ProjectAssistantCharterSummary {
+  pending_proposals: number
+  project_id: string
+  updated_at: string
+  updated_by: ProjectAssistantCharterAuthor
+  version: number
+}
+
+/**
+ * One immutable charter version. text is present only on the version a read
+ * selected.
+ */
+export interface ProjectAssistantCharterVersion {
+  author: ProjectAssistantCharterAuthor
+  created_at: string
+  reason: string
+  text?: string
+  version: number
+}
+
+/**
+ * Every Project of the machine with a charter, and the Projects that have Bots but
+ * no charter yet.
+ */
+export interface ProjectAssistantChartersResponse {
+  charters: ProjectAssistantCharterSummary[]
+  contract_version: string
+  limits: ProjectAssistantCharterLimits
+  machine_id: string
+  projects_without_charter: string[]
+}
+
+/**
  * SHA-256 of canonical validated content, recomputed by source. Scope is
  * machine/Bot/operation/key, not device. At create, client chooses a stable opaque
  * bot_id; same command returns same Bot.

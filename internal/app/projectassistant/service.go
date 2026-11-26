@@ -631,10 +631,12 @@ func (s *Service) SendCharterEdit(ctx context.Context, c pa.Command, fence pa.Fe
 		return pa.Receipt{}, err
 	}
 	message := pa.SendMessage{Fence: fence, Text: text}
+	// A retry composes a fresh fence and may see a newer charter; the request
+	// is the person's words for this Project.
 	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, struct {
-		Message pa.SendMessage
-		Charter pa.CharterEdit
-	}{message, edit})
+		Text    string
+		Charter string
+	}{text, edit.ProjectID})
 	if err != nil {
 		return pa.Receipt{}, err
 	}

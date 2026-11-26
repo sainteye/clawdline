@@ -390,3 +390,40 @@ func (s *Store) CharterReads(ctx context.Context, machine, project string) (map[
 	}
 	return out, rows.Err()
 }
+
+// CharterBot is what the charter pages show of one Bot: its Project, whether
+// it leads, and whether it has a running or queued turn now.
+type CharterBot struct {
+	BotID     string
+	Name      string
+	ProjectID string
+	Lead      bool
+	Hidden    bool
+	Running   bool
+	Queued    bool
+}
+
+// CharterBots lists the machine's Bots, without private background workers.
+func (s *Store) CharterBots(ctx context.Context, machine string) ([]CharterBot, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT bot,
+ coalesce(json_extract(CAST(data AS TEXT),'$.Bot.name'),''),
+ coalesce(json_extract(CAST(data AS TEXT),'$.Bot.project.project_id'),''),
+ coalesce(json_extract(CAST(data AS TEXT),'$.Bot.lead'),0),
+ coalesce(json_extract(CAST(data AS TEXT),'$.Bot.hidden'),0),
+ coalesce(json_extract(CAST(data AS TEXT),'$.Conversation.active_turn_id'),'')<>'',
+ EXISTS(SELECT 1 FROM json_each(CAST(data AS TEXT),'$.Turns') t WHERE json_extract(t.value,'$.state') IN ('accepted','queued'))
+ FROM project_assistant_bots WHERE machine=? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL ORDER BY bot`, machine)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []CharterBot{}
+	for rows.Next() {
+		var b CharterBot
+		if err = rows.Scan(&b.BotID, &b.Name, &b.ProjectID, &b.Lead, &b.Hidden, &b.Running, &b.Queued); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
