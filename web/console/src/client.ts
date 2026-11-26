@@ -1,4 +1,4 @@
-import { ClawdlineClient, nativeEventSourceTransport, pollingTransport, type StreamHandle, type StreamTransport } from "@clawdline/core"
+import { ClawdlineClient, RefusalError, nativeEventSourceTransport, pollingTransport, type StreamHandle, type StreamHandlers, type StreamTransport } from "@clawdline/core"
 import { shareLocalEvents } from "./local-events.js"
 
 /**
@@ -51,6 +51,18 @@ export function quietFleetStream(): () => void {
 /** Every few seconds while quiet, the stream otherwise; the switch reopens with the same handlers. */
 const QUIET_READ_MS = 5_000
 const FLEET_STREAM_LOCK = "clawdline-local-fleet-stream"
+
+// An HTTP error (a 401, a 503) closes an EventSource for good: the browser
+// does not retry it. The holder lets the lock go, waits, reads once to learn
+// whether the daemon answers, and opens again; the wait doubles each time.
+export const FLEET_RECONNECT_FIRST_MS = 1_000
+export const FLEET_RECONNECT_CEILING_MS = 30_000
+export const FLEET_RECONNECT_ATTEMPTS = 6
+/** EventSource.CLOSED */
+const CLOSED = 2
+const closedForGood = (cause: unknown) => (cause as { target?: { readyState?: unknown } } | null)?.target?.readyState === CLOSED
+/** The daemon refused this page's access: retrying will not help until the person signs in again. */
+const accessRefused = (cause: unknown) => cause instanceof RefusalError && (cause.status === 401 || cause.status === 403)
 
 // Read once per tab, as `native` reads EventSource: a browser tab keeps its document.
 const page = (globalThis as { document?: EventTarget & { visibilityState?: string } }).document
@@ -122,11 +134,27 @@ function quietableTransport(): StreamTransport | undefined {
       let using: StreamTransport | undefined
       let lease: FleetLease | undefined
       let closed = false
+      // Reconnecting after the stream was refused: failures since it last
+      // opened, the pending retry, and whether this page has stopped trying.
+      let failures = 0
+      let retry: ReturnType<typeof setTimeout> | undefined
+      let stopped = false
+      const watched: StreamHandlers = {
+        ...handlers,
+        onOpen() {
+          failures = 0
+          handlers.onOpen?.()
+        },
+        onError(cause) {
+          handlers.onError?.(cause)
+          if (using === stream && closedForGood(cause)) refused()
+        },
+      }
       const use = (transport: StreamTransport) => {
         if (using === transport) return
         inner?.close()
         using = transport
-        inner = transport.open(url, handlers)
+        inner = transport.open(url, transport === stream ? watched : handlers)
       }
       const waiting = () => use(hidden() ? paused : reads)
       const drop = () => {
@@ -166,6 +194,32 @@ function quietableTransport(): StreamTransport | undefined {
           change()
         })
       }
+      // Let another tab take the stream at once; this one tries again later.
+      const refused = () => {
+        failures += 1
+        drop()
+        use(paused)
+        if (failures > FLEET_RECONNECT_ATTEMPTS) { stopped = true; return }
+        const wait = Math.min(FLEET_RECONNECT_FIRST_MS * 2 ** (failures - 1), FLEET_RECONNECT_CEILING_MS)
+        retry = setTimeout(() => void reconnect(), wait)
+      }
+      const reconnect = async () => {
+        try {
+          await client.sessions()
+        } catch (cause) {
+          if (closed) return
+          retry = undefined
+          if (accessRefused(cause)) stopped = true
+          else refused()
+          return
+        }
+        if (closed) return
+        retry = undefined
+        if (quiet > 0) { change(); return }
+        // Behind whichever tab took the stream meanwhile, without stealing it.
+        if (locks) claim(false)
+        else use(stream)
+      }
       const change = () => {
         if (closed) return
         if (quiet > 0) {
@@ -173,6 +227,13 @@ function quietableTransport(): StreamTransport | undefined {
           drop()
           waiting()
           return
+        }
+        if (retry) return
+        if (stopped) {
+          // A page shown again, or a terminal closed, is a person's new try.
+          if (hidden()) return
+          stopped = false
+          failures = 0
         }
         if (!locks) { use(stream); return }
         if (yielding) return
@@ -193,6 +254,7 @@ function quietableTransport(): StreamTransport | undefined {
         close() {
           closed = true
           yielding = undefined
+          clearTimeout(retry)
           quietChanged.delete(change)
           page?.removeEventListener("visibilitychange", change)
           inner?.close()

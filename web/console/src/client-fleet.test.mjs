@@ -105,22 +105,33 @@ function fleetBrowser(t, locks) {
   const handles = new Set()
   let tabs = 0
   mockBrowserGlobal(t, "navigator", locks ? { locks } : {})
+  const browser = { answer: 200 }
   t.mock.method(globalThis, "fetch", async input => {
     traffic.push(`read ${input}`)
-    return Response.json({ sessions: [] })
+    if (browser.answer === 200) return Response.json({ sessions: [] })
+    return Response.json({ error: { code: browser.answer === 401 ? "unauthorized" : "unavailable", detail: "refused" } }, { status: browser.answer })
   })
   t.after(() => { for (const handle of handles) handle.close() })
-  return {
+  return Object.assign(browser, {
     traffic,
     async openTab(visibility = "visible") {
       const name = `tab${++tabs}`
       // A module reads its page and EventSource once, as a browser tab would.
       const { page, show } = fakePage(visibility)
       mockBrowserGlobal(t, "document", page)
+      const sources = []
       mockBrowserGlobal(t, "EventSource", class {
-        constructor(url) { traffic.push(`${name} stream ${url}`) }
+        constructor(url) {
+          traffic.push(`${name} stream ${url}`)
+          this.readyState = 0
+          sources.push(this)
+        }
         addEventListener() {}
-        close() { traffic.push(`${name} close stream`) }
+        close() {
+          if (this.readyState === 2) return
+          this.readyState = 2
+          traffic.push(`${name} close stream`)
+        }
       })
       // A separate module instance gives each tab its own quiet state and stream.
       const tab = await import(`${clientModule}#tab-${++tabNumber}`)
@@ -130,14 +141,24 @@ function fleetBrowser(t, locks) {
       handles.add(handle)
       return {
         show,
+        module: tab,
         quietFleetStream: tab.quietFleetStream,
+        // The browser answers this tab's open stream with an HTTP error: the
+        // EventSource fires error and stays CLOSED, as a 401 or 503 leaves it.
+        refuseStream() {
+          const source = sources.at(-1)
+          assert.ok(source && source.readyState !== 2, `${name} has no open stream to refuse`)
+          source.readyState = 2
+          traffic.push(`${name} stream refused`)
+          source.onerror?.({ type: "error", target: source })
+        },
         close() {
           handle.close()
           handles.delete(handle)
         },
       }
     },
-  }
+  })
 }
 
 test("a fleet tab opens a stream when it acquires the lock", async t => {
@@ -244,4 +265,89 @@ test("a fleet tab opens a stream when the browser has no Web Locks", async t => 
   await browser.openTab()
   await settle()
   assert.deepEqual(browser.traffic, ["tab1 stream /v1/events"])
+})
+
+// Failure injection: the holder's stream is answered with an HTTP error. The
+// browser closes such an EventSource for good and never retries it itself.
+
+test("a held stream refused with 503 reopens after a backoff", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab()
+  await settle()
+  only.refuseStream()
+  await settle()
+  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused"])
+
+  t.mock.timers.tick(only.module.FLEET_RECONNECT_FIRST_MS)
+  await settle()
+  assert.deepEqual(browser.traffic.slice(2), ["read /v1/sessions", "tab1 stream /v1/events"])
+})
+
+test("a holder whose stream is refused hands the lock to a waiting tab", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const holder = await browser.openTab()
+  await settle()
+  await browser.openTab("hidden")
+  await settle()
+  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events"])
+
+  holder.refuseStream()
+  await settle()
+  assert.deepEqual(browser.traffic.slice(1), ["tab1 stream refused", "tab2 stream /v1/events"])
+
+  // Its own retry queues behind the new holder and reads instead of stealing.
+  t.mock.timers.tick(holder.module.FLEET_RECONNECT_FIRST_MS)
+  await settle()
+  assert.deepEqual(browser.traffic.slice(3), ["read /v1/sessions", "read /v1/sessions"])
+})
+
+test("a stream that keeps being refused stops reconnecting at the limit", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab()
+  await settle()
+  const { FLEET_RECONNECT_ATTEMPTS, FLEET_RECONNECT_CEILING_MS } = only.module
+  assert.ok(FLEET_RECONNECT_ATTEMPTS > 0)
+  const opened = () => browser.traffic.filter(line => line === "tab1 stream /v1/events").length
+  for (let attempt = 0; attempt < FLEET_RECONNECT_ATTEMPTS; attempt++) {
+    only.refuseStream()
+    await settle()
+    t.mock.timers.tick(FLEET_RECONNECT_CEILING_MS)
+    await settle()
+    assert.equal(opened(), attempt + 2)
+  }
+  only.refuseStream()
+  await settle()
+  const stopped = browser.traffic.length
+  t.mock.timers.tick(FLEET_RECONNECT_CEILING_MS * 10)
+  await settle()
+  assert.deepEqual(browser.traffic.slice(stopped), [])
+  assert.equal(opened(), FLEET_RECONNECT_ATTEMPTS + 1)
+})
+
+test("a refused stream whose read answers 401 stops at once and a shown page tries again", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab()
+  await settle()
+  browser.answer = 401
+  only.refuseStream()
+  await settle()
+  t.mock.timers.tick(only.module.FLEET_RECONNECT_FIRST_MS)
+  await settle()
+  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused", "read /v1/sessions"])
+
+  t.mock.timers.tick(only.module.FLEET_RECONNECT_CEILING_MS * 10)
+  await settle()
+  assert.equal(browser.traffic.length, 3)
+
+  // Signed in again and back on the page: the person's return is a new try.
+  browser.answer = 200
+  only.show("hidden")
+  await settle()
+  only.show("visible")
+  await settle()
+  assert.deepEqual(browser.traffic.slice(3), ["tab1 stream /v1/events"])
 })
