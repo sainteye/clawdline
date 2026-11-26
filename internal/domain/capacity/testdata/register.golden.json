@@ -1357,6 +1357,145 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.charter_body_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 262144,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterBodyBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_projects",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 512,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterProjects"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_proposals",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterProposals"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_reason_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 500,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterReasonBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_request_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4096,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterRequestBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_text_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 32768,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterTextBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_versions",
+    "Class": "journal",
+    "Unit": "rows",
+    "Limit": 200,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterVersions"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.chat_gap_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

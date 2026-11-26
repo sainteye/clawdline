@@ -72,6 +72,13 @@
 | `bots.background_waiting` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
+| `bots.charter_body_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_proposals` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_reason_bytes` | 500 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_request_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_text_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_versions` | 200 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_initial_page_rows` | 20 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |

@@ -39,6 +39,16 @@ type RuntimeOptions struct {
 	// SharedMemory returns the machine's shared memory section for a Bot,
 	// already filtered by its Project and its own switch; empty adds nothing.
 	SharedMemory func(context.Context, pa.Bot) string
+	// Charter reads the Bot's Project team charter for every prompt and notes
+	// which version each sent prompt carried. Nil delivers no charter.
+	Charter CharterSource
+}
+
+// CharterSource is the team charter a runtime delivers. Current answers
+// version 0 when the Project has none.
+type CharterSource interface {
+	CurrentCharter(context.Context, pa.ProjectScope) (version int64, text string, err error)
+	CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error
 }
 
 // AttachmentReader returns the bytes stored for one attachment of a Bot.

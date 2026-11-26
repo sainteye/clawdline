@@ -499,6 +499,33 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-change-request": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-proposal-apply": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-proposal-dismiss": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-proposals": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-readers": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-restore": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charter-save": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
+  // The charter page is built in the console after this daemon side; until it
+  // carries these words the phone does not send them.
+  "project-assistants.charters": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
 } as const
 
 /**

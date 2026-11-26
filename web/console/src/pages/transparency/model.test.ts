@@ -15,7 +15,7 @@ test("facet selection is OR within a row and AND between rows", () => {
   const both = visible("#page=transparency&agents=claude,codex&scope=default,automatic")
   assert(both.includes("codex-language")); assert(both.includes("claude-language")); assert(both.includes("memory-index"))
   assert(!both.includes("board")); assert(!both.includes("claude-role"))
-  assert.deepEqual(visible("#page=transparency&agents=claude&scenes=role&stages=start"), ["claude-role", "persistent-bot-lead"])
+  assert.deepEqual(visible("#page=transparency&agents=claude&scenes=role&stages=start"), ["claude-role", "persistent-bot-lead", "persistent-bot-team-charter"])
 })
 test("delivery rules are loaded with guides, rather than newly injected on completion", () => {
   assert(visible("#page=transparency&stages=start&scenes=skill").includes("report"))

@@ -450,6 +450,13 @@ func (r *Engine) submissionTurn(st *submitState, fence pa.Fence) (pa.Turn, pa.Me
 		turn.Origin = pa.LeadCallOrigin
 		turn.MessageID = pa.LeadCallKeyPrefix + turn.MessageID
 	}
+	if s.CharterEdit != nil {
+		if !bot.Lead || s.Notice || s.Compact || s.LeadCall || s.AuthorityCheck == nil || s.Room != nil || s.Network != nil || s.Decision != nil {
+			return pa.Turn{}, "", runtimeFailure(pa.ScopeDenied, "charter_edit")
+		}
+		edit := *s.CharterEdit
+		turn.CharterEdit = &edit
+	}
 	if s.Compact {
 		turn.Origin = pa.CompactOrigin
 		kind = pa.NoticeMessage

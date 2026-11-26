@@ -49,3 +49,18 @@ func sharedSettingsBounds() []Entry {
 		{Name: "bots.shared_settings_body_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxSharedSettingsBodyBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxSharedSettingsBodyBytes"}},
 	}
 }
+
+// charterBounds are the team charter's rows (docs/bots.md, "Team charter").
+// Versions are history the daemon trims oldest-first; the current version is
+// never removed. Pending proposals wait for the person to apply or dismiss.
+func charterBounds() []Entry {
+	return []Entry{
+		{Name: "bots.charter_text_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterTextBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterTextBytes"}},
+		{Name: "bots.charter_versions", Class: Journal, Unit: Rows, Limit: pa.MaxCharterVersions, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterVersions"}},
+		{Name: "bots.charter_proposals", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterProposals, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterProposals"}},
+		{Name: "bots.charter_reason_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterReasonBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterReasonBytes"}},
+		{Name: "bots.charter_request_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterRequestBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterRequestBytes"}},
+		{Name: "bots.charter_body_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterBodyBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterBodyBytes"}},
+		{Name: "bots.charter_projects", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterProjects, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterProjects"}},
+	}
+}
