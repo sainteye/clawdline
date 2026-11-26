@@ -336,6 +336,11 @@ type Turn struct {
 	// the room handed it. The room line it publishes takes its Author from
 	// Room.Member, never from text the model wrote.
 	Room *RoomTicket `json:"room,omitempty"`
+	// CharterVersion is the team charter version this turn's session had
+	// heard when its prompt was sent; zero when the Project had none.
+	CharterVersion int64 `json:"charter_version,omitempty"`
+	// CharterEdit marks a change request sent from a charter page.
+	CharterEdit *CharterEdit `json:"charter_edit,omitempty"`
 }
 
 type ExecutionBinding struct {
@@ -352,6 +357,9 @@ type ExecutionBinding struct {
 	ForgottenThrough    int64  `json:"forgotten_through"`
 	InstructionRevision int64  `json:"instruction_revision"`
 	Revoked             bool   `json:"revoked"`
+	// CharterVersion is the team charter version this native session last
+	// heard; a resumed session hears a newer one once, in its next prompt.
+	CharterVersion int64 `json:"charter_version,omitempty"`
 }
 
 type MessageKind string
