@@ -740,6 +740,12 @@ export function charterRelayRequest(url: URL, method: string, init?: RequestInit
   return { word: route.word, kind: "action" as const, fields: fields as Record<string, unknown>, id: fields.idempotency_key as string }
 }
 
+// The two route families with their own vocabulary tables: browser tabs and team charters.
+function prefixedRelayRequest(url: URL, method: string, init?: RequestInit) {
+  if (!url.pathname.startsWith("/v1/browser/")) return charterRelayRequest(url, method, init)
+  return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
+}
+
 /** Exact browser vocabulary; neither client authority nor an owner crosses this boundary. */
 function browserRelayRequest(url: URL, method: string, body?: Record<string,unknown>, id = "") {
   const routes: Record<string,{method:string;word:string;fields:string[];required:string[]}> = {
@@ -782,7 +788,7 @@ function groupRelayFields(action: string, fields: Record<string, unknown>) {
 
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
-  if(url.pathname.startsWith("/v1/browser/"))return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
+  if(url.pathname.startsWith("/v1/browser/")||url.pathname===chartersPath||url.pathname.startsWith(chartersPath+"/"))return prefixedRelayRequest(url,method,init)
   if (url.pathname === base+"/roster-events") throw failure("pa_unsupported")
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
   if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {
@@ -808,7 +814,6 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
       typeof fields.idempotency_key !== "string" || !fields.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key) throw failure("pa_invalid")
     return {word:"project-assistants.tower-floor-save",kind:"action" as const,fields:fields as Record<string,unknown>,id:fields.idempotency_key as string}
   }
-  if (url.pathname === chartersPath || url.pathname.startsWith(chartersPath + "/")) return charterRelayRequest(url, method, init)
   if (url.pathname === "/v1/project-assistant-shared-settings") {
     if (method === "GET") {
       if (init?.body != null || url.searchParams.size !== 1 || !url.searchParams.get("machine_id")) throw failure("pa_invalid")

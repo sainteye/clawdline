@@ -11,3 +11,11 @@ export function CharterRosterRow({ summary, selected, onSelect }: { summary: Cha
     <span className="pa-row-body"><strong>{charterWord("title")}</strong><span className="pa-row-preview" title={line}><span>{line}</span></span></span>
   </button>
 }
+
+/** The row in its roster entry, only for a Project section whose charter exists. */
+export function CharterRosterEntry({ shown, summary, selected, onOpen, dismiss }: {
+  shown: boolean; summary?: CharterSummary; selected: boolean; onOpen?: (summary: CharterSummary) => void; dismiss: () => void
+}) {
+  if (!shown || !onOpen || !summary || summary.version < 1) return null
+  return <div className="pa-roster-entry pa-charter-entry"><CharterRosterRow summary={summary} selected={selected} onSelect={() => { dismiss(); onOpen(summary) }}/></div>
+}

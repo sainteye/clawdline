@@ -12,7 +12,7 @@ web/console/src/cloud/PairPanel.tsx	PairPanel	343	134
 web/console/src/cloud/PeerAccessPage.tsx	PeerAccessPage	108	28
 web/console/src/cloud/admin/AdminGate.tsx	AdminGate	105	52
 web/console/src/cloud/admin/health/fixture.ts	fixtureAnswer	65	48
-web/console/src/cloud/project-assistants.ts	assistantRelayRequest	216	141
+web/console/src/cloud/project-assistants.ts	assistantRelayRequest	216	140
 web/console/src/cloud/relay-reader.ts	RelayReader.answerFetch	420	181
 web/console/src/cloud/relay-reader.ts	RelayReader.snapshotReading	116	54
 web/console/src/cloud/relay-writer.ts	RelayWriter.carry	739	423

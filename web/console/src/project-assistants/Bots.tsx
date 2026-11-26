@@ -26,11 +26,8 @@ import { emptyRosterState, getRosterState } from "./roster-state"
 import { TowerSlot, savedBotsView, saveBotsView, type BotsView } from "./tower/TowerSlot"
 import { useSheetSwipe } from "./tower/sheet-swipe"
 import { requestStatusRefresh } from "../status-refresh"
-import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, type CharterProject, type CharterSummary } from "./charter-api"
-import { CharterPage } from "./CharterPage"
-import { charterTemplate } from "./charter-text"
-import { charterWord } from "./charter-words"
-import type { CharterSettingsRow } from "./CharterSettings"
+import { useCharterView } from "./useCharterView"
+import type { CharterProject } from "./charter-api"
 import "./styles.css"
 
 export interface BotsProps {
@@ -114,10 +111,6 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
   const [profileRequest,setProfileRequest]=useState<{id:string;count:number}|null>(null)
   useEffect(()=>{setProfileRequest(request=>request?.id===selected?request:null)},[selected])
   const [groupOpen,setGroupOpen]=useState(false)
-  // A Project's team charter shown where a chat would be; at most one of it and a chat is open.
-  const [charterOpen,setCharterOpen]=useState<CharterProject|null>(null)
-  const [charters,setCharters]=useState<ReadonlyMap<string,CharterSummary>>(new Map())
-  const [chartersRead,setChartersRead]=useState(0)
   const [savedView,setSavedView]=useState<BotsView|null>(savedBotsView)
   const changeView=(next:BotsView)=>{setSavedView(next);saveBotsView(next)}
   const narrow=useNarrow()
@@ -306,25 +299,6 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
     for(const source of sources)void authorized(source,current,async s=>{const request={machine_id:source.machineID,cursor:"",page_size:100};return projectChoices(await source.projects(request,s),request)},control.signal).then(answer=>{if(!control.signal.aborted)setProjectNames(old=>{const next=new Map(old);for(const p of answer.items)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.label);return next});setProjectIcons(old=>{const next=new Map(old);for(const p of answer.items)if(p.icon)next.set(JSON.stringify([source.machineID,p.target.project_id]),p.icon);return next})}).catch(()=>{})
     return()=>control.abort()
   },[authorization,current])
-  useEffect(()=>{
-    const control=new AbortController()
-    for(const source of sources){
-      const api=charterApiFor(source)
-      if(!api)continue
-      void authorized(source,current,s=>charterSummaries(api,source.machineID,s),control.signal).then(rows=>{
-        if(control.signal.aborted)return
-        setCharters(old=>{
-          const next=new Map([...old].filter(([,row])=>row.project.machine_id!==source.machineID))
-          for(const row of rows)if(row.project.machine_id===source.machineID)next.set(charterProjectKey(row.project),row)
-          return next
-        })
-      },()=>{})
-    }
-    return()=>control.abort()
-  },[authorization,current,chartersRead])
-  const refreshCharters=useCallback(()=>setChartersRead(n=>n+1),[])
-  const charterSource=charterOpen?sources.find(s=>s.machineID===charterOpen.machine_id):undefined
-  const charterApi=charterApiFor(charterSource)
   const writeHistory=(bot:string|null,group:string|null,replace:boolean,charter:CharterProject|null=null)=>{
     const current=history.state
     const depth=current?.paView===historyID.current?(current.paDepth??1):1
@@ -334,12 +308,12 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
     if(replace)history.replaceState(state,"")
     else history.pushState(state,"")
   }
-  const chatOpened=useRef<{ id: string; at: number } | null>(null)
+  const chatOpened=useRef<{ id: string; at: number } | null>(null),charter=useCharterView({sources,current,authorization,projectNames,w,language,narrow,manageHistory,historyID,writeHistory,selected,groupOpen,
+    setSettings:setBotsSettings,clear:{setSelected,setDestination,setGroupRoute,selectRef,lastSelected}})
   const select=(item:W.ProjectAssistantBotSummary,fromGroup=false)=>{
     const id=botIdentity(item.bot.key)
     if (selected !== id) chatOpened.current={id,at:performance.now()}
     lastSelected.current=id
-    setCharterOpen(null)
     setSelected(id);selectRef.current?.(item.bot.key)
     if(manageHistory){
       const previous=history.state
@@ -347,34 +321,6 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
       setGroupRoute(group)
       writeHistory(id,group,previous?.paView===historyID.current&&!!(previous.paBot||previous.paGroup&&!fromGroup))
     }
-  }
-  const openCharter=(project:CharterProject)=>{
-    lastSelected.current=null
-    setDestination(null);setSelected(null);selectRef.current?.(null);setCharterOpen(project)
-    if(manageHistory){
-      const previous=history.state
-      setGroupRoute(null)
-      writeHistory(null,null,previous?.paView===historyID.current&&!!(previous.paBot||previous.paGroup||previous.paCharter),project)
-    }
-  }
-  const closeCharter=()=>{
-    if(manageHistory&&history.state?.paView===historyID.current&&history.state?.paCharter){history.back();return}
-    setCharterOpen(null)
-  }
-  // Rows come from each machine's listing, which names every Project with Bots.
-  const charterRows=():CharterSettingsRow[]=>[...charters.values()].map(summary=>{
-    const key=charterProjectKey(summary.project)
-    return {project:summary.project,name:projectNames.get(key)||w.unnamedProject,bots:summary.names,summary}
-  }).sort((a,b)=>a.name.localeCompare(b.name,language))
-  const createCharter=async(row:CharterSettingsRow)=>{
-    const source=sources.find(s=>s.machineID===row.project.machine_id),api=charterApiFor(source)
-    if(!source||!api)throw new CharterRefusal("unknown")
-    const five=[1,2,3,4,5]
-    const text=charterTemplate(five.map(n=>charterWord(`templateHeading${n}`)),five.map(n=>charterWord(`templateStarter${n}`)),row.bots,charterWord("templateBotSeparator"))
-    await authorized(source,current,s=>api.save(row.project,{expected_version:0,text,reason:charterWord("reasonCreated")},s),new AbortController().signal)
-    refreshCharters()
-    setBotsSettings(false)
-    openCharter(row.project)
   }
   const removeFromList=(key:W.ProjectAssistantBotKey)=>{
     const id=botIdentity(key)
@@ -459,7 +405,7 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
   }
   const groupOpened=(key:W.ProjectAssistantBotKey)=>{
     lastSelected.current=null
-    setGroupOpen(true);setDestination(null);setSelected(null);setCharterOpen(null);selectRef.current?.(null)
+    setGroupOpen(true);setDestination(null);setSelected(null);selectRef.current?.(null)
     if(manageHistory){
       const id=botIdentity(key),previous=history.state
       setGroupRoute(id)
@@ -514,7 +460,7 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
       if(state?.paView!==historyID.current){closeRef.current();return}
       const id=state.paBot??null
       chatOpened.current=null
-      setSelected(id);setGroupRoute(state.paGroup??null);setCharterOpen(state.paCharter??null)
+      setSelected(id);setGroupRoute(state.paGroup??null)
       const key=Object.values(pagesRef.current).flatMap(page=>page.items).find(row=>botIdentity(row.bot.key)===id)?.bot.key??null
       selectRef.current?.(key)
     }
@@ -557,15 +503,14 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
   const [sheetFull,setSheetFull]=useState(false)
   useEffect(()=>{setSheetFull(false)},[selected,towerSheet])
   const swipe=useSheetSwipe(towerSheet,sheetFull,release=>{if(release==="expand")setSheetFull(true);else if(release==="collapse")setSheetFull(false);else back()})
-  return <div ref={host} className={`project-assistants pa-shell ${selectedItem||charterOpen&&charterApi?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}${towerSheet&&sheetFull?" pa-tower-sheet-full":""}`} lang={language}>
+  return <div ref={host} className={`project-assistants pa-shell ${selectedItem||charter.page?"pa-selected":""}${towerSheet?" pa-tower-sheet":""}${towerSheet&&sheetFull?" pa-tower-sheet-full":""}`} lang={language}>
     {rosterNotice&&<div className="pa-roster-notice" data-tone={rosterNotice.error?"error":"ok"} role={rosterNotice.error?"alert":"status"}>
       <span>{rosterNotice.text}</span>{rosterNotice.open&&<button type="button" className="pa-roster-notice-open" onClick={()=>openCreated(rosterNotice.open!)}>{w.openBot}</button>}<button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}
     {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
-    <BotRoster charters={charters} selectedCharter={charterOpen?charterProjectKey(charterOpen):null} onOpenCharter={summary=>openCharter(summary.project)} onSettings={sources.length?()=>setBotsSettings(true):undefined} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onUnavailable={reportUnavailable} onRetry={sources.length?refreshRoster:undefined} onRefresh={refreshRoster} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
-    <main className="pa-main" {...(towerSheet?swipe:{})}>{towerSheet&&<div className="pa-sheet-grip" aria-hidden="true"/>}{charterOpen&&charterApi?<CharterPage key={charterProjectKey(charterOpen)} api={charterApi} project={charterOpen} projectName={projectNames.get(charterProjectKey(charterOpen))||w.unnamedProject} narrow={narrow} showBack={narrow} onBack={closeCharter} onChanged={refreshCharters} w={w} language={language}/>:selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} pushed={livePending[selectedSource.machineID]===false&&!pages[selectedSource.machineID]?.error} openedAt={chatOpened.current?.id===selected?chatOpened.current.at:undefined} projectNameOf={b=>projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} projectIconOf={b=>projectIcons.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} voiceShortcut={callTarget?.key===selected?callTarget?.request:undefined} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={selectedItem.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} focusDecision={decisionTarget?.bot===selected?decisionTarget.id:undefined} onDecisionFocused={()=>setDecisionTarget(null)} onNewSession={()=>setRosterPrompt({item:selectedItem,action:"new-session"})} newSessionCount={newSessionCount} onBotChanged={updateBot} onOpenBot={key=>{const item=allItems.find(i=>i.bot.key.machine_id===key.machine_id&&i.bot.key.bot_id===key.bot_id);if(!item)return;select(item);window.setTimeout(()=>document.querySelector(".pa-decision[data-state=\"pending\"]")?.scrollIntoView({block:"center"}),400)}}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
-    {botsSettings&&<BotsSettingsModal projects={sharedSettingsProjects(projectNames,w.personalWorkspace)} machines={sources.map(s=>({source:s,name:machineNames.get(s.machineID)||(sources.length>1?s.machineID:w.thisMachine)}))} initialMachine={machine||selectedItem?.bot.key.machine_id} onClose={()=>setBotsSettings(false)}
-      charter={sources.some(s=>charterApiFor(s))?{rows:charterRows(),onOpen:project=>{setBotsSettings(false);openCharter(project)},onCreate:createCharter}:undefined}/>}
+    <BotRoster charters={charter.charters} selectedCharter={charter.selectedKey} onOpenCharter={summary=>charter.openCharter(summary.project)} onSettings={sources.length?()=>setBotsSettings(true):undefined} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onUnavailable={reportUnavailable} onRetry={sources.length?refreshRoster:undefined} onRefresh={refreshRoster} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <main className="pa-main" {...(towerSheet?swipe:{})}>{towerSheet&&<div className="pa-sheet-grip" aria-hidden="true"/>}{charter.page??(selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} pushed={livePending[selectedSource.machineID]===false&&!pages[selectedSource.machineID]?.error} openedAt={chatOpened.current?.id===selected?chatOpened.current.at:undefined} projectNameOf={b=>projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} projectIconOf={b=>projectIcons.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} voiceShortcut={callTarget?.key===selected?callTarget?.request:undefined} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={selectedItem.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} focusDecision={decisionTarget?.bot===selected?decisionTarget.id:undefined} onDecisionFocused={()=>setDecisionTarget(null)} onNewSession={()=>setRosterPrompt({item:selectedItem,action:"new-session"})} newSessionCount={newSessionCount} onBotChanged={updateBot} onOpenBot={key=>{const item=allItems.find(i=>i.bot.key.machine_id===key.machine_id&&i.bot.key.bot_id===key.bot_id);if(!item)return;select(item);window.setTimeout(()=>document.querySelector(".pa-decision[data-state=\"pending\"]")?.scrollIntoView({block:"center"}),400)}}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>)}</main>
+    {botsSettings&&<BotsSettingsModal projects={sharedSettingsProjects(projectNames,w.personalWorkspace)} machines={sources.map(s=>({source:s,name:machineNames.get(s.machineID)||(sources.length>1?s.machineID:w.thisMachine)}))} initialMachine={machine||selectedItem?.bot.key.machine_id} onClose={()=>setBotsSettings(false)} charter={charter.settings}/>}
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={created}/>}
   </div>
 }
