@@ -1876,7 +1876,7 @@ ${currentDraft}`:submitted)
           discardFailed={discardFailed===pendingSend.intent.command.idempotency_key} onDiscard={()=>discardSend(pendingSend)} w={w} language={language}/>
       : <small><span className="pa-send-spinner" aria-hidden="true"/>{w.sending}</small>}
   </article>
-  return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener}
+  return <section className={`pa-chat-layout pa-chat-surface${infoOpen?" pa-info-open":""}`} aria-label={thread?.title??bot.name}><div className="pa-chat" inert={!!browserOpener} data-reconnecting={reconnecting||undefined}
     {...dragHandlers} data-file-drag={dropTarget?(dropTarget.refusal?"refused":"ready"):undefined}>
     {dropTarget&&<div className="pa-drop-target" data-refused={dropTarget.refusal?true:undefined} role="status" aria-live="polite">
       <div className="pa-drop-target-label">
@@ -1902,11 +1902,11 @@ ${currentDraft}`:submitted)
       </h2>
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>
     </header>}
-    {(reconnecting||error)&&<div className="pa-chat-error" role={reconnecting?"status":"alert"} data-reconnecting={reconnecting||undefined}>
-      <span>{reconnecting?w.chatReconnecting:errorField==="read_deadline"?w.readTimedOut:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
+    {!reconnecting&&error&&<div className="pa-chat-error" role="alert">
+      <span>{errorField==="read_deadline"?w.readTimedOut:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
       <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{errorField==="read_deadline"?w.retry:w.refresh}</button>
-      {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
-      {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
+      {error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
+      {error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
     </div>}
     {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
       <button type="button" className="pa-pill" onClick={()=>setDecisionHandled(false)}>{w.decisionHandledDismiss}</button></div>}
