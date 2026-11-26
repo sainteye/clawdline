@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useId, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
 import type { MemoryReadDetail, ProjectMemoryPage } from "./client"
@@ -15,7 +15,9 @@ export const projectMemoryPageSize=25
 export type MemoryNoteDraft={entry_id:string;title:string;summary:string;text:string;expected_revision:number}
 
 type MemoryProps={
-  embedded?:boolean;pendingText?:string;pendingSources?:string[];enabled:boolean;w:Words;
+  embedded?:boolean;pendingText?:string;
+  /** The Bot has a running or queued turn, a Bot request included; forgetting then asks first. */
+  working?:boolean;pendingSources?:string[];enabled:boolean;w:Words;
   onSave:(text:string)=>Promise<void>;
   onSaveNote?:(note:MemoryNoteDraft)=>Promise<void>;noteDraft?:MemoryNoteDraft|null;onNoteDraft?:(draft:MemoryNoteDraft|null)=>void;pendingNote?:MemoryNoteDraft;
   onForget:(ids:string[])=>Promise<void>;
@@ -38,8 +40,11 @@ function MemoryLoading({w,onClose,embedded=false}:{w:Words;onClose:()=>void;embe
   </section>
 }
 
-function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingNote,noteDraft,onNoteDraft,enabled,onSave,onSaveNote,onForget,onRefresh,onClose,readDetail,readProjectPage,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
+function MemoryContent({value,embedded=false,working=false,pendingText,pendingSources,pendingNote,noteDraft,onNoteDraft,enabled,onSave,onSaveNote,onForget,onRefresh,onClose,readDetail,readProjectPage,w}:MemoryProps&{value:W.ProjectAssistantMemoryViewResponse}) {
   const [text,setText]=useState(pendingText??""),[selected,setSelected]=useState<string[]>(()=>(value.view.layers.find(layer=>layer.layer==="bot")?.entries??[]).filter(entry=>entry.sources.some(source=>pendingSources?.includes(source.id))).map(entry=>entry.id))
+  const entryLabel=useId()
+  // Forgetting starts a fresh conversation; while the Bot works it first asks whether to wait.
+  const [askForget,setAskForget]=useState<{ids:string[];after:()=>void;from:"detail"|"list"}|null>(null)
   const [busy,setBusy]=useState(false),[error,setError]=useState(pendingNote?"pa_outcome_unknown":""),[uncertain,setUncertain]=useState(!!pendingNote)
   const [localNote,setLocalNote]=useState<MemoryNoteDraft|null>(pendingNote??null)
   const note=noteDraft===undefined?localNote:noteDraft,setNote=onNoteDraft??setLocalNote
@@ -128,6 +133,18 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
     try{await action();setUncertain(false);done()}catch(error){const code=errorCode(error);setError(code);setUncertain(["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(code)||(error as Error)?.name==="AbortError")}
     finally{pending.current=false;setBusy(false)}
   }
+  const forget=(ids:string[],after:()=>void,from:"detail"|"list")=>{
+    if(working){setAskForget({ids,after,from});return}
+    setAskForget(null);void run(()=>onForget(ids),after)
+  }
+  // Shown where forgetting was asked: the Bot is working, so wait or forget now.
+  const ask=(from:"detail"|"list")=>askForget?.from===from&&working?<>
+    <p role="alert">{w.memoryForgetWorking}</p>
+    <div className="pa-toolbar">
+      <button type="button" onClick={()=>setAskForget(null)}>{w.memoryForgetWait}</button>
+      <button type="button" disabled={!enabled||busy} onClick={()=>{const chosen=askForget;setAskForget(null);void run(()=>onForget(chosen.ids),chosen.after)}}>{w.memoryForgetAnyway}</button>
+    </div>
+  </>:null
   return <section ref={panel} className={embedded?"pa-memory pa-memory-embedded":"pa-card pa-memory"} aria-label={w.memory}>
     {!embedded&&<header className="pa-toolbar"><h3 tabIndex={-1}>{w.memory}</h3><button type="button" onClick={onClose}>{w.close}</button></header>}
     <nav className="pa-memory-scopes" aria-label={w.memory}>
@@ -151,9 +168,10 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
           onClick={() => setNote({ entry_id: detail.id, title: detail.title ?? "", summary: detail.summary ?? "", text: detail.text, expected_revision: value.view.memory.revision })}>{w.memoryEditNote}</button>
         <button type="button" disabled={!enabled || busy || !!note || uncertain} onClick={() => {
           const row = entries.find(entry => entry.id === detail.id)
-          void run(() => onForget([detail.id, ...(row?.sources.map(source => source.id) ?? [])]), () => setRead(null))
+          forget([detail.id, ...(row?.sources.map(source => source.id) ?? [])], () => setRead(null), "detail")
         }}>{w.forget}</button>
       </div>}
+      {layer === "bot" && detail.kind === "note" && onSaveNote && (ask("detail") ?? <p className="pa-memory-forget-note">{w.memoryForgetFresh}</p>)}
       <pre tabIndex={0}>{detail.text}</pre>
       {detail.truncated && <p>{w.memoryTruncated}</p>}
       {shown && layer !== "project" && <MemoryRelated entry={shown.entries.find(entry => entry.id === detail.id)} entries={shown.entries} onOpen={(entry, opener) => void open(entry, opener)} w={w}/>}
@@ -193,11 +211,14 @@ function MemoryContent({value,embedded=false,pendingText,pendingSources,pendingN
       <button type="submit" disabled={!enabled||busy||!text.trim()}>{w.remember}</button>
     </form>
     </details><details className="pa-memory-forget"><summary><span>{w.forget}</span><ChevronIcon className="pa-settings-chevron"/></summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
-      {entries.length?entries.map(entry=><label className="pa-memory-entry" key={entry.id}>
-        <input type="checkbox" checked={selected.includes(entry.id)} disabled={!entry.sources.length} onChange={event=>setSelected(old=>event.target.checked?[...old,entry.id]:old.filter(id=>id!==entry.id))}/>
-        <span>{entry.title||entry.text}</span>
+      {entries.length?entries.map((entry,index)=><label className="pa-memory-entry" key={entry.id}>
+        <input type="checkbox" aria-labelledby={`${entryLabel}-${index}`} checked={selected.includes(entry.id)} disabled={!entry.sources.length} onChange={event=>setSelected(old=>event.target.checked?[...old,entry.id]:old.filter(id=>id!==entry.id))}/>
+        <span id={`${entryLabel}-${index}`}>{entry.title||entry.text}</span>
       </label>):<p>{w.emptyMemory}</p>}
-      <button type="button" disabled={!enabled||busy||!sourceIDs.length} onClick={()=>void run(()=>onForget(sourceIDs),()=>setSelected([]))}>{w.forget}</button>
+      <div className="pa-memory-forget-foot">
+        {ask("list")??<><p>{w.memoryForgetFresh}</p>
+        <button type="button" disabled={!enabled||busy||!sourceIDs.length} onClick={()=>forget(sourceIDs,()=>setSelected([]),"list")}>{w.forget}</button></>}
+      </div>
     </fieldset></details>
     </>}</div><p className="pa-memory-revision">{w.memoryRevision}: {value.view.memory.revision} · {w.forgotten}: {value.view.memory.forgotten_count}</p>
     {error&&<p role="alert">{uncertain?w.unknown:["pa_context_stale","pa_stale_version"].includes(error)?w.memoryDetailStale:w.unavailable} ({error}) <button type="button" disabled={busy} onClick={()=>{setError("");refresh()}}>{w.memoryRefresh}</button></p>}

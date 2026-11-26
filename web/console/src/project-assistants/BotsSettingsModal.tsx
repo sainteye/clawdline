@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react"
 import type * as W from "@clawdline/contract"
 import { catalogWord } from "../catalog.js"
 import { useModalBackdrop } from "../modal-backdrop.js"
@@ -118,7 +118,22 @@ export function scopeLabel(scope: SharedScope, projects: readonly ProjectChoice[
 /** A checkbox popover: All Projects (including future ones) or chosen Projects. */
 export function ScopePicker({ scope, projects, onChange }: { scope: SharedScope; projects: readonly ProjectChoice[]; onChange: (scope: SharedScope) => void }) {
   const [open, setOpen] = useState(false)
-  const root = useRef<HTMLDivElement>(null)
+  const [place, setPlace] = useState<{ side: "start" | "end"; width: number } | null>(null)
+  const root = useRef<HTMLDivElement>(null), pop = useRef<HTMLDivElement>(null)
+  const id = useId()
+  // The list opens on whichever side of its button has room inside the scrolling
+  // pane, and is never wider than that pane, so no option is cut off.
+  useLayoutEffect(() => {
+    if (!open) { setPlace(null); return }
+    const button = root.current, list = pop.current
+    const pane = button?.closest(".pa-bs-body") ?? button?.closest("[role=dialog]")
+    if (!button || !list || !pane) return
+    const b = button.getBoundingClientRect(), p = pane.getBoundingClientRect(), gap = 8
+    const toEnd = p.right - b.left - gap, toStart = b.right - p.left - gap
+    const width = Math.min(Math.max(list.getBoundingClientRect().width, 220), 360, p.width - 2 * gap)
+    const side = toEnd >= width || toEnd >= toStart ? "start" : "end"
+    setPlace({ side, width: Math.max(0, Math.min(width, Math.max(toEnd, toStart))) })
+  }, [open, projects])
   useEffect(() => {
     if (!open) return
     const away = (e: PointerEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false) }
@@ -137,9 +152,9 @@ export function ScopePicker({ scope, projects, onChange }: { scope: SharedScope;
     <button type="button" className="pa-bs-scope-button" aria-haspopup="true" aria-expanded={open} aria-label={`${word("appliesTo")}: ${scopeLabel(scope, projects)}`} onClick={() => setOpen(!open)}>
       <span className="pa-bs-scope-value">{scopeLabel(scope, projects)}</span><Chevron/>
     </button>
-    {open && <div className="pa-bs-scope-pop" role="group" aria-label={word("appliesTo")}>
-      <label><input type="checkbox" checked={scope.all} onChange={() => onChange(scope.all ? { all: false, projects: [] } : { all: true })}/><span>{word("allProjectsFuture")}</span></label>
-      {projects.map(p => <label key={p.id}><input type="checkbox" disabled={scope.all} checked={!scope.all && chosen.includes(p.id)} onChange={() => toggle(p.id)}/><span>{p.name}</span></label>)}
+    {open && <div ref={pop} className="pa-bs-scope-pop" role="group" aria-label={word("appliesTo")} data-side={place?.side} style={place ? { width: place.width } : { visibility: "hidden", width: "max-content" }}>
+      <label><input type="checkbox" aria-labelledby={`${id}-all`} checked={scope.all} onChange={() => onChange(scope.all ? { all: false, projects: [] } : { all: true })}/><span id={`${id}-all`}>{word("allProjectsFuture")}</span></label>
+      {projects.map((p, i) => <label key={p.id}><input type="checkbox" aria-labelledby={`${id}-${i}`} disabled={scope.all} checked={!scope.all && chosen.includes(p.id)} onChange={() => toggle(p.id)}/><span id={`${id}-${i}`}>{p.name}</span></label>)}
     </div>}
   </div>
 }

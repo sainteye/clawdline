@@ -132,7 +132,10 @@ async function forgetSection(page,name,width){
   check(`${name} forget names the fresh conversation`,()=>assert.match(text,/新的對話/))
   // While the Bot works, forgetting first offers waiting.
   await page.evaluate(()=>window.botsFixture.a.workTurn("running"))
+  // The turn reaches the chat through its event stream; wait until Stop shows it.
+  await page.getByRole("button",{name:"停止目前與待送工作",exact:true}).or(page.locator("button[aria-label=\"停止目前與待送工作\"]")).first().waitFor({state:"attached"})
   await page.waitForTimeout(300)
+  await panel.locator(".pa-memory-forget input[type=checkbox]").first().check()
   const before=await page.evaluate(()=>window.botsFixture.log.filter(r=>r.method==="forget").length)
   await confirm.click()
   await page.waitForTimeout(200)

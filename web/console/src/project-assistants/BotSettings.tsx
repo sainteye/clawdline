@@ -1,4 +1,4 @@
-import {useRef,useState,type ReactNode,type RefObject} from "react"
+import {useEffect,useRef,useState,type ReactNode,type RefObject} from "react"
 import type * as W from "@clawdline/contract"
 import {AppearancePicker} from "./BotAvatar"
 import type {Words} from "./words"
@@ -78,8 +78,19 @@ function settingsFallbackPatch(
 /** The outcome of reading the source after an unconfirmed save. */
 export type SettingsCheck=""|"checking"|"confirmed"|"unchanged"|"diverged"|"failed"|"superseded"
 
+type BotSettingsProps=Parameters<typeof BotSettingsForm>[0]
+
+/** In the Bot's side panel, Cancel discards the draft and stays on the tab; the
+ *  panel is closed by its own close button. A standalone editor closes on Cancel. */
+export function BotSettings(props:BotSettingsProps) {
+  const [round,setRound]=useState(0),holder=useRef<HTMLDivElement>(null)
+  useEffect(()=>{if(round)holder.current?.querySelector<HTMLElement>("textarea,input")?.focus({preventScroll:true})},[round])
+  if(!props.embedded)return <BotSettingsForm {...props}/>
+  return <div ref={holder} className="pa-settings-draft"><BotSettingsForm key={round} {...props} onClose={()=>setRound(n=>n+1)}/></div>
+}
+
 /** One mounted editor owns the draft across the Details and Settings tabs. */
-export function BotSettings({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck,nameInput}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean;nameInput?:RefObject<HTMLInputElement|null>}) {
+function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,data,workspace,teamAvailable=false,embedded=false,onCheck,nameInput}:{bot:W.ProjectAssistantBot;onCheck?:()=>Promise<W.ProjectAssistantBot>;onSave:(settings:W.ProjectAssistantEditSettings,original:W.ProjectAssistantBot)=>Promise<void>;onClose:()=>void;w:Words;enabled:boolean;reason?:string;rules?:ReactNode;manage?:ReactNode;data?:ReactNode;workspace?:{project:string;machine:string};teamAvailable?:boolean;embedded?:boolean;nameInput?:RefObject<HTMLInputElement|null>}) {
   const [original,setOriginal]=useState(bot)
   // The exact values of the save whose outcome is unknown; reconciliation compares against these.
   const attempted=useRef<W.ProjectAssistantEditSettings|undefined>(undefined),[check,setCheck]=useState<SettingsCheck>("")
