@@ -123,7 +123,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
   // One machine needs no machine filter and no machine name on every row.
   const several=machines.length>1,named=(id:string)=>machineNames?.get(id)||w.thisMachine
   // The first read draws placeholder rows after 150ms; once Bots are listed, a later read only says so.
-  const skeleton=useShowAfter(loading&&!items.length)
+  const skeleton=useShowAfter(loading&&!shown.length)
   const renderRows=(roomEntries:readonly GroupRosterEntry[],openGroup:(entry:GroupRosterEntry,opener?:HTMLElement)=>void,selectedGroup:string|null,dismissGroup:()=>void)=>{
     const now=Date.now()
     const allRows=conversations(items,roomEntries)
@@ -249,7 +249,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
               <span>{pullWord==="release"?strings.webPullRelease:pullWord==="busy"?strings.webPullBusy:strings.webPull}</span>
             </div>
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
-            {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
+            {skeleton&&!tower&&!group.rows.length&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
             {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
             {group.content}
             {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}

@@ -4527,11 +4527,11 @@
       "sources": [
         {
           "path": "web/console/src/project-assistants/Chat.tsx",
-          "line": 1710
+          "line": 1713
         },
         {
           "path": "web/console/src/project-assistants/words.ts",
-          "line": 503
+          "line": 515
         },
         {
           "path": "internal/app/projectassistant/submit.go",
@@ -5463,7 +5463,15 @@
         },
         {
           "path": "internal/adapters/projectassistantacp/mcp.go",
-          "line": 778
+          "line": 793
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/tools.go",
+          "line": 812
+        },
+        {
+          "path": "internal/domain/projectassistant/actor.go",
+          "line": 107
         },
         {
           "path": "internal/adapters/projectassistantacp/mcp_work_receipt.go",
@@ -5491,6 +5499,7 @@
         }
       ],
       "original": [
+        "For read-only child work, use an empty array and state the no-write scope in the brief. Omit project to use your own Project. 填寫相對於目的地的檔案路徑。唯讀子任務請用空陣列，並在任務說明寫明只調查。省略 project 就會派到自己的 Project。",
         "Set continue_on_completion when you still need the result to finish the current user request even if the setting is off.",
         "For long builds, tests, and external waits, delegate to a work Session and tell it to use clawdline callback to run the command and wake on exit.",
         "This is a report on work you dispatched, not a new instruction from the user."
@@ -5735,7 +5744,7 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "7501d4f47b0db00c0a2eb010708421b5fb9ec2cd6e68afbe8517d5e0a11faff7",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "c62b3259e22d959637e55b356c37da63788163f0bd3a97076fce4948c9508963",
+    "internal/adapters/projectassistantacp/mcp.go": "1ab6dd5053ff636665eaa7153f1062930d8d2bf5a74b3c116ec9bb0133bc1a67",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
@@ -5766,7 +5775,7 @@
     "internal/adapters/projectassistanthost/provider.go": "1a943198130285d56fe4a9fe49f90cd9d76c542cab686516ca0c6d0b9060cc4e",
     "internal/adapters/projectassistanthost/provider_message.go": "b0bee11362592c648cc1e611fcf135ddd0c4ca32755620f4c14c79f11ed666e6",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
-    "internal/adapters/projectassistanthost/tools.go": "39c2329d493c5723502ba13760a542802b9865c3a126a7512ea44f8eb2bb07ed",
+    "internal/adapters/projectassistanthost/tools.go": "cfd31986185a08e4250f11d75cd4f41fc8b0770d0a1ab04fe190bcd63055baa5",
     "internal/adapters/projectassistanthost/work_completion.go": "53f0b16b1251c50ecf1275d0ecf790ba3600028ec8363979c7acefce6523dc8c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "4eca7f2fcd21ae79433f3280a723dfe07f3e4a5e90d82f1bc8ff8bff8313e2d3",
@@ -5869,6 +5878,7 @@
     "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
+    "internal/domain/projectassistant/actor.go": "e443e8744125f68b7336b9a8714ddf1f022e4bac16f60f0ea11143cb9cc8741f",
     "internal/domain/projectassistant/fallback.go": "449dbb46ffed4853b36ac3eff990fdffd29c8386fa19c93947754bd543025533",
     "internal/domain/projectassistant/inputs.go": "9032c9e7682053935f7f8ea612e04e61af0869b79ad895b29af5b77479582633",
     "internal/domain/projectassistant/memory_notes.go": "728ee7db6202d38df7ec9d4cf2c0c7b4ef595e04d00140e9746eefbe4ac70321",
@@ -5954,7 +5964,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotSettings.tsx": "e2082aa828d66750b4d8501bbb2c15253be9be54f244aea5353cffc918f52590",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "e4a03773046b6fd8a0be39b06053714a8660a6f17adc0db1c711cc72524c06e7",
+    "web/console/src/project-assistants/Chat.tsx": "0d1194c0b6df3c029338f92464a4663d112bb1e162f5e91e9a4d4772a90fd1e5",
     "web/console/src/project-assistants/ChatRows.tsx": "b8b1e0ec14d9ac1ab194830371d104130659852b95c626728fc16a7b8676db7c",
     "web/console/src/project-assistants/DecisionCard.tsx": "a770144b42746b07781b07da155d392f112569f86fb252a6d34c9fc861cf1e8a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
@@ -5980,7 +5990,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "de3256296428d263ba62008de15f602ee6be0a1e0da2c92883e25c622b7ee017",
+    "web/console/src/project-assistants/words.ts": "c838a2fd6f5680a60ae56abaf8ba2b99fab3738ae60ec424e3bc854fd38821a1",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
@@ -6013,7 +6023,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "0c6f141264c84e15ed03c1e4ca17b28f2fd933d28e6b49cd578d6b593819bd9d",
-    "zh-Hant": "50a1aaf904987baf73acc9385aed4889c875ec17d7748f4fc05dad3c7df1fd01"
+    "en": "5455da4e566cb8c01875b421b0f844d61d6c24c4dc4b425fa05ac7c8cd120f85",
+    "zh-Hant": "5934d0ba72d0eef65974d9b9036a32030da4b5ec2b6127723ad92d9240c644f1"
   }
 }

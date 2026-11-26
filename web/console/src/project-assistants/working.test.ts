@@ -40,6 +40,36 @@ test("the native approval review has a localized activity label",()=>{
   assert.equal(rowActivity("guardian_review",words("en")),"Reviewing an action")
 })
 
+test("live trace and daemon activity use the same localized tool captions", () => {
+  const cases = [
+    ["mcp__clawdline__browser_command", "Using the browser", "正在使用瀏覽器"],
+    ["clawdline.browser_status (read)", "Using the browser", "正在使用瀏覽器"],
+    ["send_message", "Sending a message", "正在傳送訊息"],
+    ["mcp__clawdline__dispatch_work", "Dispatching work", "正在派工"],
+    ["mcp__clawdline__edit_memory", "Updating memory", "正在更新記憶"],
+    ["Bash", "Running a command", "正在執行指令"],
+    ["Read", "Reading a file", "正在讀取檔案"],
+    ["Edit", "Editing a file", "正在修改檔案"],
+    ["Grep", "Searching", "正在搜尋"],
+    ["functions.exec_command", "Running a command", "正在執行指令"],
+    ["mcp__other__browser_command", "Using a tool", "正在使用工具"],
+    ["mcp__clawdline__browser_command_extra", "Using a tool", "正在使用工具"],
+    ["unknown_tool (details)", "Using a tool", "正在使用工具"],
+  ] as const
+  const working = {
+    status:"working", pending_permissions:0,
+    source:{fresh:true,state:"online",readable:true,access:"interactive"},
+  }
+  for (const [title, en, zh] of cases) {
+    const activity = activityOf(trace("tool_call", title + "\nin_progress\nTool output"))
+    for (const [locale, expected] of [["en",en],["zh-TW",zh]]) {
+      const w = words(locale)
+      assert.equal(rowActivity(activity,w), expected, `${locale} live trace: ${title}`)
+      assert.equal(rosterActivity({...working,activity:title} as W.ProjectAssistantBotSummary,w).caption, expected, `${locale} daemon activity: ${title}`)
+    }
+  }
+})
+
 test("roster state is independent of unread and cached source activity",()=>{
   const w=words("zh-Hant"),base={latest_message:"Last reply",activity:"Read notes.md",status:"working",pending_permissions:0,unread_count:3,source:{fresh:true,state:"online",readable:true,access:"interactive"}}
   assert.deepEqual(rosterActivity(base as never,w),{state:"working",caption:"Read notes.md",live:true})

@@ -795,11 +795,7 @@ func (s *toolScope) bindDispatchTools(tools *NativeWork) {
 		if e := dispatchScope(ctx, h.botRequestCards(), q.Bot.Key.BotID, turn, botRequestID); e != nil {
 			return pa.WorkLink{}, e
 		}
-		// A Bot answering another Bot's message_bot may dispatch into its own
-		// Project: the requester delegated the work so the person need not
-		// repeat it in this Bot's chat. Another Project still needs the
-		// person (dispatch_project_direct below). A request from another
-		// machine stays refused.
+		// A request from another machine has no dispatch authority.
 		if turn.Origin == pa.NetworkRequestOrigin {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
 		}
@@ -832,12 +828,9 @@ func (s *toolScope) bindDispatchTools(tools *NativeWork) {
 				return pa.WorkLink{}, failure(pa.ScopeDenied, "board_item_id")
 			}
 		}
-		if project != "" && turn.Origin == pa.BotRequestOrigin {
-			// Naming its own Project is not a cross-Project dispatch: a Bot
-			// answering another Bot may do read-only work (claims []) there,
-			// such as an acceptance Session that only takes screenshots.
-			// Any other folder, or one that cannot be resolved, falls through
-			// to the refusal below.
+		if project != "" && (turn.Origin == pa.BotRequestOrigin || turn.Origin == pa.BotReplyOrigin || pa.WorkCompletionTask(turn) != "") {
+			// Use the same target and receipt hash as an omitted project
+			// when the registry resolves the name to this Bot's own Project.
 			if folders, ok := h.o.Projects.(app.TeamProjectResolver); ok {
 				if own, err := folders.ResolveTeamFolder(ctx, q.Bot.Key.MachineID, project); err == nil && own.Scope == q.Binding.Fence.Project {
 					project = ""

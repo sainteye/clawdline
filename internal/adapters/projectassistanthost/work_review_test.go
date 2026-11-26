@@ -2,6 +2,7 @@ package projectassistanthost
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -104,9 +105,12 @@ func TestWorkReviewOffPublishesOnlyUnlessRequested(t *testing.T) {
 	ctx := context.Background()
 	setWorkReview(t, n.f, n.bot.Key, "off")
 	session := fixtureReceive(t, n.f.p.sessions)
-	quiet, err := n.tools.Dispatch(ctx, "quiet", "Quiet work", "Change only a.go in the isolated worktree.", []string{"a.go"})
+	quiet, err := n.tools.Dispatch(ctx, "quiet", "Inspect the result", "Inspect without editing files.", []string{})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if quiet.Fence.Key != n.bot.Key || quiet.TurnID != n.prompt.Turn.ID {
+		t.Fatalf("read-only work did not attach to the direct user turn: %+v", quiet)
 	}
 	requested, err := n.tools.DispatchWithCompletion(ctx, "requested", "Requested review", "Inspect without editing files.", []string{}, "", "", "")
 	if err != nil {
@@ -134,6 +138,38 @@ func TestWorkReviewOffPublishesOnlyUnlessRequested(t *testing.T) {
 	if wakes, results := workTurns(t, n); wakes != 1 || results != 2 {
 		t.Fatalf("wakes=%d results=%d, want one wake and two results", wakes, results)
 	}
+}
+
+func TestWorkReviewTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
+	n := startNative(t, func(f *hostFixture) { f.o.Projects = peerFolders{fixtureResolver{f}} })
+	ctx := context.Background()
+	initial := dispatchUnrequested(t, n, "initial")
+	if _, err := n.f.o.Broker.Settle(ctx, initial.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: "Ready to review."}); err != nil {
+		t.Fatal(err)
+	}
+	review := fixtureReceive(t, n.f.p.sessions)
+	wake := fixtureReceive(t, n.f.p.sent)
+	if pa.WorkCompletionTask(wake.Turn) != initial.TaskID {
+		t.Fatalf("not a review turn for the initial task: %+v", wake.Turn)
+	}
+	tools := review.q.Tools.(NativeWork)
+	var refused *pa.Failure
+	if _, err := tools.DispatchToProject(ctx, "other", "Inspect elsewhere", "Read only.", []string{}, "other"); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "dispatch_project_direct" {
+		t.Fatalf("review turn cross-Project dispatch: %v", err)
+	}
+	if _, err := tools.DispatchWithCompletion(ctx, "callback", "Inspect the result", "Read only.", []string{}, "", "", ""); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "work_completion_origin" {
+		t.Fatalf("review turn completion callback: %v", err)
+	}
+	if _, err := tools.DispatchWithBoard(ctx, "board", "Inspect the result", "Read only.", []string{}, "", "", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"); !errors.As(err, &refused) || refused.Code != pa.ScopeDenied || refused.Field != "board_item_id" {
+		t.Fatalf("review turn Board dispatch: %v", err)
+	}
+	for _, project := range []string{"own", ""} {
+		link, err := tools.DispatchToProject(ctx, "review-read", "Inspect the result", "Read only.", []string{}, project)
+		if err != nil || link.TaskID == "" || link.Fence.Key != n.bot.Key || link.TurnID != wake.Turn.ID {
+			t.Fatalf("review dispatch with project %q: %+v, %v", project, link, err)
+		}
+	}
+	review.reply <- app.PromptResult{FinalText: "Dispatched the review."}
 }
 
 // The first wait for a person is the task's one review; its later settlement

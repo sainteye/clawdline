@@ -155,6 +155,7 @@ func TestNetworkNativePeer(t *testing.T) {
 				}{
 					{"edit_memory", map[string]any{"idempotency_key": "peer-memory-denied", "append": "Synthetic peer text must not persist"}},
 					{"network_bot", app.NetworkToolRequest{Kind: "routes", RequestID: "peer-network-denied"}},
+					{"dispatch_work", map[string]any{"idempotency_key": "peer-dispatch-denied", "title": "Inspect the result", "brief": "Read only.", "claims": []string{}}},
 				} {
 					raw := rpc("tools/call", "deny-"+forbidden.name, map[string]any{"name": forbidden.name, "arguments": forbidden.args})
 					var refused struct {
@@ -162,7 +163,8 @@ func TestNetworkNativePeer(t *testing.T) {
 							IsError bool `json:"isError"`
 						}
 					}
-					if json.Unmarshal(raw, &refused) != nil || !refused.Result.IsError || !strings.Contains(string(raw), "pa_scope_denied") {
+					missingDispatchReason := forbidden.name == "dispatch_work" && (!strings.Contains(string(raw), "peer_dispatch") || !strings.Contains(string(raw), `\"reason\":`))
+					if json.Unmarshal(raw, &refused) != nil || !refused.Result.IsError || !strings.Contains(string(raw), "pa_scope_denied") || missingDispatchReason {
 						_ = os.WriteFile(os.Getenv("CLAWDLINE_NETWORK_RECEIPT")+".forbidden", raw, 0600)
 						os.Exit(32)
 					}

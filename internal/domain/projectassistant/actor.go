@@ -102,8 +102,8 @@ func ValidateWorkTitle(title string) error {
 	return nil
 }
 
-// CheckWorkRequest does not replace the broker's path/claims validation. It
-// rejects empty dispatches before the existing isolated-worktree authority.
+// CheckWorkRequest validates the actor and work declaration. Its callers
+// verify the active turn and the broker validates the destination and claims.
 func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 	if err := CheckActor(request.Actor, current, DispatchWork, now); err != nil {
 		return err
@@ -127,12 +127,6 @@ func CheckWorkRequest(request WorkRequest, current Fence, now time.Time) error {
 		if target.Kind != RepositoryProject || target.MachineID != current.Key.MachineID {
 			return fail(ScopeDenied, "dispatch_project")
 		}
-	} else if len(request.Claims) == 0 && !request.ContinueOnCompletion && request.OwnerTurnID == "" && request.Choice.Mode != DispatchModeRoot {
-		// Claimless work in the Bot's own Project is read-only work whose
-		// result the Bot reads back: through a completion turn, or, for work
-		// dispatched at another Bot's request (OwnerTurnID), through the
-		// main chat's review turn. A Root reports through its own delivery.
-		return fail(Invalid, "work")
 	}
 	if request.Title != "" {
 		if err := ValidateWorkTitle(request.Title); err != nil {

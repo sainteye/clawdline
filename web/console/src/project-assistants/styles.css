@@ -778,12 +778,12 @@
   .project-assistants .pa-info-open>.pa-chat,.project-assistants .pa-members-open>.pa-chat { visibility:hidden; }
 }
 
-/* On phones the jump control occupies its own row below the scroll viewport. */
-.project-assistants .pa-jump-mobile { display:none; }
+/* Give the jump control its own row below the scroll viewport. */
+.project-assistants .pa-chat > .pa-jump { display:none; }
+.project-assistants .pa-chat > .pa-jump[data-shown="on"] { display:flex;position:static;flex:none;height:auto;padding-top:4px; }
 .project-assistants .pa-permissions { padding-bottom:48px; }
 @media(max-width:700px) {
-  .project-assistants .pa-chat .pa-jump { display:none; }
-  .project-assistants .pa-chat:not(:has(.pa-permission)) .pa-jump-mobile[data-shown="on"] { display:flex;position:static;flex:none;height:auto;padding-top:4px; }
+  .project-assistants .pa-chat:has(.pa-permission) > .pa-jump { display:none; }
   .project-assistants .pa-permissions { padding-bottom:16px; }
 }
 

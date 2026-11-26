@@ -519,8 +519,10 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 					}
 				}
 			}
-			if q.Name == "dispatch_work" && result["field"] == "work_title" && result["code"] == string(pa.Invalid) {
-				result["reason"] = dispatchTitleReason(q.Arguments)
+			if q.Name == "dispatch_work" {
+				if reason := dispatchRefusalReason(q.Arguments, result["code"], result["field"]); reason != "" {
+					result["reason"] = reason
+				}
 			}
 			if q.Name == "dispatch_work" && result["field"] == "persona" && result["code"] == string(pa.Invalid) {
 				return mcpToolResult(map[string]any{"code": result["code"], "field": "persona", "builtin_personas": persona.IDs(),
@@ -1041,12 +1043,12 @@ func mcpTools() []any {
 			"title": map[string]any{"type": "string", "minLength": 1, "maxLength": work.OutcomeTitleLimit,
 				"description": "A short Session title in the user's language. Name the concrete result of this task, e.g. Keep draft messages after reconnecting or 重新連線後保留訊息草稿. Keep credentials and private details out of the title."},
 			"brief":                  text(),
-			"continue_on_completion": map[string]any{"type": "boolean"},
+			"continue_on_completion": map[string]any{"type": "boolean", "description": "Only in a direct user turn. Requests a completion turn even if automatic work review is off. The result is published in chat either way. 僅限使用者直接開啟的回合。即使關閉自動接手，仍要求完成後開啟接續回合；結果都會回到聊天。"},
 			"mode":                   map[string]any{"type": "string", "enum": []string{"child", pa.DispatchModeRoot}, "description": "Optional. child (default) opens bounded work that returns a branch for review. root opens an independently owned Root Session for integration, release, or a whole feature the user hands off end to end: it may merge, push, deploy and record landings under the repository's ordinary rules, and it is nobody's child. Only a turn the user started, or a request card you hold, may open a Root. Claims may be empty; continue_on_completion is not used. Its report arrives in this chat when it runs clawdline session report. 選填。child（預設）開啟有範圍的工作，交回分支供審查。root 開啟獨立負責的 Root 工作階段，用於整合、發版，或使用者交給它從頭到尾負責的整個功能：可依儲存庫一般規則合併、推送、部署與記錄落地，它不是任何人的子任務。只有使用者本人開始的回合、或你持有的交辦卡能開 Root。claims 可為空陣列，不使用 continue_on_completion。它執行 clawdline session report 時，回報會回到這個聊天。"},
 			"bot_request_id":         map[string]any{"type": "string", "description": "Optional Bot request card id this call works on. You must be in the card's chain; in a turn a card handoff woke, it must be that card. 選填，這次呼叫所屬的交辦卡 id；你必須在卡的參與 Bot 中，交棒通知喚醒的回合只能填那張卡。"},
 			"board_item_id":          map[string]any{"type": "string", "description": "Optional UUID of the existing Board item explicitly named in the user's current message. Links this task for evidence without assigning or moving the item. 使用者在本則訊息明確指定既有看板項目時填入 UUID，只連結交付證據。"},
-			"claims":                 map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For read-only work with an explicit project or a completion callback, use an empty array and state the no-write scope in the brief. 填寫相對於目的地的檔案路徑。只調查且有指定 Project 或完成回呼時，使用空陣列並在任務說明寫明只調查。"},
-			"project":                map[string]any{"type": "string", "minLength": 1, "description": "Exact unique registered repository folder name or absolute registered path on this computer. A Bot other than the lead waits for the user's approval on a card. Omit to use the Bot's own Project. 填入這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。非大總管要等使用者在權限卡核准。省略時使用 Bot 自己的 Project。"},
+			"claims":                 map[string]any{"type": "array", "items": text(), "description": "Exact files to change, relative to the destination. For read-only child work, use an empty array and state the no-write scope in the brief. Omit project to use your own Project. 填寫相對於目的地的檔案路徑。唯讀子任務請用空陣列，並在任務說明寫明只調查。省略 project 就會派到自己的 Project。"},
+			"project":                map[string]any{"type": "string", "minLength": 1, "description": "Omit to use the Bot's own Project. Use an exact unique registered repository folder name or an absolute registered path on this computer. In a local Bot request, Bot reply or work review turn, naming your own Project also works. Naming another Project requires a direct user turn and, for a Bot other than the lead, approval. 省略時使用 Bot 自己的 Project。可填這台電腦上已登錄且唯一的儲存庫資料夾名稱或已登錄的絕對路徑。本機 Bot 的請求、回覆或工作審查回合也可明填自己的 Project。指定其他 Project 需要使用者直接開啟回合，非大總管還須取得核准。"},
 			"persona": map[string]any{"type": "string", "minLength": 1, "description": "Optional Session persona the work Session starts with. Built-in IDs: " + strings.Join(persona.IDs(), ", ") +
 				". A custom role uses its namespaced ID (for example team.reviewer) from Settings, Squad, Custom team. Omit for the default Session. An unknown ID is refused with the built-in list. 選填，工作階段啟動時套用的角色。可填上列內建 ID；自訂角色填「設定 > Squad > 自訂」裡的命名空間 ID。省略時使用一般工作階段；不認識的 ID 會被拒絕並列出內建清單。"},
 			"kind":   map[string]any{"type": "string", "minLength": 1, "maxLength": 64, "description": "Optional work kind from the person's dispatch rules (Bots settings), e.g. coding, design or image. The program picks the agent, model and effort from the matching rule. Precedence: explicit agent/model/effort > rule for kind > default Claude Code. An unknown kind keeps the default. 選填，工作類型，對應使用者在 Bots 設定的派工規則（例如寫程式、設計、生圖），程式依規則選 agent、模型與強度。優先順序：明確指定的 agent／model／effort ＞ 規則 ＞ 預設 Claude Code。不符合任何規則時維持預設。"},
@@ -1223,6 +1225,43 @@ func dispatchTitleReason(arguments json.RawMessage) string {
 	return "A title is one line of printable text without control or line-separator characters."
 }
 
+func dispatchRefusalReason(arguments json.RawMessage, code, field string) string {
+	switch field {
+	case "work_title":
+		if code == string(pa.Invalid) {
+			return dispatchTitleReason(arguments)
+		}
+	case "mcp_dispatch":
+		var q dispatchWorkArgs
+		if mcpDecode(arguments, &q) != nil {
+			return "Provide valid dispatch_work arguments, including idempotency_key, title, brief and claims."
+		}
+		switch {
+		case q.Claims == nil:
+			return "Add claims: [] for read-only work, or list the exact files to change."
+		case q.ID == "":
+			return "Add a stable idempotency_key."
+		case q.Brief == "":
+			return "Add a brief that states the scope of the work."
+		}
+	case "dispatch_project_direct":
+		return "Omit project to use your own repository Project. To use another Project, ask the user to request it directly in your chat."
+	case "dispatch_project":
+		if code == string(pa.Invalid) {
+			return "Omit project to use your own Project, or provide an exact registered repository folder name or absolute path."
+		}
+	case "dispatch_policy":
+		return "Dispatch requires an enabled policy and a repository Project. From a personal workspace, specify project in a direct user turn."
+	case "work_completion_origin", "continue_on_completion":
+		return "Omit continue_on_completion. The work result still returns to your chat."
+	case "board_item_id":
+		return "Omit board_item_id unless the user named the Board item UUID in this direct turn."
+	case "peer_dispatch":
+		return "Ask the user to request the work directly in your chat on this machine."
+	}
+	return ""
+}
+
 func browserFailureResult(err error) any {
 	var browser *app.BrowserFailure
 	if errors.As(err, &browser) {
@@ -1264,7 +1303,7 @@ func decodeDispatchWork(ctx context.Context, arguments []byte) (dispatchWorkArgs
 	if q.BotRequestID != "" {
 		ctx = pa.WithBotRequest(ctx, q.BotRequestID)
 	}
-	if q.ID == "" || q.Brief == "" || q.Claims == nil || len(q.Claims) == 0 && q.Project == "" && !q.ContinueOnCompletion && q.Mode != pa.DispatchModeRoot {
+	if q.ID == "" || q.Brief == "" || q.Claims == nil {
 		return q, ctx, refusal(pa.Invalid, "mcp_dispatch")
 	}
 	return q, ctx, checkDispatchMode(q.Mode, q.ContinueOnCompletion)

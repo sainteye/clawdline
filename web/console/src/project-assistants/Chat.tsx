@@ -192,17 +192,20 @@ function permissionSections(cards:ChatPermissionCard[],visible:ChatPermissionCar
   }
 }
 
-function ChatJump({mobile,shown,working,scroll,followingRef,setFollowing,w}:{
-  mobile?:boolean;shown:boolean;working:boolean;scroll:RefObject<HTMLDivElement|null>;
+function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
+  shown:boolean;working:boolean;scroll:RefObject<HTMLDivElement|null>;
   followingRef:RefObject<boolean>;setFollowing:(following:boolean)=>void;w:Words
 }) {
   const onJump=()=>{
     followingRef.current=true
     setFollowing(true)
     const el=scroll.current
-    if(el)el.scrollTop=el.scrollHeight
+    if(el){
+      el.scrollTop=el.scrollHeight
+      el.focus({preventScroll:true})
+    }
   }
-  return <div className={mobile?"tx-jump pa-jump-mobile":"tx-jump pa-jump"} data-end="bottom" data-shown={shown?"on":"off"} data-fresh="off">
+  return <div className="tx-jump pa-jump" data-end="bottom" data-shown={shown?"on":"off"} data-fresh="off">
     <button type="button" className="tx-jump-go" tabIndex={shown?0:-1} aria-hidden={!shown||undefined} title={w.jump} aria-label={working?`${w.jump} · ${w.jumpWorking}`:undefined} onClick={onJump}>
       <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
       <span>{w.jump}</span>
@@ -1718,7 +1721,9 @@ ${currentDraft}`:submitted)
   const canRequestTurnReview=enabled&&!unknown&&!busy&&!legacyBlocked()&&!call.active&&!activeTurn
     &&!editingHandoff&&!handoff.busy&&!handoff.error&&handoff.card?.state!=="draft"
   const exchangeReplyTurns=new Set(messages.flatMap(message=>message.exchange&&message.turn_id===message.exchange.reply_turn_id?[message.turn_id]:[]))
+  // A snapshot includes the last finished turn alongside the active one.
   const visibleInterruptions=turns.filter(turn=>!["queued","accepted","running","waiting_permission"].includes(turn.state)
+    &&(!activeTurn||turn.state!=="succeeded")
     &&turn.failure_field!=="restart_resumed"&&!(restartNotice&&turn.id===restartInterruption?.id)
     &&!(turn.state==="cancelled"&&(!turn.failure_code&&!turn.started_at||exchangeReplyTurns.has(turn.id))))
   const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
@@ -1998,9 +2003,8 @@ ${currentDraft}`:submitted)
         const loose=requests.loose.length>0&&<div className="pa-request-loose">{requests.loose.map(card=><BotRequestLine key={card.id} card={card} w={w} onOpen={setOpenRequest}/>)}</div>
         return <>{loose}{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id} card={openRequest} bots={[bot,...(roster??[])]} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=botOf(card.baton.bot,roster??[]);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
-      <ChatJump {...jump}/>
     </div>
-      <ChatJump {...jump} mobile/>
+      <ChatJump {...jump}/>
       {inlineReview&&!following&&<button type="button" className="pa-pill pa-team-jump" onClick={()=>{
         const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
         card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})
