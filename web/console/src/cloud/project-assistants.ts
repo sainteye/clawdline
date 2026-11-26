@@ -1146,7 +1146,7 @@ export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], a
     // current() also becomes false while offline. Preserve the existing unread
     // badge in that case, but never animate the cached activity.
     const offline=source.current?.()===false
-    const mood=offline?"idle":rosterMood(item)
+    const mood=offline?"idle":rosterMood(item,showDispatched)
     const waiting=!offline&&rosterShownState(item,showDispatched)==="needsInput"?1:0
     return {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+waiting,
       mood:count.mood==="needsInput"||mood==="needsInput"?"needsInput" as const:count.mood==="working"||mood==="working"?"working" as const:"idle" as const}
