@@ -53,15 +53,31 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
   useEffect(()=>{sound.current=startBotCompletionSound();return()=>{sound.current?.stop();sound.current=null}},[])
   const completionScope=useCallback((source: typeof sources[number])=>JSON.stringify([registry.accountKey,source.machineID,source.authorizationRevision]),[registry.accountKey])
   useEffect(()=>completion.current.retain(sources.map(completionScope)),[sources,completionScope])
-  const observeCompletions=useCallback((items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[])=>{
+  const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
+  // While Bots is open its roster is the one unread projection: the badge adopts each
+  // complete source it reports, and the host's own reads stop overwriting that source.
+  const projected=useRef(new Set<string>())
+  useEffect(()=>{if(!opened)projected.current.clear()},[opened])
+  const observeCompletions=useCallback((items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[],completeSources:readonly string[]=[])=>{
     let done=false
     for(const source of sources.filter(source=>loadedSources.includes(source.machineID)))done=completion.current.observe(completionScope(source),items.filter(item=>item.bot.key.machine_id===source.machineID))||done
     if(done)sound.current?.play()
+    const adopted=sources.filter(source=>completeSources.includes(source.machineID))
+    if(!openedRef.current||!adopted.length)return
+    for(const source of adopted)projected.current.add(source.machineID)
+    setMetadata(old=>{
+      const next={...old}
+      for(const source of adopted){
+        const own=items.filter(item=>item.bot.key.machine_id===source.machineID&&canRead(item.source)),previous=old[source.machineID]
+        // Source authority still comes from the host's status read; the roster supplies the rows.
+        next[source.machineID]={revision:source.authorizationRevision,readable:previous?.revision===source.authorizationRevision?previous.readable:own.length>0,items:own}
+      }
+      return next
+    })
   },[sources,completionScope])
   const observeSource=useCallback((source:typeof sources[number],items:readonly W.ProjectAssistantBotSummary[])=>{
     if(completion.current.observe(completionScope(source),items))sound.current?.play()
   },[completionScope])
-  const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
   useEffect(() => {
     if (cloud || supplied || apiLevel === undefined || apiLevel < PROJECT_ASSISTANTS_API_LEVEL) return
     const control = new AbortController(), transport = globalThis.fetch.bind(globalThis)
@@ -106,7 +122,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
             seen.add(cursor)
           } while (cursor && !control.signal.aborted)
         }
-        if (!control.signal.aborted) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
+        if (!control.signal.aborted&&!(openedRef.current&&projected.current.has(source.machineID))) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
       } catch (error) {
         // Keep counts through a transport failure. Explicit denials clear them.
         // Cached work stops animating after either failed read.
