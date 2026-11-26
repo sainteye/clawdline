@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14745,
-  "riskKeys": 6248,
-  "nonRiskCount": 8497,
+  "englishContentKeys": 14751,
+  "riskKeys": 6253,
+  "nonRiskCount": 8498,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 801,
+      "count": 802,
       "sources": [
         null
       ],
@@ -1028,6 +1028,7 @@
         "capacityRow.console.copilot_update_pages.full",
         "capacityRow.console.copilot_update_pages.what",
         "capacityRow.console.direct_history_machines.what",
+        "capacityRow.console.fleet_retry_ceiling_milliseconds.full",
         "capacityRow.console.health_ui_body_bytes.what",
         "capacityRow.console.health_ui_budget_seconds.what",
         "capacityRow.console.health_ui_event_pages.full",
