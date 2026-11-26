@@ -27,8 +27,12 @@ import { moveRosterBot, pinRosterBot, reorderKeys, type RosterState } from "./ro
 import { useRosterState } from "./useRosterState"
 import { RosterHandle, type RosterDrag } from "./RosterHandle"
 import { rosterIcon } from "./roster-icons"
+import { CharterRosterRow } from "./CharterRosterRow"
+import type { CharterSummary } from "./charter-api"
 import "./roster-controls.css"
-export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onUnavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,onSettings}: {
+export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onUnavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,onSettings,charters,selectedCharter,onOpenCharter}: {
+  /** Each Project's charter by projectKey; a Project with one shows it as the section's first row. */
+  charters?:ReadonlyMap<string,CharterSummary>;selectedCharter?:string|null;onOpenCharter?:(summary:CharterSummary)=>void;
   saveRoster?:(item:W.ProjectAssistantBotSummary,edit:W.ProjectAssistantRosterEdit)=>void;
   newSection?:(item:W.ProjectAssistantBotSummary)=>void;
   botActions?:(item:W.ProjectAssistantBotSummary)=>PaMenuItem[];
@@ -204,6 +208,10 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
         const keys = group.items.map(item => item.key)
         return <section className="pa-project-group" key={group.key} aria-label={name} data-roster-project={group.kind==="project"||undefined} {...(!lifted&&targetProps({kind:"project",key:group.key}))}>
           <h2 className="pa-project-heading">{flat ? <span>{name}</span> : <><ProjectMark icon={projectIcons?.get(group.key)} size={12}/><span>{name}</span></>}{several&&!flat&&<small>{named(group.machineID)}</small>}{sorting&&group.kind==="project"&&handle({kind:"project",key:group.key},name,sections.filter(g=>g.kind==="project").map(g=>g.key))}</h2>
+          {group.kind==="project"&&!sorting&&onOpenCharter&&(()=>{
+            const summary=charters?.get(group.key)
+            return summary&&summary.version>0?<div className="pa-roster-entry pa-charter-entry"><CharterRosterRow summary={summary} selected={selectedCharter===group.key} onSelect={()=>{dismissGroup();onOpenCharter(summary)}}/></div>:null
+          })()}
           {group.items.map(item => {
             const key = item.key, project = projectKey(item.machineID,item.projectID), name=item.kind==="bot"?item.item.bot.name:item.entry.group.name
             const pinLabel=item.kind==="bot"?(pinned?w.rosterUnpin:w.rosterPin):(pinned?w.rosterUnpinGroup:w.rosterPinGroup)

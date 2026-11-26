@@ -1,0 +1,82 @@
+/* The team charter page, its roster row and its history panel. Colours are the
+   Bots palette; the diff backgrounds are the transcript diff's (legacy/transcript.css). */
+.project-assistants .pa-charter { --pa-diff-add:rgba(77,139,91,.23);--pa-diff-del:rgba(164,77,65,.24);--pa-diff-hunk:rgba(101,137,188,.10); }
+.project-assistants .pa-charter-main { display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden; }
+.project-assistants .pa-charter-pill { display:inline-flex;align-items:center;gap:8px;max-width:100%;min-height:36px;padding:6px 14px;border:1px solid var(--pa-line);border-radius:18px;background:var(--pa-card);font-size:14px;font-weight:550; }
+.project-assistants .pa-charter-pill>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-charter-pill>svg { flex:none;color:var(--pa-dim); }
+.project-assistants .pa-charter-scroll { flex:1;min-height:0;overflow:auto;padding:18px 24px 24px;display:flex;flex-direction:column;gap:12px; }
+.project-assistants .pa-charter-scroll>* { width:100%;max-width:760px;margin-inline:auto;box-sizing:border-box; }
+.project-assistants .pa-charter-status { display:flex;align-items:center;gap:12px;justify-content:space-between; }
+.project-assistants .pa-charter-status p { margin:0;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-charter-status .pa-pill,.project-assistants .pa-charter-actions button,.project-assistants .pa-charter-editor-bar button { min-height:44px; }
+.project-assistants .pa-charter-history-open { flex:none; }
+.project-assistants .pa-charter-notice { margin:0;padding:10px 14px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-card);font-size:13px; }
+.project-assistants .pa-charter-notice[data-tone="error"] { color:#e8a39b; }
+.project-assistants .pa-charter-loading,.project-assistants .pa-charter-problem { color:var(--pa-dim); }
+.project-assistants .pa-charter-section,.project-assistants .pa-charter-proposal,.project-assistants .pa-charter-editor { position:relative;padding:14px 60px 14px 18px;border:1px solid var(--pa-line);border-radius:14px;background:var(--pa-card); }
+.project-assistants .pa-charter-section[data-proposed] { background:linear-gradient(var(--pa-diff-hunk),var(--pa-diff-hunk)),var(--pa-card); }
+.project-assistants .pa-charter-section .pa-markdown>:first-child { margin-top:0; }
+.project-assistants .pa-charter-section .pa-markdown>:last-child { margin-bottom:0; }
+.project-assistants .pa-charter-section .pa-markdown h2 { font-size:15px;margin:0 0 8px; }
+.project-assistants .pa-charter-edit { position:absolute;top:8px;right:8px;display:grid;place-items:center;min-width:44px;height:44px;padding:0 10px;border-color:transparent;background:transparent;color:var(--pa-dim); }
+.project-assistants .pa-charter-edit:hover:not(:disabled),.project-assistants .pa-charter-edit:focus-visible { color:#fafafa;border-color:var(--pa-line); }
+.project-assistants .pa-charter-editor { padding:14px 18px; }
+.project-assistants .pa-charter-editor textarea { display:block;width:100%;box-sizing:border-box;min-height:120px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:10px;background:var(--pa-bg);color:inherit;font:inherit;line-height:1.6;resize:vertical; }
+.project-assistants .pa-charter-hint { margin:8px 0 0;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-charter-after { margin-top:12px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:10px;font-size:13px; }
+.project-assistants .pa-charter-after strong { display:block;font-size:12px;color:var(--pa-dim);font-weight:550; }
+.project-assistants .pa-charter-after p { margin:4px 0 0; }
+.project-assistants .pa-charter-actions { display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:12px; }
+.project-assistants .pa-charter-primary { background:#fafafa;color:#080808;border-color:#fafafa;font-weight:550; }
+.project-assistants .pa-charter-primary:disabled { opacity:.5; }
+.project-assistants .pa-charter-proposal { padding:14px 18px;border-color:#4a4a50; }
+.project-assistants .pa-charter-proposal p { margin:0 0 8px; }
+.project-assistants .pa-charter-proposal-why { font-size:14px; }
+.project-assistants .pa-charter-proposal-stale { color:#e8a39b;font-size:13px; }
+.project-assistants .pa-charter-diff { margin:8px 0;border:1px solid var(--pa-line);border-radius:10px;overflow:hidden;font-size:13px;line-height:1.6; }
+.project-assistants .pa-charter-diff-line { display:grid;grid-template-columns:22px minmax(0,1fr);padding:1px 10px 1px 4px;white-space:pre-wrap;overflow-wrap:anywhere; }
+.project-assistants .pa-charter-diff-line[data-kind="removed"] { background:var(--pa-diff-del);color:#db8578; }
+.project-assistants .pa-charter-diff-line[data-kind="added"] { background:var(--pa-diff-add);color:#86c997; }
+.project-assistants .pa-charter-diff-line[data-kind="same"] { color:var(--pa-dim); }
+.project-assistants .pa-charter-diff-mark { text-align:center;user-select:none; }
+.project-assistants .pa-charter-request { flex:none;padding:10px 24px max(14px,env(safe-area-inset-bottom,0px)); }
+.project-assistants .pa-charter-request>* { max-width:760px;margin-inline:auto; }
+.project-assistants .pa-charter-request textarea { flex:1;min-width:0;min-height:36px;max-height:30dvh;padding:6px 8px;border:0;background:transparent;color:inherit;font:inherit;line-height:24px;resize:none; }
+.project-assistants .pa-charter-retouch { display:flex;align-items:center;gap:8px;justify-content:space-between;margin:0 auto 6px;color:var(--pa-dim);font-size:12px; }
+.project-assistants .pa-charter-retouch button { min-width:44px;min-height:44px;padding:0;border-color:transparent;background:transparent;color:var(--pa-dim); }
+.project-assistants .pa-charter-history-body { display:flex;flex-direction:column;gap:14px; }
+.project-assistants .pa-charter-history-head { display:flex;align-items:center;justify-content:space-between; }
+.project-assistants .pa-charter-history-head h3 { margin:0;font-size:16px; }
+.project-assistants .pa-charter-history-close { width:44px;height:44px; }
+.project-assistants .pa-charter-versions { list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px; }
+.project-assistants .pa-charter-versions button { display:flex;flex-direction:column;gap:2px;width:100%;min-height:44px;text-align:left;border-radius:12px;padding:8px 12px; }
+.project-assistants .pa-charter-versions button[aria-pressed="true"] { border-color:#fafafa; }
+.project-assistants .pa-charter-versions span { font-size:13px; }
+.project-assistants .pa-charter-current { margin-left:8px; }
+.project-assistants .pa-charter-history-diff h4 { margin:0 0 4px;font-size:13px;color:var(--pa-dim);font-weight:550; }
+.project-assistants .pa-charter-history-diff>button { width:100%;min-height:44px;margin-top:8px; }
+/* The roster row. */
+.project-assistants .pa-charter-row .pa-charter-mark { display:grid;place-items:center;flex:none;width:44px;height:44px;border-radius:50%;border:1px solid var(--pa-line);background:var(--pa-card);color:#fafafa; }
+.project-assistants .pa-charter-row[aria-current] { background:#1b1b1e; }
+/* The settings tab. */
+.project-assistants .pa-bs-charters { list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px; }
+.project-assistants .pa-bs-charters li { display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:12px; }
+.project-assistants .pa-bs-charters li>div { flex:1;min-width:0;display:flex;flex-direction:column; }
+.project-assistants .pa-bs-charters li strong { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-bs-charters li button { flex:none;min-height:44px; }
+@media (pointer:coarse) { .project-assistants .pa-charter-request .pa-send { width:44px;height:44px;min-width:44px; } }
+@media(max-width:700px) {
+  .project-assistants .pa-charter-scroll { padding:12px 16px 20px; }
+  .project-assistants .pa-charter-request { padding-inline:16px; }
+  .project-assistants .pa-charter-section { padding:12px 64px 12px 14px; }
+  .project-assistants .pa-charter-edit { font-size:14px;color:#fafafa;border-color:var(--pa-line); }
+  .project-assistants .pa-charter-status { flex-wrap:wrap; }
+  .project-assistants .pa-charter-pill { font-size:13px; }
+  /* The section edit fills the screen, with Cancel and Save in its top bar. */
+  .project-assistants .pa-charter-editor-full { position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;border:0;border-radius:0;padding:0;background:var(--pa-bg); }
+  .project-assistants .pa-charter-editor-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:max(8px,env(safe-area-inset-top)) 12px 8px;border-bottom:1px solid var(--pa-line); }
+  .project-assistants .pa-charter-editor-bar strong { flex:1;text-align:center;font-size:15px; }
+  .project-assistants .pa-charter-editor-full .pa-charter-editor-body { flex:1;min-height:0;overflow:auto;padding:14px 16px max(16px,env(safe-area-inset-bottom,0px)); }
+  .project-assistants .pa-charter-editor-full textarea { min-height:40dvh;font-size:16px; }
+}
