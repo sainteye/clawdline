@@ -44,7 +44,7 @@ Nine machine-named words carry a Project's team charter (`docs/bots.md`, "Team c
 `/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
 `project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
 local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
-The console carry table marks them deferred until the charter page sends them.
+The console carries all nine: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
 
 | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- |

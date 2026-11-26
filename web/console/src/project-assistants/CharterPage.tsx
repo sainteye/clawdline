@@ -127,9 +127,13 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
     } catch (error) { if (!life.current.signal.aborted) setNotice({ text: charterProblem(error), tone: "error" }) }
     finally { if (!life.current.signal.aborted) setBusy(false) }
   }
-  const startRetouch = (item: CharterProposal) => {
-    setRetouch(item.id)
-    requestAnimationFrame(() => composer.current?.focus())
+  const startRetouch = (item: CharterProposal) => setRetouch(item.id)
+  useEffect(() => { if (retouch) composer.current?.focus() }, [retouch])
+  // Who is working changes by the minute; the after-save box reads it as the edit opens.
+  const startEdit = (index: number, text: string) => {
+    setEditing({ index, draft: text.replace(/\n+$/, "") })
+    const signal = life.current.signal
+    api.readers(project, signal).then(answer => { if (!signal.aborted) setReaders(shownReaders(answer)) }, () => {})
   }
   const closeHistory = () => { setHistoryOpen(false); requestAnimationFrame(() => historyButton.current?.focus({ preventScroll: true })) }
 
@@ -159,7 +163,7 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
             : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
               <BotMessageMarkdown text={section.text} w={w}/>
               <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
-                onClick={() => setEditing({ index, draft: section.text.replace(/\n+$/, "") })}>
+                onClick={() => startEdit(index, section.text)}>
                 {narrow ? <span>{charterWord("editShort")}</span> : <PencilIcon/>}
               </button>
             </article>)}

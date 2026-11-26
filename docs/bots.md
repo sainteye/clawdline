@@ -137,8 +137,15 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   `PUT …/charter` saves; `POST …/restore`; `GET …/readers`; `GET …/proposals`;
   `POST …/proposal-apply`; `POST …/proposal-dismiss`; `POST …/change-request` sends your words to
   the lead. The contract is `api/v1/project-assistant-charters.schema.json`. The same operations
-  cross Cloud as the `project-assistants.charter*` words, so a phone can read and edit; the
-  console marks them deferred until its charter page sends them.
+  cross Cloud as the `project-assistants.charter*` words, so a phone can read and edit.
+- **In the console.** A Project with a charter shows a 團隊章程 row first in its roster section;
+  it opens the charter where a chat would be, one card per `## ` section with a pencil to edit
+  that section (saved as the whole document with `expected_version`), the lead's pending
+  proposal as a red/green line diff with Apply, Dismiss and Revise, a 版本紀錄 side panel with
+  each version's diff and a restore, and a composer that sends a change request. Bots settings
+  has a 團隊章程 tab listing each Project and creating a first version from a five-heading
+  template. Every call goes through `web/console/src/project-assistants/charter-api.ts`; the
+  fixture-backed browser check is `charter.e2e.mjs` (`PLAYWRIGHT_MODULE`, `CHARTER_ARTIFACTS`).
 - **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
   Bot's own record, keyed by machine and Project. They were added without a schema version bump,
   like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops

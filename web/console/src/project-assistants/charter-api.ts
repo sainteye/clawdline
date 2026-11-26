@@ -18,6 +18,8 @@ export interface CharterSummary {
   /** Visible Bots of the Project, and how many worked under the current version last. */
   bots: number
   readers_current: number
+  /** The visible Bots' names, for the template's first section. */
+  names: string[]
 }
 
 export type CharterRefusalCode = "version_conflict" | "too_large" | "not_found" | "unknown"
@@ -119,17 +121,18 @@ export const charterProjectKey = (project: CharterProject) => JSON.stringify([pr
 /** Visible readers only: a hidden Bot is never named on the page. */
 export const shownReaders = (answer: W.ProjectAssistantCharterReadersResponse) => answer.readers.filter(reader => !reader.hidden)
 
-/** The listing with each chartered Project's reader count, for the roster. */
+/** Every Project of the listing, with or without a charter (version 0), with its Bots. */
 export async function charterSummaries(api: CharterApi, machineID: string, signal: AbortSignal): Promise<CharterSummary[]> {
   const listing = await api.list(signal)
-  return Promise.all(listing.charters.filter(row => row.version > 0).map(async row => {
+  const rows = [...listing.charters, ...listing.projects_without_charter.map(project_id => ({ project_id, version: 0, pending_proposals: 0 }))]
+  return Promise.all(rows.map(async row => {
     const project = { machine_id: machineID, project_id: row.project_id }
-    let bots = 0, current = 0
+    let names: string[] = [], current = 0
     try {
       const readers = shownReaders(await api.readers(project, signal))
-      bots = readers.length
+      names = readers.map(reader => reader.name)
       current = readers.filter(reader => reader.version === row.version).length
     } catch (error) { if ((error as { name?: unknown } | null)?.name === "AbortError") throw error }
-    return { project, version: row.version, pending_proposals: row.pending_proposals, bots, readers_current: current }
+    return { project, version: row.version, pending_proposals: row.pending_proposals, bots: names.length, readers_current: current, names }
   }))
 }

@@ -361,18 +361,11 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
     if(manageHistory&&history.state?.paView===historyID.current&&history.state?.paCharter){history.back();return}
     setCharterOpen(null)
   }
-  const charterRows=():CharterSettingsRow[]=>{
-    const rows=new Map<string,CharterSettingsRow>()
-    for(const item of allItems){
-      if(item.bot.hidden||item.bot.project.kind==="personal")continue
-      const project={machine_id:item.bot.key.machine_id,project_id:item.bot.project.project_id},key=charterProjectKey(project)
-      if(!charterApiFor(sources.find(s=>s.machineID===project.machine_id)))continue
-      const row=rows.get(key)??{project,name:projectNames.get(key)||w.unnamedProject,bots:[],summary:charters.get(key)}
-      row.bots.push(item.bot.name)
-      rows.set(key,row)
-    }
-    return [...rows.values()].sort((a,b)=>a.name.localeCompare(b.name,language))
-  }
+  // Rows come from each machine's listing, which names every Project with Bots.
+  const charterRows=():CharterSettingsRow[]=>[...charters.values()].map(summary=>{
+    const key=charterProjectKey(summary.project)
+    return {project:summary.project,name:projectNames.get(key)||w.unnamedProject,bots:summary.names,summary}
+  }).sort((a,b)=>a.name.localeCompare(b.name,language))
   const createCharter=async(row:CharterSettingsRow)=>{
     const source=sources.find(s=>s.machineID===row.project.machine_id),api=charterApiFor(source)
     if(!source||!api)throw new CharterRefusal("unknown")
