@@ -408,6 +408,11 @@ The same change adds `BotDecisionItems`, a settings-file read, to
 instruction-injection setting; both language explanations of the browser entry
 remain accurate. Only that entry's source line and receipt move.
 
+Settings → Workflow then makes `bot_decision_items` a settable boolean in
+`nextconfig.go`. It is not a browser or instruction-injection setting; both
+language explanations of the browser entry remain accurate, and only that
+entry's source line and receipt move again.
+
 
 Doctor adds a fixed local CLI version probe and a sanitized support report read.
 It does not prepare provider context, run a model prompt or change instruction

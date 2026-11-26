@@ -2442,7 +2442,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 678
+          "line": 680
         }
       ],
       "original": [],
@@ -5773,7 +5773,7 @@
     "internal/adapters/memory/memory.go": "236f15e80e79d72f060ac487ed74f57fc25c775897028fd4c775fa2164346c46",
     "internal/adapters/nextconfig/browser_mode.go": "042c8a8abfebcfc6537d2720023443e98a2088032502bb119d4e5e5988f3e90e",
     "internal/adapters/nextconfig/browser_policy.go": "62039a6f023460a6ffa71ee7ee1d548694c8fa74e7327e4971c7ea2eab0ff77c",
-    "internal/adapters/nextconfig/nextconfig.go": "894d747d4f7ca47171f9b4c1a7516f0869036cc3c7b1cf83780cb07ab6fe5c83",
+    "internal/adapters/nextconfig/nextconfig.go": "dc91a9416e813e85c90c06b4a8d1f1e8529f6d8ac1d39ff3c59d514abaf30610",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
