@@ -14734,5 +14734,16 @@
   "teamCharter.templateStarter2": "From request to done, in a few steps.",
   "teamCharter.templateStarter3": "Decisions a Bot must not make alone.",
   "teamCharter.templateStarter4": "When to ask another Bot, and how.",
-  "teamCharter.templateStarter5": "What a handoff card must say."
+  "teamCharter.templateStarter5": "What a handoff card must say.",
+  "teamCharter.titleText": "Title of section {arg0}",
+  "teamCharter.waiting": "The lead is writing a proposal. It will appear here as soon as it is ready.",
+  "teamCharter.waitingSlow": "The lead has not proposed a change yet. Its chat shows what it answered.",
+  "teamCharter.proposalsUnavailable": "The lead's proposals could not be read just now. This page tries again shortly.",
+  "teamCharter.remove": "Remove charter",
+  "teamCharter.removeConfirmTitle": "Remove the team charter of {arg0}?",
+  "teamCharter.removeConfirmBody": "Every Bot of this Project will be told in its next message that there is no team charter, and new conversations will start without one. Pending proposals are dropped. The version history stays, and you can create a charter again later.",
+  "teamCharter.removeConfirm": "Remove",
+  "teamCharter.author_removed": "You (removed)",
+  "teamCharter.reasonRemoved": "Removed the charter",
+  "teamCharter.personalWorkspaceOf": "{arg0}'s own workspace"
 }

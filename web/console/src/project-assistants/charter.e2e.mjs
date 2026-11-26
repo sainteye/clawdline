@@ -6,6 +6,10 @@
 // so while keeping the edit; a change request's proposal is shown as a diff and
 // applied or dismissed; the history panel restores an old version as a new one;
 // the settings tab creates a charter from the five-heading template.
+// A section's title is its own field, so clearing the body keeps the heading;
+// the page cannot be scrolled under the roster; a proposal the lead records
+// seconds later appears without a reload, also in a background tab, and
+// opening the charter again rereads it; 移除章程 asks once and removes it.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> CHARTER_ARTIFACTS=<dir> node charter.e2e.mjs
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
@@ -81,9 +85,9 @@ async function rosterAndEdit(page,name,narrow){
   await page.getByRole("button",{name:"編輯第 3 段"}).click()
   const area=page.getByRole("textbox",{name:"第 3 段內容"})
   await area.waitFor()
-  const value=await area.inputValue()
-  check(`${name} editor holds the section text`,()=>assert.equal(value,"## 什麼要問你\n\n部署前先問。"))
-  await area.fill("## 什麼要問你\n\n部署和刪除前先問。")
+  const value=await area.inputValue(),title=await page.getByRole("textbox",{name:"第 3 段標題"}).inputValue()
+  check(`${name} editor holds the section body, its title apart`,()=>{assert.equal(value,"部署前先問。");assert.equal(title,"什麼要問你")})
+  await area.fill("部署和刪除前先問。")
   const editor=page.locator(".pa-charter-editor")
   await editor.getByText("正在做事").waitFor()
   const after=await editor.innerText()
@@ -107,14 +111,14 @@ async function rosterAndEdit(page,name,narrow){
   // A stale save: another device saved meanwhile.
   await page.getByRole("button",{name:"編輯第 5 段"}).click()
   const five=page.getByRole("textbox",{name:"第 5 段內容"})
-  await five.fill("## 交辦卡\n\n寫清楚目標、驗收方式和截止時間。")
+  await five.fill("寫清楚目標、驗收方式和截止時間。")
   await fixture(page,()=>window.charterFixture.studio.saveElsewhere("project",window.charterFixture.studio.text("project").replace("用交辦卡","一律用交辦卡")))
   if(narrow)await page.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
   else await page.getByRole("button",{name:"儲存為第 5 版"}).click()
   await page.getByText("你編輯時有人存了第 5 版").waitFor()
   await shot(page,`conflict-${name}`)
   const kept=await five.inputValue()
-  check(`${name} conflict keeps the edit`,()=>assert.equal(kept,"## 交辦卡\n\n寫清楚目標、驗收方式和截止時間。"))
+  check(`${name} conflict keeps the edit`,()=>assert.equal(kept,"寫清楚目標、驗收方式和截止時間。"))
   const pill5=await page.locator(".pa-charter-pill").innerText()
   check(`${name} conflict reread the charter`,()=>assert.match(pill5,/第 5 版/))
   if(narrow)await page.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
@@ -165,6 +169,98 @@ async function proposals(page,name,narrow){
   const left=await page.locator(".pa-charter-proposal").count(),version=await fixture(page,()=>window.charterFixture.studio.version("project"))
   check(`${name} dismissed leaves the charter`,()=>{assert.equal(left,0);assert.equal(version,4)})
   void narrow
+}
+
+// The roster column's left edge, and where the page's header pill starts.
+const edges=page=>page.evaluate(()=>({scroll:document.querySelector(".pa-charter")?.scrollLeft,pill:document.querySelector(".pa-charter-pill")?.getBoundingClientRect().left,main:document.querySelector(".pa-main")?.getBoundingClientRect().left}))
+async function headingsAndLayout(page,name,narrow){
+  await open(page)
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  // A focus or scrollIntoView toward the right edge once slid the page under the roster.
+  const reach=()=>page.evaluate(()=>{for(const b of [...document.querySelectorAll(".pa-charter button")].reverse())b.scrollIntoView({inline:"center",block:"nearest"})})
+  await reach()
+  const opened=await edges(page)
+  check(`${name} opened page stays beside the roster`,()=>{assert.equal(opened.scroll,0);assert.ok(opened.pill>=opened.main,JSON.stringify(opened))})
+  await page.getByRole("button",{name:"編輯第 2 段"}).click()
+  const body=page.getByRole("textbox",{name:"第 2 段內容"})
+  await body.fill("")
+  await body.fill("先開卡，派工前先確認範圍。")
+  if(narrow)await page.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
+  else{await reach();await page.getByRole("button",{name:"儲存為第 4 版"}).click()}
+  await page.getByText("已存成第 4 版。").waitFor()
+  await reach()
+  const saved=await edges(page)
+  check(`${name} saved page stays beside the roster`,()=>{assert.equal(saved.scroll,0);assert.ok(saved.pill>=saved.main,JSON.stringify(saved))})
+  await shot(page,`layout-${name}`)
+  const text=await fixture(page,()=>window.charterFixture.studio.text("project"))
+  check(`${name} clearing a body keeps its heading`,()=>assert.match(text,/## 一件事怎麼走\n\n先開卡，派工前先確認範圍。\n\n## 什麼要問你/))
+  // A new title renames the section; an empty one keeps it.
+  await page.getByRole("button",{name:"編輯第 3 段"}).click()
+  await page.getByRole("textbox",{name:"第 3 段標題"}).fill("")
+  await page.getByRole("textbox",{name:"第 3 段內容"}).fill("部署前一定要問。")
+  if(narrow)await page.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
+  else await page.getByRole("button",{name:"儲存為第 5 版"}).click()
+  await page.getByText("已存成第 5 版。").waitFor()
+  const kept=await fixture(page,()=>window.charterFixture.studio.text("project"))
+  check(`${name} an empty title keeps the heading`,()=>assert.match(kept,/## 什麼要問你\n\n部署前一定要問。/))
+}
+
+// The lead records its proposal seconds after the request, as on a real machine.
+async function lateProposal(page,name){
+  await open(page)
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  await fixture(page,()=>window.charterFixture.studio.holdProposals(true))
+  const composer=page.getByRole("textbox",{name:"要求修改章程"})
+  await composer.fill("交辦卡要寫截止時間")
+  await composer.press("Enter")
+  await page.getByText("主助理正在寫提案，好了會馬上出現在這裡。").waitFor()
+  const before=await page.locator(".pa-charter-proposal").count()
+  check(`${name} nothing to show yet`,()=>assert.equal(before,0))
+  // The person switched to another tab meanwhile.
+  await page.evaluate(()=>{Object.defineProperty(document,"visibilityState",{configurable:true,get:()=>"hidden"});document.dispatchEvent(new Event("visibilitychange"))})
+  await page.waitForTimeout(700)
+  await fixture(page,()=>window.charterFixture.studio.releaseProposal("project"))
+  const started=Date.now()
+  await page.locator(".pa-charter-proposal").waitFor({timeout:3500})
+  check(`${name} the late proposal appears within one fast read`,()=>assert.ok(Date.now()-started<3500))
+  const waiting=await page.getByText("主助理正在寫提案").count()
+  check(`${name} waiting line gone once the card is shown`,()=>assert.equal(waiting,0))
+  await shot(page,`late-proposal-${name}`)
+  await page.getByRole("button",{name:"不要",exact:true}).click()
+  await page.getByText("已略過這個提案，章程沒變。").waitFor()
+  // Back in the tab; a proposal recorded meanwhile shows when the charter is opened again.
+  await page.evaluate(()=>{delete document.visibilityState})
+  await fixture(page,()=>{window.charterFixture.studio.holdProposals(false);window.charterFixture.studio.propose("project","部署前先問。","部署和花錢前先問。","什麼要問你加上花錢")})
+  const reopened=Date.now()
+  if(await page.locator(".pa-charter-row").isVisible())await page.locator(".pa-charter-row").click()
+  else{await page.locator(".pa-chat-back").click();await page.locator(".pa-charter-row").click()}
+  await page.locator(".pa-charter-proposal").waitFor({timeout:3000})
+  check(`${name} opening the charter again rereads it`,()=>assert.ok(Date.now()-reopened<3000))
+}
+
+async function removal(page,name){
+  await open(page)
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  await page.getByRole("button",{name:"移除章程"}).click()
+  const confirm=page.getByRole("group",{name:"移除章程"})
+  await confirm.waitFor()
+  const words=await confirm.innerText()
+  check(`${name} removal asks once and says what every Bot hears`,()=>{assert.match(words,/要移除「Clawdline」的團隊章程嗎？/);assert.match(words,/每位 Bot 下一則訊息會收到「已沒有團隊章程」/);assert.match(words,/版本紀錄會保留/)})
+  await shot(page,`remove-confirm-${name}`)
+  const small=await smallTargets(page,".pa-charter-remove-confirm")
+  check(`${name} removal touch targets`,()=>assert.deepEqual(small,[]))
+  await confirm.getByRole("button",{name:"移除",exact:true}).click()
+  await page.locator(".pa-charter").waitFor({state:"detached"})
+  const state=await fixture(page,()=>({version:window.charterFixture.studio.version("project"),body:window.charterFixture.studio.log.filter(r=>r.path.endsWith("/remove")).map(r=>r.body)}))
+  check(`${name} removed at the version read`,()=>{assert.equal(state.version,0);assert.equal(state.body.length,1);assert.equal(state.body[0].expected_version,3)})
+  if(name==="390")await page.locator(".pa-bot-row").first().waitFor()
+  await page.waitForTimeout(300)
+  const rows=await page.locator(".pa-charter-row").count()
+  check(`${name} roster row gone after removal`,()=>assert.equal(rows,0))
+  await shot(page,`removed-${name}`)
 }
 
 async function history(page,name){
@@ -227,7 +323,7 @@ async function settings(page,name){
 try{
   for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}]]){
     const narrow=name==="390"
-    for(const run of [rosterAndEdit,proposals,history,settings]){
+    for(const run of [rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings]){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)
       const errors=[];page.on("pageerror",e=>errors.push(e.message))

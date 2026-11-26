@@ -1,6 +1,7 @@
 // The one place the console reads and writes a Project's team charter.
 //
-// Every call is one route under /v1/project-assistant-charters (API 122), sent
+// Every call is one route under /v1/project-assistant-charters (API 122; removal
+// API 123), sent
 // through the machine's captured source: locally over HTTP, from the phone as
 // the project-assistants.charter* Cloud words. The screens see the generated
 // contract shapes and a typed refusal, never a transport.
@@ -63,6 +64,8 @@ export interface CharterApi {
   read(project: CharterProject, version: number, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   save(project: CharterProject, request: { expected_version: number; text: string; reason: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   restore(project: CharterProject, request: { expected_version: number; version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
+  /** Takes the charter away at the version read; undefined on a machine older than API 123. */
+  remove?(project: CharterProject, request: { expected_version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   readers(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterReadersResponse>
   proposals(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterProposalsResponse>
   applyProposal(project: CharterProject, id: string, request: { expected_version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
@@ -78,7 +81,7 @@ const query = (fields: Record<string, string | number>) => "?" + new URLSearchPa
 const newKey = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)
 
 /** The routes, built over any sender with the source's request semantics. */
-export function charterRoutes(machineID: string, send: Send): CharterApi {
+export function charterRoutes(machineID: string, send: Send, options: { remove?: boolean } = {}): CharterApi {
   const call = async <T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal) => {
     try { return await send<T>(path, method, body, signal) } catch (error) { throw charterRefusal(error) }
   }
@@ -93,6 +96,7 @@ export function charterRoutes(machineID: string, send: Send): CharterApi {
     // Over Cloud a save always names its reason, so it is always sent.
     save: (project, request, signal) => call(chartersPath + "/charter", "PUT", write<W.ProjectAssistantCharterSaveRequest>(project, { expected_version: request.expected_version, text: request.text, reason: request.reason }), signal),
     restore: (project, request, signal) => call(chartersPath + "/restore", "POST", write<W.ProjectAssistantCharterRestoreRequest>(project, { expected_version: request.expected_version, version: request.version }), signal),
+    ...(options.remove ? { remove: (project: CharterProject, request: { expected_version: number }, signal: AbortSignal) => call<W.ProjectAssistantCharterResponse>(chartersPath + "/remove", "POST", write<W.ProjectAssistantCharterRemoveRequest>(project, { expected_version: request.expected_version }), signal) } : {}),
     readers: (project, signal) => call(chartersPath + "/readers" + query(own(project)), "GET", undefined, signal),
     proposals: (project, signal) => call(chartersPath + "/proposals" + query(own(project)), "GET", undefined, signal),
     applyProposal: (project, id, request, signal) => call(chartersPath + "/proposal-apply", "POST", write<W.ProjectAssistantCharterApplyRequest>(project, { proposal_id: id, expected_version: request.expected_version }), signal),
@@ -109,7 +113,7 @@ export function charterApiFor(source: SourceClient | undefined): CharterApi | un
   // One client per source object, so a screen holding it does not reread on every render.
   let api = clients.get(source)
   if (!api) {
-    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal))
+    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal), { remove: source.canRemoveCharter?.() === true })
     clients.set(source, api)
   }
   return api
@@ -135,4 +139,10 @@ export async function charterSummaries(api: CharterApi, machineID: string, signa
     } catch (error) { if ((error as { name?: unknown } | null)?.name === "AbortError") throw error }
     return { project, version: row.version, pending_proposals: row.pending_proposals, bots: names.length, readers_current: current, names }
   }))
+}
+
+/** Each personal workspace's Bot name, keyed as charterProjectKey keys its Project. */
+export function personalWorkspaceNames(items: readonly { bot: Pick<W.ProjectAssistantBot, "key" | "name" | "project"> }[]): ReadonlyMap<string, string> {
+  return new Map(items.filter(item => item.bot.project.kind === "personal")
+    .map(item => [charterProjectKey({ machine_id: item.bot.key.machine_id, project_id: item.bot.project.project_id }), item.bot.name]))
 }

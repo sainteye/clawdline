@@ -148,9 +148,13 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   cross Cloud as the `project-assistants.charter*` words, so a phone can read and edit.
 - **In the console.** A Project with a charter shows a 團隊章程 row first in its roster section;
   it opens the charter where a chat would be, one card per `## ` section with a pencil to edit
-  that section (saved as the whole document with `expected_version`), the lead's pending
+  that section (its title and body as separate fields, so clearing the body never drops the
+  heading; saved as the whole document with `expected_version`), the lead's pending
   proposal as a red/green line diff with Apply, Dismiss and Revise, a 版本紀錄 side panel with
-  each version's diff and a restore, and a composer that sends a change request. Bots settings
+  each version's diff and a restore, and a composer that sends a change request.
+  The page rereads every ten seconds while visible, at once when the tab becomes visible or the
+  charter is opened again, and every two seconds for two minutes after a change request, so the
+  lead's proposal appears without a reload even in a background tab. Bots settings
   has a 團隊章程 tab listing each Project and creating a first version from a five-heading
   template. Every call goes through `web/console/src/project-assistants/charter-api.ts`; the
   fixture-backed browser check is `charter.e2e.mjs` (`PLAYWRIGHT_MODULE`, `CHARTER_ARTIFACTS`).

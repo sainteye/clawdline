@@ -5372,7 +5372,7 @@
       "sources": [
         {
           "path": "internal/domain/projectassistant/charter.go",
-          "line": 92
+          "line": 97
         },
         {
           "path": "internal/app/projectassistant/attempt.go",
@@ -5928,7 +5928,7 @@
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/projectassistant/actor.go": "e443e8744125f68b7336b9a8714ddf1f022e4bac16f60f0ea11143cb9cc8741f",
-    "internal/domain/projectassistant/charter.go": "13382b245d4d5eb705ef9922b20b95014e3671c2d8c71844347f3964870c9a41",
+    "internal/domain/projectassistant/charter.go": "164e25bf6effc68362b00cb6391666ba72c07051f6542ed7bb5cb1ecddd07e87",
     "internal/domain/projectassistant/fallback.go": "449dbb46ffed4853b36ac3eff990fdffd29c8386fa19c93947754bd543025533",
     "internal/domain/projectassistant/inputs.go": "9032c9e7682053935f7f8ea612e04e61af0869b79ad895b29af5b77479582633",
     "internal/domain/projectassistant/memory_notes.go": "728ee7db6202d38df7ec9d4cf2c0c7b4ef595e04d00140e9746eefbe4ac70321",
@@ -6002,7 +6002,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "74c6e084d0996078e6139ae2c1df5fa26a8f9aefab86920c391c516d02a0d0c8",
+    "web/console/src/cloud/project-assistants.ts": "611aed0539d59b4a8d5cbb793ae77cc5b6f721c4586c33ee0a3b2583416cba19",
     "web/console/src/cloud/relay-writer.ts": "c28dc4eca6842ead01330894a70a31c890076a5a8dbbac53682f9d824e334e03",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",

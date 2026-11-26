@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { changedCharterSections, charterLineDiff, charterSections, charterTemplate, replaceCharterSection, shownCharterSection } from "./charter-text.ts"
+import { changedCharterSections, charterLineDiff, charterSections, charterTemplate, replaceCharterSection, sectionFromParts, sectionParts, shownCharterSection } from "./charter-text.ts"
 
 const doc = "Intro line\n\n## Who does what\n\n- Orbit: reviews\n\n## Asking you\n\nAsk before deploying.\n"
 
@@ -39,4 +39,19 @@ test("only the sections a change touches are reported, paired by heading", () =>
 test("the template lists the Project's Bots under the first heading", () => {
   const text = charterTemplate(["Who", "How"], ["", "Steps."], ["Orbit", "Beacon"], ": ")
   assert.equal(text, "## Who\n\n- Orbit: \n- Beacon: \n\n## How\n\nSteps.\n")
+})
+
+test("the editor edits a section's body apart from its title, and clearing the body keeps the heading", () => {
+  const [intro, who] = charterSections(doc)
+  assert.deepEqual(sectionParts(who), { title: "Who does what", body: "- Orbit: reviews" })
+  assert.deepEqual(sectionParts(intro), { title: "", body: "Intro line" })
+  // Clearing the body to rewrite it keeps "## Who does what".
+  assert.equal(replaceCharterSection(doc, 1, sectionFromParts(who, "Who does what", "")), "Intro line\n\n## Who does what\n\n## Asking you\n\nAsk before deploying.\n")
+  // An empty title keeps the old heading; a new one renames it on one line.
+  assert.equal(sectionFromParts(who, "  ", "New body"), "## Who does what\n\nNew body")
+  assert.equal(sectionFromParts(who, "Roles\nand owners", "x"), "## Roles and owners\n\nx")
+  assert.equal(sectionFromParts(intro, "ignored", "\nNew intro\n"), "New intro")
+  // An unchanged title and body give back the same document.
+  const parts = sectionParts(who)
+  assert.equal(replaceCharterSection(doc, 1, sectionFromParts(who, parts.title, parts.body)), doc)
 })

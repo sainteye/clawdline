@@ -28,6 +28,26 @@ export function replaceCharterSection(text: string, index: number, replacement: 
 
 const trailing = (text: string) => text.match(/\n*$/)?.[0] ?? ""
 
+/** One section as the editor shows it: its "## " title apart from its body. */
+export function sectionParts(section: CharterSection): { title: string; body: string } {
+  if (!section.heading && !headingLine.test(section.text)) return { title: "", body: section.text.replace(/\n+$/, "") }
+  const [, ...rest] = section.text.split("\n")
+  return { title: section.heading, body: rest.join("\n").replace(/^\n+/, "").replace(/\n+$/, "") }
+}
+
+/**
+ * The section text from an edited title and body. A section that had a
+ * heading keeps one: an empty title keeps the old heading, so clearing the
+ * body never drops it. The text before the first heading has no title.
+ */
+export function sectionFromParts(section: CharterSection, title: string, body: string): string {
+  const hadHeading = !!section.heading || headingLine.test(section.text)
+  const text = body.replace(/^\n+/, "").replace(/\n+$/, "")
+  if (!hadHeading) return text
+  const heading = title.replace(/[\r\n]+/g, " ").trim() || section.heading
+  return text ? `## ${heading}\n\n${text}` : `## ${heading}`
+}
+
 export type DiffLine = { kind: "same" | "removed" | "added"; text: string }
 
 /** A line diff by longest common subsequence. */

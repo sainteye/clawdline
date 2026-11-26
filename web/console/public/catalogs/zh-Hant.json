@@ -14734,5 +14734,16 @@
   "teamCharter.templateStarter2": "從收到要求到完成，分幾步寫。",
   "teamCharter.templateStarter3": "哪些決定 Bot 不能自己做。",
   "teamCharter.templateStarter4": "什麼時候找另一位 Bot、怎麼找。",
-  "teamCharter.templateStarter5": "交辦卡上一定要寫的內容。"
+  "teamCharter.templateStarter5": "交辦卡上一定要寫的內容。",
+  "teamCharter.titleText": "第 {arg0} 段標題",
+  "teamCharter.waiting": "主助理正在寫提案，好了會馬上出現在這裡。",
+  "teamCharter.waitingSlow": "主助理還沒有提出修改。可以到主助理的對話看它怎麼回。",
+  "teamCharter.proposalsUnavailable": "主助理的提案暫時讀不到，這頁稍後會再試。",
+  "teamCharter.remove": "移除章程",
+  "teamCharter.removeConfirmTitle": "要移除「{arg0}」的團隊章程嗎？",
+  "teamCharter.removeConfirmBody": "移除後，這個 Project 的每位 Bot 下一則訊息會收到「已沒有團隊章程」，新的對話也不再帶章程；還沒處理的提案會一併拿掉。版本紀錄會保留，之後可以重新建立。",
+  "teamCharter.removeConfirm": "移除",
+  "teamCharter.author_removed": "你（移除）",
+  "teamCharter.reasonRemoved": "移除章程",
+  "teamCharter.personalWorkspaceOf": "{arg0} 自己的工作區"
 }

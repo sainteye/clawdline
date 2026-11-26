@@ -2,9 +2,10 @@ import { useCallback, useEffect, useState, type MutableRefObject } from "react"
 import type * as W from "@clawdline/contract"
 import { authorized, type SourceClient } from "./client"
 import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, type CharterProject, type CharterSummary } from "./charter-api"
+export { personalWorkspaceNames } from "./charter-api"
 import { CharterPage } from "./CharterPage"
 import { charterTemplate } from "./charter-text"
-import { charterWord } from "./charter-words"
+import { charterFormat, charterWord } from "./charter-words"
 import type { CharterSettingsRow } from "./CharterSettings"
 import type { CharterSettingsTab } from "./BotsSettingsModal"
 import type { Words } from "./words"
@@ -18,6 +19,8 @@ export interface CharterViewInput {
   current: () => readonly SourceClient[]
   authorization: string
   projectNames: ReadonlyMap<string, string>
+  /** Each personal workspace's Bot name, by charter Project key, from personalWorkspaceNames. */
+  personalNames?: ReadonlyMap<string, string>
   w: Words
   language: string
   narrow: boolean
@@ -33,9 +36,11 @@ export interface CharterViewInput {
 }
 
 export function useCharterView(input: CharterViewInput) {
-  const { sources, current, authorization, projectNames, w, language, narrow, manageHistory, historyID, writeHistory, selected, groupOpen, clear, setSettings } = input
+  const { sources, current, authorization, projectNames, personalNames, w, language, narrow, manageHistory, historyID, writeHistory, selected, groupOpen, clear, setSettings } = input
   const closeSettings = () => setSettings(false)
   const [open, setOpen] = useState<CharterProject | null>(null)
+  // Counts every opening, so opening the charter already shown rereads it.
+  const [opened, setOpened] = useState(0)
   const [charters, setCharters] = useState<ReadonlyMap<string, CharterSummary>>(new Map())
   const [reads, setReads] = useState(0)
   const refresh = useCallback(() => setReads(n => n + 1), [])
@@ -60,7 +65,7 @@ export function useCharterView(input: CharterViewInput) {
   const api = charterApiFor(open ? sources.find(s => s.machineID === open.machine_id) : undefined)
   const openCharter = (project: CharterProject) => {
     clear.lastSelected.current = null
-    clear.setDestination(null); clear.setSelected(null); clear.selectRef.current?.(null); setOpen(project)
+    clear.setDestination(null); clear.setSelected(null); clear.selectRef.current?.(null); setOpen(project); setOpened(n => n + 1)
     if (!manageHistory) return
     const previous = history.state
     clear.setGroupRoute(null)
@@ -78,14 +83,19 @@ export function useCharterView(input: CharterViewInput) {
     refresh(); closeSettings(); openCharter(row.project)
   }
   // Rows come from each machine's listing, which names every Project with Bots.
+  // A personal workspace is named for its Bot; the bare "Project" is only for a name not known yet.
+  const nameOf = (project: CharterProject) => {
+    const key = charterProjectKey(project), personal = personalNames?.get(key)
+    return projectNames.get(key) || (personal ? charterFormat("personalWorkspaceOf", personal) : w.unnamedProject)
+  }
   const settings: CharterSettingsTab | undefined = sources.some(s => charterApiFor(s)) ? {
-    rows: [...charters.values()].map(summary => ({ project: summary.project, name: projectNames.get(charterProjectKey(summary.project)) || w.unnamedProject, bots: summary.names, summary }))
+    rows: [...charters.values()].map(summary => ({ project: summary.project, name: nameOf(summary.project), bots: summary.names, summary }))
       .sort((a, b) => a.name.localeCompare(b.name, language)),
     onOpen: project => { closeSettings(); openCharter(project) },
     onCreate: create,
   } : undefined
-  const page = open && api ? <CharterPage key={charterProjectKey(open)} api={api} project={open} projectName={projectNames.get(charterProjectKey(open)) || w.unnamedProject}
-    narrow={narrow} showBack={narrow} onBack={close} onChanged={refresh} w={w} language={language}/> : null
+  const page = open && api ? <CharterPage key={charterProjectKey(open)} api={api} project={open} projectName={nameOf(open)} opened={opened}
+    narrow={narrow} showBack={narrow} onBack={close} onChanged={refresh} onRemoved={close} w={w} language={language}/> : null
   return { charters, selectedKey: open ? charterProjectKey(open) : null, openCharter, page, settings }
 }
 

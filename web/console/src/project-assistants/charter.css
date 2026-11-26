@@ -1,7 +1,11 @@
 /* The team charter page, its roster row and its history panel. Colours are the
    Bots palette; the diff backgrounds are the transcript diff's (legacy/transcript.css). */
 .project-assistants .pa-charter { --pa-diff-add:rgba(77,139,91,.23);--pa-diff-del:rgba(164,77,65,.24);--pa-diff-hunk:rgba(101,137,188,.10); }
-.project-assistants .pa-charter-main { display:flex;flex-direction:column;min-height:0;height:100%;overflow:hidden; }
+/* The closed history panel waits off the right edge. A layout that hides overflow
+   can still be scrolled to it by a focus or scrollIntoView, which slid the page
+   under the roster; clip cannot be scrolled at all. */
+.project-assistants .pa-chat-layout.pa-charter { overflow:clip; }
+.project-assistants .pa-charter-main { display:flex;flex-direction:column;min-width:0;min-height:0;height:100%;overflow:hidden;overflow:clip; }
 .project-assistants .pa-charter-pill { display:inline-flex;align-items:center;gap:8px;max-width:100%;min-height:36px;padding:6px 14px;border:1px solid var(--pa-line);border-radius:18px;background:var(--pa-card);font-size:14px;font-weight:550; }
 .project-assistants .pa-charter-pill>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-charter-pill>svg { flex:none;color:var(--pa-dim); }
@@ -9,7 +13,7 @@
 .project-assistants .pa-charter-scroll>* { width:100%;max-width:760px;margin-inline:auto;box-sizing:border-box; }
 .project-assistants .pa-charter-status { display:flex;align-items:center;gap:12px;justify-content:space-between; }
 .project-assistants .pa-charter-status p { margin:0;color:var(--pa-dim);font-size:13px; }
-.project-assistants .pa-charter-status .pa-pill,.project-assistants .pa-charter-actions button,.project-assistants .pa-charter-editor-bar button { min-height:44px; }
+.project-assistants .pa-charter-status .pa-pill,.project-assistants .pa-charter-actions button,.project-assistants .pa-charter-remove-confirm button,.project-assistants .pa-charter-editor-bar button { min-height:44px; }
 .project-assistants .pa-charter-history-open { flex:none; }
 .project-assistants .pa-charter-notice { margin:0 auto;padding:10px 14px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-card);font-size:13px; }
 .project-assistants .pa-charter-notice[data-tone="error"] { color:#e8a39b; }
@@ -23,6 +27,15 @@
 .project-assistants .pa-charter-edit:hover:not(:disabled),.project-assistants .pa-charter-edit:focus-visible { color:#fafafa;border-color:var(--pa-line); }
 .project-assistants .pa-charter-editor { padding:14px 18px; }
 .project-assistants .pa-charter-editor textarea { display:block;width:100%;box-sizing:border-box;min-height:120px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:10px;background:var(--pa-bg);color:inherit;font:inherit;line-height:1.6;resize:vertical; }
+.project-assistants .pa-charter-editor .pa-charter-title { display:block;width:100%;box-sizing:border-box;min-height:44px;margin-bottom:8px;padding:8px 12px;border:1px solid var(--pa-line);border-radius:10px;background:var(--pa-bg);color:inherit;font:inherit;font-size:15px;font-weight:600; }
+.project-assistants .pa-charter-waiting { margin:0;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-charter-remove { display:flex;justify-content:center;padding-top:8px; }
+.project-assistants .pa-charter-remove button { min-height:44px;border-color:transparent;background:transparent;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-charter-remove button:hover:not(:disabled) { color:#e8a39b;border-color:var(--pa-line); }
+.project-assistants .pa-charter-remove-confirm { padding:14px 18px;border:1px solid #6a3a35;border-radius:14px;background:var(--pa-card); }
+.project-assistants .pa-charter-remove-confirm p { margin:0 0 8px;font-size:14px; }
+.project-assistants .pa-charter-danger { background:#c2564a;color:#fff;border-color:#c2564a;font-weight:550; }
+.project-assistants .pa-charter-danger:disabled { opacity:.5; }
 .project-assistants .pa-charter-hint { margin:8px 0 0;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-charter-after { margin-top:12px;padding:10px 12px;border:1px solid var(--pa-line);border-radius:10px;font-size:13px; }
 .project-assistants .pa-charter-after strong { display:block;font-size:12px;color:var(--pa-dim);font-weight:550; }
@@ -79,4 +92,5 @@
   .project-assistants .pa-charter-editor-bar strong { flex:1;text-align:center;font-size:15px; }
   .project-assistants .pa-charter-editor-full .pa-charter-editor-body { flex:1;min-height:0;overflow:auto;padding:14px 16px max(16px,env(safe-area-inset-bottom,0px)); }
   .project-assistants .pa-charter-editor-full textarea { min-height:40dvh;font-size:16px; }
+  .project-assistants .pa-charter-editor-full .pa-charter-title { font-size:16px; }
 }
