@@ -65,7 +65,8 @@ import (
 // Bot request card reads, the person's card actions and the Bot card tools arrive at API 119.
 // The daemon's one model catalog, GET /v1/model-catalog and its Cloud word, arrives at API 120.
 // Team charters for every Project's Bots, and their Cloud words, arrive at API 122.
-const APILevel = 122
+// Removing a Project's team charter, and its Cloud word, arrives at API 123.
+const APILevel = 123
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

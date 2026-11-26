@@ -40,11 +40,11 @@ The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 
 ### Team charter words
 
-Nine machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
+Ten machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
 `/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
 `project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
 local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
-The console carries all nine: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
+The console carries all ten: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
 
 | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- |
@@ -54,6 +54,7 @@ The console carries all nine: the charter page sends them through the captured B
 | project-assistants.charter-proposals | GET C/proposals | No |
 | project-assistants.charter-save | PUT C/charter (`expected_version`, `text`, `reason`) | Yes |
 | project-assistants.charter-restore | POST C/restore (`expected_version`, `version`) | Yes |
+| project-assistants.charter-remove | POST C/remove (`expected_version`; API 123) | Yes |
 | project-assistants.charter-proposal-apply | POST C/proposal-apply (`proposal_id`, `expected_version`) | Yes |
 | project-assistants.charter-proposal-dismiss | POST C/proposal-dismiss (`proposal_id`) | Yes |
 | project-assistants.charter-change-request | POST C/change-request (`text`) | Yes |

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "project-assistant-charters.v1",
   "title": "Bots team charters",
-  "description": "API 122. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
+  "description": "API 122; removing a charter arrives at API 123. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
   "$defs": {
     "ProjectAssistantCharterAuthor": {
       "type": "string",
@@ -10,9 +10,10 @@
         "person",
         "lead_proposal",
         "restore",
-        "template"
+        "template",
+        "removed"
       ],
-      "description": "How a charter version came to be."
+      "description": "How a charter version came to be. A removed version is the Project's charter being taken away: its text is empty, and while it is the newest version the Project has no charter (version 0)."
     },
     "ProjectAssistantCharterLimits": {
       "type": "object",
@@ -249,6 +250,32 @@
         "idempotency_key",
         "expected_version",
         "version"
+      ]
+    },
+    "ProjectAssistantCharterRemoveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Remove the Project's charter while it is still at expected_version (API 123). Every Bot of the Project hears once that there is no charter; fresh sessions get none. The retained versions stay, and a later save starts a new charter after them.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version"
       ]
     },
     "ProjectAssistantCharterReader": {

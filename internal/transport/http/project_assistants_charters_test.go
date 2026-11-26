@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -120,4 +121,71 @@ func TestProjectAssistantChartersAreVersionedOverHTTP(t *testing.T) {
 	}
 	paAssertHTTPFailure(t, f.request(t, "GET", chartersPath+"?machine_id=another-machine", f.local, nil), 403, pa.ScopeDenied)
 	paAssertHTTPFailure(t, f.request(t, "GET", chartersPath+"/unknown?machine_id="+m, f.local, nil), 400, pa.Invalid)
+}
+
+// A charter is removed only at the version it was read at. The Project then
+// reads as having none, its proposals go, the removal stays in the history,
+// and a later charter is numbered after it. A removal cannot be restored.
+func TestProjectAssistantCharterRemovalOverHTTP(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	m, p := f.key.MachineID, "project-one"
+	save := map[string]any{"machine_id": m, "project_id": p, "idempotency_key": "save-1", "expected_version": 0, "text": "Lead plans.", "reason": "first"}
+	paCharterAnswer[contract.ProjectAssistantCharterResponse](t, paCharterWrite(t, f, "PUT", chartersPath+"/charter", f.lan, save))
+	if _, err := f.s.projectAssistantFloorsStore().ProposeCharter(t.Context(), m, pa.CharterProposal{ProjectID: p, BaseVersion: 1, Text: "Proposed.", BotID: "lead", TurnID: "t1", CreatedAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	remove := map[string]any{"machine_id": m, "project_id": p, "idempotency_key": "remove-1", "expected_version": 1}
+	if w := paCharterWrite(t, f, "POST", chartersPath+"/remove", f.readonly, remove); w.Code != 403 {
+		t.Fatalf("a read-only device removed a charter: HTTP %d %s", w.Code, w.Body)
+	}
+	stale := map[string]any{"machine_id": m, "project_id": p, "idempotency_key": "remove-stale", "expected_version": 2}
+	paAssertHTTPFailure(t, paCharterWrite(t, f, "POST", chartersPath+"/remove", f.lan, stale), 409, pa.StaleVersion)
+	gone := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, paCharterWrite(t, f, "POST", chartersPath+"/remove", f.lan, remove))
+	if gone.Version != 0 || gone.Text != "" || gone.PendingProposals != 0 || len(gone.History) != 2 || gone.History[0].Author != "removed" || gone.History[0].Version != 2 {
+		t.Fatalf("removed: %+v", gone)
+	}
+	again := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, paCharterWrite(t, f, "POST", chartersPath+"/remove", f.lan, remove))
+	if again.Version != 0 || len(again.History) != 2 {
+		t.Fatalf("a repeated removal answers its own effect: %+v", again)
+	}
+	proposals := paCharterAnswer[contract.ProjectAssistantCharterProposalsResponse](t, f.request(t, "GET", chartersPath+"/proposals?machine_id="+m+"&project_id="+p, f.readonly, nil))
+	if proposals.Version != 0 || len(proposals.Proposals) != 0 {
+		t.Fatalf("a removal drops the proposals: %+v", proposals)
+	}
+	list := paCharterAnswer[contract.ProjectAssistantChartersResponse](t, f.request(t, "GET", chartersPath+"?machine_id="+m, f.readonly, nil))
+	if len(list.Charters) != 0 {
+		t.Fatalf("a removed charter is not listed: %+v", list)
+	}
+	restore := map[string]any{"machine_id": m, "project_id": p, "idempotency_key": "restore-removal", "expected_version": 0, "version": 2}
+	paAssertHTTPFailure(t, paCharterWrite(t, f, "POST", chartersPath+"/restore", f.lan, restore), 404, pa.NotFound)
+	save["idempotency_key"], save["text"] = "save-2", "Lead plans again."
+	made := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, paCharterWrite(t, f, "PUT", chartersPath+"/charter", f.lan, save))
+	if made.Version != 3 || made.Text != "Lead plans again." {
+		t.Fatalf("a charter made after a removal is numbered after it: %+v", made)
+	}
+	paAssertHTTPFailure(t, paCharterWrite(t, f, "POST", chartersPath+"/remove", f.lan, map[string]any{"machine_id": m, "project_id": p, "idempotency_key": "remove-0", "expected_version": 0}), 400, pa.Invalid)
+}
+
+// The settings list offers a charter for each Project with Bots, never for a
+// Bot's own personal workspace, and the Bots read name their Project's kind.
+func TestProjectAssistantChartersListingOmitsPersonalWorkspaces(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
+	bots, err := f.s.projectAssistantFloorsStore().CharterBots(t.Context(), f.key.MachineID)
+	if err != nil || len(bots) != 1 || bots[0].ProjectKind != pa.PlaceProject {
+		t.Fatalf("a Bot's Project kind: %+v %v", bots, err)
+	}
+	place := bots[0]
+	personal := projectassistantstore.CharterBot{BotID: "atlas", ProjectID: "bot-workspace-atlas", ProjectKind: pa.PersonalWorkspace}
+	other := projectassistantstore.CharterBot{BotID: "orbit", ProjectID: "project-two", ProjectKind: pa.PlaceProject}
+	got := projectsWithoutCharter([]projectassistantstore.CharterBot{personal, place, place, other}, map[string]bool{"project-two": true})
+	if len(got) != 1 || got[0] != place.ProjectID {
+		t.Fatalf("Projects offered a charter: %v", got)
+	}
+	list := paCharterAnswer[contract.ProjectAssistantChartersResponse](t, f.request(t, "GET", chartersPath+"?machine_id="+f.key.MachineID, f.readonly, nil))
+	if len(list.ProjectsWithoutCharter) != 1 || list.ProjectsWithoutCharter[0] != place.ProjectID {
+		t.Fatalf("listing: %+v", list.ProjectsWithoutCharter)
+	}
 }

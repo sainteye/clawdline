@@ -4870,7 +4870,9 @@ type ProjectAssistantCharterApplyRequest struct {
 	ProposalID      string `json:"proposal_id"`
 }
 
-// How a charter version came to be.
+// How a charter version came to be. A removed version is the Project's charter
+// being taken away: its text is empty, and while it is the newest version the
+// Project has no charter (version 0).
 type ProjectAssistantCharterAuthor string
 
 const (
@@ -4878,10 +4880,11 @@ const (
 	ProjectAssistantCharterAuthorLeadProposal ProjectAssistantCharterAuthor = "lead_proposal"
 	ProjectAssistantCharterAuthorRestore      ProjectAssistantCharterAuthor = "restore"
 	ProjectAssistantCharterAuthorTemplate     ProjectAssistantCharterAuthor = "template"
+	ProjectAssistantCharterAuthorRemoved      ProjectAssistantCharterAuthor = "removed"
 )
 
 // ProjectAssistantCharterAuthorValues is every value the contract allows, in contract order.
-var ProjectAssistantCharterAuthorValues = []ProjectAssistantCharterAuthor{ProjectAssistantCharterAuthorPerson, ProjectAssistantCharterAuthorLeadProposal, ProjectAssistantCharterAuthorRestore, ProjectAssistantCharterAuthorTemplate}
+var ProjectAssistantCharterAuthorValues = []ProjectAssistantCharterAuthor{ProjectAssistantCharterAuthorPerson, ProjectAssistantCharterAuthorLeadProposal, ProjectAssistantCharterAuthorRestore, ProjectAssistantCharterAuthorTemplate, ProjectAssistantCharterAuthorRemoved}
 
 // The person's words from a charter page, sent to the machine's lead Bot as
 // their own message. The lead's turn carries the Project's charter and may
@@ -4963,6 +4966,17 @@ type ProjectAssistantCharterReadersResponse struct {
 	ProjectID       string                          `json:"project_id"`
 	Readers         []ProjectAssistantCharterReader `json:"readers"`
 	Version         int64                           `json:"version"`
+}
+
+// Remove the Project's charter while it is still at expected_version (API 123).
+// Every Bot of the Project hears once that there is no charter; fresh sessions
+// get none. The retained versions stay, and a later save starts a new charter
+// after them.
+type ProjectAssistantCharterRemoveRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
 }
 
 // A Project's current charter and its retained history, newest first. Version 0

@@ -67,7 +67,9 @@ func charterDigest(parts ...string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func currentCharter(ctx context.Context, r reader, machine, project string) (pa.CharterVersion, error) {
+// latestCharter is the newest version row, a removal included; version 0
+// when the Project never had one.
+func latestCharter(ctx context.Context, r reader, machine, project string) (pa.CharterVersion, error) {
 	var out pa.CharterVersion
 	var at int64
 	err := r.QueryRowContext(ctx, `SELECT version,author,reason,created_at,text FROM project_assistant_charter_versions WHERE machine=? AND project=? ORDER BY version DESC LIMIT 1`, machine, project).
@@ -77,6 +79,16 @@ func currentCharter(ctx context.Context, r reader, machine, project string) (pa.
 	}
 	out.CreatedAt = time.UnixMilli(at).UTC()
 	return out, err
+}
+
+// currentCharter is the charter the Project has now: version 0 when it never
+// had one or its newest version is a removal.
+func currentCharter(ctx context.Context, r reader, machine, project string) (pa.CharterVersion, error) {
+	v, err := latestCharter(ctx, r, machine, project)
+	if err != nil || v.Author == pa.CharterByRemoval {
+		return pa.CharterVersion{}, err
+	}
+	return v, nil
 }
 
 // Charter returns the Project's current charter; version 0 means none.
@@ -122,7 +134,7 @@ func (s *Store) Charters(ctx context.Context, machine string) ([]pa.CharterSumma
 	rows, err := s.reader.QueryContext(ctx, `SELECT v.project,v.version,v.created_at,v.author,
  (SELECT count(*) FROM project_assistant_charter_proposals p WHERE p.machine=v.machine AND p.project=v.project)
  FROM project_assistant_charter_versions v WHERE v.machine=? AND v.version=(SELECT max(version) FROM project_assistant_charter_versions w WHERE w.machine=v.machine AND w.project=v.project)
- ORDER BY v.project LIMIT ?`, machine, pa.MaxCharterProjects+1)
+ AND v.author<>'removed' ORDER BY v.project LIMIT ?`, machine, pa.MaxCharterProjects+1)
 	if err != nil {
 		return nil, err
 	}
@@ -189,9 +201,13 @@ func (s *Store) insertCharter(ctx context.Context, w CharterWrite, request strin
 	if !errors.Is(err, sql.ErrNoRows) {
 		return pa.CharterVersion{}, err
 	}
-	current, err := currentCharter(ctx, tx, w.MachineID, w.ProjectID)
+	latest, err := latestCharter(ctx, tx, w.MachineID, w.ProjectID)
 	if err != nil {
 		return pa.CharterVersion{}, err
+	}
+	current := latest
+	if latest.Author == pa.CharterByRemoval {
+		current = pa.CharterVersion{}
 	}
 	if current.Version != w.ExpectedVersion {
 		return current, failure(pa.StaleVersion, "charter_version")
@@ -201,7 +217,9 @@ func (s *Store) insertCharter(ctx context.Context, w CharterWrite, request strin
 			return pa.CharterVersion{}, err
 		}
 	}
-	next := pa.CharterVersion{Version: current.Version + 1, Author: w.Author, Reason: w.Reason, CreatedAt: w.At.UTC().Truncate(time.Millisecond), Text: w.Text}
+	// A charter made after a removal is numbered after it, so a Bot that
+	// heard an older charter of the same number is told again.
+	next := pa.CharterVersion{Version: latest.Version + 1, Author: w.Author, Reason: w.Reason, CreatedAt: w.At.UTC().Truncate(time.Millisecond), Text: w.Text}
 	// The primary key fences a concurrent writer that read the same version.
 	if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_charter_versions(machine,project,version,author,reason,created_at,text,idem,request) VALUES(?,?,?,?,?,?,?,?,?)`,
 		w.MachineID, w.ProjectID, next.Version, string(next.Author), next.Reason, next.CreatedAt.UnixMilli(), next.Text, w.IdempotencyKey, request); err != nil {
@@ -229,8 +247,8 @@ func (s *Store) RestoreCharter(ctx context.Context, machine, project string, exp
 	request := charterDigest("restore", strconv.FormatInt(expected, 10), strconv.FormatInt(version, 10))
 	// A repeated restore answers its own version before the old one is read:
 	// it may have been evicted since.
-	var text string
-	err := s.db.QueryRowContext(ctx, `SELECT text FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).Scan(&text)
+	var text, author string
+	err := s.db.QueryRowContext(ctx, `SELECT text,author FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).Scan(&text, &author)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		text = ""
@@ -238,11 +256,30 @@ func (s *Store) RestoreCharter(ctx context.Context, machine, project string, exp
 		return pa.CharterVersion{}, err
 	}
 	var restoreErr error
-	if errors.Is(err, sql.ErrNoRows) {
+	// A removal has no text to bring back.
+	if errors.Is(err, sql.ErrNoRows) || author == string(pa.CharterByRemoval) {
 		restoreErr = failure(pa.NotFound, "charter_version")
 	}
 	w.Text = text
 	return s.insertCharter(ctx, w, request, func(*sql.Tx) error { return restoreErr })
+}
+
+// RemoveCharter takes the Project's charter away while it is still at
+// expected, as a removal version with empty text, and drops its pending
+// proposals with it. A repeat of a removal that took effect answers it.
+func (s *Store) RemoveCharter(ctx context.Context, machine, project string, expected int64, idem string, at time.Time) (pa.CharterVersion, error) {
+	if idem == "" || expected <= 0 {
+		return pa.CharterVersion{}, failure(pa.Invalid, "expected_version")
+	}
+	if err := pa.ValidateCharterProject(project); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	w := CharterWrite{MachineID: machine, ProjectID: project, ExpectedVersion: expected, Author: pa.CharterByRemoval, IdempotencyKey: idem, At: at}
+	request := charterDigest("remove", strconv.FormatInt(expected, 10))
+	return s.insertCharter(ctx, w, request, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_charter_proposals WHERE machine=? AND project=?`, machine, project)
+		return err
+	})
 }
 
 // ProposeCharter records a lead proposal. The same Bot turn proposing the
@@ -391,16 +428,18 @@ func (s *Store) CharterReads(ctx context.Context, machine, project string) (map[
 	return out, rows.Err()
 }
 
-// CharterBot is what the charter pages show of one Bot: its Project, whether
-// it leads, and whether it has a running or queued turn now.
+// CharterBot is what the charter pages show of one Bot: its Project and the
+// Project's kind, whether it leads, and whether it has a running or queued
+// turn now.
 type CharterBot struct {
-	BotID     string
-	Name      string
-	ProjectID string
-	Lead      bool
-	Hidden    bool
-	Running   bool
-	Queued    bool
+	BotID       string
+	Name        string
+	ProjectID   string
+	ProjectKind pa.ProjectKind
+	Lead        bool
+	Hidden      bool
+	Running     bool
+	Queued      bool
 }
 
 // CharterBots lists the machine's Bots, without private background workers.
@@ -408,6 +447,7 @@ func (s *Store) CharterBots(ctx context.Context, machine string) ([]CharterBot, 
 	rows, err := s.reader.QueryContext(ctx, `SELECT bot,
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.name'),''),
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.project.project_id'),''),
+ coalesce(json_extract(CAST(data AS TEXT),'$.Bot.project.kind'),''),
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.lead'),0),
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.hidden'),0),
  coalesce(json_extract(CAST(data AS TEXT),'$.Conversation.active_turn_id'),'')<>'',
@@ -420,7 +460,7 @@ func (s *Store) CharterBots(ctx context.Context, machine string) ([]CharterBot, 
 	out := []CharterBot{}
 	for rows.Next() {
 		var b CharterBot
-		if err = rows.Scan(&b.BotID, &b.Name, &b.ProjectID, &b.Lead, &b.Hidden, &b.Running, &b.Queued); err != nil {
+		if err = rows.Scan(&b.BotID, &b.Name, &b.ProjectID, &b.ProjectKind, &b.Lead, &b.Hidden, &b.Running, &b.Queued); err != nil {
 			return nil, err
 		}
 		out = append(out, b)

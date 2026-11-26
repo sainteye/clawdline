@@ -33,6 +33,8 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer, err = s.charterSave(w, r)
 	case "POST " + chartersPath + "/restore":
 		answer, err = s.charterRestore(w, r)
+	case "POST " + chartersPath + "/remove":
+		answer, err = s.charterRemove(w, r)
 	case "GET " + chartersPath + "/readers":
 		answer, err = s.charterReaders(r)
 	case "GET " + chartersPath + "/proposals":
@@ -118,17 +120,27 @@ func (s *Server) chartersList(r *http.Request) (contract.ProjectAssistantCharter
 		has[c.ProjectID] = true
 		out.Charters = append(out.Charters, contract.ProjectAssistantCharterSummary{ProjectID: c.ProjectID, Version: c.Version, UpdatedAt: charterTime(c.UpdatedAt), UpdatedBy: contract.ProjectAssistantCharterAuthor(c.UpdatedBy), PendingProposals: int64(c.Pending)})
 	}
-	for _, b := range bots {
-		if b.ProjectID != "" && !has[b.ProjectID] {
-			has[b.ProjectID] = true
-			out.ProjectsWithoutCharter = append(out.ProjectsWithoutCharter, b.ProjectID)
-		}
-	}
+	out.ProjectsWithoutCharter = append(out.ProjectsWithoutCharter, projectsWithoutCharter(bots, has)...)
 	now, err := s.projectAssistantMachineAuthority(r.Context(), machine, false)
 	if err == nil {
 		err = sameMachineAuthority(before, now)
 	}
 	return out, err
+}
+
+// projectsWithoutCharter names, once each, the Projects whose Bots have no
+// charter yet. A personal workspace belongs to one Bot, and a team charter
+// is for a Project's team, so one is not offered.
+func projectsWithoutCharter(bots []projectassistantstore.CharterBot, has map[string]bool) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, b := range bots {
+		if b.ProjectID != "" && b.ProjectKind != pa.PersonalWorkspace && !has[b.ProjectID] && !seen[b.ProjectID] {
+			seen[b.ProjectID] = true
+			out = append(out, b.ProjectID)
+		}
+	}
+	return out
 }
 
 func (s *Server) charterAnswer(ctx context.Context, machine, project string, selected int64) (contract.ProjectAssistantCharterResponse, error) {
@@ -235,6 +247,22 @@ func (s *Server) charterRestore(w http.ResponseWriter, r *http.Request) (any, er
 	}
 	return s.charterWrite(r, body.MachineID, body.ProjectID, body.IdempotencyKey, func(ctx context.Context) error {
 		_, err := s.projectAssistantFloorsStore().RestoreCharter(ctx, body.MachineID, body.ProjectID, body.ExpectedVersion, body.Version, body.IdempotencyKey, time.Now())
+		return err
+	}, func(ctx context.Context) (any, error) { return s.charterAnswer(ctx, body.MachineID, body.ProjectID, 0) })
+}
+
+// charterRemove takes a Project's charter away. The Bots' next prompts say
+// once that there is no charter; fresh sessions carry none.
+func (s *Server) charterRemove(w http.ResponseWriter, r *http.Request) (any, error) {
+	if _, err := paHTTPQuery(r); err != nil {
+		return nil, err
+	}
+	body, err := paDecodeHTTP[contract.ProjectAssistantCharterRemoveRequest](w, r)
+	if err != nil {
+		return nil, err
+	}
+	return s.charterWrite(r, body.MachineID, body.ProjectID, body.IdempotencyKey, func(ctx context.Context) error {
+		_, err := s.projectAssistantFloorsStore().RemoveCharter(ctx, body.MachineID, body.ProjectID, body.ExpectedVersion, body.IdempotencyKey, time.Now())
 		return err
 	}, func(ctx context.Context) (any, error) { return s.charterAnswer(ctx, body.MachineID, body.ProjectID, 0) })
 }
