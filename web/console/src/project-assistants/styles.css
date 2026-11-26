@@ -779,9 +779,9 @@
   .project-assistants .pa-info-open>.pa-chat,.project-assistants .pa-members-open>.pa-chat { visibility:hidden; }
 }
 
-/* Give the jump control its own row below the scroll viewport. */
+/* The jump control floats over the transcript's bottom edge, clear of the composer, with no strip of its own. */
 .project-assistants .pa-chat > .pa-jump { display:none; }
-.project-assistants .pa-chat > .pa-jump[data-shown="on"] { display:flex;position:static;flex:none;height:auto;padding-top:4px; }
+.project-assistants .pa-chat > .pa-jump[data-shown="on"] { display:flex;position:relative;bottom:8px;flex:none;height:0;padding:0; }
 .project-assistants .pa-permissions { padding-bottom:48px; }
 @media(max-width:700px) {
   .project-assistants .pa-chat:has(.pa-permission) > .pa-jump { display:none; }
