@@ -268,7 +268,11 @@ Bot memory gained one source on 2026-11-24: machine-wide shared memory from Bots
 The rows that apply to the Bot's Project are prefixed to the Bot's memory context as
 `<shared_memory>` (`internal/app/projectassistant/runtime.go`, `SharedMemory` option), so they
 travel through the existing fresh-session opening, `<memory_update>` and compaction redelivery
-paths; no new provider sink was added. A Bot's own "use shared memory" switch removes it. The
+paths; no new provider sink was added. Each native binding records a digest of the shared
+section it heard (`SharedMemoryDigest`), so a change saved while the session is resumable
+reaches it once as a `<memory_update>` even when the Bot's own memory did not move; before
+2026-11-27 only the Bot's own memory revision was compared and the change waited for a fresh
+session. A Bot's own "use shared memory" switch removes it. The
 context card does not yet list this source separately; that card is pending.
 
 The selected Bot extension card now covers execution-owned folder skill snapshots,

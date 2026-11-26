@@ -480,14 +480,20 @@ func (r *Engine) commitAttemptStartLocked(ctx context.Context, a *runtimeActor, 
 	if !s.resume {
 		binding.NativeSessionID = ""
 	}
-	// A resumed session last heard memory at its binding's revision.
-	s.memoryChanged = binding.MemoryRevision != s.current.Revision
+	// A resumed session last heard memory at its binding's revision, and the
+	// machine's shared memory under its binding's digest.
+	sharedDigest := ""
+	if r.o.SharedMemory != nil {
+		sharedDigest = sharedMemoryDigest(r.o.SharedMemory(ctx, bot))
+	}
+	s.memoryChanged = binding.MemoryRevision != s.current.Revision || binding.SharedMemoryDigest != sharedDigest
 	s.compacted = compactedBeforeTurn(s.export, t, resumedBindingID)
 	// A /compact prompt delivers no memory, so the session's memory revision
 	// stays where it was and the next prompt still carries any change.
 	if t.Origin != pa.CompactOrigin {
 		binding.MemoryRevision = s.current.Revision
 		binding.ForgottenThrough = s.current.ForgottenThrough
+		binding.SharedMemoryDigest = sharedDigest
 		// A charter change never replaces the native session: a resumed one
 		// hears the new version once, in this prompt.
 		s.charterChanged = s.resume && binding.CharterVersion != s.charterVersion

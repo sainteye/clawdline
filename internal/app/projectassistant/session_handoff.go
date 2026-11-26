@@ -1,6 +1,8 @@
 package projectassistant
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -29,6 +31,16 @@ type SessionHandoff struct {
 	// sharedMemory is the shared memory block that precedes the Bot's own
 	// memory in Context.Text. It has no Bot memory provenance of its own.
 	sharedMemory string
+}
+
+// sharedMemoryDigest names one shared memory section; "" when there is none,
+// so a binding saved before digests existed matches an empty section.
+func sharedMemoryDigest(shared string) string {
+	if shared == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(shared))
+	return hex.EncodeToString(sum[:16])
 }
 
 // sharedMemoryBlock is the delivered form of the machine's shared memory.
