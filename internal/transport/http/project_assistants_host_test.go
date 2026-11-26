@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -642,11 +643,18 @@ func (p *paServerSession) Send(context.Context, app.PromptRequest) (app.PendingP
 }
 func (*paServerSession) Answer(context.Context, string, string) error { return nil }
 func (*paServerSession) Cancel(context.Context) error                 { return nil }
+
+// Close with closeFails reports an unknown outcome as soon as it sees the
+// engine's cleanup deadline, rather than spending that deadline. Waiting it out
+// left the attempt running into the next request, whose own total deadline
+// then had to cover it as well.
 func (p *paServerSession) Close(ctx context.Context) error {
 	p.closes.Add(1)
 	if p.closeFails.Load() {
-		<-ctx.Done()
-		return ctx.Err()
+		if _, ok := ctx.Deadline(); !ok {
+			return errors.New("synthetic Close had no cleanup deadline")
+		}
+		return fmt.Errorf("synthetic Close outcome unknown: %w", context.DeadlineExceeded)
 	}
 	return nil
 }
@@ -661,7 +669,10 @@ func (paServerPending) Wait(ctx context.Context) (app.PromptResult, error) {
 
 func TestProjectAssistantServerFirstSendIsLazyAndCleanupDeadlineRetainsOwner(t *testing.T) {
 	f := newPAServerFixture(t, true)
-	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Second, CleanupTimeout: 50 * time.Millisecond}
+	// The successful disable at the end runs under the production cleanup
+	// budget; the failing Close no longer needs a short one to finish quickly.
+	limits := app.RuntimeLimits{MaxBots: capacity.MaximumBotActors, PromptTimeout: time.Second,
+		CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond}
 	f.s.projectAssistants.limits = &limits
 	session := &paServerSession{sent: make(chan struct{})}
 	session.closeFails.Store(true)
