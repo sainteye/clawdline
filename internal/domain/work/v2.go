@@ -221,6 +221,10 @@ type CreatedViaV2 struct {
 	Epic     string `json:"epic_id,omitempty"`
 	Assigned bool   `json:"assigned,omitempty"`
 	Persona  string `json:"persona,omitempty"`
+	// Decision and Bot name the question card a Bot created the item on, when
+	// the person's answer to that card is the authority instead of a run.
+	Decision string `json:"decision_id,omitempty"`
+	Bot      string `json:"bot_id,omitempty"`
 }
 
 // SessionAssignable is whether a Session may hand an item of this kind to a

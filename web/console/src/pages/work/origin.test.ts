@@ -9,6 +9,7 @@ const at = Math.floor(new Date(2026, 8, 25, 9, 5).getTime() / 1000)
 
 test("the creator's prefix, not created_via, says who made an item", () => {
   assert.equal(workOrigin("user_via_session:conv-1"), "session")
+  assert.equal(workOrigin("user_via_bot_decision:card-1"), "session")
   assert.equal(workOrigin("epic_owner:sess-1"), "epic_owner")
   assert.equal(workOrigin("user"), "person")
   assert.equal(workOrigin(""), "person")
