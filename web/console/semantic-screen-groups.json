@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14604,
+  "englishContentKeys": 14616,
   "riskKeys": 6209,
-  "nonRiskCount": 8395,
+  "nonRiskCount": 8407,
   "groups": [
     {
       "name": "acp / other",
@@ -6345,11 +6345,23 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 728,
+      "count": 740,
       "sources": [
         null
       ],
       "keys": [
+        "projectAssistants.activityBrowser",
+        "projectAssistants.activityCheckWork",
+        "projectAssistants.activityDispatch",
+        "projectAssistants.activityEditFile",
+        "projectAssistants.activityEditMemory",
+        "projectAssistants.activityReadFile",
+        "projectAssistants.activityReadMemory",
+        "projectAssistants.activityReadPage",
+        "projectAssistants.activitySearch",
+        "projectAssistants.activitySendMessage",
+        "projectAssistants.activityTool",
+        "projectAssistants.activityWebSearch",
         "projectAssistants.addReaction",
         "projectAssistants.agent",
         "projectAssistants.agentTooOld",

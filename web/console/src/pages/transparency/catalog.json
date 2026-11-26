@@ -4531,7 +4531,7 @@
         },
         {
           "path": "web/console/src/project-assistants/words.ts",
-          "line": 503
+          "line": 515
         },
         {
           "path": "internal/app/projectassistant/submit.go",
@@ -5974,7 +5974,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "0c1958904690489bb4926571a970167856330a71acb79a94c1d5dd26967deed9",
+    "web/console/src/project-assistants/words.ts": "eab86a5efb55a0342d18b5a2dfa4c21822818b56ea8c82feb0c7efd20f33b873",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
