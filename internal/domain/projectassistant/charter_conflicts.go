@@ -232,6 +232,11 @@ func ReplaceExactlyOnce(text, sentence, replacement string) (string, int) {
 		} else if start > 0 {
 			start--
 		}
+		// A paragraph of its own leaves one blank line between its
+		// neighbours, not two.
+		if strings.HasSuffix(text[:start], "\n\n") && strings.HasPrefix(text[end:], "\n") {
+			end++
+		}
 	} else if end < len(text) && text[end] == ' ' {
 		end++
 	} else if start > 0 && text[start-1] == ' ' {
