@@ -100,7 +100,7 @@ function quietableTransport(): StreamTransport | undefined {
         }).then(async () => {
           if (waiting && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
         }).catch(() => {
-          if (!control.signal.aborted) use(reads)
+          if (!control.signal.aborted) use(stream)
         })
       }
       quietChanged.add(change)
