@@ -1,0 +1,277 @@
+package http
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+	"time"
+
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/work"
+)
+
+func decisionItemBody(t *testing.T, conversation string, via map[string]string, extra map[string]any) string {
+	t.Helper()
+	body := map[string]any{"session_id": conversation, "via": via, "kind": "feature",
+		"title": "Shared event stream follow-ups", "description": "Atlas takes these.",
+		"steps": []string{"closed EventSource reuse", "memory retry rereads memory"}}
+	for k, v := range extra {
+		body[k] = v
+	}
+	b, _ := json.Marshal(body)
+	return string(b)
+}
+
+// A Bot chat has no run; the person's answer to its own question card, found
+// by the daemon, is what lets it create a Board item. A card the daemon does
+// not admit writes nothing, and a Session's run path is untouched.
+func TestABotCreatesAnItemOnThePersonsAnswerToItsQuestionCard(t *testing.T) {
+	s, p, _ := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
+	answered := time.Now().Add(-time.Minute).Truncate(time.Second)
+	var asked []string
+	decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
+		asked = append(asked, conversation+"/"+offerID)
+		switch {
+		case offerID == "card-answered" && conversation == "bot-native":
+			return pa.DecisionAuthority{OfferID: offerID, BotID: "xavia", ConversationID: "chat-1", NativeSessionID: conversation,
+				CanonicalID: p.s.CWD, Question: "Open it?", Answer: "Yes, open it for Atlas", AnsweredAt: answered}, nil
+		case offerID == "card-answered":
+			return pa.DecisionAuthority{}, &pa.DecisionRefusal{Code: pa.DecisionOtherConversation}
+		case offerID == "card-pending":
+			return pa.DecisionAuthority{}, &pa.DecisionRefusal{Code: pa.DecisionUnanswered}
+		}
+		return pa.DecisionAuthority{}, &pa.DecisionRefusal{Code: pa.DecisionUnknown}
+	}))
+	t.Cleanup(func() { decisionAuthorityByServer.Delete(s) })
+	post := func(body, key string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", body, key))
+		return rec
+	}
+	openItems := func() int {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open", nil))
+		return strings.Count(rec.Body.String(), `"title":"Shared event stream follow-ups"`)
+	}
+
+	// Off, the default: the card is ignored exactly as before the setting
+	// existed, so even an answered card creates nothing.
+	if rec := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered"}, nil), "off"); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("an answered card with the setting off: %d %s", rec.Code, rec.Body)
+	}
+	if len(asked) != 0 || openItems() != 0 {
+		t.Fatalf("the setting off read cards %v or created items", asked)
+	}
+	if err := os.WriteFile(s.settingsFile().Path(), []byte(`{"bot_decision_items":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// (b) Without an answered card of this Bot chat, nothing is created.
+	for _, c := range []struct {
+		conversation, card, code string
+		status                   int
+	}{
+		{"bot-native", "card-pending", pa.DecisionUnanswered, http.StatusForbidden},
+		{"bot-native", "card-made-up", pa.DecisionUnknown, http.StatusForbidden},
+		{"other-bot-native", "card-answered", pa.DecisionOtherConversation, http.StatusForbidden},
+	} {
+		rec := post(decisionItemBody(t, c.conversation, map[string]string{"decision": c.card}, nil), "refused-"+c.card+c.conversation)
+		if rec.Code != c.status || !strings.Contains(rec.Body.String(), `"error":"`+c.code+`"`) {
+			t.Fatalf("%s from %s: %d %s", c.card, c.conversation, rec.Code, rec.Body)
+		}
+	}
+	if rec := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered", "run": "10000000-0000-4000-8000-000000000009"}, nil), "both"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "via_ambiguous") {
+		t.Fatalf("a card and a run together: %d %s", rec.Code, rec.Body)
+	}
+	if rec := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered"}, map[string]any{"assign": map[string]string{"mode": "self"}}), "self"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "invalid_assignment") {
+		t.Fatalf("a card with an assignment: %d %s", rec.Code, rec.Body)
+	}
+	if rec := post(decisionItemBody(t, "bot-native", map[string]string{}, nil), "no-authority"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "run_unknown") {
+		t.Fatalf("neither card nor run: %d %s", rec.Code, rec.Body)
+	}
+	if n := openItems(); n != 0 {
+		t.Fatalf("a refused request created %d items", n)
+	}
+
+	// (a) The answered card creates the item, unassigned, with the card as its source.
+	rec := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered"}, nil), "created")
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body)
+	}
+	var created struct {
+		Assigned        bool           `json:"assigned"`
+		AssignmentState string         `json:"assignment_state"`
+		Item            workV2ItemWire `json:"item"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	it := created.Item
+	if created.Assigned || created.AssignmentState != "not_requested" || it.OwnerSession != nil ||
+		it.CreatedBy != work.ActorViaBotDecision+"card-answered" || len(it.Steps) != 2 {
+		t.Fatalf("item: %s", rec.Body)
+	}
+	if v := it.CreatedVia; v == nil || v.DecisionID != "card-answered" || v.BotID != "xavia" || v.Run != "card-answered" ||
+		v.SessionID != "bot-native" || v.At != answered.Unix() || v.Excerpt != "Yes, open it for Atlas" {
+		t.Fatalf("created_via: %+v", it.CreatedVia)
+	}
+	if replay := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered"}, nil), "created"); replay.Code != http.StatusCreated || replay.Body.String() != rec.Body.String() {
+		t.Fatalf("replay: %d %s", replay.Code, replay.Body)
+	}
+	if n := openItems(); n != 1 {
+		t.Fatalf("open items after one create and its replay = %d", n)
+	}
+
+	// (c) A Session's run path never consults a question card.
+	asked = nil
+	run := issueTestRun(t, s, p, "Make a Board item for the notes")
+	if rec := post(sessionItemBody(t, p.s.ConversationID, run, "", "issue"), "session-run"); rec.Code != http.StatusCreated ||
+		!strings.Contains(rec.Body.String(), `"created_by":"`+work.ActorViaSession+run+`"`) || strings.Contains(rec.Body.String(), "decision_id") {
+		t.Fatalf("session create: %d %s", rec.Code, rec.Body)
+	}
+	if len(asked) != 0 {
+		t.Fatalf("the Session path read question cards: %v", asked)
+	}
+}
+
+// The person turns bot_decision_items on and off from Settings (the workflow
+// settings route, which Cloud also carries): the switch reads off by default,
+// persists, and is what the create route obeys.
+func TestTheBotDecisionItemsSwitchOnTheWorkflowRouteDecidesTheCreate(t *testing.T) {
+	s, p, _ := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
+	decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
+		return pa.DecisionAuthority{OfferID: offerID, BotID: "xavia", ConversationID: "chat-1", NativeSessionID: conversation,
+			CanonicalID: p.s.CWD, Question: "Open it?", Answer: "Yes", AnsweredAt: time.Now().Add(-time.Minute)}, nil
+	}))
+	t.Cleanup(func() { decisionAuthorityByServer.Delete(s) })
+	setting := func(method, body string) bool {
+		t.Helper()
+		r := httptest.NewRequest(method, "/v1/settings/workflow", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.workflowSettingsRoute(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s workflow settings: %d %s", method, w.Code, w.Body)
+		}
+		var got struct {
+			BotDecisionItems *bool `json:"bot_decision_items"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.BotDecisionItems == nil {
+			t.Fatalf("no bot_decision_items in %s (%v)", w.Body, err)
+		}
+		return *got.BotDecisionItems
+	}
+	create := func(key string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
+			decisionItemBody(t, "bot-native", map[string]string{"decision": "card-" + key}, nil), key))
+		return rec
+	}
+
+	if setting(http.MethodGet, "") {
+		t.Fatal("bot_decision_items reads on before anybody turned it on")
+	}
+	if rec := create("before"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("off: %d %s", rec.Code, rec.Body)
+	}
+	if !setting(http.MethodPost, `{"bot_decision_items":true}`) || !setting(http.MethodGet, "") {
+		t.Fatal("turning bot_decision_items on did not persist")
+	}
+	if rec := create("on"); rec.Code != http.StatusCreated {
+		t.Fatalf("on: %d %s", rec.Code, rec.Body)
+	}
+	if setting(http.MethodPost, `{"bot_decision_items":false}`) {
+		t.Fatal("turning bot_decision_items off did not take")
+	}
+	if rec := create("after"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("off again: %d %s", rec.Code, rec.Body)
+	}
+	if rec := httptest.NewRecorder(); true {
+		r := httptest.NewRequest(http.MethodPost, "/v1/settings/workflow", strings.NewReader(`{"bot_decision_items":"on"}`))
+		r.Header.Set("Content-Type", "application/json")
+		s.workflowSettingsRoute(rec, r)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("a non-boolean switch was taken: %d %s", rec.Code, rec.Body)
+		}
+	}
+}
+
+// decisionServer is sessionItemServer with bot_decision_items on and a card
+// lookup that admits every card as an answer of the Bot whose Project is
+// botProject.
+func decisionServer(t *testing.T, botProject func(p *pane) string) (*Server, *pane, string) {
+	t.Helper()
+	s, p, project := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
+	if err := os.WriteFile(s.settingsFile().Path(), []byte(`{"bot_decision_items":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if botProject != nil {
+		decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
+			return pa.DecisionAuthority{OfferID: offerID, BotID: "xavia", ConversationID: "chat-1", NativeSessionID: conversation,
+				CanonicalID: botProject(p), Question: "Open it?", Answer: "Yes", AnsweredAt: time.Now().Add(-time.Minute)}, nil
+		}))
+		t.Cleanup(func() { decisionAuthorityByServer.Delete(s) })
+	}
+	return s, p, project
+}
+
+func postDecisionItem(s *Server, body, key string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", body, key))
+	return rec
+}
+
+// A Bot's card speaks only for the Bot's own Project, whatever the kind: a
+// Plan that names another Project is refused like any other item.
+func TestADecisionCardCreatesNothingInAnotherProject(t *testing.T) {
+	s, _, project := decisionServer(t, func(*pane) string { return "/code/the-bots-own-project" })
+	for _, kind := range []string{"plan", "feature"} {
+		extra := map[string]any{"kind": kind, "project_id": project}
+		if kind == "plan" {
+			extra["steps"] = []string{}
+		}
+		rec := postDecisionItem(s, decisionItemBody(t, "bot-native", map[string]string{"decision": "card-" + kind}, extra), "elsewhere-"+kind)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"error":"project_mismatch"`) {
+			t.Fatalf("a %s in another Project: %d %s", kind, rec.Code, rec.Body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items", nil))
+	if strings.Contains(rec.Body.String(), "Shared event stream follow-ups") {
+		t.Fatalf("a refused card created an item: %s", rec.Body)
+	}
+}
+
+// Before the Bot host is up nobody can say whether the card exists, so the
+// answer is a retry, not a claim that the card is unknown.
+func TestADecisionCardBeforeTheBotHostStartsIsRetried(t *testing.T) {
+	s, _, _ := decisionServer(t, nil)
+	rec := postDecisionItem(s, decisionItemBody(t, "bot-native", map[string]string{"decision": "card-1"}, nil), "no-host")
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"error":"store_unavailable"`) {
+		t.Fatalf("a card with no Bot host: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// One card backs as many items as one message does (run.created_items).
+func TestADecisionCardBacksAtMostFiveItems(t *testing.T) {
+	s, _, _ := decisionServer(t, func(p *pane) string { return p.s.CWD })
+	for i := 1; i <= 6; i++ {
+		body := decisionItemBody(t, "bot-native", map[string]string{"decision": "card-1"}, map[string]any{"title": fmt.Sprintf("Follow-up %d", i)})
+		rec := postDecisionItem(s, body, fmt.Sprintf("key-%d", i))
+		if i <= 5 && rec.Code != http.StatusCreated {
+			t.Fatalf("item %d: %d %s", i, rec.Code, rec.Body)
+		}
+		if i == 6 && (rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"error":"run_items_exhausted"`)) {
+			t.Fatalf("the sixth item on one card: %d %s", rec.Code, rec.Body)
+		}
+	}
+}

@@ -2883,6 +2883,10 @@ test("the website workflow tab carries its preferences only to the selected mach
     assert.equal((await reader.fetch("/v1/settings/workflow", post({ iterm_integration: on }))).status, 200)
     assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { iterm_integration: on } }, "action"])
   }
+  for (const on of [true, false]) {
+    assert.equal((await reader.fetch("/v1/settings/workflow", post({ bot_decision_items: on }))).status, 200)
+    assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { bot_decision_items: on } }, "action"])
+  }
   assert.equal((await reader.fetch("/v1/settings/workflow", post({ terminal: "tmux" }))).status, 200)
   assert.deepEqual(client.calls.pop(), ["_machineRequest", "mac-a", "workflow-settings-update", { changes: { terminal: "tmux" } }, "action"])
   assert.equal((await reader.fetch("/v1/settings/workflow", post({ codex_permission_mode: "auto_review" }))).status, 200)

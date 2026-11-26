@@ -830,6 +830,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `run.claimed_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `run.created_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `run.decision_answer_age` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `schedule.history_page_rows` | 10 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `schedule.run_transcript_head` | 65536 | `bytes` | `evict_oldest` | `diagnostics` | — |
 | `schedule.run_transcripts_probed` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |

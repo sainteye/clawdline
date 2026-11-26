@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14745,
-  "riskKeys": 6248,
-  "nonRiskCount": 8497,
+  "englishContentKeys": 14752,
+  "riskKeys": 6250,
+  "nonRiskCount": 8502,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 801,
+      "count": 802,
       "sources": [
         null
       ],
@@ -1283,6 +1283,7 @@
         "capacityRow.resources.scratch_total_bytes.what",
         "capacityRow.run.claimed_items.what",
         "capacityRow.run.created_items.what",
+        "capacityRow.run.decision_answer_age.what",
         "capacityRow.schedule.history_page_rows.what",
         "capacityRow.schedule.run_transcript_head.what",
         "capacityRow.screens.capture_slots.what",
@@ -9525,11 +9526,15 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 32,
+      "count": 36,
       "sources": [
         null
       ],
       "keys": [
+        "workflowSettings.bot_decision_itemsOn",
+        "workflowSettings.bot_decision_itemsScope",
+        "workflowSettings.bot_decision_itemsTitle",
+        "workflowSettings.bot_decision_itemsUpdateRequired",
         "workflowSettings.codexPermissionHelp_auto_review",
         "workflowSettings.codexPermissionPendingApproval",
         "workflowSettings.codexPermissionTitle",
