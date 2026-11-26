@@ -216,5 +216,9 @@
   "flag.source_todo": "for propose: this Session's own to-do the proposal comes from",
   "flag.source_item": "for propose: a Board item this Session owns that the proposal comes from",
   "usage.doc_delete": "       clawdline item doc-delete [--conversation id] [--key k] [--port n] <item id> <doc id>",
-  "receipt.document_deleted": "the deletion of document "
+  "receipt.document_deleted": "the deletion of document ",
+  "flag.decision": "for add in a Bot chat: the id of your ask_person question card the person answered",
+  "usage.add_decision": "                          [--decision <question card id>]   in a Bot chat, instead of --run and any --assign-*",
+  "error.decision_alone": "clawdline %s: --decision is the whole authority: it takes no --run and no --assign-*. Nothing was created.\n",
+  "error.no_run_decision": " In a Bot chat, ask the person with ask_person and pass --decision <question card id> once they answer."
 }

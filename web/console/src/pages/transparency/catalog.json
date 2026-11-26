@@ -888,7 +888,7 @@
         },
         {
           "path": "internal/transport/http/work_v2.go",
-          "line": 1212
+          "line": 1219
         },
         {
           "path": "internal/productcopy/board.go",
@@ -2442,7 +2442,7 @@
         },
         {
           "path": "internal/adapters/nextconfig/nextconfig.go",
-          "line": 670
+          "line": 680
         }
       ],
       "original": [],
@@ -5773,7 +5773,7 @@
     "internal/adapters/memory/memory.go": "236f15e80e79d72f060ac487ed74f57fc25c775897028fd4c775fa2164346c46",
     "internal/adapters/nextconfig/browser_mode.go": "042c8a8abfebcfc6537d2720023443e98a2088032502bb119d4e5e5988f3e90e",
     "internal/adapters/nextconfig/browser_policy.go": "62039a6f023460a6ffa71ee7ee1d548694c8fa74e7327e4971c7ea2eab0ff77c",
-    "internal/adapters/nextconfig/nextconfig.go": "ac278ded76001b7882e31757d5843d96728d71b30727f363b6f00366e686d39d",
+    "internal/adapters/nextconfig/nextconfig.go": "dc91a9416e813e85c90c06b4a8d1f1e8529f6d8ac1d39ff3c59d514abaf30610",
     "internal/adapters/nextconfig/workflow.go": "c6520776bce147821e95eda181974cce5eaeae15067dd0c648dc5cffd99c05a7",
     "internal/adapters/planner/planner.go": "bf297cd3850201eb5f193de4883a106ef947bf0aecc9ed0a9f976a7704885722",
     "internal/adapters/planner/polish.go": "dd16490957d3262cae6f3f3e16317feb8a5eb637dc9eefb18acdf79c3fdb354e",
@@ -5985,7 +5985,7 @@
     "internal/transport/http/start.go": "9bec818a38b512099766fbe06dbc841ec196fcb501625c009ba36d81124845f6",
     "internal/transport/http/voice_live.go": "3aa560225c74eb0ad4438ef718794d3e7e02ad4a7376ef49e8c670cd6bdb6bb9",
     "internal/transport/http/voice_polish.go": "b8c10d3898ee1d04ed815468011fb43d57efbc1f7488143982a8bc6f02f753cd",
-    "internal/transport/http/work_v2.go": "4be9fc8db6de91dec64744cefcc7340f6fe0d824a2ab97eb5247505eb0e9eb26",
+    "internal/transport/http/work_v2.go": "9e7620911d8630fd26d8fd190afa03086e40940a61a01ccd06ca6b293da93f26",
     "internal/transport/http/work_v2_brief.go": "44ff50bb8f55e1fba32605cb10f887be4860aebfad5856e58b4222e562e9a3e3",
     "internal/transport/http/workflow_launch.go": "56f3e18bba4f2f657f0342239b3e621696e22d4e31eae5dfebb9458ca54a6dd7",
     "skills/LICENSE.pstack": "bc957ca6bee02792566a1a028d105e02e247c6e77cf057061674273da77b200e",

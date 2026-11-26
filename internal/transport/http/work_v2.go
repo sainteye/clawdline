@@ -139,6 +139,10 @@ type workV2CreatedViaWire struct {
 	// Persona (none when empty). Absent on a claim.
 	Assigned bool   `json:"assigned,omitempty"`
 	Persona  string `json:"persona,omitempty"`
+	// DecisionID and BotID name the Bot question card whose answer the item
+	// was created on; Run then repeats the card's id.
+	DecisionID string `json:"decision_id,omitempty"`
+	BotID      string `json:"bot_id,omitempty"`
 }
 
 // claimedViaWire is the wire of the person's message an assignment was made
@@ -415,6 +419,9 @@ func (s *Server) workV2ItemOf(catalog workV2ProjectCatalog, v app.WorkV2View) wo
 	}
 	if via := i.CreatedVia; via != nil && strings.HasPrefix(i.CreatedBy, work.ActorViaSession) {
 		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt}
+	} else if via != nil && via.Decision != "" && strings.HasPrefix(i.CreatedBy, work.ActorViaBotDecision) {
+		out.CreatedVia = &workV2CreatedViaWire{Run: via.Run, SessionID: via.Session, At: via.At, Excerpt: via.Excerpt,
+			DecisionID: via.Decision, BotID: via.Bot}
 	} else if via != nil && via.Epic != "" && strings.HasPrefix(i.CreatedBy, work.ActorEpicOwner) {
 		out.CreatedVia = &workV2CreatedViaWire{SessionID: via.Session, At: via.At, EpicID: via.Epic}
 	}

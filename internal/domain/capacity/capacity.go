@@ -278,6 +278,7 @@ const (
 	ReportOpenTodoRows           = "session.report_open_todo_rows"
 	ReportOpenTodoCharacters     = "session.report_open_todo_characters"
 	RunCreatedItems              = "run.created_items"
+	RunDecisionAnswerAge         = "run.decision_answer_age"
 	RunClaimedItems              = "run.claimed_items"
 	EpicChildItems               = "epic.child_items"
 	PlanReviewBlockingListed     = "planreview.blocking_listed"

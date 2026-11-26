@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14785,
+  "englishKeys": 14792,
   "counts": {
-    "negation": 3731,
-    "state": 2517,
+    "negation": 3733,
+    "state": 2518,
     "permission": 876,
     "deletion": 345,
     "uncertainty": 585
   },
-  "unionCount": 6255,
+  "unionCount": 6257,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -731,6 +731,7 @@
       "capacityRow.resources.scratch_seconds.full",
       "capacityRow.run.claimed_items.full",
       "capacityRow.run.created_items.full",
+      "capacityRow.run.decision_answer_age.full",
       "capacityRow.schedule.history_page_rows.full",
       "capacityRow.schedule.run_transcript_head.full",
       "capacityRow.schedule.run_transcripts_probed.full",
@@ -3718,6 +3719,7 @@
       "workflowProfiles.noUseReceipt",
       "workflowProfiles.unavailableDescription",
       "workflowProfiles.unknown",
+      "workflowSettings.bot_decision_itemsOff",
       "workflowSettings.codexPermissionHelp_full",
       "workflowSettings.dispatch_full_permissionOff",
       "workflowSettings.dispatch_full_permissionOn",
@@ -4450,6 +4452,7 @@
       "capacityRow.resources.scratch_total_bytes.full",
       "capacityRow.run.claimed_items.full",
       "capacityRow.run.created_items.full",
+      "capacityRow.run.decision_answer_age.full",
       "capacityRow.schedule.run_transcripts_probed.what",
       "capacityRow.session.close_scheduled.full",
       "capacityRow.session.close_scheduled.what",
@@ -9381,6 +9384,7 @@
     "capacityRow.resources.scratch_total_bytes.full",
     "capacityRow.run.claimed_items.full",
     "capacityRow.run.created_items.full",
+    "capacityRow.run.decision_answer_age.full",
     "capacityRow.schedule.history_page_rows.full",
     "capacityRow.schedule.run_transcript_head.full",
     "capacityRow.schedule.run_transcripts_probed.full",
@@ -14283,6 +14287,7 @@
     "workflowProfiles.unavailable",
     "workflowProfiles.unavailableDescription",
     "workflowProfiles.unknown",
+    "workflowSettings.bot_decision_itemsOff",
     "workflowSettings.codexPermissionHelp_full",
     "workflowSettings.codexPermissionHelp_native",
     "workflowSettings.codexPermissionShortcut",
