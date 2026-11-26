@@ -341,6 +341,9 @@ type Turn struct {
 	CharterVersion int64 `json:"charter_version,omitempty"`
 	// CharterEdit marks a change request sent from a charter page.
 	CharterEdit *CharterEdit `json:"charter_edit,omitempty"`
+	// CharterFix marks the person's request from a charter page that this
+	// Bot change one of its own sentences to agree with the charter.
+	CharterFix *CharterFix `json:"charter_fix,omitempty"`
 }
 
 type ExecutionBinding struct {
@@ -360,6 +363,10 @@ type ExecutionBinding struct {
 	// CharterVersion is the team charter version this native session last
 	// heard; a resumed session hears a newer one once, in its next prompt.
 	CharterVersion int64 `json:"charter_version,omitempty"`
+	// CharterChecked is the charter version this binding was last asked to
+	// compare with the Bot's own memory and instructions; below the current
+	// version, the next prompt asks once.
+	CharterChecked int64 `json:"charter_checked,omitempty"`
 }
 
 type MessageKind string

@@ -87,6 +87,26 @@ type CharterEditProposal struct {
 	Summary     string `json:"summary"`
 }
 
+// CharterConflictTools lets any Bot whose Project has a team charter report a
+// sentence of its own that the charter contradicts. A report changes
+// nothing; the person decides on the charter page.
+type CharterConflictTools interface {
+	CharterConflictAvailable(context.Context) error
+	ReportCharterConflict(context.Context, CharterConflictReport) (pa.CharterConflict, error)
+}
+
+// CharterConflictReport is the report_charter_conflict tool's arguments.
+type CharterConflictReport struct {
+	CharterVersion  int64  `json:"charter_version"`
+	Source          string `json:"source"`
+	Path            string `json:"path,omitempty"`
+	MemoryEntryID   string `json:"memory_entry_id,omitempty"`
+	BotSentence     string `json:"bot_sentence"`
+	CharterSentence string `json:"charter_sentence"`
+	Section         string `json:"section"`
+	Suggested       string `json:"suggested_replacement,omitempty"`
+}
+
 // LeadBotTools is a private capability scoped to the current Lead's direct user turn.
 type LeadBotTools interface {
 	LeadBotAvailable(context.Context) error

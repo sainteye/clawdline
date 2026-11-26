@@ -43,6 +43,9 @@ type Submission struct {
 	// CharterEdit marks the person's change request from a charter page; only
 	// Service.SendCharterEdit sets it, and only for the lead Bot.
 	CharterEdit *pa.CharterEdit
+	// CharterFix marks the person's request from a charter page that this
+	// Bot change its own sentence; only Service.SendCharterFix sets it.
+	CharterFix *pa.CharterFix
 }
 type StopRequest struct {
 	Command pa.Command
