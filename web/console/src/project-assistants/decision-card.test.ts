@@ -111,7 +111,8 @@ test("memory proposals use localized controls and show the confirmed detail whil
     assert.doesNotMatch(pending,/pa-decision-own|pa-decision-dismiss/)
     const answeredSummary={...memorySummary,state:"answered" as const}
     assert.ok(!render(answeredSummary,memoryOffer).includes(declined),"a stale detail does not imply a skip")
-    for(const cardSummary of [memorySummary,answeredSummary]){
+    const expiredSummary={...memorySummary,state:"expired" as const}
+    for(const cardSummary of [memorySummary,answeredSummary,expiredSummary]){
       for(const [answer,label] of [[saved,stored],[skipped,declined]] as const){
         const answered=render(cardSummary,answer)
         assert.ok(answered.includes(label),`${label} with a ${cardSummary.state} summary`)
