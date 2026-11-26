@@ -108,7 +108,9 @@ func (s *Server) charterConflictResolve(w http.ResponseWriter, r *http.Request) 
 	}
 	return s.charterWrite(r, body.MachineID, body.ProjectID, body.IdempotencyKey, func(ctx context.Context) error {
 		return s.resolveCharterConflict(ctx, body.MachineID, body.ProjectID, body.ConflictID, action, body.IdempotencyKey)
-	}, func(ctx context.Context) (any, error) { return s.charterConflictsAnswer(ctx, body.MachineID, body.ProjectID) })
+	}, func(ctx context.Context) (any, error) {
+		return s.charterConflictsAnswer(ctx, body.MachineID, body.ProjectID)
+	})
 }
 
 func (s *Server) resolveCharterConflict(ctx context.Context, machine, project, id string, action pa.CharterConflictAction, idem string) error {
