@@ -325,6 +325,41 @@
     "Note": true
   },
   {
+    "Name": "bots.charter_body_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_projects",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_proposals",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_reason_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_request_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_versions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.chat_gap_ms",
     "Known": true,
     "Note": true
@@ -2567,6 +2602,18 @@
   },
   {
     "Name": "console.held_read_lost_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.local_bot_read_timeout",
+    "Err": true
+  },
+  {
+    "Name": "console.local_fleet_stream_frames",
+    "Err": true
+  },
+  {
+    "Name": "console.local_fleet_stream_lease",
     "Err": true
   },
   {

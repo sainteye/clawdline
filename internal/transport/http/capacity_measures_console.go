@@ -439,6 +439,19 @@ func (s *Server) consoleCapacityMeasures() map[string]func() capacity.Reading {
 			}
 		}
 	}
+	return withLocalConsoleCapacityMeasures(out)
+}
+
+func withLocalConsoleCapacityMeasures(out map[string]func() capacity.Reading) map[string]func() capacity.Reading {
+	out["console.local_bot_read_timeout"] = func() capacity.Reading {
+		return capacity.Unmeasured("the console aborts local Bot reads with its own timer; the daemon cannot observe the browser's deadline or timeout result")
+	}
+	out["console.local_fleet_stream_frames"] = func() capacity.Reading {
+		return capacity.Unmeasured("the browser tab caches the latest Sessions and task frames; the daemon cannot observe which frames the tab retains")
+	}
+	out["console.local_fleet_stream_lease"] = func() capacity.Reading {
+		return capacity.Unmeasured("the browser's Web Locks manager owns the lease per origin; an open daemon event stream does not reveal its lock state")
+	}
 	return out
 }
 

@@ -10444,7 +10444,9 @@
     "EvictedBy": "daemon",
     "Projects": false,
     "QuietRecovery": false,
-    "Sources": null
+    "Sources": [
+      "internal/domain/capacity.MaximumLocalBotReadSeconds"
+    ]
   },
   {
     "Register": "daemon",

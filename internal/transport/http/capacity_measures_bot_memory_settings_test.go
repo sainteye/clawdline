@@ -1,6 +1,52 @@
 package http
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+)
+
+func TestBotCharterCapacityReadsDurableUsage(t *testing.T) {
+	f := newPAServerFixture(t, true)
+	f.enable(t)
+	st := f.s.projectAssistantFloorsStore()
+	for _, w := range []projectassistantstore.CharterWrite{
+		{MachineID: "one", ProjectID: "p1", IdempotencyKey: "first", Text: "Earlier", Reason: "章程"},
+		{MachineID: "one", ProjectID: "p1", IdempotencyKey: "second", Text: "Current", ExpectedVersion: 1},
+		{MachineID: "one", ProjectID: "p2", IdempotencyKey: "first", Text: "Second"},
+		{MachineID: "two", ProjectID: "p1", IdempotencyKey: "first", Text: "Remote"},
+	} {
+		w.At = time.Now()
+		w.Author = pa.CharterByPerson
+		if _, err := st.SaveCharter(t.Context(), w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, p := range []pa.CharterProposal{
+		{ProjectID: "p1", TurnID: "first", BaseVersion: 2, Text: "團隊章程", Summary: "Short"},
+		{ProjectID: "p1", TurnID: "second", BaseVersion: 2, Text: "Other"},
+		{ProjectID: "p3", TurnID: "third", Text: "Draft"},
+	} {
+		p.BotID, p.CreatedAt = "lead", time.Now()
+		if _, err := st.ProposeCharter(t.Context(), "one", p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	measures := f.s.capacityMeasures()
+	for name, want := range map[string]int64{
+		"bots.charter_versions":     2,
+		"bots.charter_proposals":    2,
+		"bots.charter_projects":     2,
+		"bots.charter_text_bytes":   int64(len("團隊章程")),
+		"bots.charter_reason_bytes": int64(len("章程")),
+	} {
+		if got := measures[name](); !got.Known || got.Used != want {
+			t.Errorf("%s = %+v; want known usage %d", name, got, want)
+		}
+	}
+}
 
 func TestBotSettingsCapacityReadsDurableValuesAndUnknown(t *testing.T) {
 	f := newPAServerFixture(t, true)

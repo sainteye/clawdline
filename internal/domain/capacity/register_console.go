@@ -5,6 +5,20 @@ const (
 	MaximumStartedSessionRetrySeconds  = 5
 	MaximumStartedSessionFollowSeconds = 60
 	MaximumStartedSessionReads         = 12
+
+	// MaximumLocalBotReadSeconds is LOCAL_BOT_READ_TIMEOUT_MS in
+	// web/console/src/cloud/project-assistants.ts, in seconds. Measured on
+	// 2026-11-26 with three owner-local GET /v1/api-performance reads
+	// (hours=1|24|168; mixed dev builds up to v3.2.0-dev.44bc9fb, zero dropped
+	// observations), the route GET /v1/project-assistants/:id/view [snapshot]
+	// completed 1962 times in seven days: histogram P50 <= 500 ms, P95 <= 5 s,
+	// P99 <= 10 s, observed maximum 43.6 s; 7 reads (0.36%) took over 10 s and
+	// 2 over 30 s. The last 24 hours held 277 reads, P99 <= 5 s, maximum 5.7 s.
+	// The bound is 1.5 times the seven-day P99 bucket and 2.6 times the 24-hour
+	// maximum. The memory-view route had no row: it fell into route overflow,
+	// so its latency is unmeasured. Daemon completion time also excludes the
+	// browser's own connection queue, which the deadline does include.
+	MaximumLocalBotReadSeconds = 15
 )
 
 // consoleBounds is every registered row named console.*.
@@ -17,8 +31,14 @@ func baseConsoleBounds() []Entry {
 		// for a listener that joins after its tab's connection is open.
 		{Name: "console.local_fleet_stream_frames", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		// Native fetch gives up the connection if the local chat snapshot or
-		// memory read cannot finish (LOCAL_BOT_READ_TIMEOUT_MS).
-		{Name: "console.local_bot_read_timeout", Class: Cache, Unit: Seconds, Limit: 15, AtLimit: Expire, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
+		// memory read cannot finish (LOCAL_BOT_READ_TIMEOUT_MS); the measured
+		// latency behind the number is on MaximumLocalBotReadSeconds.
+		{
+			Name: "console.local_bot_read_timeout", Class: Cache, Unit: Seconds,
+			Limit: MaximumLocalBotReadSeconds, AtLimit: Expire,
+			Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumLocalBotReadSeconds"},
+		},
 		{Name: "console.copilot_session_report_batch", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_refs", Class: Cache, Unit: Rows, Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_sessions", Class: Buffer, Unit: Rows, Limit: 24, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},
