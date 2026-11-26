@@ -71,7 +71,7 @@ web/console/src/pages/work/WorkV2.tsx	WorkV2Page	337	76
 web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
 web/console/src/project-assistants/BotSettings.tsx	BotSettings	122	60
-web/console/src/project-assistants/Bots.tsx	Bots	445	137
+web/console/src/project-assistants/Bots.tsx	Bots	438	136
 web/console/src/project-assistants/Chat.tsx	Chat	2071	602
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	85	49
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78

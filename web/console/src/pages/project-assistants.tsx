@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
 import type * as W from "@clawdline/contract"
+import type { ConnectionLightState } from "../connection-state.js"
 import { onStatusRefresh } from "../status-refresh.js"
 import { Bots } from "../project-assistants/Bots.js"
 import { browserBotVoiceAvailable } from "../project-assistants/BotVoicePanel"
@@ -25,9 +26,10 @@ const BADGE_REFRESH_MS = 15_000
 // The status bar opens the window; each source controls access to its own Bots.
 export const page: PageModule = {id:"project-assistants",drawer:false,Component:() => null}
 
-export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, language, onOpenWork}: {
+export function useProjectAssistantsHost({registry: supplied, apiLevel, connection, cloud, language, onOpenWork}: {
   registry?: ProjectAssistantRegistry | null
   apiLevel?: number
+  connection?: ConnectionLightState
   cloud: boolean
   language: string
   onOpenWork?: (work: W.ProjectAssistantWorkLink) => void
@@ -244,7 +246,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, cloud, l
   const [ox,oy] = windowOrigin.current.split(" ")
   const content = opened ? <section data-page-view="project-assistants" aria-label="Bots" className="pa-window" data-closing={closing || undefined}
     style={{position:"fixed",inset:0,zIndex:1000,height:"100dvh",["--pa-ox" as string]:ox,["--pa-oy" as string]:oy}}>
-    <Bots key={entry} onRosterObserved={observeCompletions} onRosterUnavailable={registry.reportRosterScreen} sources={sources} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
+    <Bots key={entry} onRosterObserved={observeCompletions} onRosterUnavailable={registry.reportRosterScreen} sources={sources} connection={connection} language={language} accountKey={registry.accountKey} readerID={registry.readerID}
       viewState={registry.viewState} openBot={target ?? undefined} voiceShortcut={voiceShortcut} returnFocus={opener.current} manageHistory onClose={close}
       onOpenWork={(work, view) => {
         const target = assistantWorkTarget(work)

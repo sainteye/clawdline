@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
+import type { ConnectionLightState } from "../connection-state"
 import type { RosterFailure, RosterScreenEvidence, SourceClient } from "./client"
 import { authorized, command, errorCode, projectChoices, botFromFragment } from "./client"
 import { decisionFromFragment } from "./decision-focus"
@@ -14,7 +15,7 @@ import { BotCreate } from "./BotCreate"
 import { BotsSettingsModal, sharedSettingsProjects } from "./BotsSettingsModal"
 import { HiddenBots } from "./HiddenBots"
 import { Chat, EventRefreshMs } from "./Chat"
-import { followLiveRoster } from "./live-roster"
+import { createRosterReconnect, followLiveRoster } from "./live-roster"
 import { readSnapshotRoster, serialSnapshotRefresh, followSnapshotRoster } from "./snapshot-roster"
 import { botIdentity, canRead, canWrite, createViewState, mergeRoster, type ViewState } from "./view-state"
 import { words } from "./words"
@@ -31,6 +32,7 @@ export interface BotsProps {
   onRosterUnavailable?:(evidence:RosterScreenEvidence)=>void
   onRosterObserved?:(items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[])=>void
   sources: readonly SourceClient[]
+  connection?: ConnectionLightState
   onClose:()=>void
   language?:string
   /** Authenticated account namespace and reader principal, supplied by the integration host. */
@@ -46,10 +48,10 @@ export interface BotsProps {
   /** One Bot to open at mount, by its stable key (the Sessions list's dispatch frame). */
   openBot?:W.ProjectAssistantBotKey
 }
-interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;failure?:RosterFailure;loadedPages?:number;checked?:number}
-export function Bots({sources,onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,onRosterUnavailable,manageHistory=false,onSelectionChange,voiceShortcut=0,openBot}:BotsProps) {
-  const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
-  const [pages,setPages]=useState<Record<string,SourcePage>>({}),[creating,setCreating]=useState(false),[botsSettings,setBotsSettings]=useState(false)
+interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;failure?:RosterFailure;loadedPages?:number;checked?:number;waitingForConnection?:boolean}
+type SourcePages=Record<string,SourcePage>
+
+function useManualRosterRefresh(sources:readonly SourceClient[],pages:SourcePages) {
   const [rosterRetry,setRosterRetry]=useState(0)
   const manualRefresh=useRef<{attempt:number;promise:Promise<void>;resolve:()=>void}|null>(null)
   const refreshRoster=useCallback(()=>{
@@ -72,6 +74,35 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
     refresh.resolve()
   },[pages,rosterRetry,sources])
   useEffect(()=>()=>manualRefresh.current?.resolve(),[])
+  return {rosterRetry,refreshRoster}
+}
+
+function rosterIsLoading(connection:ConnectionLightState,readable:boolean,sources:readonly SourceClient[],pages:SourcePages,
+  snapshotPending:ReadonlySet<SourceClient>,livePending:Record<string,boolean>) {
+  if(!readable&&(connection==="connecting"||connection==="retrying"))return true
+  return sources.some(source=>{
+    const page=pages[source.machineID]
+    // The failed read made before reconnection is superseded by a fresh attempt.
+    return snapshotPending.has(source)||livePending[source.machineID]||page?.revision!==source.authorizationRevision||
+      (connection==="live"&&page.waitingForConnection)
+  })
+}
+
+function retryInterruptedRoster(sources:readonly SourceClient[],pages:SourcePages,live:ReadonlyMap<SourceClient,()=>void>,
+  snapshots:ReadonlyMap<SourceClient,(append?:boolean)=>Promise<void>>) {
+  for(const source of sources){
+    const page=pages[source.machineID]
+    if(page?.revision!==source.authorizationRevision||!retryableSourceError(page.error))continue
+    // Both paths wake their existing retry loop without replacing a flight.
+    const retry=live.get(source)??snapshots.get(source)
+    void retry?.()
+  }
+}
+
+export function Bots({sources,connection="live",onClose,language="en",accountKey,readerID,viewState,returnFocus,onOpenWork,onRosterObserved,onRosterUnavailable,manageHistory=false,onSelectionChange,voiceShortcut=0,openBot}:BotsProps) {
+  const w=words(language),[selected,setSelected]=useState<string|null>(null),[query,setQuery]=useState(""),[machine,setMachine]=useState("")
+  const [pages,setPages]=useState<SourcePages>({}),[creating,setCreating]=useState(false),[botsSettings,setBotsSettings]=useState(false)
+  const {rosterRetry,refreshRoster}=useManualRosterRefresh(sources,pages)
   const [snapshotPending,setSnapshotPending]=useState<ReadonlySet<SourceClient>>(()=>new Set(sources))
   const [rosterPrompt,setRosterPrompt]=useState<RosterPrompt|null>(null)
   const {rosterNotice,setRosterNotice,newSessionCount,notifyRosterEdit}=useRosterFeedback(selected,w)
@@ -103,7 +134,9 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   const historyID=useRef(typeof crypto!=="undefined"?crypto.randomUUID():"")
   const lastSelected=useRef<string|null>(null)
   const snapshotLoaders=useRef(new Map<SourceClient,(append?:boolean)=>Promise<void>>())
+  const rosterReconnects=useRef(new Map<SourceClient,()=>void>())
   const deniedSnapshots=useRef(new Set<SourceClient>())
+  const connectionRef=useRef(connection);connectionRef.current=connection
   const pagesRef=useRef(pages);pagesRef.current=pages
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
   useEffect(()=>{
@@ -112,21 +145,22 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[pages,authorization,onRosterObserved])
   const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
-  const rosterLoading=sources.some(s=>(!machine||s.machineID===machine)&&(snapshotPending.has(s)||livePending[s.machineID]))
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
   const callableLeads=sources.flatMap(source=>allItems.filter(item=>item.bot.key.machine_id===source.machineID&&item.bot.lead&&!item.bot.hidden&&canWrite(item.source)))
   const availableLead=callableLeads.find(item=>botIdentity(item.bot.key)===preferredLead)??callableLeads[0]
   const statuses=Object.entries(pages).flatMap(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)?p.statuses:[])
-  const rosterUnavailable=!rosterLoading&&!statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))
+  const scopedSources=sources.filter(source=>!machine||source.machineID===machine)
+  const readableRoster=statuses.some(status=>(!machine||status.machine_id===machine)&&canRead(status))
+  const rosterLoading=rosterIsLoading(connection,readableRoster,scopedSources,pages,snapshotPending,livePending)
+  const rosterUnavailable=!rosterLoading&&!readableRoster
   const reportUnavailable = onRosterUnavailable && ((order: string) => {
-    const scoped = sources.filter(source => !machine || source.machineID === machine)
     onRosterUnavailable({
       machine: machine || null,
-      source_count: scoped.length,
+      source_count: scopedSources.length,
       searching: query.trim().length > 0,
       order,
       online: navigator.onLine,
-      sources: scoped.map(source => {
+      sources: scopedSources.map(source => {
         const page = pages[source.machineID]
         if (page?.revision !== source.authorizationRevision) return `${source.machineID}|no_answer`
         const failure = page.failure
@@ -179,14 +213,16 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
           if (control.signal.aborted) return
           const code = errorCode(error)
           const denied = ["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(code)
-          if (!retryableSourceError(code)) deniedSnapshots.current.add(source)
+          const retryable=retryableSourceError(code)
+          if (!retryable) deniedSnapshots.current.add(source)
+          const waitingForConnection=retryable&&connectionRef.current!=="live"
           setPages(old => {
             const previous = old[source.machineID]
             const sameSource = !denied && previous?.revision === source.authorizationRevision
             const sameQuery = sameSource && previous.query === query && previous.requestQuery === requestQuery
             const stale = {fresh:false,writable:false}
             return {...old,[source.machineID]:{
-              revision:source.authorizationRevision,query,requestQuery,error:code,failure,checked:rosterRetry,
+              revision:source.authorizationRevision,query,requestQuery,error:code,failure,checked:rosterRetry,waitingForConnection,
               items:sameQuery ? previous.items.map(item => ({...item,source:{...item.source,...stale}})) : [],
               cursor:sameQuery ? previous.cursor : "",
               loadedPages:sameQuery ? previous.loadedPages : undefined,
@@ -232,21 +268,29 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
   },[selected,authorization,query,searchProjectNames,rosterRetry])
   useEffect(()=>{
     const control=new AbortController()
+    const reconnects=new Map<SourceClient,()=>void>()
+    rosterReconnects.current=reconnects
     setLivePending({})
     for(const source of sources) {
       if(!source.canRoster?.()||!source.subscribeRoster)continue
+      const reconnect=createRosterReconnect()
+      reconnects.set(source,reconnect.retry)
       void followLiveRoster(source,current,control.signal,EventRefreshMs,value=>{
         if(control.signal.aborted||!current().includes(source))return
+        const waitingForConnection=value.retryable&&connectionRef.current!=="live"
         setLivePending(old=>({...old,[source.machineID]:value.pending}))
         setPages(old=>{
           const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
           const items=value.items??(value.error?previous?.items.map(i=>({...i,source:{...i.source,fresh:false,writable:false}})):previous?.items)??[]
-          return {...old,[source.machineID]:{revision:source.authorizationRevision,query:"",requestQuery:"",items,cursor:"",statuses:value.statuses??previous?.statuses??[],error:value.error,checked:value.pending?previous?.checked:rosterRetry}}
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,query:"",requestQuery:"",items,cursor:"",statuses:value.statuses??previous?.statuses??[],error:value.error,checked:value.pending?previous?.checked:rosterRetry,waitingForConnection}}
         })
-      })
+      },reconnect.wait)
     }
     return()=>control.abort()
   },[sources,current,rosterRetry])
+  useEffect(()=>{
+    if(connection==="live")retryInterruptedRoster(current(),pagesRef.current,rosterReconnects.current,snapshotLoaders.current)
+  },[connection,current])
   useEffect(()=>{
     const control=new AbortController()
     setProjectNames(new Map());setProjectIcons(new Map())
@@ -461,7 +505,7 @@ export function Bots({sources,onClose,language="en",accountKey,readerID,viewStat
       <span>{rosterNotice.text}</span>{rosterNotice.open&&<button type="button" className="pa-roster-notice-open" onClick={()=>openCreated(rosterNotice.open!)}>{w.openBot}</button>}<button type="button" onClick={()=>setRosterNotice(null)} aria-label={w.close}>×</button>
     </div>}
     {rosterPrompt&&<RosterActionDialog prompt={rosterPrompt} w={w} onClose={()=>setRosterPrompt(null)} apply={applyPrompt}/>}
-    <BotRoster onSettings={sources.length?()=>setBotsSettings(true):undefined} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onRetry={sources.length?refreshRoster:undefined} onRefresh={refreshRoster} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
+    <BotRoster onSettings={sources.length?()=>setBotsSettings(true):undefined} botActions={botActions} saveRoster={updateSidebar} newSection={item=>setRosterPrompt({item,action:"section"})} key={namespace} view={botsView} onView={changeView} tower={narrow?tower:undefined} rosterScope={namespace} sources={sources} current={current} readerID={readerID} onRead={refreshAfterRead} groupsItems={allItems} items={items} machines={sources.map(s=>s.machineID)} selected={selected} onOpenGroup={groupOpened} onGroupOpenChange={groupOpenChanged} groupRoute={manageHistory?groupRoute:undefined} onGroupBack={groupBack} query={query} onQuery={setQuery} machine={machine} onMachine={setMachine} onSelect={select} onClose={onClose} onCreate={statuses.some(canWrite)?()=>setCreating(true):undefined} w={w} language={language} loading={rosterLoading} unavailable={rosterUnavailable} onUnavailable={reportUnavailable} onRetry={sources.length?refreshRoster:undefined} onRefresh={refreshRoster} machineNames={machineNames} projectIcons={projectIcons} hidden={hiddenItems.length?<HiddenBots items={hiddenItems} onUnhide={item=>void unhide(item).catch(()=>{})} w={w}/>:undefined} onMore={!rosterLoading&&Object.values(pages).some(p=>p.query===query&&!!p.cursor)?()=>void load(true):undefined} projectNames={projectNames}/>
     <main className="pa-main" {...(towerSheet?swipe:{})}>{towerSheet&&<div className="pa-sheet-grip" aria-hidden="true"/>}{selectedItem&&selectedSource?<FallbackSourceScope source={selectedSource}><Chat key={JSON.stringify([namespace,selected,selectedSource.authorizationRevision])} summary={selectedItem} pushed={livePending[selectedSource.machineID]===false&&!pages[selectedSource.machineID]?.error} openedAt={chatOpened.current?.id===selected?chatOpened.current.at:undefined} projectNameOf={b=>projectNames.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} projectIconOf={b=>projectIcons.get(JSON.stringify([b.key.machine_id,b.project.project_id]))} voiceShortcut={callTarget?.key===selected?callTarget?.request:undefined} roster={allItems.map(item=>item.bot)} editProfileRequest={profileRequest?.id===selected?profileRequest?.count:undefined} projectName={selectedItem.bot.project.kind==="personal"?w.personalWorkspace:projectNames.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} projectIcon={projectIcons.get(JSON.stringify([selectedItem.bot.key.machine_id,selectedItem.bot.project.project_id]))} machineName={sources.length>1?machineNames.get(selectedItem.bot.key.machine_id)||w.thisMachine:undefined} source={selectedSource} current={current} accountKey={namespace} readerID={readerID} view={view} w={w} language={language} showBack={groupOpen||botsView==="tower"} backLabel={groupOpen?w.backToGroup:botsView==="tower"?w.towerBack:undefined} onBack={back} onOpenWork={onOpenWork} onRead={()=>void refreshAfterRead(selectedSource)} onDeleted={()=>removeFromList(selectedItem.bot.key)} focusDecision={decisionTarget?.bot===selected?decisionTarget.id:undefined} onDecisionFocused={()=>setDecisionTarget(null)} onNewSession={()=>setRosterPrompt({item:selectedItem,action:"new-session"})} newSessionCount={newSessionCount} onBotChanged={updateBot} onOpenBot={key=>{const item=allItems.find(i=>i.bot.key.machine_id===key.machine_id&&i.bot.key.bot_id===key.bot_id);if(!item)return;select(item);window.setTimeout(()=>document.querySelector(".pa-decision[data-state=\"pending\"]")?.scrollIntoView({block:"center"}),400)}}/></FallbackSourceScope>:!narrow&&tower?tower:<p className="pa-select-prompt">{w.selectBot}</p>}</main>
     {botsSettings&&<BotsSettingsModal projects={sharedSettingsProjects(projectNames,w.personalWorkspace)} machines={sources.map(s=>({source:s,name:machineNames.get(s.machineID)||(sources.length>1?s.machineID:w.thisMachine)}))} initialMachine={machine||selectedItem?.bot.key.machine_id} onClose={()=>setBotsSettings(false)}/>}
     {creating&&<BotCreate sources={sources} current={current} w={w} onClose={()=>setCreating(false)} onCreated={created}/>}
