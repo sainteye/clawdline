@@ -73,6 +73,9 @@
 | `bots.carry_messages` | 12 | `rows` | `coalesce` | `diagnostics` | — |
 | `bots.carry_quote_bytes` | 2000 | `bytes` | `coalesce` | `diagnostics` | — |
 | `bots.charter_body_bytes` | 262144 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_conflict_sentence_bytes` | 2048 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_conflicts` | 50 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_conflicts_resolved` | 50 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `bots.charter_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_proposals` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_reason_bytes` | 500 | `bytes` | `refuse` | `diagnostics, sender` | — |
