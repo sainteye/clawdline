@@ -374,13 +374,9 @@ const Schedules = (() => {
   let answerVersion = 0
   const recovery = new ScheduleRecovery()
   const machineKey = () => scheduleFleet()?.machines.map((machine) => machine.id).join(" ") ?? ""
-  // The catalog the words on screen were drawn in. The section can draw while
-  // the page is still booting, before the selected catalog has arrived.
-  let paintedIn = ""
   const paintReadState = () => {
     const state = document.getElementById("schedules-state")
     if (!state) return
-    paintedIn = currentCatalogTag()
     if (readState === "loading" && !lastAnswer) {
       state.innerHTML = loadingSkeletonHTML(nextWord("schedulesLoading"), "SK-11")
       state.hidden = false
@@ -705,13 +701,6 @@ const Schedules = (() => {
   }
 
   return {
-    /** Draw the words again when the catalog they were drawn in has changed. */
-    catalogChanged(): void {
-      if (!started || paintedIn === currentCatalogTag()) return
-      if (lastAnswer && lastAnswerMachines === machineKey())
-        renderSchedules(lastAnswer.schedules, lastAnswer.at, lastAnswer.unanswered)
-      paintReadState()
-    },
     machineReady(machine: string): void {
       recovery.machineReady(machine)
       retryReadyMissing()
@@ -3012,10 +3001,17 @@ export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen
     return () => { unbind(); host.open = () => {}; host.canOpen = (id) => !!L.byId(id) }
   }, [])
 
+  // The section can start while the page is still booting, before the
+  // selected catalog has arrived; what it drew then is drawn again in the
+  // catalog's words (`Schedules.start` repaints and only reads when owed).
+  const drawnIn = useRef(currentCatalogTag())
   // `static.js` again whenever the catalog has changed.
   useEffect(() => {
     paintStatic()
-    Schedules.catalogChanged()
+    const tag = currentCatalogTag()
+    if (tag === drawnIn.current) return
+    drawnIn.current = tag
+    if (arrived && (!waitForFleet || scheduleFleet())) Schedules.start()
   })
 
   useEffect(() => {
