@@ -12,7 +12,7 @@ web/console/src/cloud/PairPanel.tsx	PairPanel	343	134
 web/console/src/cloud/PeerAccessPage.tsx	PeerAccessPage	108	28
 web/console/src/cloud/admin/AdminGate.tsx	AdminGate	105	52
 web/console/src/cloud/admin/health/fixture.ts	fixtureAnswer	65	48
-web/console/src/cloud/project-assistants.ts	assistantRelayRequest	216	140
+web/console/src/cloud/project-assistants.ts	assistantRelayRequest	216	138
 web/console/src/cloud/relay-reader.ts	RelayReader.answerFetch	420	181
 web/console/src/cloud/relay-reader.ts	RelayReader.snapshotReading	116	54
 web/console/src/cloud/relay-writer.ts	RelayWriter.carry	739	423
@@ -72,7 +72,7 @@ web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
 web/console/src/project-assistants/BotSettings.tsx	BotSettingsForm	122	60
 web/console/src/project-assistants/Bots.tsx	Bots	438	136
-web/console/src/project-assistants/Chat.tsx	Chat	2058	597
+web/console/src/project-assistants/Chat.tsx	Chat	2058	596
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	85	48
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78
 web/console/src/project-assistants/ImageViewer.tsx	useImageZoom	170	45

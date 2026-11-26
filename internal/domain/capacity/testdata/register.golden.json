@@ -2392,6 +2392,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.exchange_excerpt_characters",
+    "Class": "buffer",
+    "Unit": "characters",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxExchangeExcerptRunes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.extensions",
     "Class": "buffer",
     "Unit": "rows",

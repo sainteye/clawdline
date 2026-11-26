@@ -101,6 +101,7 @@ export function teamPermission(p:W.ProjectAssistantPermissionOffer) {
 export function readViewRequest(q:W.ProjectAssistantReadViewRequest):W.ProjectAssistantReadViewRequest {
   if(!q||!key(q.key)||!text(q.conversation_id)||!oneOf(q.mode,ProjectAssistantReadViewModeValues)||typeof q.source_epoch!=="string"||!cursor(q.cursor)||!integer(q.after_seq)||!integer(q.page_size,1)||q.page_size>(q.mode==="events"?256:100))throw failure("pa_invalid")
   if(q.team_cards!==undefined&&q.team_cards!==true||q.defer_trace_count!==undefined&&q.defer_trace_count!==true)throw failure("pa_invalid")
+  if(q.exchange_excerpts!==undefined&&(q.exchange_excerpts!==true||q.mode!=="snapshot"&&q.mode!=="history"))throw failure("pa_invalid")
   if(q.mode==="snapshot") {if(q.source_epoch||q.cursor||q.after_seq)throw failure("pa_invalid")}
   else if(!q.source_epoch||q.mode!=="events"&&q.after_seq||q.mode==="events"&&q.cursor||(q.mode==="history"||q.mode==="detail")&&!q.cursor||q.mode==="detail"&&q.page_size!==1)throw failure("pa_invalid")
   return q

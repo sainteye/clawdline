@@ -15,6 +15,10 @@ const (
 	// Cursor bytes bound a stateless signed position/reference, not retained
 	// history. Oversized positions are refused rather than truncated.
 	MaxReadViewCursorBytes = 4 << 10
+	// MaxExchangeExcerptRunes is how much of an exchange's request, reply
+	// and notice text a chat page carries when it asks for excerpts. The
+	// chat shows a shorter summary; the exchange panel reads the full text.
+	MaxExchangeExcerptRunes = 1000
 )
 
 type ReadViewRequest struct {
@@ -27,6 +31,9 @@ type ReadViewRequest struct {
 	PageSize        int
 	TeamCards       bool
 	DeferTraceCount bool
+	// ExchangeExcerpts shortens exchange text in timeline rows to
+	// MaxExchangeExcerptRunes. Only snapshot and history pages have them.
+	ExchangeExcerpts bool
 }
 
 func CheckReadViewRequest(q ReadViewRequest) error {
@@ -46,6 +53,9 @@ func CheckReadViewRequest(q ReadViewRequest) error {
 	}
 	if q.AfterSeq < 0 {
 		return fail(Invalid, "after_seq")
+	}
+	if q.ExchangeExcerpts && q.Mode != ReadViewSnapshot && q.Mode != ReadViewHistory {
+		return fail(Invalid, "exchange_excerpts")
 	}
 	if q.Mode == ReadViewSnapshot {
 		if q.SourceEpoch != "" || q.Cursor != "" || q.AfterSeq != 0 {
@@ -72,4 +82,26 @@ func CheckReadViewRequest(q ReadViewRequest) error {
 		return fail(Invalid, "page_size")
 	}
 	return nil
+}
+
+// ExcerptExchange shortens an exchange notice's text, request and reply to
+// MaxExchangeExcerptRunes each. Other messages are unchanged.
+func ExcerptExchange(m *Message) {
+	if m.Exchange == nil {
+		return
+	}
+	x := *m.Exchange
+	m.Text, x.Request, x.Reply = excerptRunes(m.Text), excerptRunes(x.Request), excerptRunes(x.Reply)
+	m.Exchange = &x
+}
+
+func excerptRunes(s string) string {
+	n := 0
+	for i := range s {
+		if n == MaxExchangeExcerptRunes {
+			return s[:i]
+		}
+		n++
+	}
+	return s
 }

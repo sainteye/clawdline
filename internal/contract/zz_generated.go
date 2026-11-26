@@ -6874,9 +6874,14 @@ type ProjectAssistantReadViewRequest struct {
 
 	// When true, skip the aggregate trace count outside traces mode. A zero in the
 	// head then does not describe trace availability.
-	DeferTraceCount bool                         `json:"defer_trace_count,omitempty"`
-	Key             ProjectAssistantBotKey       `json:"key"`
-	Mode            ProjectAssistantReadViewMode `json:"mode"`
+	DeferTraceCount bool `json:"defer_trace_count,omitempty"`
+
+	// Snapshot and history only. When true, an exchange notice's text, request and
+	// reply are each cut to their first 1,000 characters. Read without it for the full
+	// text.
+	ExchangeExcerpts bool                         `json:"exchange_excerpts,omitempty"`
+	Key              ProjectAssistantBotKey       `json:"key"`
+	Mode             ProjectAssistantReadViewMode `json:"mode"`
 
 	// Events up to256; other pages up to100; detail exactly1.
 	PageSize int64 `json:"page_size"`

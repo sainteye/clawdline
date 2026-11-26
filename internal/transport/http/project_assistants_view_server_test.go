@@ -376,7 +376,7 @@ func TestProjectAssistantCloudReadRecordsReachedStages(t *testing.T) {
 		t.Fatalf("request and observed answer disagree: %d, %+v", answer.Status, row)
 	}
 	for _, stage := range []string{"source_open", "source_queue", "bridge", "view", "view_authority",
-		"sqlite_acquire", "sqlite_read", "sqlite_metadata", "sqlite_fact_shape", "sqlite_fact_relations",
+		"sqlite_acquire", "sqlite_read", "sqlite_metadata",
 		"sqlite_chat_head", "sqlite_background_tasks", "sqlite_turn_counts", "sqlite_trace_count",
 		"sqlite_pending_turns", "sqlite_last_turn", "sqlite_timeline", "sqlite_reactions", "sqlite_commit",
 		"view_revalidate", "response_encode", "publication_authority", "response_publish"} {

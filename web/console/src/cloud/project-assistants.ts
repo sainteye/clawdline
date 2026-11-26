@@ -85,6 +85,7 @@ const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
 const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
+const PROJECT_ASSISTANTS_EXCHANGE_EXCERPTS_API_LEVEL = 125
 const PROJECT_ASSISTANTS_REPLY_INPUT_API_LEVEL = 121
 const PROJECT_ASSISTANTS_PROGRESS_API_LEVEL = 118
 const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
@@ -151,6 +152,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly grant: Readonly<AssistantGrant>
   canTeamCards() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL }
   canDeferTraceCount() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL }
+  canExchangeExcerpts() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_EXCHANGE_EXCERPTS_API_LEVEL }
   canReadProgress() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_PROGRESS_API_LEVEL }
   canSettingsBase() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL }
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
@@ -538,11 +540,11 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal,observation?: BotReadObservation) {
     this.key(r.key);readViewRequest(r)
-    const level=r.mode==="progress"?PROJECT_ASSISTANTS_PROGRESS_API_LEVEL:r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
+    const level=r.mode==="progress"?PROJECT_ASSISTANTS_PROGRESS_API_LEVEL:r.exchange_excerpts?PROJECT_ASSISTANTS_EXCHANGE_EXCERPTS_API_LEVEL:r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
     const mode = this.grant.accountKey === "local" ? r.mode === "snapshot" ? "local-view" : "standard" : "cloud-view"
     const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
       machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,
-      ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{})
+      ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{}),...(r.exchange_excerpts?{exchange_excerpts:"true"}:{})
     }),s,undefined,"GET",true,level,mode,observation)
     this.check(s,false,false,PROJECT_ASSISTANTS_VIEW_API_LEVEL,mode)
     if(!answer?.head)throw failure("pa_invalid")
@@ -916,13 +918,13 @@ export function assistantRelayRequest(input: string, init?: RequestInit) {
     }
     if(tail==="/view") {
       const fields=["machine_id","conversation_id","mode","source_epoch","cursor","after_seq","page_size"]
-      for(const flag of ["team_cards","defer_trace_count"]){
+      for(const flag of ["team_cards","defer_trace_count","exchange_excerpts"]){
         if(!url.searchParams.has(flag))continue
         if(q[flag]!=="true")throw failure("pa_invalid")
         fields.push(flag)
       }
       if(init?.body!=null||url.searchParams.size!==fields.length||fields.some(field=>!url.searchParams.has(field))||Object.keys(q).some(field=>!fields.includes(field))||! /^(0|[1-9][0-9]*)$/.test(q.after_seq)||! /^[1-9][0-9]*$/.test(q.page_size))throw failure("pa_invalid")
-      const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size),...(q.team_cards?{team_cards:true}:{}),...(q.defer_trace_count?{defer_trace_count:true}:{})}
+      const request:W.ProjectAssistantReadViewRequest={key,conversation_id:q.conversation_id,mode:q.mode as W.ProjectAssistantReadViewMode,source_epoch:q.source_epoch,cursor:q.cursor,after_seq:Number(q.after_seq),page_size:Number(q.page_size),...Object.fromEntries(fields.slice(7).map(flag=>[flag,true]))}
       readViewRequest(request)
       return {word:"project-assistants.view",kind:"read" as const,fields:{...request},id:""}
     }

@@ -5288,6 +5288,8 @@ func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 		[]string{"type", "after_seq", "conversation_id", "cursor", "key", "mode", "page_size", "request", "session", "source_epoch", "team_cards"},
 		[]string{"type", "after_seq", "conversation_id", "cursor", "defer_trace_count", "key", "mode", "page_size", "request", "session", "source_epoch"},
 		[]string{"type", "after_seq", "conversation_id", "cursor", "defer_trace_count", "key", "mode", "page_size", "request", "session", "source_epoch", "team_cards"},
+		[]string{"type", "after_seq", "conversation_id", "cursor", "defer_trace_count", "exchange_excerpts", "key", "mode", "page_size", "request", "session", "source_epoch"},
+		[]string{"type", "after_seq", "conversation_id", "cursor", "defer_trace_count", "exchange_excerpts", "key", "mode", "page_size", "request", "session", "source_epoch", "team_cards"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -5301,6 +5303,9 @@ func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("defer_trace_count", genRule{kind: "bool", equals: genBool(true)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("exchange_excerpts", genRule{kind: "bool", equals: genBool(true)}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("key", genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", checks: []func(string) bool{projectAssistantBotID}}, "machine_id": genRule{kind: "string", nonEmpty: true}}, required: []string{"bot_id", "machine_id"}, closed: true}) {
@@ -5324,7 +5329,7 @@ func genDecodeProjectAssistantsView(b body) (plan, LocalRequest, bool) {
 	}
 	path := "/v1/project-assistants/" + segment(genText(b.genAt("key.bot_id"))) + "/view"
 	req := LocalRequest{Method: "GET", Path: path}
-	req.Query = b.genQuery(map[string]genValue{"after_seq": genValue{from: "after_seq"}, "conversation_id": genValue{from: "conversation_id"}, "cursor": genValue{from: "cursor"}, "defer_trace_count": genValue{from: "defer_trace_count", ifTrue: "true"}, "machine_id": genValue{from: "key.machine_id"}, "mode": genValue{from: "mode"}, "page_size": genValue{from: "page_size"}, "source_epoch": genValue{from: "source_epoch"}, "team_cards": genValue{from: "team_cards", ifTrue: "true"}})
+	req.Query = b.genQuery(map[string]genValue{"after_seq": genValue{from: "after_seq"}, "conversation_id": genValue{from: "conversation_id"}, "cursor": genValue{from: "cursor"}, "defer_trace_count": genValue{from: "defer_trace_count", ifTrue: "true"}, "exchange_excerpts": genValue{from: "exchange_excerpts", ifTrue: "true"}, "machine_id": genValue{from: "key.machine_id"}, "mode": genValue{from: "mode"}, "page_size": genValue{from: "page_size"}, "source_epoch": genValue{from: "source_epoch"}, "team_cards": genValue{from: "team_cards", ifTrue: "true"}})
 	req.Header = asDevice()
 	return p, req, true
 }

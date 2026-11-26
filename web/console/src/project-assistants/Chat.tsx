@@ -206,6 +206,15 @@ export interface ChatProps {
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
+// A preflight before a write reads only the head and fence; its rows are discarded.
+const chatPreflightPageRows = 1
+
+// Chat rows show a short summary of each exchange; the panel reads its full text.
+function chatReadFlags(source:SourceClient,mode:W.ProjectAssistantReadViewMode,deferTraceCount:boolean):Partial<W.ProjectAssistantReadViewRequest> {
+  if(!deferTraceCount||mode==="traces")return {}
+  const timeline=(mode==="snapshot"||mode==="history")&&source.canExchangeExcerpts?.()===true
+  return timeline?{defer_trace_count:true,exchange_excerpts:true}:{defer_trace_count:true}
+}
 
 type ChatPermissionCard = {
   summary:W.ProjectAssistantReadPermissionSummary
@@ -471,8 +480,8 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[valid,lock,fail,scheduleRead])
   const request=useCallback((mode:W.ProjectAssistantReadViewMode,cursor="",page_size=100):W.ProjectAssistantReadViewRequest=>({
     key:scope.key,conversation_id:scope.conversation_id,mode,source_epoch:mode==="snapshot"?"":epoch.current,cursor,after_seq:mode==="events"?lastSeq.current:0,page_size,
-    ...(teamCards?{team_cards:true}:{}),...(deferTraceCount&&mode!=="traces"?{defer_trace_count:true}:{})
-  }),[scope,teamCards,deferTraceCount])
+    ...(teamCards?{team_cards:true}:{}),...chatReadFlags(source,mode,deferTraceCount)
+  }),[scope,teamCards,deferTraceCount,source])
   const read=useCallback(async(q:W.ProjectAssistantReadViewRequest,signal:AbortSignal,trace?:BotReadObservation)=>{
     const answer=await authorized(source,current,s=>typeof source.view==="function"?source.view(q,s,trace):Promise.reject(failure("pa_unsupported")),signal)
     const page=readView(answer,q,scope)
@@ -759,7 +768,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     const currentView=()=>!recovery.current&&epoch.current===capturedEpoch&&(!!lifetime||valid())
     try{return await authorized(source,current,async s=>{
       let page:W.ProjectAssistantReadViewResponse
-      try{page=await read(request("snapshot"),s)}catch(e){if(reportReadFailure&&!s.aborted)readFailed(e);throw e}
+      try{page=await read(request("snapshot","",chatPreflightPageRows),s)}catch(e){if(reportReadFailure&&!s.aborted)readFailed(e);throw e}
       if(s.aborted||!currentView())throw failure("pa_read_only")
       if(!canWrite(page.source))throw failure("pa_read_only")
       const stale=page.source_epoch!==capturedEpoch?"pa_cursor_expired":!sameFence(fence(captured),page.head.current_fence)?"pa_stale_generation":null
@@ -1041,7 +1050,7 @@ ${currentDraft}`:submitted)
       try{await prepared}finally{await saved}
     }
     const rebind=plain&&!review?async(s:AbortSignal)=>{
-      const fresh=await read(request("snapshot"),s)
+      const fresh=await read(request("snapshot","",chatPreflightPageRows),s)
       if(!sameConversation(fresh.head.current_fence,scope)||sameFence(intent.fence,fresh.head.current_fence))return false
       intent.fence=fresh.head.current_fence;view.heldOutcomes.set(draftKey,hold(null))
       return true

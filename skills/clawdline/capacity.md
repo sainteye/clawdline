@@ -124,6 +124,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.dispatched_strip_rows` | 5 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.error_kind_bytes` | 40 | `bytes` | `refuse` | `diagnostics` | — |
 | `bots.event_rows` | 256 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.exchange_excerpt_characters` | 1000 | `characters` | `coalesce` | `diagnostics, sender` | — |
 | `bots.extensions` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.fallback_agents` | 3 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.feature_probe_bytes` | 65536 | `bytes` | `refuse` | `diagnostics, sender` | — |

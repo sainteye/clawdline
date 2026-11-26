@@ -75,13 +75,9 @@ func (s *ViewStore) Read(ctx context.Context, q app.ReadViewQuery) (app.ReadView
 		return out, err
 	}
 	out.Head = h
-	// Events and progress verify their own source rows. They do not need a
-	// complete pass over message and work relationships.
-	if q.Request.Mode != pa.ReadViewEvents && q.Request.Mode != pa.ReadViewProgress {
-		if err = viewValidateFacts(ctx, tx, q); err != nil {
-			return out, err
-		}
-	}
+	// Every persisted write passes validateAggregate, which checks each
+	// message, turn, permission, work link and binding with its relations.
+	// A read checks the rows it returns, not the whole history again.
 	chatHead := botreadtrace.Measure(ctx, "sqlite_chat_head")
 	err = viewOwnChatHead(ctx, tx, &out.Head)
 	chatHead()
@@ -367,6 +363,9 @@ func (s *ViewStore) timeline(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 			item.Kind, item.Message, item.JoinedTurnID = app.ReadItemMessage, &message.Message, message.JoinedTurnID
 			if err = viewCheckFence(item.Message.Fence, out.Head, false); err != nil {
 				return err
+			}
+			if q.Request.ExchangeExcerpts {
+				pa.ExcerptExchange(item.Message)
 			}
 		case 1:
 			item.Kind, item.Work = app.ReadItemWork, &pa.WorkLink{}

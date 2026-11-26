@@ -224,6 +224,11 @@ func projectAssistantBounds() []Entry {
 		// The existing history cursor exposes the remaining rows on demand.
 		{Name: "bots.chat_initial_page_rows", Class: Buffer, Unit: Rows, Limit: 20, AtLimit: Coalesce,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon},
+		// A chat page cuts each exchange's text to an excerpt. Nothing is
+		// removed from the store; the exchange panel reads the full text.
+		{Name: "bots.exchange_excerpt_characters", Class: Buffer, Unit: Characters, Limit: pa.MaxExchangeExcerptRunes, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/projectassistant.MaxExchangeExcerptRunes"}},
 		{Name: BotsEventRows, Class: Buffer, Unit: Rows, Limit: pa.MaxEventPageRows, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/projectassistant.MaxEventPageRows"}},

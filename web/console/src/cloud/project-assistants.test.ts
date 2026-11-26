@@ -825,6 +825,8 @@ test("captured bounded reads preserve all six modes and optional chat flags", as
     {key,conversation_id:"chat",mode:"detail",source_epoch:"epoch",cursor:"signed detail",after_seq:0,page_size:1},
     {key,conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:20,defer_trace_count:true},
     {key,conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:20,team_cards:true,defer_trace_count:true},
+    {key,conversation_id:"chat",mode:"snapshot",source_epoch:"",cursor:"",after_seq:0,page_size:20,defer_trace_count:true,exchange_excerpts:true},
+    {key,conversation_id:"chat",mode:"history",source_epoch:"epoch",cursor:"signed history",after_seq:0,page_size:20,team_cards:true,defer_trace_count:true,exchange_excerpts:true},
   ]
   const captured:Record<string,unknown>[]=[]
   const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.view"]}}),async _machineRequest(machine:string,word:string,fields:Record<string,unknown>){assert.equal(machine,"one");assert.equal(word,"project-assistants.view");captured.push(fields);return {contract_version:"project-assistants.v1"}}}
@@ -898,7 +900,7 @@ test("bounded relay reads refuse malformed queries and bodies before transport",
   const connection={machineDescriptor:()=>({machine:{commands:["project-assistants.view"]}}),async _machineRequest(){calls++;return {}}}
   const relay=capturedAssistantRelayFetch("one",()=>connection,["project-assistants.view"])
   const path="/v1/project-assistants/bot/view?machine_id=one&conversation_id=chat&mode=snapshot&source_epoch=&cursor=&after_seq=0&page_size=100"
-  const invalid=[path+"&cursor=duplicate",path+"&reader_id=forged",path+"&defer_trace_count=false",path+"&defer_trace_count=true&defer_trace_count=true",path.replace("source_epoch=", "epoch="),path.replace("after_seq=0","after_seq=1e2"),path.replace("after_seq=0","after_seq=9007199254740992"),path.replace("page_size=100","page_size=257"),path.replace("mode=snapshot","mode=export")]
+  const invalid=[path+"&cursor=duplicate",path+"&reader_id=forged",path+"&defer_trace_count=false",path+"&defer_trace_count=true&defer_trace_count=true",path+"&exchange_excerpts=false",path.replace("mode=snapshot","mode=events").replace("source_epoch=","source_epoch=epoch")+"&exchange_excerpts=true",path.replace("source_epoch=", "epoch="),path.replace("after_seq=0","after_seq=1e2"),path.replace("after_seq=0","after_seq=9007199254740992"),path.replace("page_size=100","page_size=257"),path.replace("mode=snapshot","mode=export")]
   for(const query of invalid)await assert.rejects(relay(query),e=>errorCode(e)==="pa_invalid")
   await assert.rejects(relay(path,{method:"GET",body:"{}"}),e=>errorCode(e)==="pa_invalid")
   assert.equal(calls,0)

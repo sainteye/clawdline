@@ -4178,7 +4178,7 @@
         },
         {
           "path": "internal/adapters/projectassistantstore/read_view_query.go",
-          "line": 302
+          "line": 223
         },
         {
           "path": "web/console/src/project-assistants/BotSettings.tsx",
@@ -4527,7 +4527,7 @@
       "sources": [
         {
           "path": "web/console/src/project-assistants/Chat.tsx",
-          "line": 1713
+          "line": 1722
         },
         {
           "path": "web/console/src/project-assistants/words.ts",
@@ -5840,7 +5840,7 @@
     "internal/adapters/projectassistantstore/memory_index.go": "ac1dbeaa7c89b494d4327d7025b04842503bbfffcf2d0a3e2d84802e39f42b41",
     "internal/adapters/projectassistantstore/memory_view.go": "4898a2eb71ac3e88ce9c63c3362cbed7be04ae132a3563cc95d4af29422a5865",
     "internal/adapters/projectassistantstore/outputs.go": "f16094a828fb416c3e4be2c2de39ddf903a315f97a26a781342288d1c786743c",
-    "internal/adapters/projectassistantstore/read_view_query.go": "d856edd13f3587b6159edf8762216916a3e28855a2ca088c96f368f043bd00c5",
+    "internal/adapters/projectassistantstore/read_view_query.go": "32110ea3cd3a0a0a5560cbda2e44c3173b7546234875da3b875e3aae1da72b38",
     "internal/adapters/projectassistantstore/roster.go": "0d7d7a433576d545b5cef6488972336cd2b419d1147e74898ac606b067dfec0a",
     "internal/adapters/projectassistantstore/routines.go": "8a5161cd4f3a5e3e009fe840b977181d352d55656150d2d4d1555b44bba23c1c",
     "internal/adapters/projectassistantstore/schema.go": "32014777cc23af02d9a9cceb989f437e1676a680acc315ec06c8dfd4943da016",
@@ -6002,7 +6002,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "996483d3a386bf9a882333104a7218930fe748c12c1348a980459abb2ea3d611",
+    "web/console/src/cloud/project-assistants.ts": "5ef654ce65d738b6ad49106581502f1cee5c4507e3fe8f3c66cfc57aeec49003",
     "web/console/src/cloud/relay-writer.ts": "c28dc4eca6842ead01330894a70a31c890076a5a8dbbac53682f9d824e334e03",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
@@ -6014,7 +6014,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotSettings.tsx": "139532f3581b1df293f90f101331b2b496d364b6fdaadb05e1f6b6e1859e668b",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "6970c57095972ad12c43c492e5fb352997f6dd31beb1044b6841e255c9508eda",
+    "web/console/src/project-assistants/Chat.tsx": "83ddc786bf77aec4cdabd6a0485de783fa58bb8e78fa4198d12671ab2d708406",
     "web/console/src/project-assistants/ChatRows.tsx": "b8b1e0ec14d9ac1ab194830371d104130659852b95c626728fc16a7b8676db7c",
     "web/console/src/project-assistants/DecisionCard.tsx": "a770144b42746b07781b07da155d392f112569f86fb252a6d34c9fc861cf1e8a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",

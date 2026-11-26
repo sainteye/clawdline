@@ -2698,6 +2698,10 @@
           "type": "boolean",
           "description": "When true, skip the aggregate trace count outside traces mode. A zero in the head then does not describe trace availability."
         },
+        "exchange_excerpts": {
+          "type": "boolean",
+          "description": "Snapshot and history only. When true, an exchange notice's text, request and reply are each cut to their first 1,000 characters. Read without it for the full text."
+        },
         "page_size": {
           "type": "integer",
           "minimum": 1,

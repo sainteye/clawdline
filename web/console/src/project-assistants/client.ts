@@ -77,6 +77,8 @@ export interface SourceClient {
   capabilityGap?(): CapabilityGap
   canTeamCards?(): boolean
   canDeferTraceCount?(): boolean
+  /** Chat pages can carry exchange excerpts; the exchange panel still reads the full text (API 125). */
+  canExchangeExcerpts?(): boolean
   canReadProgress?(): boolean
   /** The source rebases a settings save on its base and names conflicting fields (API 117). */
   canSettingsBase?(): boolean

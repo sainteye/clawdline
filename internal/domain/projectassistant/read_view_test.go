@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestReadViewRequestSeparatesSnapshotsPagesAndReplay(t *testing.T) {
@@ -73,5 +74,41 @@ func TestReadViewRequestSeparatesSnapshotsPagesAndReplay(t *testing.T) {
 	q.Cursor = strings.Repeat("界", MaxReadViewCursorBytes/3+1)
 	if Code(CheckReadViewRequest(q)) != CapacityFull {
 		t.Fatal("cursor budget counted runes instead of bytes")
+	}
+}
+
+func TestExcerptExchangeCutsWholeCharacters(t *testing.T) {
+	long := strings.Repeat("交", MaxExchangeExcerptRunes+5)
+	original := &Exchange{Request: long, Reply: "short"}
+	m := Message{Text: long, Exchange: original}
+	ExcerptExchange(&m)
+	if n := utf8.RuneCountInString(m.Text); n != MaxExchangeExcerptRunes || !utf8.ValidString(m.Text) {
+		t.Fatalf("text = %d characters, valid %v", n, utf8.ValidString(m.Text))
+	}
+	if utf8.RuneCountInString(m.Exchange.Request) != MaxExchangeExcerptRunes || m.Exchange.Reply != "short" {
+		t.Fatalf("exchange = %+v", m.Exchange)
+	}
+	if original.Request != long {
+		t.Fatal("the caller's exchange was changed")
+	}
+	plain := Message{Text: long}
+	ExcerptExchange(&plain)
+	if plain.Text != long {
+		t.Fatal("a message without an exchange was cut")
+	}
+}
+
+func TestExchangeExcerptsAreOnlyForTimelinePages(t *testing.T) {
+	base := ReadViewRequest{Key: BotKey{"machine", "bot"}, ConversationID: "conversation", PageSize: MaxPageRows, ExchangeExcerpts: true}
+	if err := CheckReadViewRequest(base); err == nil {
+		t.Fatal("a request without a mode was accepted")
+	}
+	base.Mode = ReadViewSnapshot
+	if err := CheckReadViewRequest(base); err != nil {
+		t.Fatal(err)
+	}
+	base.Mode, base.SourceEpoch = ReadViewEvents, "epoch"
+	if err := CheckReadViewRequest(base); Code(err) != Invalid {
+		t.Fatalf("events with excerpts = %v", err)
 	}
 }

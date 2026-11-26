@@ -7952,6 +7952,13 @@ export interface ProjectAssistantReadViewRequest {
    * head then does not describe trace availability.
    */
   defer_trace_count?: boolean
+
+  /**
+   * Snapshot and history only. When true, an exchange notice's text, request and
+   * reply are each cut to their first 1,000 characters. Read without it for the
+   * full text.
+   */
+  exchange_excerpts?: boolean
   key: ProjectAssistantBotKey
   mode: ProjectAssistantReadViewMode
 

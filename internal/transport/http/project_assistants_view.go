@@ -52,7 +52,7 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 		}
 	}
 	fields := []string{"machine_id", "conversation_id", "mode", "source_epoch", "cursor", "after_seq", "page_size"}
-	flags := []string{"team_cards", "defer_trace_count"}
+	flags := []string{"team_cards", "defer_trace_count", "exchange_excerpts"}
 	for _, flag := range flags {
 		if r.URL.Query().Has(flag) {
 			fields = append(fields, flag)
@@ -80,7 +80,8 @@ func (h *projectAssistantHTTP) readView(r *http.Request, route paHTTPRoute) (any
 		}
 	}
 	request := pa.ReadViewRequest{Key: key, ConversationID: q.Get("conversation_id"), Mode: pa.ReadViewMode(q.Get("mode")),
-		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size), TeamCards: q.Has("team_cards"), DeferTraceCount: q.Has("defer_trace_count")}
+		SourceEpoch: q.Get("source_epoch"), Cursor: q.Get("cursor"), AfterSeq: after, PageSize: int(size), TeamCards: q.Has("team_cards"), DeferTraceCount: q.Has("defer_trace_count"),
+		ExchangeExcerpts: q.Has("exchange_excerpts")}
 	if err = pa.CheckReadViewRequest(request); err != nil {
 		return nil, err
 	}

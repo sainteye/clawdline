@@ -392,3 +392,39 @@ node "$EVIDENCE/browser-runner.mjs" "$EVIDENCE" "$CHROME"
 
 The Go overlay keys are absolute paths in the checkout being tested.
 Write the matching `.origin.done` files to finish both source fixtures.
+
+### Reads check the rows they return (2026-11-27)
+
+On the owner's machine, daemon `bot_view` traces from 24–26 November (344
+Cloud reads) showed `sqlite_read` taking nearly all Bridge time, a median
+of 208–454 ms per day and up to 8.1 s, with every statement slowing at once
+under load. Local snapshot reads scaled with the Bot's whole stored history,
+not with the page: 0.55 s for a 4.7 MB aggregate (1,138 messages), 0.33–0.44 s
+for 2.9 MB, about 10 ms for 40 KB. Five browser traces matched to daemon
+traces spent 0.44–2.34 s in the daemon and a further 0.75–1.3 s moving
+156–172 KB of ciphertext through the relay.
+
+Every persisted write already passes `validateAggregate`: message positions,
+IDs, kinds and fences, turn, permission, work link and binding relations, and
+the conversation's last sequence. `persist` is the only writer of the Bot
+row. Snapshot and history no longer repeat that walk over the whole history;
+they still check the shape and fence of each row they return, and the head's
+metadata. A row that no writer of this store can produce, outside the page,
+no longer stops the newest page; `TestReadViewChecksReturnedRowsOnly` keeps
+that boundary and `TestRestoreRefusesBrokenFactRelations` keeps the write-side
+refusals. On the 9,001-message store fixture
+(`TestReadViewLongHistoryWithinSourceDeadline`, three runs each on an Apple
+M4 Pro under shared load) snapshot fell from 680–685 ms to 396–430 ms and
+history from 562–649 ms to 379–424 ms; the empty event resume, which never
+ran the walk, stayed at 185–205 ms.
+
+API 125 adds `exchange_excerpts` to snapshot and history. Exchange notices
+then carry at most `MaxExchangeExcerptRunes` characters of text, request and
+reply. The chat shows a 160-character summary and sends the flag; the
+exchange panel reads without it and gets the full text. In the owner's
+largest pages, exchange text was 37–67% of the JSON for exchange-heavy Bots.
+The chat's write preflight reads only the head and fence, so it asks for one
+row instead of a hundred.
+
+The SQL still parses the whole aggregate once per statement; the next step
+is to store collection members as rows so a page reads only its rows.

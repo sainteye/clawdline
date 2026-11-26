@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14792,
-  "riskKeys": 6257,
-  "nonRiskCount": 8535,
+  "englishContentKeys": 14794,
+  "riskKeys": 6258,
+  "nonRiskCount": 8536,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 804,
+      "count": 805,
       "sources": [
         null
       ],
@@ -739,6 +739,7 @@
         "capacityRow.bots.dispatched_strip_rows.full",
         "capacityRow.bots.dispatched_strip_rows.what",
         "capacityRow.bots.event_rows.what",
+        "capacityRow.bots.exchange_excerpt_characters.what",
         "capacityRow.bots.extensions.what",
         "capacityRow.bots.fallback_agents.what",
         "capacityRow.bots.feature_probe_bytes.what",

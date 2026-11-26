@@ -354,35 +354,52 @@ func TestReadViewRejectsMalformedAndMissingMetadata(t *testing.T) {
 	requireCode(t, err, pa.NotFound)
 }
 
-func TestReadViewRejectsBrokenFactRelations(t *testing.T) {
-	for _, mutation := range []string{
-		`json_set(CAST(data AS TEXT),'$.Messages[0]',null)`,
-		`json_set(CAST(data AS TEXT),'$.Messages[0]','text')`,
-		`json_set(CAST(data AS TEXT),'$.Messages[0].fence.project.canonical_id','foreign')`,
-		`json_set(CAST(data AS TEXT),'$.Messages[0].id','m002')`,
-		`json_set(CAST(data AS TEXT),'$.Messages[0].seq',2)`,
-		`json_set(CAST(data AS TEXT),'$.Turns.t1.message_id','missing-message')`,
-		`json_set(CAST(data AS TEXT),'$.WorkLinks.w000.turn_id','absent')`,
-		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','absent')`,
-		`json_set(CAST(data AS TEXT),'$.Permissions.p000.turn_id','')`,
-		`json_set(CAST(data AS TEXT),'$.Permissions.p000.kind','decision','$.Permissions.p000.decision',json('{"question":"Wrong turn"}'))`,
-		`json_set(CAST(data AS TEXT),'$.Bindings.current.fence.key.bot_id','foreign')`,
-	} {
-		t.Run(mutation, func(t *testing.T) {
-			e, _, _ := viewFixture(t, 40, 1, true)
-			db, _, views, _ := restoreViews(t, e)
-			if _, err := db.Exec(`UPDATE project_assistant_bots SET data=` + mutation); err != nil {
-				t.Fatal(err)
+// Broken shapes and relations are refused when they are written, so a read
+// does not walk the whole history to look for them again.
+func TestRestoreRefusesBrokenFactRelations(t *testing.T) {
+	for name, corrupt := range map[string]func(*app.Export){
+		"duplicate message id":    func(e *app.Export) { e.Messages[0].ID = "m002" },
+		"message position":        func(e *app.Export) { e.Messages[0].Seq = 2 },
+		"foreign message fence":   func(e *app.Export) { e.Messages[0].Fence.Project.CanonicalID = "foreign" },
+		"turn without message":    func(e *app.Export) { e.Turns[0].MessageID = "missing-message" },
+		"work without turn":       func(e *app.Export) { e.WorkLinks[0].TurnID = "absent" },
+		"permission without turn": func(e *app.Export) { e.Permissions[0].TurnID = "absent" },
+		"foreign binding": func(e *app.Export) {
+			for i := range e.Bindings {
+				if e.Bindings[i].Fence.BindingID == "current" {
+					e.Bindings[i].Fence.Key.BotID = "foreign"
+				}
 			}
-			// The latest row is intact. A small returned page still needs
-			// to reject corrupt shapes and relationships in older history.
-			q := viewQuery(e.Bot)
-			q.Request.PageSize = 1
-			_, err := views.Read(testContext, q)
-			if pa.Code(err) != pa.Invalid && pa.Code(err) != pa.ScopeDenied {
-				t.Fatalf("corrupt fact was accepted: %v", err)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e, _, _ := viewFixture(t, 40, 1, true)
+			corrupt(&e)
+			_, s, _ := testDB(t)
+			if err := s.Restore(testContext, e); pa.Code(err) != pa.Invalid && pa.Code(err) != pa.ScopeDenied {
+				t.Fatalf("corrupt fact was stored: %v", err)
 			}
 		})
+	}
+}
+
+// A page checks the rows it returns. A corrupt row outside it, which no
+// writer of this store can produce, does not stop the newest page.
+func TestReadViewChecksReturnedRowsOnly(t *testing.T) {
+	e, _, _ := viewFixture(t, 40, 1, true)
+	db, _, views, _ := restoreViews(t, e)
+	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages[0].fence.project.canonical_id','foreign')`); err != nil {
+		t.Fatal(err)
+	}
+	q := viewQuery(e.Bot)
+	q.Request.PageSize = 1
+	v := readView(t, views, q)
+	if len(v.Items) != 1 || v.Items[0].Message == nil || v.Items[0].Message.ID != "m040" {
+		t.Fatalf("newest page = %+v", v.Items)
+	}
+	q.Request.PageSize = pa.MaxPageRows
+	if _, err := views.Read(testContext, q); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("returned corrupt row was accepted: %v", err)
 	}
 }
 
@@ -1136,5 +1153,33 @@ func TestReadViewShowsTheReleasingMessageAheadOfHeldWork(t *testing.T) {
 	}
 	if !got[0].ReleasedRestart || got[0].Origin != pa.UserOrigin || got[1].ReleasedRestart || got[1].Origin != pa.HostNoticeOrigin {
 		t.Fatalf("read view turn facts = %+v", got)
+	}
+}
+
+// A chat page can carry exchange excerpts. Without the flag, the same page
+// carries the stored text unchanged.
+func TestReadViewExchangeExcerptsShortenOnlyWhenAsked(t *testing.T) {
+	e, _, _ := viewFixture(t, 3, 0, false)
+	db, _, views, _ := restoreViews(t, e)
+	long := strings.Repeat("回", pa.MaxExchangeExcerptRunes+1)
+	exchange, _ := json.Marshal(pa.Exchange{ID: "x1", Request: long, Reply: long})
+	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages[2].text',?,'$.Messages[2].exchange',json(?))`, long, string(exchange)); err != nil {
+		t.Fatal(err)
+	}
+	q := viewQuery(e.Bot)
+	full := readView(t, views, q)
+	q.Request.ExchangeExcerpts = true
+	cut := readView(t, views, q)
+	if m := full.Items[0].Message; m == nil || m.ID != "m003" || m.Text != long || m.Exchange.Request != long || m.Exchange.Reply != long {
+		t.Fatalf("full page = %+v", full.Items[0].Message)
+	}
+	m := cut.Items[0].Message
+	for _, s := range []string{m.Text, m.Exchange.Request, m.Exchange.Reply} {
+		if s != strings.Repeat("回", pa.MaxExchangeExcerptRunes) {
+			t.Fatalf("excerpt has %d characters", len([]rune(s)))
+		}
+	}
+	if cut.Items[1].Message.Text != full.Items[1].Message.Text {
+		t.Fatal("a message without an exchange changed")
 	}
 }
