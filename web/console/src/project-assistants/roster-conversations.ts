@@ -96,6 +96,7 @@ export function firstCallableBot(items:readonly W.ProjectAssistantBotSummary[],s
 export function groupLastSpeaker(group:RosterRoom,bots:readonly W.ProjectAssistantBot[],person:string):{speaker:string;text:string}|null{
   const line=group.last_entry
   if(!line||!line.text.trim()||!["person","member"].includes(line.kind))return null
-  const speaker=line.kind==="person"?person:line.author?bots.find(bot=>botIdentity(bot.key)===botIdentity(line.author!))?.name??line.author.bot_id:""
+  const author=line.author
+  const speaker=line.kind==="person"?person:author?bots.find(bot=>botIdentity(bot.key)===botIdentity(author))?.name:""
   return speaker?{speaker,text:line.text}:null
 }

@@ -33,7 +33,8 @@ test("last speaker uses the returned author, supports the person and never inven
   assert.deepEqual(groupLastSpeaker({...group,last_entry:{seq:5,kind:"person",text:"Question"}},bots,"You"),{speaker:"You",text:"Question"})
   assert.equal(groupLastSpeaker({...group,last_entry:undefined},bots,"You"),null)
   assert.equal(groupLastSpeaker({...group,last_entry:{seq:6,kind:"system",text:"Not a member reply"}},bots,"You"),null)
-  assert.equal(groupLastSpeaker({...group,last_entry:{...group.last_entry!,author:key("Two","other")}},bots,"You")?.speaker,"Two")
+  assert.equal(groupLastSpeaker(group,[],"You"),null)
+  assert.equal(groupLastSpeaker({...group,last_entry:{...group.last_entry!,author:key("Two","other")}},bots,"You"),null)
 })
 test("the avatar preview counts all remaining members without losing membership or unknown identities",()=>{
   const group=room("many").group

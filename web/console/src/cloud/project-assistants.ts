@@ -144,7 +144,6 @@ export class ProjectAssistantSourceClient implements SourceClient {
   readonly machineID: string
   readonly authorizationRevision: string
   readonly grant: Readonly<AssistantGrant>
-  readonly machineName?: string
   canTeamCards() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL }
   canDeferTraceCount() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL }
   canReadProgress() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_PROGRESS_API_LEVEL }
@@ -191,12 +190,16 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
   constructor(grant: AssistantGrant, transport: AssistantFetch, currentGrant: () => AssistantGrant | null,
     reportRosterFailure?: (failure: RosterFailure) => void, reportRead?: (data: Record<string, unknown>) => void) {
-    this.grant = { ...grant }; this.machineID = grant.machineID; this.machineName = grant.name; this.authorizationRevision = grant.authorizationRevision
+    this.grant = { ...grant }; this.machineID = grant.machineID; this.authorizationRevision = grant.authorizationRevision
     this.transport = transport; this.currentGrant = currentGrant
     this.reportRosterFailure = reportRosterFailure
     this.reportRead = reportRead
   }
   revoke() { this.lifetime.abort() }
+  get machineName() {
+    const grant=this.currentGrant()
+    return grant?.authorizationRevision===this.authorizationRevision?grant.name:undefined
+  }
   get browserRemote() { return this.grant.accountKey !== "local" }
   browserUnavailable(): string {
     try { this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_BROWSER_API_LEVEL); return "" }

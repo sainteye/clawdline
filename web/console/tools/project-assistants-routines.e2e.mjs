@@ -37,11 +37,12 @@ if(new URL(location.href).searchParams.get("journal")==="broken") {
 createRoot(document.getElementById("app")).render(<main className="project-assistants" style={{height:"100vh"}}><Chat summary={summary} source={source} current={()=>[source]} accountKey={grant.accountKey} readerID={grant.readerID} view={view} w={language==="en"?en:zhHant} language={language} onBack={()=>{}} onBotChanged={()=>{}}/></main>);
 `,resolveDir:consoleRoot,loader:"tsx"},bundle:true,write:false,outfile:"routine.js",format:"esm",target:"es2022",platform:"browser",jsx:"automatic",define:{"process.env.NODE_ENV":'"development"'}})
 const files=new Map(bundle.outputFiles.map(f=>["/"+path.basename(f.path),f.contents])),requests=[]
-let lostSave=false,pageLoads=0,holdEnable=0,enableArrived=0
+let lostSave=false,pageLoads=0,holdEnable=0,enableArrived=0,heldRoutineRead
 const server=createServer(async(req,res)=>{
   try {
     if(req.url.startsWith("/v1/")) {
       const chunks=[];for await(const chunk of req)chunks.push(chunk)
+      if(req.method==="GET"&&heldRoutineRead?.path.test(new URL(req.url,"http://fixture").pathname))await heldRoutineRead.until
       // A deterministic slow toggle: the commit itself is held, so a person
       // can try to open the editor while the owned enable is still pending.
       if(req.method==="POST"&&req.url.endsWith("/enabled")){enableArrived++;if(holdEnable){const ms=holdEnable;holdEnable=0;await new Promise(r=>setTimeout(r,ms))}}
@@ -101,6 +102,11 @@ async function browser(op,...args) {
 }
 const controls=async language=>{const catalog=JSON.parse(await readFile(path.join(consoleRoot,"public/catalogs",language+".json"),"utf8"));return name=>catalog["botRoutineControls."+name]}
 async function waitText(text) { let last;for(let i=0;i<40;i++){last=await browser("read");if(last.text?.includes(text))return last;await pause(150)}throw Error(`Missing ${text}: ${JSON.stringify(last)}`) }
+function holdRoutineRead(path){
+  let release
+  heldRoutineRead={path,until:new Promise(resolve=>{release=resolve})}
+  return ()=>{heldRoutineRead=undefined;release()}
+}
 try {
   // A damaged durable record is still an uncertain action, never permission
   // to replace it with another test/save. Exercise the production component.
@@ -127,7 +133,12 @@ try {
 
     const opened=await browser("open",origin+"/?lang="+language);tab=opened.tab
     await browser("viewport",zh?"mobile":"desktop")
-    await waitText("Synthetic Bot");await browser("click",w.identity);await waitText(w.empty)
+    const releaseList=holdRoutineRead(/\/routines$/)
+    try{
+      await waitText("Synthetic Bot");await browser("click",w.identity)
+      await waitText(zh?"正在載入例行任務…":"Loading routines…")
+    }finally{releaseList()}
+    await waitText(w.empty)
     await browser("click",w.create)
     await browser("click",control("webhook"))
     await waitText(control("webhookSave"))
@@ -146,6 +157,13 @@ try {
     await waitText("Browser interval "+language)
     await browser("screenshot","--out",path.join(artifacts,`${language}-routine-list.jpg`))
     await browser("click",`${copy.routineEdit}: Browser interval ${language}`);await waitText(w.instructions)
+    const releaseHistory=holdRoutineRead(/\/routines\/[^/]+\/runs$/)
+    try{
+      await browser("click",copy.routineHistory)
+      await waitText(zh?"正在載入執行紀錄…":"Loading run history…")
+    }finally{releaseHistory()}
+    await waitText(copy.routineNoRuns)
+    await browser("click",copy.routineHistory)
     // Appending verifies an actual edit while keeping the trigger untouched.
     await browser("click",w.name);await browser("key","ArrowDown");await browser("type"," edited");await browser("click",w.save)
     await waitText("edited")

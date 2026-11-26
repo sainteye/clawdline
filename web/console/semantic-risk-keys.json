@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14725,
+  "englishKeys": 14727,
   "counts": {
-    "negation": 3726,
-    "state": 2515,
+    "negation": 3725,
+    "state": 2513,
     "permission": 876,
     "deletion": 339,
     "uncertainty": 584
   },
-  "unionCount": 6241,
+  "unionCount": 6239,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2883,7 +2883,6 @@
       "next.sessionStateEmptyWorking",
       "next.sessionStateFilterAllHint",
       "next.sessionStateFilterEmpty",
-      "next.sessionStateFilterIdleHint",
       "next.sessionStateUnrecognizedDetail",
       "next.sessionsListUnansweredTitle",
       "next.sessionsMachineOfflineHint",
@@ -5600,9 +5599,7 @@
       "next.sessionBotDispatchOpen",
       "next.sessionNotStartedShort",
       "next.sessionStateFilterAttentionHint",
-      "next.sessionStateFilterIdleHint",
       "next.sessionStateFilterIncomplete",
-      "next.sessionStateFilterWorkingHint",
       "next.sessionStopSent",
       "next.sessionWaitHeavyRunning",
       "next.sessionWaitingOnCallback",
@@ -12702,9 +12699,7 @@
     "next.sessionStateFilterAllHint",
     "next.sessionStateFilterAttentionHint",
     "next.sessionStateFilterEmpty",
-    "next.sessionStateFilterIdleHint",
     "next.sessionStateFilterIncomplete",
-    "next.sessionStateFilterWorkingHint",
     "next.sessionStateUnrecognizedDetail",
     "next.sessionStateUnrecognizedList",
     "next.sessionStopSent",

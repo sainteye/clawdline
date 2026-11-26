@@ -75,8 +75,7 @@
 .project-assistants .pa-chat-surface .pa-settings-card .pa-settings-disclosure-body { padding:0 0 12px; }
 .project-assistants .pa-chat-surface .pa-settings-card>.pa-settings-disclosure { padding:0; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact { margin:0;border:0;border-radius:0; }
-.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>label { display:flex;flex-direction:row;align-items:center;justify-content:space-between;gap:12px;font-size:13px; }
-.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>label select { width:64%;min-height:32px;padding:5px 8px;margin:0;font-size:12px; }
+.project-assistants .pa-chat-surface .pa-settings-card .pa-login-compact>.pa-select { margin:0; }
 .project-assistants .pa-chat-surface .pa-settings-card .pa-login-management>summary { font-size:11px;padding:5px 0;color:var(--pa-dim); }
 .project-assistants .pa-chat-surface .pa-settings-link { display:block;width:100%;min-height:44px;padding:12px 0;border:0;border-radius:0;background:none;text-align:start;font-size:13px; }
 .project-assistants .pa-chat-surface .pa-settings-link:not(:disabled):hover { color:#fff; }

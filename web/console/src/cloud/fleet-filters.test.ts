@@ -1,7 +1,10 @@
 import assert from "node:assert/strict"
 import test from "node:test"
+import type { SessionRow } from "@clawdline/contract"
 // @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
 import { matchesFleetFilter } from "./fleet-filters.ts"
+// @ts-expect-error -- node's type-stripping runner resolves the source .ts file.
+import { matchesLocalStateFilter } from "../session/state-filter.ts"
 import type { ProjectedSession } from "./all-machine-sessions.js"
 
 const row: ProjectedSession = {
@@ -31,15 +34,12 @@ test("idle shows only a current idle state", () => {
 })
 
 
-test("background shells move quiet Sessions from idle to working", () => {
-  const active = { shells: [{ id: "build", at: 1 }] }
-  for (const state of ["idle", "waiting", "unknown"]) {
-    const quiet = { ...row, state }
-    assert.equal(matchesFleetFilter(quiet, "working", active), true)
-    assert.equal(matchesFleetFilter(quiet, "idle", active), false)
-    assert.equal(matchesFleetFilter({ ...quiet, freshness: "stale" }, "working", active), false)
+test("the local and fleet filters agree for Sessions with background shells", () => {
+  for (const state of ["idle", "waiting", "unknown", "working"] as const) {
+    const local = { state, shells: [{ id: "build", at: 1 }] } as SessionRow
+    for (const filter of ["working", "idle"] as const) {
+      assert.equal(matchesFleetFilter({ ...row, state }, filter), state === filter)
+      assert.equal(matchesLocalStateFilter(local, filter), matchesFleetFilter({ ...row, state }, filter))
+    }
   }
-  assert.equal(matchesFleetFilter(row, "working", { shells: [] }), false)
-  assert.equal(matchesFleetFilter(row, "idle", { shells: [] }), true)
-  assert.equal(matchesFleetFilter({ ...row, waitingForReply: true }, "attention", active), true)
 })

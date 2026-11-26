@@ -339,8 +339,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
     const reading = readings[machine.id]
     return !reading || reading.phase !== "settled" || reading.value.kind !== "ready"
   })
-  const filterCounts = stateFilterCounts(filterRows, (row, value) => matchesFleetFilter(row, value,
-    displayedPresentationStatus(row, presentations.current.get(destinationKey(row.destination)))))
+  const filterCounts = stateFilterCounts(filterRows, matchesFleetFilter)
 
   const search = filter.trim().toLocaleLowerCase()
   const groups = machines.map((machine) => {
@@ -364,7 +363,7 @@ export function FleetSessionList({ machines, source, target, filter, onFilter, o
         const presentation = presentations.current.get(key)
         const confirmedTitle = confirmedTitles?.get(key)
         if (!isVisible(row) || (unavailable && !row.machineScope && !presentation && !confirmedTitles?.has(key)) ||
-          !matchesFleetFilter(row, statusFilter, displayedPresentationStatus(row, presentation))) return false
+          !matchesFleetFilter(row, statusFilter)) return false
         if (!search) return true
         const title = row.machineScope ? "Clawdfather" : confirmedTitle ?? presentation?.title
         const dispatch = presentation?.botDispatch

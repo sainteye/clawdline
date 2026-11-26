@@ -9,6 +9,7 @@ import {FallbackSettings,SelectedFallbackSettings,useFallbackSource,useSettingsS
 import {agentName,fallbackEdit} from "./fallback-settings"
 import {ExtensionSettings} from "./ExtensionSettings"
 import {LoginProfiles} from "./LoginProfiles"
+import {PaSelect} from "./PaSelect"
 import {configurationError,useBotConfiguration} from "./RuntimeSettings"
 import {useModelCatalog} from "../model-catalog/useModelCatalog"
 import {AgentModelPicker} from "./AgentModelPicker"
@@ -238,7 +239,8 @@ function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,da
           {switchRow(w.botNotify,w.botNotifyHint,notify,!modern,setNotify)}
           {switchRow(w.botWorkReview,w.botWorkReviewHint,workReview,false,setWorkReview)}
           {sharedMemory.available&&switchRow(catalogWord("botsSettings","useShared"),catalogWord("botsSettings","useSharedHint"),sharedMemory.use,false,sharedMemory.set)}
-          {bot.background_threads!==undefined&&<label className="pa-settings-field">{w.backgroundConcurrency}<select value={backgroundThreads} onChange={e=>setBackgroundThreads(Number(e.target.value))}>{[1,2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}</select></label>}
+          {bot.background_threads!==undefined&&<PaSelect label={w.backgroundConcurrency} value={String(backgroundThreads)}
+            onChange={value=>setBackgroundThreads(Number(value))} options={[1,2,3,4,5,6].map(n=>({value:String(n),label:String(n)}))}/>}
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
           {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
         </SettingsGroup>

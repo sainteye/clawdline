@@ -28,7 +28,7 @@ const machines=['alpha','beta'].map(id=>({id,name:id,platform:'Linux',freshness:
 const calls={alpha:0,beta:0};const displayReads={alpha:0,beta:0};const listeners=new Set();let agents=6;let callbacks;let presentation=0;
 window.fixture={calls,displayReads,setCallbacks:n=>{callbacks=n;agents=0;presentation++;listeners.forEach(fn=>fn({machineID:'alpha',kind:'changed'}))},setAgents:n=>{agents=n;listeners.forEach(fn=>fn({machineID:'alpha',kind:'changed'}))}};
 const destination=id=>({machineID:id,sessionID:'session-'+id,executionGeneration:'1'.padStart(32,'0')});
-const source={subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},readMachine:async(id,signal)=>{calls[id]++;return {kind:'ready',complete:true,observedAt:Date.now(),snapshotGeneration:String(calls[id]),presentationGeneration:String(presentation),rows:[{destination:destination(id),runningAgentCount:agents,agentCountUnknown:agents===null,state:id==='alpha'&&callbacks!==undefined?'idle':'working',freshness:'current',needsAttention:false,observedAt:Date.now()}]}},readMachinePresentations:async id=>{displayReads[id]++;return [{destination:destination(id),title:id+' reading '+calls[id],status:{state:'working',sessionId:'saved-'+id,work_state:'working',...(id==='alpha'&&callbacks!==undefined?{state:'idle',work_state:'unknown',waiting_for:callbacks}:{}),line:'Inspecting a long fixture sentence that must give room to the agent count'}}]}};
+const source={subscribe:fn=>{listeners.add(fn);return()=>listeners.delete(fn)},readMachine:async(id,signal)=>{calls[id]++;return {kind:'ready',complete:true,observedAt:Date.now(),snapshotGeneration:String(calls[id]),presentationGeneration:String(presentation),rows:[{destination:destination(id),runningAgentCount:agents,agentCountUnknown:agents===null,state:id==='alpha'&&callbacks!==undefined?'idle':'working',freshness:'current',needsAttention:false,observedAt:Date.now()}]}},readMachinePresentations:async id=>{displayReads[id]++;return [{destination:destination(id),title:id+' reading '+calls[id],status:{state:'working',sessionId:'saved-'+id,work_state:'working',...(id==='alpha'&&callbacks!==undefined?{state:'idle',work_state:'unknown',waiting_for:callbacks,shells:[{id:'build',at:1}]}:{}),line:'Inspecting a long fixture sentence that must give room to the agent count'}}]}};
 createRoot(document.getElementById('root')).render(<FleetSessionList machines={machines} source={source} target={null} filter="" onFilter={()=>{}} onOpen={()=>{}} onConnection={()=>{}} onCloseRequest={()=>{}} onArchiveRequest={()=>{}}/>);
 const style=document.createElement('style');style.textContent='body{margin:0}.cloud-all-list-scroll{height:650px;overflow:auto;overscroll-behavior:contain}.cloud-all-groups{min-height:1100px}.row{min-height:90px}.ptr{flex-shrink:0}';document.head.append(style);`)
     vite = spawn(process.execPath, [resolve(root, "web/node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", "0"],
@@ -79,6 +79,16 @@ const style=document.createElement('style');style.textContent='body{margin:0}.cl
         assert.equal(await wait.textContent(), lang === 'en' ? '⏳Waiting for callback: Wait for CI' : '⏳等待回呼：Wait for CI')
         assert.equal(await page.locator('.cloud-all-group').first().locator('.session-work-copy').count(), 0)
         assert.equal(await page.locator('.cloud-all-group').last().locator('.coordination-wait').count(), 0)
+        const stateFilter = page.locator('#session-state-filter-open')
+        await stateFilter.click()
+        const stateOption = name => page.locator(`[data-filter="${name}"][role="radio"]`)
+        assert.equal(await stateOption("working").locator('.session-state-count').textContent(), "1")
+        assert.equal(await stateOption("idle").locator('.session-state-count').textContent(), "1")
+        await stateOption("idle").click()
+        await wait.waitFor()
+        assert.equal(await page.getByText(/^beta reading /).count(), 0, "the idle filter keeps only the Session with a background shell")
+        await stateFilter.click()
+        await stateOption("all").click()
         const waitBox = await wait.evaluate(el => ({right:el.getBoundingClientRect().right,viewport:window.innerWidth}))
         assert.ok(waitBox.right <= waitBox.viewport, JSON.stringify(waitBox))
         if (process.env.CALLBACK_SHOT && lang === 'zh-Hant' && engine === webkit)

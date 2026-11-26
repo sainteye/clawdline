@@ -354,6 +354,7 @@
 .project-assistants .pa-select-list:focus { outline:none; }
 .project-assistants .pa-select-list li { display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 10px;border-radius:9px;cursor:pointer;color:#fafafa;font-size:14px; }
 .project-assistants .pa-select-list li[data-active] { background:#2a2a2d; }
+.project-assistants .pa-select-list li[aria-disabled="true"] { color:var(--pa-dim);cursor:default; }
 .project-assistants .pa-select-text { flex:1;min-width:0;display:flex;flex-direction:column; }
 .project-assistants .pa-select-text>span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .project-assistants .pa-select-check { flex:none;color:#e39567; }

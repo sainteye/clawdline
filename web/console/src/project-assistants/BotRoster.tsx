@@ -254,8 +254,8 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
               <span>{pullWord==="release"?strings.webPullRelease:pullWord==="busy"?strings.webPullBusy:strings.webPull}</span>
             </div>
             {/* On a phone the tower stands in for the rows: list placeholders above it would push the picture down. */}
-            {skeleton&&!tower&&!group.rows.length&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
-            {tower??renderRows(group.rows,group.open,group.selected,group.dismiss)}
+            {skeleton&&!tower&&<LoadingSkeleton kind="rows" id="bots-roster" label={w.loading}/>}
+            {tower??renderRows(visibleRosterRooms(group.rows,loading&&!shown.length),group.open,group.selected,group.dismiss)}
             {group.content}
             {onMore&&<button className="pa-pill" onClick={onMore}>{w.more}</button>}{hidden}
           </div>
@@ -263,6 +263,11 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       }}
     </Groups>
   </aside>
+}
+
+function visibleRosterRooms(rows:readonly GroupRosterEntry[],awaitingBots:boolean):readonly GroupRosterEntry[] {
+  // Rooms can arrive before the Bot names that identify their authors.
+  return awaitingBots?[]:rows
 }
 
 function RosterUnavailable({onVisible,order,onRetry,w}: {
