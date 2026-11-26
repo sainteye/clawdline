@@ -84,16 +84,11 @@ func (s *Server) projectAssistantSharedSettingsRoute(w http.ResponseWriter, r *h
 			paWriteHTTPFailure(w, err)
 			return
 		}
-		s.projectAssistantSharedSettingsChanged(r.Context())
 		writeJSON(w, sharedSettingsReply{saved, agents, sharedSettingsLimits()})
 	default:
 		paWriteHTTPFailure(w, paHTTPFailure(pa.Unsupported, "method"))
 	}
 }
-
-// projectAssistantSharedSettingsChanged lets running Bots read new shared
-// memory on their next turn. Without a running host nothing is pending.
-func (s *Server) projectAssistantSharedSettingsChanged(context.Context) {}
 
 // projectAssistantSharedMemory reads the stored document on every prompt so
 // a saved change reaches the next fresh, compacted or memory-updated prompt.

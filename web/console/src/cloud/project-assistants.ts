@@ -255,6 +255,9 @@ export class ProjectAssistantSourceClient implements SourceClient {
       live.readerID !== this.grant.readerID || live.machineID !== this.machineID || live.authorizationRevision !== this.authorizationRevision) throw failure("pa_revoked")
     if (signal.aborted) throw new DOMException("Aborted", "AbortError")
     if (!live.paired) throw failure("pa_unpaired")
+    // A machine that is not reporting may have been updated since its version was
+    // last read; "too old" would send the person to update a machine that is down.
+    if (!live.online && (live.apiLevel === undefined || live.apiLevel < minimum)) throw failure("pa_offline")
     if (live.apiLevel === undefined) {
       if (mode === "cloud-view" && live.descriptorPending) throw failure("pa_offline")
       if (mode !== "cloud-roster") throw failure("pa_unsupported")
@@ -335,7 +338,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     // An unavailable source is a typed status, never an authoritative empty roster.
     const grant = this.currentGrant()
     if (!grant || this.lifetime.signal.aborted) throw failure("pa_revoked")
-    const state: W.ProjectAssistantSourceState | null = !grant.paired ? "unpaired" : grant.apiLevel === undefined || grant.apiLevel < PROJECT_ASSISTANTS_API_LEVEL ? "unsupported" : !grant.online ? "offline" : null
+    const state: W.ProjectAssistantSourceState | null = !grant.paired ? "unpaired" : !grant.online ? "offline" : grant.apiLevel === undefined || grant.apiLevel < PROJECT_ASSISTANTS_API_LEVEL ? "unsupported" : null
     if (s.aborted) throw new DOMException("Aborted","AbortError")
     if (state) return {contract_version:"project-assistants.v1",sources:[(state === "offline" || state === "unsupported") && this.lastStatus
       ? {...this.lastStatus,state,writable:false,fresh:false}
@@ -1148,7 +1151,7 @@ export function assistantBadge(items: readonly W.ProjectAssistantBotSummary[], a
     // current() also becomes false while offline. Preserve the existing unread
     // badge in that case, but never animate the cached activity.
     const offline=source.current?.()===false
-    const mood=offline?"idle":rosterMood(item)
+    const mood=offline?"idle":rosterMood(item,showDispatched)
     const waiting=!offline&&rosterShownState(item,showDispatched)==="needsInput"?1:0
     return {unread:count.unread+item.unread_count,pendingPermissions:count.pendingPermissions+waiting,
       mood:count.mood==="needsInput"||mood==="needsInput"?"needsInput" as const:count.mood==="working"||mood==="working"?"working" as const:"idle" as const}

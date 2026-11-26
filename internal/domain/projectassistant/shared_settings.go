@@ -186,6 +186,22 @@ func (s SharedSettings) RulesFor(projectID string) []DispatchRule {
 	return out
 }
 
+// DispatchKindsFor lists the dispatch rule kinds that apply in a Project, each
+// followed by the person's hint in parentheses, so the model can choose the
+// kind the person meant instead of guessing a name.
+func DispatchKindsFor(s SharedSettings, projectID string) []string {
+	rules := s.RulesFor(projectID)
+	out := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		kind := strings.TrimSpace(rule.Kind)
+		if hint := strings.Join(strings.Fields(rule.Hint), " "); hint != "" {
+			kind += " (" + hint + ")"
+		}
+		out = append(out, kind)
+	}
+	return out
+}
+
 // MemoryFor is the shared memory text that applies in a Project, in order.
 func (s SharedSettings) MemoryFor(projectID string) []SharedMemoryEntry {
 	var out []SharedMemoryEntry

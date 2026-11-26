@@ -12405,6 +12405,7 @@
   "projectAssistants.decisionReplyLabel": "Reply to a decision card",
   "projectAssistants.decisionReplyQuestion": "Question: {text}",
   "projectAssistants.readTimedOut": "The read timed out.",
+  "projectAssistants.dispatchedNoSession": "no Session to open yet",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

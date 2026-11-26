@@ -6,10 +6,10 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedMark,DispatchedWorkStrip,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedMark,DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotRow,DispatchedMark,DispatchedWorkStrip,openDispatchedSession,words}=compiled.exports
+const {BotRow,DispatchedMark,DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession,words}=compiled.exports
 const w=words("zh-Hant"),render=(c,p)=>renderToStaticMarkup(React.createElement(c,p))
 const live={fresh:true,state:"online",readable:true,writable:true,access:"interactive"}
 const item=extra=>({bot:{key:{machine_id:"m",bot_id:"atlas"},name:"Atlas",project:{kind:"repository",machine_id:"m",project_id:"p"},appearance:{shape:"blob",color:"#5b8def"},agent:"claude"},status:"idle",activity:"",latest_message:"Last reply",activity_at:"2026-11-23T09:00:00Z",pending_permissions:0,unread_count:0,source:live,...extra})
@@ -99,4 +99,15 @@ test("a delivered row's mark is a check, and every other state keeps its plain d
   for(const kind of ["needsYou","running","queued","failed"]){
     assert.doesNotMatch(render(DispatchedMark,{kind}),/<svg/)
   }
+})
+
+test("a dispatched row with nothing to open says so instead of being a dead button", () => {
+  assert.equal(dispatchedOpenable({worker_terminal:"t",worker_session:"s"}),true)
+  assert.equal(dispatchedOpenable({board_item_id:"item"}),true)
+  assert.equal(dispatchedOpenable({worker_terminal:"t"}),false)
+  assert.equal(dispatchedOpenable({}),false)
+  // The expanded list starts closed; render its rows through the exported pieces.
+  const zh=words("zh-TW")
+  assert.equal(zh.dispatchedNoSession,"還沒有可開啟的 Session")
+  assert.equal(words("en").dispatchedNoSession,"no Session to open yet")
 })

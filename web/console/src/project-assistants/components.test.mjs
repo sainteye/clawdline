@@ -271,6 +271,20 @@ test("the entry prioritizes live input over work without treating unread as acti
 })
 
 
+test("the entry's mood follows what the roster shows for dispatched and background work",async()=>{
+  const source=fixtureSource(),signal=new AbortController().signal
+  const {items}=await source.list({machine_id:source.machineID,cursor:"",query:"",page_size:100},signal)
+  const quiet={...items[0],unread_count:0,pending_permissions:0,status:"idle",activity:""}
+  const asking={...quiet,dispatched_work:{running:1,executing:1,needs_you:1,delivered:0}}
+  assert.equal(assistantBadge([asking],[source]).mood,"needsInput")
+  assert.equal(assistantBadge([asking],[source],false).mood,"idle")
+  const helperAsks={...quiet,background_work:{working:0,waiting:0,needs_input:1}}
+  assert.equal(assistantBadge([helperAsks],[source]).mood,"needsInput")
+  // Waiting on dispatched work ranks after working and does not animate.
+  const overseeing={...quiet,dispatched_work:{running:2,executing:2,needs_you:0,delivered:0}}
+  assert.equal(assistantBadge([overseeing],[source]).mood,"idle")
+})
+
 test("the icon's number is what the list marks: one per waiting row plus unread",async()=>{
   const source=fixtureSource(),signal=new AbortController().signal
   const {items}=await source.list({machine_id:source.machineID,cursor:"",query:"",page_size:100},signal)

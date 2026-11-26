@@ -57,6 +57,7 @@ export function SessionsPage({
   live,
   machineOffline,
   emptyAuthoritative,
+  scanIncomplete = false,
   readingSource,
   scanNotes,
   scanSources,
@@ -95,6 +96,8 @@ export function SessionsPage({
   /** The machine underneath has stopped reporting; `live` above is only this browser's line. */
   machineOffline?: MachineOffline | null
   emptyAuthoritative: boolean
+  /** The latest reading missed part of the machine, so an empty filtered list is not a fact. */
+  scanIncomplete?: boolean
   /** The whole batch's freshness; rows carry the source they came from. */
   readingSource?: BearingsSource
   /** Why a terminal source did not finish, plus its named unread regions. */
@@ -398,7 +401,7 @@ export function SessionsPage({
             </ul>
             <div className={statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? "session-state-empty-wrap" : emptyClass} id="list-empty" hidden={!skeleton && !empty}>
               {statusFilter !== "all" && !skeleton && offlineAt !== "empty" ? (
-                <SessionStateEmpty filter={statusFilter} onReset={() => onStatusFilter?.("all")} />
+                <SessionStateEmpty filter={statusFilter} incomplete={scanIncomplete} onReset={() => onStatusFilter?.("all")} />
               ) : said.current === "skel" ? (
                 <ListSkeleton />
               ) : offerAt === "hero" && restore.offer ? (

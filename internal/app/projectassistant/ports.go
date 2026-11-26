@@ -180,6 +180,12 @@ type DecisionRepository interface {
 	ForwardDecision(context.Context, pa.BotKey, pa.Turn, string, time.Time) (pa.Exchange, error)
 }
 
+// DecisionExpiry completes exchanges whose question for the person expired
+// unanswered and returns them, so their requesters can be woken.
+type DecisionExpiry interface {
+	ExpireWaitingDecisions(context.Context, string, time.Time) ([]pa.Exchange, error)
+}
+
 // QuestionRepository lets a Bot review and withdraw its own open questions
 // for the person. Withdrawing never answers one.
 type QuestionRepository interface {

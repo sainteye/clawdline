@@ -5,8 +5,8 @@ are stored in the machine SQLite database, shared by its paired readers. Writes
 require Send permission or the machine credential. This is a collection of source
 metadata; it never establishes that a tool is installed or enabled.
 
-The compiled recommendation snapshot contains 38 public projects, including three
-web libraries, one evaluation framework and one desktop application, 60 verified Skill entry paths and fourteen categories. English and Taiwan Traditional Chinese
+The compiled recommendation snapshot contains 39 public projects, including three
+web libraries, one evaluation framework and one desktop application, 64 verified Skill entry paths and fourteen categories. English and Taiwan Traditional Chinese
 names, purposes, requirements and limitations accompany commit and entry SHA-256
 metadata. Historical ranking evidence retains its original kind, date and scope.
 Bundled icons distinguish official project assets from owner avatars; custom

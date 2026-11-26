@@ -9,6 +9,11 @@ import "./dispatched-work.css"
 
 type OpenWork = (link: W.ProjectAssistantWorkLink, view?: "session") => void
 
+/** Whether a row leads anywhere: its worker Session, or the Board item it belongs to. */
+export function dispatchedOpenable(link: W.ProjectAssistantWorkLink): boolean {
+  return !!(link.worker_terminal && link.worker_session) || !!link.board_item_id
+}
+
 /** Use the same machine and conversation checks as the work result card. */
 export function openDispatchedSession(link: W.ProjectAssistantWorkLink, openWork?: OpenWork) {
   openWork?.(link, link.worker_terminal && link.worker_session ? "session" : undefined)
@@ -56,12 +61,20 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
         const other = !!(ownProjectID && row.link.target_project_id && row.link.target_project_id !== ownProjectID)
         const time = row.kind === "running" ? elapsed(row.link.started_at, now) : ""
         return <li key={row.link.id}>
-          <button type="button" className="pa-dispatched-row" data-kind={row.kind} title={row.link.landing_note || undefined} onClick={() => openDispatchedSession(row.link, onOpen)}>
-            <DispatchedMark kind={row.kind}/>
-            <span className="pa-dispatched-text"><strong>{row.link.title || row.link.task_id}</strong>
-              <small>{dispatchedReason(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}</small></span>
-            {time && <time>{time}</time>}<span aria-hidden="true">›</span>
-          </button>
+          {(() => {
+            const openable = !!onOpen && dispatchedOpenable(row.link)
+            const body = <>
+              <DispatchedMark kind={row.kind}/>
+              <span className="pa-dispatched-text"><strong>{row.link.title || row.link.task_id}</strong>
+                <small>{dispatchedReason(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}
+                  {!openable && <span className="pa-dispatched-unopenable"> · {w.dispatchedNoSession}</span>}</small></span>
+              {time && <time>{time}</time>}
+            </>
+            // A row with nothing to open says so instead of being a button that does nothing.
+            return openable
+              ? <button type="button" className="pa-dispatched-row" data-kind={row.kind} title={row.link.landing_note || undefined} onClick={() => openDispatchedSession(row.link, onOpen)}>{body}<span aria-hidden="true">›</span></button>
+              : <div className="pa-dispatched-row" data-kind={row.kind} data-unopenable="" title={row.link.landing_note || undefined}>{body}</div>
+          })()}
         </li>
       })}
       {more > 0 && <li><a className="pa-dispatched-more" href="#page=sessions">{w.dispatchedStripMore.replace("{count}", String(more))}</a></li>}

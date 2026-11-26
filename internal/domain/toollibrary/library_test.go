@@ -9,7 +9,7 @@ import (
 
 func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 	c := Recommendations()
-	if len(c.Projects) != 38 || len(c.Categories) != 14 {
+	if len(c.Projects) != 39 || len(c.Categories) != 14 {
 		t.Fatalf("catalog: %d projects, %d categories", len(c.Projects), len(c.Categories))
 	}
 	skills := 0
@@ -34,7 +34,7 @@ func TestToolLibrarySourcesAndPinnedPreparation(t *testing.T) {
 			}
 		}
 	}
-	if skills != 60 {
+	if skills != 64 {
 		t.Fatalf("skills %d", skills)
 	}
 	p := c.Projects[0]

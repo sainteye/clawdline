@@ -1525,3 +1525,17 @@ test("an older machine answers Bots shared settings as unsupported before anythi
   assert.deepEqual(assistantRelayRequest("/v1/project-assistant-shared-settings?machine_id=one"),{word:"project-assistants.shared-settings",kind:"read",fields:{machine_id:"one"},id:""})
   assert.throws(() => assistantRelayRequest("/v1/project-assistant-shared-settings",{method:"PUT",body:JSON.stringify({machine_id:"one",expected_version:0,settings:{}}),headers:{"Idempotency-Key":"x"}}),error => errorCode(error) === "pa_invalid")
 })
+
+test("an offline machine whose version was never read is offline, not too old", async () => {
+  let calls = 0
+  const never: AssistantGrant = {...grant(), apiLevel: undefined, online: false}
+  const {source} = make(async () => { calls++; return Response.json({}) }, never)
+  await assert.rejects(source.sharedSettings(signal()), e => errorCode(e) === "pa_offline")
+  const status = await source.status(signal())
+  assert.equal(status.sources[0]?.state, "offline")
+  const stale: AssistantGrant = {...grant(), apiLevel: 1, online: false}
+  await assert.rejects(make(async () => { calls++; return Response.json({}) }, stale).source.sharedSettings(signal()), e => errorCode(e) === "pa_offline")
+  assert.equal(calls, 0)
+  const online: AssistantGrant = {...grant(), apiLevel: undefined, online: true}
+  await assert.rejects(make(async () => { calls++; return Response.json({}) }, online).source.sharedSettings(signal()), e => errorCode(e) === "pa_unsupported")
+})

@@ -150,3 +150,14 @@ test("tool detail stays out of the activity caption and thought events become th
   assert.equal(activityOf(trace("tool_call","Read source\ncompleted\nSource found")),"Read source")
   assert.equal(activityOf(trace("agent_thought_chunk","Check source")),"thinking")
 })
+
+test("a Bot's own failure is not hidden by its background work, with or without dispatched work",()=>{
+  const w=words("en")
+  const failed={status:"error",activity:"",pending_permissions:0,failure:{code:"execution_effect_unknown"},
+    source:{fresh:true,state:"online",readable:true,access:"interactive"},
+    background_work:{working:1,waiting:0,needs_input:0}} as unknown as W.ProjectAssistantBotSummary
+  assert.equal(botRosterActivity(failed,w).state,"error")
+  assert.equal(botRosterActivity(failed,w,false).state,"error")
+  const asking={...failed,background_work:{working:0,waiting:0,needs_input:1}} as unknown as W.ProjectAssistantBotSummary
+  assert.equal(botRosterActivity(asking,w).state,"needsInput")
+})

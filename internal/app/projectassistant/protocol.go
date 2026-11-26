@@ -74,6 +74,12 @@ type ProjectDispatchTools interface {
 // CharterTools lets the lead Bot, in a direct turn from the person, propose a
 // whole new team charter for a Project. A proposal changes nothing until the
 // person applies it on the charter page.
+// DispatchKindTools names the person's dispatch rule kinds for this Bot's
+// Project, with their hints, for the dispatch tool's kind argument.
+type DispatchKindTools interface {
+	DispatchKinds(context.Context) []string
+}
+
 type CharterTools interface {
 	CharterProposalAvailable(context.Context) error
 	ProposeCharterEdit(context.Context, CharterEditProposal) (pa.CharterProposal, error)
