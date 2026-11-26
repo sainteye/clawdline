@@ -383,7 +383,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 	} {
 		measures[key] = measure
 	}
-	return measures
+	return s.withCharterCapacityMeasures(measures)
 }
 
 // A rule is durable and the limit is per Bot. Read through the query-only pool
