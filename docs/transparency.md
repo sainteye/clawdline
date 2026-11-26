@@ -36,6 +36,14 @@ the peer-request prompt, the work-completion prompt and the tool descriptions
 are unchanged. Only the actor, provider, provider message and runtime source
 receipts are refreshed; this review does not deploy the public website.
 
+The owned dispatch tool now accepts an explicit empty write set with the
+default Project. The English and Taiwan Traditional Chinese work-completion
+card and tool descriptions cover read-only child dispatch to the Bot's own
+Project and the result's return to its main chat. The Host treats the exact
+own-Project name or path as the default in local request, reply and work
+review turns. Cross-Project dispatch, Board links and explicit completion
+callbacks still need a direct user turn.
+
 A Bot answering another Bot's request on this machine can now call
 `dispatch_work` into its own Project and use browser tabs it opened in that
 turn. Reviewed the persistent-bot-review card in English and Taiwan Traditional

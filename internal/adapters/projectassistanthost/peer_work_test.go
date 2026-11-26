@@ -407,8 +407,8 @@ func (r peerFolders) ResolveTeamFolder(ctx context.Context, machine, folder stri
 }
 
 // A Bot answering another Bot may dispatch read-only work, such as an
-// acceptance Session that only takes screenshots, by naming its own Project
-// with no claims. The work belongs to its main chat like any peer dispatch.
+// acceptance Session that only takes screenshots, with an empty claims array.
+// The work belongs to its main chat like any peer dispatch.
 // Another Project, and the options that need the person, stay refused.
 func TestPeerRequestTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
 	ctx := context.Background()
@@ -438,10 +438,7 @@ func TestPeerRequestTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
 	if request.Turn.Origin != pa.BotRequestOrigin || worker.q.Bot.Key == atlas.Key {
 		t.Fatalf("not a peer-request worker turn: %+v", request.Turn)
 	}
-	tools := worker.q.Tools.(interface {
-		DispatchToProject(context.Context, string, string, string, []string, string) (pa.WorkLink, error)
-		DispatchWithCompletion(context.Context, string, string, string, []string, string, string, string) (pa.WorkLink, error)
-	})
+	tools := worker.q.Tools.(NativeWork)
 
 	var refused *pa.Failure
 	for _, folder := range []string{"other", "missing"} {
@@ -453,9 +450,13 @@ func TestPeerRequestTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
 		t.Fatalf("a peer-request turn asked for a completion turn: %v", err)
 	}
 
-	link, err := tools.DispatchToProject(ctx, "peer-read", "Take acceptance screenshots", "Read only: take 390px screenshots, change nothing.", []string{}, "own")
+	const title, brief = "Take acceptance screenshots", "Read only: take 390px screenshots, change nothing."
+	link, err := tools.Dispatch(ctx, "peer-read", title, brief, []string{})
 	if err != nil || link.TaskID == "" {
 		t.Fatalf("read-only dispatch in the Bot's own Project from a peer-request turn: %+v, %v", link, err)
+	}
+	if replay, err := tools.DispatchToProject(ctx, "peer-read", title, brief, []string{}, "own"); err != nil || replay.TaskID != link.TaskID {
+		t.Fatalf("naming the same Project did not replay the receipt: %+v, %v", replay, err)
 	}
 	main, err := f.h.store.Export(ctx, atlas.Key)
 	if err != nil {
@@ -466,6 +467,36 @@ func TestPeerRequestTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
 		t.Fatalf("task owned by %s; main chat links=%d, hidden thread links=%d", link.Fence.Key.BotID, len(main.WorkLinks), len(hidden.WorkLinks))
 	}
 	worker.reply <- app.PromptResult{FinalText: "Dispatched the screenshots."}
+}
+
+func TestPeerReplyTurnDispatchesReadOnlyWorkInItsOwnProject(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.o.Projects = peerFolders{fixtureResolver{f}}
+	f.start(t)
+	f.enable(t)
+	requester, recipient := f.create(t, "requester"), f.create(t, "recipient")
+	sender, exchange, err := peerRequest(t, f, requester, pa.BotMessageRequest{
+		TargetBotID: recipient.Key.BotID, Text: "Suggest a follow-up check.", IdempotencyKey: "suggest-check",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finishTurn(t, f, sender, requester.Key, exchange.SourceTurnID)
+	f.h.tickBackgroundTasks(ctx)
+	worker := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	worker.reply <- app.PromptResult{FinalText: "Check the receipt."}
+	reply := fixtureReceive(t, f.p.sessions)
+	wake := fixtureReceive(t, f.p.sent)
+	if reply.q.Bot.Key != requester.Key || wake.Turn.Origin != pa.BotReplyOrigin {
+		t.Fatalf("not a reply turn for the requester: %+v", wake.Turn)
+	}
+	link, err := reply.q.Tools.(NativeWork).DispatchToProject(ctx, "reply-read", "Inspect the receipt", "Read only.", []string{}, "own")
+	if err != nil || link.TaskID == "" || link.Fence.Key != requester.Key || link.TurnID != wake.Turn.ID {
+		t.Fatalf("reply dispatch in the Bot's own Project: %+v, %v", link, err)
+	}
+	reply.reply <- app.PromptResult{FinalText: "Dispatched the check."}
 }
 
 // A Host composed without a language reader writes its notices in English.

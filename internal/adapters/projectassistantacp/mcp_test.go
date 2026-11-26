@@ -468,6 +468,34 @@ func (t completionMCPTools) DispatchWithCompletion(_ context.Context, id, title,
 	return t.record(id, title, brief, claims, project, persona, boardItemID), nil
 }
 
+func TestMCPDispatchRoutesReadOnlyWorkWithoutAProject(t *testing.T) {
+	f := newMCPFixture(t, mcpTestTools{dispatch: func(_ context.Context, _, _, _ string, claims []string) (pa.WorkLink, error) {
+		if claims == nil || len(claims) != 0 {
+			t.Errorf("expected an explicit empty claims array, got %#v", claims)
+		}
+		return pa.WorkLink{TaskID: "read-only-task"}, nil
+	}})
+	f.initialize(t)
+	code, body := f.post(t, mcpCall("dispatch_work", map[string]any{
+		"idempotency_key": "read-only", "title": "Inspect the result", "brief": "Read only.", "claims": []string{},
+	}), nil)
+	if code != http.StatusOK || !bytes.Contains(body, []byte(`\"task_id\":\"read-only-task\"`)) {
+		t.Fatalf("read-only dispatch response: %d %s", code, body)
+	}
+}
+
+func TestMCPDispatchRefusalNamesMissingClaims(t *testing.T) {
+	f := newMCPFixture(t, mcpTestTools{})
+	f.initialize(t)
+	code, body := f.post(t, mcpCall("dispatch_work", map[string]any{
+		"idempotency_key": "read-only", "title": "Inspect the result", "brief": "Read only.",
+	}), nil)
+	if code != http.StatusOK || !bytes.Contains(body, []byte(`"isError":true`)) ||
+		!bytes.Contains(body, []byte(`\"code\":\"pa_invalid\"`)) || !bytes.Contains(body, []byte(`\"reason\":\"Add claims`)) {
+		t.Fatalf("dispatch refusal did not name the missing field: %d %s", code, body)
+	}
+}
+
 func TestMCPDispatchRequestsCompletionForReadOnlyWork(t *testing.T) {
 	var calls atomic.Int64
 	f := newMCPFixture(t, completionMCPTools{record: func(id, title, brief string, claims []string, project, persona, boardItemID string) pa.WorkLink {

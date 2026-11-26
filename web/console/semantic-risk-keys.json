@@ -4,7 +4,7 @@
   "counts": {
     "negation": 3713,
     "state": 2497,
-    "permission": 874,
+    "permission": 875,
     "deletion": 336,
     "uncertainty": 584
   },
@@ -7056,6 +7056,7 @@
       "transparency.card.persistent-bot-team.condition",
       "transparency.card.persistent-bot-work-completion.condition",
       "transparency.card.persistent-bot-work-completion.effect",
+      "transparency.card.persistent-bot-work-completion.how",
       "transparency.card.persistent-bot-work-message.effect",
       "transparency.card.persistent-bots.condition",
       "transparency.card.persistent-bots.effect",
