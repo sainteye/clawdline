@@ -17,7 +17,7 @@ export async function mountCharterFixture() {
   const studio = createCharterFixture("studio", [{ project_id: "project", bots: bots("studio"), versions: [
     { text: v1, author: "template", reason: "" }, { text: v2, author: "person", reason: "編輯「一件事怎麼走」" }, { text: v3, author: "lead_proposal", reason: "交辦卡寫清楚驗收方式" }] }])
   const notebook = createCharterFixture("notebook", [{ project_id: "project", bots: bots("notebook") }])
-  Object.assign(controls.a, { canCharters: studio.canCharters, canRemoveCharter: studio.canRemoveCharter, charterRequest: studio.charterRequest })
-  Object.assign(controls.b, { canCharters: notebook.canCharters, canRemoveCharter: notebook.canRemoveCharter, charterRequest: notebook.charterRequest })
+  Object.assign(controls.a, { canCharters: studio.canCharters, canRemoveCharter: studio.canRemoveCharter, canCharterConflicts: studio.canCharterConflicts, charterRequest: studio.charterRequest })
+  Object.assign(controls.b, { canCharters: notebook.canCharters, canRemoveCharter: notebook.canRemoveCharter, canCharterConflicts: notebook.canCharterConflicts, charterRequest: notebook.charterRequest })
   Object.assign(window, { charterFixture: { studio, notebook } })
 }

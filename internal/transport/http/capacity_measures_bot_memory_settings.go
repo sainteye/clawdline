@@ -10,6 +10,7 @@ import (
 
 type charterCapacityUsage struct {
 	versions, proposals, projects, textBytes, reasonBytes int64
+	openConflicts, handledConflicts, conflictBytes        int64
 }
 
 func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
@@ -46,6 +47,22 @@ func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
 	if err != nil {
 		return usage, errors.New("Bot charter rows cannot be read")
 	}
+	var conflicts int
+	if err = db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_charter_conflicts'`).Scan(&conflicts); err != nil {
+		return usage, errors.New("Bot charter conflict table cannot be inspected")
+	}
+	if conflicts == 0 {
+		return usage, nil
+	}
+	err = db.QueryRow(`WITH per AS (
+		SELECT sum(state='open') AS open, sum(state<>'open') AS handled FROM project_assistant_charter_conflicts GROUP BY machine, project
+	)
+	SELECT coalesce((SELECT max(open) FROM per), 0), coalesce((SELECT max(handled) FROM per), 0),
+		coalesce((SELECT max(max(octet_length(bot_sentence)), max(octet_length(charter_sentence)), max(octet_length(section)), max(octet_length(suggested)), max(octet_length(path)), max(octet_length(memory_entry))) FROM project_assistant_charter_conflicts), 0)`).
+		Scan(&usage.openConflicts, &usage.handledConflicts, &usage.conflictBytes)
+	if err != nil {
+		return usage, errors.New("Bot charter conflict rows cannot be read")
+	}
 	return usage, nil
 }
 
@@ -66,6 +83,10 @@ func (s *Server) withCharterCapacityMeasures(measures map[string]func() capacity
 		"bots.charter_versions":     charter(func(u charterCapacityUsage) int64 { return u.versions }, "largest retained charter version count per Project and machine"),
 		"bots.charter_proposals":    charter(func(u charterCapacityUsage) int64 { return u.proposals }, "largest pending charter proposal count per Project and machine"),
 		"bots.charter_projects":     charter(func(u charterCapacityUsage) int64 { return u.projects }, "largest count of Projects with a saved charter per machine"),
+		"bots.charter_conflicts":    charter(func(u charterCapacityUsage) int64 { return u.openConflicts }, "largest open charter conflict report count per Project and machine"),
+		"bots.charter_conflicts_resolved": charter(func(u charterCapacityUsage) int64 { return u.handledConflicts },
+			"largest kept handled or superseded charter conflict report count per Project and machine"),
+		"bots.charter_conflict_sentence_bytes": charter(func(u charterCapacityUsage) int64 { return u.conflictBytes }, "largest quoted sentence, heading, path or entry id of a kept conflict report in UTF-8 bytes"),
 		"bots.charter_request_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-change-request text guard; accepted text belongs to Bot conversation storage"}
 		},

@@ -457,6 +457,13 @@ func (r *Engine) submissionTurn(st *submitState, fence pa.Fence) (pa.Turn, pa.Me
 		edit := *s.CharterEdit
 		turn.CharterEdit = &edit
 	}
+	if s.CharterFix != nil {
+		if s.CharterEdit != nil || s.Notice || s.Compact || s.LeadCall || s.AuthorityCheck == nil || s.Room != nil || s.Network != nil || s.Decision != nil || pa.ValidateCharterFix(*s.CharterFix) != nil {
+			return pa.Turn{}, "", runtimeFailure(pa.ScopeDenied, "charter_fix")
+		}
+		fix := *s.CharterFix
+		turn.CharterFix = &fix
+	}
 	if s.Compact {
 		turn.Origin = pa.CompactOrigin
 		kind = pa.NoticeMessage

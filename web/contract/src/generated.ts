@@ -5764,6 +5764,125 @@ export interface ProjectAssistantCharterChangeResponse {
 }
 
 /**
+ * One Bot's report that a sentence of its own disagrees with the charter. outdated
+ * says it was made against an older version than the current one.
+ */
+export interface ProjectAssistantCharterConflict {
+  bot_id: string
+
+  /**
+   * The Bot's name, empty when it is hidden or gone.
+   */
+  bot_name: string
+  bot_sentence: string
+  charter_sentence: string
+  created_at: string
+  id: string
+
+  /**
+   * The memory entry the Bot named; may be empty.
+   */
+  memory_entry_id: string
+  outdated: boolean
+
+  /**
+   * Workspace-relative file path; empty unless source is workspace_file.
+   */
+  path: string
+
+  /**
+   * Empty while open.
+   */
+  resolved_at: string
+  section: string
+  source: ProjectAssistantCharterConflictSource
+  state: ProjectAssistantCharterConflictState
+
+  /**
+   * The Bot's suggested replacement; empty to remove its sentence.
+   */
+  suggested: string
+  turn_id: string
+  version: number
+}
+
+/**
+ * The person's choice for one report.
+ */
+export type ProjectAssistantCharterConflictAction =
+    "follow_charter"
+  | "change_charter"
+  | "dismiss"
+
+export const ProjectAssistantCharterConflictActionValues: readonly ProjectAssistantCharterConflictAction[] = ["follow_charter", "change_charter", "dismiss"] as const
+
+/**
+ * The conflict report bounds.
+ */
+export interface ProjectAssistantCharterConflictLimits {
+  open: number
+  resolved: number
+  sentence_bytes: number
+}
+
+/**
+ * The person's choice for one open report (API 124). follow_charter replaces the
+ * Bot's sentence in its memory fact or instructions when it appears exactly once,
+ * otherwise asks the Bot to change it; change_charter marks the report handed to a
+ * charter change the person then requests; dismiss leaves everything as it is. A
+ * repeated key finishes the plan it chose; another key on a handled report is
+ * stale.
+ */
+export interface ProjectAssistantCharterConflictResolveRequest {
+  action: ProjectAssistantCharterConflictAction
+  conflict_id: string
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * Where the Bot's sentence lives: its memory, its instructions, or a file in its
+ * workspace its instructions point to.
+ */
+export type ProjectAssistantCharterConflictSource =
+    "memory"
+  | "instructions"
+  | "workspace_file"
+
+export const ProjectAssistantCharterConflictSourceValues: readonly ProjectAssistantCharterConflictSource[] = ["memory", "instructions", "workspace_file"] as const
+
+/**
+ * What became of a report. fixed: the daemon replaced the Bot's sentence;
+ * handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the
+ * person chose to change the charter instead. Dismissed and superseded reports are
+ * not listed.
+ */
+export type ProjectAssistantCharterConflictState =
+    "open"
+  | "fixed"
+  | "handed_to_bot"
+  | "handed_to_charter"
+
+export const ProjectAssistantCharterConflictStateValues: readonly ProjectAssistantCharterConflictState[] = ["open", "fixed", "handed_to_bot", "handed_to_charter"] as const
+
+/**
+ * A Project's conflict reports, open ones first, newest first (API 124).
+ * checked_without_report counts the visible Bots that were asked to compare the
+ * current version and reported nothing against it. Each report is one Bot's own
+ * judgment and may miss things.
+ */
+export interface ProjectAssistantCharterConflictsResponse {
+  checked_without_report: number
+  conflicts: ProjectAssistantCharterConflict[]
+  contract_version: string
+  limits: ProjectAssistantCharterConflictLimits
+  machine_id: string
+  project_id: string
+  version: number
+}
+
+/**
  * Dismiss a pending proposal. Dismissing one that is already gone answers the
  * current list.
  */
@@ -5896,6 +6015,11 @@ export interface ProjectAssistantCharterSaveRequest {
  * One Project's current charter in the machine listing.
  */
 export interface ProjectAssistantCharterSummary {
+  /**
+   * Open conflict reports from the Project's Bots (API 124); absent from an older
+   * daemon.
+   */
+  open_conflicts?: number
   pending_proposals: number
   project_id: string
   updated_at: string

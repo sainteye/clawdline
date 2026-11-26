@@ -57,6 +57,8 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		charterIdemIndex,
 		charterProposalsSchema,
 		charterReadsSchema,
+		charterConflictsSchema,
+		charterChecksSchema,
 		reactionsSchema,
 		handoffCardSchema,
 		handoffReceiptSchema,

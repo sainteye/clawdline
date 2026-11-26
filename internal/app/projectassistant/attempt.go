@@ -49,6 +49,9 @@ type attemptStart struct {
 	charterVersion int64
 	charterText    string
 	charterChanged bool
+	// charterCheck says this prompt asks the Bot, once for this version, to
+	// compare the charter with its own memory and instructions.
+	charterCheck bool
 }
 
 // attemptCleanup closes an opened native session at most once and remembers
@@ -351,6 +354,14 @@ func (r *Engine) readAttemptInputLocked(ctx context.Context, a *runtimeActor, s 
 		}
 		input.Text = pa.CharterEditContext(t.CharterEdit.ProjectID, version, text, input.Text)
 	}
+	if t.CharterFix != nil {
+		// The report travels as the turn's own mark, set only by the charter
+		// page's resolve route; the message text grants nothing.
+		if !pa.DirectUserTurn(t) || pa.ValidateCharterFix(*t.CharterFix) != nil {
+			return runtimeFailure(pa.ScopeDenied, "charter_fix")
+		}
+		input.Text = pa.CharterFixContext(*t.CharterFix) + input.Text
+	}
 	// The first prompt after an interrupted turn was settled unrepeated
 	// inspects what finished before it acts.
 	input.Text = restartPromptHeader(export, t, isolatedRoutine) + input.Text
@@ -482,6 +493,13 @@ func (r *Engine) commitAttemptStartLocked(ctx context.Context, a *runtimeActor, 
 		s.charterChanged = s.resume && binding.CharterVersion != s.charterVersion
 		binding.CharterVersion = s.charterVersion
 		t.CharterVersion = s.charterVersion
+		// The binding remembers the version it was asked to check, so a fresh
+		// or resumed session asks once per version. A Bot's own background
+		// helpers and isolated routines have nothing of their own to compare.
+		s.charterCheck = s.charterVersion > binding.CharterChecked && !s.isolatedRoutine && !bot.Hidden
+		if s.charterCheck {
+			binding.CharterChecked = s.charterVersion
+		}
 	}
 	leadRole := "member"
 	if bot.Lead {
@@ -723,6 +741,9 @@ func (r *Engine) sendAttemptPrompt(ctx context.Context, a *runtimeActor, s *atte
 		// The sent version feeds the charter's readers; the prompt is
 		// already sent, so a failed note does not fail the turn.
 		_ = r.o.Charter.CharterDelivered(context.WithoutCancel(ctx), s.bot, s.turn.ID, s.charterVersion)
+		if recorder, ok := r.o.Charter.(CharterCheckRecorder); ok && s.charterCheck {
+			_ = recorder.CharterChecked(context.WithoutCancel(ctx), s.bot, s.turn.ID, s.charterVersion)
+		}
 	}
 	return pending, err
 }
@@ -759,15 +780,23 @@ func attemptPrompt(s *attemptStart, filtered pa.ContextSnapshot) (string, *Sessi
 		}
 		text = prefix + text
 	}
+	// The check follows whatever charter text this prompt or the session
+	// already holds; it never repeats the text.
+	check := ""
+	if s.charterCheck {
+		check = pa.CharterCheck(s.charterVersion)
+	}
 	switch {
 	case handoff == nil && !s.resume && s.charterVersion > 0:
 		// An isolated routine opens without a handoff; its prompt carries
 		// the charter itself.
-		text = pa.CharterOpening(s.charterVersion, s.charterText) + "\n" + text
+		text = pa.CharterOpening(s.charterVersion, s.charterText) + "\n" + check + text
 	case handoff == nil && s.charterChanged && !s.memoryChanged && !s.compacted:
 		// A memory update or compaction redelivery already repeats the
 		// whole context, charter included.
-		text = pa.CharterUpdate(s.charterVersion, s.charterText) + text
+		text = pa.CharterUpdate(s.charterVersion, s.charterText) + check + text
+	default:
+		text = check + text
 	}
 	return text, handoff, nil
 }

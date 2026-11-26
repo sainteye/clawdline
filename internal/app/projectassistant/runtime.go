@@ -46,6 +46,14 @@ type RuntimeOptions struct {
 
 // CharterSource is the team charter a runtime delivers. Current answers
 // version 0 when the Project has none.
+// CharterCheckRecorder, when a CharterSource also implements it, notes that a
+// sent prompt asked the Bot to compare a charter version with its own
+// sentences, which the charter page counts and which supersedes the Bot's
+// older open reports.
+type CharterCheckRecorder interface {
+	CharterChecked(ctx context.Context, bot pa.Bot, turnID string, version int64) error
+}
+
 type CharterSource interface {
 	CurrentCharter(context.Context, pa.ProjectScope) (version int64, text string, err error)
 	CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error

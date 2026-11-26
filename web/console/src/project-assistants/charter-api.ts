@@ -1,7 +1,7 @@
 // The one place the console reads and writes a Project's team charter.
 //
 // Every call is one route under /v1/project-assistant-charters (API 122; removal
-// API 123), sent
+// API 123; the Bots' conflict reports API 124), sent
 // through the machine's captured source: locally over HTTP, from the phone as
 // the project-assistants.charter* Cloud words. The screens see the generated
 // contract shapes and a typed refusal, never a transport.
@@ -16,6 +16,8 @@ export interface CharterSummary {
   project: CharterProject
   version: number
   pending_proposals: number
+  /** Open conflict reports from the Project's Bots; 0 from a machine older than API 124. */
+  open_conflicts: number
   /** Visible Bots of the Project, and how many worked under the current version last. */
   bots: number
   readers_current: number
@@ -70,6 +72,10 @@ export interface CharterApi {
   proposals(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterProposalsResponse>
   applyProposal(project: CharterProject, id: string, request: { expected_version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   dismissProposal(project: CharterProject, id: string, signal: AbortSignal): Promise<W.ProjectAssistantCharterProposalsResponse>
+  /** The Bots' reports where their own sentences disagree with the charter; undefined before API 124. */
+  conflicts?(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterConflictsResponse>
+  /** The person's choice for one report; answers the reports after it. */
+  resolveConflict?(project: CharterProject, request: { conflict_id: string; action: W.ProjectAssistantCharterConflictAction }, signal: AbortSignal): Promise<W.ProjectAssistantCharterConflictsResponse>
   /** The person's words to the machine's lead, which may answer with a proposal. */
   requestChange(project: CharterProject, request: { text: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterChangeResponse>
 }
@@ -81,7 +87,7 @@ const query = (fields: Record<string, string | number>) => "?" + new URLSearchPa
 const newKey = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)
 
 /** The routes, built over any sender with the source's request semantics. */
-export function charterRoutes(machineID: string, send: Send, options: { remove?: boolean } = {}): CharterApi {
+export function charterRoutes(machineID: string, send: Send, options: { remove?: boolean; conflicts?: boolean } = {}): CharterApi {
   const call = async <T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal) => {
     try { return await send<T>(path, method, body, signal) } catch (error) { throw charterRefusal(error) }
   }
@@ -97,6 +103,11 @@ export function charterRoutes(machineID: string, send: Send, options: { remove?:
     save: (project, request, signal) => call(chartersPath + "/charter", "PUT", write<W.ProjectAssistantCharterSaveRequest>(project, { expected_version: request.expected_version, text: request.text, reason: request.reason }), signal),
     restore: (project, request, signal) => call(chartersPath + "/restore", "POST", write<W.ProjectAssistantCharterRestoreRequest>(project, { expected_version: request.expected_version, version: request.version }), signal),
     ...(options.remove ? { remove: (project: CharterProject, request: { expected_version: number }, signal: AbortSignal) => call<W.ProjectAssistantCharterResponse>(chartersPath + "/remove", "POST", write<W.ProjectAssistantCharterRemoveRequest>(project, { expected_version: request.expected_version }), signal) } : {}),
+    ...(options.conflicts ? {
+      conflicts: (project: CharterProject, signal: AbortSignal) => call<W.ProjectAssistantCharterConflictsResponse>(chartersPath + "/conflicts" + query(own(project)), "GET", undefined, signal),
+      resolveConflict: (project: CharterProject, request: { conflict_id: string; action: W.ProjectAssistantCharterConflictAction }, signal: AbortSignal) =>
+        call<W.ProjectAssistantCharterConflictsResponse>(chartersPath + "/conflict-resolve", "POST", write<W.ProjectAssistantCharterConflictResolveRequest>(project, { conflict_id: request.conflict_id, action: request.action }), signal),
+    } : {}),
     readers: (project, signal) => call(chartersPath + "/readers" + query(own(project)), "GET", undefined, signal),
     proposals: (project, signal) => call(chartersPath + "/proposals" + query(own(project)), "GET", undefined, signal),
     applyProposal: (project, id, request, signal) => call(chartersPath + "/proposal-apply", "POST", write<W.ProjectAssistantCharterApplyRequest>(project, { proposal_id: id, expected_version: request.expected_version }), signal),
@@ -113,7 +124,7 @@ export function charterApiFor(source: SourceClient | undefined): CharterApi | un
   // One client per source object, so a screen holding it does not reread on every render.
   let api = clients.get(source)
   if (!api) {
-    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal), { remove: source.canRemoveCharter?.() === true })
+    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal), { remove: source.canRemoveCharter?.() === true, conflicts: source.canCharterConflicts?.() === true })
     clients.set(source, api)
   }
   return api
@@ -128,7 +139,7 @@ export const shownReaders = (answer: W.ProjectAssistantCharterReadersResponse) =
 /** Every Project of the listing, with or without a charter (version 0), with its Bots. */
 export async function charterSummaries(api: CharterApi, machineID: string, signal: AbortSignal): Promise<CharterSummary[]> {
   const listing = await api.list(signal)
-  const rows = [...listing.charters, ...listing.projects_without_charter.map(project_id => ({ project_id, version: 0, pending_proposals: 0 }))]
+  const rows = [...listing.charters, ...listing.projects_without_charter.map(project_id => ({ project_id, version: 0, pending_proposals: 0, open_conflicts: 0 }))]
   return Promise.all(rows.map(async row => {
     const project = { machine_id: machineID, project_id: row.project_id }
     let names: string[] = [], current = 0
@@ -137,7 +148,7 @@ export async function charterSummaries(api: CharterApi, machineID: string, signa
       names = readers.map(reader => reader.name)
       current = readers.filter(reader => reader.version === row.version).length
     } catch (error) { if ((error as { name?: unknown } | null)?.name === "AbortError") throw error }
-    return { project, version: row.version, pending_proposals: row.pending_proposals, bots: names.length, readers_current: current, names }
+    return { project, version: row.version, pending_proposals: row.pending_proposals, open_conflicts: row.open_conflicts ?? 0, bots: names.length, readers_current: current, names }
   }))
 }
 

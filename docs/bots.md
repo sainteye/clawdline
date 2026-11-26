@@ -158,6 +158,41 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   has a 團隊章程 tab listing each Project and creating a first version from a five-heading
   template. Every call goes through `web/console/src/project-assistants/charter-api.ts`; the
   fixture-backed browser check is `charter.e2e.mjs` (`PLAYWRIGHT_MODULE`, `CHARTER_ARTIFACTS`).
+- **Where a Bot disagrees with the charter** (API 124). Each execution binding remembers the
+  charter version it was last asked to check (`charter_checked`, starting at 0, so every Bot with a
+  charter checks once on its next turn after this shipped). While that is below the current
+  version, the next prompt carries a short `<charter_check version="N">` block after whatever
+  charter text the prompt or the resumed session already holds: compare the charter once with
+  your memory, instructions and any playbook or workspace file your instructions point to, call
+  `report_charter_conflict` for each disagreement, change nothing, then continue the request. A
+  resumed session gets only the check, never the text again; the native session is not replaced.
+  Isolated routines and a Bot's hidden helpers are not asked. The tool is offered in every turn of
+  a Bot whose Project has a charter, Bot-to-Bot request turns included (a helper reports for the
+  Bot it works for). A report names the charter version, the source (`memory`, `instructions` or
+  `workspace_file` with its workspace-relative path; a memory entry id when known), both exact
+  sentences, the section heading and an optional replacement. Reports are deduplicated by Bot,
+  version and Bot sentence (a dismissed one stays dismissed); a report on another version than
+  the current one is refused; when a Bot is asked to check a newer version its open older reports
+  become superseded. Bounds: 50 open reports per Project (a new one is refused until you handle
+  one), 50 handled ones kept (oldest removed first), 2 KiB per quoted sentence.
+  `GET …/conflicts` lists them with `outdated` and `checked_without_report` (visible Bots asked to
+  check the current version that reported nothing); `POST …/conflict-resolve` takes
+  `follow_charter`, `change_charter` or `dismiss` with `Idempotency-Key`. The plan is chosen and
+  stored before anything changes, so a repeated key finishes the same plan and another key on a
+  handled report is stale. `follow_charter` is the person's authority: when the Bot's sentence
+  appears exactly once in a short memory fact or in its instructions, the daemon replaces it with
+  the suggestion (or removes it) through the ordinary memory save/forget and settings edit paths
+  and their revision checks (an instruction change may start a fresh native session, as any
+  instruction edit does); for a topic note, a workspace file, or a sentence found zero or several
+  times, it sends the Bot a typed turn (`charter_fix`, the person's origin, never authority from
+  text) quoting the report so the Bot edits its own memory or file. `change_charter` marks the
+  report and the page fills the request box with a sentence naming the Bot and both quotes, which
+  the person sends to the lead as in a change request. The Cloud words are
+  `project-assistants.charter-conflicts` and `project-assistants.charter-conflict-resolve`.
+  In the console the roster row says “N 個衝突”, the page shows a reminder at the top, and a
+  ~380px side panel (a full-screen sheet on a phone) lists one card per report with
+  以章程為準，改掉它的那一句, 改章程 and 先不管, the count of Bots that reported nothing, and the
+  plain warning that each report is that Bot's own judgment and may miss things.
 - **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
   Bot's own record, keyed by machine and Project. They were added without a schema version bump,
   like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops

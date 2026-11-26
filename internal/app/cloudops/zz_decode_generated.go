@@ -103,6 +103,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.attachment":      genDecodeProjectAssistantsAttachment,
 	"project-assistants.charter":         genDecodeProjectAssistantsCharter,
 	"project-assistants.charter-change-request":   genDecodeProjectAssistantsCharterChangeRequest,
+	"project-assistants.charter-conflict-resolve": genDecodeProjectAssistantsCharterConflictResolve,
+	"project-assistants.charter-conflicts":        genDecodeProjectAssistantsCharterConflicts,
 	"project-assistants.charter-proposal-apply":   genDecodeProjectAssistantsCharterProposalApply,
 	"project-assistants.charter-proposal-dismiss": genDecodeProjectAssistantsCharterProposalDismiss,
 	"project-assistants.charter-proposals":        genDecodeProjectAssistantsCharterProposals,
@@ -2683,6 +2685,66 @@ func genDecodeProjectAssistantsCharterChangeRequest(b body) (plan, LocalRequest,
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "text": genValue{from: "text"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsCharterConflictResolve is the `project-assistants.charter-conflict-resolve` row's decode.
+func genDecodeProjectAssistantsCharterConflictResolve(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "conflict_id", "idempotency_key", "machine_id", "project_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"follow_charter", "change_charter", "dismiss"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("conflict_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-charters/conflict-resolve"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"action": genValue{from: "action"}, "conflict_id": genValue{from: "conflict_id"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsCharterConflicts is the `project-assistants.charter-conflicts` row's decode.
+func genDecodeProjectAssistantsCharterConflicts(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "machine_id", "project_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-charters/conflicts"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}})
+	req.Header = asDevice()
 	return p, req, true
 }
 

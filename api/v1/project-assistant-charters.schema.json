@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "project-assistant-charters.v1",
   "title": "Bots team charters",
-  "description": "API 122; removing a charter arrives at API 123. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
+  "description": "API 122; removing a charter arrives at API 123, and the Bots' conflict reports at API 124. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
   "$defs": {
     "ProjectAssistantCharterAuthor": {
       "type": "string",
@@ -65,6 +65,11 @@
         "pending_proposals": {
           "type": "integer",
           "minimum": 0
+        },
+        "open_conflicts": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Open conflict reports from the Project's Bots (API 124); absent from an older daemon."
         }
       },
       "required": [
@@ -538,6 +543,208 @@
         "project_id",
         "lead_bot_id",
         "receipt"
+      ]
+    },
+    "ProjectAssistantCharterConflictSource": {
+      "type": "string",
+      "enum": [
+        "memory",
+        "instructions",
+        "workspace_file"
+      ],
+      "description": "Where the Bot's sentence lives: its memory, its instructions, or a file in its workspace its instructions point to."
+    },
+    "ProjectAssistantCharterConflictState": {
+      "type": "string",
+      "enum": [
+        "open",
+        "fixed",
+        "handed_to_bot",
+        "handed_to_charter"
+      ],
+      "description": "What became of a report. fixed: the daemon replaced the Bot's sentence; handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the person chose to change the charter instead. Dismissed and superseded reports are not listed."
+    },
+    "ProjectAssistantCharterConflictAction": {
+      "type": "string",
+      "enum": [
+        "follow_charter",
+        "change_charter",
+        "dismiss"
+      ],
+      "description": "The person's choice for one report."
+    },
+    "ProjectAssistantCharterConflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One Bot's report that a sentence of its own disagrees with the charter. outdated says it was made against an older version than the current one.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "bot_name": {
+          "type": "string",
+          "description": "The Bot's name, empty when it is hidden or gone."
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outdated": {
+          "type": "boolean"
+        },
+        "source": {
+          "$ref": "#/$defs/ProjectAssistantCharterConflictSource"
+        },
+        "path": {
+          "type": "string",
+          "description": "Workspace-relative file path; empty unless source is workspace_file."
+        },
+        "memory_entry_id": {
+          "type": "string",
+          "description": "The memory entry the Bot named; may be empty."
+        },
+        "bot_sentence": {
+          "type": "string"
+        },
+        "charter_sentence": {
+          "type": "string"
+        },
+        "section": {
+          "type": "string"
+        },
+        "suggested": {
+          "type": "string",
+          "description": "The Bot's suggested replacement; empty to remove its sentence."
+        },
+        "state": {
+          "$ref": "#/$defs/ProjectAssistantCharterConflictState"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "resolved_at": {
+          "type": "string",
+          "description": "Empty while open."
+        }
+      },
+      "required": [
+        "id",
+        "bot_id",
+        "bot_name",
+        "turn_id",
+        "version",
+        "outdated",
+        "source",
+        "path",
+        "memory_entry_id",
+        "bot_sentence",
+        "charter_sentence",
+        "section",
+        "suggested",
+        "state",
+        "created_at",
+        "resolved_at"
+      ]
+    },
+    "ProjectAssistantCharterConflictsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Project's conflict reports, open ones first, newest first (API 124). checked_without_report counts the visible Bots that were asked to compare the current version and reported nothing against it. Each report is one Bot's own judgment and may miss things.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterConflict"
+          }
+        },
+        "checked_without_report": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limits": {
+          "$ref": "#/$defs/ProjectAssistantCharterConflictLimits"
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "project_id",
+        "version",
+        "conflicts",
+        "checked_without_report",
+        "limits"
+      ]
+    },
+    "ProjectAssistantCharterConflictLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The conflict report bounds.",
+      "properties": {
+        "open": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "resolved": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sentence_bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "open",
+        "resolved",
+        "sentence_bytes"
+      ]
+    },
+    "ProjectAssistantCharterConflictResolveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The person's choice for one open report (API 124). follow_charter replaces the Bot's sentence in its memory fact or instructions when it appears exactly once, otherwise asks the Bot to change it; change_charter marks the report handed to a charter change the person then requests; dismiss leaves everything as it is. A repeated key finishes the plan it chose; another key on a handled report is stale.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "conflict_id": {
+          "type": "string"
+        },
+        "action": {
+          "$ref": "#/$defs/ProjectAssistantCharterConflictAction"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "conflict_id",
+        "action"
       ]
     }
   }

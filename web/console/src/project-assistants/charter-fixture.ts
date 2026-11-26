@@ -13,11 +13,15 @@ interface FixtureProject {
   versions: FixtureVersion[]
   readers: Map<string, { version: number; running: boolean; queued: boolean }>
   proposals: W.ProjectAssistantCharterProposal[]
+  conflicts: W.ProjectAssistantCharterConflict[]
+  /** Bots that compared the current version and reported nothing. */
+  checkedWithoutReport: number
 }
 
 export interface CharterFixture {
   canCharters(): boolean
   canRemoveCharter(): boolean
+  canCharterConflicts(): boolean
   charterRequest<T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal): Promise<T>
   log: { method: string; path: string; body?: unknown }[]
   /** Saves a version as if another device did, so the next save is stale. */
@@ -28,6 +32,8 @@ export interface CharterFixture {
   /** While held, a change request is accepted and its proposal waits for releaseProposal, as a lead takes seconds. */
   holdProposals(held: boolean): void
   releaseProposal(projectID: string): void
+  /** A Bot's report against the current version, as report_charter_conflict stores it. */
+  reportConflict(projectID: string, report: Pick<W.ProjectAssistantCharterConflict, "bot_id" | "source" | "bot_sentence" | "charter_sentence" | "section"> & Partial<W.ProjectAssistantCharterConflict>, checkedWithoutReport?: number): string
   text(projectID: string): string
   version(projectID: string): number
 }
@@ -53,11 +59,36 @@ function charterAnswer(machineID: string, entry: FixtureProject, selected: numbe
   return structuredClone(out)
 }
 
+function conflictsAnswer(machineID: string, entry: FixtureProject): W.ProjectAssistantCharterConflictsResponse {
+  return { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
+    conflicts: structuredClone([...entry.conflicts].sort((a, b) => Number(b.state === "open") - Number(a.state === "open")).map(c => ({ ...c, outdated: c.version !== current(entry) }))),
+    checked_without_report: entry.checkedWithoutReport, limits: { open: 50, resolved: 50, sentence_bytes: 2048 } }
+}
+
+/** The conflict list and the person's choice; the daemon rewrites a memory fact or instructions itself, a file goes to the Bot. */
+function conflictRoute(machineID: string, entry: FixtureProject, method: string, resolve: W.ProjectAssistantCharterConflictResolveRequest | undefined) {
+  if (method === "GET" || !resolve) return conflictsAnswer(machineID, entry)
+  const item = entry.conflicts.find(c => c.id === resolve.conflict_id)
+  if (!item) throw refuse("pa_not_found", "charter_conflict")
+  if (item.state !== "open") throw refuse("pa_stale_version", "charter_conflict")
+  if (resolve.action === "dismiss") entry.conflicts = entry.conflicts.filter(c => c !== item)
+  else Object.assign(item, { state: resolve.action === "change_charter" ? "handed_to_charter" : item.source === "workspace_file" ? "handed_to_bot" : "fixed", resolved_at: at(9) })
+  return conflictsAnswer(machineID, entry)
+}
+
+function addConflict(entry: FixtureProject, id: string, report: Parameters<CharterFixture["reportConflict"]>[1], checked?: number) {
+  const name = entry.bots.find(b => b.bot_id === report.bot_id)?.name ?? ""
+  entry.conflicts.unshift({ id, bot_name: name, turn_id: `turn-${id}`, version: current(entry), outdated: false, path: "", memory_entry_id: "", suggested: "", state: "open",
+    created_at: new Date(Date.UTC(2026, 10, 26, 5, 12)).toISOString(), resolved_at: "", ...report })
+  if (checked !== undefined) entry.checkedWithoutReport = checked
+  return id
+}
+
 export function createCharterFixture(machineID: string, seed: { project_id: string; bots: { bot_id: string; name: string; lead?: boolean }[]; versions?: { text: string; author: W.ProjectAssistantCharterAuthor; reason: string }[] }[]): CharterFixture {
   const projects = new Map<string, FixtureProject>()
   for (const item of seed) {
     const versions = (item.versions ?? []).map((v, i) => ({ ...v, version: i + 1, created_at: at(i) }))
-    projects.set(item.project_id, { project_id: item.project_id, bots: item.bots, versions, proposals: [],
+    projects.set(item.project_id, { project_id: item.project_id, bots: item.bots, versions, proposals: [], conflicts: [], checkedWithoutReport: 0,
       readers: new Map(item.bots.map(bot => [bot.bot_id, { version: versions.length, running: false, queued: false }])) })
   }
   const log: CharterFixture["log"] = []
@@ -84,7 +115,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
     if (q.machine_id !== undefined && q.machine_id !== machineID || body && body.machine_id !== machineID) throw refuse("pa_scope_denied", "machine_id")
     switch (`${method} ${rest}`) {
       case "GET ": return { contract_version: contractVersion, machine_id: machineID, limits,
-        charters: [...projects.values()].filter(p => current(p) > 0).map(p => ({ project_id: p.project_id, version: current(p), pending_proposals: p.proposals.length, updated_at: p.versions.at(-1)!.created_at, updated_by: p.versions.at(-1)!.author })),
+        charters: [...projects.values()].filter(p => current(p) > 0).map(p => ({ project_id: p.project_id, version: current(p), pending_proposals: p.proposals.length, open_conflicts: p.conflicts.filter(c => c.state === "open").length, updated_at: p.versions.at(-1)!.created_at, updated_by: p.versions.at(-1)!.author })),
         projects_without_charter: [...projects.values()].filter(p => !current(p)).map(p => p.project_id) } satisfies W.ProjectAssistantChartersResponse
       case "GET /charter": return answer(find(q.project_id), Number(q.version))
       case "PUT /charter": {
@@ -129,6 +160,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
         entry.proposals = entry.proposals.filter(p => p.id !== body!.proposal_id)
         return proposalsAnswer(entry)
       }
+      case "GET /conflicts": case "POST /conflict-resolve": return conflictRoute(machineID, find(q.project_id ?? body?.project_id), method, request as W.ProjectAssistantCharterConflictResolveRequest | undefined)
       case "POST /change-request": {
         const entry = find(body!.project_id), latest = entry.versions.at(-1)
         if (!latest) throw refuse("pa_not_found", "charter")
@@ -148,6 +180,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
     log,
     canCharters: () => true,
     canRemoveCharter: () => true,
+    canCharterConflicts: () => true,
     async charterRequest<T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal) {
       log.push({ method, path, body })
       if (signal.aborted) throw new DOMException("Aborted", "AbortError")
@@ -161,6 +194,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
     holdProposals(on) { held = on },
     releaseProposal(projectID) { const p = waiting.get(projectID); if (p) { find(projectID).proposals = [p]; waiting.delete(projectID) } },
     setRunning(projectID, botID, running) { const r = find(projectID).readers.get(botID); if (r) r.running = running },
+    reportConflict(projectID, report, checked) { return addConflict(find(projectID), `cc-${++sequence}`, report, checked) },
     text(projectID) { return find(projectID).versions.at(-1)?.text ?? "" },
     version(projectID) { return current(find(projectID)) },
   }

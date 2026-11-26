@@ -526,7 +526,7 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				t.Fatal("migration did not create an empty background queue")
 			}
 			delete(after, "project_assistant_background_tasks")
-			for _, table := range []string{"project_assistant_charter_versions", "project_assistant_charter_proposals", "project_assistant_charter_reads"} {
+			for _, table := range []string{"project_assistant_charter_versions", "project_assistant_charter_proposals", "project_assistant_charter_reads", "project_assistant_charter_conflicts", "project_assistant_charter_checks"} {
 				if rows, exists := after[table]; !exists || len(rows) != 0 {
 					t.Fatal("migration did not create an empty team charter table", table)
 				}

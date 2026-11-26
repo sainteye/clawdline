@@ -4905,6 +4905,113 @@ type ProjectAssistantCharterChangeResponse struct {
 	Receipt         ProjectAssistantReceipt `json:"receipt"`
 }
 
+// One Bot's report that a sentence of its own disagrees with the charter.
+// outdated says it was made against an older version than the current one.
+type ProjectAssistantCharterConflict struct {
+	BotID string `json:"bot_id"`
+
+	// The Bot's name, empty when it is hidden or gone.
+	BotName         string `json:"bot_name"`
+	BotSentence     string `json:"bot_sentence"`
+	CharterSentence string `json:"charter_sentence"`
+	CreatedAt       string `json:"created_at"`
+	ID              string `json:"id"`
+
+	// The memory entry the Bot named; may be empty.
+	MemoryEntryID string `json:"memory_entry_id"`
+	Outdated      bool   `json:"outdated"`
+
+	// Workspace-relative file path; empty unless source is workspace_file.
+	Path string `json:"path"`
+
+	// Empty while open.
+	ResolvedAt string                                `json:"resolved_at"`
+	Section    string                                `json:"section"`
+	Source     ProjectAssistantCharterConflictSource `json:"source"`
+	State      ProjectAssistantCharterConflictState  `json:"state"`
+
+	// The Bot's suggested replacement; empty to remove its sentence.
+	Suggested string `json:"suggested"`
+	TurnID    string `json:"turn_id"`
+	Version   int64  `json:"version"`
+}
+
+// The person's choice for one report.
+type ProjectAssistantCharterConflictAction string
+
+const (
+	ProjectAssistantCharterConflictActionFollowCharter ProjectAssistantCharterConflictAction = "follow_charter"
+	ProjectAssistantCharterConflictActionChangeCharter ProjectAssistantCharterConflictAction = "change_charter"
+	ProjectAssistantCharterConflictActionDismiss       ProjectAssistantCharterConflictAction = "dismiss"
+)
+
+// ProjectAssistantCharterConflictActionValues is every value the contract allows, in contract order.
+var ProjectAssistantCharterConflictActionValues = []ProjectAssistantCharterConflictAction{ProjectAssistantCharterConflictActionFollowCharter, ProjectAssistantCharterConflictActionChangeCharter, ProjectAssistantCharterConflictActionDismiss}
+
+// The conflict report bounds.
+type ProjectAssistantCharterConflictLimits struct {
+	Open          int64 `json:"open"`
+	Resolved      int64 `json:"resolved"`
+	SentenceBytes int64 `json:"sentence_bytes"`
+}
+
+// The person's choice for one open report (API 124). follow_charter replaces
+// the Bot's sentence in its memory fact or instructions when it appears exactly
+// once, otherwise asks the Bot to change it; change_charter marks the report
+// handed to a charter change the person then requests; dismiss leaves
+// everything as it is. A repeated key finishes the plan it chose; another key
+// on a handled report is stale.
+type ProjectAssistantCharterConflictResolveRequest struct {
+	Action         ProjectAssistantCharterConflictAction `json:"action"`
+	ConflictID     string                                `json:"conflict_id"`
+	IdempotencyKey string                                `json:"idempotency_key"`
+	MachineID      string                                `json:"machine_id"`
+	ProjectID      string                                `json:"project_id"`
+}
+
+// Where the Bot's sentence lives: its memory, its instructions, or a file in
+// its workspace its instructions point to.
+type ProjectAssistantCharterConflictSource string
+
+const (
+	ProjectAssistantCharterConflictSourceMemory        ProjectAssistantCharterConflictSource = "memory"
+	ProjectAssistantCharterConflictSourceInstructions  ProjectAssistantCharterConflictSource = "instructions"
+	ProjectAssistantCharterConflictSourceWorkspaceFile ProjectAssistantCharterConflictSource = "workspace_file"
+)
+
+// ProjectAssistantCharterConflictSourceValues is every value the contract allows, in contract order.
+var ProjectAssistantCharterConflictSourceValues = []ProjectAssistantCharterConflictSource{ProjectAssistantCharterConflictSourceMemory, ProjectAssistantCharterConflictSourceInstructions, ProjectAssistantCharterConflictSourceWorkspaceFile}
+
+// What became of a report. fixed: the daemon replaced the Bot's sentence;
+// handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the
+// person chose to change the charter instead. Dismissed and superseded reports
+// are not listed.
+type ProjectAssistantCharterConflictState string
+
+const (
+	ProjectAssistantCharterConflictStateOpen            ProjectAssistantCharterConflictState = "open"
+	ProjectAssistantCharterConflictStateFixed           ProjectAssistantCharterConflictState = "fixed"
+	ProjectAssistantCharterConflictStateHandedToBot     ProjectAssistantCharterConflictState = "handed_to_bot"
+	ProjectAssistantCharterConflictStateHandedToCharter ProjectAssistantCharterConflictState = "handed_to_charter"
+)
+
+// ProjectAssistantCharterConflictStateValues is every value the contract allows, in contract order.
+var ProjectAssistantCharterConflictStateValues = []ProjectAssistantCharterConflictState{ProjectAssistantCharterConflictStateOpen, ProjectAssistantCharterConflictStateFixed, ProjectAssistantCharterConflictStateHandedToBot, ProjectAssistantCharterConflictStateHandedToCharter}
+
+// A Project's conflict reports, open ones first, newest first (API 124).
+// checked_without_report counts the visible Bots that were asked to compare the
+// current version and reported nothing against it. Each report is one Bot's own
+// judgment and may miss things.
+type ProjectAssistantCharterConflictsResponse struct {
+	CheckedWithoutReport int64                                 `json:"checked_without_report"`
+	Conflicts            []ProjectAssistantCharterConflict     `json:"conflicts"`
+	ContractVersion      string                                `json:"contract_version"`
+	Limits               ProjectAssistantCharterConflictLimits `json:"limits"`
+	MachineID            string                                `json:"machine_id"`
+	ProjectID            string                                `json:"project_id"`
+	Version              int64                                 `json:"version"`
+}
+
 // Dismiss a pending proposal. Dismissing one that is already gone answers the
 // current list.
 type ProjectAssistantCharterDismissRequest struct {
@@ -5017,6 +5124,9 @@ type ProjectAssistantCharterSaveRequest struct {
 
 // One Project's current charter in the machine listing.
 type ProjectAssistantCharterSummary struct {
+	// Open conflict reports from the Project's Bots (API 124); absent from an older
+	// daemon.
+	OpenConflicts    int64                         `json:"open_conflicts,omitempty"`
 	PendingProposals int64                         `json:"pending_proposals"`
 	ProjectID        string                        `json:"project_id"`
 	UpdatedAt        string                        `json:"updated_at"`

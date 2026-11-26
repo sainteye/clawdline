@@ -651,6 +651,41 @@ func (s *Service) SendCharterEdit(ctx context.Context, c pa.Command, fence pa.Fe
 		AuthorityCheck: check, Feature: a.Feature, Source: a.Source, CharterEdit: &edit})
 }
 
+// SendCharterFix sends, as the person's own message from a charter page, the
+// request that a Bot change one of its sentences to agree with the charter.
+// The report rides on the turn as its mark; the Bot edits with its own memory
+// and file tools under its ordinary permissions.
+func (s *Service) SendCharterFix(ctx context.Context, c pa.Command, fence pa.Fence, fix pa.CharterFix) (pa.Receipt, error) {
+	a, err := s.authorize(ctx, c.Key, true)
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	if fence.Key != c.Key {
+		return pa.Receipt{}, serviceFailure(pa.ScopeDenied, "message_key")
+	}
+	if err = pa.ValidateCharterFix(fix); err != nil {
+		return pa.Receipt{}, err
+	}
+	text := pa.CharterFixMessage(fix)
+	message := pa.SendMessage{Fence: fence, Text: text}
+	c, err = canonicalCommand(c, pa.SendOperation, a.PrincipalID, struct {
+		Text   string
+		Report string
+	}{text, fix.ReportID})
+	if err != nil {
+		return pa.Receipt{}, err
+	}
+	check := func(ctx context.Context) error {
+		_, err := s.authorizeEffect(ctx, c.Key, true, a)
+		return err
+	}
+	if err = check(ctx); err != nil {
+		return pa.Receipt{}, err
+	}
+	return s.opts.Runtime.Submit(ctx, Submission{Command: c, Message: message, InputOwner: InputOwner{Authority: readViewBinding(a)},
+		AuthorityCheck: check, Feature: a.Feature, Source: a.Source, CharterFix: &fix})
+}
+
 // CompactNow asks an idle Bot to compact its native context now. The prompt
 // is the agent's own command; the person supplies no text.
 func (s *Service) CompactNow(ctx context.Context, c pa.Command, fence pa.Fence) (pa.Receipt, error) {

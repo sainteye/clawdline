@@ -80,6 +80,7 @@ export const MODEL_CATALOG_API_LEVEL = 120
 export const PROJECT_ASSISTANTS_CHARTERS_API_LEVEL = 122
 /** Removing a Project's team charter: POST /v1/project-assistant-charters/remove (API 123). */
 export const PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL = 123
+export const PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL = 124
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -662,9 +663,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canCharters(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTERS_API_LEVEL);return true}catch{return false}}
   /** One team charter route; the paths and bodies are shaped by charter-api.ts. */
   canRemoveCharter(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL);return true}catch{return false}}
+  canCharterConflicts(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL);return true}catch{return false}}
   charterRequest<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,s:AbortSignal){
     if(!path.startsWith(chartersPath))throw failure("pa_invalid")
-    return this.request<T>(path,s,body,method,true,path===chartersPath+"/remove"?PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL)
+    const route=new URL(path,"http://source.invalid").pathname
+    const level=route===chartersPath+"/remove"?PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL:route===chartersPath+"/conflicts"||route===chartersPath+"/conflict-resolve"?PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL
+    return this.request<T>(path,s,body,method,true,level)
   }
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   saveTowerFloor(r:W.ProjectAssistantTowerFloorRequest,s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors",s,r,"POST",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
@@ -720,7 +724,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
 }
 
 const chartersPath = "/v1/project-assistant-charters"
-// The team charter's ten Cloud words (docs/project-assistants-cloud-wire.md), each
+// The team charter's twelve Cloud words (docs/project-assistants-cloud-wire.md), each
 // with its exact local query or body. Over Cloud a save always names its reason.
 const charterRoutes: Record<string,{method:string;word:string;query?:string[];body?:string[]}> = {
   "":{method:"GET",word:"project-assistants.charters",query:["machine_id"]},
@@ -733,6 +737,8 @@ const charterRoutes: Record<string,{method:string;word:string;query?:string[];bo
   "/proposal-apply":{method:"POST",word:"project-assistants.charter-proposal-apply",body:["expected_version","idempotency_key","machine_id","project_id","proposal_id"]},
   "/proposal-dismiss":{method:"POST",word:"project-assistants.charter-proposal-dismiss",body:["idempotency_key","machine_id","project_id","proposal_id"]},
   "/change-request":{method:"POST",word:"project-assistants.charter-change-request",body:["idempotency_key","machine_id","project_id","text"]},
+  "/conflicts":{method:"GET",word:"project-assistants.charter-conflicts",query:["machine_id","project_id"]},
+  "/conflict-resolve":{method:"POST",word:"project-assistants.charter-conflict-resolve",body:["action","conflict_id","idempotency_key","machine_id","project_id"]},
 }
 export function charterRelayRequest(url: URL, method: string, init?: RequestInit) {
   const rest = url.pathname.slice(chartersPath.length)

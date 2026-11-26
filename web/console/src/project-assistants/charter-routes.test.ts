@@ -7,7 +7,7 @@ import { ProjectAssistantSourceClient, assistantRelayRequest, type AssistantGran
 import { CharterRefusal, charterApiFor, charterProjectKey, personalWorkspaceNames } from "./charter-api.ts"
 
 // The charter screens' every call, sent through a real captured source, must be
-// one of the ten routes the daemon serves with exactly its Cloud word's local
+// one of the twelve routes the daemon serves with exactly its Cloud word's local
 // query or body (internal/domain/cloudvocab/vocabulary.json is the contract).
 
 type Row = { op: string; local: { method: string }; shapes: { path: string; query?: string[]; local_body?: string[] }[] }
@@ -15,7 +15,7 @@ const vocabulary = JSON.parse(readFileSync(new URL("../../../../internal/domain/
 const rows = vocabulary.operations.filter(row => row.op?.startsWith("project-assistants.charter"))
 
 const signal = () => new AbortController().signal
-const grant = (apiLevel = 123): AssistantGrant => ({ accountKey: "local", readerID: "person", machineID: "machine", authorizationRevision: "one", apiLevel, paired: true, online: true, writable: true })
+const grant = (apiLevel = 124): AssistantGrant => ({ accountKey: "local", readerID: "person", machineID: "machine", authorizationRevision: "one", apiLevel, paired: true, online: true, writable: true })
 const project = { machine_id: "machine", project_id: "project-one" }
 
 const sourceStatus = { contract_version: "project-assistants.v1", sources: [{ machine_id: "machine", state: "online", access: "interactive", readable: true, writable: true, fresh: true, observed_at: "", capabilities: [] }] }
@@ -34,7 +34,7 @@ async function source(held: AssistantGrant, answer: (word: string) => unknown, s
 }
 
 test("every charter call is one daemon route with exactly its Cloud word's fields", async () => {
-  assert.equal(rows.length, 10)
+  assert.equal(rows.length, 12)
   const seen: Parameters<typeof source>[2] = []
   const api = charterApiFor(await source(grant(), () => ({ contract_version: "project-assistants.v1" }), seen))
   assert.ok(api)
@@ -50,7 +50,10 @@ test("every charter call is one daemon route with exactly its Cloud word's field
   await api.applyProposal(project, "cp-1", { expected_version: 3 }, signal())
   await api.dismissProposal(project, "cp-1", signal())
   await api.requestChange(project, { text: "Add the review step." }, signal())
-  const words = ["charters", "charter", "charter", "charter-save", "charter-restore", "charter-remove", "charter-readers", "charter-proposals", "charter-proposal-apply", "charter-proposal-dismiss", "charter-change-request"].map(w => "project-assistants." + w)
+  assert.ok(api.conflicts && api.resolveConflict)
+  await api.conflicts(project, signal())
+  await api.resolveConflict(project, { conflict_id: "cc-1", action: "follow_charter" }, signal())
+  const words = ["charters", "charter", "charter", "charter-save", "charter-restore", "charter-remove", "charter-readers", "charter-proposals", "charter-proposal-apply", "charter-proposal-dismiss", "charter-change-request", "charter-conflicts", "charter-conflict-resolve"].map(w => "project-assistants." + w)
   assert.deepEqual(seen.map(r => r.word), words)
   for (const request of seen) {
     const row = rows.find(r => r.op === request.word)!, shape = row.shapes[0], url = new URL(request.path, "http://source.invalid")
@@ -96,6 +99,15 @@ test("a machine at API 122 reads and edits charters but offers no removal", asyn
   assert.equal(api.remove, undefined)
   await api.read(project, 0, signal())
   assert.deepEqual(seen.map(r => r.word), ["project-assistants.charter"])
+})
+
+test("a machine at API 123 offers no conflict reports, and never asks for them", async () => {
+  const seen: Parameters<typeof source>[2] = []
+  const api = charterApiFor(await source(grant(123), () => ({ contract_version: "project-assistants.v1" }), seen))
+  assert.ok(api && api.remove)
+  assert.equal(api.conflicts, undefined)
+  assert.equal(api.resolveConflict, undefined)
+  assert.equal(seen.length, 0)
 })
 
 test("a personal workspace is named for its Bot, keyed as its charter Project", () => {

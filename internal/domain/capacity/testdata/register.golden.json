@@ -1377,6 +1377,65 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.charter_conflict_sentence_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 2048,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterConflictSentenceBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_conflicts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterConflicts"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_conflicts_resolved",
+    "Class": "journal",
+    "Unit": "rows",
+    "Limit": 50,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterConflictsResolved"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.charter_projects",
     "Class": "buffer",
     "Unit": "rows",

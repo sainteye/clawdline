@@ -489,6 +489,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if charter, ok := s.tools.(app.CharterTools); ok && charter.CharterProposalAvailable(ctx) == nil {
 			list = append(list, mcpCharterTool())
 		}
+		if conflicts, ok := s.tools.(app.CharterConflictTools); ok && conflicts.CharterConflictAvailable(ctx) == nil {
+			list = append(list, mcpCharterConflictTool())
+		}
 		if _, ok := s.tools.(app.BotRequestTools); ok {
 			list = append(list, mcpBotRequestTools()...)
 		}
@@ -513,7 +516,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" || q.Name == "report_charter_conflict" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
@@ -578,6 +581,9 @@ func mcpToolResult(value any, failed bool) any {
 func (s *ownedMCPServer) callTool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
 	if name == "propose_charter_edit" {
 		return s.charterTool(ctx, arguments)
+	}
+	if name == "report_charter_conflict" {
+		return s.charterConflictTool(ctx, arguments)
 	}
 	return s.tool(ctx, name, arguments)
 }
@@ -949,6 +955,48 @@ func (s *ownedMCPServer) charterTool(ctx context.Context, arguments json.RawMess
 		return nil, err
 	}
 	return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
+}
+
+// charterConflictTool records one report; it changes nothing by itself.
+func (s *ownedMCPServer) charterConflictTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	tools, ok := s.tools.(app.CharterConflictTools)
+	if !ok {
+		return nil, refusal(pa.Unsupported, "charter_conflict_tools")
+	}
+	var q app.CharterConflictReport
+	if mcpDecode(arguments, &q) != nil || q.CharterVersion <= 0 {
+		return nil, refusal(pa.Invalid, "charter_conflict_arguments")
+	}
+	c, err := tools.ReportCharterConflict(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"report_id": c.ID, "charter_version": c.Version, "state": "waiting_for_person"}, nil
+}
+
+// mcpCharterConflictTool is offered in every turn of a Bot whose Project has
+// a team charter.
+func mcpCharterConflictTool() map[string]any {
+	text := func(description string) map[string]any {
+		return map[string]any{"type": "string", "description": description}
+	}
+	return map[string]any{
+		"name":        "report_charter_conflict",
+		"description": "Report one sentence of yours that the team charter of your Project contradicts, after you compare a new charter version with your memory, your instructions and any playbook or workspace file your instructions tell you to follow. Call it once for each disagreement. charter_version is the version you compared; source is memory, instructions or workspace_file; give path (relative to your workspace) for a file and memory_entry_id when it is a memory entry; bot_sentence and charter_sentence are exact quotes; section is the charter heading; suggested_replacement is your sentence rewritten to agree with the charter, or empty to remove it. Change nothing yourself: the person decides on the charter page. 比對新版團隊章程與你的記憶、指示，以及指示要你遵循的 playbook 或工作區檔案後，回報一句與章程矛盾的你自己的話，每個不一致呼叫一次。charter_version 是你比對的版本；source 填 memory、instructions 或 workspace_file；檔案要附 path（工作區內的相對路徑），記憶條目附 memory_entry_id；bot_sentence 與 charter_sentence 必須逐字引用；section 是章程段落標題；suggested_replacement 是改成符合章程的句子，留空表示刪除。不要自己修改，由使用者在章程頁決定。",
+		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
+			"required": []string{"charter_version", "source", "bot_sentence", "charter_sentence", "section"},
+			"properties": map[string]any{
+				"charter_version":       map[string]any{"type": "integer", "minimum": 1},
+				"source":                map[string]any{"type": "string", "enum": []string{"memory", "instructions", "workspace_file"}},
+				"path":                  text("Workspace-relative file path, for workspace_file only."),
+				"memory_entry_id":       text("The memory entry id, for memory only, when you know it."),
+				"bot_sentence":          text("Your exact sentence."),
+				"charter_sentence":      text("The charter's exact sentence."),
+				"section":               text("The charter section heading."),
+				"suggested_replacement": text("Your sentence rewritten to agree with the charter; empty to remove it."),
+			},
+		},
+	}
 }
 
 // mcpCharterTool is offered to the lead Bot in a direct turn from the person,

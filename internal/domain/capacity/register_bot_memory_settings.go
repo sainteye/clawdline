@@ -62,5 +62,10 @@ func charterBounds() []Entry {
 		{Name: "bots.charter_request_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterRequestBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterRequestBytes"}},
 		{Name: "bots.charter_body_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterBodyBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterBodyBytes"}},
 		{Name: "bots.charter_projects", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterProjects, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterProjects"}},
+		// Conflict reports wait for the person; handled ones are kept to show
+		// what became of them and trimmed oldest-first.
+		{Name: "bots.charter_conflicts", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterConflicts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterConflicts"}},
+		{Name: "bots.charter_conflicts_resolved", Class: Journal, Unit: Rows, Limit: pa.MaxCharterConflictsResolved, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterConflictsResolved"}},
+		{Name: "bots.charter_conflict_sentence_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterConflictSentenceBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterConflictSentenceBytes"}},
 	}
 }
