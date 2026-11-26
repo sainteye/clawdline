@@ -38,6 +38,29 @@ The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 | saveMemory | project-assistants.memory | POST B/{bot_id}/memory | Yes |
 | export | project-assistants.export | GET B/{bot_id}/export | No |
 
+### Team charter words
+
+Nine machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
+`/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
+`project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
+local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
+The console carry table marks them deferred until the charter page sends them.
+
+| Cloud word | Local HTTP | Write gate |
+| --- | --- | --- |
+| project-assistants.charters | GET C | No |
+| project-assistants.charter | GET C/charter (`version` 0 for the current only) | No |
+| project-assistants.charter-readers | GET C/readers | No |
+| project-assistants.charter-proposals | GET C/proposals | No |
+| project-assistants.charter-save | PUT C/charter (`expected_version`, `text`, `reason`) | Yes |
+| project-assistants.charter-restore | POST C/restore (`expected_version`, `version`) | Yes |
+| project-assistants.charter-proposal-apply | POST C/proposal-apply (`proposal_id`, `expected_version`) | Yes |
+| project-assistants.charter-proposal-dismiss | POST C/proposal-dismiss (`proposal_id`) | Yes |
+| project-assistants.charter-change-request | POST C/change-request (`text`) | Yes |
+
+Over Cloud `reason` is required (empty is allowed); the text bounds are copies of
+`MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`.
+
 Projects retains `machine_id`, `cursor`, and `page_size` on its independent route.
 List retains `machine_id`, `query`, `cursor`, and `page_size`. History retains
 `key`, `conversation_id`, `before_seq`, and `page_size`; events retain `key`,

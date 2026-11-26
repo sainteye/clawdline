@@ -103,6 +103,47 @@ document keeps the earlier behavior.
   memory at its next fresh session, compaction or own memory change, not immediately. Cloud and the
   phone do not carry this route yet; the modal reports that settings cannot be read there.
 
+## Team charter: how the Bots of one Project work together
+
+Each Project can have one **team charter** (團隊章程): plain Markdown you write, in any shape you
+like, saying who does what, how work flows and what must be asked of you. Every Bot in that
+Project follows it, including the hidden workers that answer requests from other Bots. Where the
+charter and a Bot's own instructions or memory disagree, **the charter wins**.
+
+- **Versions.** Every save is a new version that never changes afterwards; the current charter is
+  the newest version. Each version records who made it (`person`, `lead_proposal`, `restore`,
+  `template`), an optional reason and when. Restoring an old version saves a copy of it as the
+  newest version, so nothing is lost. A save names the version it was based on: if someone else
+  saved first, it is refused (`pa_stale_version`, field `charter_version`) and you reload.
+- **Asking the lead.** You can also ask the lead Bot (主助理) in words, from the charter page or
+  in its chat. The lead answers with a proposal: the whole new text and one line saying which
+  sentences it removed and added. **Nothing changes until you press Apply.** A proposal written
+  against an older version is marked stale and Apply refuses it (`pa_stale_version`, field
+  `charter_proposal_base`); dismiss it or ask again. The lead's `propose_charter_edit` tool is
+  offered only in its turns that come directly from you.
+- **When a Bot hears it.** A Bot starting a fresh conversation reads the current charter first,
+  as `<team_charter version="N">`, ahead of shared memory and its own memory. A Bot already in a
+  conversation reads a changed charter once, at the start of its next prompt
+  (`<team_charter_update version="N">`); a charter change never restarts its conversation. The
+  charter page shows, for each Bot, the version its latest prompt carried and whether it is
+  working now, so you can tell who has not seen a change yet.
+- **Limits** (`internal/domain/capacity`): 32 KiB of text per charter; 200 versions kept per
+  Project (saving past that removes the oldest, never the current one); 20 pending proposals per
+  Project (a new one is refused until you apply or dismiss one); 4 KiB for a request to the lead.
+- **Routes** (API 122, paired devices with this machine's Bots authority; every write carries
+  `Idempotency-Key`): `GET /v1/project-assistant-charters?machine_id=` lists Projects with a
+  charter and those with Bots but none; `GET …/charter?machine_id=&project_id=&version=` reads the
+  current charter with its history (`version` 0, or a retained version to read its text);
+  `PUT …/charter` saves; `POST …/restore`; `GET …/readers`; `GET …/proposals`;
+  `POST …/proposal-apply`; `POST …/proposal-dismiss`; `POST …/change-request` sends your words to
+  the lead. The contract is `api/v1/project-assistant-charters.schema.json`. The same operations
+  cross Cloud as the `project-assistants.charter*` words, so a phone can read and edit; the
+  console marks them deferred until its charter page sends them.
+- **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
+  Bot's own record, keyed by machine and Project. They were added without a schema version bump,
+  like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops
+  the recorded charter version, which only means the next prompt carries the charter once more.
+
 ## Use a Bot
 
 To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user/bot-webhooks.md) · [繁體中文](user/bot-webhooks.zh-TW.md).
