@@ -1,5 +1,5 @@
 /** Synthetic faults around the real roster; no daemon, provider or external API. */
-import React from "react"
+import React, {useState} from "react"
 import {createRoot} from "react-dom/client"
 import type * as W from "@clawdline/contract"
 import {Bots} from "./Bots"
@@ -7,6 +7,12 @@ import {fixtureSource} from "./fixtures"
 import {ViewerEventLog} from "../legacy/js/net/cloud-viewer-events.js"
 import {failure,type SourceClient} from "./client"
 import {capturedAssistantRelayFetch,ProjectAssistantRegistry,ProjectAssistantSourceClient,type AssistantGrant} from "../cloud/project-assistants"
+import {connectionLightState, connectionLightWords} from "../connection-state"
+import "../legacy/tokens.css"
+import "../legacy/base.css"
+import "../legacy/header.css"
+import "../legacy/list.css"
+import "../page-skeleton.css"
 import "./styles.css"
 
 function controlled(machine:string,live:boolean,initial:W.ProjectAssistantErrorCode="pa_offline") {
@@ -40,7 +46,7 @@ function controlled(machine:string,live:boolean,initial:W.ProjectAssistantErrorC
   }
   return {source,setCode(value:W.ProjectAssistantErrorCode|null){code=value;drop?.()},hold(){hold=true},release(){hold=false;release?.();release=undefined},snapshot:()=>({reads,active,maxActive,streams,maxStreams,cursors})}
 }
-function cloudRoster() {
+function cloudRoster(transportCode="offline") {
   const registry = new ProjectAssistantRegistry("cloud-fixture", "fixture")
   const machines = new Map(["studio","notebook"].map(id=>[id,{source:fixtureSource(id),ready:false,reads:0}]))
   const word = "project-assistants.list"
@@ -50,7 +56,7 @@ function cloudRoster() {
       const machine = machines.get(id)
       if(!machine||command!==word||fields.machine_id!==id)throw Error("Unexpected roster destination")
       machine.reads++
-      if(!machine.ready)throw Object.assign(new Error("Relay is reconnecting"),{code:"offline"})
+      if(!machine.ready)throw Object.assign(new Error("Roster transport failed"),{code:transportCode})
       return machine.source.list(fields as unknown as W.ProjectAssistantListRequest,new AbortController().signal)
     },
   }
@@ -100,9 +106,28 @@ const params=new URL(location.href).searchParams
 const initial=params.has("retry")?"pa_invalid":"pa_offline"
 const studio=controlled("studio",!params.has("snapshots"),initial),notebook=controlled("notebook",false,initial)
 const language=params.get("lang")??"en"
-const sources=params.has("chat")?cloudChat():params.has("cloud")?cloudRoster():[studio.source,notebook.source]
+const connectionTest=params.has("connection")
+const sources=params.has("chat")?cloudChat():params.has("cloud")?cloudRoster(connectionTest?"request_timeout":undefined):[studio.source,notebook.source]
 if(params.has("hold")){studio.hold();notebook.hold()}
-const diagnostic = new ViewerEventLog({storage:localStorage,key:"roster-recovery-diagnostic"})
-createRoot(document.getElementById("app")!).render(<Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}
-  onRosterUnavailable={params.has("hold") ? evidence => diagnostic.recordImmediately("cloud.bots.roster.unavailable",evidence) : undefined}/>)
+const diagnostic = new ViewerEventLog({storage:localStorage,key:connectionTest?"roster-connection-diagnostic":"roster-recovery-diagnostic"})
+function RecoveryFixture() {
+  const [connection, setConnection] = useState(() => connectionLightState(false,false,false))
+  const words = language === "en"
+    ? {webConnConnecting:"connecting",webConnLive:"connected",webConnOffline:"offline"}
+    : {webConnConnecting:"連線中",webConnLive:"已連上",webConnOffline:"離線"}
+  const {label} = connectionLightWords(connection,words,undefined)
+  Object.assign(window,{setRosterConnection:(live:boolean,answered:boolean,failed:boolean)=>
+    setConnection(connectionLightState(live,answered,failed))})
+  return <>
+    {connectionTest&&<header className="top">
+      <span className="counts"/>
+      <button className="conn" data-state={connection}><span className="dot" aria-hidden="true"/>{label}</button>
+    </header>}
+    <Bots sources={sources} language={language} accountKey="roster-recovery-fixture" readerID="fixture" onClose={()=>{}}
+      connection={connectionTest?connection:undefined}
+      onRosterUnavailable={params.has("hold")||connectionTest ? evidence => diagnostic.recordImmediately("cloud.bots.roster.unavailable",evidence) : undefined}/>
+  </>
+}
+document.documentElement.lang=language
+createRoot(document.getElementById("app")!).render(<RecoveryFixture/>)
 Object.assign(window,{rosterRecovery:{studio,notebook}})

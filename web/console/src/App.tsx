@@ -300,7 +300,7 @@ export default function App({ aside, cloudPairingProgress, cloudSessions, cloudO
   }, [fleetList, fleet.refresh])
   const light = useConnectionLight(fleet.live, fleet.refresh)
   const machineVersion = useMachineVersion()
-  const assistants = useProjectAssistantsHost({registry:projectAssistants,apiLevel:machineVersion.apiLevel,
+  const assistants = useProjectAssistantsHost({registry:projectAssistants,apiLevel:machineVersion.apiLevel,connection:light.state,
     cloud:!!import.meta.env.VITE_HOSTED_CONSOLE,language:document.documentElement.lang || "en",onOpenWork:onOpenAssistantWork})
   const updateRead = useSyncExternalStore(subscribeUpdate, currentUpdateRead, currentUpdateRead)
   const stagedAppVersion = updateRead?.kind === "status" && updateRead.status.apply?.staged_app

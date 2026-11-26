@@ -23,7 +23,7 @@ const server=createServer((req,res)=>{
   if(url.pathname.startsWith("/v1/")){forbidden.push(url.pathname);res.writeHead(500);res.end("No live API");return}
   if(pictures.has(url.pathname)){res.setHeader("Content-Type","image/webp");res.end(pictures.get(url.pathname));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
-  res.setHeader("Content-Type","text/html");res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font:15px system-ui;background:#080808;color:#fafafa}#app{height:100dvh}</style><link rel="stylesheet" href="/roster.css"><div id="app"></div><script type="module" src="/roster.js"></script>')
+  res.setHeader("Content-Type","text/html");res.end('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>#app{height:100dvh}#app:has(>.top){display:grid;grid-template-rows:auto minmax(0,1fr)}</style><link rel="stylesheet" href="/roster.css"><div id="app"></div><script type="module" src="/roster.js"></script>')
 })
 await new Promise(r=>server.listen(0,"127.0.0.1",r))
 const origin=`http://127.0.0.1:${server.address().port}`,results=[]
@@ -73,6 +73,73 @@ async function checkCloudRosterBeforeVersionReplay(page) {
   await page.evaluate(()=>window.cloudRoster.restore("notebook"))
   await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:7000})
   assert.equal(await rows.count(),6)
+}
+
+async function checkRosterDuringConnection(page,language,width,name,tabKey) {
+  const target={width,height:844}
+  await page.setViewportSize({width:width===390?844:390,height:844})
+  await page.goto(origin+"/?cloud&connection&lang="+language)
+  await page.setViewportSize(target)
+  await page.reload()
+  const zh=language!=="en"
+  const loading=page.getByRole("status").filter({hasText:zh?"正在載入 Bots…":"Loading Bots…"})
+  const error=page.getByRole("status").filter({hasText:zh?"暫時無法載入 Bot 清單。":"Could not load the Bot list right now."})
+  const connection=page.locator(".conn")
+  const connect=(live,answered,failed)=>page.evaluate(args=>window.setRosterConnection(...args),[live,answered,failed])
+  const diagnostics=()=>page.evaluate(()=>JSON.parse(localStorage.getItem("roster-connection-diagnostic")??"null")?.rows??[])
+  const firstReads=()=>page.waitForFunction(()=>["studio","notebook"].every(id=>window.cloudRoster.reads(id)>0))
+  await firstReads()
+  assert.equal(await connection.getAttribute("data-state"),"connecting")
+  await loading.waitFor({timeout:1500}).catch(()=>assert.fail("A failed first roster read must keep loading while the header is connecting"))
+  assert.equal(await error.count(),0)
+  assert.deepEqual(await diagnostics(),[])
+  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
+  await page.screenshot({path:path.join(artifacts,`${name}-connecting.png`)})
+  await connect(false,true,false)
+  assert.equal(await connection.getAttribute("data-state"),"retrying")
+  assert.equal(await loading.isVisible(),true)
+
+  await page.evaluate(()=>{
+    window.cloudRoster.restore("studio")
+    window.cloudRoster.restore("notebook")
+    window.setRosterConnection(true,true,false)
+  })
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:1800})
+  assert.equal(await connection.getAttribute("data-state"),"live")
+  assert.deepEqual(await diagnostics(),[],"reconnecting must not publish a transient roster error")
+  await page.screenshot({path:path.join(artifacts,`${name}-recovered.png`)})
+
+  await page.reload()
+  await firstReads()
+  await connect(false,false,true)
+  await error.waitFor()
+  assert.equal(await connection.getAttribute("data-state"),"offline")
+  const retry=page.getByRole("button",{name:zh?"重試":"Try again",exact:true})
+  await retry.waitFor()
+  for(let index=0;index<12&&!(await retry.evaluate(button=>document.activeElement===button));index++)await page.keyboard.press(tabKey)
+  assert.equal(await retry.evaluate(button=>document.activeElement===button),true)
+  assert.equal((await diagnostics()).length,1)
+  await page.screenshot({path:path.join(artifacts,`${name}-offline.png`)})
+  await page.evaluate(()=>{
+    window.cloudRoster.restore("studio")
+    window.cloudRoster.restore("notebook")
+    window.setRosterConnection(true,true,false)
+  })
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:1800})
+  assert.equal(await error.count(),0)
+
+  await page.goto(origin+"/?connection&lang="+language)
+  await loading.waitFor()
+  assert.equal(await error.count(),0)
+  await page.evaluate(()=>{
+    window.rosterRecovery.studio.setCode(null)
+    window.rosterRecovery.notebook.setCode(null)
+    window.setRosterConnection(true,true,false)
+  })
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6,undefined,{timeout:1800})
+  const studio=await page.evaluate(()=>window.rosterRecovery.studio.snapshot())
+  assert.equal(studio.maxActive,1)
+  assert.equal(studio.maxStreams,1)
 }
 
 async function checkCloudChatBeforeCapabilities(page, language) {
@@ -150,12 +217,21 @@ async function checkMobileToolbarAndRetry(page,language,width) {
   await page.waitForFunction(()=>document.querySelectorAll(".pa-bot-row[data-bot-key]").length===6)
 }
 const chatOnly = process.argv.includes("--chat-only")
+const connectingOnly=process.argv.includes("--connecting-only")
 try {
   for(const engine of [chromium,webkit])for(const [language,width] of [["zh-Hant",390],["en",1280]]) {
     const browser=await engine.launch({headless:true,...(engine===chromium?{args:["--disable-features=OmniboxEverywhere"]}:{})}),page=await browser.newPage({viewport:{width,height:844}})
     const errors=[];page.on("pageerror",error=>errors.push(error.message))
     const name=`${engine.name()}-${language}-${width}`
     try {
+      if(!chatOnly){
+        await checkRosterDuringConnection(page,language,width,name,engine===webkit?"Alt+Tab":"Tab")
+        if(connectingOnly){
+          assert.deepEqual(errors,[])
+          results.push({name,connectionRecovery:true})
+          continue
+        }
+      }
       await checkCloudChatBeforeCapabilities(page,language)
       if(chatOnly){
         assert.deepEqual(errors,[])
@@ -211,7 +287,7 @@ try {
       if(width<701)await checkCloudRosterBeforeVersionReplay(page)
       assert.deepEqual(errors,[])
       results.push({name,...proof,snapshots})
-    }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)});throw error}
+    }catch(error){await page.screenshot({path:path.join(artifacts,`${name}-FAIL.png`)}).catch(()=>{});throw error}
     finally{await browser.close()}
   }
   assert.deepEqual(forbidden,[])
