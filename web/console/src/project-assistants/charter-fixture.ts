@@ -59,6 +59,31 @@ function charterAnswer(machineID: string, entry: FixtureProject, selected: numbe
   return structuredClone(out)
 }
 
+function conflictsAnswer(machineID: string, entry: FixtureProject): W.ProjectAssistantCharterConflictsResponse {
+  return { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
+    conflicts: structuredClone([...entry.conflicts].sort((a, b) => Number(b.state === "open") - Number(a.state === "open")).map(c => ({ ...c, outdated: c.version !== current(entry) }))),
+    checked_without_report: entry.checkedWithoutReport, limits: { open: 50, resolved: 50, sentence_bytes: 2048 } }
+}
+
+/** The conflict list and the person's choice; the daemon rewrites a memory fact or instructions itself, a file goes to the Bot. */
+function conflictRoute(machineID: string, entry: FixtureProject, method: string, resolve: W.ProjectAssistantCharterConflictResolveRequest | undefined) {
+  if (method === "GET" || !resolve) return conflictsAnswer(machineID, entry)
+  const item = entry.conflicts.find(c => c.id === resolve.conflict_id)
+  if (!item) throw refuse("pa_not_found", "charter_conflict")
+  if (item.state !== "open") throw refuse("pa_stale_version", "charter_conflict")
+  if (resolve.action === "dismiss") entry.conflicts = entry.conflicts.filter(c => c !== item)
+  else Object.assign(item, { state: resolve.action === "change_charter" ? "handed_to_charter" : item.source === "workspace_file" ? "handed_to_bot" : "fixed", resolved_at: at(9) })
+  return conflictsAnswer(machineID, entry)
+}
+
+function addConflict(entry: FixtureProject, id: string, report: Parameters<CharterFixture["reportConflict"]>[1], checked?: number) {
+  const name = entry.bots.find(b => b.bot_id === report.bot_id)?.name ?? ""
+  entry.conflicts.unshift({ id, bot_name: name, turn_id: `turn-${id}`, version: current(entry), outdated: false, path: "", memory_entry_id: "", suggested: "", state: "open",
+    created_at: new Date(Date.UTC(2026, 10, 26, 5, 12)).toISOString(), resolved_at: "", ...report })
+  if (checked !== undefined) entry.checkedWithoutReport = checked
+  return id
+}
+
 export function createCharterFixture(machineID: string, seed: { project_id: string; bots: { bot_id: string; name: string; lead?: boolean }[]; versions?: { text: string; author: W.ProjectAssistantCharterAuthor; reason: string }[] }[]): CharterFixture {
   const projects = new Map<string, FixtureProject>()
   for (const item of seed) {
@@ -77,9 +102,6 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
   const answer = (entry: FixtureProject, selected = 0) => charterAnswer(machineID, entry, selected)
   const proposalsAnswer = (entry: FixtureProject): W.ProjectAssistantCharterProposalsResponse => ({ contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
     proposals: structuredClone(entry.proposals.map(p => ({ ...p, stale: p.base_version !== current(entry) }))) })
-  const conflictsAnswer = (entry: FixtureProject): W.ProjectAssistantCharterConflictsResponse => ({ contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
-    conflicts: structuredClone([...entry.conflicts].sort((a, b) => Number(b.state === "open") - Number(a.state === "open")).map(c => ({ ...c, outdated: c.version !== current(entry) }))),
-    checked_without_report: entry.checkedWithoutReport, limits: { open: 50, resolved: 50, sentence_bytes: 2048 } })
   const append = (entry: FixtureProject, text: string, author: W.ProjectAssistantCharterAuthor, reason: string) => {
     if (new TextEncoder().encode(text).length > limits.text_bytes) throw refuse("pa_capacity_full", "charter_text")
     entry.versions.push({ version: entry.versions.length + 1, text, author, reason, created_at: at(entry.versions.length) })
@@ -138,17 +160,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
         entry.proposals = entry.proposals.filter(p => p.id !== body!.proposal_id)
         return proposalsAnswer(entry)
       }
-      case "GET /conflicts": return conflictsAnswer(find(q.project_id))
-      case "POST /conflict-resolve": {
-        const entry = find(body!.project_id), resolve = request as W.ProjectAssistantCharterConflictResolveRequest
-        const item = entry.conflicts.find(c => c.id === resolve.conflict_id)
-        if (!item) throw refuse("pa_not_found", "charter_conflict")
-        if (item.state !== "open") throw refuse("pa_stale_version", "charter_conflict")
-        // The daemon rewrites a memory fact or instructions itself; a file goes to the Bot.
-        if (resolve.action === "dismiss") entry.conflicts = entry.conflicts.filter(c => c !== item)
-        else Object.assign(item, { state: resolve.action === "change_charter" ? "handed_to_charter" : item.source === "workspace_file" ? "handed_to_bot" : "fixed", resolved_at: at(9) })
-        return conflictsAnswer(entry)
-      }
+      case "GET /conflicts": case "POST /conflict-resolve": return conflictRoute(machineID, find(q.project_id ?? body?.project_id), method, request as W.ProjectAssistantCharterConflictResolveRequest | undefined)
       case "POST /change-request": {
         const entry = find(body!.project_id), latest = entry.versions.at(-1)
         if (!latest) throw refuse("pa_not_found", "charter")
@@ -182,14 +194,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
     holdProposals(on) { held = on },
     releaseProposal(projectID) { const p = waiting.get(projectID); if (p) { find(projectID).proposals = [p]; waiting.delete(projectID) } },
     setRunning(projectID, botID, running) { const r = find(projectID).readers.get(botID); if (r) r.running = running },
-    reportConflict(projectID, report, checked) {
-      const entry = find(projectID), name = entry.bots.find(b => b.bot_id === report.bot_id)?.name ?? ""
-      const id = `cc-${++sequence}`
-      entry.conflicts.unshift({ id, bot_name: name, turn_id: `turn-${sequence}`, version: current(entry), outdated: false, path: "", memory_entry_id: "", suggested: "", state: "open",
-        created_at: new Date(Date.UTC(2026, 10, 26, 5, 12)).toISOString(), resolved_at: "", ...report })
-      if (checked !== undefined) entry.checkedWithoutReport = checked
-      return id
-    },
+    reportConflict(projectID, report, checked) { return addConflict(find(projectID), `cc-${++sequence}`, report, checked) },
     text(projectID) { return find(projectID).versions.at(-1)?.text ?? "" },
     version(projectID) { return current(find(projectID)) },
   }
