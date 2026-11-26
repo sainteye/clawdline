@@ -165,3 +165,13 @@ func TestSavedDefaultIsValidated(t *testing.T) {
 		t.Fatalf("a valid default was refused: %v", err)
 	}
 }
+
+func TestDispatchKindsCarryTheHintOnOneLine(t *testing.T) {
+	s := codingRule()
+	s.Rules[0].Hint = "Write or\nchange   code"
+	s.Rules = append(s.Rules, DispatchRule{ID: "other", Kind: "docs", Scope: SharedScope{Projects: []string{"p2"}}})
+	got := strings.Join(DispatchKindsFor(s, "p1"), "; ")
+	if got != "coding (Write or change code); image" {
+		t.Fatalf("kinds = %q", got)
+	}
+}

@@ -781,6 +781,15 @@ func (s *toolScope) bindBackgroundTool(tools *NativeWork) {
 // bindDispatchTools binds the chat send tool and the tool that dispatches Board work.
 func (s *toolScope) bindDispatchTools(tools *NativeWork) {
 	h, q, turn, turnID, r, c, actor, taskOwner, bound, journal := s.h, s.q, s.turn, s.turnID, s.r, s.c, s.actor, s.taskOwner, s.bound, s.journal
+	if h.o.DispatchPolicy != nil {
+		tools.dispatchKinds = func(ctx context.Context) []string {
+			p, err := h.o.DispatchPolicy(ctx, q.Bot.Key)
+			if err != nil {
+				return nil
+			}
+			return pa.DispatchKindsFor(p.Shared, q.Bot.Project.ProjectID)
+		}
+	}
 	tools.send = func(ctx context.Context, id, text string) error {
 		ctx, cancel, e := bound(ctx)
 		if e != nil {

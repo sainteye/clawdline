@@ -367,6 +367,10 @@ type ExecutionBinding struct {
 	// compare with the Bot's own memory and instructions; below the current
 	// version, the next prompt asks once.
 	CharterChecked int64 `json:"charter_checked,omitempty"`
+	// SharedMemoryDigest identifies the machine's shared memory section this
+	// native session last heard; empty when it heard none. A resumed session
+	// whose digest differs hears the memory update once, like its own memory.
+	SharedMemoryDigest string `json:"shared_memory_digest,omitempty"`
 }
 
 type MessageKind string

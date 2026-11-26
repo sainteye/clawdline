@@ -261,6 +261,171 @@
       ]
     },
     {
+      "id": "google--elephant-goldfish-model",
+      "repo_url": "https://github.com/google/elephant-goldfish-model",
+      "owner": "google",
+      "repo": "elephant-goldfish-model",
+      "name": {
+        "en": "Elephant-Goldfish Model",
+        "zh-Hant": "Elephant-Goldfish 設計審查"
+      },
+      "summary": {
+        "en": "Draft specifications with full context, then review them and check document drift with fresh-context reviewers.",
+        "zh-Hant": "帶完整脈絡撰寫規格，再由不看先前對話的審查者檢查規格，並比對文件與程式碼是否脫節。"
+      },
+      "category_id": "architecture",
+      "category": {
+        "en": "Architecture & domain modeling",
+        "zh-Hant": "程式架構與領域建模"
+      },
+      "recommendation": {
+        "en": "Start with the drift report on a small docs folder; run the full design review before large features.",
+        "zh-Hant": "先對小的文件資料夾跑 drift report；大型功能實作前再跑完整設計審查。"
+      },
+      "recommendation_tier": "explore",
+      "icon": {
+        "url": "https://raw.githubusercontent.com/google/elephant-goldfish-model/46933754e63c0424daa9c270d7e0734245d79560/assets/icon.svg",
+        "kind": "project",
+        "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/assets/icon.svg",
+        "asset": "/tool-library/google--elephant-goldfish-model.png"
+      },
+      "source_commit": "46933754e63c0424daa9c270d7e0734245d79560",
+      "license": "Apache-2.0",
+      "license_evidence": [
+        {
+          "path": "LICENSE",
+          "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/LICENSE",
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "license": "Apache-2.0"
+        }
+      ],
+      "skills": [
+        {
+          "id": "google--elephant-goldfish-model--egm-drift-report",
+          "native_name": "egm-drift-report",
+          "name": {
+            "en": "Drift Report",
+            "zh-Hant": "文件漂移報告"
+          },
+          "purpose": {
+            "en": "Compare checked-in design documents with the current code and list only the divergences.",
+            "zh-Hant": "比對已提交的設計文件與現行程式碼，只列出不一致之處。"
+          },
+          "path": "skills/egm-drift-report/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/skills/egm-drift-report/SKILL.md",
+          "sha256": "c000ffe2e77a9fe74ee6915b314e1547337c95c79a19014c44fd976dc6511476",
+          "source_bytes": 3169,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        },
+        {
+          "id": "google--elephant-goldfish-model--egm-review",
+          "native_name": "egm-review",
+          "name": {
+            "en": "Goldfish Design Review",
+            "zh-Hant": "Goldfish 設計審查"
+          },
+          "purpose": {
+            "en": "Review a design document in five stages with fresh reviewers before implementation.",
+            "zh-Hant": "實作前由全新脈絡的審查者分五個階段審查設計文件。"
+          },
+          "path": "skills/egm-review/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Fresh subagent contexts for Goldfish reviewers; EGM stops the review without them.",
+              "zh-Hant": "Goldfish 審查需要能開全新脈絡的子代理；沒有時 EGM 會停止審查。"
+            }
+          ],
+          "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/skills/egm-review/SKILL.md",
+          "sha256": "97504ffb02193bb8405d609565cc6134f10708149334b45137bbc9d82ceec4ce",
+          "source_bytes": 13420,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        },
+        {
+          "id": "google--elephant-goldfish-model--egm-brainstorm",
+          "native_name": "egm-brainstorm",
+          "name": {
+            "en": "Brainstorm",
+            "zh-Hant": "腦力激盪"
+          },
+          "purpose": {
+            "en": "Turn a rough idea into a concept brief, with fresh reviewers challenging it.",
+            "zh-Hant": "把初步想法整理成概念簡報，並由全新脈絡的審查者提出質疑。"
+          },
+          "path": "skills/egm-brainstorm/SKILL.md",
+          "mode": "instruction",
+          "requirements": [
+            {
+              "en": "Fresh subagent contexts for Goldfish reviewers; EGM stops the review without them.",
+              "zh-Hant": "Goldfish 審查需要能開全新脈絡的子代理；沒有時 EGM 會停止審查。"
+            }
+          ],
+          "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/skills/egm-brainstorm/SKILL.md",
+          "sha256": "91818ced884e88573251354e2133f5463ad40e3db93147641fedc5b6229f4400",
+          "source_bytes": 15284,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        },
+        {
+          "id": "google--elephant-goldfish-model--egm-draft",
+          "native_name": "egm-draft",
+          "name": {
+            "en": "Draft Specification",
+            "zh-Hant": "撰寫規格"
+          },
+          "purpose": {
+            "en": "Draft a design document section by section from a concept brief or notes.",
+            "zh-Hant": "依概念簡報或筆記逐節撰寫設計文件。"
+          },
+          "path": "skills/egm-draft/SKILL.md",
+          "mode": "instruction",
+          "requirements": [],
+          "source_url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/skills/egm-draft/SKILL.md",
+          "sha256": "4e8dbe707a1dccbbb73c9d4a7d3e93548a8569fa3b2b09f3d59b5699d10364bc",
+          "source_bytes": 17578,
+          "review_status": "entry_metadata_verified",
+          "dependency_review_status": "not_reviewed",
+          "license": "Apache-2.0"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "upstream_documentation",
+          "url": "https://github.com/google/elephant-goldfish-model/blob/46933754e63c0424daa9c270d7e0734245d79560/README.md",
+          "observed_at": "2026-11-27",
+          "scope": "project_readme",
+          "sha256": "2bd6e36f3f4fa64fffaf61dbef3b8fae9b8fe97bdba76c8d0f01cd75f85621c8",
+          "note": {
+            "en": "Reviewed the pinned README and the drift-report and review skills. A drift-report trial on this repository's docs/design found six confirmed product defects; that is one local trial, not a measured general benefit.",
+            "zh-Hant": "已檢閱固定版本 README 與 drift-report、review 技能。在本專案 docs/design 試跑 drift-report，找出六個經確認的產品問題；這是單次本地試用，不代表普遍效益。"
+          }
+        }
+      ],
+      "integration_kind": "workflow",
+      "status": "recommended",
+      "limitations": [
+        {
+          "en": "Selected entry files and the license were fetched at the pinned commit and hashed. The skills read bundled reviewer personas and document standards; a pinned entry alone is not a complete import bundle.",
+          "zh-Hant": "已讀取並雜湊固定 commit 的選用入口與授權檔；技能會讀取外掛內附的審查角色與文件標準，單一入口檔不等於完整匯入套件。"
+        },
+        {
+          "en": "Reviews write report files into the working directory. Run them in a disposable checkout of a public repository so reports are not committed by accident.",
+          "zh-Hant": "審查會把報告檔寫進工作目錄；公開 repo 請在拋棄式 checkout 執行，避免報告被誤提交。"
+        },
+        {
+          "en": "A full design review starts several reviewers per stage and costs accordingly.",
+          "zh-Hant": "完整設計審查每個階段會啟動多個審查者，費用隨之增加。"
+        }
+      ]
+    },
+    {
       "id": "addyosmani--agent-skills",
       "repo_url": "https://github.com/addyosmani/agent-skills",
       "owner": "addyosmani",

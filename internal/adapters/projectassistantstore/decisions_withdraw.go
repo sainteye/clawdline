@@ -139,3 +139,75 @@ func (s *Store) WithdrawQuestion(ctx context.Context, fence pa.Fence, turnID str
 	}
 	return offer, x, s.commitRoster(ctx, tx, fence.Key.MachineID)
 }
+
+// ExpireWaitingDecisions completes every exchange on the machine that still
+// waits for the person on a question whose offer has expired unanswered. The
+// card closes as expired and the requester receives that as its reply, in
+// one transaction per exchange. An answered question is left to the answer
+// turn, which forwards it as before.
+func (s *Store) ExpireWaitingDecisions(ctx context.Context, machine string, at time.Time) ([]pa.Exchange, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM project_assistant_exchanges WHERE machine=? AND json_extract(CAST(data AS TEXT),'$.outcome')=? ORDER BY rowid`, machine, string(pa.ExchangeNeedsPerson))
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err = rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	if err = rows.Close(); err != nil {
+		return nil, err
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	var expired []pa.Exchange
+	for _, id := range ids {
+		x, done, e := s.expireWaitingDecision(ctx, machine, id, at)
+		if e != nil {
+			return expired, e
+		}
+		if done {
+			expired = append(expired, x)
+		}
+	}
+	return expired, nil
+}
+
+func (s *Store) expireWaitingDecision(ctx context.Context, machine, id string, at time.Time) (pa.Exchange, bool, error) {
+	x, err := exchangeRead(ctx, s.db, machine, id)
+	if err != nil {
+		return x, false, err
+	}
+	unlock := s.lockExchange(x.Source.Key, x.Target.Key)
+	defer unlock()
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return x, false, err
+	}
+	defer tx.Rollback()
+	if x, err = exchangeRead(ctx, tx, machine, id); err != nil || x.Outcome != pa.ExchangeNeedsPerson {
+		return x, false, err
+	}
+	owner, err := load(ctx, tx, x.Target.Key)
+	if err != nil {
+		return x, false, err
+	}
+	offer, ok := pendingDecision(owner, x.ID)
+	if !ok || offer.ExpiresAt.IsZero() || at.Before(offer.ExpiresAt) {
+		return x, false, nil
+	}
+	m := exchangeMutation(owner, offer.ID+"-expire", at, nil, nil)
+	withdrawDecision(&m, offer, pa.PermissionExpired, at)
+	if err = exchangeApply(ctx, tx, &owner, m); err != nil {
+		return x, false, err
+	}
+	if x, err = finishPersonExchange(ctx, tx, x, pa.ExchangeCompleted, pa.ExpiredQuestionReply(offer.Decision.Question), "-expired-source", at); err != nil {
+		return x, false, err
+	}
+	return x, true, s.commitRoster(ctx, tx, machine)
+}

@@ -108,7 +108,6 @@ func (s *Server) projectAssistantMachineSettingsWrite(r *http.Request) (machineS
 		}
 		return machineSharedSettingsReply{}, err
 	}
-	s.projectAssistantSharedSettingsChanged(r.Context())
 	now, err := s.projectAssistantMachineAuthority(context.WithoutCancel(r.Context()), body.MachineID, true)
 	if err == nil {
 		err = sameMachineAuthority(before, now)

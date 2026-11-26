@@ -41,8 +41,8 @@ const (
 	// and the person's answer quote as context.
 	MaxDecisionRequestQuoteBytes = 1500
 	// MaxDecisionOfferSeconds is how long a question stays answerable. A
-	// peer exchange has no other expiry, so the offer and its waiting
-	// exchange expire together at this bound.
+	// peer exchange has no other expiry: the host's routine sweep completes
+	// a waiting exchange once its offer passes this bound.
 	MaxDecisionOfferSeconds = 24 * 60 * 60
 )
 
@@ -138,6 +138,12 @@ func PendingQuestionOf(offer PermissionOffer) PendingQuestion {
 		q.SuggestedReplies = append(q.SuggestedReplies, o.Label)
 	}
 	return q
+}
+
+// ExpiredQuestionReply is what a requesting Bot hears when the question it
+// waited on expired before the person answered it.
+func ExpiredQuestionReply(question string) string {
+	return "The question for the user expired before the user answered it, so there is no user decision.\nQuestion: " + strings.TrimSpace(question)
 }
 
 // WithdrawnQuestionReply is what a requesting Bot receives when the Bot it

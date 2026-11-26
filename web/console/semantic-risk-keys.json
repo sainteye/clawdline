@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14792,
+  "englishKeys": 14793,
   "counts": {
-    "negation": 3733,
-    "state": 2518,
+    "negation": 3734,
+    "state": 2519,
     "permission": 876,
     "deletion": 345,
     "uncertainty": 585
   },
-  "unionCount": 6257,
+  "unionCount": 6258,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3165,6 +3165,7 @@
       "projectAssistants.decisionFailUnconfirmed",
       "projectAssistants.decisionSendFailed",
       "projectAssistants.deleteBotConfirm",
+      "projectAssistants.dispatchedNoSession",
       "projectAssistants.dispatchedStateFailedOwed",
       "projectAssistants.dispatchedStateLandingUnknown",
       "projectAssistants.draftUnavailable",
@@ -5811,6 +5812,7 @@
       "projectAssistants.decisionSendFailed",
       "projectAssistants.decisionWaiting",
       "projectAssistants.delivered",
+      "projectAssistants.dispatchedNoSession",
       "projectAssistants.dispatchedStateDelivered",
       "projectAssistants.dispatchedStateFailedOwed",
       "projectAssistants.dispatchedStateLandingUnknown",
@@ -13245,6 +13247,7 @@
     "projectAssistants.discardFiles",
     "projectAssistants.dispatchAllowAlways",
     "projectAssistants.dispatchAllowOnce",
+    "projectAssistants.dispatchedNoSession",
     "projectAssistants.dispatchedStateDelivered",
     "projectAssistants.dispatchedStateFailedOwed",
     "projectAssistants.dispatchedStateLandingUnknown",

@@ -136,9 +136,9 @@ export function hasExecutingDispatch(work: W.ProjectAssistantDispatchedWork | un
   return typeof executing === "number" && Number.isSafeInteger(executing) && executing > 0
 }
 
-/** The roster state a person sees. With dispatched work shown, precedence is
- * needsInput > error > working > waitingOnWork > idle; with it hidden (or on
- * an older source without the field) this is today's presentation. */
+/** The roster state a person sees. Precedence is needsInput > error > working
+ * > waitingOnWork > idle; waitingOnWork needs dispatched work shown and a
+ * source that reports it. */
 export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<string, string>, showDispatched = true) {
   const chat = rosterActivity(item, w)
   const work = item.background_work
@@ -155,7 +155,8 @@ export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<
     if (work.needs_input > 0) {
       return {state:"needsInput", caption:w.rosterBackgroundNeedsYou, live:true, queuedOnly:false}
     }
-    if (chat.state !== "working" && (work.working > 0 || work.waiting > 0)) {
+    // An own failure outranks work running in the background.
+    if (chat.state !== "working" && chat.state !== "error" && (work.working > 0 || work.waiting > 0)) {
       const counts = [
         work.working > 0 ? w.rosterBackgroundWorking.replace("{count}", String(work.working)) : "",
         work.waiting > 0 ? w.rosterBackgroundWaiting.replace("{count}", String(work.waiting)) : "",
