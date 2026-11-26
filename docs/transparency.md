@@ -403,6 +403,11 @@ those explanations remain accurate. Only the Board source line and review
 receipt follow the changed projection. No instruction excerpt is added to the
 Console bundle.
 
+The same change adds `BotDecisionItems`, a settings-file read, to
+`nextconfig.go`. It adds no settings-window row and changes no browser-mode or
+instruction-injection setting; both language explanations of the browser entry
+remain accurate. Only that entry's source line and receipt move.
+
 
 Doctor adds a fixed local CLI version probe and a sanitized support report read.
 It does not prepare provider context, run a model prompt or change instruction
