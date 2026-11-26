@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { botWorkspaceName, capabilityHint, retryableSourceError, shownSourceError } from "./source-errors.ts"
+import { botWorkspaceName, capabilityHint, retryableSourceError, settingsReadOnlyReason, shownSourceError } from "./source-errors.ts"
 test("a machine without Bots is left out of the roster's errors, a real failure is not",()=>{
   assert.equal(shownSourceError("pa_unsupported"), false)
   assert.equal(shownSourceError("pa_disabled"), false)
@@ -68,4 +68,14 @@ test("an offline source says it cannot be reached rather than a bare unavailable
   const w={unavailable:"目前無法使用",sourceOffline:"暫時連不上這台機器。"}
   assert.equal(readOnlyReason({...ok,state:"offline"},w),"暫時連不上這台機器。")
   assert.equal(readOnlyReason({...ok,fresh:false},w),"目前無法使用")
+})
+
+test("read-only Bot settings on Cloud name a pending or offline source before the generic reason",()=>{
+  const ok={state:"online",fresh:true,writable:true,access:"interactive"}
+  const w={unavailable:"目前無法使用",sourceOffline:"暫時連不上這台機器。",capabilitiesPending:"還沒回報"}
+  const pending={capabilityGap:()=>"pending" as const},older={capabilityGap:()=>"outdated" as const}
+  assert.equal(settingsReadOnlyReason(true,pending,true,ok,w),"")
+  assert.equal(settingsReadOnlyReason(false,pending,true,{...ok,state:"unsupported"},w),"還沒回報")
+  assert.equal(settingsReadOnlyReason(false,older,true,ok,w),"目前無法使用")
+  assert.equal(settingsReadOnlyReason(false,undefined,false,{...ok,writable:false},{...w,readOnlySource:"唯讀"}),"唯讀")
 })

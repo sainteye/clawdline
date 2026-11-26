@@ -44,6 +44,18 @@ export function capabilityHint(source: { capabilityGap?(): CapabilityGap } | und
 }
 
 /**
+ * Why the Bot settings form is read-only, or "" while it can be edited. A
+ * source still describing itself, or offline, says that before the generic
+ * reasons.
+ */
+export function settingsReadOnlyReason(enabled: boolean, source: { capabilityGap?(): CapabilityGap } | undefined, recoveryRequired: boolean,
+  status: Parameters<typeof readOnlyReason>[0], w: Record<string, string>): string {
+  if (enabled) return ""
+  return capabilityHint(source, "", { capabilitiesPending: w.capabilitiesPending ?? "", sourceOffline: w.sourceOffline ?? "" }) ||
+    (recoveryRequired ? w.unavailable ?? "" : readOnlyReason(status, w))
+}
+
+/**
  * What went wrong with a Bot action and what to do, in the person's words;
  * the code itself is shown beside it in small print.
  */
