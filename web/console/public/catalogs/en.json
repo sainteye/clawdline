@@ -2429,6 +2429,8 @@
   "capacityRow.run.claimed_items.what": "How many Board items a Session may take on, or hand to a new Session, on the strength of one message from you. It stops one instruction from turning into a sweep that grabs half the Board.",
   "capacityRow.run.created_items.full": "This is a ceiling on one message. The Session's next item is refused and nothing is written; send another message if you really want more, or ask for one planning item.",
   "capacityRow.run.created_items.what": "How many Board items a Session may create on the strength of one message from you. A message asking for more is really a plan, and the ceiling stops a looping Session from flooding the Board.",
+  "capacityRow.run.decision_answer_age.full": "An older answer is refused and nothing is written; the Bot asks you the question again.",
+  "capacityRow.run.decision_answer_age.what": "How long your answer to a Bot's question card lets that Bot create Board items: one day, as long as a message from you lets a Session create them.",
   "capacityRow.schedule.history_page_rows.full": "Load more items reveals the next batch. This display limit does not delete stored history; the schedule detail currently includes at most the newest 200 runs.",
   "capacityRow.schedule.history_page_rows.what": "How many scheduled runs the history sheet reveals at a time, keeping long histories easy to browse.",
   "capacityRow.schedule.run_transcript_head.full": "This is a ceiling on one read. If the first message lies past it, that run is not matched and shows no Resume button; the conversation file is untouched. Nothing for you to do.",

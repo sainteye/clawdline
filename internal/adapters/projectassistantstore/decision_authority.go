@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -19,19 +20,23 @@ func (s *Store) DecisionAuthority(ctx context.Context, machine, conversation, of
 	if offerID == "" {
 		return pa.DecisionAuthority{}, &pa.DecisionRefusal{Code: pa.DecisionUnknown}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=?`, machine)
+	rows, err := s.db.QueryContext(ctx, `SELECT bot,data FROM project_assistant_bots WHERE machine=?`, machine)
 	if err != nil {
 		return pa.DecisionAuthority{}, err
 	}
 	defer rows.Close()
 	for rows.Next() {
+		var bot string
 		var data []byte
-		if err := rows.Scan(&data); err != nil {
+		if err := rows.Scan(&bot, &data); err != nil {
 			return pa.DecisionAuthority{}, err
 		}
 		var a aggregate
 		if err := json.Unmarshal(data, &a); err != nil {
-			return pa.DecisionAuthority{}, err
+			// One Bot's undecodable chat must not make every other Bot's
+			// cards unreadable; its own cards are simply not found here.
+			log.Printf("bots: question card lookup skipped an unreadable Bot %s: %v", bot, err)
+			continue
 		}
 		offer, ok := a.Permissions[offerID]
 		if !ok {

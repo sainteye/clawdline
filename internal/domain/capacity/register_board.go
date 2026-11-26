@@ -45,14 +45,26 @@ func boardBounds() []Entry {
 			Sources: []string{"internal/app.workUnitAnswerLimit"},
 		},
 		{
-			// The Board items one person's message may back when a Session
+			// The Board items one person's message, or one Bot question card
+			// the person answered, may back when a Session or that Bot
 			// creates them on it (work-system-v2 §2, amended 2026-09-25).
-			// Counted over every item that run created, open or closed; the
-			// sixth is refused run_items_exhausted and nothing is written.
+			// Counted over every item that run or card created, open or
+			// closed; the sixth is refused run_items_exhausted and nothing
+			// is written.
 			Name: RunCreatedItems, Class: Buffer, Unit: Rows,
 			Limit: 5, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app.runItemLimit"},
+		},
+		{
+			// How long the person's answer to a Bot's question card backs a
+			// Board item the Bot creates on it: as long as a person's
+			// message is relayed (work.RelayWindow, one day). An older
+			// answer is refused decision_expired and nothing is written.
+			Name: RunDecisionAnswerAge, Class: Cache, Unit: Seconds,
+			Limit: 86400, AtLimit: Expire,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/transport/http.decisionAnswerAgeLimit"},
 		},
 		{
 			// The Board items one person's message may have a Session claim

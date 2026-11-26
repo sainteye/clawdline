@@ -16119,6 +16119,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "run.decision_answer_age",
+    "Class": "cache",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "expire",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/transport/http.decisionAnswerAgeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "schedule.history_page_rows",
     "Class": "observation",
     "Unit": "rows",

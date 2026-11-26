@@ -32,7 +32,8 @@ import (
 // assignment and the receipt — is one transaction: it is written whole or not
 // at all.
 
-// runItemLimit is how many items one person's message may back. A message
+// runItemLimit is how many items one person's message, or one Bot question
+// card the person answered, may back. A message
 // that asks for more is a plan, which belongs on the Board as one planning
 // item or in several messages; a Session looping on one run is stopped here.
 const runItemLimit = 5
