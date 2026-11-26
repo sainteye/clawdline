@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"strings"
+	"time"
 
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
@@ -94,6 +95,22 @@ func (r *Engine) WithdrawQuestion(ctx context.Context, fence pa.Fence, turnID st
 		r.wakeBot(x.Source.Key)
 	}
 	return offer, nil
+}
+
+// ExpireWaitingDecisions closes questions for the person that expired while
+// a requesting Bot waited on them, and wakes each requester with that reply.
+func (r *Engine) ExpireWaitingDecisions(ctx context.Context, machine string, at time.Time) error {
+	p, ok := r.o.Repository.(DecisionExpiry)
+	if !ok {
+		return nil
+	}
+	expired, err := p.ExpireWaitingDecisions(ctx, machine, at)
+	for _, x := range expired {
+		if x.Delivery == "queued" || x.Delivery == "waiting" {
+			r.wakeBot(x.Source.Key)
+		}
+	}
+	return err
 }
 
 // ProposeMemory turns a short fact a Bot wants to remember while answering
