@@ -66,7 +66,8 @@ import (
 // The daemon's one model catalog, GET /v1/model-catalog and its Cloud word, arrives at API 120.
 // Team charters for every Project's Bots, and their Cloud words, arrive at API 122.
 // Removing a Project's team charter, and its Cloud word, arrives at API 123.
-const APILevel = 123
+// The Bots' charter conflict reports, their resolve route and Cloud words arrive at API 124.
+const APILevel = 124
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

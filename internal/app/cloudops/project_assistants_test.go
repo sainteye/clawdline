@@ -139,7 +139,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 84 {
+	if len(out) != 86 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -837,6 +837,7 @@ func charterOperationCases() []operationCase {
 	read("charter", "/charter", map[string]string{"machine_id": "mac-01", "project_id": "project", "version": "0"})
 	read("charter-readers", "/readers", map[string]string{"machine_id": "mac-01", "project_id": "project"})
 	read("charter-proposals", "/proposals", map[string]string{"machine_id": "mac-01", "project_id": "project"})
+	read("charter-conflicts", "/conflicts", map[string]string{"machine_id": "mac-01", "project_id": "project"})
 	write := func(word, method, sub string, fields map[string]any) {
 		fields["machine_id"], fields["project_id"], fields["idempotency_key"] = "mac-01", "project", "case-"+word
 		raw, _ := json.Marshal(fields)
@@ -853,5 +854,6 @@ func charterOperationCases() []operationCase {
 	write("charter-proposal-apply", "POST", "/proposal-apply", map[string]any{"proposal_id": "cp-one", "expected_version": 1})
 	write("charter-proposal-dismiss", "POST", "/proposal-dismiss", map[string]any{"proposal_id": "cp-one"})
 	write("charter-change-request", "POST", "/change-request", map[string]any{"text": "Add a review rule."})
+	write("charter-conflict-resolve", "POST", "/conflict-resolve", map[string]any{"conflict_id": "cc-one", "action": "follow_charter"})
 	return rows
 }

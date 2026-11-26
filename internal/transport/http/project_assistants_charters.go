@@ -45,6 +45,10 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer, err = s.charterDismiss(w, r)
 	case "POST " + chartersPath + "/change-request":
 		answer, err = s.charterChangeRequest(w, r)
+	case "GET " + chartersPath + "/conflicts":
+		answer, err = s.charterConflicts(r)
+	case "POST " + chartersPath + "/conflict-resolve":
+		answer, err = s.charterConflictResolve(w, r)
 	default:
 		err = paHTTPFailure(pa.Invalid, "route")
 	}
@@ -114,11 +118,15 @@ func (s *Server) chartersList(r *http.Request) (contract.ProjectAssistantCharter
 	if err != nil {
 		return contract.ProjectAssistantChartersResponse{}, err
 	}
+	conflicts, err := store.OpenCharterConflicts(r.Context(), machine)
+	if err != nil {
+		return contract.ProjectAssistantChartersResponse{}, err
+	}
 	out := contract.ProjectAssistantChartersResponse{ContractVersion: pa.ContractVersion, MachineID: machine, Charters: []contract.ProjectAssistantCharterSummary{}, ProjectsWithoutCharter: []string{}, Limits: charterLimits()}
 	has := map[string]bool{}
 	for _, c := range charters {
 		has[c.ProjectID] = true
-		out.Charters = append(out.Charters, contract.ProjectAssistantCharterSummary{ProjectID: c.ProjectID, Version: c.Version, UpdatedAt: charterTime(c.UpdatedAt), UpdatedBy: contract.ProjectAssistantCharterAuthor(c.UpdatedBy), PendingProposals: int64(c.Pending)})
+		out.Charters = append(out.Charters, contract.ProjectAssistantCharterSummary{ProjectID: c.ProjectID, Version: c.Version, UpdatedAt: charterTime(c.UpdatedAt), UpdatedBy: contract.ProjectAssistantCharterAuthor(c.UpdatedBy), PendingProposals: int64(c.Pending), OpenConflicts: int64(conflicts[c.ProjectID])})
 	}
 	out.ProjectsWithoutCharter = append(out.ProjectsWithoutCharter, projectsWithoutCharter(bots, has)...)
 	now, err := s.projectAssistantMachineAuthority(r.Context(), machine, false)

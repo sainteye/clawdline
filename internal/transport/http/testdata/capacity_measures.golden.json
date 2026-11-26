@@ -330,6 +330,21 @@
     "Note": true
   },
   {
+    "Name": "bots.charter_conflict_sentence_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_conflicts",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_conflicts_resolved",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.charter_projects",
     "Known": true,
     "Note": true
