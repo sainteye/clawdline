@@ -584,6 +584,11 @@
     "Note": true
   },
   {
+    "Name": "bots.exchange_excerpt_characters",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.extensions",
     "Known": true,
     "Note": true

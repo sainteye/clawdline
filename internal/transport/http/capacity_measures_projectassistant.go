@@ -276,6 +276,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsPageRows:              pure,
 		capacity.BotsEventRows:             pure,
 		"bots.chat_initial_page_rows":      pure,
+		"bots.exchange_excerpt_characters": pure,
 		capacity.BotsActors:                count(func(u app.RuntimeUsage) int { return u.ActiveActors }, "actual Host.Usage actors; pending or unknown cleanup is not known zero"),
 		capacity.BotsRPCPending:            sessions(func(u app.SessionUsage) int { return u.PendingRPC }, "largest occupied owned MCP HTTP request pool"),
 		capacity.BotsFrames:                unobserved,
