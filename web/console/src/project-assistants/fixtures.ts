@@ -17,11 +17,12 @@ function applyFixtureBotEdit(bot:W.ProjectAssistantBot,settings:W.ProjectAssista
   Object.assign(bot,{name:settings.name,appearance:settings.appearance,instructions:{...bot.instructions,text:settings.instructions,revision:bot.instructions.revision+1},version:bot.version+1,...(settings.background_threads!==undefined?{background_threads:settings.background_threads}:{})})
   return settings.roster?.fresh_context&&contextUsage?.bot===bot.key.bot_id?undefined:contextUsage
 }
-function seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,push}:{
+function seedExchangeLayout(input:{
   language:string;at:string;bots:W.ProjectAssistantBot[];messages:Map<string,W.ProjectAssistantMessage[]>
   backgroundTasks:Map<string,W.ProjectAssistantBackgroundTaskSummary[]>
   fence:(bot:W.ProjectAssistantBot)=>W.ProjectAssistantFence;push:(event:W.ProjectAssistantEvent)=>void
-}) {
+},review:boolean) {
+  const {language,at,bots,messages,backgroundTasks,fence,push}=input
   const bot=bots[2]!,peer=bots[3]!,zh=language==="zh-Hant"
   bot.name="Beacon"
   bot.agent="codex"
@@ -49,6 +50,37 @@ function seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,pus
     :"### Review results\n\n1. **Confirmed | Complete fields** in both versions of the export.\n2. **Follow-up | Schedule update** recorded in the handover notes for the next sync.","2026-11-12T06:22:47Z")
   messages.set(bot.key.bot_id,rows)
   backgroundTasks.set(bot.key.bot_id,tasks)
+  if(review)seedExchangeReview(input)
+}
+
+function seedExchangeReview({language,at,bots,messages,backgroundTasks,fence,push}:Parameters<typeof seedExchangeLayout>[0]) {
+  const bot=bots[2]!,peer=bots[3]!,f=fence(bot),zh=language==="zh-Hant"
+  const worker:W.ProjectAssistantBot={...bot,hidden:true,key:{...bot.key,bot_id:"thread-exchange-layout-incoming"},conversation_id:"exchange-layout-incoming"}
+  bots.push(worker)
+  const rows=messages.get(bot.key.bot_id)!
+  const history=Array.from({length:16},(_,index):W.ProjectAssistantMessage=>({
+    id:`exchange-history-${index}`,seq:0,kind:index%2?"assistant":"user",
+    text:zh?"請核對清單內容，確認下一步。":"Check the list and confirm the next step.",at,fence:f,turn_id:"",quote_message_id:"",
+  }))
+  const turn:W.ProjectAssistantTurn={id:"exchange-layout-current",message_id:"exchange-layout-current-request",origin:"user",state:"running",fence:f,started_at:at,idempotency_key:"exchange-layout-current",memory_revision:1,instructions:bot.instructions}
+  const workerTurn:W.ProjectAssistantTurn={...turn,id:"exchange-layout-worker",message_id:"exchange-layout-worker-brief",origin:"bot_request",exchange_id:worker.conversation_id,hops:1,fence:fence(worker)}
+  const current:W.ProjectAssistantMessage={...rows[0]!,id:turn.message_id,kind:"user",turn_id:turn.id,text:zh?"請和 Orbit 核對最後一筆。":"Check the last item with Orbit."}
+  const outgoing:W.ProjectAssistantMessage={...rows[1]!,id:"exchange-layout-outgoing",turn_id:turn.id,exchange:{
+    id:"exchange-layout-outgoing",project:bot.project,source:{key:bot.key,conversation_id:bot.conversation_id},target:{key:peer.key,conversation_id:peer.conversation_id},
+    source_turn_id:turn.id,request_turn_id:"orbit-request",request:current.text,outcome:"sent",request_at:at,revision:2,hops:1,
+  }}
+  const incoming:W.ProjectAssistantMessage={...rows[1]!,id:"exchange-layout-incoming",turn_id:"",exchange:{
+    ...rows[1]!.exchange!,id:worker.conversation_id,source_turn_id:"orbit-source-turn",request_turn_id:workerTurn.id,
+    reply:undefined,reply_at:undefined,outcome:"sent",revision:2,
+  }}
+  peer.name="Orbit"
+  messages.set(bot.key.bot_id,[...history,...rows,current,outgoing,incoming].map((message,index)=>({...message,seq:index+1})))
+  backgroundTasks.get(bot.key.bot_id)!.push({
+    id:worker.conversation_id,origin_message_id:incoming.id,title:zh?"核對排程的最後一筆並整理結果":"Check the final scheduled item and summarize the results",state:"active",worker:worker.key,started_at:at,
+  })
+  push({id:turn.id,seq:0,at,version:contractVersion,kind:"turn_updated",fence:f,turn})
+  messages.set(worker.key.bot_id,[{...incoming,id:workerTurn.message_id,kind:"user",seq:1,fence:workerTurn.fence,turn_id:workerTurn.id,exchange:undefined}])
+  push({id:workerTurn.id,seq:0,at,version:contractVersion,kind:"turn_updated",fence:workerTurn.fence,turn:workerTurn})
 }
 
 export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
@@ -217,7 +249,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
       const rows=messages.get(bot.key.bot_id)??[];const message:W.ProjectAssistantMessage={id:receipt.id,seq:rows.length+1,at,fence:fence(bot),kind:"user",text:r.text,quote_message_id:r.quote_message_id,turn_id:receipt.id};if(!rows.some(m=>m.id===message.id)){messages.set(bot.key.bot_id,[...rows,message]);push({id:crypto.randomUUID(),seq:0,at,version:contractVersion,kind:"message_created",fence:fence(bot),message})}return{contract_version:contractVersion,receipt}},
     async stop(r,s){
       check("stop",r,s,true)
-      const receipt=receive(r.command)
+      const receipt=Object.assign(receive(r.command),{resource_id:r.turn_id})
       if(stopReply)receipt.state=await stopReply
       return {contract_version:contractVersion,receipt}
     },
@@ -237,7 +269,7 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
     async export(r,s){if(legacyForbidden)throw new Error("huge legacy Export forbidden");if(exportGate)await exportGate;check("export",r,s);if(exportFailure!=="ok"&&sameBot(r,bots[0].key))throw failure(exportFailure);if(sameBot(r,bots[0].key))expiredCursor=false;const bot=find(r),revision={...memory,key:r},ownEvents=events.filter(e=>sameBot(e.fence.key,r));return{contract_version:contractVersion,schema_version:1,bot,conversation:conversation(bot),messages:messages.get(r.bot_id)??[],memory:revision,memory_entries:[],context:{memory:revision,provenance_complete:true,sources:[],text:""},bindings:[],permissions:ownEvents.flatMap(e=>e.permission?[e.permission]:[]),read_cursors:[],receipts:[...receipts.values()].filter(receipt=>sameBot(receipt.command.key,r)),turns:ownEvents.flatMap(e=>e.turn?[e.turn]:[]),work_links:[...new Map(ownEvents.flatMap(e=>e.work?[[e.work.id,e.work] as const]:[])).values()],events:ownEvents}},
   }
   return Object.assign(api,{configureProjects(options:{count?:number;failure?:W.ProjectAssistantErrorCode|null;invalid?:"duplicate"|"foreign"|"cursor"|"revision"|null}){if(options.count!==undefined){projectCount=options.count;projectRevision++}if("failure" in options)projectFailure=options.failure??null;if("invalid" in options)projectInvalid=options.invalid??null},
-    exchangeLayoutFixture:(language:string)=>seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,push}),
+    exchangeLayoutFixture:(language:string,review:boolean)=>seedExchangeLayout({language,at,bots,messages,backgroundTasks,fence,push},review),
     // A Codex Bot after its first turn: one compaction notice stored with a key,
     // one stored earlier in both languages, and the reading kept from that turn.
     compactionFixture(){
@@ -435,7 +467,7 @@ export function mountFixture() {
   let sourceList:SourceClient[]=[a,b]
   const params=new URLSearchParams(location.search)
   const root=createRoot(document.getElementById("fixture")!),language=params.get("lang")??"zh-Hant"
-  if(params.has("exchange-layout"))a.exchangeLayoutFixture(language)
+  if(params.has("exchange-layout"))a.exchangeLayoutFixture(language,params.get("exchange-layout")==="review")
   const view=createViewState(window.localStorage)
   let accountKey="fixture-account",hostGeneration=0,opened=false,opener:HTMLElement|null=null
   const paint=()=>root.render(React.createElement(React.Fragment,null,
