@@ -53,6 +53,7 @@ export class FleetStore {
   private state: FleetState = { snapshot: null, loaded: false, error: null, live: false, tasks: null, tasksLive: false }
   private listeners = new Set<FleetListener>()
   private handle: StreamHandle | undefined
+  private run = 0
   private titles = new Map<string, { title: string; conversation: string | undefined; execution: string | undefined }>()
 
   constructor(
@@ -69,16 +70,25 @@ export class FleetStore {
     return () => this.listeners.delete(fn)
   }
 
-  /** Reads once, then follows the stream if this host has one. */
+  /** Starts the initial read and the live connection independently. */
   async start(): Promise<void> {
-    await this.refresh(true)
-    if (!this.transport) return
-    this.handle = this.transport.open(this.client.url(routes.events), {
+    const run = ++this.run
+    const previous = this.state.snapshot
+    const read = this.client.sessions(true).then(
+      snapshot => ({ snapshot, failure: null }),
+      cause => ({ snapshot: null, failure: { cause } }),
+    )
+    // The first Cloud read assembles the retained rows into one list. Keep
+    // that first paint while allowing connection and task events through.
+    const initial: { frame?: SessionsSnapshot | null } = { frame: null }
+    this.handle?.close()
+    this.handle = this.transport?.open(this.client.url(routes.events), {
       // A reopened connection has not yet said what the tasks are: until its
       // first `orchestrator` frame, the list held is from the old one.
-      onOpen: () => this.set({ live: true, tasksLive: false }),
-      onError: () => this.set({ live: false, tasksLive: false }),
+      onOpen: () => { if (run === this.run) this.set({ live: true, tasksLive: false }) },
+      onError: () => { if (run === this.run) this.set({ live: false, tasksLive: false }) },
       onFrame: (event, data) => {
+        if (run !== this.run) return
         if (event === "orchestrator") {
           const tasks = taskListFrame(data)
           if (tasks) this.set({ tasks, tasksLive: true })
@@ -87,16 +97,35 @@ export class FleetStore {
         if (event !== "sessions" && event !== "message") return
         try {
           const next = JSON.parse(data) as SessionsSnapshot
-          this.accept(next)
+          if (!next?.scan || !Array.isArray(next.sessions)) return
+          if (initial.frame === undefined) this.accept(next)
+          else initial.frame = acceptSnapshot(initial.frame, next) ?? initial.frame
         } catch {
           // A frame that will not parse is dropped, not treated as an empty
           // fleet. Half a message is not news that everything went away.
         }
       },
     })
+    const { snapshot, failure } = await read
+    const buffered = initial.frame
+    initial.frame = undefined
+    if (run !== this.run) return
+    try {
+      // A stream reopen can race a body from the previous daemon. Its start
+      // time (epoch) orders the processes; acceptSnapshot orders their reads.
+      const next = buffered && (!snapshot || buffered.scan.epoch >= snapshot.scan.epoch)
+        ? acceptSnapshot(snapshot, buffered) ?? snapshot
+        : snapshot
+      const current = this.state.snapshot
+      if (next && (!current || current === previous || next.scan.epoch >= current.scan.epoch)) this.accept(next)
+      else if (failure && current === previous) this.readFailed(failure.cause)
+    } catch (err) {
+      this.readFailed(err)
+    }
   }
 
   stop(): void {
+    this.run++
     this.handle?.close()
     this.handle = undefined
     this.set({ live: false, tasksLive: false })
@@ -106,8 +135,12 @@ export class FleetStore {
     try {
       this.accept(await this.client.sessions(initial))
     } catch (err) {
-      this.set({ error: err instanceof Error ? err.message : String(err), loaded: true })
+      this.readFailed(err)
     }
+  }
+
+  private readFailed(err: unknown): void {
+    this.set({ error: err instanceof Error ? err.message : String(err), loaded: true })
   }
 
   /** A successful write is newer than the producer's next, possibly held list. */
