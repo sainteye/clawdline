@@ -40,11 +40,11 @@ The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 
 ### Team charter words
 
-Ten machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
+Twelve machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
 `/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
 `project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
 local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
-The console carries all ten: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
+The console carries all twelve: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
 
 | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- |
@@ -58,6 +58,8 @@ The console carries all ten: the charter page sends them through the captured Bo
 | project-assistants.charter-proposal-apply | POST C/proposal-apply (`proposal_id`, `expected_version`) | Yes |
 | project-assistants.charter-proposal-dismiss | POST C/proposal-dismiss (`proposal_id`) | Yes |
 | project-assistants.charter-change-request | POST C/change-request (`text`) | Yes |
+| project-assistants.charter-conflicts | GET C/conflicts (API 124) | No |
+| project-assistants.charter-conflict-resolve | POST C/conflict-resolve (`conflict_id`, `action`: `follow_charter`, `change_charter` or `dismiss`; API 124) | Yes |
 
 Over Cloud `reason` is required (empty is allowed); the text bounds are copies of
 `MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`.

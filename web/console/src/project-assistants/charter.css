@@ -120,3 +120,6 @@
 @media(min-width:701px) {
   .project-assistants .pa-charter-conflicts.pa-info-panel { width:380px;max-width:380px; }
 }
+.project-assistants .pa-info-panel.pa-charter-conflicts .pa-charter-history-close { width:44px;height:44px;min-width:44px;min-height:44px; }
+/* A prefilled charter change request shows whole, up to the box's maximum height. */
+.project-assistants .pa-charter-request textarea { field-sizing:content; }

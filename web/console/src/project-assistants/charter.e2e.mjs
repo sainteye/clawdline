@@ -10,6 +10,9 @@
 // the page cannot be scrolled under the roster; a proposal the lead records
 // seconds later appears without a reload, also in a background tab, and
 // opening the charter again rereads it; 移除章程 asks once and removes it.
+// The Bots' conflict reports: the roster row and a reminder count them, the
+// side panel (a full-screen sheet on a phone) quotes both sentences, and each
+// of 以章程為準, 改章程 and 先不管 does what it says.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> CHARTER_ARTIFACTS=<dir> node charter.e2e.mjs
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
@@ -263,6 +266,69 @@ async function removal(page,name){
   await shot(page,`removed-${name}`)
 }
 
+async function conflicts(page,name,narrow){
+  await page.goto(origin+"/")
+  await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
+  await page.evaluate(()=>{
+    const studio=window.charterFixture.studio
+    studio.reportConflict("project",{bot_id:"bot-1",source:"workspace_file",path:"docs/playbook.md",bot_sentence:"部署：GitHub、app.clawdline.com、本機 dev 各自要有使用者授權。",charter_sentence:"部署前先問。",section:"什麼要問你"})
+    studio.reportConflict("project",{bot_id:"bot-5",source:"instructions",bot_sentence:"直接改別人的檔案比較快。",charter_sentence:"用交辦卡，不要私下改別人的檔案。",section:"Bot 之間怎麼溝通"})
+    studio.reportConflict("project",{bot_id:"bot-3",source:"memory",bot_sentence:"開卡可以省略。",charter_sentence:"先開卡，再派工，做完回報。",section:"一件事怎麼走"},3)
+    window.botsFixture.open()
+  })
+  await page.locator(".pa-charter-row").first().waitFor()
+  const row=await page.locator(".pa-charter-row").innerText()
+  check(`${name} roster row counts the conflicts`,()=>assert.match(row,/團隊章程[\s\S]*3 個衝突/))
+  await page.locator(".pa-charter-row").click()
+  const banner=page.locator(".pa-charter-conflict-banner")
+  await banner.waitFor()
+  const bannerText=await banner.innerText()
+  check(`${name} reminder text`,()=>assert.match(bannerText,/3 個和章程不一樣的地方[\s\S]*查看/))
+  await shot(page,`conflicts-reminder-${name}`)
+  await banner.click()
+  const panel=page.locator(".pa-charter-conflicts")
+  await panel.getByText("和章程不一樣的地方",{exact:true}).waitFor()
+  await shot(page,`conflicts-panel-${name}`)
+  const cards=panel.locator(".pa-charter-conflict")
+  const count=await cards.count()
+  check(`${name} three cards`,()=>assert.equal(count,3))
+  const first=await cards.nth(0).innerText()
+  check(`${name} card quotes the Bot and the charter`,()=>{assert.match(first,/Documentation · .* 回報/);assert.match(first,/它的記憶[\s\S]*開卡可以省略。[\s\S]*章程第 2 段[\s\S]*先開卡，再派工，做完回報。/)})
+  const file=await cards.nth(2).innerText()
+  check(`${name} a playbook card names its file and the section number`,()=>assert.match(file,/Code review[\s\S]*它的 playbook · docs\/playbook.md[\s\S]*章程第 3 段[\s\S]*部署前先問。/))
+  const footer=await panel.innerText()
+  check(`${name} others and judgment`,()=>{assert.match(footer,/其他 3 位 Bot 沒有回報不一致/);assert.match(footer,/這是每位 Bot 自己的判斷，可能有遺漏。/);assert.match(footer,/章程優先，但由你決定要不要改。/)})
+  const box=await panel.boundingBox(),viewport=page.viewportSize()
+  if(narrow)check(`${name} the panel is a full-screen sheet`,()=>assert.ok(box&&Math.abs(box.width-viewport.width)<1&&box.x<1,JSON.stringify(box)))
+  else check(`${name} the panel is about 380px at the right`,()=>assert.ok(box&&Math.abs(box.width-380)<=24&&Math.abs(box.x+box.width-viewport.width)<1,JSON.stringify(box)))
+  const small=await smallTargets(page,".pa-charter-conflicts")
+  check(`${name} conflict panel touch targets`,()=>assert.deepEqual(small,[]))
+  const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}))
+  check(`${name} no sideways scroll with the panel`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))
+  // 以章程為準 on a playbook file goes to the Bot; on instructions the daemon fixes it.
+  await cards.nth(2).getByRole("button",{name:"以章程為準，改掉它的那一句"}).click()
+  await panel.getByText("已交給 Code review 修改").waitFor()
+  await cards.nth(0).getByRole("button",{name:"以章程為準，改掉它的那一句"}).click()
+  await panel.getByText("已改成和章程一致").waitFor()
+  // 先不管 removes the report from the list.
+  await cards.nth(0).getByRole("button",{name:"先不管"}).click()
+  await page.getByText("這一項先不管。").first().waitFor()
+  const after=await cards.count()
+  check(`${name} a dismissed report leaves the list`,()=>assert.equal(after,2))
+  await shot(page,`conflicts-handled-${name}`)
+  const reminder=await page.locator(".pa-charter-conflict-banner").count()
+  check(`${name} no reminder without open reports`,()=>assert.equal(reminder,0))
+  // 改章程 opens the request box with both quotes.
+  await page.evaluate(()=>window.charterFixture.studio.reportConflict("project",{bot_id:"bot-2",source:"memory",bot_sentence:"交辦卡不用寫驗收方式。",charter_sentence:"寫清楚目標和驗收方式。",section:"交辦卡"}))
+  await page.waitForFunction(()=>!!document.querySelector(".pa-charter-conflict-banner")||document.querySelectorAll(".pa-charter-conflict[data-state=open]").length>0,null,{timeout:15000})
+  if(!(await page.locator(".pa-charter-conflicts:not([hidden])").count()))await page.locator(".pa-charter-conflict-banner").click()
+  await panel.locator('.pa-charter-conflict[data-state="open"]').getByRole("button",{name:"改章程"}).click()
+  await page.getByText("修改章程的請求已放進下方輸入框，確認後再送出。").first().waitFor()
+  const request=await page.getByRole("textbox",{name:"要求修改章程"}).inputValue()
+  check(`${name} the request names the Bot and both quotes`,()=>assert.match(request,/Interface design 的記憶寫「交辦卡不用寫驗收方式。」，但章程第 5 段寫「寫清楚目標和驗收方式。」。請改章程/))
+  await shot(page,`conflicts-change-request-${name}`)
+}
+
 async function history(page,name){
   await open(page)
   await page.locator(".pa-charter-row").click()
@@ -321,9 +387,10 @@ async function settings(page,name){
 }
 
 try{
-  for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}]]){
+  for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}],["1440x900",{width:1440,height:900}]]){
     const narrow=name==="390"
-    for(const run of [rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings]){
+    // 1440x900 is the conflict panel's design size; the other screens are covered above.
+    for(const run of name==="1440x900"?[conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)
       const errors=[];page.on("pageerror",e=>errors.push(e.message))
