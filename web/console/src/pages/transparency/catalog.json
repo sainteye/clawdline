@@ -4182,7 +4182,7 @@
         },
         {
           "path": "web/console/src/project-assistants/BotSettings.tsx",
-          "line": 226
+          "line": 237
         }
       ],
       "original": [
@@ -5962,16 +5962,16 @@
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
-    "web/console/src/project-assistants/BotSettings.tsx": "e2082aa828d66750b4d8501bbb2c15253be9be54f244aea5353cffc918f52590",
+    "web/console/src/project-assistants/BotSettings.tsx": "ec05b4cd80c74e9b01859a5124a0725d556f6607856e4983c071a864a3ac6551",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "47909c9edfb9d85ac2bfadcb1be8535ea365cff6a81a51182d8076d43f177a06",
+    "web/console/src/project-assistants/Chat.tsx": "6705c6bee8fda6b4d344701e072da8cc48cd32f44d775713cb20d810a973e684",
     "web/console/src/project-assistants/ChatRows.tsx": "b8b1e0ec14d9ac1ab194830371d104130659852b95c626728fc16a7b8676db7c",
     "web/console/src/project-assistants/DecisionCard.tsx": "a770144b42746b07781b07da155d392f112569f86fb252a6d34c9fc861cf1e8a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
     "web/console/src/project-assistants/ImageViewer.tsx": "d31081988eed7e19c66984a44ed4bd7d9e0ec6170054babe413a2cbb44a26f07",
-    "web/console/src/project-assistants/MemoryPanel.tsx": "cbe7e73945ff288ceeacf14bd7cab1b6c182e505eaf1aa45242f2ba2158f91df",
+    "web/console/src/project-assistants/MemoryPanel.tsx": "9d3e71b53b9a83c8ab05bb05948e7d48676ba068ccdbe3d9cebdb65900f68fa4",
     "web/console/src/project-assistants/NetworkSettings.tsx": "d2c99482a6a84e9fad9fae688f905eb0222d730775446f40cb0faaee05cbffcc",
     "web/console/src/project-assistants/OutputCard.tsx": "880948ab8e65488241340ecea927be6508ce55abe91101400907b7105f273c09",
     "web/console/src/project-assistants/OutputLibrary.tsx": "aa6c0daa92d485861196ffcb3bba4753c363aac2a939c3fa7569c9fc979fefe2",
@@ -5990,7 +5990,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "c838a2fd6f5680a60ae56abaf8ba2b99fab3738ae60ec424e3bc854fd38821a1",
+    "web/console/src/project-assistants/words.ts": "76c780ebd3f2169f7f8131dd35edd88588abdce7e0292ebcb31d8c2b3290bc25",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",

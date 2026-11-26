@@ -51,7 +51,10 @@ const fakeSource = (machine: string, older = false) => ({
 }) as unknown as SourceClient
 const several = new URLSearchParams(location.search).has("machines")
 const machines = several ? [{ source: fakeSource("m-studio"), name: "Studio" }, { source: fakeSource("m-laptop", true), name: "Laptop" }] : [{ source: fakeSource("m-studio"), name: "Studio" }]
-const projects = [{ id: "p-web", name: "Sample Web" }, { id: "p-api", name: "Sample API" }, { id: "p-docs", name: "Sample Docs" }]
+// ?projects=many: a machine with many Projects, some with long names, as the scope list sees them.
+const projects = discovery.has("projects")
+  ? Array.from({ length: 22 }, (_, i) => ({ id: `p-${i}`, name: i % 3 ? `Sample Project ${i + 1}` : `Sample Project With A Rather Long Descriptive Name ${i + 1}` }))
+  : [{ id: "p-web", name: "Sample Web" }, { id: "p-api", name: "Sample API" }, { id: "p-docs", name: "Sample Docs" }]
 
 function App() {
   const [open, setOpen] = useState(false)

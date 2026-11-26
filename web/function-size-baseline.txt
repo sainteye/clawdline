@@ -70,13 +70,13 @@ web/console/src/pages/work/WorkV2.tsx	WorkCard	150	56
 web/console/src/pages/work/WorkV2.tsx	WorkV2Page	337	76
 web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
-web/console/src/project-assistants/BotSettings.tsx	BotSettings	122	60
+web/console/src/project-assistants/BotSettings.tsx	BotSettingsForm	122	60
 web/console/src/project-assistants/Bots.tsx	Bots	438	136
 web/console/src/project-assistants/Chat.tsx	Chat	2071	600
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	85	48
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78
 web/console/src/project-assistants/ImageViewer.tsx	useImageZoom	170	45
-web/console/src/project-assistants/MemoryPanel.tsx	MemoryContent	112	36
+web/console/src/project-assistants/MemoryPanel.tsx	MemoryContent	111	34
 web/console/src/project-assistants/MessageReactions.tsx	MessageReactions	120	40
 web/console/src/project-assistants/OutputViewer.tsx	OutputViewer	126	39
 web/console/src/project-assistants/PaMenu.tsx	PaMenu	110	29

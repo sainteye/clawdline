@@ -57,3 +57,5 @@
 /* An unconfirmed save offers a read-only check; results wrap above the actions on narrow screens. */
 .project-assistants .pa-settings-check-result { flex:0 0 100%;margin:0;font-size:13px;overflow-wrap:anywhere; }
 .project-assistants .pa-settings-savebar .pa-settings-check-saved { flex:0 0 100%; }
+/* The draft holder around the embedded editor adds no box of its own. */
+.project-assistants .pa-settings-draft { display:contents; }
