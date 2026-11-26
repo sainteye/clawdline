@@ -23,6 +23,33 @@ import { OPEN_BOT, openableBot, publishBotDirectory, type OpenBotRequest } from 
 
 const BADGE_REFRESH_MS = 15_000
 
+type BadgeMetadata=Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>
+type HostSource=ReturnType<ProjectAssistantRegistry["getSnapshot"]>[number]
+
+/** While Bots is open its roster is the one unread projection: the badge adopts each complete
+ * source it reports, and the host's own reads stop overwriting that source until Bots closes. */
+function useBadgeMetadata(opened:boolean,openedRef:{current:boolean},sources:readonly HostSource[]) {
+  const [metadata,setMetadata]=useState<BadgeMetadata>({})
+  const projected=useRef(new Set<string>())
+  useEffect(()=>{if(!opened)projected.current.clear()},[opened])
+  const adopt=useCallback((items:readonly W.ProjectAssistantBotSummary[],completeSources:readonly string[])=>{
+    const adopted=sources.filter(source=>completeSources.includes(source.machineID))
+    if(!openedRef.current||!adopted.length)return
+    for(const source of adopted)projected.current.add(source.machineID)
+    setMetadata(old=>{
+      const next={...old}
+      for(const source of adopted){
+        const own=items.filter(item=>item.bot.key.machine_id===source.machineID&&canRead(item.source)),previous=old[source.machineID]
+        // Source authority still comes from the host's status read; the roster supplies the rows.
+        next[source.machineID]={revision:source.authorizationRevision,readable:previous?.revision===source.authorizationRevision?previous.readable:own.length>0,items:own}
+      }
+      return next
+    })
+  },[sources,openedRef])
+  const owns=useCallback((machineID:string)=>openedRef.current&&projected.current.has(machineID),[openedRef])
+  return {metadata,setMetadata,adopt,owns}
+}
+
 // The status bar opens the window; each source controls access to its own Bots.
 export const page: PageModule = {id:"project-assistants",drawer:false,Component:() => null}
 
@@ -53,28 +80,13 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
   useEffect(()=>{sound.current=startBotCompletionSound();return()=>{sound.current?.stop();sound.current=null}},[])
   const completionScope=useCallback((source: typeof sources[number])=>JSON.stringify([registry.accountKey,source.machineID,source.authorizationRevision]),[registry.accountKey])
   useEffect(()=>completion.current.retain(sources.map(completionScope)),[sources,completionScope])
-  const [metadata,setMetadata] = useState<Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>>({})
-  // While Bots is open its roster is the one unread projection: the badge adopts each
-  // complete source it reports, and the host's own reads stop overwriting that source.
-  const projected=useRef(new Set<string>())
-  useEffect(()=>{if(!opened)projected.current.clear()},[opened])
+  const {metadata,setMetadata,...roster}=useBadgeMetadata(opened,openedRef,sources)
   const observeCompletions=useCallback((items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[],completeSources:readonly string[]=[])=>{
     let done=false
     for(const source of sources.filter(source=>loadedSources.includes(source.machineID)))done=completion.current.observe(completionScope(source),items.filter(item=>item.bot.key.machine_id===source.machineID))||done
     if(done)sound.current?.play()
-    const adopted=sources.filter(source=>completeSources.includes(source.machineID))
-    if(!openedRef.current||!adopted.length)return
-    for(const source of adopted)projected.current.add(source.machineID)
-    setMetadata(old=>{
-      const next={...old}
-      for(const source of adopted){
-        const own=items.filter(item=>item.bot.key.machine_id===source.machineID&&canRead(item.source)),previous=old[source.machineID]
-        // Source authority still comes from the host's status read; the roster supplies the rows.
-        next[source.machineID]={revision:source.authorizationRevision,readable:previous?.revision===source.authorizationRevision?previous.readable:own.length>0,items:own}
-      }
-      return next
-    })
-  },[sources,completionScope])
+    roster.adopt(items,completeSources)
+  },[sources,completionScope,roster.adopt])
   const observeSource=useCallback((source:typeof sources[number],items:readonly W.ProjectAssistantBotSummary[])=>{
     if(completion.current.observe(completionScope(source),items))sound.current?.play()
   },[completionScope])
@@ -122,7 +134,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
             seen.add(cursor)
           } while (cursor && !control.signal.aborted)
         }
-        if (!control.signal.aborted&&!(openedRef.current&&projected.current.has(source.machineID))) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
+        if (!control.signal.aborted&&!roster.owns(source.machineID)) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
       } catch (error) {
         // Keep counts through a transport failure. Explicit denials clear them.
         // Cached work stops animating after either failed read.
@@ -167,8 +179,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
   const readableRef = useRef(readableItems)
   readableRef.current = readableItems
   useEffect(() => publishBotDirectory(readableItems))
-  const showDispatched = useDispatchedWorkShown()
-  const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources,showDispatched)
+  const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources,useDispatchedWorkShown())
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.
   const [closing,setClosing] = useState(false)

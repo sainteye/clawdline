@@ -54,6 +54,11 @@ export interface BotsProps {
 interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;failure?:RosterFailure;loadedPages?:number;checked?:number;waitingForConnection?:boolean}
 type SourcePages=Record<string,SourcePage>
 
+/** A settled live roster, or a whole unfiltered snapshot, holds every row the badge counts. */
+function completeRosterSources(pages:SourcePages,livePending:Record<string,boolean>,loaded:readonly string[]) {
+  return loaded.filter(id=>!livePending[id]&&!pages[id].requestQuery&&!pages[id].cursor)
+}
+
 function useManualRosterRefresh(sources:readonly SourceClient[],pages:SourcePages) {
   const [rosterRetry,setRosterRetry]=useState(0)
   const manualRefresh=useRef<{attempt:number;promise:Promise<void>;resolve:()=>void}|null>(null)
@@ -144,8 +149,7 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
   useEffect(()=>{
     const loaded=Object.entries(pages).filter(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id])=>id)
-    const complete=loaded.filter(id=>!livePending[id]&&!pages[id].requestQuery&&!pages[id].cursor)
-    if(loaded.length)onRosterObserved?.(allItems,loaded,complete)
+    if(loaded.length)onRosterObserved?.(allItems,loaded,completeRosterSources(pages,livePending,loaded))
   },[pages,livePending,authorization,onRosterObserved])
   const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
