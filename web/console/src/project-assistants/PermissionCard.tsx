@@ -10,6 +10,11 @@ import type { Words } from "./words"
 // The tower answers offers too, so the identity and expiry rules live in view-state.
 export {permissionState,samePermission}
 
+export function permissionMachineLabel(name:string|undefined,machineID:string,fallback:string) {
+  const label=name?.trim()
+  return label&&label!==machineID&&!label.startsWith("mac_")?label:fallback
+}
+
 // Codync's sortedOptions: allow before deny, once before persistent options.
 export function sortedOptions(options:readonly W.ProjectAssistantPermissionOption[]) {
   const rank={allow_once:0,allow_always:1,reject_once:2,reject_always:3}
@@ -53,7 +58,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
   const canExpand=!!(action&&(action.detail||action.diffs.length||action.shortened)||!offer&&onDetail)
   return <section className={team?"pa-card pa-permission pa-team-proposal":"pa-card pa-permission"} data-permission-id={value.id} aria-label={team?actionHeading(kind,w):w.permission} tabIndex={team?-1:undefined} aria-busy={busy||undefined} data-state={state}>{team?
       <TeamProposalSummary heading={actionHeading(kind,w)} title={title} proposal={proposal} context={context} machine={machine} status={status} pending={state==="pending"} w={w}/>:
-      <><h3>{actionHeading(kind,w)}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>{title&&<p className="pa-permission-title">{title}</p>}{context&&<small className="pa-permission-source">{context}</small>}<p className="pa-permission-state" role="status">{status}</p></>}
+      <><h3>{actionHeading(kind,w)}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>{title&&<p className="pa-permission-title" style={kind==="dispatch_project"?{fontFamily:"inherit"}:undefined}>{title}</p>}{context&&<small className="pa-permission-source">{context}</small>}<p className="pa-permission-state" role="status">{status}</p></>}
     {kind==="source_command"&&<p className="pa-approval-detail">{w.permissionSourceAuthority}</p>}
     {canExpand&&<details className="pa-permission-detail" open={expanded} onToggle={event=>{
       const open=event.currentTarget.open
@@ -69,7 +74,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
       </div>
     </details>}
     {team&&!offer&&state==="pending"&&<p className="pa-team-loading" role={detailState==="failed"?"alert":"status"}>{detailState==="failed"?<>{w.unavailable}{detailError&&` (${detailError})`} <button type="button" onClick={()=>void load()}>{w.retry}</button></>:w.loading}</p>}
-    {offer&&(!team||state==="pending")&&<div className="pa-permission-options">{sortedOptions(offer.options).map(option=>{
+    {offer&&(!team||state==="pending")&&<div className="pa-permission-options" style={team?undefined:{background:"none",borderRadius:0,overflow:"visible"}}>{sortedOptions(offer.options).map(option=>{
       const label=team?(option.allow?(kind==="team_create"?w.teamApproveCreate:w.teamApproveUpdate):w.reject_once):permissionOptionLabel(option,w,kind,title),selected=offer.selected_option_id===option.id
       return <button key={option.id} type="button" data-option-kind={option.kind} data-selected={selected||undefined} disabled={!enabled||busy||state!=="pending"} onClick={async()=>{if(!enabled||pending.current||permissionCardState(value,summary)!=="pending")return;pending.current=true;setBusy(true);setError("");try{await onAnswer(offer,option)}catch(error){setError(errorCode(error))}finally{pending.current=false;setBusy(false)}}}><span>{selected&&<span aria-hidden="true">✓ </span>}{label}</span>{!team&&option.label&&option.label!==label&&<small>{option.label}</small>}</button>
     })}</div>}{error&&state==="pending"&&<p role="alert">{error==="pa_outcome_unknown"?w.unknown:`${w.permissionAnswerFailed} (${error})`}</p>}</section>

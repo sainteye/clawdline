@@ -151,6 +151,24 @@ func TestDeclinedProjectDispatchIsTypedAndStaysDeclinedOnResend(t *testing.T) {
 	}
 }
 
+func TestReadOnlyProjectDispatchDetailsListOnlyProjectAndTitle(t *testing.T) {
+	n := startAskingBot(t)
+	const title = "Review the documentation inventory"
+	done := make(chan dispatchOutcome, 1)
+	go func() {
+		link, err := n.tools.DispatchToProject(context.Background(), "read-only", title, "Read the documentation only.", []string{}, "fixture-repository")
+		done <- dispatchOutcome{link, err}
+	}()
+	card := awaitDispatchCard(t, n, 1)
+	answerDispatchCard(t, n, card, dispatchDecline)
+	if out := receiveDispatch(t, done); pa.Code(out.err) != pa.Declined {
+		t.Fatalf("decline: %+v", out)
+	}
+	if want := filepath.Base(n.f.repo) + "\n\n" + title; card.Action == nil || card.Action.Detail != want {
+		t.Fatalf("wanted project and title %q, action = %+v", want, card.Action)
+	}
+}
+
 func TestAlwaysAllowSavesAVisibleRevocableBotToProjectRule(t *testing.T) {
 	n := startAskingBot(t)
 	ctx := context.Background()

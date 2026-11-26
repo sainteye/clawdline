@@ -54,7 +54,7 @@ import { BotCallBar, useBotCall, useBotCallStart } from "./BotCall"
 import { BotVoicePanel, useBotVoice } from "./BotVoicePanel"
 import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
-import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
+import { PermissionCard, permissionMachineLabel, permissionState, samePermission } from "./PermissionCard"
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
 import { legacyMemoryProposalTitle } from "./notice-text"
 import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
@@ -1830,8 +1830,8 @@ ${currentDraft}`:submitted)
   const heldSend=heldOutcome?.intent.command.operation==="send"?heldOutcome:null
   const reviewPending=[heldSend,...pendingRows].some(row=>row?.intent.command.idempotency_key.startsWith(TURN_REVIEW_PREFIX)&&!admittedReceipt(row.receipt))
 
-  const permissionMachine=source.machineName===key.machine_id?undefined:source.machineName
-  const permissionContext=[permissionMachine,projectName||bot.project.project_id].filter(Boolean).join(" · ")
+  const permissionMachine=permissionMachineLabel(source.machineName,key.machine_id,w.thisMachine)
+  const permissionContext=[projectName||bot.project.project_id,permissionMachine].filter(Boolean).join(" · ")
   const permissionSection=permissionSections(permissionCards,sectionPermissions,pendingPermissionCount,head)
   const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
   const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} botID={key.bot_id} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>

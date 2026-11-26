@@ -93,10 +93,10 @@ export function rowActivity(activity: string, w: Record<string, string>): string
   if (/^guardian[ _]review$/i.test(activity)) return w.reviewingAction
   if (activity === "running" || activity === "waiting_permission" || activity === "queued" || activity === "accepted") return w[activity] ?? activity
   const title = activity.trim().toLowerCase()
-  const name = title.replace(/^(?:mcp__clawdline__|clawdline\.|functions\.)/, "").split(/\s*[:(]/,1)[0]
+  const name = title.replace(/^(?:mcp__clawdline__|mcp\.clawdline\.|clawdline\.|functions\.)/, "").split(/\s*[:(]/,1)[0]
   const label = toolActivityWords.get(name)
   if (label) return w[label]
-  if (/mcp__|^(?:clawdline\.|functions\.)|^[a-z][a-z0-9]*_[a-z0-9_]+(?=$|[\s(:])/.test(title)) return w.activityTool
+  if (/mcp__|^(?:mcp\.|clawdline\.|functions\.)|^[a-z][a-z0-9]*_[a-z0-9_]+(?=$|[\s(:])/.test(title)) return w.activityTool
   return activity
 }
 

@@ -46,6 +46,7 @@ test("live trace and daemon activity use the same localized tool captions", () =
     ["clawdline.browser_status (read)", "Using the browser", "正在使用瀏覽器"],
     ["send_message", "Sending a message", "正在傳送訊息"],
     ["mcp__clawdline__dispatch_work", "Dispatching work", "正在派工"],
+    ["mcp.clawdline.dispatch_work", "Dispatching work", "正在派工"],
     ["mcp__clawdline__edit_memory", "Updating memory", "正在更新記憶"],
     ["Bash", "Running a command", "正在執行指令"],
     ["Read", "Reading a file", "正在讀取檔案"],
@@ -53,6 +54,7 @@ test("live trace and daemon activity use the same localized tool captions", () =
     ["Grep", "Searching", "正在搜尋"],
     ["functions.exec_command", "Running a command", "正在執行指令"],
     ["mcp__other__browser_command", "Using a tool", "正在使用工具"],
+    ["mcp.other.dispatch_work", "Using a tool", "正在使用工具"],
     ["mcp__clawdline__browser_command_extra", "Using a tool", "正在使用工具"],
     ["unknown_tool (details)", "Using a tool", "正在使用工具"],
   ] as const

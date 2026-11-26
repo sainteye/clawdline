@@ -217,11 +217,10 @@ func (h *Host) askDispatch(ctx context.Context, r *app.Engine, q dispatchAsk) er
 		return err
 	}
 	folder := filepath.Base(q.Target.Directory)
-	claims := "-"
+	detail := folder + "\n\n" + q.Title
 	if len(q.Claims) > 0 {
-		claims = "- " + strings.Join(q.Claims, "\n- ")
+		detail += "\n\n- " + strings.Join(q.Claims, "\n- ")
 	}
-	detail := folder + "\n\n" + q.Title + "\n\n" + claims
 	option, err := r.RequestHumanPermission(ctx, app.SourcePermissionRequest{
 		Fence: q.Fence, TurnID: q.TurnID, MemoryRevision: q.MemoryRevision,
 		Action: pa.PermissionAction{Title: q.BotName + " → " + folder, ToolKind: "dispatch_project", Detail: detail, Diffs: []pa.PermissionDiff{}},
