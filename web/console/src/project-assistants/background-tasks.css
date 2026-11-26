@@ -40,12 +40,12 @@
 
 /* Another Bot's message being answered: a small centred card under that message. */
 .pa-background-handoff {
-  position: relative; align-self: center; display: flex; flex-direction: column; align-items: center;
+  display: grid; grid-template-columns: minmax(0,1fr) auto; align-self: center;
   max-width: 100%; margin: 4px auto 10px; border: 1px solid var(--pa-line); border-radius: 20px; background: var(--pa-card);
 }
 .project-assistants .pa-background-handoff-open {
-  display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%;
-  padding: 14px 52px 10px 18px; border: 0; border-radius: 20px; background: transparent; color: var(--pa-dim);
+  display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0;
+  padding-block: 14px 10px; padding-inline: 18px 10px; border: 0; border-radius: 20px; background: transparent; color: var(--pa-dim);
 }
 .pa-background-handoff-cast { display: flex; align-items: center; gap: 14px; }
 .pa-background-handoff-party { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
@@ -56,8 +56,8 @@
 .pa-background-handoff-line strong { color: var(--pa-ink,currentColor); font-weight: 600; white-space: nowrap; }
 .pa-background-handoff-line span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pa-background-handoff-line time { font-size: 13px; font-variant-numeric: tabular-nums; flex-shrink: 0; }
-.pa-background-handoff > .pa-background-stop { position: absolute; inset-inline-end: 6px; bottom: 4px; }
-.pa-background-handoff > .pa-background-stop-status { text-align: center; }
+.pa-background-handoff > .pa-background-stop { align-self: end; margin-inline-end: 6px; margin-block-end: 4px; }
+.pa-background-handoff > .pa-background-stop-status { grid-column: 1 / -1; text-align: center; }
 .pa-background-flow { display: flex; gap: 6px; padding-bottom: 16px; }
 .pa-background-flow i { display: block; width: 6px; height: 6px; border-radius: 50%; background: var(--pa-dim); opacity: 0; animation: pa-background-flow 1.4s linear infinite; }
 .pa-background-flow i:nth-child(2) { animation-delay: .35s; }
@@ -68,7 +68,7 @@
 @keyframes pa-background-flow-back { 0% { opacity: 0; transform: translateX(10px); } 30% { opacity: 1; } 100% { opacity: 0; transform: translateX(-10px); } }
 @media (prefers-reduced-motion: reduce) { .pa-background-flow i { animation: none; opacity: .55; } }
 .pa-exchange-card > .pa-background-handoff {
-  align-items:flex-start; margin:0; padding:0; border:0; border-radius:0; background:transparent;
+  margin:0; padding:0; border:0; border-radius:0; background:transparent;
 }
 .project-assistants .pa-background-handoff-done {
   display:flex; align-items:center; gap:7px; min-width:0; min-height:36px; padding:4px 10px;

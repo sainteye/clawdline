@@ -32,13 +32,108 @@ const check=async(label,action)=>{
   try{await action();console.log("PASS",label)}
   catch(error){failures.push(label);console.error("FAIL",label,error.message)}
 }
+
+async function checkActiveExchange({page,origin,language,width,scenario}) {
+  const zh=language==="zh-Hant",mobile=width===390
+  await page.clock.setFixedTime(new Date("2026-11-12T06:23:56Z"))
+  await page.goto(origin+"/?exchange-layout=review&lang="+language)
+  await page.addStyleTag({content:"#voice-owner { display:none }"})
+  await page.waitForFunction(()=>!!window.botsFixture)
+  await page.evaluate(()=>window.botsFixture.open())
+  await page.locator('.pa-bot-row[data-bot-key=\'["studio","bot-2"]\']').click()
+  const scroller=page.locator(".pa-chat > .pa-chat-scroll")
+  const footer=page.locator(".pa-chat > .pa-chat-footer")
+  const jump=page.locator(".pa-chat .tx-jump-go:visible")
+  const outgoing=page.locator('[data-message-id="exchange-layout-outgoing"] .pa-exchange-entry')
+  const handoff=page.locator('[data-message-id="exchange-layout-incoming"] .pa-background-handoff')
+  const stop=handoff.locator(".pa-background-stop")
+  const timer=handoff.locator("time")
+  const working=scroller.locator(".pa-working")
+  const completed=scroller.locator("p.pa-turn").filter({hasText:zh?/^已完成$/:/^Completed$/})
+  const screenshot=async name=>{
+    if(artifacts&&zh)await page.screenshot({path:path.join(artifacts,`review-${phase}-${width}-${name}.png`)})
+  }
+  await working.waitFor()
+  await handoff.waitFor()
+  await page.waitForFunction(()=>{
+    const el=document.querySelector(".pa-chat > .pa-chat-scroll")
+    return el.scrollHeight-el.clientHeight-el.scrollTop<=1
+  })
+  await screenshot("handoff")
+  await check(`${scenario} a running turn shows its own progress without a bare previous completion`,async()=>{
+    assert.equal(await completed.count(),0)
+    assert.equal(await working.count(),1)
+    assert.match(await outgoing.innerText(),zh?/已傳訊息給\s+Orbit/:/Messaged\s+Orbit/)
+    assert.equal(await scroller.locator('[data-message-id="compacted-exchange-layout-compact"]').count(),1)
+  })
+  await check(`${scenario} the stop target has space after the elapsed time`,async()=>{
+    assert.equal(await timer.innerText(),"3:56")
+    const [timeBox,stopBox]=await Promise.all([timer.boundingBox(),stop.boundingBox()])
+    const gap=stopBox.x-timeBox.x-timeBox.width
+    assert.ok(gap>=8,`elapsed time to stop target: ${gap}px`)
+    assert.ok(stopBox.width>=(mobile?44:38)&&stopBox.height>=(mobile?44:38),JSON.stringify(stopBox))
+  })
+  const anchor=await completed.count()?completed:outgoing
+  await anchor.evaluate((el,inset)=>{
+    const scroll=el.closest(".pa-chat-scroll"),box=el.getBoundingClientRect()
+    scroll.scrollTop+=box.top+box.height/2-scroll.getBoundingClientRect().bottom+inset
+  },mobile?78:61)
+  await jump.waitFor()
+  await screenshot("jump")
+  await check(`${scenario} the jump occupies a row outside the transcript`,async()=>{
+    const [button,pane,composer]=await Promise.all([jump.boundingBox(),scroller.boundingBox(),footer.boundingBox()])
+    assert.ok(button.y>=pane.y+pane.height-1,JSON.stringify({button,pane}))
+    assert.ok(button.y+button.height<=composer.y+1,JSON.stringify({button,composer}))
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true)
+  })
+  await check(`${scenario} the keyboard reaches the jump and returns to the transcript`,async()=>{
+    await footer.locator("textarea").focus()
+    for(let remaining=12;remaining>0&&!(await jump.evaluate(el=>el===document.activeElement));remaining--){
+      await page.keyboard.press("Shift+Tab")
+    }
+    assert.equal(await jump.evaluate(el=>el===document.activeElement&&el.matches(":focus-visible")),true)
+    await page.keyboard.press("Enter")
+    await jump.waitFor({state:"hidden"})
+    assert.deepEqual(await scroller.evaluate(el=>({
+      atEnd:el.scrollHeight-el.clientHeight-el.scrollTop<=1,focused:el===document.activeElement,
+    })),{atEnd:true,focused:true})
+  })
+  await check(`${scenario} the named stop target opens an escapable confirmation`,async()=>{
+    assert.ok(await stop.getAttribute("aria-label"))
+    await stop.press("Enter")
+    const dialog=handoff.getByRole("dialog")
+    await dialog.waitFor()
+    await page.keyboard.press("Escape")
+    await dialog.waitFor({state:"hidden"})
+    assert.equal(await stop.evaluate(el=>el===document.activeElement),true)
+  })
+  await check(`${scenario} a refused stop leaves the live card and re-enables its stop button`,async()=>{
+    await page.evaluate(()=>window.botsFixture.a.holdStop())
+    await stop.click()
+    await handoff.getByRole("dialog").locator(".pa-danger").click()
+    const pending=handoff.getByRole("status")
+    try{
+      await pending.waitFor()
+      assert.equal(await stop.isDisabled(),true)
+      const [statusBox,stopBox]=await Promise.all([pending.boundingBox(),stop.boundingBox()])
+      assert.ok(statusBox.y>=stopBox.y+stopBox.height,JSON.stringify({statusBox,stopBox}))
+    }finally{
+      await page.evaluate(()=>window.botsFixture.a.releaseStop("failed"))
+    }
+    await pending.waitFor({state:"hidden"})
+    await page.locator(".pa-chat-work > p[role=status]").waitFor()
+    assert.equal(await stop.isEnabled(),true)
+    await screenshot("stop-refused")
+  })
+}
+
 let browser
 try{
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROME,args:["--disable-features=OmniboxEverywhere"]})
-  for(const [width,height,language] of [[390,844,"zh-Hant"],[1280,800,"zh-Hant"],[390,844,"en"]]){
+  for(const [width,height,language] of [[390,844,"zh-Hant"],[1280,800,"zh-Hant"],[390,844,"en"],[1280,800,"en"]]){
     const mobile=width===390,zh=language==="zh-Hant",scenario=`${width}×${height} ${language}`
     const context=await browser.newContext({viewport:{width,height},isMobile:mobile,hasTouch:mobile,
-      deviceScaleFactor:1,reducedMotion:"reduce",locale:zh?"zh-TW":"en-US",timezoneId:"Asia/Taipei"})
+      deviceScaleFactor:1,reducedMotion:"reduce",colorScheme:zh?"dark":"light",locale:zh?"zh-TW":"en-US",timezoneId:"Asia/Taipei"})
     try{
       const page=await context.newPage()
       page.setDefaultTimeout(5000)
@@ -167,6 +262,7 @@ try{
         await reply.click()
         await page.locator('.pa-thread-inspector [data-message-id="exchange-layout-second-reply"]').waitFor()
       })
+      if(phase!=="first-version")await checkActiveExchange({page,origin,language,width,scenario})
       assert.deepEqual(errors,[])
     }finally{await context.close()}
   }
