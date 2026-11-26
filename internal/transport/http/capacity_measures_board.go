@@ -44,6 +44,9 @@ func (s *Server) boardCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.RunCreatedItems: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-run guard, counted inside each create; no retained buffer"}
 		},
+		capacity.RunDecisionAnswerAge: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request age check of the answer a Bot item cites; no retained buffer"}
+		},
 		capacity.RunClaimedItems: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-run guard, counted inside each claim; no retained buffer"}
 		},
