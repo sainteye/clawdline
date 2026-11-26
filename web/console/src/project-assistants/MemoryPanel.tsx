@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react"
+import { useEffect, useId, useRef, useState, type ReactNode, type SyntheticEvent } from "react"
 import type * as W from "@clawdline/contract"
 import { errorCode } from "./client"
 import type { MemoryReadDetail, ProjectMemoryPage } from "./client"
@@ -194,7 +194,7 @@ function MemoryContent({value,embedded=false,working=false,pendingText,pendingSo
       <label>{w.memoryNote}<textarea value={text} disabled={!enabled||busy} onChange={event=>setText(event.target.value)}/></label>
       <button type="submit" disabled={!enabled||busy||!text.trim()}>{w.remember}</button>
     </form>
-    </details><details className="pa-memory-forget"><summary><span>{w.forget}</span><ChevronIcon className="pa-settings-chevron"/></summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
+    </details><details className="pa-memory-forget" onToggle={revealForgetConfirm}><summary><span>{w.forget}</span><ChevronIcon className="pa-settings-chevron"/></summary><fieldset disabled={!enabled||busy}><legend>{w.savedMemory}</legend>
       <ForgetSources entries={entries} selected={selected} onSelect={setSelected} disabled={!enabled||busy||!sourceIDs.length} confirm={ask("list")} w={w}
         onForget={()=>forget(sourceIDs,()=>setSelected([]),"list")}/>
     </fieldset></details>
@@ -205,6 +205,15 @@ function MemoryContent({value,embedded=false,working=false,pendingText,pendingSo
 }
 
 type ForgetFrom="detail"|"list"
+
+/** An opened forget section can start near the panel's bottom edge, where its
+ *  sticky confirm cannot rise above the section itself; bring the section's
+ *  heading to the top of the panel so the list and its confirm both show. */
+function revealForgetConfirm(event:SyntheticEvent<HTMLDetailsElement>) {
+  const section=event.currentTarget,foot=section.querySelector(".pa-memory-forget-foot"),panel=section.closest(".pa-info-panel")
+  if(!section.open||!foot||!panel)return
+  if(foot.getBoundingClientRect().bottom>panel.getBoundingClientRect().bottom)section.querySelector("summary")?.scrollIntoView({block:"start"})
+}
 
 /** Forgetting starts a fresh conversation. While the Bot works it first asks,
  *  where it was asked, whether to wait or forget now. */
