@@ -395,6 +395,20 @@ source link and review receipt follow the changed catalog/resolution code in
 `work_v2.go`. No instruction excerpt is added to the Console bundle.
 
 
+A Bot's answered question card may now authorize a Board item it creates, and
+the Board item projection in `work_v2.go` names that card in `created_via`.
+Review of the Board entry in English and Taiwan Traditional Chinese found no
+change to assignment text, language, injection triggers or reminder delivery;
+those explanations remain accurate. Only the Board source line and review
+receipt follow the changed projection. No instruction excerpt is added to the
+Console bundle.
+
+The same change adds `BotDecisionItems`, a settings-file read, to
+`nextconfig.go`. It adds no settings-window row and changes no browser-mode or
+instruction-injection setting; both language explanations of the browser entry
+remain accurate. Only that entry's source line and receipt move.
+
+
 Doctor adds a fixed local CLI version probe and a sanitized support report read.
 It does not prepare provider context, run a model prompt or change instruction
 injection. The new guide paragraph documents that explicit diagnostic read only.

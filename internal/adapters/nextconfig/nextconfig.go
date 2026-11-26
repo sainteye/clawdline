@@ -76,6 +76,14 @@ func (v Values) WorkGates() WorkGates {
 	return out
 }
 
+// BotDecisionItems lets a Bot create a Board item on the person's answer to
+// its own question card (docs/work-system-v2.md §7.1). It changes who may
+// create items, so it is off unless the person turned it on.
+func (v Values) BotDecisionItems() bool {
+	on, set := v.Bool("bot_decision_items")
+	return set && on
+}
+
 // SessionAutoDiscovery includes externally opened Sessions unless explicitly disabled.
 func (v Values) SessionAutoDiscovery() bool {
 	on, set := v.Bool("session_auto_discovery")
