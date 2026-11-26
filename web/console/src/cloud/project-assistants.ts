@@ -84,7 +84,8 @@ const PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL = 113
 const PROJECT_ASSISTANTS_REPLY_INPUT_API_LEVEL = 121
 const PROJECT_ASSISTANTS_PROGRESS_API_LEVEL = 118
 const PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL = 117
-type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view"
+const LOCAL_BOT_READ_TIMEOUT_MS = 15_000
+type AssistantRequestMode = "standard" | "plain-send" | "cloud-roster" | "cloud-view" | "local-view"
 export type AssistantFetch = (input: string, init?: RequestInit, observation?: BotReadObservation) => Promise<Response>
 export interface AssistantWorkIntent {token:string;machineID:string;item:WorkV2Item;current:()=>boolean}
 export interface AssistantGrant {
@@ -269,6 +270,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
     try { this.check(signal,write,content,minimum,mode); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
     const control = new AbortController(), abort = () => control.abort()
     signal.addEventListener("abort",abort,{once:true}); this.lifetime.signal.addEventListener("abort",abort,{once:true})
+    const expired = mode === "local-view" ? new DOMException("Bot read timed out", "TimeoutError") : undefined
+    const deadline = expired ? setTimeout(() => control.abort(expired), LOCAL_BOT_READ_TIMEOUT_MS) : undefined
     let answered = false
     try {
       const response = await this.transport(path,{method,signal:control.signal,cache:"no-store",
@@ -276,12 +279,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
       this.recheck(signal,write,content,minimum,response,mode)
       const answer: unknown = await response.json()
       this.recheck(signal,write,content,minimum,answer,mode)
+      if (expired && control.signal.reason === expired) throw expired
       answered = true
       if (sourceFailure(answer)) throw answer
       if (!response.ok) throw (write && refusedBeforeRunning(answer)) || new AssistantTransportFailure(response.status === 501 ? "pa_unsupported" : write ? "pa_outcome_unknown" : "pa_offline",answer)
       return answer as T
     } catch (error) {
       if (answered || error instanceof AssistantTransportFailure) throw error
+      if (expired && control.signal.reason === expired) {
+        this.recheck(signal,write,content,minimum,error,mode)
+        throw new AssistantTransportFailure("pa_offline",error,"read_deadline")
+      }
       // A transport that refused before sending says so; nothing crossed.
       if (provablyNotSent(error)) {
         try { this.check(signal,write,content,minimum,mode) } catch (current) { throw notSent(current) }
@@ -293,7 +301,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
       if (refused) throw refused
       const unsupportedRead = (mode === "cloud-roster" || mode === "cloud-view") && (error as {code?: unknown} | null)?.code === "unknown_command"
       throw new AssistantTransportFailure(write ? "pa_outcome_unknown" : unsupportedRead ? "pa_unsupported" : "pa_offline",error)
-    } finally { signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
+    } finally { clearTimeout(deadline); signal.removeEventListener("abort",abort); this.lifetime.signal.removeEventListener("abort",abort) }
   }
   /**
    * After a write reached the transport, a changed grant or an abort cannot
@@ -521,7 +529,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
   async view(r: W.ProjectAssistantReadViewRequest,s: AbortSignal,observation?: BotReadObservation) {
     this.key(r.key);readViewRequest(r)
     const level=r.mode==="progress"?PROJECT_ASSISTANTS_PROGRESS_API_LEVEL:r.defer_trace_count?PROJECT_ASSISTANTS_DEFER_TRACE_COUNT_API_LEVEL:r.team_cards?PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL:PROJECT_ASSISTANTS_VIEW_API_LEVEL
-    const mode = this.grant.accountKey === "local" ? "standard" : "cloud-view"
+    const mode = this.grant.accountKey === "local" ? r.mode === "snapshot" ? "local-view" : "standard" : "cloud-view"
     const answer=await this.request<W.ProjectAssistantReadViewResponse>(endpoint(r.key,"/view")+query({
       machine_id:this.machineID,conversation_id:r.conversation_id,mode:r.mode,source_epoch:r.source_epoch,cursor:r.cursor,after_seq:r.after_seq,page_size:r.page_size,
       ...(r.team_cards?{team_cards:"true"}:{}),...(r.defer_trace_count?{defer_trace_count:"true"}:{})
@@ -670,7 +678,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canMemorySettings(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL);return true}catch{return false}}
   canProjectMemoryPages(){return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL}
   async memoryView(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal,detail?:MemoryReadDetail,page?:ProjectMemoryPage){
-    this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail,...page}),signal,undefined,"GET",true,page?PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL)
+    const mode = this.grant.accountKey === "local" ? "local-view" : "standard"
+    this.key(key);const answer=await this.request<W.ProjectAssistantMemoryViewResponse>(endpoint(key,"/memory-view")+query({machine_id:this.machineID,conversation_id:conversation,source_epoch:"",layer:"",entry_id:"",revision:"",...detail,...page}),signal,undefined,"GET",true,page?PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL:PROJECT_ASSISTANTS_MEMORY_SETTINGS_API_LEVEL,mode)
     const v=answer.view;if(v.bot.key.machine_id!==key.machine_id||v.bot.key.bot_id!==key.bot_id||v.bot.conversation_id!==conversation||v.conversation_id!==conversation||!answer.source_epoch||detail&&(answer.source_epoch!==detail.source_epoch||detail.entry_id&&(answer.detail?.id!==detail.entry_id||answer.detail?.layer!==detail.layer||answer.detail?.revision!==detail.revision)))throw failure("pa_scope_denied")
     if(page&&page.page>0&&!detail?.entry_id){
       const layer=v.layers?.[0]

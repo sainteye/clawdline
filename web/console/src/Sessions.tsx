@@ -431,7 +431,7 @@ export function SessionsPage({
           <NotifyFooter /></>}
         </section>
 
-        <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} tasks={tasks} messageSenders={messageSenders}
+        <Detail key={fleetDetailKey} row={fleetDetailPending ? null : open} active={onScreen && !terminalMode && (view === "detail" || paneOpen)} tasks={tasks} messageSenders={messageSenders}
           onOpenMessageSender={!fleetList || (readerMachine && onOpenFleetSession) ? openMessageSender : undefined}
           messageSenderNeedsGeneration={!!fleetList} onBack={onBack} onDid={onDid}
           scanSources={scanSources}

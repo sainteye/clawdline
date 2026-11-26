@@ -1,6 +1,6 @@
 import type { Screen, ScanSource, SessionRow } from "@clawdline/contract"
 import { useEffect, useRef, useState } from "react"
-import { client, followsRelay } from "../client.js"
+import { watchLocalScreen } from "../client.js"
 import * as L from "../legacy/bridge.js"
 import { nextWord } from "../next-strings.js"
 import { readFailure, type ReadState } from "../read-state.js"
@@ -34,14 +34,8 @@ import {
  * repository already had. There is no Refresh button: the panel keeps its own
  * lease, and on the backend that has to be asked it says how often it may.
  *
- * **Its own EventSource, and that is the one deliberate difference from the
- * original.** There the `screen` frame arrives on the page's single stream and
- * is handed to `Terminal.observe`. Here the console's stream belongs to the
- * fleet store in `@clawdline/core`, which listens for `sessions` alone, so this
- * opens a second connection for as long as the panel is open and closes it with
- * the panel. It costs one of the browser's six connections to this host while
- * somebody is watching a terminal, which is the cheapest way to keep the `即時`
- * badge true without changing a package this task does not own.
+ * Screen revisions ride the tab's shared local event stream. A hidden
+ * Session detail releases its subscription and renews the lease when shown.
  *
  * **Over Clawdline Cloud there is no such stream, and none is opened.** This
  * origin's `/v1/events` is the static host's, and the relay carries named
@@ -54,11 +48,13 @@ import {
 export function ScreenPanel({
   row,
   open,
+  active,
   onClose,
   scanSources,
 }: {
   row: SessionRow | null
   open: boolean
+  active: boolean
   onClose: (restore: boolean) => void
   scanSources?: readonly ScanSource[]
 }) {
@@ -122,7 +118,7 @@ export function ScreenPanel({
    * `pipe-pane` on that ask, which is what a lease is for.
    */
   useEffect(() => {
-    if (!open || !id) return
+    if (!open || !active || !id) return
     const mineGeneration = generation.current
     let alive = true
     const load = () => {
@@ -155,21 +151,15 @@ export function ScreenPanel({
     // this is a comparison and a fetch, and a revision this panel already holds
     // is dropped without asking the daemon anything. That is where the
     // byte-identical fifth of captures would otherwise have gone.
-    let stream: EventSource | null = null
-    if (!followsRelay() && typeof EventSource === "function") {
-      stream = new EventSource(client.url("/v1/events"))
-      stream.addEventListener("screen", (ev) => {
-        let moved: { id?: string; revision?: string }
-        try {
-          moved = JSON.parse((ev as MessageEvent).data)
-        } catch {
-          return
-        }
-        if (!moved.id || !moved.revision || moved.id !== id) return
-        if (held.current && held.current.revision === moved.revision) return
-        load()
-      })
-    }
+    let opened = false
+    const stream = watchLocalScreen(data => {
+      let moved: { id?: string; revision?: string }
+      try { moved = JSON.parse(data) } catch { return }
+      if (moved.id === id && moved.revision && held.current?.revision !== moved.revision) load()
+    }, () => {
+      if (opened) load()
+      opened = true
+    })
 
     return () => {
       alive = false
@@ -177,7 +167,7 @@ export function ScreenPanel({
       keepalive.stop()
       stream?.close()
     }
-  }, [open, id])
+  }, [open, active, id])
 
   /**
    * The other clock, and it exists only on a backend that has no change signal.
@@ -186,7 +176,7 @@ export function ScreenPanel({
    * number is the machine's and not this page's.
    */
   useEffect(() => {
-    if (!open || !id || channel !== "on-demand") {
+    if (!open || !active || !id || channel !== "on-demand") {
       polling.current = false
       return
     }
@@ -215,7 +205,7 @@ export function ScreenPanel({
       polling.current = false
       poll.stop()
     }
-  }, [open, id, channel, askAgain])
+  }, [open, active, id, channel, askAgain])
 
   const body = () => {
     if (reading.phase === "refused" || reading.phase === "unanswered") {

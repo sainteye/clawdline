@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14727,
+  "englishContentKeys": 14734,
   "riskKeys": 6239,
-  "nonRiskCount": 8488,
+  "nonRiskCount": 8495,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 795,
+      "count": 801,
       "sources": [
         null
       ],
@@ -1053,6 +1053,12 @@
         "capacityRow.console.health_ui_trend_lanes.full",
         "capacityRow.console.health_ui_trend_lanes.what",
         "capacityRow.console.health_ui_trend_signals.what",
+        "capacityRow.console.local_bot_read_timeout.full",
+        "capacityRow.console.local_bot_read_timeout.what",
+        "capacityRow.console.local_fleet_stream_frames.full",
+        "capacityRow.console.local_fleet_stream_frames.what",
+        "capacityRow.console.local_fleet_stream_lease.full",
+        "capacityRow.console.local_fleet_stream_lease.what",
         "capacityRow.console.local_performance_body_bytes.what",
         "capacityRow.console.local_performance_points.what",
         "capacityRow.console.local_performance_refresh_ms.what",
@@ -6356,7 +6362,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 746,
+      "count": 747,
       "sources": [
         null
       ],
@@ -6758,6 +6764,7 @@
         "projectAssistants.read",
         "projectAssistants.readMarked",
         "projectAssistants.readOnlySource",
+        "projectAssistants.readTimedOut",
         "projectAssistants.refresh",
         "projectAssistants.reject_once",
         "projectAssistants.reloadProjects",

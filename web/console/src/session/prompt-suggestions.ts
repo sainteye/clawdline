@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from "react"
 import type { PromptSuggestion, SessionRow } from "@clawdline/contract"
-import { client, followsRelay } from "../client.js"
+import { watchLocalScreen } from "../client.js"
 import { readScreen, visibleInterval } from "../legacy/screen-bridge.js"
 import { composerDraftKey } from "./composer-drafts.js"
 
 import { PromptSuggestionState } from "./prompt-suggestion-state.js"
 
 /** Watching renews the existing bounded screen lease; idle panes are signalled. */
-export function usePromptSuggestion(row: SessionRow | null, enabled: boolean) {
+export function usePromptSuggestion(row: SessionRow | null, enabled: boolean, active: boolean) {
   const eligible = enabled && row?.assistant === "claude" && row.backend === "tmux" && !!row.sessionId && row.prompt_suggestion?.source === "claude-terminal"
   const key = eligible ? `${composerDraftKey(row)}:${row.execution_generation ?? ""}` : ""
   const [held, setHeld] = useState<{ key: string; value: PromptSuggestion | null } | null>(null)
@@ -28,8 +28,10 @@ export function usePromptSuggestion(row: SessionRow | null, enabled: boolean) {
 
   useEffect(() => {
     if (!key || !row?.sessionId) { owner.current = null; setHeld(null); return }
-    const state = new PromptSuggestionState(row.sessionId)
+    if (!active) return
+    const state = owner.current?.key === key ? owner.current.state : new PromptSuggestionState(row.sessionId)
     owner.current = { key, state }
+    publish()
     let alive = true
     let asking = false
     let wanted = false
@@ -53,18 +55,12 @@ export function usePromptSuggestion(row: SessionRow | null, enabled: boolean) {
     load()
     const lease = visibleInterval(load, 15000)
     lease.start()
-    let stream: EventSource | null = null
-    if (!followsRelay() && typeof EventSource === "function") {
-      stream = new EventSource(client.url("/v1/events"))
-      stream.addEventListener("screen", event => {
-        let moved: { id?: string }
-        try { moved = JSON.parse((event as MessageEvent).data) } catch { return }
-        if (moved.id === row.id) load()
-      })
-      stream.onerror = () => { state.pause(); publish() }
-      stream.onopen = load
-    }
     const unavailable = () => { state.pause(); publish() }
+    const stream = watchLocalScreen(data => {
+      let moved: { id?: string }
+      try { moved = JSON.parse(data) } catch { return }
+      if (moved.id === row.id) load()
+    }, load, unavailable)
     const visible = () => {
       if (document.visibilityState === "hidden") unavailable()
       else load()
@@ -74,26 +70,27 @@ export function usePromptSuggestion(row: SessionRow | null, enabled: boolean) {
     window.addEventListener("online", load)
     return () => {
       alive = false
+      state.pause()
       lease.stop(); stream?.close()
       document.removeEventListener("visibilitychange", visible)
       window.removeEventListener("offline", unavailable)
       window.removeEventListener("online", load)
     }
-  }, [key])
+  }, [key, active])
 
   useEffect(() => {
     const current = owner.current
-    if (!current || current.key !== key || document.visibilityState === "hidden" || navigator.onLine === false) return
+    if (!active || !current || current.key !== key || document.visibilityState === "hidden" || navigator.onLine === false) return
     current.state.observe(row?.prompt_suggestion)
     publish()
-  }, [key, row?.prompt_suggestion])
+  }, [key, active, row?.prompt_suggestion])
 
   // A newly captured idle native prompt may arrive before the list observes
   // the end of its turn. It must postdate a working row to outrank that row.
   const candidate = held?.key === key ? held.value : null
   const stateAdmits = row?.state === "idle" || row?.state === "working" && !!candidate &&
     candidate.observed_at > Number(row.source?.observed_at ?? Infinity) * 1000
-  const available = eligible && stateAdmits && !row?.menu && document.visibilityState !== "hidden" && navigator.onLine !== false &&
+  const available = active && eligible && stateAdmits && !row?.menu && document.visibilityState !== "hidden" && navigator.onLine !== false &&
     row?.source?.freshness !== "unverified" && row?.source?.freshness !== "missing" ? candidate : null
   return { candidate: available, dismiss, take }
 }

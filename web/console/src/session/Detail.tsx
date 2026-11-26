@@ -112,6 +112,7 @@ function suggestionsTitle(): string {
  */
 export function Detail({
   row,
+  active,
   readerMachine,
   tasks: _tasks,
   messageSenders,
@@ -129,6 +130,7 @@ export function Detail({
   viewReturn,
 }: {
   row: SessionRow | null
+  active: boolean
   readerMachine?: string | null
   tasks: TaskRow[] | null
   messageSenders: ReadonlyMap<string, SessionRow>
@@ -477,6 +479,7 @@ export function Detail({
       <ScreenPanel
         row={row}
         open={screenOpen}
+        active={active}
         scanSources={scanSources}
         onClose={(restore) => {
           setScreenOpen(false)
@@ -554,7 +557,7 @@ export function Detail({
           own button is the way on, not a field that cannot send. While the
           list is still on its way the pane is blank, the composer included,
           so the home screen does not arrive by taking a field away. */}
-      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home || (!row && listUnknown) ? null : <Composer key={composerDraftKey(row)} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={openNativeTerminal} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
+      {loading ? <div className="composer detail-loading-composer" aria-hidden="true"><div><span /><i /></div></div> : selectedAgent || home || (!row && listUnknown) ? null : <Composer key={composerDraftKey(row)} active={active} assistantReadiness={readiness.kind} assistantFacts={assistantFacts} assistantQueues={assistantQueues} row={row} onDid={onDid} onSent={onSent} onNativeTerminal={openNativeTerminal} onScreen={() => setScreenOpen(true)} suggestedDraft={suggestedDraft} toolDraft={toolDraft} toolIdentity={toolIdentity} />}
       {/* The loaded page keeps a status line under the composer, and on a phone that line holds
           the home-indicator inset. Reserve the same row while loading so the composer does not
           sit on the bottom edge and then jump up when the Session arrives. */}

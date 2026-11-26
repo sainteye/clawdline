@@ -96,6 +96,7 @@ import { resumeCommandQuery } from "./resume-command.js"
  */
 export function Composer({
   row,
+  active = true,
   onDid,
   onSent,
   onNativeTerminal,
@@ -114,6 +115,7 @@ export function Composer({
   /** The machine takes a message sent during an owned turn (`capabilities.queue`), as last read. */
   assistantQueues?: boolean
   row: SessionRow | null
+  active?: boolean
   onDid: () => void
   /** After a delivered send; nothing when left out (`Detail`'s `onSent`). */
   onSent?: () => void
@@ -244,7 +246,7 @@ export function Composer({
   const providerOn = assistantComposeAdmits(remote?.assistant ?? row?.assistant, remote?.assistantFacts ?? assistantFacts,
     remote ? remote.state : row?.state, remote ? !!remote.hasMenu : !!row?.menu, protocolOwned)
   const on = draftReady && write && (remote ? remote.canSend : !!row) && providerOn
-  const promptSuggestion = usePromptSuggestion(row, on && !remote)
+  const promptSuggestion = usePromptSuggestion(row, on && !remote, active)
   const composing = useRef(false)
   const modifiedSpace = useRef(false)
   const ghost = !composing.current && !text && !shotsBusy && voice === "off" && !sending && !skills.shown && !Shots.count()
