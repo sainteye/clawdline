@@ -15,7 +15,9 @@ func TestDispatchWorkModeChoosesChildOrRoot(t *testing.T) {
 		{`{"idempotency_key":"k","brief":"b","claims":["a.go"]}`, "", true},
 		{`{"idempotency_key":"k","brief":"b","claims":["a.go"],"mode":"child"}`, "", true},
 		{`{"idempotency_key":"k","brief":"b","claims":[],"mode":"root"}`, pa.DispatchModeRoot, true},
-		{`{"idempotency_key":"k","brief":"b","claims":[]}`, "", false},
+		// An empty write set is read-only work for a child (2418aece).
+		{`{"idempotency_key":"k","brief":"b","claims":[]}`, "", true},
+		{`{"idempotency_key":"k","brief":"b"}`, "", false},
 		{`{"idempotency_key":"k","brief":"b","claims":[],"mode":"root","continue_on_completion":true}`, "", false},
 		{`{"idempotency_key":"k","brief":"b","claims":["a.go"],"mode":"owner"}`, "", false},
 	} {
