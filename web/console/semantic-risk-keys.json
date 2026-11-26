@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14745,
+  "englishKeys": 14747,
   "counts": {
-    "negation": 3728,
-    "state": 2514,
+    "negation": 3729,
+    "state": 2515,
     "permission": 876,
     "deletion": 344,
     "uncertainty": 585
   },
-  "unionCount": 6248,
+  "unionCount": 6249,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -731,6 +731,7 @@
       "capacityRow.resources.scratch_seconds.full",
       "capacityRow.run.claimed_items.full",
       "capacityRow.run.created_items.full",
+      "capacityRow.run.decision_answer_age.full",
       "capacityRow.schedule.history_page_rows.full",
       "capacityRow.schedule.run_transcript_head.full",
       "capacityRow.schedule.run_transcripts_probed.full",
@@ -4444,6 +4445,7 @@
       "capacityRow.resources.scratch_total_bytes.full",
       "capacityRow.run.claimed_items.full",
       "capacityRow.run.created_items.full",
+      "capacityRow.run.decision_answer_age.full",
       "capacityRow.schedule.run_transcripts_probed.what",
       "capacityRow.session.close_scheduled.full",
       "capacityRow.session.close_scheduled.what",
@@ -9370,6 +9372,7 @@
     "capacityRow.resources.scratch_total_bytes.full",
     "capacityRow.run.claimed_items.full",
     "capacityRow.run.created_items.full",
+    "capacityRow.run.decision_answer_age.full",
     "capacityRow.schedule.history_page_rows.full",
     "capacityRow.schedule.run_transcript_head.full",
     "capacityRow.schedule.run_transcripts_probed.full",
