@@ -525,6 +525,10 @@ export interface CreatedVia {
   assigned?: boolean
   /** With `assigned`: the persona id the new Session was opened as; absent for none. */
   persona?: string
+  /** The Bot question card whose answer the item was created on, instead of a message's run. */
+  decision_id?: string
+  /** With `decision_id`: the Bot that asked the card. */
+  bot_id?: string
 }
 
 /** A Unix time as this browser's local HH:MM. */
@@ -564,7 +568,7 @@ export function claimedViaLine(via: CreatedVia | null | undefined, lang: Catalog
 export type WorkOrigin = "session" | "epic_owner" | "person"
 
 export function workOrigin(createdBy: string | undefined): WorkOrigin {
-  if (createdBy?.startsWith("user_via_session:")) return "session"
+  if (createdBy?.startsWith("user_via_session:") || createdBy?.startsWith("user_via_bot_decision:")) return "session"
   if (createdBy?.startsWith("epic_owner:")) return "epic_owner"
   return "person"
 }

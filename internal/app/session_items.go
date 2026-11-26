@@ -68,6 +68,11 @@ type NewSessionItemV2 struct {
 	// executable item's steps are seeded from its description's list, as a
 	// person's assignment would.
 	Steps []string
+	// Decision is the Bot question card whose answer, found by the daemon in
+	// BotID's chat, authorizes the item instead of a run. Run then carries
+	// the answer's time and words under the card's id.
+	Decision string
+	BotID    string
 }
 
 // CreateFromSession creates the item, and for an executable kind its steps and,
@@ -76,6 +81,10 @@ type NewSessionItemV2 struct {
 func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2, file WorkV2Filer) (WorkV2View, error) {
 	if err := work.RelayTo(n.Run, n.SessionID, time.Time{}); err != nil {
 		return WorkV2View{}, relayRefusal(err)
+	}
+	if n.Decision != "" && (n.AssignSelf || n.MachineTriage || n.Decision != n.Run.ID) {
+		return WorkV2View{}, workV2Error(http.StatusUnprocessableEntity, "invalid_assignment",
+			"An item a Bot creates on a question card's answer arrives unassigned; nothing was created.")
 	}
 	n.ProjectID, n.ProjectPath = strings.TrimSpace(n.ProjectID), strings.TrimSpace(n.ProjectPath)
 	n.Title, n.Description = strings.TrimSpace(n.Title), strings.TrimSpace(n.Description)
@@ -93,12 +102,16 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 		return WorkV2View{}, err
 	}
 	actor := n.Run.Actor()
+	if n.Decision != "" {
+		actor = work.ActorViaBotDecision + n.Decision
+	}
 	now := w.now()
 	i := work.ItemV2{ID: newWorkID(), ProjectID: n.ProjectID, ProjectPath: n.ProjectPath, Kind: n.Kind,
 		Title: n.Title, Description: n.Description, Phase: work.PhaseCreated,
 		DeploymentPolicy: n.DeploymentPolicy, CreatedBy: actor, CreatedAt: now, UpdatedAt: now,
 		Cycle: 1, Version: 1,
-		CreatedVia: &work.CreatedViaV2{Run: n.Run.ID, Session: n.SessionID, At: n.Run.At.Unix(), Excerpt: n.Run.Excerpt}}
+		CreatedVia: &work.CreatedViaV2{Run: n.Run.ID, Session: n.SessionID, At: n.Run.At.Unix(), Excerpt: n.Run.Excerpt,
+			Decision: n.Decision, Bot: n.BotID}}
 	work.SetAcceptance(&i, n.AcceptanceCriteria)
 	if err := work.ValidateNewV2(i); err != nil {
 		return WorkV2View{}, mapWorkV2Error(err)
@@ -133,7 +146,7 @@ func (w *WorkSystemV2) CreateFromSession(ctx context.Context, n NewSessionItemV2
 					"Ask the person to send another message if they want more.", runItemLimit))
 		}
 		if err := tx.CreateItem(i, actor, payload(map[string]any{"project_id": i.ProjectID, "kind": i.Kind,
-			"via_run": n.Run.ID, "session_id": n.SessionID})); err != nil {
+			"via_run": n.Run.ID, "via_decision": n.Decision, "session_id": n.SessionID})); err != nil {
 			return err
 		}
 		out = WorkV2View{Item: i, Assignments: []work.AssignmentV2{}, Documents: []work.DocumentV2{},

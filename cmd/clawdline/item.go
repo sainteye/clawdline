@@ -51,6 +51,9 @@ func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
 // itemFlags is what `item add` was told.
 type itemFlags struct {
 	project, kind, title, description, acceptance, deploy, run, reason string
+	// decision is the Bot's answered question card `item add` rests on
+	// instead of a run (add only).
+	decision string
 	// sourceTodo and sourceItem are the proposal's own source (propose only).
 	sourceTodo, sourceItem string
 	expectedVersion        int64
@@ -153,6 +156,7 @@ func itemCommand(args []string) {
 	stepsFile := fs.String("steps-file", "", cliCopy("item", "flag.steps_file", "a file holding the steps, one per non-empty line"))
 	deploy := fs.String("deploy", "", cliCopy("item", "flag.deploy", "required, not_required or agent_decides (default agent_decides)"))
 	run := fs.String("run", "", cliCopy("item", "flag.run", "the run of the person's message (default: this conversation's latest run)"))
+	decision := fs.String("decision", "", cliCopy("item", "flag.decision", "for add in a Bot chat: the id of your ask_person question card the person answered"))
 	sourceTodo := fs.String("source-todo", "", cliCopy("item", "flag.source_todo", "for propose: this Session's own to-do the proposal comes from"))
 	sourceItem := fs.String("source-item", "", cliCopy("item", "flag.source_item", "for propose: a Board item this Session owns that the proposal comes from"))
 	reason := fs.String("reason", "", cliCopy("item", "flag.reason", "why this Board item or step is no longer needed"))
@@ -202,6 +206,9 @@ func itemCommand(args []string) {
 			rest = positional
 		}
 		f = itemFlags{project: *project, kind: *kind, title: *title, deploy: *deploy, run: *run, steps: steps, assign: assign}
+		if op == "add" {
+			f.decision = *decision
+		}
 		if op == "propose" {
 			f.reason, f.sourceTodo, f.sourceItem = *reason, *sourceTodo, *sourceItem
 		}
@@ -381,6 +388,7 @@ func itemUsage() {
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_steps", "                          [--step <text>]… [--steps-file f] [--description-file f | stdin] [--acceptance-file f]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_assign", "                          [--assign-self | --assign-terminal <terminal id> | --assign-new [--assistant a] [--model m] [--persona id]]"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_options", "                          [--deploy policy] [--run id] [--conversation id] [--key k] [--port n]"))
+	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.add_decision", "                          [--decision <question card id>]   in a Bot chat, instead of --run and any --assign-*"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.claim", "       clawdline item claim [--kind feature|issue|epic|refactor] [--run id] [--conversation id] [--key k] [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.cancel", "       clawdline item cancel --reason <text> [--run id] [--expected-version n] [--conversation id] [--key k] [--port n] <item id>"))
 	fmt.Fprintln(os.Stderr, cliCopy("item", "usage.name", "       clawdline item name [--conversation id] [--port n] <item id> <Session task name>"))
@@ -633,11 +641,22 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 			fmt.Fprintf(stderr, cliCopy("item", "error.created_refusal", "clawdline %s: %s Nothing was created.\n"), name, why)
 			return 2
 		}
-		run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
-			cliCopy("item", "error.no_run_propose", "Nothing was created. Without a message sent through Clawdline, file a proposal with ")+
-				cliCopy("item", "error.no_run_propose_next", "`clawdline item propose` (same --kind, --title and description) and tell the person to accept it in the Board's Agent proposals."))
-		if code != 0 {
-			return code
+		via := map[string]string{}
+		if decision := strings.TrimSpace(f.decision); decision != "" {
+			if strings.TrimSpace(f.run) != "" || f.assign.choices() > 0 {
+				fmt.Fprintf(stderr, cliCopy("item", "error.decision_alone", "clawdline %s: --decision is the whole authority: it takes no --run and no --assign-*. Nothing was created.\n"), name)
+				return 2
+			}
+			via["decision"] = decision
+		} else {
+			run, code := wordRun(stdout, stderr, b, name, f.run, conversation,
+				cliCopy("item", "error.no_run_propose", "Nothing was created. Without a message sent through Clawdline, file a proposal with ")+
+					cliCopy("item", "error.no_run_propose_next", "`clawdline item propose` (same --kind, --title and description) and tell the person to accept it in the Board's Agent proposals.")+
+					cliCopy("item", "error.no_run_decision", " In a Bot chat, ask the person with ask_person and pass --decision <question card id> once they answer."))
+			if code != 0 {
+				return code
+			}
+			via["run"] = run
 		}
 		steps := make([]string, 0, len(f.steps))
 		for _, s := range f.steps {
@@ -645,7 +664,7 @@ func sessionItem(stdout, stderr io.Writer, b *broker, op string, f itemFlags, ar
 				steps = append(steps, s)
 			}
 		}
-		body = map[string]any{"session_id": conversation, "via": map[string]string{"run": run},
+		body = map[string]any{"session_id": conversation, "via": via,
 			"project_id": f.project, "kind": f.kind, "title": f.title, "description": f.description,
 			"acceptance_criteria": f.acceptance}
 		if f.deploy != "" {

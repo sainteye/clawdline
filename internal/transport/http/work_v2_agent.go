@@ -665,6 +665,9 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		SessionID string `json:"session_id"`
 		Via       struct {
 			Run string `json:"run"`
+			// Decision is a Bot's answered question card, the authority a
+			// Bot chat has instead of a run (decisionItemRun).
+			Decision string `json:"decision"`
 		} `json:"via"`
 		ProjectID          string                   `json:"project_id"`
 		Kind               string                   `json:"kind"`
@@ -684,6 +687,23 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refuse := s.relayRefuser(w, r, k)
+	if decision := strings.TrimSpace(body.Via.Decision); decision != "" {
+		if strings.TrimSpace(body.Via.Run) != "" {
+			refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "via_ambiguous",
+				Message: "Name either a run or a question card, not both; nothing was created."})
+			return
+		}
+		if body.Assign != nil {
+			refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "invalid_assignment",
+				Message: "An item a Bot creates on a question card's answer arrives unassigned, for Atlas or the person to assign; nothing was created."})
+			return
+		}
+		s.agentCreateDecisionItem(w, r, k, refuse, decision, body.SessionID, body.ProjectID, app.NewSessionItemV2{
+			Kind: work.Kind(body.Kind), Title: body.Title, Description: body.Description,
+			AcceptanceCriteria: body.AcceptanceCriteria, DeploymentPolicy: work.DeploymentPolicy(body.DeploymentPolicy),
+			Steps: body.Steps})
+		return
+	}
 	run, sess, err := s.relaySession(r.Context(), body.Via.Run, body.SessionID,
 		"A Session creates a Board item only on a person's message sent through Clawdline; name its run as "+
 			"{\"via\":{\"run\":\"…\"}}. Without one, file a proposal with `clawdline item propose` (POST /v1/work/v2/agent/proposals) for the person to accept.",

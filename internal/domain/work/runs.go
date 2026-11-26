@@ -49,6 +49,12 @@ const RelayWindow = 24 * time.Hour
 // ActorViaSession is the prefix of a relayed actor: `user_via_session:<run>`.
 const ActorViaSession = "user_via_session:"
 
+// ActorViaBotDecision is the prefix of an item a Bot created on the person's
+// answer to its ask_person question card: `user_via_bot_decision:<card>`.
+// The daemon found the card answered in that Bot's own chat; the model's
+// claim that the person agreed is never the authority.
+const ActorViaBotDecision = "user_via_bot_decision:"
+
 // Run is one message a person sent a session through this daemon.
 type Run struct {
 	ID string `json:"id"`
