@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -30,6 +31,7 @@ func decisionItemBody(t *testing.T, conversation string, via map[string]string, 
 // not admit writes nothing, and a Session's run path is untouched.
 func TestABotCreatesAnItemOnThePersonsAnswerToItsQuestionCard(t *testing.T) {
 	s, p, _ := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
 	answered := time.Now().Add(-time.Minute).Truncate(time.Second)
 	var asked []string
 	decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
@@ -55,6 +57,19 @@ func TestABotCreatesAnItemOnThePersonsAnswerToItsQuestionCard(t *testing.T) {
 		rec := httptest.NewRecorder()
 		s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items?status=open", nil))
 		return strings.Count(rec.Body.String(), `"title":"Shared event stream follow-ups"`)
+	}
+
+	// Off, the default: the card is ignored exactly as before the setting
+	// existed, so even an answered card creates nothing.
+	if rec := post(decisionItemBody(t, "bot-native", map[string]string{"decision": "card-answered"}, nil), "off"); rec.Code != http.StatusForbidden ||
+		!strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("an answered card with the setting off: %d %s", rec.Code, rec.Body)
+	}
+	if len(asked) != 0 || openItems() != 0 {
+		t.Fatalf("the setting off read cards %v or created items", asked)
+	}
+	if err := os.WriteFile(s.settingsFile().Path(), []byte(`{"bot_decision_items":true}`), 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	// (b) Without an answered card of this Bot chat, nothing is created.

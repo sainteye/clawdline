@@ -687,7 +687,7 @@ func (s *Server) agentCreateItem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	refuse := s.relayRefuser(w, r, k)
-	if strings.TrimSpace(body.Via.Decision) != "" {
+	if strings.TrimSpace(body.Via.Decision) != "" && s.botDecisionItems() {
 		s.agentCreateDecisionItem(w, r, k, refuse, decisionItemRequest{decision: body.Via.Decision, run: body.Via.Run,
 			assigned: body.Assign != nil, conversation: body.SessionID, project: body.ProjectID}, app.NewSessionItemV2{
 			Kind: work.Kind(body.Kind), Title: body.Title, Description: body.Description,

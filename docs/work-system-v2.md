@@ -47,9 +47,12 @@ and projects an assigned item into its owner's Session to-do panel.
    *(Amended 2026-09-27:)* the owner Session of an Epic past its plan gate may also create Feature
    and Issue items under that Epic (§6.5): the person's assignment of the Epic is the authority, so
    no run is needed, and nothing else may be created that way.
-   *(Amended 2026-11-26:)* a Bot chat has no run, so it creates an item on the person's answer to
-   its own `ask_person` question card instead (§7.1, "A Bot's question card"). The daemon finds and
-   checks the card; the model's claim that the person agreed authorizes nothing.
+   *(Exception, 2026-11-26, only when the person has turned on the `bot_decision_items` setting;
+   off by default, and off this rule reads exactly as above:)* a Bot chat, which has no run, may
+   create an item on the person's answer to its own `ask_person` question card (§7.1, "A Bot's
+   question card"). The daemon finds and checks the card; the model's claim that the person agreed
+   authorizes nothing. Whether this exception ships enabled, and how the person turns it on, is
+   still the owner's decision.
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
    item, including actions a Session relays from that person's message.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 with
@@ -709,7 +712,10 @@ later assignment seeds nothing when steps exist, so no step is written twice. An
 Plan never seeds from its description, so a converted Plan carries only steps its owner adds. A Plan is created
 unassigned in Planning, as a person's would be.
 
-**A Bot's question card** *(added 2026-11-26)*. A Bot chat is not a Session: nobody types into it
+**A Bot's question card** *(added 2026-11-26; only while `bot_decision_items` is `true` in the
+settings file — absent, false or unreadable, the route ignores `via.decision` exactly as before,
+and a body with no run is refused `run_unknown`; no settings route writes the key yet)*. A Bot chat
+is not a Session: nobody types into it
 through the send route, so it never has a run, and `clawdline item add` from a Bot answered
 `no_run` even when the person had just agreed on the Bot's decision card. A team charter that has a
 Bot open Board items for another Bot could not work. The Bot names its card instead of a run:

@@ -25,7 +25,8 @@ import (
 // the last day, and session_id is the current native session of the Bot chat
 // that asked it (pa.CheckDecisionAuthority). The item arrives unassigned in
 // the Bot's Project and records the card as its source; one card backs at
-// most as many items as one message does.
+// most as many items as one message does. All of this applies only while the
+// person's bot_decision_items setting is on (botDecisionItems).
 
 // decisionAuthorityByServer holds a test's stand-in for the Bot host lookup.
 var decisionAuthorityByServer sync.Map // *Server -> decisionAuthorityFunc
@@ -57,6 +58,14 @@ var decisionRefusals = map[string]string{
 	pa.DecisionOtherConversation: "That question card belongs to another Bot chat, or to an earlier session of this one; nothing was created. " +
 		"Only the Bot chat that asked it, in its current session, creates items on its answer.",
 	pa.DecisionExpired: "The person answered that question card more than a day ago; nothing was created. Ask again.",
+}
+
+// botDecisionItems is the person's bot_decision_items setting. Off, or
+// unreadable, the create route ignores via.decision exactly as it did before
+// the setting existed, and a body without a run is refused as run_unknown.
+func (s *Server) botDecisionItems() bool {
+	values, err := s.settingsFile().Read()
+	return err == nil && values.BotDecisionItems()
 }
 
 // decisionItemRequest is what of a create body the card path reads besides
