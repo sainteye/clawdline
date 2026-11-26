@@ -20,6 +20,9 @@ const server=createServer((req,res)=>{
   if(req.method==="GET"&&url.pathname==="/v1/settings/copilot"){
     res.setHeader("Content-Type","application/json");res.end('{"key_set":false}');return
   }
+  if(req.method==="POST"&&url.pathname==="/v1/project-assistants/bot-0/viewing"){
+    req.resume();res.writeHead(204);res.end();return
+  }
   if(url.pathname.startsWith("/v1/")){forbidden.push(url.pathname);res.writeHead(500);res.end("No live API");return}
   if(pictures.has(url.pathname)){res.setHeader("Content-Type","image/webp");res.end(pictures.get(url.pathname));return}
   if(files.has(url.pathname)){res.setHeader("Content-Type",url.pathname.endsWith(".css")?"text/css":"text/javascript");res.end(files.get(url.pathname));return}
