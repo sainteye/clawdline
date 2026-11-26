@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14734,
-  "riskKeys": 6239,
-  "nonRiskCount": 8495,
+  "englishContentKeys": 14745,
+  "riskKeys": 6247,
+  "nonRiskCount": 8498,
   "groups": [
     {
       "name": "acp / other",
@@ -8420,7 +8420,7 @@
     },
     {
       "name": "teamCharter / other",
-      "count": 62,
+      "count": 65,
       "sources": [
         null
       ],
@@ -8449,6 +8449,7 @@
         "teamCharter.intro",
         "teamCharter.lead",
         "teamCharter.listSeparator",
+        "teamCharter.personalWorkspaceOf",
         "teamCharter.proposalFrom",
         "teamCharter.proposalStale",
         "teamCharter.reasonCreated",
@@ -8485,8 +8486,10 @@
         "teamCharter.templateStarter4",
         "teamCharter.templateStarter5",
         "teamCharter.title",
+        "teamCharter.titleText",
         "teamCharter.tooLarge",
-        "teamCharter.version"
+        "teamCharter.version",
+        "teamCharter.waiting"
       ]
     },
     {

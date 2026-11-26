@@ -220,3 +220,55 @@ func TestCharterChangeRequestLetsTheLeadPropose(t *testing.T) {
 	}
 	other.reply <- app.PromptResult{FinalText: "ok"}
 }
+
+// Removing a charter reaches a resumed session once, as the "no charter"
+// update; its later prompts carry nothing, and a fresh session opens without
+// one. A charter made afterwards is numbered past the removal, so the same
+// session hears it even though it last heard a charter of a lower number.
+func TestRemovedCharterIsAnnouncedOnceAndNotReopened(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "bot")
+	saveFixtureCharter(t, f, b.Project, 0, "Rule one: ask before deploying.")
+	turn := func(text string) (app.PromptRequest, *fixtureSession) {
+		t.Helper()
+		if _, err := f.send(t, b, text); err != nil {
+			t.Fatal(err)
+		}
+		prompt := fixtureReceive(t, f.p.sent)
+		session := fixtureReceive(t, f.p.sessions)
+		return prompt, session
+	}
+	finish := func(s *fixtureSession) {
+		t.Helper()
+		s.reply <- app.PromptResult{FinalText: "Noted"}
+		fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+	}
+	_, first := turn("one")
+	finish(first)
+	removed, err := f.h.store.RemoveCharter(ctx, b.Project.MachineID, b.Project.ProjectID, 1, "remove-1", time.Now())
+	if err != nil || removed.Version != 2 || removed.Author != pa.CharterByRemoval {
+		t.Fatalf("removed: %+v %v", removed, err)
+	}
+	prompt, second := turn("two")
+	if !second.q.Resume || !strings.HasPrefix(prompt.Text, `<team_charter_update version="0">`) || strings.Contains(prompt.Text, "Rule one") {
+		t.Fatalf("the resumed session hears once that there is no charter: resume=%v %q", second.q.Resume, prompt.Text)
+	}
+	finish(second)
+	prompt, third := turn("three")
+	if strings.Contains(prompt.Text, "team_charter") {
+		t.Fatalf("the removal is told only once: %q", prompt.Text)
+	}
+	finish(third)
+	if v, text, err := (hostCharters{store: f.h.store}).CurrentCharter(ctx, b.Project); err != nil || v != 0 || text != "" {
+		t.Fatalf("a fresh session reads no charter after a removal: %d %q %v", v, text, err)
+	}
+	saveFixtureCharter(t, f, b.Project, 0, "Rule three: write it down.")
+	prompt, fourth := turn("four")
+	if !strings.HasPrefix(prompt.Text, `<team_charter_update version="3">`) || !strings.Contains(prompt.Text, "Rule three") {
+		t.Fatalf("a charter made after the removal reaches the session: %q", prompt.Text)
+	}
+	finish(fourth)
+}

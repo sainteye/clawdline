@@ -22,7 +22,7 @@ export type ProjectMemoryPage={page:number;page_size:number}
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 /** A charter write's body: always the machine, Project and idempotency key. */
-export type CharterRequestBody = W.ProjectAssistantCharterSaveRequest | W.ProjectAssistantCharterRestoreRequest | W.ProjectAssistantCharterApplyRequest | W.ProjectAssistantCharterDismissRequest | W.ProjectAssistantCharterChangeRequest
+export type CharterRequestBody = W.ProjectAssistantCharterSaveRequest | W.ProjectAssistantCharterRestoreRequest | W.ProjectAssistantCharterRemoveRequest | W.ProjectAssistantCharterApplyRequest | W.ProjectAssistantCharterDismissRequest | W.ProjectAssistantCharterChangeRequest
 
 export interface SourceClient {
   beginReadObservation?(mode: BotReadMode, start: number, interactionID?: string): BotReadObservation | undefined
@@ -42,6 +42,8 @@ export interface SourceClient {
  /** Team charters (API 122); charter-api.ts shapes the path, query and body. */
  canCharters?():boolean
  charterRequest?<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,signal:AbortSignal):Promise<T>
+ /** Removing a charter (API 123). */
+ canRemoveCharter?():boolean
  saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean
  networkSettings?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>

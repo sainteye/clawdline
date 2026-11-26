@@ -41,6 +41,11 @@ const (
 	CharterByLeadProposal CharterAuthor = "lead_proposal"
 	CharterByRestore      CharterAuthor = "restore"
 	CharterByTemplate     CharterAuthor = "template"
+	// CharterByRemoval marks the Project's charter being taken away. Its
+	// text is empty; while it is the newest version the Project has no
+	// charter and reads as version 0. Its number still counts, so a charter
+	// made later gets a version no Bot heard before.
+	CharterByRemoval CharterAuthor = "removed"
 )
 
 // CharterVersion is one immutable saved charter. Text is empty in a history

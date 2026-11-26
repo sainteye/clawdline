@@ -214,6 +214,7 @@ export const CARRIED = {
   "project-assistants.charter-proposal-dismiss": "captured Bot source POST /v1/project-assistant-charters/proposal-dismiss",
   "project-assistants.charter-proposals": "captured Bot source GET /v1/project-assistant-charters/proposals",
   "project-assistants.charter-readers": "captured Bot source GET /v1/project-assistant-charters/readers",
+  "project-assistants.charter-remove": "captured Bot source POST /v1/project-assistant-charters/remove",
   "project-assistants.charter-restore": "captured Bot source POST /v1/project-assistant-charters/restore",
   "project-assistants.charter-save": "captured Bot source PUT /v1/project-assistant-charters/charter",
   "project-assistants.charters": "captured Bot source GET /v1/project-assistant-charters",

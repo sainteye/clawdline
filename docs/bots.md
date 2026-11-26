@@ -121,6 +121,14 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   against an older version is marked stale and Apply refuses it (`pa_stale_version`, field
   `charter_proposal_base`); dismiss it or ask again. The lead's `propose_charter_edit` tool is
   offered only in its turns that come directly from you.
+- **Removing it.** 移除章程 on the charter page (API 123, `POST …/remove` with the
+  `expected_version` you read) takes the charter away. It saves a `removed` version with empty
+  text: the Project then reads as having no charter (version 0), its pending proposals go, a Bot
+  already in a conversation is told once that there is no charter
+  (`<team_charter_update version="0">`), and a fresh conversation carries none. The removal keeps
+  its number, so a charter made later is numbered after it and every Bot hears that one too; a
+  removed version cannot be restored. Personal workspaces belong to one Bot and are not offered
+  a charter in Bots settings.
 - **When a Bot hears it.** A Bot starting a fresh conversation reads the current charter first,
   as `<team_charter version="N">`, ahead of shared memory and its own memory. A Bot already in a
   conversation reads a changed charter once, at the start of its next prompt
@@ -134,15 +142,19 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   `Idempotency-Key`): `GET /v1/project-assistant-charters?machine_id=` lists Projects with a
   charter and those with Bots but none; `GET …/charter?machine_id=&project_id=&version=` reads the
   current charter with its history (`version` 0, or a retained version to read its text);
-  `PUT …/charter` saves; `POST …/restore`; `GET …/readers`; `GET …/proposals`;
+  `PUT …/charter` saves; `POST …/restore`; `POST …/remove` (API 123); `GET …/readers`; `GET …/proposals`;
   `POST …/proposal-apply`; `POST …/proposal-dismiss`; `POST …/change-request` sends your words to
   the lead. The contract is `api/v1/project-assistant-charters.schema.json`. The same operations
   cross Cloud as the `project-assistants.charter*` words, so a phone can read and edit.
 - **In the console.** A Project with a charter shows a 團隊章程 row first in its roster section;
   it opens the charter where a chat would be, one card per `## ` section with a pencil to edit
-  that section (saved as the whole document with `expected_version`), the lead's pending
+  that section (its title and body as separate fields, so clearing the body never drops the
+  heading; saved as the whole document with `expected_version`), the lead's pending
   proposal as a red/green line diff with Apply, Dismiss and Revise, a 版本紀錄 side panel with
-  each version's diff and a restore, and a composer that sends a change request. Bots settings
+  each version's diff and a restore, and a composer that sends a change request.
+  The page rereads every ten seconds while visible, at once when the tab becomes visible or the
+  charter is opened again, and every two seconds for two minutes after a change request, so the
+  lead's proposal appears without a reload even in a background tab. Bots settings
   has a 團隊章程 tab listing each Project and creating a first version from a five-heading
   template. Every call goes through `web/console/src/project-assistants/charter-api.ts`; the
   fixture-backed browser check is `charter.e2e.mjs` (`PLAYWRIGHT_MODULE`, `CHARTER_ARTIFACTS`).

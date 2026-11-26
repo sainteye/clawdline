@@ -5727,15 +5727,18 @@ export interface ProjectAssistantCharterApplyRequest {
 }
 
 /**
- * How a charter version came to be.
+ * How a charter version came to be. A removed version is the Project's charter
+ * being taken away: its text is empty, and while it is the newest version the
+ * Project has no charter (version 0).
  */
 export type ProjectAssistantCharterAuthor =
     "person"
   | "lead_proposal"
   | "restore"
   | "template"
+  | "removed"
 
-export const ProjectAssistantCharterAuthorValues: readonly ProjectAssistantCharterAuthor[] = ["person", "lead_proposal", "restore", "template"] as const
+export const ProjectAssistantCharterAuthorValues: readonly ProjectAssistantCharterAuthor[] = ["person", "lead_proposal", "restore", "template", "removed"] as const
 
 /**
  * The person's words from a charter page, sent to the machine's lead Bot as their
@@ -5833,6 +5836,19 @@ export interface ProjectAssistantCharterReadersResponse {
   project_id: string
   readers: ProjectAssistantCharterReader[]
   version: number
+}
+
+/**
+ * Remove the Project's charter while it is still at expected_version (API 123).
+ * Every Bot of the Project hears once that there is no charter; fresh sessions get
+ * none. The retained versions stay, and a later save starts a new charter after
+ * them.
+ */
+export interface ProjectAssistantCharterRemoveRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
 }
 
 /**
