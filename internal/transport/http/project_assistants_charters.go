@@ -324,7 +324,9 @@ func (s *Server) charterDismiss(w http.ResponseWriter, r *http.Request) (any, er
 	}
 	return s.charterWrite(r, body.MachineID, body.ProjectID, body.IdempotencyKey, func(ctx context.Context) error {
 		return s.projectAssistantFloorsStore().DismissCharterProposal(ctx, body.MachineID, body.ProjectID, body.ProposalID)
-	}, func(ctx context.Context) (any, error) { return s.charterProposalsAnswer(ctx, body.MachineID, body.ProjectID) })
+	}, func(ctx context.Context) (any, error) {
+		return s.charterProposalsAnswer(ctx, body.MachineID, body.ProjectID)
+	})
 }
 
 // charterChangeRequest sends the person's words to the machine's lead Bot as

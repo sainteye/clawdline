@@ -139,7 +139,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 74 {
+	if len(out) != 83 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -811,6 +811,46 @@ func projectAssistantServerOperationCases() []operationCase {
 		"settings": map[string]any{"version": 0, "rules": []any{}, "memory": []any{map[string]any{"id": "m", "text": "Answer first", "scope": map[string]any{"all": true}}}}}
 	raw, _ = json.Marshal(put)
 	put["type"], put["session"], put["request"] = "project-assistants.shared-settings-save", MachineReplySession, "case-shared-settings-save"
-	return append(rows, operationCase{word: "project-assistants.shared-settings-save", method: "PUT", path: "/v1/project-assistant-shared-settings",
+	rows = append(rows, operationCase{word: "project-assistants.shared-settings-save", method: "PUT", path: "/v1/project-assistant-shared-settings",
 		session: MachineReplySession, name: "action:case-shared-settings-save", answers: &router{body: shared}, body2: string(raw), body: put})
+	return append(rows, charterOperationCases()...)
+}
+
+// charterOperationCases cross each team charter word once, as the local
+// route the source serves it.
+func charterOperationCases() []operationCase {
+	const path = "/v1/project-assistant-charters"
+	charter := `{"contract_version":"project-assistants.v1","machine_id":"mac-01","project_id":"project","version":1,"text":"Lead plans.","history":[],"pending_proposals":0,"limits":{}}`
+	var rows []operationCase
+	read := func(word, sub string, query map[string]string) {
+		body := map[string]any{"type": "project-assistants." + word, "session": MachineReplySession, "request": "case-" + word}
+		for k, v := range query {
+			body[k] = v
+			if k == "version" {
+				body[k] = 0
+			}
+		}
+		rows = append(rows, operationCase{word: "project-assistants." + word, method: "GET", path: path + sub, query: query, session: MachineReplySession,
+			name: "read:case-" + word, answers: &router{body: charter}, body: body})
+	}
+	read("charters", "", map[string]string{"machine_id": "mac-01"})
+	read("charter", "/charter", map[string]string{"machine_id": "mac-01", "project_id": "project", "version": "0"})
+	read("charter-readers", "/readers", map[string]string{"machine_id": "mac-01", "project_id": "project"})
+	read("charter-proposals", "/proposals", map[string]string{"machine_id": "mac-01", "project_id": "project"})
+	write := func(word, method, sub string, fields map[string]any) {
+		fields["machine_id"], fields["project_id"], fields["idempotency_key"] = "mac-01", "project", "case-"+word
+		raw, _ := json.Marshal(fields)
+		body := map[string]any{"type": "project-assistants." + word, "session": MachineReplySession, "request": "case-" + word}
+		for k, v := range fields {
+			body[k] = v
+		}
+		rows = append(rows, operationCase{word: "project-assistants." + word, method: method, path: path + sub, session: MachineReplySession,
+			name: "action:case-" + word, answers: &router{body: charter}, body2: string(raw), body: body})
+	}
+	write("charter-save", "PUT", "/charter", map[string]any{"expected_version": 0, "text": "Lead plans.", "reason": ""})
+	write("charter-restore", "POST", "/restore", map[string]any{"expected_version": 2, "version": 1})
+	write("charter-proposal-apply", "POST", "/proposal-apply", map[string]any{"proposal_id": "cp-one", "expected_version": 1})
+	write("charter-proposal-dismiss", "POST", "/proposal-dismiss", map[string]any{"proposal_id": "cp-one"})
+	write("charter-change-request", "POST", "/change-request", map[string]any{"text": "Add a review rule."})
+	return rows
 }
