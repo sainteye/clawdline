@@ -91,6 +91,7 @@ type NativeWork struct {
 
 	leadBotAvailable   func(context.Context) error
 	charterAvailable   func(context.Context) error
+	dispatchKinds      func(context.Context) []string
 	proposeCharter     func(context.Context, app.CharterEditProposal) (pa.CharterProposal, error)
 	conflictsAvailable func(context.Context) error
 	reportConflict     func(context.Context, app.CharterConflictReport) (pa.CharterConflict, error)
@@ -494,6 +495,13 @@ func (h *Host) stageRoomOutputPicture(ctx context.Context, ticket pa.RoomTicket,
 // botTabKept answers a Bot's release: the tab stays the Bot's, and the person
 // takes it over from the Bot's chat.
 var botTabKept = json.RawMessage(`{"kept":true,"note":"The tab stays yours so the person can take it over from your chat's browser and hand it back. Tell them what to do there; use close when you no longer need the tab."}`)
+
+func (w NativeWork) DispatchKinds(ctx context.Context) []string {
+	if w.dispatchKinds == nil {
+		return nil
+	}
+	return w.dispatchKinds(ctx)
+}
 
 func (w NativeWork) CharterProposalAvailable(ctx context.Context) error {
 	if w.charterAvailable == nil {
