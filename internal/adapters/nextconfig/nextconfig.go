@@ -77,7 +77,8 @@ func (v Values) WorkGates() WorkGates {
 }
 
 // BotDecisionItems lets a Bot create a Board item on the person's answer to
-// its own question card (docs/work-system-v2.md §7.1). It changes who may
+// its own question card (docs/work-system-v2.md §7.1); Settings → Workflow
+// switches it, locally or from a paired phone. It changes who may
 // create items, so it is off unless the person turned it on.
 func (v Values) BotDecisionItems() bool {
 	on, set := v.Bool("bot_decision_items")
@@ -670,6 +671,7 @@ var Settables = []Settable{
 	{Name: "iterm_scan", Kind: "bool"},
 	{Name: "session_auto_discovery", Kind: "bool"},
 	{Name: "warm_shells", Kind: "bool"},
+	{Name: "bot_decision_items", Kind: "bool"},
 	{Name: "workflow_skills_enabled", Kind: "bool"},
 	{Name: "workflow_profile", Kind: "string", Choices: []string{"clawdline", "superpowers", "poteto"}, Refusal: "invalid_workflow_profile", Because: "clawdline, superpowers or poteto"},
 	{Name: "codegraph_enabled", Kind: "bool"},

@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"sort"
@@ -2116,6 +2117,19 @@ func TestWorkflowSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		t.Fatalf("write crossed too broadly: %+v body=%s", got, got.Body)
 	}
 
+	// The phone switches whether a Bot's question card may back a Board item.
+	for _, on := range []bool{true, false} {
+		r = &router{}
+		answer = open(r).Handle(context.Background(), request(t, ClassCtl, map[string]any{
+			"type": "workflow-settings-update", "session": MachineReplySession, "request": "req-decision",
+			"changes": map[string]any{"bot_decision_items": on},
+		}))
+		if answer.Status != 200 || len(r.seen) != 1 || r.last().Path != "/v1/settings/workflow" ||
+			string(r.last().Body) != fmt.Sprintf(`{"bot_decision_items":%t}`, on) {
+			t.Fatalf("bot_decision_items %t did not cross: %+v asked %+v", on, answer, r.seen)
+		}
+	}
+
 	for _, changes := range []any{
 		map[string]any{"remote": true},
 		map[string]any{"iterm_scan": true},
@@ -2124,6 +2138,7 @@ func TestWorkflowSettingsCrossOnlyTheirNarrowSettingsRoute(t *testing.T) {
 		map[string]any{"codex_permission_mode": "unknown"},
 		map[string]any{"terminal": true},
 		map[string]any{"dispatch_full_permission": "on"},
+		map[string]any{"bot_decision_items": "on"},
 		map[string]any{"dispatch_full_permission": true, "session_auto_discovery": false, "remote": nil},
 		[]any{true},
 	} {

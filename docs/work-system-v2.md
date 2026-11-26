@@ -51,8 +51,8 @@ and projects an assigned item into its owner's Session to-do panel.
    off by default, and off this rule reads exactly as above:)* a Bot chat, which has no run, may
    create an item on the person's answer to its own `ask_person` question card (§7.1, "A Bot's
    question card"). The daemon finds and checks the card; the model's claim that the person agreed
-   authorizes nothing. Whether this exception ships enabled, and how the person turns it on, is
-   still the owner's decision.
+   authorizes nothing. The owner chose on 2026-11-26 that it ships off and is a switch the person
+   turns on in Settings → Workflow, locally or from a paired phone.
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
    item, including actions a Session relays from that person's message.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 with
@@ -714,7 +714,11 @@ unassigned in Planning, as a person's would be.
 
 **A Bot's question card** *(added 2026-11-26; only while `bot_decision_items` is `true` in the
 settings file — absent, false or unreadable, the route ignores `via.decision` exactly as before,
-and a body with no run is refused `run_unknown`; no settings route writes the key yet)*. A Bot chat
+and a body with no run is refused `run_unknown`. The person switches it in Settings → Workflow, on
+this machine or from a paired phone: `bot_decision_items` is a key of `GET`/`POST /v1/settings/workflow`
+and of that route's Cloud carry, `workflow-settings-update`. It is one machine-wide setting rather
+than one per Bot because it lives in the settings file beside the other Board gates, and the card
+check already confines each item to the Bot that asked)*. A Bot chat
 is not a Session: nobody types into it
 through the send route, so it never has a run, and `clawdline item add` from a Bot answered
 `no_run` even when the person had just agreed on the Bot's decision card. A team charter that has a

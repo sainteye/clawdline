@@ -31,8 +31,8 @@ func TestBotDecisionItemsIsOffUnlessTheFileTurnsItOn(t *testing.T) {
 			t.Errorf("%q: %t, want %t", c.file, got, c.want)
 		}
 	}
-	// No settings route writes it: the routes take only settable keys.
-	if _, settable := SettableByName("bot_decision_items"); settable {
-		t.Fatal("bot_decision_items became a settings-window key")
+	// Settings → Workflow writes it, so it is a settable boolean and nothing else.
+	if s, settable := SettableByName("bot_decision_items"); !settable || s.Kind != "bool" {
+		t.Fatalf("bot_decision_items is not a settable boolean: %+v %t", s, settable)
 	}
 }

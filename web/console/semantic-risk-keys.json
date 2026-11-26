@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14734,
+  "englishKeys": 14739,
   "counts": {
-    "negation": 3725,
+    "negation": 3726,
     "state": 2513,
     "permission": 876,
     "deletion": 339,
     "uncertainty": 584
   },
-  "unionCount": 6239,
+  "unionCount": 6240,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3712,6 +3712,7 @@
       "workflowProfiles.noUseReceipt",
       "workflowProfiles.unavailableDescription",
       "workflowProfiles.unknown",
+      "workflowSettings.bot_decision_itemsOff",
       "workflowSettings.codexPermissionHelp_full",
       "workflowSettings.dispatch_full_permissionOff",
       "workflowSettings.dispatch_full_permissionOn",
@@ -14250,6 +14251,7 @@
     "workflowProfiles.unavailable",
     "workflowProfiles.unavailableDescription",
     "workflowProfiles.unknown",
+    "workflowSettings.bot_decision_itemsOff",
     "workflowSettings.codexPermissionHelp_full",
     "workflowSettings.codexPermissionHelp_native",
     "workflowSettings.codexPermissionShortcut",

@@ -139,3 +139,66 @@ func TestABotCreatesAnItemOnThePersonsAnswerToItsQuestionCard(t *testing.T) {
 		t.Fatalf("the Session path read question cards: %v", asked)
 	}
 }
+
+// The person turns bot_decision_items on and off from Settings (the workflow
+// settings route, which Cloud also carries): the switch reads off by default,
+// persists, and is what the create route obeys.
+func TestTheBotDecisionItemsSwitchOnTheWorkflowRouteDecidesTheCreate(t *testing.T) {
+	s, p, _ := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
+	decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
+		return pa.DecisionAuthority{OfferID: offerID, BotID: "xavia", ConversationID: "chat-1", NativeSessionID: conversation,
+			CanonicalID: p.s.CWD, Question: "Open it?", Answer: "Yes", AnsweredAt: time.Now().Add(-time.Minute)}, nil
+	}))
+	t.Cleanup(func() { decisionAuthorityByServer.Delete(s) })
+	setting := func(method, body string) bool {
+		t.Helper()
+		r := httptest.NewRequest(method, "/v1/settings/workflow", strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		s.workflowSettingsRoute(w, r)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s workflow settings: %d %s", method, w.Code, w.Body)
+		}
+		var got struct {
+			BotDecisionItems *bool `json:"bot_decision_items"`
+		}
+		if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.BotDecisionItems == nil {
+			t.Fatalf("no bot_decision_items in %s (%v)", w.Body, err)
+		}
+		return *got.BotDecisionItems
+	}
+	create := func(key string) *httptest.ResponseRecorder {
+		rec := httptest.NewRecorder()
+		s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items",
+			decisionItemBody(t, "bot-native", map[string]string{"decision": "card-" + key}, nil), key))
+		return rec
+	}
+
+	if setting(http.MethodGet, "") {
+		t.Fatal("bot_decision_items reads on before anybody turned it on")
+	}
+	if rec := create("before"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("off: %d %s", rec.Code, rec.Body)
+	}
+	if !setting(http.MethodPost, `{"bot_decision_items":true}`) || !setting(http.MethodGet, "") {
+		t.Fatal("turning bot_decision_items on did not persist")
+	}
+	if rec := create("on"); rec.Code != http.StatusCreated {
+		t.Fatalf("on: %d %s", rec.Code, rec.Body)
+	}
+	if setting(http.MethodPost, `{"bot_decision_items":false}`) {
+		t.Fatal("turning bot_decision_items off did not take")
+	}
+	if rec := create("after"); rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), `"error":"run_unknown"`) {
+		t.Fatalf("off again: %d %s", rec.Code, rec.Body)
+	}
+	if rec := httptest.NewRecorder(); true {
+		r := httptest.NewRequest(http.MethodPost, "/v1/settings/workflow", strings.NewReader(`{"bot_decision_items":"on"}`))
+		r.Header.Set("Content-Type", "application/json")
+		s.workflowSettingsRoute(rec, r)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("a non-boolean switch was taken: %d %s", rec.Code, rec.Body)
+		}
+	}
+}

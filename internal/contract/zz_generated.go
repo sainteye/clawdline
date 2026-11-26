@@ -10338,7 +10338,11 @@ type SettingsSnapshot struct {
 	AutoNameAssistant *string `json:"auto_name_assistant"`
 
 	// How much the bar blurs what is behind it.
-	Backdrop             *float64                `json:"backdrop"`
+	Backdrop *float64 `json:"backdrop"`
+
+	// Whether the person's answer to a Bot's own question card may back a Board item
+	// that Bot creates (docs/work-system-v2.md); absent means off.
+	BotDecisionItems     *bool                   `json:"bot_decision_items"`
 	BrowserEnabled       *bool                   `json:"browser_enabled"`
 	BrowserMode          *string                 `json:"browser_mode"`
 	BrowserNotifyNewSite *bool                   `json:"browser_notify_new_site"`
@@ -13789,6 +13793,10 @@ const (
 var WorkStateValues = []WorkState{WorkStateReady, WorkStateWorking, WorkStateHolding, WorkStateWaitingYou, WorkStateWaitingSession, WorkStateUnknown, WorkStateMilestoneComplete, WorkStateWorkComplete}
 
 type WorkflowSettingsRequest struct {
+	// Whether the person's answer to a Bot's own question card lets that Bot create a
+	// Board item.
+	BotDecisionItems *bool `json:"bot_decision_items"`
+
 	// Permission mode for new interactive Codex Sessions on the selected machine.
 	CodexPermissionMode    *string `json:"codex_permission_mode"`
 	DispatchFullPermission *bool   `json:"dispatch_full_permission"`
@@ -13819,6 +13827,11 @@ type WorkflowSettingsRequest struct {
 }
 
 type WorkflowSettingsSnapshot struct {
+	// Whether the person's answer to a Bot's own question card lets that Bot create a
+	// Board item that records the card as its source. False by default; a daemon
+	// before this setting omits the field.
+	BotDecisionItems *bool `json:"bot_decision_items"`
+
 	// Permission mode for new interactive Codex Sessions. Defaults to full; older
 	// daemons omit this field.
 	CodexPermissionMode    *string `json:"codex_permission_mode"`

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14734,
-  "riskKeys": 6239,
-  "nonRiskCount": 8495,
+  "englishContentKeys": 14739,
+  "riskKeys": 6240,
+  "nonRiskCount": 8499,
   "groups": [
     {
       "name": "acp / other",
@@ -9523,11 +9523,15 @@
     },
     {
       "name": "workflowSettings / other",
-      "count": 32,
+      "count": 36,
       "sources": [
         null
       ],
       "keys": [
+        "workflowSettings.bot_decision_itemsOn",
+        "workflowSettings.bot_decision_itemsScope",
+        "workflowSettings.bot_decision_itemsTitle",
+        "workflowSettings.bot_decision_itemsUpdateRequired",
         "workflowSettings.codexPermissionHelp_auto_review",
         "workflowSettings.codexPermissionPendingApproval",
         "workflowSettings.codexPermissionTitle",

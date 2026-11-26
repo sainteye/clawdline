@@ -12275,6 +12275,12 @@ export interface SettingsSnapshot {
    * How much the bar blurs what is behind it.
    */
   backdrop: number | null
+
+  /**
+   * Whether the person's answer to a Bot's own question card may back a Board item
+   * that Bot creates (docs/work-system-v2.md); absent means off.
+   */
+  bot_decision_items: boolean | null
   browser_enabled: boolean | null
   browser_mode: string | null
   browser_notify_new_site: boolean | null
@@ -16362,6 +16368,12 @@ export const WorkStateValues: readonly WorkState[] = ["ready", "working", "holdi
 
 export interface WorkflowSettingsRequest {
   /**
+   * Whether the person's answer to a Bot's own question card lets that Bot create a
+   * Board item.
+   */
+  bot_decision_items: boolean | null
+
+  /**
    * Permission mode for new interactive Codex Sessions on the selected machine.
    */
   codex_permission_mode: string | null
@@ -16405,6 +16417,13 @@ export interface WorkflowSettingsRequest {
 }
 
 export interface WorkflowSettingsSnapshot {
+  /**
+   * Whether the person's answer to a Bot's own question card lets that Bot create a
+   * Board item that records the card as its source. False by default; a daemon
+   * before this setting omits the field.
+   */
+  bot_decision_items: boolean | null
+
   /**
    * Permission mode for new interactive Codex Sessions. Defaults to full; older
    * daemons omit this field.
