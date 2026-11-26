@@ -1,6 +1,6 @@
 import { confirmAction } from "../confirm-action.js"
 import { paintActionProgress } from "../ui/ActionProgress.js"
-import { catalogWord } from "../catalog.js"
+import { catalogWord, currentCatalogTag } from "../catalog.js"
 import { assistantAdmits, assistantLabel, isAssistant, type AssistantFacts } from "../session/antigravity-ui.js"
 import { STATUS_FRESH_MS } from "../cloud/status-projection.js"
 import { loadingSkeletonHTML } from "../loading-skeleton.js"
@@ -374,9 +374,13 @@ const Schedules = (() => {
   let answerVersion = 0
   const recovery = new ScheduleRecovery()
   const machineKey = () => scheduleFleet()?.machines.map((machine) => machine.id).join(" ") ?? ""
+  // The catalog the words on screen were drawn in. The section can draw while
+  // the page is still booting, before the selected catalog has arrived.
+  let paintedIn = ""
   const paintReadState = () => {
     const state = document.getElementById("schedules-state")
     if (!state) return
+    paintedIn = currentCatalogTag()
     if (readState === "loading" && !lastAnswer) {
       state.innerHTML = loadingSkeletonHTML(nextWord("schedulesLoading"), "SK-11")
       state.hidden = false
@@ -436,6 +440,7 @@ const Schedules = (() => {
     return laneOnScreen({
       laidOut: host.getClientRects().length > 0,
       visibility: typeof getComputedStyle === "function" ? getComputedStyle(host).visibility : "visible",
+      booting: document.documentElement.classList.contains("booting"),
     })
   }
 
@@ -700,6 +705,13 @@ const Schedules = (() => {
   }
 
   return {
+    /** Draw the words again when the catalog they were drawn in has changed. */
+    catalogChanged(): void {
+      if (!started || paintedIn === currentCatalogTag()) return
+      if (lastAnswer && lastAnswerMachines === machineKey())
+        renderSchedules(lastAnswer.schedules, lastAnswer.at, lastAnswer.unanswered)
+      paintReadState()
+    },
     machineReady(machine: string): void {
       recovery.machineReady(machine)
       retryReadyMissing()
@@ -3003,6 +3015,7 @@ export function ScheduleSection({ arrived, waitForFleet = false, onOpen, canOpen
   // `static.js` again whenever the catalog has changed.
   useEffect(() => {
     paintStatic()
+    Schedules.catalogChanged()
   })
 
   useEffect(() => {

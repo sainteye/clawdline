@@ -28,6 +28,13 @@ export interface LaneBox {
   laidOut: boolean
   /** The computed `visibility`, which is inherited, so an ancestor's counts. */
   visibility: string
+  /**
+   * The page is still behind `html.booting`, whose `visibility: hidden` on the
+   * body only waits for the selected catalog. It is not a pane taken off
+   * screen: a read skipped then waited for the lane's next tick, a minute or
+   * more of skeleton in a tab whose catalog came late.
+   */
+  booting?: boolean
 }
 
 /**
@@ -40,7 +47,7 @@ export interface LaneBox {
 export function laneOnScreen(box: LaneBox | null): boolean {
   if (!box) return true
   if (!box.laidOut) return false
-  return box.visibility !== "hidden"
+  return box.booting === true || box.visibility !== "hidden"
 }
 
 /**
