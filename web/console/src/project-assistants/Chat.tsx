@@ -43,6 +43,7 @@ import { MemoryPanel, projectMemoryPageSize, type MemoryNoteDraft } from "./Memo
 import {OutputLibrary} from "./OutputLibrary"
 import type {ArtifactComposerAccess,ArtifactSendResult} from "./ArtifactWorkspace"
 import { ChatRows } from "./ChatRows"
+import { exchangeEntries, type ExchangeScope } from "./exchanges"
 import { HandoffCard } from "./HandoffCard"
 import { handoffWords } from "./handoff-card-words"
 import { useHandoffCard } from "./useHandoffCard"
@@ -80,6 +81,17 @@ import { BotBrowser, BotBrowserChip, botBrowserWord } from "./BotBrowser"
 import { botBrowserSupported, browserToolTrace, toolTraceCategory } from "./bot-browser-entry"
 
 export {EventRefreshMs,PushedEventFallbackMs} from "./chat-push"
+
+function backgroundWorkPlacement(tasks: BackgroundTask[], timeline: readonly W.ProjectAssistantReadViewItem[], scope?: ExchangeScope) {
+  const backgroundRunning=tasks.some(liveBackgroundTask)
+  const running=tasks.filter(task=>task.state==="active"||task.state==="waiting_permission")
+  // Incoming requests can run in a hidden worker, leaving the parent turn idle.
+  if(!scope||!running.length)return {backgroundRunning,capsuleTasks:tasks,exchangeRunning:false}
+  const entries=exchangeEntries(timeline.flatMap(row=>row.message?[row.message]:[]),scope)
+  const incomingIDs=new Set(entries.filter(({exchange})=>!sameBot(exchange.source.key,scope.key)).map(({exchange})=>exchange.id))
+  const inlineIDs=new Set(running.filter(task=>incomingIDs.has(task.id)).map(task=>task.id))
+  return {backgroundRunning,capsuleTasks:tasks.filter(task=>!inlineIDs.has(task.id)),exchangeRunning:inlineIDs.size>0}
+}
 
 function transientChatRead(error:unknown) {
   const code=errorCode(error)
@@ -1720,10 +1732,13 @@ ${currentDraft}`:submitted)
   const showTurnReview=!thread&&unknownCount>0&&!restartNotice&&!reconnecting
   const canRequestTurnReview=enabled&&!unknown&&!busy&&!legacyBlocked()&&!call.active&&!activeTurn
     &&!editingHandoff&&!handoff.busy&&!handoff.error&&handoff.card?.state!=="draft"
+  const taskRows=head?.background_tasks
+  const tasks=thread||recoveryRequired?[]:taskRows??[]
+  const {backgroundRunning,capsuleTasks,exchangeRunning}=backgroundWorkPlacement(tasks,chatTimeline,head?.current_fence)
   const exchangeReplyTurns=new Set(messages.flatMap(message=>message.exchange&&message.turn_id===message.exchange.reply_turn_id?[message.turn_id]:[]))
   // A snapshot includes the last finished turn alongside the active one.
   const visibleInterruptions=turns.filter(turn=>!["queued","accepted","running","waiting_permission"].includes(turn.state)
-    &&(!activeTurn||turn.state!=="succeeded")
+    &&(turn.state!=="succeeded"||!activeTurn&&!exchangeRunning)
     &&turn.failure_field!=="restart_resumed"&&!(restartNotice&&turn.id===restartInterruption?.id)
     &&!(turn.state==="cancelled"&&(!turn.failure_code&&!turn.started_at||exchangeReplyTurns.has(turn.id))))
   const queueLimited=queuedCount>turns.filter(turn=>turn.state==="queued"||turn.state==="accepted").length
@@ -1750,9 +1765,6 @@ ${currentDraft}`:submitted)
     setLegacyRemoveFailed(!view.unverifiedDrafts.dismiss(draftKey,scope))
     repaintJournal()
   }
-  const taskRows=head?.background_tasks
-  const tasks=thread||recoveryRequired?[]:taskRows??[]
-  const backgroundRunning=tasks.some(liveBackgroundTask)
   const openTask=(task:BackgroundTask,button:HTMLButtonElement)=>{
     taskOpener.current=button
     if(task.worker)setSelectedTask(task.id)
@@ -1999,7 +2011,7 @@ ${currentDraft}`:submitted)
           <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}
       </div>}
       {/* Background and dispatched work are the latest facts of the conversation: they scroll at its end instead of sitting over the composer. */}
-      {!thread&&(data||error)&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={tasks} appearance={bot.appearance} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
+      {!thread&&(data||error)&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={capsuleTasks} appearance={bot.appearance} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
         const loose=requests.loose.length>0&&<div className="pa-request-loose">{requests.loose.map(card=><BotRequestLine key={card.id} card={card} w={w} onOpen={setOpenRequest}/>)}</div>
         return <>{loose}{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id} card={openRequest} bots={[bot,...(roster??[])]} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=botOf(card.baton.bot,roster??[]);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
