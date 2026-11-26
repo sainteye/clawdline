@@ -36,7 +36,7 @@ func ownChatTurnSQL(id string) string {
 }
 
 const roomTurnsCTE = `, room_turns AS MATERIALIZED (
- SELECT t.key id FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object' AND json_type(t.value,'$.room')='object'
+ SELECT t.key id FROM a,fact_turns t WHERE t.type='object' AND json_type(t.value,'$.room')='object'
 ) `
 
 // Unqueue is the intentional cancellation of a turn that never started and
@@ -50,7 +50,7 @@ func ownChatMessageSQL(id string) string {
 }
 
 const withdrawnTurnsCTE = `, withdrawn_turns AS MATERIALIZED (
- SELECT t.key id FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
+ SELECT t.key id FROM a,fact_turns t WHERE t.type='object'
  AND json_extract(t.value,'$.state')='cancelled' AND json_extract(t.value,'$.failure') IS NULL
  AND json_extract(t.value,'$.started_at') IS NULL
 ) `

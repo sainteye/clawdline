@@ -1,7 +1,6 @@
 package projectassistantstore
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -21,17 +20,16 @@ func TestAnUnreadableBotDoesNotHideAnotherBotsCard(t *testing.T) {
 		Bindings:     map[string]pa.ExecutionBinding{"b1": {Fence: fence, NativeSessionID: "native-1"}},
 		Permissions: map[string]pa.PermissionOffer{"card-1": {ID: "card-1", Fence: fence, Kind: pa.DecisionOfferKind, State: pa.PermissionResolved,
 			Decision: &pa.DecisionRequest{Question: "Open it?", AnswerText: "Yes"}}},
-		Messages: []pa.Message{{Kind: pa.UserMessage, At: now.Add(-time.Minute), DecisionReply: &pa.DecisionReply{OfferID: "card-1", Answer: "Yes"}}},
+		Messages: []pa.Message{{ID: "reply-1", Seq: 1, Kind: pa.UserMessage, At: now.Add(-time.Minute), DecisionReply: &pa.DecisionReply{OfferID: "card-1", Answer: "Yes"}}},
 	}
-	data, err := json.Marshal(a)
-	if err != nil {
+	insertStoredAggregate(t, db, a)
+	// "atlas" sorts before "xavia" and also names card-1, so the broken row
+	// is read first.
+	if _, err := db.ExecContext(testContext, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES('m','atlas',1,'{not json')`); err != nil {
 		t.Fatal(err)
 	}
-	// "atlas" sorts before "xavia", so the broken row is read first.
-	for bot, row := range map[string][]byte{"atlas": []byte("{not json"), "xavia": data} {
-		if _, err := db.ExecContext(testContext, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES('m',?,1,?)`, bot, row); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := db.ExecContext(testContext, `INSERT INTO project_assistant_bot_facts(machine,bot,collection,member,ord,data) VALUES('m','atlas','Permissions','card-1',0,'{}')`); err != nil {
+		t.Fatal(err)
 	}
 	got, err := s.DecisionAuthority(testContext, "m", "native-1", "card-1", now, time.Hour)
 	if err != nil || got.OfferID != "card-1" || got.BotID != "xavia" {

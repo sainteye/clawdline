@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistanttest"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -102,6 +103,9 @@ func TestProjectAssistantViewServerRealReaderFrontierAndLifecycle(t *testing.T) 
 	if _, err := f.s.store.ProjectAssistantDatabase().Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.Messages',json(?),'$.Conversation.last_message_seq',?) WHERE machine=? AND bot=?`, string(raw), len(messages), f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
 	t.Logf("fixture message write elapsed=%s", time.Since(started))
 	snapshot := paViewServerRead(t, f, pa.ReadViewSnapshot, "", "", 0, 100, f.readonly)
 	if snapshot.Head.EventFrontier != last+1 || snapshot.Snapshot == nil || len(snapshot.Items) != 100 || snapshot.Items[0].Message.Seq != 650 || !snapshot.HasMore {
@@ -194,6 +198,9 @@ func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText
 			eventFence.BindingID, string(binding), eventFence.BindingID, eventFence.Generation, f.key.MachineID, f.key.BotID); err != nil {
 			t.Fatal(err)
 		}
+		if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	paViewServerEvents(t, f, f.key, eventFence, eventCount)
 	other := f.create()
@@ -212,6 +219,9 @@ func paViewServerHistory(t *testing.T, messageCount, eventCount int, messageText
 	t.Logf("fixture message build/marshal rows=%d bytes=%d elapsed=%s", len(messages), len(raw), time.Since(started))
 	started = time.Now()
 	if _, err = f.s.store.ProjectAssistantDatabase().Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.Messages',json(?),'$.Conversation.last_message_seq',?) WHERE machine=? AND bot=?`, string(raw), len(messages), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	t.Logf("fixture message write elapsed=%s", time.Since(started))
@@ -612,6 +622,9 @@ func TestProjectAssistantViewServerCloudOversizedStoredItemKeepsHonestPrefix(t *
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
 	f.pin(t, "reader", adaptercloud.ScopeReadOnly, false)
 	q := contract.ProjectAssistantReadViewRequest{Key: paWireBotKey(f.key), ConversationID: g.Conversation.ID, Mode: contract.ProjectAssistantReadViewModeSnapshot, PageSize: 100}
 	a := paViewServerBridge(t, f, "reader", q)
@@ -668,6 +681,9 @@ func TestProjectAssistantViewServerRetainsOldGenerationFactsAndUnknownBarrier(t 
 	db := f.s.store.ProjectAssistantDatabase()
 	_, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.Messages',json(?),'$.Conversation.last_message_seq',2,'$.Conversation.binding_id',?,'$.Conversation.generation',2,'$.Turns',json(?),'$.Bindings',json(?),'$.WorkLinks',json(?)) WHERE machine=? AND bot=?`, string(rawMessages), current.BindingID, string(rawTurns), string(rawBindings), string(rawWork), f.key.MachineID, f.key.BotID)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), db, f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	f.pin(t, "reader", adaptercloud.ScopeReadOnly, false)

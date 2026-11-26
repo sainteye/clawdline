@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistanttest"
 	"net/http"
 	"net/http/httptest"
 	"os/exec"
@@ -60,6 +61,9 @@ func TestProjectAssistantMetadataEventCursor(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = f.s.store.ProjectAssistantDatabase().Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.Messages',json(?),'$.Conversation.last_message_seq',1) WHERE machine=? AND bot=?`, string(messages), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	root, err := filepath.Abs("../../..")

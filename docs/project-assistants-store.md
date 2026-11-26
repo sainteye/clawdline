@@ -22,7 +22,7 @@ store or delete existing data. Repeated installation preserves the feature's
 facts; unknown schema versions are rejected. The caller owns and closes `db`.
 The SQLite driver is supplied by the host, rather than registered by this module.
 
-The current feature schema is **2**. The HTTP contract remains
+The feature schema is now **17**; this paragraph records the 1 to 2 upgrade. The HTTP contract remains
 `project-assistants.v1`, with the existing integer `schema_version` field. An
 installed schema 1 upgrades to 2 in the same transaction as additive feature
 DDL and roster backfill. The migration changes the feature version marker;
@@ -47,10 +47,12 @@ use separate writers while a `WithCurrent` callback is sending context.
 
 ## Atomic facts and durable receipts
 
-The Bot table stores one explicit aggregate: configuration, conversation, turns,
-bindings, messages, permission offers, work links, memory entries/revision and
-reader cursors. Events and command receipts have separate durable tables. A
-Commit validates the resulting aggregate, allocates source-local durable event
+The Bot table stores one explicit aggregate: configuration, conversation, memory
+entries/revision and reader cursors. Since schema 17 its turns, bindings,
+messages, permission offers and work links are stored one member per row in
+`project_assistant_bot_facts`, keyed by the member's identity (a message by its
+ID, with its position in `ord`). Events and command receipts have separate
+durable tables. A Commit validates the resulting aggregate, allocates source-local durable event
 sequences and commits all facts/projections/events/receipts together. The SQLite
 CAS also checks the stored version. A failed constraint or final receipt write
 rolls everything back, including event allocation.
@@ -92,10 +94,15 @@ permissions and work links require the turn's complete fence. Once running, turn
 snapshots are immutable. A changed binding ID requires a newer generation.
 
 The aggregate is deliberately direct, with no automatic pruning or separate
-projection cache. Mutations decode and rewrite the Bot's aggregate, so cost grows
-with retained history. No latency/capacity benefit or large-history performance
-claim has been measured. A normalized representation can replace it under a
-future schema migration if real usage justifies that work.
+projection cache. Mutations still decode the whole aggregate and validate it;
+`persist` then writes the Bot row and only the member rows whose bytes changed.
+Schema 17 made that change after real use justified it: on 26 November one
+owner's largest Bot held 4.7 MB of history in its row, and opening its chat
+took 0.36–0.56 s in SQLite alone. The migration moves each member unchanged and
+removes the five collections from the row; a missing or repeated member identity
+fails the whole migration and leaves the database as it was. A row that still
+holds a collection inline is refused by every reader rather than read as empty.
+`docs/project-assistants-read-store.md` has the measurements.
 
 ## Lists, reads and replay
 

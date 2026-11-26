@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistanttest"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -73,6 +74,9 @@ func TestProjectAssistantExchangeCapturedReadSQLite(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err = db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages',json(?),'$.Conversation.last_message_seq',?) WHERE machine=? AND bot=?`, string(history), len(messages), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), db, f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}}
@@ -303,8 +307,12 @@ func TestServerSendIsAdmittedBehindAnyUnknownTurn(t *testing.T) {
 			paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
 			exchange := seedQueuedBotStatus(t, f, pa.TurnUnknown)
 			db := f.s.store.ProjectAssistantDatabase()
-			if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns.original.failure.field',?,'$.Conversation.active_turn_id',?) WHERE machine=? AND bot=?`,
-				tc.field, tc.active, f.key.MachineID, f.key.BotID); err != nil {
+			if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.failure.field',?) WHERE machine=? AND bot=? AND collection='Turns' AND member='original'`,
+				tc.field, f.key.MachineID, f.key.BotID); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Conversation.active_turn_id',?) WHERE machine=? AND bot=?`,
+				tc.active, f.key.MachineID, f.key.BotID); err != nil {
 				t.Fatal(err)
 			}
 			server := httptest.NewServer(f.s.Handler())
@@ -463,6 +471,9 @@ func seedQueuedBotStatus(t *testing.T, f *paServerFixture, originalState pa.Turn
 		t.Fatal(err)
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns',json(?),'$.Messages',json(?),'$.Bindings',json(?),'$.Conversation.binding_id',?,'$.Conversation.generation',?,'$.Conversation.last_message_seq',2) WHERE machine=? AND bot=?`, string(tRaw), string(mRaw), string(bRaw), fence.BindingID, fence.Generation, f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), db, f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	return exchange

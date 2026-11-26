@@ -118,14 +118,23 @@ func TestReadViewSQLCapabilitiesAndLegacyCollections(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("SQLite %s JSON/null=%d empty=%d materialized/window=%d", version, nullRows, emptyRows, window)
-	for _, data := range []string{"null", "[]"} {
-		if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages',json(?))`, data); err != nil {
-			t.Fatal(err)
-		}
-		got := readView(t, views, viewQuery(b))
-		if got.Snapshot == nil || !reflect.DeepEqual(got.Snapshot.Bot, b) || len(got.Items) != 0 || got.Items == nil || got.Snapshot.PendingTurns == nil || got.Snapshot.QueuedMessages == nil || got.Head.EventFrontier != 1 {
-			t.Fatalf("legacy %s: %+v", data, got)
-		}
+	// Collections live in member rows. A JSON null where one was once
+	// inline reads as empty; any inline value is a row this store refuses.
+	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages',json('null'))`); err != nil {
+		t.Fatal(err)
+	}
+	got := readView(t, views, viewQuery(b))
+	if got.Snapshot == nil || !reflect.DeepEqual(got.Snapshot.Bot, b) || len(got.Items) != 0 || got.Items == nil || got.Snapshot.PendingTurns == nil || got.Snapshot.QueuedMessages == nil || got.Head.EventFrontier != 1 {
+		t.Fatalf("null collection: %+v", got)
+	}
+	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages',json('[]'))`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := views.Read(testContext, viewQuery(b)); pa.Code(err) != pa.Invalid {
+		t.Fatalf("inline collection was read: %v", err)
+	}
+	if _, err := s.Bot(testContext, b.Key); pa.Code(err) != pa.Invalid {
+		t.Fatalf("inline collection was loaded: %v", err)
 	}
 }
 
@@ -388,7 +397,7 @@ func TestRestoreRefusesBrokenFactRelations(t *testing.T) {
 func TestReadViewChecksReturnedRowsOnly(t *testing.T) {
 	e, _, _ := viewFixture(t, 40, 1, true)
 	db, _, views, _ := restoreViews(t, e)
-	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages[0].fence.project.canonical_id','foreign')`); err != nil {
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.fence.project.canonical_id','foreign') WHERE collection='Messages' AND ord=1`); err != nil {
 		t.Fatal(err)
 	}
 	q := viewQuery(e.Bot)
@@ -410,7 +419,7 @@ func TestReadViewBudgetsRefuseWholeObjectsWithoutTruncation(t *testing.T) {
 	initial := readView(t, views, q)
 	// Lower the trusted byte budget: a raw row larger than it must never be
 	// copied as a partial message. The preceding legal prefix remains usable.
-	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages[1].text',?)`, strings.Repeat("x", 4096)); err != nil {
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.text',?) WHERE collection='Messages' AND ord=2`, strings.Repeat("x", 4096)); err != nil {
 		t.Fatal(err)
 	}
 	q.ByteLimit = 2048
@@ -1163,7 +1172,7 @@ func TestReadViewExchangeExcerptsShortenOnlyWhenAsked(t *testing.T) {
 	db, _, views, _ := restoreViews(t, e)
 	long := strings.Repeat("回", pa.MaxExchangeExcerptRunes+1)
 	exchange, _ := json.Marshal(pa.Exchange{ID: "x1", Request: long, Reply: long})
-	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Messages[2].text',?,'$.Messages[2].exchange',json(?))`, long, string(exchange)); err != nil {
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.text',?,'$.exchange',json(?)) WHERE collection='Messages' AND ord=3`, long, string(exchange)); err != nil {
 		t.Fatal(err)
 	}
 	q := viewQuery(e.Bot)

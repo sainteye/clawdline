@@ -57,15 +57,16 @@ type aggregate struct {
 	ArtifactTitles  map[string]pa.ArtifactDisplayTitle `json:",omitempty"`
 	Bot             pa.Bot
 	Conversation    pa.Conversation
-	Turns           map[string]pa.Turn
-	Bindings        map[string]pa.ExecutionBinding
-	Messages        []pa.Message
-	Permissions     map[string]pa.PermissionOffer
-	WorkLinks       map[string]pa.WorkLink
-	Memory          pa.MemoryRevision
-	Entries         map[string]pa.MemoryEntry
-	ReadCursors     map[string]pa.ReadCursor
-	RosterTrace     *pa.Event `json:",omitempty"`
+	// The growing collections are stored one member per row (facts.go).
+	Turns       map[string]pa.Turn             `json:"-"`
+	Bindings    map[string]pa.ExecutionBinding `json:"-"`
+	Messages    []pa.Message                   `json:"-"`
+	Permissions map[string]pa.PermissionOffer  `json:"-"`
+	WorkLinks   map[string]pa.WorkLink         `json:"-"`
+	Memory      pa.MemoryRevision
+	Entries     map[string]pa.MemoryEntry
+	ReadCursors map[string]pa.ReadCursor
+	RosterTrace *pa.Event `json:",omitempty"`
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -78,24 +79,50 @@ func (s *Store) lock(key pa.BotKey) func() {
 
 type reader interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 }
 
 func load(ctx context.Context, r reader, key pa.BotKey) (aggregate, error) {
-	var data []byte
-	err := r.QueryRowContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot=?`, key.MachineID, key.BotID).Scan(&data)
-	if errors.Is(err, sql.ErrNoRows) {
-		return aggregate{}, failure(pa.NotFound, "bot")
-	}
+	data, err := loadRow(ctx, r, key)
 	if err != nil {
 		return aggregate{}, err
 	}
-	var a aggregate
-	err = json.Unmarshal(data, &a)
-	// Workers saved by earlier versions can carry their owner's sidebar role.
-	if a.BackgroundOwner != nil {
-		a.Bot.Lead = false
+	return decodeAggregate(ctx, r, key, data)
+}
+
+func loadRow(ctx context.Context, r reader, key pa.BotKey) ([]byte, error) {
+	var data []byte
+	err := r.QueryRowContext(ctx, `SELECT data FROM project_assistant_bots WHERE machine=? AND bot=?`, key.MachineID, key.BotID).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, failure(pa.NotFound, "bot")
 	}
-	return a, err
+	return data, err
+}
+
+// loadHead is load without the Bot's collections, for a caller that reads
+// only its Bot, Conversation or memory state.
+func loadHead(ctx context.Context, r reader, key pa.BotKey) (aggregate, error) {
+	data, err := loadRow(ctx, r, key)
+	if err != nil {
+		return aggregate{}, err
+	}
+	return decodeHead(data)
+}
+
+// loadMember reads one stored member of an existing Bot into v.
+func loadMember(ctx context.Context, r reader, key pa.BotKey, collection, member string, v any) error {
+	if _, err := loadHead(ctx, r, key); err != nil {
+		return err
+	}
+	var data []byte
+	err := r.QueryRowContext(ctx, `SELECT data FROM project_assistant_bot_facts WHERE machine=? AND bot=? AND collection=? AND member=?`, key.MachineID, key.BotID, collection, member).Scan(&data)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sql.ErrNoRows
+	}
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, v)
 }
 
 // ReadNativeContextFacts keeps optional chat status off the writer. Read the
@@ -116,11 +143,11 @@ func (s *Store) ReadNativeContextFacts(ctx context.Context, key pa.BotKey, turnI
 }
 
 func (s *Store) Bot(ctx context.Context, key pa.BotKey) (pa.Bot, error) {
-	a, e := load(ctx, s.db, key)
+	a, e := loadHead(ctx, s.db, key)
 	return a.Bot, e
 }
 func (s *Store) Conversation(ctx context.Context, key pa.BotKey, id string) (pa.Conversation, error) {
-	a, e := load(ctx, s.db, key)
+	a, e := loadHead(ctx, s.db, key)
 	if e != nil {
 		return pa.Conversation{}, e
 	}
@@ -130,37 +157,46 @@ func (s *Store) Conversation(ctx context.Context, key pa.BotKey, id string) (pa.
 	return a.Conversation, nil
 }
 func (s *Store) Turn(ctx context.Context, key pa.BotKey, id string) (pa.Turn, error) {
-	a, e := load(ctx, s.db, key)
-	if e != nil {
-		return pa.Turn{}, e
-	}
-	x, ok := a.Turns[id]
-	if !ok {
+	var x pa.Turn
+	if id == "" {
+		if _, e := loadHead(ctx, s.db, key); e != nil {
+			return x, e
+		}
 		return x, failure(pa.NotFound, "turn")
 	}
-	return x, nil
+	e := loadMember(ctx, s.db, key, factTurns, id, &x)
+	if errors.Is(e, sql.ErrNoRows) {
+		return pa.Turn{}, failure(pa.NotFound, "turn")
+	}
+	return x, e
 }
 func (s *Store) Binding(ctx context.Context, key pa.BotKey, id string) (pa.ExecutionBinding, error) {
-	a, e := load(ctx, s.db, key)
-	if e != nil {
-		return pa.ExecutionBinding{}, e
-	}
-	x, ok := a.Bindings[id]
-	if !ok {
+	var x pa.ExecutionBinding
+	if id == "" {
+		if _, e := loadHead(ctx, s.db, key); e != nil {
+			return x, e
+		}
 		return x, failure(pa.NotFound, "binding")
 	}
-	return x, nil
+	e := loadMember(ctx, s.db, key, factBindings, id, &x)
+	if errors.Is(e, sql.ErrNoRows) {
+		return pa.ExecutionBinding{}, failure(pa.NotFound, "binding")
+	}
+	return x, e
 }
 func (s *Store) Permission(ctx context.Context, key pa.BotKey, id string) (pa.PermissionOffer, error) {
-	a, e := load(ctx, s.db, key)
-	if e != nil {
-		return pa.PermissionOffer{}, e
-	}
-	x, ok := a.Permissions[id]
-	if !ok {
+	var x pa.PermissionOffer
+	if id == "" {
+		if _, e := loadHead(ctx, s.db, key); e != nil {
+			return x, e
+		}
 		return x, failure(pa.NotFound, "permission")
 	}
-	return x, nil
+	e := loadMember(ctx, s.db, key, factPermissions, id, &x)
+	if errors.Is(e, sql.ErrNoRows) {
+		return pa.PermissionOffer{}, failure(pa.NotFound, "permission")
+	}
+	return x, e
 }
 func (s *Store) PendingTurns(ctx context.Context, key pa.BotKey) ([]pa.Turn, error) {
 	a, err := load(ctx, s.db, key)
@@ -247,8 +283,7 @@ func (s *Store) Receipt(ctx context.Context, c pa.Command) (*pa.Receipt, error) 
 
 // SendReceipt reads one receipt and its turn in the same SQLite snapshot.
 func (s *Store) SendReceipt(ctx context.Context, key pa.BotKey, conversation, id string) (pa.Receipt, error) {
-	const query = `SELECT r.data, json_extract(CAST(b.data AS TEXT), '$.Bot.project'), coalesce(json_extract(CAST(b.data AS TEXT),
-		'$.Turns."' || json_extract(CAST(r.data AS TEXT), '$.resource_id') || '"'), '')
+	query := `SELECT r.data, json_extract(CAST(b.data AS TEXT), '$.Bot.project'), coalesce(` + factValueSQL(factTurns, "b", `json_extract(CAST(r.data AS TEXT), '$.resource_id')`) + `, '')
 		FROM project_assistant_receipts r JOIN project_assistant_bots b USING (machine,bot)
 		WHERE r.machine=? AND r.bot=? AND r.operation='send' AND r.command_key=?
 		AND json_extract(CAST(b.data AS TEXT), '$.Conversation.id')=?`
@@ -295,9 +330,16 @@ func persist(ctx context.Context, tx *sql.Tx, a aggregate, expected int64) error
 	if err != nil {
 		return err
 	}
+	facts, err := encodeFacts(a)
+	if err != nil {
+		return err
+	}
 	if expected == 0 {
 		_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES(?,?,?,?)`, a.Bot.Key.MachineID, a.Bot.Key.BotID, a.Bot.Version, data)
 		if err != nil {
+			return err
+		}
+		if err = persistFacts(ctx, tx, a.Bot.Key, facts, true); err != nil {
 			return err
 		}
 		return appendRosterChange(ctx, tx, a, false)
@@ -311,6 +353,9 @@ func persist(ctx context.Context, tx *sql.Tx, a aggregate, expected int64) error
 		return failure(pa.StaleVersion, "bot")
 	}
 	if err != nil {
+		return err
+	}
+	if err = persistFacts(ctx, tx, a.Bot.Key, facts, false); err != nil {
 		return err
 	}
 	return appendRosterChange(ctx, tx, a, false)
@@ -1023,8 +1068,8 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 		if err = rows.Scan(&machine, &id, &raw); err != nil {
 			return out, err
 		}
-		var a aggregate
-		if err = json.Unmarshal(raw, &a); err != nil {
+		a, err := decodeAggregate(ctx, tx, pa.BotKey{MachineID: machine, BotID: id}, raw)
+		if err != nil {
 			return out, err
 		}
 		if !strings.Contains(strings.ToLower(a.Bot.Name), strings.ToLower(q.Query)) {
@@ -1289,7 +1334,7 @@ func deleteBotFacts(ctx context.Context, tx *sql.Tx, key pa.BotKey) error {
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return failure(pa.NotFound, "bot")
 	}
-	for _, table := range []string{"project_assistant_handoff_cards", "project_assistant_handoff_receipts", "project_assistant_reactions", "project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
+	for _, table := range []string{"project_assistant_bot_facts", "project_assistant_handoff_cards", "project_assistant_handoff_receipts", "project_assistant_reactions", "project_assistant_events", "project_assistant_receipts", "project_assistant_routines", "project_assistant_routine_runs", "project_assistant_routine_hooks"} {
 		if _, err = tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE machine=? AND bot=?`, key.MachineID, key.BotID); err != nil {
 			return err
 		}

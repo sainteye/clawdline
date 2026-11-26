@@ -209,12 +209,12 @@ func viewSnapshot(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h app.Re
 	out := &app.ReadSnapshot{Bot: bot, PendingTurns: []app.ReadTurnSummary{}, QueuedMessages: []pa.Message{}}
 	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, pending AS MATERIALIZED (
  SELECT ` + viewTurnProjection("t.value") + ` j,json_extract(t.value,'$.message_id') message_id,t.key id
- FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
+ FROM a,fact_turns t WHERE t.type='object'
  AND ` + ownChatTurnSQL("t.key") + `
  AND json_extract(t.value,'$.state') IN ('accepted','queued','running','waiting_permission')
 ), matched AS MATERIALIZED (
- SELECT p.j,p.id,m.value m,json_extract(m.value,'$.seq') anchor FROM pending p
- LEFT JOIN (a JOIN json_each(a.j,'$.Messages') m) ON m.type='object' AND json_extract(m.value,'$.id')=p.message_id
+ SELECT p.j,p.id,m.value m,m.ord anchor FROM pending p
+ LEFT JOIN fact_messages m ON m.member=p.message_id
 ), budget AS (
  SELECT *,sum(length(CAST(j AS BLOB))+coalesce(length(CAST(m AS BLOB)),0)) OVER(ORDER BY anchor,id COLLATE BINARY) spent FROM matched
 )
@@ -286,12 +286,11 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 	// Join on scalar message positions so SQLite can look up each turn's
 	// anchor without walking the complete message array for each turn. An
 	// interrupted restart can still block the queue behind newer messages.
-	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, message_positions AS MATERIALIZED (
- SELECT json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor
- FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object'
+	statement = strings.TrimSuffix(viewAggregateSQL, " ") + `, message_positions AS NOT MATERIALIZED (
+ SELECT m.member id,m.ord anchor FROM fact_messages m
 ), terminal AS MATERIALIZED (
  SELECT ` + viewTurnProjection("t.value") + ` j,m.anchor,t.key id
- FROM a,json_each(a.j,'$.Turns') t
+ FROM a,fact_turns t
  LEFT JOIN message_positions m ON m.id=json_extract(t.value,'$.message_id')
  WHERE t.type='object' AND ` + ownChatTurnSQL("t.key") + `
  AND ` + viewBoundFenceSQL("t.value") + ` ORDER BY CASE WHEN json_extract(t.value,'$.state')='unknown'
@@ -524,7 +523,7 @@ func (c *viewEventFactChecks) verify(ctx context.Context, tx *sql.Tx, e pa.Event
 	// potentially large captured instructions or the enclosing aggregate.
 	binding := viewEventBinding{id: e.Fence.BindingID, generation: e.Fence.Generation}
 	if binding.id != "" && !c.bindings[binding] {
-		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Bindings') b
+		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,fact_bindings b
  WHERE b.type='object' AND b.key=? AND b.key=json_extract(b.value,'$.fence.binding_id')
  AND json_extract(b.value,'$.fence.generation')=? AND ` + viewFenceSQL("b.value", false) + `)`
 		var valid bool
@@ -544,7 +543,7 @@ func (c *viewEventFactChecks) verify(ctx context.Context, tx *sql.Tx, e pa.Event
 		if c.traces[trace] {
 			return nil
 		}
-		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Turns') t
+		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,fact_turns t
  WHERE t.type='object' AND t.key=? AND t.key=json_extract(t.value,'$.id') AND json_extract(t.value,'$.fence.generation')=?
  AND json_extract(t.value,'$.fence.binding_id')=? AND ` + viewFenceSQL("t.value", false) + `)`
 		var valid bool
@@ -571,7 +570,7 @@ func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQ
  'kind',json_extract(p.value,'$.kind'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision'
  THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
  'expires_at',json_extract(p.value,'$.expires_at')) j
- FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND (json_extract(p.value,'$.state')='pending'
+ FROM a,fact_permissions p WHERE p.type='object' AND (json_extract(p.value,'$.state')='pending'
  OR (json_extract(p.value,'$.state')='answered' AND json_extract(p.value,'$.kind')='decision'
  AND coalesce(json_extract(p.value,'$.decision.memory'),'')<>''))
  AND ` + viewPermissionFenceSQL("p.value") + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)
@@ -704,7 +703,7 @@ func (s *ViewStore) detail(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery,
 	args := []any{out.Head.Key.MachineID, out.Head.Key.BotID}
 	if p.Collection == "permission" {
 		statement = viewAggregateSQL + `SELECT CASE WHEN length(CAST(p.value AS BLOB))<=? THEN p.value END
- FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND p.key=? AND ` + viewPermissionFenceSQL("p.value")
+ FROM a,fact_permissions p WHERE p.type='object' AND p.key=? AND ` + viewPermissionFenceSQL("p.value")
 		args = append(args, q.ByteLimit, p.ID)
 	} else {
 		// Seek the signed event sequence. Only accumulated text needs earlier

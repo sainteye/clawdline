@@ -346,7 +346,10 @@ func TestHistoricalOwnChatTraceRequiresItsExactStoredBinding(t *testing.T) {
 	if _, err := db.Exec(`UPDATE project_assistant_events SET data=? WHERE event_id=?`, raw, event.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`UPDATE project_assistant_bots SET data=json_set(CAST(data AS TEXT),'$.Turns.t1.fence.binding_id','missing-binding','$.Permissions',json('{}')) WHERE bot=?`, e.Bot.Key.BotID); err != nil {
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.fence.binding_id','missing-binding') WHERE bot=? AND collection='Turns' AND member='t1'`, e.Bot.Key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM project_assistant_bot_facts WHERE bot=? AND collection='Permissions'`, e.Bot.Key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := v.Read(testContext, viewQuery(e.Bot)); pa.Code(err) != pa.ScopeDenied {

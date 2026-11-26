@@ -456,6 +456,10 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				}
 			}
 			before := databaseFacts(t, db)
+			split := expectSplit(t, db)
+			if len(split.members) == 0 {
+				t.Fatal("the schema 2 fixture has no inline members")
+			}
 			err = (Installer{}).Install(testContext, db)
 			if fault != "" {
 				if err == nil {
@@ -474,6 +478,12 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 			if err = db.QueryRow(`SELECT version FROM project_assistant_schema`).Scan(&version); err != nil || version != pa.SchemaVersion {
 				t.Fatal(version, err)
 			}
+			// Schema 17 moves the Bot's collections to member rows; every
+			// other table keeps its bytes.
+			requireSplit(t, db, split)
+			delete(before, "project_assistant_bots")
+			delete(after, "project_assistant_bots")
+			delete(after, "project_assistant_bot_facts")
 			delete(before, "project_assistant_schema")
 			delete(after, "project_assistant_schema")
 			delete(after, "project_assistant_exchanges")
@@ -543,7 +553,7 @@ func TestInstallerMigratesActualSchemaTwoDatabaseAtomically(t *testing.T) {
 				if statement == "CREATE INDEX project_assistant_event_machine ON project_assistant_events(machine,seq)" {
 					continue
 				}
-				if strings.Contains(statement, "project_assistant_background_") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_lead_setup ") {
+				if strings.Contains(statement, "project_assistant_background_") || strings.Contains(statement, "project_assistant_bot_fact") || strings.HasPrefix(statement, "CREATE TABLE project_assistant_lead_setup ") {
 					continue
 				}
 

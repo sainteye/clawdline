@@ -19,9 +19,11 @@ import (
 // and raw-byte budgets preserve their existing JSON semantics.
 // The inner lookup only names that TEXT expression. Inline it so SQLite does
 // not write a second temporary copy of the full Bot aggregate.
-const viewAggregateSQL = `WITH aggregate AS NOT MATERIALIZED (
- SELECT CAST(data AS TEXT) j FROM project_assistant_bots WHERE machine=? AND bot=?
-), a AS MATERIALIZED (
+// The Bot's collections come from member rows (facts.go); ?1 and ?2 are the
+// machine and Bot, so later plain parameters keep their positions.
+var viewAggregateSQL = `WITH aggregate AS NOT MATERIALIZED (
+ SELECT CAST(data AS TEXT) j FROM project_assistant_bots WHERE machine=?1 AND bot=?2
+)` + factCTEsSQL("?1", "?2") + `, a AS MATERIALIZED (
  SELECT j,
  json_extract(j,'$.Bot.key.machine_id') machine_id,
  json_extract(j,'$.Bot.key.bot_id') bot_id,
@@ -31,11 +33,7 @@ const viewAggregateSQL = `WITH aggregate AS NOT MATERIALIZED (
  json_extract(j,'$.Bot.project.kind') project_kind,
  json_extract(j,'$.Conversation.id') conversation_id,
  json_extract(j,'$.Conversation.binding_id') binding_id,
- json_extract(j,'$.Conversation.generation') generation,
- coalesce(json_type(j,'$.Turns'),'null') turns_type,
- coalesce(json_type(j,'$.Messages'),'null') messages_type,
- coalesce(json_type(j,'$.Permissions'),'null') permissions_type,
- coalesce(json_type(j,'$.WorkLinks'),'null') work_links_type
+ json_extract(j,'$.Conversation.generation') generation
  FROM aggregate
 ) ` + roomTurnsCTE
 
@@ -76,14 +74,15 @@ func viewBoundFenceSQL(value string) string {
 	// This membership list is independent of the candidate turn. Evaluate
 	// the persisted binding scope once per statement.
 	return viewFenceSQL(value, false) + ` AND ((` + generation + `=0 AND ` + binding + `='') OR (` + binding + `,` + generation + `) IN (
- SELECT b.key,json_extract(b.value,'$.fence.generation') FROM a,json_each(a.j,'$.Bindings') b
+ SELECT b.key,json_extract(b.value,'$.fence.generation') FROM a,fact_bindings b
  WHERE CASE WHEN b.type='object' THEN b.key=json_extract(b.value,'$.fence.binding_id')
  AND ` + viewFenceSQL("b.value", false) + ` ELSE 0 END))`
 }
 
 func viewOwnChatHead(ctx context.Context, tx *sql.Tx, h *app.ReadViewHead) error {
-	statement := viewAggregateSQL + `SELECT coalesce(max(json_extract(m.value,'$.seq')),0)
- FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object' AND ` + ownChatTurnSQL("json_extract(m.value,'$.turn_id')")
+	// The newest own-chat message is found from the newest row down.
+	statement := viewAggregateSQL + `SELECT coalesce((SELECT m.ord FROM a,fact_messages m
+ WHERE ` + ownChatTurnSQL("json_extract(m.value,'$.turn_id')") + ` ORDER BY m.ord DESC LIMIT 1),0)`
 	return tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.Conversation.LastMessageSeq)
 }
 
@@ -109,11 +108,11 @@ SELECT version,valid AND json_type(j)='object'
  AND coalesce(json_type(j,'$.Bot'),'missing')='object'
  AND coalesce(json_type(j,'$.Conversation'),'missing')='object'
  AND coalesce(json_type(j,'$.Memory'),'missing')='object'
- AND coalesce(json_type(j,'$.Messages'),'null') IN ('array','null')
- AND coalesce(json_type(j,'$.Turns'),'null') IN ('object','null')
- AND coalesce(json_type(j,'$.Bindings'),'null') IN ('object','null')
- AND coalesce(json_type(j,'$.Permissions'),'null') IN ('object','null')
- AND coalesce(json_type(j,'$.WorkLinks'),'null') IN ('object','null'),
+ AND coalesce(json_type(j,'$.Messages'),'null')='null'
+ AND coalesce(json_type(j,'$.Turns'),'null')='null'
+ AND coalesce(json_type(j,'$.Bindings'),'null')='null'
+ AND coalesce(json_type(j,'$.Permissions'),'null')='null'
+ AND coalesce(json_type(j,'$.WorkLinks'),'null')='null',
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN b END,
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN c END,
  CASE WHEN length(CAST(b AS BLOB))+length(CAST(c AS BLOB))+length(CAST(m AS BLOB))<=? THEN m END,
@@ -167,7 +166,7 @@ SELECT version,valid AND json_type(j)='object'
 	h.Key, h.Project, h.BotVersion, h.MemoryRevision = b.Key, b.Project, b.Version, m.Revision
 	h.CurrentFence = pa.Fence{Key: b.Key, Project: b.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
 	if c.BindingID != "" {
-		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,json_each(a.j,'$.Bindings') b
+		statement := viewAggregateSQL + `SELECT EXISTS(SELECT 1 FROM a,fact_bindings b
  WHERE CASE WHEN b.type!='object' THEN 0 ELSE b.key=a.binding_id AND ` + viewFenceSQL("b.value", true) + ` END)`
 		var current bool
 		binding := botreadtrace.Measure(ctx, "sqlite_binding")
@@ -191,17 +190,26 @@ SELECT version,valid AND json_type(j)='object'
 	return h, b, nil
 }
 
-const viewTimelineCTE = `, messages AS MATERIALIZED (
+// page_floor is the position of the page-size-plus-one-th own-chat message
+// below the cursor. Those messages are candidates themselves, so every row of
+// the page sits at or above it, and no older message needs to be read.
+// Parameters: ?4 a cursor is set, ?5 its anchor, ?8 the page size plus one.
+const viewTimelineCTE = `, page_floor AS MATERIALIZED (
+ SELECT coalesce((SELECT m.ord FROM a,fact_messages m WHERE (?4=0 OR m.ord<?5)
+ AND ` + "NOT EXISTS(SELECT 1 FROM room_turns WHERE room_turns.id=json_extract(m.value,'$.turn_id'))" + `
+ AND NOT EXISTS(SELECT 1 FROM withdrawn_turns WHERE withdrawn_turns.id=json_extract(m.value,'$.turn_id'))
+ ORDER BY m.ord DESC LIMIT 1 OFFSET ?8-1),0) floor
+), messages AS MATERIALIZED (
  SELECT CASE WHEN json_extract(m.value,'$.output.artifact_id')!='' THEN
  json_set(m.value,'$.output.name',coalesce((SELECT json_extract(t.value,'$.title') FROM json_each(a.j,'$.ArtifactTitles') t WHERE t.key=json_extract(m.value,'$.output.artifact_id')),json_extract(m.value,'$.output.name')),
  '$.output.title_version',coalesce((SELECT json_extract(t.value,'$.version') FROM json_each(a.j,'$.ArtifactTitles') t WHERE t.key=json_extract(m.value,'$.output.artifact_id')),1)) ELSE m.value END j,
- json_extract(m.value,'$.id') id,json_extract(m.value,'$.seq') anchor
- FROM a,json_each(a.j,'$.Messages') m WHERE m.type='object'
-), turns AS MATERIALIZED (
- SELECT key id,value j,json_extract(value,'$.message_id') message_id FROM a,json_each(a.j,'$.Turns') WHERE type='object'
+ m.member id,m.ord anchor
+ FROM a,fact_messages m WHERE m.ord>=(SELECT floor FROM page_floor)
+), turns AS NOT MATERIALIZED (
+ SELECT key id,value j,json_extract(value,'$.message_id') message_id FROM fact_turns
 ), timeline AS (
  SELECT anchor,0 kind,id,j FROM messages UNION ALL
- SELECT m.anchor,1,w.key,w.value FROM a,json_each(a.j,'$.WorkLinks') w
+ SELECT m.anchor,1,w.key,w.value FROM a,fact_work_links w
  JOIN turns t ON t.id=json_extract(w.value,'$.turn_id') JOIN messages m ON m.id=t.message_id
 ) `
 
@@ -211,13 +219,13 @@ func viewTimelineSQL() string {
 	return strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + viewTimelineCTE + `, candidates AS NOT MATERIALIZED (
  SELECT anchor,kind,id,j FROM timeline
  UNION ALL
- SELECT json_extract(p.value,'$.anchor_message_seq'),2,p.key,p.value FROM a,json_each(a.j,'$.Permissions') p
- WHERE ? AND json_extract(p.value,'$.anchor_message_seq')>0
+ SELECT json_extract(p.value,'$.anchor_message_seq'),2,p.key,p.value FROM a,fact_permissions p
+ WHERE ?3 AND json_extract(p.value,'$.anchor_message_seq')>0
  AND json_extract(p.value,'$.action.tool_kind') IN ('team_create','team_update')
 ), bounded AS MATERIALIZED (
  SELECT anchor,kind,id,candidates.j FROM a,candidates
- WHERE ` + ownChatMessageSQL("json_extract(candidates.j,'$.turn_id')") + ` AND (?=0 OR (anchor,kind,id COLLATE BINARY)<(?,?,? COLLATE BINARY))
- ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?
+ WHERE ` + ownChatMessageSQL("json_extract(candidates.j,'$.turn_id')") + ` AND (?4=0 OR (anchor,kind,id COLLATE BINARY)<(?5,?6,?7 COLLATE BINARY))
+ ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC LIMIT ?8
 ), exchange_state AS MATERIALIZED (
  SELECT c.anchor,c.kind,c.id,CASE
  WHEN json_extract(c.j,'$.kind')='user' AND json_extract(t.j,'$.joined_turn_id') IS NOT NULL
@@ -232,16 +240,16 @@ func viewTimelineSQL() string {
  AND json_extract(CAST(e.data AS TEXT),'$.request_turn_id')=json_extract(c.j,'$.exchange.request_turn_id')
  THEN json_set(c.j,'$.exchange',json(CAST(e.data AS TEXT))) ELSE c.j END
  ELSE c.j END j
- FROM bounded c LEFT JOIN project_assistant_exchanges e ON c.kind=0 AND e.machine=?
- AND e.id=json_extract(c.j,'$.exchange.id') AND (e.source=? OR e.target=?)
+ FROM bounded c LEFT JOIN project_assistant_exchanges e ON c.kind=0 AND e.machine=?9
+ AND e.id=json_extract(c.j,'$.exchange.id') AND (e.source=?10 OR e.target=?11)
  LEFT JOIN turns t ON c.kind=0 AND t.id=json_extract(c.j,'$.turn_id') AND t.message_id=c.id
 ), sized AS (
  SELECT *,length(CAST(j AS BLOB)) n FROM exchange_state
 ), budget AS (
  SELECT *,sum(n) OVER(ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC) spent FROM sized
 )
-SELECT anchor,kind,CASE WHEN n<=? AND spent<=? THEN id ELSE '' END,
- CASE WHEN n<=? AND spent<=? THEN j END FROM budget
+SELECT anchor,kind,CASE WHEN n<=?12 AND spent<=?13 THEN id ELSE '' END,
+ CASE WHEN n<=?14 AND spent<=?15 THEN j END FROM budget
 ORDER BY anchor DESC,kind DESC,id COLLATE BINARY DESC`
 }
 
@@ -268,10 +276,10 @@ func viewTraceCTE() string {
 
 func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.ReadViewHead) error {
 	statement := viewAggregateSQL + `SELECT
- (SELECT count(*) FROM a,json_each(a.j,'$.Turns') WHERE type='object' AND json_extract(value,'$.state')='unknown'),
- (SELECT count(*) FROM a,json_each(a.j,'$.Turns') t WHERE t.type='object'
+ (SELECT count(*) FROM a,fact_turns WHERE type='object' AND json_extract(value,'$.state')='unknown'),
+ (SELECT count(*) FROM a,fact_turns t WHERE t.type='object'
  AND json_extract(t.value,'$.state') IN ('accepted','queued') AND ` + ownChatTurnSQL("t.key") + `),
- (SELECT count(*) FROM a,json_each(a.j,'$.Permissions') p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `)`
+ (SELECT count(*) FROM a,fact_permissions p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `)`
 	counts := botreadtrace.Measure(ctx, "sqlite_turn_counts")
 	err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount)
 	counts()
@@ -299,7 +307,7 @@ func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.Rea
  SELECT DISTINCT turn_id,binding_id,generation FROM traces
 ), trace_turns AS MATERIALIZED (
  SELECT t.key id,json_extract(t.value,'$.fence.binding_id') binding_id,json_extract(t.value,'$.fence.generation') generation
- FROM a,json_each(a.j,'$.Turns') t
+ FROM a,fact_turns t
  WHERE CASE WHEN t.type!='object' THEN 0
  WHEN (t.key,json_extract(t.value,'$.fence.binding_id'),json_extract(t.value,'$.fence.generation')) IN (SELECT turn_id,binding_id,generation FROM trace_refs)
  THEN ` + viewBoundFenceSQL("t.value") + ` ELSE 0 END

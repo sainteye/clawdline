@@ -16,7 +16,7 @@ func (s *ViewStore) progress(ctx context.Context, tx *sql.Tx, q app.ReadViewQuer
 	// belongs to its requesting Bot, even when its trace is readable on demand.
 	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, turns AS MATERIALIZED (
  SELECT t.key id,json_extract(t.value,'$.fence.binding_id') binding,json_extract(t.value,'$.fence.generation') generation
- FROM a,json_each(a.j,'$.Turns') t
+ FROM a,fact_turns t
  WHERE t.type='object' AND coalesce(json_extract(t.value,'$.origin'),'') NOT IN ('bot_request','network_request')
  AND ` + viewBoundFenceSQL("t.value") + `
 ), chunks AS MATERIALIZED (

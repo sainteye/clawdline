@@ -279,7 +279,7 @@ func TestFallbackLedgerSQLiteEveryWriteFailureStopsAndSurvivesRestart(t *testing
 			}
 			// The receipt insert is after aggregate/event writes, inside their
 			// transaction. Inspect semantic facts, never ordinal suffixes.
-			condition += fmt.Sprintf(` AND EXISTS(SELECT 1 FROM project_assistant_bots b, json_each(CAST(b.data AS TEXT),'$.Turns') t WHERE b.machine=NEW.machine AND b.bot=NEW.bot AND json_extract(t.value,'$.attempts[#-1].stage')='%s' AND json_extract(t.value,'$.attempts[#-1].agent')='%s')`, stage, agent)
+			condition += fmt.Sprintf(` AND EXISTS(SELECT 1 FROM project_assistant_bot_facts t WHERE t.machine=NEW.machine AND t.bot=NEW.bot AND t.collection='Turns' AND json_extract(CAST(t.data AS TEXT),'$.attempts[#-1].stage')='%s' AND json_extract(CAST(t.data AS TEXT),'$.attempts[#-1].agent')='%s')`, stage, agent)
 			if _, err := db.Exec(`CREATE TRIGGER reject_ledger BEFORE INSERT ON project_assistant_receipts WHEN ` + condition + ` BEGIN SELECT RAISE(ABORT,'scripted ledger receipt failure'); END`); err != nil {
 				t.Fatal(err)
 			}

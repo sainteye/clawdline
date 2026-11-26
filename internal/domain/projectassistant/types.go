@@ -12,7 +12,7 @@ import (
 const (
 	ContractVersion = "project-assistants.v1"
 	FixtureVersion  = 1
-	SchemaVersion   = 16
+	SchemaVersion   = 17
 	MaxNameRunes    = 128
 	// What a group works on, as Codync's group description: shown to the
 	// person and quoted to each member in its room prompt.

@@ -12,10 +12,13 @@ import (
 // unknown; a background task until it reaches a terminal turn state. Keep the
 // SQL fragments below in step with these.
 const (
-	activeWorkLinkStatesSQL      = `('accepted','waiting_for_person','executing')`
-	activeBackgroundStatesSQL    = `('waiting','active')`
-	dispatchedWorkLinkStatesSQL  = `('accepted','waiting_for_person','executing','completed','failed')`
-	backgroundWorkerTurnStateSQL = `json_extract(CAST(b.data AS TEXT),'$.Turns.'||json_quote(json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id'))||'.state')`
+	activeWorkLinkStatesSQL     = `('accepted','waiting_for_person','executing')`
+	activeBackgroundStatesSQL   = `('waiting','active')`
+	dispatchedWorkLinkStatesSQL = `('accepted','waiting_for_person','executing','completed','failed')`
+)
+
+var (
+	backgroundWorkerTurnStateSQL = `json_extract(` + factValueSQL(factTurns, "b", `json_extract(CAST(b.data AS TEXT),'$.Conversation.active_turn_id')`) + `,'$.state')`
 	backgroundWorkCountsSQL      = `count(*) FILTER (WHERE t.state='active' AND ` + backgroundWorkerTurnStateSQL + ` IS NOT NULL),
 		count(*) FILTER (WHERE t.state='waiting' OR (` + backgroundWorkerTurnStateSQL + ` IS NULL AND t.state='active')),
 		count(*) FILTER (WHERE ` + backgroundWorkerTurnStateSQL + `='waiting_permission')`
@@ -117,7 +120,7 @@ func noteBackgroundOwner(ctx context.Context, tx *sql.Tx, owner pa.BotKey) error
 func (s *Store) SettledWorkRepairs(ctx context.Context, machine, after string) ([]string, error) {
 	rows, err := s.reader.QueryContext(ctx, `
 SELECT t.id
-FROM project_assistant_bots b, json_each(CAST(b.data AS TEXT),'$.WorkLinks') w
+FROM project_assistant_bots b `+factJoinSQL(factWorkLinks, "w", "b")+`
 JOIN broker_tasks t ON t.id=json_extract(w.value,'$.task_id')
 WHERE b.machine=? AND t.id>? AND json_valid(t.record)
 AND json_extract(t.record,'$.assistant_owner.fence.key.machine_id')=b.machine

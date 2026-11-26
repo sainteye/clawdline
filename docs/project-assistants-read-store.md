@@ -99,10 +99,12 @@ claim that total Go allocations or RSS equal8MiB. There are at most100 (events:
 256) candidate objects, each continuation/detail token is at most the trusted
 cursor budget (never above4096 UTF-8 bytes), and no growing retained history.
 
-SQLite still parses/scans aggregate JSON and may materialize/order rows or
-construct temporary query structures. Engine CPU/memory is **not O(page)** and
-is not bounded by the returned JSON budget. No latency, peak-RSS or production
-contention improvement is inferred from these tests.
+Since schema 17 a page reads its rows through the member index: the timeline
+starts at the page's floor (below), and the head, pending and last-turn
+statements look members up by ID or position. SQLite may still materialize the
+Bot's turn sets for the own-chat filter and order the page's candidates; that
+engine work is bounded by the Bot's turns and the page, not by its message
+history, and it is not bounded by the returned JSON budget.
 
 The source budget does not estimate HTTP/Cloud escaping or envelope overhead.
 After the transaction, the transport measures actual complete generated JSON
@@ -426,5 +428,35 @@ largest pages, exchange text was 37–67% of the JSON for exchange-heavy Bots.
 The chat's write preflight reads only the head and fence, so it asks for one
 row instead of a hundred.
 
-The SQL still parses the whole aggregate once per statement; the next step
-is to store collection members as rows so a page reads only its rows.
+### Member rows (schema 17, 2026-11-27)
+
+Schema 17 stores each Bot's messages, turns, bindings, permissions and work
+links one member per row (`project_assistant_bot_facts`, see
+`docs/project-assistants-store.md`). The read statements define `fact_messages`
+and its siblings with json_each's key, value and type columns, so their
+predicates are unchanged. The timeline first finds its floor: the position of
+the page-size-plus-one-th own-chat message below the cursor. Those messages
+are candidates, so every row of the page is at or above the floor and no older
+message is read. The chat head takes the newest own-chat row from the top of
+the index, and pending and last-turn lookups join messages by ID.
+
+On the 9,001-message store fixture snapshot fell from 396–430 ms (commit
+`fc1d01a3f`) to 7–8 ms, history to 7 ms and an empty event resume from about
+200 ms to 2–4 ms. On a copy of the owner's database (254 Bots, the chat's
+20-row opening read, five runs per Bot, medians), against `b057cb528`:
+
+| Bot (stored history) | Before (ms) | After (ms) |
+| --- | ---: | ---: |
+| 4.7 MB, 1,138 messages | 563 | 36 |
+| 2.9 MB, 793 messages | 362 | 21 |
+| 1.7 MB, 451 messages | 129 | 16 |
+| 0.67 MB, 196 messages | 76 | 10 |
+| 40 KB, 17 messages | 7.4 | 3.9 |
+
+The Bots list (`ReadRoster`, 17 Bots) fell from 206–215 ms to 62–63 ms; its
+unread count now reads only messages after the reader's position. A read
+cursor write on the largest Bot fell from 65 to 40 ms median. The migration
+took 2.1–5.1 s once on that copy. Exports of all 254 Bots and the roster frame
+were byte-identical before and after it, apart from the roster's random epoch
+and cursor signature. These are source timings on an Apple M4 Pro under shared
+load; they exclude the relay and the browser.

@@ -60,7 +60,7 @@ func roomTurnObservations(ctx context.Context, tx *sql.Tx, group pa.Group, room 
  'failure',json_extract(t.value,'$.failure'),'attempts',json_extract(t.value,'$.attempts'))
  FROM project_assistant_group_members m
  JOIN project_assistant_bots b ON b.machine=m.machine AND b.bot=m.bot
- JOIN json_each(CAST(b.data AS TEXT),'$.Turns') t
+ `+factJoinSQL(factTurns, "t", "b")+`
  LEFT JOIN project_assistant_receipts sent ON sent.machine=b.machine AND sent.bot=b.bot
  AND sent.operation='send' AND sent.command_key=json_extract(t.value,'$.idempotency_key')
  AND json_extract(CAST(sent.data AS TEXT),'$.resource_id')=json_extract(t.value,'$.id')
@@ -158,7 +158,7 @@ func roomWork(ctx context.Context, tx *sql.Tx, group pa.Group, outcomes []pa.Roo
 	rows, err := tx.QueryContext(ctx, `SELECT o.key,json_extract(w.value,'$.task_id'),json_extract(w.value,'$.state')
  FROM json_each(?) o
  JOIN project_assistant_bots b ON b.machine=? AND b.bot=json_extract(o.value,'$.bot')
- JOIN json_each(CAST(b.data AS TEXT),'$.WorkLinks') w
+ `+factJoinSQL(factWorkLinks, "w", "b")+`
  WHERE w.type='object' AND json_extract(w.value,'$.turn_id')=json_extract(o.value,'$.turn')
  ORDER BY o.key,w.key LIMIT ?`, string(input), group.Key.MachineID, pa.MaxPageRows)
 	if err != nil {

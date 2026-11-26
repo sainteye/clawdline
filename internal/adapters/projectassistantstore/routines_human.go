@@ -161,8 +161,8 @@ func (s *ViewStore) ReadRoutines(ctx context.Context, q app.RoutineQuery) (app.R
 			if run.TurnID != "" {
 				var text, failed sql.NullString
 				err = tx.QueryRowContext(ctx, viewAggregateSQL+`SELECT
- (SELECT json_extract(m.value,'$.text') FROM json_each(a.j,'$.Messages') m WHERE json_extract(m.value,'$.turn_id')=? AND json_extract(m.value,'$.kind')='assistant' AND `+viewFenceSQL("m.value", false)+` ORDER BY json_extract(m.value,'$.seq') DESC LIMIT 1),
- (SELECT json_extract(t.value,'$.failure') FROM json_each(a.j,'$.Turns') t WHERE t.key=? AND `+viewFenceSQL("t.value", false)+`) FROM a`, q.Key.MachineID, q.Key.BotID, run.TurnID, run.TurnID).Scan(&text, &failed)
+ (SELECT json_extract(m.value,'$.text') FROM fact_messages m WHERE json_extract(m.value,'$.turn_id')=? AND json_extract(m.value,'$.kind')='assistant' AND `+viewFenceSQL("m.value", false)+` ORDER BY json_extract(m.value,'$.seq') DESC LIMIT 1),
+ (SELECT json_extract(t.value,'$.failure') FROM fact_turns t WHERE t.key=? AND `+viewFenceSQL("t.value", false)+`) FROM a`, q.Key.MachineID, q.Key.BotID, run.TurnID, run.TurnID).Scan(&text, &failed)
 				if err != nil {
 					return out, err
 				}

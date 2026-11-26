@@ -37,7 +37,7 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		if err = tx.QueryRowContext(ctx, `SELECT version FROM project_assistant_schema WHERE id=1`).Scan(&version); err != nil {
 			return err
 		}
-		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != pa.SchemaVersion {
+		if version != 1 && version != 2 && version != 3 && version != 4 && version != 5 && version != 6 && version != 7 && version != 8 && version != 9 && version != 10 && version != 11 && version != 12 && version != 13 && version != 14 && version != 15 && version != 16 && version != pa.SchemaVersion {
 			return failure(pa.Unsupported, "schema_version")
 		}
 	}
@@ -80,6 +80,9 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_lead_setup (machine TEXT PRIMARY KEY)`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_agent_rests (machine TEXT NOT NULL, agent TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,agent))`,
 		`CREATE TABLE IF NOT EXISTS project_assistant_bots (machine TEXT NOT NULL, bot TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0), data BLOB NOT NULL, PRIMARY KEY(machine,bot))`,
+		botFactsSchema,
+		botFactsOrderIndex,
+		botFactsMemberIndex,
 		`CREATE TABLE IF NOT EXISTS project_assistant_events (seq INTEGER PRIMARY KEY AUTOINCREMENT, machine TEXT NOT NULL, bot TEXT NOT NULL, event_id TEXT NOT NULL, data BLOB NOT NULL, UNIQUE(machine,event_id))`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_event_bot ON project_assistant_events(machine,bot,seq)`,
 		`CREATE INDEX IF NOT EXISTS project_assistant_event_machine ON project_assistant_events(machine,seq)`,
@@ -95,6 +98,15 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 		`CREATE TABLE IF NOT EXISTS project_assistant_receipts (machine TEXT NOT NULL, bot TEXT NOT NULL, operation TEXT NOT NULL, command_key TEXT NOT NULL, receipt_id TEXT NOT NULL, data BLOB NOT NULL, PRIMARY KEY(machine,bot,operation,command_key), UNIQUE(machine,bot,receipt_id))`,
 	} {
 		if _, err = tx.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	// V17 stores each Bot's messages, turns, bindings, permissions and work
+	// links one member per row. The members move unchanged; the Bot row keeps
+	// every other byte. A missing or repeated member identity fails the
+	// whole migration rather than dropping a fact.
+	if exists != 0 && version < 17 {
+		if err = splitBotFacts(ctx, tx); err != nil {
 			return err
 		}
 	}

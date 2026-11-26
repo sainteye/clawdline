@@ -451,7 +451,7 @@ func (s *Store) CharterBots(ctx context.Context, machine string) ([]CharterBot, 
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.lead'),0),
  coalesce(json_extract(CAST(data AS TEXT),'$.Bot.hidden'),0),
  coalesce(json_extract(CAST(data AS TEXT),'$.Conversation.active_turn_id'),'')<>'',
- EXISTS(SELECT 1 FROM json_each(CAST(data AS TEXT),'$.Turns') t WHERE json_extract(t.value,'$.state') IN ('accepted','queued'))
+ EXISTS(SELECT 1 FROM project_assistant_bot_facts t WHERE t.machine=project_assistant_bots.machine AND t.bot=project_assistant_bots.bot AND t.collection='Turns' AND json_extract(CAST(t.data AS TEXT),'$.state') IN ('accepted','queued'))
  FROM project_assistant_bots WHERE machine=? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL ORDER BY bot`, machine)
 	if err != nil {
 		return nil, err

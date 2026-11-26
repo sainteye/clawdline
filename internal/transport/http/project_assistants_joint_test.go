@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/sainteye/clawdline/internal/adapters/projectassistanttest"
 	"io"
 	"net/url"
 	"os"
@@ -124,6 +125,9 @@ func (j *paJointFixture) seedCapacity(t *testing.T) {
 	if _, err := f.s.store.ProjectAssistantDatabase().Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.Messages',json(?),'$.Conversation.last_message_seq',2,'$.Turns',json(?),'$.WorkLinks',json(?)) WHERE machine=? AND bot=?`, string(a), string(b), string(c), f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), f.s.store.ProjectAssistantDatabase(), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (j *paJointFixture) lateWork(t *testing.T) {
@@ -137,6 +141,9 @@ func (j *paJointFixture) lateWork(t *testing.T) {
 	}
 	defer tx.Rollback()
 	if _, err = tx.Exec(`UPDATE project_assistant_bots SET data=json_set(data,'$.WorkLinks',json(?)) WHERE machine=? AND bot=?`, string(rawWork), f.key.MachineID, f.key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectassistanttest.MoveInlineCollections(context.Background(), tx, f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
 	r, err := tx.Exec(`INSERT INTO project_assistant_events(machine,bot,event_id,data) VALUES(?,?,?,?)`, f.key.MachineID, f.key.BotID, "late-old-work", []byte("null"))

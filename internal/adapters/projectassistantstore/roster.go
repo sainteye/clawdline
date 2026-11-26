@@ -264,38 +264,38 @@ func rosterOpenDecisionSQL(v string) string {
 // large text aggregate inside each correlated scalar would retain the reader
 // snapshot for seconds. Stored bytes and returned projections remain JSON.
 var rosterProjectionSQL = `WITH a AS MATERIALIZED (
- SELECT jsonb(CAST(data AS TEXT)) j FROM project_assistant_bots WHERE machine=? AND bot=?
-) ` + roomTurnsCTE + withdrawnTurnsCTE + `, turns AS MATERIALIZED (
- SELECT t.key,t.value FROM a,json_each(j,'$.Turns') t
-), own_messages AS MATERIALIZED (
- SELECT m.key,m.value FROM a,json_each(j,'$.Messages') m WHERE coalesce(json_extract(m.value,'$.output.quiet'),0)<>1 AND ` + ownChatMessageSQL("json_extract(m.value,'$.turn_id')") + `
-), admissions AS MATERIALIZED (
- SELECT m.key,m.value FROM own_messages m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
+ SELECT jsonb(CAST(data AS TEXT)) j FROM project_assistant_bots WHERE machine=?1 AND bot=?2
+)` + factCTEsSQL("?1", "?2") + ` ` + roomTurnsCTE + withdrawnTurnsCTE + `, turns AS NOT MATERIALIZED (
+ SELECT t.key,t.value FROM fact_turns t
+), own_messages AS NOT MATERIALIZED (
+ SELECT m.ord,m.value FROM fact_messages m WHERE coalesce(json_extract(m.value,'$.output.quiet'),0)<>1 AND ` + ownChatMessageSQL("json_extract(m.value,'$.turn_id')") + `
+), admissions AS NOT MATERIALIZED (
+ SELECT m.ord,m.value FROM own_messages m WHERE json_extract(m.value,'$.kind') IN ('user','notice')
 ), u AS MATERIALIZED (
  SELECT m.value message,t.key turnid FROM admissions m JOIN turns t ON t.key=json_extract(m.value,'$.turn_id')
- WHERE coalesce(json_extract(t.value,'$.joined_turn_id'),'')='' AND json_extract(t.value,'$.message_id')=json_extract(m.value,'$.id') ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
+ WHERE coalesce(json_extract(t.value,'$.joined_turn_id'),'')='' AND json_extract(t.value,'$.message_id')=json_extract(m.value,'$.id') ORDER BY m.ord DESC LIMIT 1
 ), latest_message AS MATERIALIZED (
- SELECT m.value message FROM own_messages m ORDER BY CAST(m.key AS INTEGER) DESC LIMIT 1
+ SELECT m.value message FROM own_messages m ORDER BY m.ord DESC LIMIT 1
 ), background(active,waiting,needs_input) AS MATERIALIZED (
  SELECT ` + backgroundWorkCountsSQL + backgroundWorkFromSQL + ` AND t.machine=?1 AND t.bot=?2
 ), projection AS MATERIALIZED (
  SELECT json_object('Bot',json_extract(j,'$.Bot'),'Conversation',json_object('id',json_extract(j,'$.Conversation.id'),'active_turn_id',json_extract(j,'$.Conversation.active_turn_id'),'generation',json_extract(j,'$.Conversation.generation'),'binding_id',json_extract(j,'$.Conversation.binding_id')),
  'Turns',json((SELECT json_group_object(t.key,json_object('id',json_extract(t.value,'$.id'),'message_id',json_extract(t.value,'$.message_id'),'joined_turn_id',json_extract(t.value,'$.joined_turn_id'),'room',json_extract(t.value,'$.room'),'fence',json_extract(t.value,'$.fence'),'state',json_extract(t.value,'$.state'),'failure',json_extract(t.value,'$.failure'))) FROM turns t WHERE t.key=json_extract(j,'$.Conversation.active_turn_id') OR t.key=(SELECT turnid FROM u))),
  'Messages',json((SELECT json_group_array(json(message)) FROM u)),
- 'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')),'kind',json_extract(p.value,'$.kind'),'anchor_message_seq',json_extract(p.value,'$.anchor_message_seq'),'expires_at',json_extract(p.value,'$.expires_at'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision' THEN json_object('question',json_extract(p.value,'$.decision.question'),'exchange_id',json_extract(p.value,'$.decision.exchange_id'),'memory',json_extract(p.value,'$.decision.memory')) END)) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND (json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id') OR json_extract(p.value,'$.kind')='decision' AND ` + rosterOpenDecisionSQL("p.value") + `))),
+ 'Permissions',json((SELECT json_group_object(p.key,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),'action',json_object('title',json_extract(p.value,'$.action.title')),'kind',json_extract(p.value,'$.kind'),'anchor_message_seq',json_extract(p.value,'$.anchor_message_seq'),'expires_at',json_extract(p.value,'$.expires_at'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision' THEN json_object('question',json_extract(p.value,'$.decision.question'),'exchange_id',json_extract(p.value,'$.decision.exchange_id'),'memory',json_extract(p.value,'$.decision.memory')) END)) FROM fact_permissions p WHERE json_extract(p.value,'$.state')='pending' AND (json_extract(p.value,'$.turn_id')=json_extract(j,'$.Conversation.active_turn_id') OR json_extract(p.value,'$.kind')='decision' AND ` + rosterOpenDecisionSQL("p.value") + `))),
  'Completion',json_extract(j,'$.Completion'),'RosterTrace',json_extract(j,'$.RosterTrace')) projected,
  coalesce((SELECT value FROM json_each(j,'$.ReadCursors') WHERE key=?),'') read_cursor,
  coalesce((SELECT nullif(json_extract(message,'$.text'),'') FROM latest_message),(SELECT group_concat(json_extract(value,'$.name'),' · ') FROM latest_message,json_each(message,'$.files')),'') latest,
  coalesce((SELECT json_extract(message,'$.kind') FROM latest_message),'') latest_kind,
  coalesce((SELECT json_extract(message,'$.notice') FROM latest_message WHERE json_extract(message,'$.kind')='notice' AND json_extract(message,'$.notice.key')='compacted'),'') latest_notice,
  coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.created_at')) activity_at,
- (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.kind') IN ` + unreadKindsSQL + ` AND json_extract(value,'$.seq')>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)
+ (SELECT count(*) FROM own_messages WHERE json_extract(value,'$.kind') IN ` + unreadKindsSQL + ` AND ord>coalesce((SELECT json_extract(value,'$.message_seq') FROM json_each(j,'$.ReadCursors') WHERE key=?),0)
    AND NOT (json_extract(value,'$.exchange') IS NOT NULL
      AND json_extract(value,'$.exchange.target.key.machine_id')=json_extract(j,'$.Bot.key.machine_id')
      AND json_extract(value,'$.exchange.target.key.bot_id')=json_extract(j,'$.Bot.key.bot_id'))) unread,
- (SELECT count(*) FROM json_each(j,'$.Permissions') p WHERE json_extract(p.value,'$.state')='pending' AND ` + rosterOpenDecisionSQL("p.value") + `) pending,
- (SELECT count(*) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work,
- coalesce((SELECT json_group_array(json_object('state',json_extract(value,'$.state'),'landing',json_extract(value,'$.landing'))) FROM json_each(j,'$.WorkLinks') WHERE json_extract(value,'$.state') IN ` + dispatchedWorkLinkStatesSQL + `),'[]') dispatched FROM a
+ (SELECT count(*) FROM fact_permissions p WHERE json_extract(p.value,'$.state')='pending' AND ` + rosterOpenDecisionSQL("p.value") + `) pending,
+ (SELECT count(*) FROM fact_work_links WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work,
+ coalesce((SELECT json_group_array(json_object('state',json_extract(value,'$.state'),'landing',json_extract(value,'$.landing'))) FROM fact_work_links WHERE json_extract(value,'$.state') IN ` + dispatchedWorkLinkStatesSQL + `),'[]') dispatched FROM a
 ), guarded AS MATERIALIZED (
  SELECT *,length(CAST(projected AS BLOB))+length(CAST(read_cursor AS BLOB))+length(CAST(latest AS BLOB))+length(CAST(latest_notice AS BLOB))+length(CAST(activity_at AS BLOB))<=? fits FROM projection
 )
@@ -320,8 +320,18 @@ func rosterSummary(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string
 	if !projected.Valid {
 		return row, id, 0, failure(pa.CapacityFull, "roster_projection_bytes")
 	}
-	var a aggregate
-	if json.Unmarshal([]byte(projected.String), &a) != nil || a.Bot.Key != key || a.Bot.ConversationID != a.Conversation.ID || pa.ValidateScope(a.Bot.Project) != nil {
+	// The projection names its few turns, messages and permissions as an
+	// inline aggregate would; the stored aggregate keeps them in rows.
+	var p struct {
+		aggregate
+		Turns       map[string]pa.Turn
+		Messages    []pa.Message
+		Permissions map[string]pa.PermissionOffer
+	}
+	err = json.Unmarshal([]byte(projected.String), &p)
+	a := p.aggregate
+	a.Turns, a.Messages, a.Permissions = p.Turns, p.Messages, p.Permissions
+	if err != nil || a.Bot.Key != key || a.Bot.ConversationID != a.Conversation.ID || pa.ValidateScope(a.Bot.Project) != nil {
 		return row, id, 0, failure(pa.Invalid, "roster_projection")
 	}
 	row = pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, LatestMessage: latest, LatestMessageKind: pa.MessageKind(latestKind), UnreadCount: unread, PendingPermissions: pending, ActiveWork: work, ReadCursor: pa.ReadCursor{Key: key, ConversationID: a.Conversation.ID, ReaderID: reader}}
