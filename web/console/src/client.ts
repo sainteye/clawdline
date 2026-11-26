@@ -1,5 +1,5 @@
 import { ClawdlineClient, RefusalError, nativeEventSourceTransport, pollingTransport, type StreamHandle, type StreamHandlers, type StreamTransport } from "@clawdline/core"
-import { shareLocalEvents } from "./local-events.js"
+import { closedForGood, shareLocalEvents } from "./local-events.js"
 
 /**
  * One client for the whole console.
@@ -58,9 +58,6 @@ const FLEET_STREAM_LOCK = "clawdline-local-fleet-stream"
 export const FLEET_RECONNECT_FIRST_MS = 1_000
 export const FLEET_RECONNECT_CEILING_MS = 30_000
 export const FLEET_RECONNECT_ATTEMPTS = 6
-/** EventSource.CLOSED */
-const CLOSED = 2
-const closedForGood = (cause: unknown) => (cause as { target?: { readyState?: unknown } } | null)?.target?.readyState === CLOSED
 /** The daemon refused this page's access: retrying will not help until the person signs in again. */
 const accessRefused = (cause: unknown) => cause instanceof RefusalError && (cause.status === 401 || cause.status === 403)
 
@@ -191,12 +188,9 @@ function quietableTransport(): StreamTransport | undefined {
       let using: StreamTransport | undefined
       let lease: FleetLease | undefined
       let closed = false
-      // Queue behind whichever tab took the stream meanwhile, without stealing it.
-      const ladder = reconnectLadder(() => {
-        if (quiet > 0) change()
-        else if (locks) claim(false)
-        else use(stream)
-      })
+      // Reopen by visibility: a shown page steals the stream back from
+      // whichever tab took it meanwhile, a hidden one queues behind it.
+      const ladder = reconnectLadder(() => change())
       const watched: StreamHandlers = {
         ...handlers,
         onOpen() {

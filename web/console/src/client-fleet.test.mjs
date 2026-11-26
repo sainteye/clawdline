@@ -284,7 +284,7 @@ test("a held stream refused with 503 reopens after a backoff", async t => {
   assert.deepEqual(browser.traffic.slice(2), ["read /v1/sessions", "tab1 stream /v1/events"])
 })
 
-test("a holder whose stream is refused hands the lock to a waiting tab", async t => {
+test("a visible holder whose stream is refused takes it back from a hidden tab after the backoff", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] })
   const browser = fleetBrowser(t, fakeLocks())
   const holder = await browser.openTab()
@@ -297,10 +297,40 @@ test("a holder whose stream is refused hands the lock to a waiting tab", async t
   await settle()
   assert.deepEqual(browser.traffic.slice(1), ["tab1 stream refused", "tab2 stream /v1/events"])
 
-  // Its own retry queues behind the new holder and reads instead of stealing.
+  // The page the person sees steals the stream back; the hidden one pauses.
   t.mock.timers.tick(holder.module.FLEET_RECONNECT_FIRST_MS)
   await settle()
-  assert.deepEqual(browser.traffic.slice(3), ["read /v1/sessions", "read /v1/sessions"])
+  assert.deepEqual(browser.traffic.slice(3), ["read /v1/sessions", "tab1 stream /v1/events", "tab2 close stream"])
+
+  t.mock.timers.tick(holder.module.FLEET_RECONNECT_CEILING_MS)
+  await settle()
+  assert.deepEqual(browser.traffic.slice(6), [])
+})
+
+test("a refused tab takes the stream back from a visible tab, which polls and does not steal it again", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  await browser.openTab()
+  await settle()
+  const holder = await browser.openTab()
+  await settle()
+  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab2 stream /v1/events", "tab1 close stream", "read /v1/sessions"])
+
+  holder.refuseStream()
+  await settle()
+  assert.deepEqual(browser.traffic.slice(4), ["tab2 stream refused", "tab1 stream /v1/events"])
+
+  t.mock.timers.tick(holder.module.FLEET_RECONNECT_FIRST_MS)
+  await settle()
+  assert.deepEqual(browser.traffic.slice(6), ["read /v1/sessions", "tab2 stream /v1/events", "tab1 close stream", "read /v1/sessions"])
+
+  const before = browser.traffic.length
+  for (let i = 0; i < 6; i++) {
+    t.mock.timers.tick(holder.module.FLEET_RECONNECT_CEILING_MS)
+    await settle()
+  }
+  const later = browser.traffic.slice(before)
+  assert.ok(later.length > 0 && later.every(line => line === "read /v1/sessions"), JSON.stringify(later))
 })
 
 test("a stream that keeps being refused stops reconnecting at the limit", async t => {
