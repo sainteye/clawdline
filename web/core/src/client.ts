@@ -239,15 +239,16 @@ export class ClawdlineClient {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), this.timeoutMs)
     let res: Response
+    let text: string
     try {
       res = await this.doFetch(this.url(path), { ...init, signal: controller.signal })
+      text = await res.text()
     } catch (cause) {
       throw new TransportError(`${init.method ?? "GET"} ${path} did not complete`, cause)
     } finally {
       clearTimeout(timer)
     }
 
-    const text = await res.text()
     let parsed: unknown
     try {
       parsed = text.length > 0 ? JSON.parse(text) : null
