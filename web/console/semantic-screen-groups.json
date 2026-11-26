@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14623,
-  "riskKeys": 6210,
-  "nonRiskCount": 8413,
+  "englishContentKeys": 14625,
+  "riskKeys": 6208,
+  "nonRiskCount": 8417,
   "groups": [
     {
       "name": "acp / other",
@@ -454,7 +454,7 @@
     },
     {
       "name": "botRoutineControls / other",
-      "count": 65,
+      "count": 67,
       "sources": [
         "src/project-assistants/routine-words.ts"
       ],
@@ -491,6 +491,8 @@
         "botRoutineControls.invalidTimeZone",
         "botRoutineControls.key",
         "botRoutineControls.later",
+        "botRoutineControls.loadingHistory",
+        "botRoutineControls.loadingRoutines",
         "botRoutineControls.localURL",
         "botRoutineControls.manageHook",
         "botRoutineControls.minute",
@@ -4400,7 +4402,7 @@
     },
     {
       "name": "next / other",
-      "count": 1357,
+      "count": 1359,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5368,7 +5370,9 @@
         "next.sessionStateFilterAll",
         "next.sessionStateFilterClose",
         "next.sessionStateFilterEmptyHint",
+        "next.sessionStateFilterIdleHint",
         "next.sessionStateFilterTitle",
+        "next.sessionStateFilterWorkingHint",
         "next.sessionStateShowAll",
         "next.sessionStop",
         "next.sessionTrySendingAgain",

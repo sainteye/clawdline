@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useId, useRef, useState, type ReactNode } from "react"
 
-export interface PaOption { value:string; label:string; icon?:ReactNode; hint?:string }
+export interface PaOption { value:string; label:string; icon?:ReactNode; hint?:string; disabled?:boolean }
 /** A line at the end of the list about the options themselves: still loading, failed (with a retry), or none to offer. */
 export interface PaSelectStatus { kind:"loading"|"error"|"empty"; text:string; retryLabel?:string; onRetry?:()=>void }
 
@@ -26,7 +26,13 @@ export function PaSelect({label,ariaLabel,value,options,onChange,placeholder="",
   const retry=status?.onRetry?options.length:-1,rows=options.length+(retry>=0?1:0)
   const show=(at=Math.max(0,options.findIndex(o=>o.value===value)))=>{if(disabled||!rows)return;setActive(at);setOpen(true)}
   const close=(focus=true)=>{setOpen(false);if(focus)button.current?.focus({preventScroll:true})}
-  const choose=(index:number)=>{if(index===retry){status?.onRetry?.();return}const option=options[index];if(option){onChange(option.value)}close()}
+  const choose=(index:number)=>{
+    const option=options[index]
+    if(option?.disabled||button.current?.matches(":disabled"))return
+    if(index===retry){status?.onRetry?.();return}
+    if(option)onChange(option.value)
+    close()
+  }
   useLayoutEffect(()=>{
     if(!open){setUp(false);return}
     const node=list.current,anchor=button.current
@@ -68,7 +74,7 @@ export function PaSelect({label,ariaLabel,value,options,onChange,placeholder="",
       <SelectChevron/>
     </button>
     {open&&<ul className="pa-select-list" role="listbox" ref={list} tabIndex={-1} aria-labelledby={label?`${id}-label`:undefined} aria-label={label?undefined:ariaLabel} aria-activedescendant={`${id}-${active}`}>
-      {options.map((o,i)=><li key={o.value} id={`${id}-${i}`} data-index={i} role="option" aria-selected={o.value===value} data-active={i===active||undefined}
+      {options.map((o,i)=><li key={o.value} id={`${id}-${i}`} data-index={i} role="option" aria-selected={o.value===value} aria-disabled={o.disabled||undefined} data-active={i===active||undefined}
         onPointerMove={()=>setActive(i)} onClick={()=>choose(i)}>
         {o.icon&&<span className="pa-select-icon">{o.icon}</span>}
         <span className="pa-select-text"><span>{o.label}</span>{o.hint&&<small>{o.hint}</small>}</span>

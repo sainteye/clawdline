@@ -11,10 +11,10 @@ test("local attention includes replies, person-needed work and unresolved notes"
   assert.equal(matchesLocalStateFilter(row({ state: "working", attention_count: 0 }), "attention"), false)
 })
 
-test("working and idle distinguish shells and avoid retained state claims", () => {
+test("working and idle use Session state even with background shells, and avoid retained state claims", () => {
   const shell = row({ shells: [{ id: "build", at: 1 }] })
-  assert.equal(matchesLocalStateFilter(shell, "working"), true)
-  assert.equal(matchesLocalStateFilter(shell, "idle"), false)
+  assert.equal(matchesLocalStateFilter(shell, "working"), false)
+  assert.equal(matchesLocalStateFilter(shell, "idle"), true)
   for (const state of ["working", "idle"] as const) {
     const retained = row({ state, source: { freshness: "unverified" } as SessionRow["source"] })
     assert.equal(matchesLocalStateFilter(retained, state), false)

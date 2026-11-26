@@ -416,7 +416,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
     </div>}
     <header className="pa-routine-section-header"><h3>{w.routines}</h3><button type="button" className="pa-routine-plus" disabled={!writable||busy} aria-label={tr("setUp")} title={tr("setUp")} onClick={event=>edit(null,event.currentTarget)}>+</button></header>
     {!supported?<p className="pa-routines-empty" role="status">{w.routinesUnsupported}</p>:<>
-      {!page&&!error&&<p className="pa-routines-empty" role="status">{w.loading}</p>}
+      {!page&&!error&&<p className="pa-routines-empty" role="status">{tr("loadingRoutines")}</p>}
       {editing!==undefined&&<dialog ref={dialog} className="pa-routine-dialog" data-closing={closing||undefined} aria-labelledby={editorID}
         onCancel={event=>{event.preventDefault();cancelEdit()}}
         onKeyDown={event=>{
@@ -468,7 +468,7 @@ function RoutinePanel({source,bot,enabled,w,storageKey,mentions}:Props) {
             if(open)void load(editing.id).catch(e=>setError(errorCode(e)))
           }}>
             <summary><span>{w.routineHistory}</span></summary>
-            {!editorHistory?<p className="pa-routine-caption" role="status">{w.loading}</p>:editorHistory.runs.length===0?<p className="pa-routine-caption">{w.routineNoRuns}</p>:<ol className="pa-routine-runs">{editorHistory.runs.map(run=><li className="pa-routine-run" key={run.id}>
+            {!editorHistory?<p className="pa-routine-caption" role="status">{tr("loadingHistory")}</p>:editorHistory.runs.length===0?<p className="pa-routine-caption">{w.routineNoRuns}</p>:<ol className="pa-routine-runs">{editorHistory.runs.map(run=><li className="pa-routine-run" key={run.id}>
               <p className="pa-routine-run-head"><strong data-state={run.state}>{w[run.state as keyof Words]??run.state}</strong><small>{shortTime(run.created_at)} · {run.source==="test"?tr("testRun"):run.source==="schedule"?tr("scheduledRun"):run.source==="webhook"?tr("eventRun"):run.source==="follow_up"?tr("followUp"):`${tr("otherRun")}: ${run.source}`}</small></p>
               {(run.delivery_id||run.retry_count!==undefined||run.not_before)&&<p className="pa-routine-caption">{[run.delivery_id&&`${tr("delivery")}: ${run.delivery_id}`,run.retry_count!==undefined&&`${tr("retryCount")}: ${run.retry_count}`,run.not_before&&`${tr("retryAt")}: ${shortTime(run.not_before)}`].filter(Boolean).join(" · ")}</p>}
               {run.state==="unknown"&&<p role="alert">{tr("unknownRun")}</p>}

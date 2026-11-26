@@ -2068,7 +2068,7 @@ ${currentDraft}`:submitted)
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
           <button type="button" className="pa-pill" disabled={checkingUpdates} aria-busy={checkingUpdates||undefined} onClick={()=>void checkForUpdates()}>{w.refresh}</button>
         </div></>
-      } editor={<BotSettings key={settingsRevision} embedded nameInput={profileName} workspace={{project:projectName||bot.project.project_id,machine:machineName||source.machineName||key.machine_id}} data={<>
+      } editor={<BotSettings key={settingsRevision} embedded nameInput={profileName} workspace={{project:projectName||bot.project.project_id,machine:permissionMachine}} data={<>
           <button type="button" className="pa-settings-link" disabled={!canReadActions} onClick={event=>setTemplateOpener(event.currentTarget)}>{w.templateCreate}</button>
           <button type="button" className="pa-settings-link" disabled={!canReadActions||exporting} aria-busy={exporting||undefined} onClick={()=>void exportBot()}>{w.export}</button>
           {exportError&&<p role="alert">{w.unavailable} ({exportError})</p>}

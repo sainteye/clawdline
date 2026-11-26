@@ -1508,7 +1508,7 @@ function Counts({
   let unknown = 0
   let shells = 0
   for (const s of rows) {
-    if (s.state === "working") working++
+    if (matchesLocalStateFilter(s, "working")) working++
     else if (s.state === "waiting") waiting++
     else if (conversationNotStarted(s)) notStarted++
     else if (s.state === "unknown") unknown++

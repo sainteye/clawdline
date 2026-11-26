@@ -1,4 +1,5 @@
 import {useEffect,useRef,useState} from "react"
+import {PaSelect} from "./PaSelect"
 import type * as W from "@clawdline/contract"
 import {command,errorCode,provablyNotSent,type SourceClient} from "./client"
 import {routineScopeIdentity} from "./routine-hook-intent"
@@ -38,7 +39,11 @@ export function LoginProfiles({source,bot,agent,value,onChange,onStatusChange,w,
  return <section className={compact?"pa-rules pa-login-compact":"pa-rules"} aria-label={w.loginProfiles}>
   {!compact&&<><h3>{w.loginProfiles}</h3><p>{w.loginHint}</p></>}
   {available?<>
-   <label>{w.loginProfile}<select aria-label={w.loginProfile} disabled={busy||!!pending} value={value} onChange={e=>onChange(e.target.value)}><option value="">{w.loginDefault}</option>{profiles.map(p=><option key={p.id} value={p.id} disabled={p.state!=="signed_in"&&p.state!=="signed_out"}>{p.name}</option>)}{value&&!selected&&<option value={value} disabled>{w.loginMissing}</option>}</select></label>
+   <PaSelect label={w.loginProfile} disabled={busy||!!pending} value={value} onChange={onChange} options={[
+     {value:"",label:w.loginDefault},
+     ...profiles.map(p=>({value:p.id,label:p.name,disabled:p.state!=="signed_in"&&p.state!=="signed_out"})),
+     ...(value&&!selected?[{value,label:w.loginMissing,disabled:true}]:[])
+   ]}/>
    {selected&&<p role="status">{w.loginState}: {({signed_in:selected.kind==="api_key"?w.loginKeyStored:w.loginSignedIn,signed_out:w.loginSignedOut,accepted:w.loginAccepted,running:w.loginRunning,unknown:w.loginUnknown,removed:w.loginMissing} as Record<string,string>)[selected.state]??w.loginUnknown}</p>}
    {compact?<details className="pa-login-management" open={manageOpen} onToggle={event=>setManageOpen(event.currentTarget.open)}><summary>{w.settingsLoginManage}</summary><div className="pa-login-management-body">{management}</div></details>:management}
   </>:<p>{w.loginUnavailable}</p>}

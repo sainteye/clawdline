@@ -72,24 +72,32 @@ async function tap(expression){const box=await evaluate(`(()=>{const el=(${expre
 async function openAgentPicker(zh){const prefix=JSON.stringify(zh?"主要 Agent:":"Primary Agent:"),find=`[...document.querySelectorAll("button.pa-agent-picker-summary")].find(b=>b.getAttribute("aria-label")?.startsWith(${prefix}))`;if(await evaluate(`${find}?.getAttribute("aria-expanded")==="true"`))return;await tap(find)}
 async function waitSettled(){for(let n=0;n<100;n++){const r=await fetch(upstream+`/v1/project-assistants/${bot}/export?machine_id=${machine}`,{headers:{Authorization:"Bearer "+token}});const x=await r.json();if(x.turns?.length&&x.turns.every(t=>!["accepted","queued","running","waiting_permission"].includes(t.state)))return;await new Promise(r=>setTimeout(r,100))}throw Error("Scripted turn did not settle")}
 async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=await browser("read");if(last.text?.includes(text)===present)return last;await new Promise(r=>setTimeout(r,100))}throw Error(`Text ${text} present=${present}: ${JSON.stringify(last)}`)}
-async function select(label,value){await evaluate(`(()=>{const el=[...document.querySelectorAll("select")].find(e=>(e.getAttribute("aria-label")??e.closest("label")?.firstChild.textContent)===${JSON.stringify(label)});if(!el)throw Error("Missing select: "+${JSON.stringify(label)});el.value=${JSON.stringify(value)};el.dispatchEvent(new Event("change",{bubbles:true}))})()`)}
+async function chooseLogin(name){
+  const button='.pa-login-compact button[aria-haspopup="listbox"]:enabled'
+  for(let n=0;n<30&&!await evaluate(`!!document.querySelector('${button}')`);n++)await new Promise(resolve=>setTimeout(resolve,100))
+  await tap(`document.querySelector('${button}')`)
+  await waitText(name)
+  await tap(`[...document.querySelectorAll('.pa-login-compact [role=option]')].find(option=>option.textContent===${JSON.stringify(name)})`)
+  assert.equal(await evaluate('document.querySelector(".pa-login-compact .pa-select-value")?.textContent'),name)
+}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
 try{
   await connect()
   for(const [language,readonly] of [["en",true],["en",false],["zh-Hant",false]]){
-    const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save",label=zh?"登入設定":"Login profile",name=zh?"登入設定名稱":"Login profile name",create=zh?"新增獨立帳號登入":"Add account login profile",start=zh?"開啟原生登入":"Open native sign-in",refresh=zh?"檢查新訊息":"Check for updates";
-    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"預設登入設定":"Default login profile");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
+    const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save",name=zh?"登入設定名稱":"Login profile name",refresh=zh?"檢查新訊息":"Check for updates";
+    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"管理登入設定":"Manage login profiles");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
     if(readonly){assert.equal((await browser("click",save)).disabled,true);assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
     else{
       const account=zh?"Synthetic second browser key":"Synthetic first browser key";
       await evaluate(`(()=>{const e=document.querySelector('input[aria-label="${name}"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,${JSON.stringify(account)});e.dispatchEvent(new Event("input",{bubbles:true}));})()`);
-      await browser("click",zh?"新增 API 金鑰登入":"Add API-key login profile");await waitText(account);
-      const id=await evaluate(`(()=>{const s=document.querySelector('select[aria-label="${label}"]');return [...s.options].find(o=>o.textContent===${JSON.stringify(account)}).value})()`);assert.match(id,/^[0-9a-f]{32}$/);await select(label,id);await browser("click",zh?"輸入或更換 API 金鑰":"Enter or replace API key");await waitText("CODEX_API_KEY");
+      await browser("click",zh?"新增 API 金鑰登入":"Add API-key login profile");
+      await chooseLogin(account);await browser("click",zh?"輸入或更換 API 金鑰":"Enter or replace API key");await waitText("CODEX_API_KEY");
       await evaluate(`document.querySelector('textarea[aria-label="${zh?"API 金鑰":"API key"}"]').scrollIntoView({block:"center"})`);await browser("screenshot","--out",path.join(artifacts,language+"-key-form.jpg"));await writeFile(path.join(artifacts,language+"-key-form.html"),await evaluate("document.documentElement.outerHTML"));
       await evaluate(`(()=>{document.querySelector('textarea[aria-label="${zh?"API 金鑰":"API key"}"]').value="SYNTHETIC_PROFILE_KEY_ONLY";})()`);
       await browser("click",zh?"安全交付金鑰":"Deliver key securely");
       for(let i=0;i<20;i++){await browser("click",refresh);const view=await browser("read");if(view.text.includes(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)"))break;await new Promise(r=>setTimeout(r,100))}
-      await waitText(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)");await openAgentPicker(zh);await waitText(zh?"這個 Agent 未提供模型選單。":"This Agent does not expose a model selector.");
+      await waitText(zh?"金鑰已保存（尚未驗證供應商）":"Key saved (provider not verified)");await openAgentPicker(zh);
+      assert.ok(await evaluate('document.querySelector(".pa-agent-picker-panel button[aria-haspopup=listbox] .pa-select-value")?.textContent'),"the Agent picker still shows the selected Agent");
       await browser("click",zh?"新增替代 Agent":"Add alternate Agent");
       const alternate=zh?"Codex · Synthetic first browser key":"Codex · Default login profile";
       await waitText(alternate);await evaluate(`(()=>{const option=[...document.querySelectorAll('[role="option"]')].find(o=>o.textContent===${JSON.stringify(alternate)});if(!option)throw Error("Missing selected-login fallback");option.click()})()`);

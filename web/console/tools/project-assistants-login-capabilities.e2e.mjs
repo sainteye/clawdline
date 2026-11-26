@@ -85,7 +85,6 @@ async function browser(op,...args){
 // The model note lives inside the collapsed Primary Agent picker; open it with a real pointer press.
 async function openAgentPicker(zh){const prefix=JSON.stringify(zh?"主要 Agent:":"Primary Agent:"),find=`[...document.querySelectorAll("button.pa-agent-picker-summary")].find(b=>b.getAttribute("aria-label")?.startsWith(${prefix}))`;if(await evaluate(`${find}?.getAttribute("aria-expanded")==="true"`))return;await tap(find)}
 async function waitText(text,present=true){let last;for(let n=0;n<30;n++){last=await browser("read");if(last.text?.includes(text)===present)return last;await new Promise(r=>setTimeout(r,100))}throw Error(`Text ${text} present=${present}: ${JSON.stringify(last)}`)}
-async function select(label,value){await evaluate(`(()=>{const el=[...document.querySelectorAll("select")].find(e=>(e.getAttribute("aria-label")??e.closest("label")?.firstChild.textContent)===${JSON.stringify(label)});if(!el)throw Error("Missing select: "+${JSON.stringify(label)});el.value=${JSON.stringify(value)};el.dispatchEvent(new Event("change",{bubbles:true}))})()`)}
 async function waitHeld(){for(let n=0;n<100&&!held;n++)await new Promise(r=>setTimeout(r,50));assert.equal(held,true)}
 // Real Chrome input: mouse, keyboard and text arrive through CDP Input, so React sees trusted pointer, key and input events.
 const buttonByLabel=label=>`[...document.querySelectorAll("button")].find(b=>(b.getAttribute("aria-label")??b.textContent)===${JSON.stringify(label)})`
@@ -254,15 +253,18 @@ try{
   }else{
   for(const [language,readonly] of [["en",true],["en",false],["zh-Hant",false]]){
     const zh=language!=="en",settings=zh?"Bot 設定":"Bot settings",save=zh?"儲存":"Save",label=zh?"登入設定":"Login profile",name=zh?"登入設定名稱":"Login profile name",create=zh?"新增獨立帳號登入":"Add account login profile",start=zh?"開啟原生登入":"Open native sign-in",refresh=zh?"檢查新訊息":"Check for updates";
-    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"預設登入設定":"Default login profile");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
+    await browser("open",origin+"/?lang="+language+(readonly?"&read=1":""));await browser("viewport",zh?"mobile":"desktop");await waitText(settings);await browser("click",settings);await waitText(zh?"管理登入設定":"Manage login profiles");await evaluate('[...document.querySelectorAll(".pa-settings-disclosure>summary"),...document.querySelectorAll(".pa-login-management>summary")].forEach(el=>el.click())');
     if(readonly){assert.equal((await browser("click",save)).disabled,true);assert.equal(requests.filter(r=>r.method!=="GET").length,0)}
     else{
       const account=zh?"Synthetic second browser account":"Synthetic first browser account";
       await evaluate(`(()=>{const e=document.querySelector('input[aria-label="${name}"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(e,${JSON.stringify(account)});e.dispatchEvent(new Event("input",{bubbles:true}));})()`);
-      await browser("click",create);await waitText(account);
-      const id=await evaluate(`(()=>{const s=document.querySelector('select[aria-label="${label}"]');return [...s.options].find(o=>o.textContent===${JSON.stringify(account)}).value})()`);assert.match(id,/^[0-9a-f]{32}$/);await select(label,id);await browser("click",start);
+      await browser("click",create);
+      await waitFor(`!!(${paSelect(label)})?.matches(":enabled")`,"login choices available after creation");
+      await choose(label,account);assert.equal(await selectedText(label),account);await browser("click",start);
       for(let i=0;i<20;i++){await browser("click",refresh);const view=await browser("read");if(view.text.includes(zh?"已登入":"Signed in"))break;await new Promise(r=>setTimeout(r,100))}
-      await waitText(zh?"已登入":"Signed in");await openAgentPicker(zh);await waitText(zh?"這個 Agent 未提供模型選單。":"This Agent does not expose a model selector.");await waitText("Synthetic installed skill");await evaluate(`(()=>{for(const label of document.querySelectorAll("label")){if(label.textContent==="Synthetic installed skill"||label.textContent==="fixture-connector"){const checkbox=label.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked)checkbox.click()}}})()`);await browser("screenshot","--out",path.join(artifacts,language+"-login.jpg"));await writeFile(path.join(artifacts,language+"-login.html"),await evaluate("document.documentElement.outerHTML"));assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
+      await waitText(zh?"已登入":"Signed in");await openAgentPicker(zh);
+      assert.ok(await selectedText(zh?"模型":"Model"),"Codex keeps its model catalog picker after changing the login");
+      await waitText("Synthetic installed skill");await evaluate(`(()=>{for(const label of document.querySelectorAll("label")){if(label.textContent==="Synthetic installed skill"||label.textContent==="fixture-connector"){const checkbox=label.querySelector('input[type="checkbox"]');if(checkbox&&!checkbox.checked)checkbox.click()}}})()`);await browser("screenshot","--out",path.join(artifacts,language+"-login.jpg"));await writeFile(path.join(artifacts,language+"-login.html"),await evaluate("document.documentElement.outerHTML"));assert.equal(await evaluate("document.documentElement.scrollWidth<=innerWidth"),true);
       await evaluate(`document.querySelector('section[aria-label="${zh?"應用程式技能與連接器":"Application skills and connectors"}"]').scrollIntoView()`);await browser("screenshot","--out",path.join(artifacts,language+"-extensions.jpg"));await browser("click",save);await waitText("Settings saved");await browser("click","Send scripted input");await waitText("Scripted input accepted");
     }
     await browser("close");tab=undefined;

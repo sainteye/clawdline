@@ -505,6 +505,18 @@ test("Bot controls follow the live API level after the source first arrives", ()
   registry.revoke()
 })
 
+test("the source exposes the current machine name without replacing the roster connection", () => {
+  const registry = new ProjectAssistantRegistry("account","trusted-reader")
+  const transport = () => async () => Response.json(sourceStatus())
+  registry.sync([grant()],transport)
+  const [source] = registry.getSnapshot()
+  registry.sync([{...grant(),name:"Studio Workstation"}],transport)
+  assert.equal(registry.getSnapshot()[0],source)
+  assert.equal(source.machineName,"Studio Workstation")
+  registry.revoke()
+  assert.equal(source.machineName,undefined)
+})
+
 test("a source's readable status never grants content writes by itself",async () => {
   let writes=0
   const {source} = make(async (path,init) => {if(init?.method !== "GET")writes++;const answer=sourceStatus();answer.sources[0].writable=false;return Response.json(path.endsWith("/status")?answer:{})})

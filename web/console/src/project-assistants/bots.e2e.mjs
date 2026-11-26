@@ -363,9 +363,9 @@ async function boundedChecks(page,origin,language,width,shot,log) {
     await fresh(()=>{window.botsFixture.a.bots[0].background_threads=3})
     await open();await ready();await openInfo()
     await info.getByRole("tab",{name:w.settings,exact:true}).click()
-    const setting=info.getByRole("combobox",{name:zh?"背景工作並行數":"Background threads at once",exact:true})
-    assert.equal(await setting.inputValue(),"3")
-    await setting.selectOption("6")
+    const label=zh?"背景工作並行數":"Background threads at once"
+    await info.getByRole("button",{name:label+" 3",exact:true}).click()
+    await info.getByRole("listbox",{name:label,exact:true}).getByRole("option",{name:"6",exact:true}).click()
     await info.getByRole("button",{name:zh?"儲存":"Save",exact:true}).click()
     await page.waitForFunction(()=>window.botsFixture.a.bots[0].background_threads===6)
     const edits=(await log()).filter(entry=>entry.method==="edit")
@@ -884,6 +884,11 @@ try {
     const w=language==="en"?{allBots:"All Bots",select:"Select a Bot to start reading",more:"Load more",message:"Message",back:"Back to Bots",permission:"Permission request",always:"Always allow (unavailable)",allow:"Allow once",unknown:"Outcome unknown; no automatic retry",create:"Create Bot",name:"Name",submit:"Create",sessions:"Collapse Bots",earlier:"Earlier messages",refresh:"Check for updates"}:{allBots:"所有 Bots",select:"選擇一位 Bot 開始閱讀",more:"載入更多",message:"訊息",back:"返回 Bots",permission:"權限請求",always:"一律允許（不提供）",allow:"允許這次",unknown:"結果未知；不會自動重送",create:"新增 Bot",name:"名稱",submit:"建立",sessions:"收起 Bots",earlier:"較早的訊息",refresh:"檢查新訊息"}
     const browser=await engine.launch({headless:true,...(engine.name()==="chromium"?{args:["--disable-features=OmniboxEverywhere"]}:{})}),name=`${engine.name()}-${width}-${language}`
     const page=await browser.newPage({viewport:{width,height:width===1440?960:width===1280?800:844},reducedMotion:"reduce",hasTouch:!!(process.env.BOTS_WORK_PROGRESS_ONLY||process.env.BOTS_ATTACHMENTS_ONLY)&&width<701})
+    // The settings-only fixture has no daemon for chat presence or voice.
+    if(process.env.BOTS_BACKGROUND_THREADS_ONLY)await page.addInitScript(()=>{
+      Object.defineProperty(document,"hasFocus",{value:()=>false})
+      Object.defineProperty(navigator,"mediaDevices",{value:undefined})
+    })
     if(process.env.BOTS_ATTACHMENTS_ONLY&&engine.name()==="chromium"&&width<701)page.touchInput=await page.context().newCDPSession(page)
     const consoleErrors=[];page.on("pageerror",error=>consoleErrors.push(error.message))
     await page.route("**/*",route=>{const url=new URL(route.request().url());if(url.origin!==origin||url.pathname.startsWith("/v1")){forbidden++;return route.abort()}return route.continue()})
