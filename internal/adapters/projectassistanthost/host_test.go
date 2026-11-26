@@ -680,11 +680,14 @@ func TestHostRefusesForeignBrokerOwner(t *testing.T) {
 	}
 }
 
-func TestHostDisableCancelsProcessSlotWaitersAndPermissionOffers(t *testing.T) {
+// A waiter is a turn queued behind its own Bot's active turn. Another Bot's
+// turn is no waiter: since the machine-wide process gate was removed it starts
+// on its own, and Disable may meet it before or after its native Open.
+func TestHostDisableCancelsQueuedTurnsAndPermissionOffers(t *testing.T) {
 	f := newHostFixture(t)
 	f.start(t)
 	f.enable(t)
-	first, second := f.create(t, "first"), f.create(t, "second")
+	first := f.create(t, "first")
 	active, err := f.send(t, first, "active")
 	if err != nil {
 		t.Fatal(err)
@@ -695,9 +698,12 @@ func TestHostDisableCancelsProcessSlotWaitersAndPermissionOffers(t *testing.T) {
 	if err = native.sink(context.Background(), app.ProtocolEvent{ID: "permission", Fence: prompt.Turn.Fence, TurnID: prompt.Turn.ID, Permission: &offer}); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := f.send(t, second, "slot-waiter")
+	queued, err := f.send(t, first, "waiter")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if turn, err := f.h.store.Turn(context.Background(), first.Key, queued.ResourceID); err != nil || turn.State != pa.TurnQueued {
+		t.Fatal("waiter is not queued before Disable", turn, err)
 	}
 	if err = f.h.Disable(context.Background()); err != nil {
 		t.Fatal(err)
@@ -713,12 +719,12 @@ func TestHostDisableCancelsProcessSlotWaitersAndPermissionOffers(t *testing.T) {
 	if err != nil || turn.State != pa.TurnUnknown {
 		t.Fatal(turn, err)
 	}
-	turn, err = f.h.store.Turn(context.Background(), second.Key, queued.ResourceID)
+	turn, err = f.h.store.Turn(context.Background(), first.Key, queued.ResourceID)
 	if err != nil || turn.State != pa.TurnCancelled {
 		t.Fatal(turn, err)
 	}
-	if f.p.opens.Load() != 1 {
-		t.Fatal("slot waiter opened provider", f.p.opens.Load())
+	if f.p.opens.Load() != 1 || len(f.p.sent) != 0 {
+		t.Fatal("queued waiter reached the provider", f.p.opens.Load(), len(f.p.sent))
 	}
 }
 
