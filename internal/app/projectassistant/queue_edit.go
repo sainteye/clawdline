@@ -166,7 +166,7 @@ func (r *Engine) queueEditMessage(ctx context.Context, turn pa.Turn) (pa.Message
 		return pa.Message{}, err
 	}
 	for _, m := range export.Messages {
-		if m.ID == turn.MessageID && m.TurnID == turn.ID && m.Kind == pa.UserMessage && m.Exchange == nil {
+		if m.ID == turn.MessageID && m.TurnID == turn.ID && m.Kind == pa.UserMessage && m.Exchange == nil && m.DecisionReply == nil {
 			return m, nil
 		}
 	}

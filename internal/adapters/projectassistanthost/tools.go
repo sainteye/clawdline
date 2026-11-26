@@ -435,6 +435,25 @@ func (s *toolScope) bindTeamTools(tools *NativeWork) {
 		}
 		return r.AskPerson(ctx, q.Binding.Fence, turnID, request)
 	}
+	tools.listQuestions = func(ctx context.Context) ([]pa.PendingQuestion, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return nil, e
+		}
+		defer cancel()
+		return r.ListQuestions(ctx, q.Binding.Fence, turnID)
+	}
+	tools.withdrawQuestion = func(ctx context.Context, request pa.WithdrawQuestionRequest) (pa.PermissionOffer, error) {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return pa.PermissionOffer{}, e
+		}
+		defer cancel()
+		if e = journal(ctx, "withdrawQuestion"); e != nil {
+			return pa.PermissionOffer{}, e
+		}
+		return r.WithdrawQuestion(ctx, q.Binding.Fence, turnID, request)
+	}
 	// The card tools stay available in a Bot-to-Bot request (§7.2): a
 	// reviewer reached by message_bot can still record its verdict and hand
 	// the baton on. Creation checks its own person authority.

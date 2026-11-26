@@ -1022,6 +1022,9 @@
         },
         "notice": {
           "$ref": "#/$defs/ProjectAssistantNoticeRef"
+        },
+        "decision_reply": {
+          "$ref": "#/$defs/ProjectAssistantDecisionReply"
         }
       },
       "required": [
@@ -1090,10 +1093,39 @@
         "memory": {
           "type": "string",
           "description": "The literal short fact a Bot proposed to remember while answering another Bot. Only the person's Save press writes it to memory."
+        },
+        "withdrawn_reason": {
+          "type": "string",
+          "description": "The Bot's own short reason for withdrawing the question before the person answered it."
         }
       },
       "required": [
         "question"
+      ]
+    },
+    "ProjectAssistantDecisionReply": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Marks the person's message that answered a question card. The message text still holds the full prompt the Bot receives; readers show this instead.",
+      "properties": {
+        "offer_id": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "answer": {
+          "type": "string"
+        },
+        "source_bot_id": {
+          "type": "string",
+          "description": "The requesting Bot when the question came from a peer request."
+        }
+      },
+      "required": [
+        "offer_id",
+        "question",
+        "answer"
       ]
     },
     "ProjectAssistantPermissionOffer": {

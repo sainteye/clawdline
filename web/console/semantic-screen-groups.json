@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14604,
+  "englishContentKeys": 14607,
   "riskKeys": 6209,
-  "nonRiskCount": 8395,
+  "nonRiskCount": 8398,
   "groups": [
     {
       "name": "acp / other",
@@ -6345,7 +6345,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 728,
+      "count": 731,
       "sources": [
         null
       ],
@@ -6455,6 +6455,8 @@
         "projectAssistants.decisionHandledDismiss",
         "projectAssistants.decisionOwn",
         "projectAssistants.decisionOwnPlaceholder",
+        "projectAssistants.decisionReplyLabel",
+        "projectAssistants.decisionReplyQuestion",
         "projectAssistants.decisionRetry",
         "projectAssistants.decisionSend",
         "projectAssistants.decisionSending",
@@ -6463,6 +6465,7 @@
         "projectAssistants.decisionSuggested",
         "projectAssistants.decisionTitle",
         "projectAssistants.decisionWithdrawn",
+        "projectAssistants.decisionWithdrawnReason",
         "projectAssistants.deleteBotHint",
         "projectAssistants.details",
         "projectAssistants.dismissHeldNote",

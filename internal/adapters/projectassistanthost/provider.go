@@ -60,25 +60,27 @@ type NativeWork struct {
 	serverPublish   func(context.Context, func() error) error
 	// Source command handlers may use the existing card path. This function
 	// is private and is never exposed as an approval tool to the model.
-	approveSource func(context.Context, pa.PermissionAction, []pa.PermissionOption) (pa.PermissionOption, error)
-	react         func(context.Context, string, string) (pa.Receipt, error)
-	network       func(context.Context, app.NetworkToolRequest) (network.Response, error)
-	extension     func(context.Context, pa.ExtensionRef) error
-	teamAvailable func(context.Context) error
-	team          func(context.Context, string, json.RawMessage) (any, error)
-	listBots      func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
-	messageBot    func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
-	askPerson     func(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
-	botRequest    func(context.Context, string, json.RawMessage) (any, error)
-	routines      func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
-	send          func(context.Context, string, string) error
-	dispatch      func(context.Context, string, string, string, []string, string, string, string, bool) (pa.WorkLink, error)
-	status        func(context.Context, string) (pa.WorkLink, error)
-	workReceipt   func(context.Context, string) (app.WorkReceipt, error)
-	memory        func(context.Context) ([]pa.MemoryEntry, error)
-	memoryIndex   func(context.Context) (app.MemoryIndex, error)
-	memoryDetail  func(context.Context, string) (pa.MemoryDetail, error)
-	edit          func(context.Context, string, app.MemoryEdit) error
+	approveSource    func(context.Context, pa.PermissionAction, []pa.PermissionOption) (pa.PermissionOption, error)
+	react            func(context.Context, string, string) (pa.Receipt, error)
+	network          func(context.Context, app.NetworkToolRequest) (network.Response, error)
+	extension        func(context.Context, pa.ExtensionRef) error
+	teamAvailable    func(context.Context) error
+	team             func(context.Context, string, json.RawMessage) (any, error)
+	listBots         func(context.Context, pa.BotDirectoryQuery) (pa.BotDirectoryPage, error)
+	messageBot       func(context.Context, pa.BotMessageRequest) (pa.Exchange, error)
+	askPerson        func(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
+	listQuestions    func(context.Context) ([]pa.PendingQuestion, error)
+	withdrawQuestion func(context.Context, pa.WithdrawQuestionRequest) (pa.PermissionOffer, error)
+	botRequest       func(context.Context, string, json.RawMessage) (any, error)
+	routines         func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
+	send             func(context.Context, string, string) error
+	dispatch         func(context.Context, string, string, string, []string, string, string, string, bool) (pa.WorkLink, error)
+	status           func(context.Context, string) (pa.WorkLink, error)
+	workReceipt      func(context.Context, string) (app.WorkReceipt, error)
+	memory           func(context.Context) ([]pa.MemoryEntry, error)
+	memoryIndex      func(context.Context) (app.MemoryIndex, error)
+	memoryDetail     func(context.Context, string) (pa.MemoryDetail, error)
+	edit             func(context.Context, string, app.MemoryEdit) error
 	// memoryCard is true in a turn answering another Bot: edit_memory there
 	// proposes a memory card for the person instead of writing.
 	memoryCard bool

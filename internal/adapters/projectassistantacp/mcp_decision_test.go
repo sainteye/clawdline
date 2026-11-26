@@ -27,7 +27,14 @@ func TestBotToolsCanAskThePersonButNeverAnswer(t *testing.T) {
 			asked = true
 		}
 		for name := range tool.InputSchema.Properties {
-			if name == "offer_id" || name == "option_id" || name == "question_id" {
+			// withdraw_question names a question only to close it unanswered.
+			if name == "question_id" && tool.Name == "withdraw_question" {
+				if len(tool.InputSchema.Properties) != 2 || tool.InputSchema.Properties["reason"] == nil {
+					t.Errorf("withdraw_question accepts more than a question and a reason: %v", tool.InputSchema.Properties)
+				}
+				continue
+			}
+			if name == "offer_id" || name == "option_id" || name == "question_id" || name == "text" && strings.Contains(tool.Name, "question") {
 				t.Errorf("%s accepts %s: a Bot could answer an offer", tool.Name, name)
 			}
 		}

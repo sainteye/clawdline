@@ -47,6 +47,55 @@ func (r *Engine) AskPerson(ctx context.Context, fence pa.Fence, turnID string, q
 	return p.OfferDecision(ctx, fence, turnID, q, r.o.Clock())
 }
 
+func (r *Engine) questions() (QuestionRepository, error) {
+	p, ok := r.o.Repository.(QuestionRepository)
+	if !ok {
+		return nil, runtimeFailure(pa.Unsupported, "questions")
+	}
+	return p, nil
+}
+
+// ListQuestions returns the open questions in the Bot's visible chat, from
+// its active turn.
+func (r *Engine) ListQuestions(ctx context.Context, fence pa.Fence, turnID string) ([]pa.PendingQuestion, error) {
+	p, err := r.questions()
+	if err != nil {
+		return nil, err
+	}
+	return p.PendingQuestions(ctx, fence, turnID)
+}
+
+// WithdrawQuestion closes one of the Bot's own open questions from its
+// active turn. A requesting Bot that waited on it is woken with the reason.
+func (r *Engine) WithdrawQuestion(ctx context.Context, fence pa.Fence, turnID string, q pa.WithdrawQuestionRequest) (pa.PermissionOffer, error) {
+	p, err := r.questions()
+	if err != nil {
+		return pa.PermissionOffer{}, err
+	}
+	if err = pa.CheckWithdrawQuestion(q); err != nil {
+		return pa.PermissionOffer{}, err
+	}
+	a, err := r.acquire(fence.Key)
+	if err != nil {
+		return pa.PermissionOffer{}, err
+	}
+	defer r.release(a)
+	a.mu.Lock()
+	if a.stopped.Load() || a.turnID != turnID {
+		a.mu.Unlock()
+		return pa.PermissionOffer{}, runtimeFailure(pa.StaleGeneration, "decision_turn")
+	}
+	offer, x, err := p.WithdrawQuestion(ctx, fence, turnID, q, r.o.Clock())
+	a.mu.Unlock()
+	if err != nil {
+		return pa.PermissionOffer{}, err
+	}
+	if x.Delivery == "queued" || x.Delivery == "waiting" {
+		r.wakeBot(x.Source.Key)
+	}
+	return offer, nil
+}
+
 // ProposeMemory turns a short fact a Bot wants to remember while answering
 // another Bot into a memory card in its visible main chat. Text from a peer
 // never reaches memory on the Bot's own say: only the person's press on the

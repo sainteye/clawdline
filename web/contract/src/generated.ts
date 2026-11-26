@@ -5851,6 +5851,21 @@ export interface ProjectAssistantCreateSettings {
 }
 
 /**
+ * Marks the person's message that answered a question card. The message text still
+ * holds the full prompt the Bot receives; readers show this instead.
+ */
+export interface ProjectAssistantDecisionReply {
+  answer: string
+  offer_id: string
+  question: string
+
+  /**
+   * The requesting Bot when the question came from a peer request.
+   */
+  source_bot_id?: string
+}
+
+/**
  * A question a Bot asked the person. Bot-authored display data: only the person's
  * press in the console answers it.
  */
@@ -5878,6 +5893,12 @@ export interface ProjectAssistantDecisionRequest {
    */
   request?: string
   source_bot_id?: string
+
+  /**
+   * The Bot's own short reason for withdrawing the question before the person
+   * answered it.
+   */
+  withdrawn_reason?: string
 }
 
 /**
@@ -6958,6 +6979,7 @@ export interface ProjectAssistantMemoryWriteRequest {
 export interface ProjectAssistantMessage {
   at: string
   attachments?: ProjectAssistantAttachment[]
+  decision_reply?: ProjectAssistantDecisionReply
   exchange?: ProjectAssistantExchange
   fence: ProjectAssistantFence
   files?: ProjectAssistantInputFile[]
