@@ -26,7 +26,7 @@ import { emptyRosterState, getRosterState } from "./roster-state"
 import { TowerSlot, savedBotsView, saveBotsView, type BotsView } from "./tower/TowerSlot"
 import { useSheetSwipe } from "./tower/sheet-swipe"
 import { requestStatusRefresh } from "../status-refresh"
-import { CharterRefusal, charterApiFor, charterProjectKey, type CharterProject, type CharterSummary } from "./charter-api"
+import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, type CharterProject, type CharterSummary } from "./charter-api"
 import { CharterPage } from "./CharterPage"
 import { charterTemplate } from "./charter-text"
 import { charterWord } from "./charter-words"
@@ -311,7 +311,7 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
     for(const source of sources){
       const api=charterApiFor(source)
       if(!api)continue
-      void authorized(source,current,s=>api.list(s),control.signal).then(rows=>{
+      void authorized(source,current,s=>charterSummaries(api,source.machineID,s),control.signal).then(rows=>{
         if(control.signal.aborted)return
         setCharters(old=>{
           const next=new Map([...old].filter(([,row])=>row.project.machine_id!==source.machineID))

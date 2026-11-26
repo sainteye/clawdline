@@ -208,6 +208,15 @@ export const CARRIED = {
   "project-antigravity-consent-status": "GET /v1/projects/{project}/antigravity-consent",
   "project-assistants.answer": "captured Bot source POST /v1/project-assistants/{command.key.bot_id}/permissions/{offer_id}/answer",
   "project-assistants.attachment": "captured Bot source GET /v1/project-assistants/{bot_id}/attachments/{id}",
+  "project-assistants.charter": "captured Bot source GET /v1/project-assistant-charters/charter",
+  "project-assistants.charter-change-request": "captured Bot source POST /v1/project-assistant-charters/change-request",
+  "project-assistants.charter-proposal-apply": "captured Bot source POST /v1/project-assistant-charters/proposal-apply",
+  "project-assistants.charter-proposal-dismiss": "captured Bot source POST /v1/project-assistant-charters/proposal-dismiss",
+  "project-assistants.charter-proposals": "captured Bot source GET /v1/project-assistant-charters/proposals",
+  "project-assistants.charter-readers": "captured Bot source GET /v1/project-assistant-charters/readers",
+  "project-assistants.charter-restore": "captured Bot source POST /v1/project-assistant-charters/restore",
+  "project-assistants.charter-save": "captured Bot source PUT /v1/project-assistant-charters/charter",
+  "project-assistants.charters": "captured Bot source GET /v1/project-assistant-charters",
   "project-assistants.configuration": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
   "project-assistants.configuration-profile": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
   "project-assistants.connector-credential": "captured Bot source POST /v1/project-assistants/{bot_id}/connector-credential",
@@ -499,33 +508,6 @@ export const DEFERRED = {
   // chosen for (F1, `RelayWriter.press`). `key` is the older spelling and is
   // deliberately never sent.
   key: "A waiting card's press is sent as `answer`, which names the question it answers; `key` is the older spelling of the same command.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-change-request": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-proposal-apply": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-proposal-dismiss": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-proposals": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-readers": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-restore": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charter-save": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
-  // The charter page is built in the console after this daemon side; until it
-  // carries these words the phone does not send them.
-  "project-assistants.charters": "Team charters are not yet edited from the phone or app.clawdline.com; open them on the machine.",
 } as const
 
 /**

@@ -1,130 +1,145 @@
 // An in-memory charter source for the synthetic Bots fixture and its browser
-// test. No HTTP, daemon or model: proposals are scripted.
-import { CharterRefusal, type CharterApi, type CharterDocument, type CharterProject, type CharterProposal, type CharterReader, type CharterVersion } from "./charter-api"
+// test. It answers the real route shapes of /v1/project-assistant-charters with
+// the generated contract types and the source's refusal envelope; no HTTP,
+// daemon or model. The lead's proposals are scripted.
+import type * as W from "@clawdline/contract"
+import type { CharterRequestBody } from "./client"
+import { chartersPath } from "./charter-api"
 
+interface FixtureVersion { version: number; text: string; author: W.ProjectAssistantCharterAuthor; reason: string; created_at: string }
 interface FixtureProject {
-  project: CharterProject
-  bots: { bot_id: string; name: string }[]
-  versions: { text: string; meta: CharterVersion }[]
-  readers: Map<string, { version_used: number; running: boolean; queued: boolean }>
-  proposals: CharterProposal[]
+  project_id: string
+  bots: { bot_id: string; name: string; lead?: boolean }[]
+  versions: FixtureVersion[]
+  readers: Map<string, { version: number; running: boolean; queued: boolean }>
+  proposals: W.ProjectAssistantCharterProposal[]
 }
 
-export interface CharterFixture extends CharterApi {
-  log: { method: string; project?: string; request?: unknown }[]
-  /** Saves a version as if another device did, so the next save conflicts. */
+export interface CharterFixture {
+  canCharters(): boolean
+  charterRequest<T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal): Promise<T>
+  log: { method: string; path: string; body?: unknown }[]
+  /** Saves a version as if another device did, so the next save is stale. */
   saveElsewhere(projectID: string, text: string): void
   /** The lead's proposal, replacing `find` with `replace` in the current text. */
-  propose(projectID: string, find: string, replace: string, explanation: string): void
+  propose(projectID: string, find: string, replace: string, summary: string): void
   setRunning(projectID: string, botID: string, running: boolean): void
   text(projectID: string): string
   version(projectID: string): number
 }
 
+const contractVersion = "project-assistants.v1"
 const at = (n: number) => new Date(Date.UTC(2026, 10, 20 + n, 2, 30)).toISOString()
+const refuse = (code: W.ProjectAssistantErrorCode, field = ""): W.ProjectAssistantErrorResponse => ({ contract_version: contractVersion, error: { code, field, retry_after_seconds: 0 } })
+const limits: W.ProjectAssistantCharterLimits = { text_bytes: 32768, reason_bytes: 500, request_bytes: 4096, versions: 50, proposals: 5 }
 
-export function createCharterFixture(machineID: string, seed: { project_id: string; bots: { bot_id: string; name: string }[]; versions?: { text: string; author: string; author_kind: "person" | "bot"; kind: CharterVersion["kind"]; reason: string }[] }[]): CharterFixture {
+export function createCharterFixture(machineID: string, seed: { project_id: string; bots: { bot_id: string; name: string; lead?: boolean }[]; versions?: { text: string; author: W.ProjectAssistantCharterAuthor; reason: string }[] }[]): CharterFixture {
   const projects = new Map<string, FixtureProject>()
   for (const item of seed) {
-    const versions = (item.versions ?? []).map((v, i) => ({ text: v.text, meta: { version: i + 1, author: v.author, author_kind: v.author_kind, at: at(i), kind: v.kind, reason: v.reason } }))
-    const current = versions.length
-    projects.set(item.project_id, {
-      project: { machine_id: machineID, project_id: item.project_id }, bots: item.bots, versions, proposals: [],
-      readers: new Map(item.bots.map(bot => [bot.bot_id, { version_used: current, running: false, queued: false }])),
-    })
+    const versions = (item.versions ?? []).map((v, i) => ({ ...v, version: i + 1, created_at: at(i) }))
+    projects.set(item.project_id, { project_id: item.project_id, bots: item.bots, versions, proposals: [],
+      readers: new Map(item.bots.map(bot => [bot.bot_id, { version: versions.length, running: false, queued: false }])) })
   }
   const log: CharterFixture["log"] = []
-  const find = (project: CharterProject | string) => {
-    const id = typeof project === "string" ? project : project.project_id
-    if (typeof project !== "string" && project.machine_id !== machineID) throw new CharterRefusal("not_found")
-    const entry = projects.get(id)
-    if (!entry) throw new CharterRefusal("not_found")
+  let sequence = 0
+  const find = (id: unknown) => {
+    const entry = typeof id === "string" ? projects.get(id) : undefined
+    if (!entry) throw refuse("pa_not_found", "project_id")
     return entry
   }
-  const check = (method: string, project: CharterProject | undefined, request: unknown, signal: AbortSignal) => {
-    log.push({ method, project: project?.project_id, request })
-    if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+  const current = (entry: FixtureProject) => entry.versions.length
+  const answer = (entry: FixtureProject, selected = 0): W.ProjectAssistantCharterResponse => {
+    const latest = entry.versions.at(-1)
+    const wire = (v: FixtureVersion, text: boolean): W.ProjectAssistantCharterVersion => ({ version: v.version, author: v.author, reason: v.reason, created_at: v.created_at, ...(text ? { text: v.text } : {}) })
+    const out: W.ProjectAssistantCharterResponse = { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry), text: latest?.text ?? "",
+      history: entry.versions.map(v => wire(v, false)).reverse(), pending_proposals: entry.proposals.length, limits }
+    if (selected > 0) {
+      const v = entry.versions[selected - 1]
+      if (!v) throw refuse("pa_not_found", "version")
+      out.selected = wire(v, true)
+    }
+    return structuredClone(out)
   }
-  const document = (entry: FixtureProject): CharterDocument => {
-    const current = entry.versions.at(-1)
-    if (!current) throw new CharterRefusal("not_found")
-    return structuredClone({ project: entry.project, version: current.meta.version, text: current.text, updated_at: current.meta.at, history: entry.versions.map(v => v.meta).reverse() })
+  const proposalsAnswer = (entry: FixtureProject): W.ProjectAssistantCharterProposalsResponse => ({ contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
+    proposals: structuredClone(entry.proposals.map(p => ({ ...p, stale: p.base_version !== current(entry) }))) })
+  const append = (entry: FixtureProject, text: string, author: W.ProjectAssistantCharterAuthor, reason: string) => {
+    if (new TextEncoder().encode(text).length > limits.text_bytes) throw refuse("pa_capacity_full", "charter_text")
+    entry.versions.push({ version: entry.versions.length + 1, text, author, reason, created_at: at(entry.versions.length) })
   }
-  const append = (entry: FixtureProject, text: string, meta: Omit<CharterVersion, "version" | "at">) => {
-    if (new TextEncoder().encode(text).length > 64 * 1024) throw new CharterRefusal("too_large")
-    entry.versions.push({ text, meta: { ...meta, version: entry.versions.length + 1, at: at(entry.versions.length) } })
-    return document(entry)
+  const expect = (entry: FixtureProject, version: unknown, field = "charter_version") => { if (version !== current(entry)) throw refuse("pa_stale_version", field) }
+  const leadName = (entry: FixtureProject) => (entry.bots.find(b => b.lead) ?? entry.bots[0])
+  const route = (path: string, method: string, request: CharterRequestBody | undefined) => {
+    // The route below decides which request shape this is.
+    const body = request as (Partial<W.ProjectAssistantCharterSaveRequest & W.ProjectAssistantCharterRestoreRequest & W.ProjectAssistantCharterApplyRequest> & { machine_id: string; project_id: string }) | undefined
+    const url = new URL(path, "http://fixture.invalid"), q = Object.fromEntries(url.searchParams), rest = url.pathname.slice(chartersPath.length)
+    if (q.machine_id !== undefined && q.machine_id !== machineID || body && body.machine_id !== machineID) throw refuse("pa_scope_denied", "machine_id")
+    switch (`${method} ${rest}`) {
+      case "GET ": return { contract_version: contractVersion, machine_id: machineID, limits,
+        charters: [...projects.values()].filter(p => current(p) > 0).map(p => ({ project_id: p.project_id, version: current(p), pending_proposals: p.proposals.length, updated_at: p.versions.at(-1)!.created_at, updated_by: p.versions.at(-1)!.author })),
+        projects_without_charter: [...projects.values()].filter(p => !current(p)).map(p => p.project_id) } satisfies W.ProjectAssistantChartersResponse
+      case "GET /charter": return answer(find(q.project_id), Number(q.version))
+      case "PUT /charter": {
+        const entry = find(body!.project_id)
+        expect(entry, body!.expected_version)
+        append(entry, String(body!.text), body!.expected_version === 0 ? "template" : "person", String(body!.reason ?? ""))
+        return answer(entry)
+      }
+      case "POST /restore": {
+        const entry = find(body!.project_id)
+        expect(entry, body!.expected_version)
+        const old = entry.versions[Number(body!.version) - 1]
+        if (!old) throw refuse("pa_not_found", "version")
+        append(entry, old.text, "restore", `Restored version ${old.version}`)
+        return answer(entry)
+      }
+      case "GET /readers": {
+        const entry = find(q.project_id)
+        return { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, version: current(entry),
+          readers: entry.bots.map(bot => ({ bot_id: bot.bot_id, name: bot.name, hidden: false, lead: !!bot.lead, turn_id: "", ...entry.readers.get(bot.bot_id)! })) } satisfies W.ProjectAssistantCharterReadersResponse
+      }
+      case "GET /proposals": return proposalsAnswer(find(q.project_id))
+      case "POST /proposal-apply": {
+        const entry = find(body!.project_id), proposal = entry.proposals.find(p => p.id === body!.proposal_id)
+        if (!proposal) throw refuse("pa_not_found", "proposal_id")
+        expect(entry, body!.expected_version)
+        if (proposal.base_version !== current(entry)) throw refuse("pa_stale_version", "charter_proposal_base")
+        entry.proposals = entry.proposals.filter(p => p !== proposal)
+        append(entry, proposal.text, "lead_proposal", proposal.summary)
+        return answer(entry)
+      }
+      case "POST /proposal-dismiss": {
+        const entry = find(body!.project_id)
+        entry.proposals = entry.proposals.filter(p => p.id !== body!.proposal_id)
+        return proposalsAnswer(entry)
+      }
+      case "POST /change-request": {
+        const entry = find(body!.project_id), latest = entry.versions.at(-1)
+        if (!latest) throw refuse("pa_not_found", "charter")
+        const lead = leadName(entry)
+        // The scripted lead adds the request as a line at the end.
+        entry.proposals = [{ id: `cp-${++sequence}`, base_version: latest.version, bot_id: lead.bot_id, turn_id: `turn-${sequence}`, stale: false,
+          summary: String(body!.text), text: latest.text.replace(/\n*$/, "") + `\n- ${body!.text}\n`, created_at: at(entry.versions.length) }]
+        return { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, lead_bot_id: lead.bot_id,
+          receipt: { id: `receipt-${sequence}`, state: "accepted", event_seq: sequence, resource_id: lead.bot_id } as unknown as W.ProjectAssistantReceipt } satisfies W.ProjectAssistantCharterChangeResponse
+      }
+      default: throw refuse("pa_invalid", "route")
+    }
   }
-  const expect = (entry: FixtureProject, version: number) => {
-    if (entry.versions.length !== version) throw new CharterRefusal("version_conflict", entry.versions.length)
-  }
-  const fixture: CharterFixture = {
+  return {
     log,
-    async list(signal) {
-      check("list", undefined, null, signal)
-      return [...projects.values()].map(entry => {
-        const version = entry.versions.length
-        return { project: entry.project, version, bots: entry.bots.length, pending_proposals: entry.proposals.length,
-          readers_current: version ? [...entry.readers.values()].filter(r => r.version_used === version).length : 0 }
-      })
+    canCharters: () => true,
+    async charterRequest<T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal) {
+      log.push({ method, path, body })
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError")
+      return route(path, method, body ? structuredClone(body) : undefined) as T
     },
-    async read(project, signal) { check("read", project, null, signal); return document(find(project)) },
-    async readVersion(project, version, signal) {
-      check("readVersion", project, { version }, signal)
-      const entry = find(project), item = entry.versions[version - 1]
-      if (!item) throw new CharterRefusal("not_found")
-      return { version, text: item.text, previous_text: entry.versions[version - 2]?.text ?? "" }
-    },
-    async save(project, request, signal) {
-      check("save", project, request, signal)
-      const entry = find(project)
-      expect(entry, request.expected_version)
-      return append(entry, request.text, { author: "你", author_kind: "person", kind: request.expected_version ? "edit" : "create", reason: request.reason })
-    },
-    async restore(project, request, signal) {
-      check("restore", project, request, signal)
-      const entry = find(project)
-      expect(entry, request.expected_version)
-      const old = entry.versions[request.version - 1]
-      if (!old) throw new CharterRefusal("not_found")
-      return append(entry, old.text, { author: "你", author_kind: "person", kind: "restore", reason: `restore ${request.version}`, restored_from: request.version })
-    },
-    async readers(project, signal) {
-      check("readers", project, null, signal)
-      const entry = find(project)
-      return entry.bots.map((bot): CharterReader => ({ bot_id: bot.bot_id, name: bot.name, ...entry.readers.get(bot.bot_id)! }))
-    },
-    async proposals(project, signal) { check("proposals", project, null, signal); return structuredClone(find(project).proposals) },
-    async applyProposal(project, id, request, signal) {
-      check("applyProposal", project, { id, ...request }, signal)
-      const entry = find(project), proposal = entry.proposals.find(p => p.id === id)
-      if (!proposal) throw new CharterRefusal("not_found")
-      expect(entry, request.expected_version)
-      if (proposal.base_version !== request.expected_version) throw new CharterRefusal("version_conflict", entry.versions.length)
-      entry.proposals = entry.proposals.filter(p => p.id !== id)
-      return append(entry, proposal.text, { author: proposal.author, author_kind: "bot", kind: "proposal", reason: proposal.explanation })
-    },
-    async dismissProposal(project, id, signal) {
-      check("dismissProposal", project, { id }, signal)
-      const entry = find(project)
-      entry.proposals = entry.proposals.filter(p => p.id !== id)
-    },
-    async requestChange(project, request, signal) {
-      check("requestChange", project, request, signal)
-      const entry = find(project), current = entry.versions.at(-1)
-      if (!current) throw new CharterRefusal("not_found")
-      // The scripted lead adds the request as a line to the last section.
-      entry.proposals = [{ id: `proposal-${log.length}`, project: entry.project, base_version: current.meta.version, author: entry.bots[0]?.name ?? "Lead",
-        explanation: request.text, text: current.text.replace(/\n*$/, "") + `\n- ${request.text}\n`, at: at(entry.versions.length) }]
-    },
-    saveElsewhere(projectID, text) { append(find(projectID), text, { author: "Phone", author_kind: "person", kind: "edit", reason: "edit" }) },
-    propose(projectID, from, to, explanation) {
-      const entry = find(projectID), current = entry.versions.at(-1)!
-      entry.proposals = [{ id: `proposal-${log.length}-${entry.proposals.length}`, project: entry.project, base_version: current.meta.version, author: entry.bots[0]?.name ?? "Lead", explanation, text: current.text.replace(from, to), at: at(entry.versions.length) }]
+    saveElsewhere(projectID, text) { append(find(projectID), text, "person", "") },
+    propose(projectID, from, to, summary) {
+      const entry = find(projectID), latest = entry.versions.at(-1)!, lead = leadName(entry)
+      entry.proposals = [{ id: `cp-${++sequence}`, base_version: latest.version, bot_id: lead.bot_id, turn_id: `turn-${sequence}`, stale: false, summary, text: latest.text.replace(from, to), created_at: at(entry.versions.length) }]
     },
     setRunning(projectID, botID, running) { const r = find(projectID).readers.get(botID); if (r) r.running = running },
     text(projectID) { return find(projectID).versions.at(-1)?.text ?? "" },
-    version(projectID) { return find(projectID).versions.length },
+    version(projectID) { return current(find(projectID)) },
   }
-  return fixture
 }

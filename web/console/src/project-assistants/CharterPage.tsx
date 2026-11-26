@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BotMessageMarkdown } from "./BotMessageMarkdown"
-import { charterRefusalCode, type CharterApi, type CharterDocument, type CharterOldVersion, type CharterProject, type CharterProposal, type CharterReader, type CharterVersion } from "./charter-api"
+import type * as W from "@clawdline/contract"
+import { charterRefusal, charterRefusalCode, shownReaders, type CharterApi, type CharterProject } from "./charter-api"
 import { changedCharterSections, charterSections, replaceCharterSection, shownCharterSection, type ChangedSection } from "./charter-text"
 import { charterFormat, charterNames, charterProblem, charterWord } from "./charter-words"
 import type { Words } from "./words"
@@ -11,6 +12,10 @@ import "./charter.css"
 // side panel, the versions with a restore. Every read and write goes through
 // the CharterApi adapter, so the screen is the same over Cloud.
 
+type CharterDocument = W.ProjectAssistantCharterResponse
+type CharterReader = W.ProjectAssistantCharterReader
+type CharterProposal = W.ProjectAssistantCharterProposal
+type CharterVersion = W.ProjectAssistantCharterVersion
 type Notice = { text: string; tone: "ok" | "error" }
 type Editing = { index: number; draft: string }
 
@@ -38,9 +43,9 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
   const reload = useCallback(async () => {
     const signal = life.current.signal
     try {
-      const [next, who, pending] = await Promise.all([api.read(project, signal), api.readers(project, signal), api.proposals(project, signal)])
+      const [next, who, pending] = await Promise.all([api.read(project, 0, signal), api.readers(project, signal), api.proposals(project, signal)])
       if (signal.aborted) return null
-      setDoc(next); setReaders(who); setProposals(pending); setLoadError("")
+      setDoc(next); setReaders(shownReaders(who)); setProposals(pending.proposals); setLoadError("")
       return next
     } catch (error) {
       if (!signal.aborted) setLoadError(charterProblem(error))
@@ -54,7 +59,7 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
     return () => window.clearInterval(timer)
   }, [reload])
 
-  const write = async (action: (signal: AbortSignal) => Promise<CharterDocument>, done: (next: CharterDocument) => string, onConflict?: (current: CharterDocument | null) => string) => {
+  const write = async (action: (signal: AbortSignal) => Promise<CharterDocument>, done: (next: CharterDocument) => string, onConflict?: (current: CharterDocument | null, field: string) => string) => {
     setBusy(true); setNotice(null)
     try {
       const next = await action(life.current.signal)
@@ -68,7 +73,8 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
       if (charterRefusalCode(error) === "version_conflict") {
         const current = await reload()
         onChanged()
-        setNotice({ text: onConflict ? onConflict(current) : charterProblem(error, current?.version), tone: "error" })
+        const field = (charterRefusal(error) as { field?: string }).field ?? ""
+        setNotice({ text: onConflict ? onConflict(current, field) : charterProblem(error, current?.version), tone: "error" })
       } else setNotice({ text: charterProblem(error), tone: "error" })
       return false
     } finally { if (!life.current.signal.aborted) setBusy(false) }
@@ -77,11 +83,12 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
   const sections = doc ? charterSections(doc.text) : []
   const shown = sections.map((section, index) => ({ section, index })).filter(({ section }) => shownCharterSection(section))
   const next = (doc?.version ?? 0) + 1
-  const behind = doc ? readers.filter(r => r.version_used !== doc.version) : []
+  const behind = doc ? readers.filter(r => r.version !== doc.version) : []
   const status = !doc || !readers.length ? "" : behind.length
     ? charterFormat("statusSome", readers.length - behind.length, doc.version, charterNames(behind.map(r => r.name)))
     : charterFormat("statusAll", readers.length, doc.version)
   const proposal = proposals[0]
+  const botName = (id: string) => readers.find(r => r.bot_id === id)?.name ?? charterWord("lead")
   const proposed: ChangedSection[] = doc && proposal ? changedCharterSections(doc.text, proposal.text) : []
   const proposedHeadings = new Set(proposed.map(change => change.heading))
 
@@ -97,7 +104,7 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
   }
   const apply = (item: CharterProposal) => doc && void write(signal => api.applyProposal(project, item.id, { expected_version: doc.version }, signal),
     saved => charterFormat("applied", saved.version),
-    current => charterFormat("conflictProposal", item.base_version, current?.version ?? doc.version))
+    (current, field) => field === "charter_proposal_base" ? charterFormat("conflictProposal", item.base_version, current?.version ?? doc.version) : charterFormat("conflictVersion", current?.version ?? doc.version))
   const dismiss = async (item: CharterProposal) => {
     setBusy(true); setNotice(null)
     try {
@@ -145,7 +152,7 @@ export function CharterPage({ api, project, projectName, narrow, showBack, onBac
             <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setHistoryOpen(true)}>{charterWord("history")}</button>
           </div>
           {notice && <p className="pa-charter-notice" data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
-          {proposal && <ProposalCard proposal={proposal} changes={proposed} next={next} busy={busy} stale={proposal.base_version !== doc.version}
+          {proposal && <ProposalCard proposal={proposal} author={botName(proposal.bot_id)} changes={proposed} next={next} busy={busy} stale={proposal.stale || proposal.base_version !== doc.version}
             onApply={() => apply(proposal)} onDismiss={() => void dismiss(proposal)} onRetouch={() => startRetouch(proposal)}/>}
           {shown.map(({ section, index }, position) => editing?.index === index && !narrow
             ? <div key={index}>{editor}</div>
@@ -211,13 +218,13 @@ function SectionEditor({ n, editing, readers, next, busy, full, onDraft, onCance
   </div>
 }
 
-function ProposalCard({ proposal, changes, next, busy, stale, onApply, onDismiss, onRetouch }: {
-  proposal: CharterProposal; changes: readonly ChangedSection[]; next: number; busy: boolean; stale: boolean
+function ProposalCard({ proposal, author, changes, next, busy, stale, onApply, onDismiss, onRetouch }: {
+  proposal: CharterProposal; author: string; changes: readonly ChangedSection[]; next: number; busy: boolean; stale: boolean
   onApply: () => void; onDismiss: () => void; onRetouch: () => void
 }) {
-  return <article className="pa-charter-proposal" aria-label={charterFormat("proposalFrom", proposal.author)}>
-    <p className="pa-charter-proposal-title"><strong>{charterFormat("proposalFrom", proposal.author)}</strong></p>
-    <p className="pa-charter-proposal-why">{proposal.explanation}</p>
+  return <article className="pa-charter-proposal" aria-label={charterFormat("proposalFrom", author)}>
+    <p className="pa-charter-proposal-title"><strong>{charterFormat("proposalFrom", author)}</strong></p>
+    {proposal.summary && <p className="pa-charter-proposal-why">{proposal.summary}</p>}
     {stale && <p className="pa-charter-proposal-stale">{charterFormat("proposalStale", proposal.base_version)}</p>}
     {changes.map((change, i) => <CharterDiff key={i} change={change}/>)}
     {!changes.length && <p className="pa-charter-hint">{charterWord("proposalNoChange")}</p>}
@@ -244,14 +251,16 @@ function CharterHistory({ api, project, doc, busy, language, onClose, onRestore 
   onClose: () => void; onRestore: (version: number) => void
 }) {
   const [selected, setSelected] = useState(doc.version)
-  const [old, setOld] = useState<CharterOldVersion | null>(null)
+  const [old, setOld] = useState<{ text: string; previous_text: string } | null>(null)
   const [error, setError] = useState("")
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => { panel.current?.querySelector<HTMLElement>(".pa-charter-history-close")?.focus({ preventScroll: true }) }, [])
   useEffect(() => {
     const control = new AbortController()
     setOld(null); setError("")
-    api.readVersion(project, selected, control.signal).then(answer => { if (!control.signal.aborted) setOld(answer) }, problem => { if (!control.signal.aborted) setError(charterProblem(problem)) })
+    const text = (version: number) => version < 1 ? Promise.resolve("") : api.read(project, version, control.signal).then(answer => answer.selected?.text ?? "")
+    Promise.all([text(selected), text(selected - 1)]).then(([now, before]) => { if (!control.signal.aborted) setOld({ text: now, previous_text: before }) },
+      problem => { if (!control.signal.aborted) setError(charterProblem(problem)) })
     return () => control.abort()
   }, [api, project.machine_id, project.project_id, selected, doc.version])
   const date = new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -266,7 +275,7 @@ function CharterHistory({ api, project, doc, busy, language, onClose, onRestore 
         <button type="button" aria-pressed={item.version === selected} onClick={() => setSelected(item.version)}>
           <strong>{charterFormat("version", item.version)}{item.version === doc.version && <small className="pa-charter-current">{charterWord("current")}</small>}</strong>
           <span>{versionReason(item)}</span>
-          <small>{[item.author, safeDate(date, item.at)].filter(Boolean).join(" · ")}</small>
+          <small>{[charterWord(`author_${item.author}`), safeDate(date, item.created_at)].filter(Boolean).join(" · ")}</small>
         </button>
       </li>)}
     </ol>
@@ -281,11 +290,12 @@ function CharterHistory({ api, project, doc, busy, language, onClose, onRestore 
 }
 
 function versionReason(item: CharterVersion): string {
-  switch (item.kind) {
-    case "create": return charterWord("reasonCreated")
-    case "restore": return item.restored_from ? charterFormat("reasonRestored", item.restored_from) : charterWord("reasonRestoredOld")
-    case "proposal": return charterFormat("reasonProposal", item.reason)
-    default: return item.reason
+  switch (item.author) {
+    case "template": return item.reason || charterWord("reasonCreated")
+    // The source names a restore "Restored version N".
+    case "restore": { const from = /^Restored version ([1-9][0-9]*)$/.exec(item.reason)?.[1]; return from ? charterFormat("reasonRestored", from) : item.reason || charterWord("reasonRestoredOld") }
+    case "lead_proposal": return item.reason ? charterFormat("reasonProposal", item.reason) : charterWord("reasonProposalPlain")
+    default: return item.reason || charterWord("reasonEdited")
   }
 }
 
