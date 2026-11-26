@@ -1,0 +1,517 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "project-assistant-charters.v1",
+  "title": "Bots team charters",
+  "description": "API 122. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
+  "$defs": {
+    "ProjectAssistantCharterAuthor": {
+      "type": "string",
+      "enum": [
+        "person",
+        "lead_proposal",
+        "restore",
+        "template"
+      ],
+      "description": "How a charter version came to be."
+    },
+    "ProjectAssistantCharterLimits": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The charter bounds the source enforces.",
+      "properties": {
+        "text_bytes": {
+          "type": "integer"
+        },
+        "versions": {
+          "type": "integer"
+        },
+        "proposals": {
+          "type": "integer"
+        },
+        "reason_bytes": {
+          "type": "integer"
+        },
+        "request_bytes": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "text_bytes",
+        "versions",
+        "proposals",
+        "reason_bytes",
+        "request_bytes"
+      ]
+    },
+    "ProjectAssistantCharterSummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One Project's current charter in the machine listing.",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "updated_by": {
+          "$ref": "#/$defs/ProjectAssistantCharterAuthor"
+        },
+        "pending_proposals": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "project_id",
+        "version",
+        "updated_at",
+        "updated_by",
+        "pending_proposals"
+      ]
+    },
+    "ProjectAssistantChartersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Every Project of the machine with a charter, and the Projects that have Bots but no charter yet.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "charters": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterSummary"
+          }
+        },
+        "projects_without_charter": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "limits": {
+          "$ref": "#/$defs/ProjectAssistantCharterLimits"
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "charters",
+        "projects_without_charter",
+        "limits"
+      ]
+    },
+    "ProjectAssistantCharterVersion": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One immutable charter version. text is present only on the version a read selected.",
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "author": {
+          "$ref": "#/$defs/ProjectAssistantCharterAuthor"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "version",
+        "author",
+        "reason",
+        "created_at"
+      ]
+    },
+    "ProjectAssistantCharterResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Project's current charter and its retained history, newest first. Version 0 means it has no charter. selected is the version a read named with version > 0.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterVersion"
+          }
+        },
+        "selected": {
+          "$ref": "#/$defs/ProjectAssistantCharterVersion"
+        },
+        "pending_proposals": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limits": {
+          "$ref": "#/$defs/ProjectAssistantCharterLimits"
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "project_id",
+        "version",
+        "text",
+        "history",
+        "pending_proposals",
+        "limits"
+      ]
+    },
+    "ProjectAssistantCharterSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Save the whole new text as the next version while the charter is still at expected_version (0 when it has none). A stale base answers pa_stale_version with field charter_version.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version",
+        "text"
+      ]
+    },
+    "ProjectAssistantCharterRestoreRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Save a copy of a retained earlier version as the next version.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version",
+        "version"
+      ]
+    },
+    "ProjectAssistantCharterReader": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One Bot of the Project: the charter version its most recent prompt carried (0 before any) and whether it has a running or queued turn now.",
+      "properties": {
+        "bot_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lead": {
+          "type": "boolean"
+        },
+        "hidden": {
+          "type": "boolean"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "read_at": {
+          "type": "string"
+        },
+        "running": {
+          "type": "boolean"
+        },
+        "queued": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "bot_id",
+        "name",
+        "lead",
+        "hidden",
+        "version",
+        "turn_id",
+        "running",
+        "queued"
+      ]
+    },
+    "ProjectAssistantCharterReadersResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which charter version each Bot of the Project last worked under.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "readers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterReader"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "project_id",
+        "version",
+        "readers"
+      ]
+    },
+    "ProjectAssistantCharterProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A lead Bot's pending proposal: the whole replacement text. stale says the charter moved past base_version, so applying it is refused.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "base_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "turn_id": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "stale": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "base_version",
+        "text",
+        "summary",
+        "bot_id",
+        "turn_id",
+        "created_at",
+        "stale"
+      ]
+    },
+    "ProjectAssistantCharterProposalsResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A Project's pending lead proposals, oldest first.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "proposals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterProposal"
+          }
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "project_id",
+        "version",
+        "proposals"
+      ]
+    },
+    "ProjectAssistantCharterApplyRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Apply a pending proposal while the charter is still at expected_version. A proposal written against another version answers pa_stale_version with field charter_proposal_base.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "proposal_id": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "proposal_id",
+        "expected_version"
+      ]
+    },
+    "ProjectAssistantCharterDismissRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Dismiss a pending proposal. Dismissing one that is already gone answers the current list.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "proposal_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "proposal_id"
+      ]
+    },
+    "ProjectAssistantCharterChangeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The person's words from a charter page, sent to the machine's lead Bot as their own message. The lead's turn carries the Project's charter and may answer with a proposal.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "text"
+      ]
+    },
+    "ProjectAssistantCharterChangeResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The lead Bot that received the change request and the send receipt.",
+      "properties": {
+        "contract_version": {
+          "type": "string"
+        },
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "lead_bot_id": {
+          "type": "string"
+        },
+        "receipt": {
+          "$ref": "project-assistants.v1#/$defs/ProjectAssistantReceipt"
+        }
+      },
+      "required": [
+        "contract_version",
+        "machine_id",
+        "project_id",
+        "lead_bot_id",
+        "receipt"
+      ]
+    }
+  }
+}

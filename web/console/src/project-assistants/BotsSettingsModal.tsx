@@ -8,6 +8,8 @@ import { PaSelect } from "./PaSelect"
 import { useModelCatalog, type ModelCatalog } from "../model-catalog/useModelCatalog"
 import { catalogPicker, paSelectStatus } from "../model-catalog/picker"
 import { errorCode, failure, type SharedSettingsAnswer, type SharedSettingsDocument, type SourceClient } from "./client"
+import { CharterSettings, type CharterSettingsRow } from "./CharterSettings"
+import type { CharterProject } from "./charter-api"
 import "./bots-settings.css"
 
 // Machine-wide Bots settings: the default agent, dispatch rules and memory
@@ -294,10 +296,13 @@ function MemoryRow({ entry, projects, onChange, onDelete }: { entry: SharedMemor
 
 export type SettingsMachine = { source: SourceClient; name: string }
 
-type Tab = "dispatch" | "memory"
+type Tab = "dispatch" | "memory" | "charter"
 
-export function BotsSettingsModal({ projects, onClose, machines, initialMachine }: {
-  projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string
+/** The team charter tab's rows and actions, supplied by the Bots screen. */
+export interface CharterSettingsTab { rows: readonly CharterSettingsRow[]; onOpen: (project: CharterProject) => void; onCreate: (row: CharterSettingsRow) => Promise<void> }
+
+export function BotsSettingsModal({ projects, onClose, machines, initialMachine, charter }: {
+  projects: readonly ProjectChoice[]; onClose: () => void; machines: readonly SettingsMachine[]; initialMachine?: string; charter?: CharterSettingsTab
 }) {
   const panel = useRef<HTMLElement>(null)
   const opener = useRef<Element | null>(typeof document === "undefined" ? null : document.activeElement)
@@ -366,8 +371,8 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
       </header>
       <div className="pa-bs-layout">
         <nav className="pa-bs-nav" aria-label={word("title")}>
-          {(["dispatch", "memory"] as const).map(t => <button key={t} type="button" className="pa-bs-nav-item" aria-current={tab === t ? "page" : undefined}
-            onClick={() => { setTab(t); setEditing(null) }}>{word(t === "dispatch" ? "tabDispatch" : "tabMemory")}</button>)}
+          {(charter ? ["dispatch", "memory", "charter"] as const : ["dispatch", "memory"] as const).map(t => <button key={t} type="button" className="pa-bs-nav-item" aria-current={tab === t ? "page" : undefined}
+            onClick={() => { setTab(t); setEditing(null) }}>{t === "charter" ? catalogWord("teamCharter", "title") : word(t === "dispatch" ? "tabDispatch" : "tabMemory")}</button>)}
         </nav>
         <div className="pa-bs-body">
           {machines.length > 1 && <div className="pa-bs-machine">
@@ -375,8 +380,9 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
             <PaSelect compact ariaLabel={word("machine")} value={machine} disabled={saving} onChange={setMachine}
               options={machines.map(m => ({ value: m.source.machineID, label: m.name }))}/>
           </div>}
-          {!draft && !loadError && <p className="pa-bs-note" role="status">{word("loading")}</p>}
-          {loadError && <div className="pa-bs-problem" role="alert">
+          {tab === "charter" && charter && <CharterSettings rows={charter.rows.filter(row => row.project.machine_id === machine)} onOpen={charter.onOpen} onCreate={charter.onCreate}/>}
+          {tab !== "charter" && !draft && !loadError && <p className="pa-bs-note" role="status">{word("loading")}</p>}
+          {tab !== "charter" && loadError && <div className="pa-bs-problem" role="alert">
             <p className="pa-bs-error">{loadError}</p>
             <button type="button" className="pa-bs-secondary" onClick={() => setAttempt(a => a + 1)}>{word("retry")}</button>
           </div>}
@@ -421,7 +427,7 @@ export function BotsSettingsModal({ projects, onClose, machines, initialMachine 
       </div>
       <footer className="pa-bs-footer">
         <button type="button" className="pa-bs-secondary" onClick={close}>{word("cancel")}</button>
-        <button type="button" className="pa-bs-primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? word("saving") : word("save")}</button>
+        {tab !== "charter" && <button type="button" className="pa-bs-primary" disabled={!dirty || saving} onClick={() => void save()}>{saving ? word("saving") : word("save")}</button>}
       </footer>
     </section>
   </div>

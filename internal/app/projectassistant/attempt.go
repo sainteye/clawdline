@@ -43,6 +43,12 @@ type attemptStart struct {
 	compacted       bool
 	roleChanged     bool
 	priorUsage      pa.ContextSample
+	// charterVersion and charterText are the Project's team charter as this
+	// attempt read it; charterChanged says a resumed session heard another
+	// version and its next prompt carries this one once.
+	charterVersion int64
+	charterText    string
+	charterChanged bool
 }
 
 // attemptCleanup closes an opened native session at most once and remembers
@@ -257,6 +263,13 @@ func (r *Engine) readAttemptEnvironmentLocked(ctx context.Context, a *runtimeAct
 	if err != nil {
 		return err
 	}
+	if r.o.Charter != nil {
+		// Read before anything is sent: a turn never runs on a charter it
+		// could not read.
+		if s.charterVersion, s.charterText, err = r.o.Charter.CurrentCharter(ctx, bot.Project); err != nil {
+			return err
+		}
+	}
 	s.resolution, s.step, s.effective, s.caps = resolution, step, effective, caps
 	s.current, s.snapshot, s.export = current, snapshot, export
 	return nil
@@ -325,6 +338,18 @@ func (r *Engine) readAttemptInputLocked(ctx context.Context, a *runtimeActor, s 
 	}
 	if t.RoutineRunID != "" || t.Origin == pa.UserOrigin || t.Origin == "" {
 		input.Text = pa.WithBotMentionHint(input.Text)
+	}
+	if t.CharterEdit != nil {
+		// The charter the person asked about is read when the turn runs, so
+		// the lead proposes against the version that is current then.
+		if r.o.Charter == nil || !bot.Lead || !pa.DirectUserTurn(t) {
+			return runtimeFailure(pa.ScopeDenied, "charter_edit")
+		}
+		version, text, err := r.o.Charter.CurrentCharter(ctx, pa.ProjectScope{MachineID: bot.Project.MachineID, ProjectID: t.CharterEdit.ProjectID})
+		if err != nil {
+			return err
+		}
+		input.Text = pa.CharterEditContext(t.CharterEdit.ProjectID, version, text, input.Text)
 	}
 	// The first prompt after an interrupted turn was settled unrepeated
 	// inspects what finished before it acts.
@@ -452,6 +477,11 @@ func (r *Engine) commitAttemptStartLocked(ctx context.Context, a *runtimeActor, 
 	if t.Origin != pa.CompactOrigin {
 		binding.MemoryRevision = s.current.Revision
 		binding.ForgottenThrough = s.current.ForgottenThrough
+		// A charter change never replaces the native session: a resumed one
+		// hears the new version once, in this prompt.
+		s.charterChanged = s.resume && binding.CharterVersion != s.charterVersion
+		binding.CharterVersion = s.charterVersion
+		t.CharterVersion = s.charterVersion
 	}
 	leadRole := "member"
 	if bot.Lead {
@@ -647,9 +677,13 @@ func (r *Engine) sendAttemptPrompt(ctx context.Context, a *runtimeActor, s *atte
 		// the person's machine setting, not a fact of this Bot's memory, so it
 		// joins the delivered text only after the provenance checks: a Bot with
 		// no memory of its own, such as every request worker, still opens.
+		// The team charter comes first and wins over both memories.
 		shared := ""
+		if s.turn.Origin != pa.CompactOrigin {
+			shared = pa.CharterOpening(s.charterVersion, s.charterText)
+		}
 		if r.o.SharedMemory != nil {
-			shared = sharedMemoryBlock(r.o.SharedMemory(ctx, s.bot))
+			shared += sharedMemoryBlock(r.o.SharedMemory(ctx, s.bot))
 		}
 		promptText, handoff, err := attemptPrompt(s, filtered)
 		if err != nil {
@@ -685,6 +719,11 @@ func (r *Engine) sendAttemptPrompt(ctx context.Context, a *runtimeActor, s *atte
 		pending, err = session.Send(ctx, PromptRequest{Turn: s.turn, Text: promptText, Context: filtered, Quote: s.quote, Handoff: handoff, Images: images, Files: files, MemoryChanged: s.resume && s.memoryChanged, Compacted: s.resume && s.compacted})
 		return err
 	})
+	if err == nil && r.o.Charter != nil && s.turn.Origin != pa.CompactOrigin {
+		// The sent version feeds the charter's readers; the prompt is
+		// already sent, so a failed note does not fail the turn.
+		_ = r.o.Charter.CharterDelivered(context.WithoutCancel(ctx), s.bot, s.turn.ID, s.charterVersion)
+	}
 	return pending, err
 }
 
@@ -719,6 +758,16 @@ func attemptPrompt(s *attemptStart, filtered pa.ContextSnapshot) (string, *Sessi
 			return "", nil, err
 		}
 		text = prefix + text
+	}
+	switch {
+	case handoff == nil && !s.resume && s.charterVersion > 0:
+		// An isolated routine opens without a handoff; its prompt carries
+		// the charter itself.
+		text = pa.CharterOpening(s.charterVersion, s.charterText) + "\n" + text
+	case handoff == nil && s.charterChanged && !s.memoryChanged && !s.compacted:
+		// A memory update or compaction redelivery already repeats the
+		// whole context, charter included.
+		text = pa.CharterUpdate(s.charterVersion, s.charterText) + text
 	}
 	return text, handoff, nil
 }

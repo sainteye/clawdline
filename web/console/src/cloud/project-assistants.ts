@@ -3,7 +3,7 @@ import { BotReadObservation, type BotReadMode } from "../project-assistants/read
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
-import type { MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SharedSettingsAnswer, SharedSettingsWrite, SourceClient } from "../project-assistants/client.js"
+import type { CharterRequestBody, MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SharedSettingsAnswer, SharedSettingsWrite, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -75,6 +75,8 @@ export const PROJECT_ASSISTANTS_MEMORY_PAGES_API_LEVEL = 98
 export const PROJECT_ASSISTANTS_SHARED_SETTINGS_API_LEVEL = 116
 // The daemon's one model catalog, GET /v1/model-catalog and its Cloud word, arrives at 120.
 export const MODEL_CATALOG_API_LEVEL = 120
+/** Team charters: /v1/project-assistant-charters (API 122). */
+export const PROJECT_ASSISTANTS_CHARTERS_API_LEVEL = 122
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -258,7 +260,7 @@ export class ProjectAssistantSourceClient implements SourceClient {
     }
   }
   private key(key: W.ProjectAssistantBotKey) { if (key.machine_id !== this.machineID) throw failure("pa_scope_denied") }
-  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest | SharedSettingsWrite, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard", observation?: BotReadObservation): Promise<T> {
+  private async request<T>(path: string, signal: AbortSignal, body?: { command: W.ProjectAssistantCommand } | W.ProjectAssistantDevServerControlRequest | W.ProjectAssistantTowerFloorRequest | SharedSettingsWrite | CharterRequestBody, method = "GET", content = true, minimum = PROJECT_ASSISTANTS_API_LEVEL, mode: AssistantRequestMode = "standard", observation?: BotReadObservation): Promise<T> {
     const write = method !== "GET"
     // Refusals here precede the transport, so they prove the write never left.
     try { this.check(signal,write,content,minimum,mode); if (body) this.key("command" in body ? body.command.key : "key" in body ? body.key : {machine_id:body.machine_id,bot_id:""}) } catch (error) { throw notSent(error) }
@@ -637,6 +639,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canReactions(){try{this.check(new AbortController().signal,true,true,85);return true}catch{return false}}
   react(r:W.ProjectAssistantReactRequest,s:AbortSignal){return this.request<W.ProjectAssistantReceiptResponse>(endpoint(r.command.key,"/react"),s,r,"POST",true,85)}
   canTowerFloors(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL);return true}catch{return false}}
+  canCharters(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTERS_API_LEVEL);return true}catch{return false}}
+  /** One team charter route; the paths and bodies are shaped by charter-api.ts. */
+  charterRequest<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,s:AbortSignal){
+    if(!path.startsWith(chartersPath))throw failure("pa_invalid")
+    return this.request<T>(path,s,body,method,true,PROJECT_ASSISTANTS_CHARTERS_API_LEVEL)
+  }
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   saveTowerFloor(r:W.ProjectAssistantTowerFloorRequest,s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors",s,r,"POST",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   canModelCatalog(){return (this.grant.apiLevel??0)>=MODEL_CATALOG_API_LEVEL}
@@ -689,6 +697,55 @@ export class ProjectAssistantSourceClient implements SourceClient {
   }
 }
 
+const chartersPath = "/v1/project-assistant-charters"
+// The team charter's nine Cloud words (docs/project-assistants-cloud-wire.md), each
+// with its exact local query or body. Over Cloud a save always names its reason.
+const charterRoutes: Record<string,{method:string;word:string;query?:string[];body?:string[]}> = {
+  "":{method:"GET",word:"project-assistants.charters",query:["machine_id"]},
+  "/charter GET":{method:"GET",word:"project-assistants.charter",query:["machine_id","project_id","version"]},
+  "/charter PUT":{method:"PUT",word:"project-assistants.charter-save",body:["expected_version","idempotency_key","machine_id","project_id","reason","text"]},
+  "/readers":{method:"GET",word:"project-assistants.charter-readers",query:["machine_id","project_id"]},
+  "/proposals":{method:"GET",word:"project-assistants.charter-proposals",query:["machine_id","project_id"]},
+  "/restore":{method:"POST",word:"project-assistants.charter-restore",body:["expected_version","idempotency_key","machine_id","project_id","version"]},
+  "/proposal-apply":{method:"POST",word:"project-assistants.charter-proposal-apply",body:["expected_version","idempotency_key","machine_id","project_id","proposal_id"]},
+  "/proposal-dismiss":{method:"POST",word:"project-assistants.charter-proposal-dismiss",body:["idempotency_key","machine_id","project_id","proposal_id"]},
+  "/change-request":{method:"POST",word:"project-assistants.charter-change-request",body:["idempotency_key","machine_id","project_id","text"]},
+}
+export function charterRelayRequest(url: URL, method: string, init?: RequestInit) {
+  const rest = url.pathname.slice(chartersPath.length)
+  const route = charterRoutes[rest === "/charter" ? `${rest} ${method}` : rest]
+  if (!route || route.method !== method) throw failure("pa_invalid")
+  const whole = (value: unknown, min: number) => Number.isSafeInteger(value) && (value as number) >= min
+  if (route.query) {
+    const q = Object.fromEntries(url.searchParams)
+    if (init?.body != null || url.searchParams.size !== route.query.length || route.query.some(name => !q[name])) throw failure("pa_invalid")
+    const fields: Record<string, unknown> = { ...q }
+    if ("version" in fields) {
+      if (!/^(0|[1-9][0-9]*)$/.test(q.version)) throw failure("pa_invalid")
+      fields.version = Number(q.version)
+      if (!whole(fields.version, 0)) throw failure("pa_invalid")
+    }
+    return { word: route.word, kind: "read" as const, fields, id: "" }
+  }
+  if (url.search || typeof init?.body !== "string") throw failure("pa_invalid")
+  let fields
+  try { fields = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
+  const names = route.body!
+  if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length || names.some(name => !Object.hasOwn(fields, name)) ||
+    typeof fields.machine_id !== "string" || !fields.machine_id || typeof fields.project_id !== "string" || !fields.project_id ||
+    typeof fields.idempotency_key !== "string" || !fields.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key ||
+    "expected_version" in fields && !whole(fields.expected_version, 0) || "version" in fields && !whole(fields.version, 1) ||
+    "proposal_id" in fields && (typeof fields.proposal_id !== "string" || !fields.proposal_id) ||
+    "text" in fields && typeof fields.text !== "string" || "reason" in fields && typeof fields.reason !== "string") throw failure("pa_invalid")
+  return { word: route.word, kind: "action" as const, fields: fields as Record<string, unknown>, id: fields.idempotency_key as string }
+}
+
+// The two route families with their own vocabulary tables: browser tabs and team charters.
+function prefixedRelayRequest(url: URL, method: string, init?: RequestInit) {
+  if (!url.pathname.startsWith("/v1/browser/")) return charterRelayRequest(url, method, init)
+  return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
+}
+
 /** Exact browser vocabulary; neither client authority nor an owner crosses this boundary. */
 function browserRelayRequest(url: URL, method: string, body?: Record<string,unknown>, id = "") {
   const routes: Record<string,{method:string;word:string;fields:string[];required:string[]}> = {
@@ -731,7 +788,7 @@ function groupRelayFields(action: string, fields: Record<string, unknown>) {
 
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
-  if(url.pathname.startsWith("/v1/browser/"))return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
+  if(url.pathname.startsWith("/v1/browser/")||url.pathname===chartersPath||url.pathname.startsWith(chartersPath+"/"))return prefixedRelayRequest(url,method,init)
   if (url.pathname === base+"/roster-events") throw failure("pa_unsupported")
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
   if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {

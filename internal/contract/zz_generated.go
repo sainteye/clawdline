@@ -4859,6 +4859,177 @@ type ProjectAssistantCapabilities struct {
 	Unavailable          *ProjectAssistantFailure         `json:"unavailable,omitempty"`
 }
 
+// Apply a pending proposal while the charter is still at expected_version. A
+// proposal written against another version answers pa_stale_version with field
+// charter_proposal_base.
+type ProjectAssistantCharterApplyRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+	ProposalID      string `json:"proposal_id"`
+}
+
+// How a charter version came to be.
+type ProjectAssistantCharterAuthor string
+
+const (
+	ProjectAssistantCharterAuthorPerson       ProjectAssistantCharterAuthor = "person"
+	ProjectAssistantCharterAuthorLeadProposal ProjectAssistantCharterAuthor = "lead_proposal"
+	ProjectAssistantCharterAuthorRestore      ProjectAssistantCharterAuthor = "restore"
+	ProjectAssistantCharterAuthorTemplate     ProjectAssistantCharterAuthor = "template"
+)
+
+// ProjectAssistantCharterAuthorValues is every value the contract allows, in contract order.
+var ProjectAssistantCharterAuthorValues = []ProjectAssistantCharterAuthor{ProjectAssistantCharterAuthorPerson, ProjectAssistantCharterAuthorLeadProposal, ProjectAssistantCharterAuthorRestore, ProjectAssistantCharterAuthorTemplate}
+
+// The person's words from a charter page, sent to the machine's lead Bot as
+// their own message. The lead's turn carries the Project's charter and may
+// answer with a proposal.
+type ProjectAssistantCharterChangeRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+	MachineID      string `json:"machine_id"`
+	ProjectID      string `json:"project_id"`
+	Text           string `json:"text"`
+}
+
+// The lead Bot that received the change request and the send receipt.
+type ProjectAssistantCharterChangeResponse struct {
+	ContractVersion string                  `json:"contract_version"`
+	LeadBotID       string                  `json:"lead_bot_id"`
+	MachineID       string                  `json:"machine_id"`
+	ProjectID       string                  `json:"project_id"`
+	Receipt         ProjectAssistantReceipt `json:"receipt"`
+}
+
+// Dismiss a pending proposal. Dismissing one that is already gone answers the
+// current list.
+type ProjectAssistantCharterDismissRequest struct {
+	IdempotencyKey string `json:"idempotency_key"`
+	MachineID      string `json:"machine_id"`
+	ProjectID      string `json:"project_id"`
+	ProposalID     string `json:"proposal_id"`
+}
+
+// The charter bounds the source enforces.
+type ProjectAssistantCharterLimits struct {
+	Proposals    int64 `json:"proposals"`
+	ReasonBytes  int64 `json:"reason_bytes"`
+	RequestBytes int64 `json:"request_bytes"`
+	TextBytes    int64 `json:"text_bytes"`
+	Versions     int64 `json:"versions"`
+}
+
+// A lead Bot's pending proposal: the whole replacement text. stale says the
+// charter moved past base_version, so applying it is refused.
+type ProjectAssistantCharterProposal struct {
+	BaseVersion int64  `json:"base_version"`
+	BotID       string `json:"bot_id"`
+	CreatedAt   string `json:"created_at"`
+	ID          string `json:"id"`
+	Stale       bool   `json:"stale"`
+	Summary     string `json:"summary"`
+	Text        string `json:"text"`
+	TurnID      string `json:"turn_id"`
+}
+
+// A Project's pending lead proposals, oldest first.
+type ProjectAssistantCharterProposalsResponse struct {
+	ContractVersion string                            `json:"contract_version"`
+	MachineID       string                            `json:"machine_id"`
+	ProjectID       string                            `json:"project_id"`
+	Proposals       []ProjectAssistantCharterProposal `json:"proposals"`
+	Version         int64                             `json:"version"`
+}
+
+// One Bot of the Project: the charter version its most recent prompt carried (0
+// before any) and whether it has a running or queued turn now.
+type ProjectAssistantCharterReader struct {
+	BotID   string `json:"bot_id"`
+	Hidden  bool   `json:"hidden"`
+	Lead    bool   `json:"lead"`
+	Name    string `json:"name"`
+	Queued  bool   `json:"queued"`
+	ReadAt  string `json:"read_at,omitempty"`
+	Running bool   `json:"running"`
+	TurnID  string `json:"turn_id"`
+	Version int64  `json:"version"`
+}
+
+// Which charter version each Bot of the Project last worked under.
+type ProjectAssistantCharterReadersResponse struct {
+	ContractVersion string                          `json:"contract_version"`
+	MachineID       string                          `json:"machine_id"`
+	ProjectID       string                          `json:"project_id"`
+	Readers         []ProjectAssistantCharterReader `json:"readers"`
+	Version         int64                           `json:"version"`
+}
+
+// A Project's current charter and its retained history, newest first. Version 0
+// means it has no charter. selected is the version a read named with version >
+// 0.
+type ProjectAssistantCharterResponse struct {
+	ContractVersion  string                           `json:"contract_version"`
+	History          []ProjectAssistantCharterVersion `json:"history"`
+	Limits           ProjectAssistantCharterLimits    `json:"limits"`
+	MachineID        string                           `json:"machine_id"`
+	PendingProposals int64                            `json:"pending_proposals"`
+	ProjectID        string                           `json:"project_id"`
+	Selected         *ProjectAssistantCharterVersion  `json:"selected,omitempty"`
+	Text             string                           `json:"text"`
+	Version          int64                            `json:"version"`
+}
+
+// Save a copy of a retained earlier version as the next version.
+type ProjectAssistantCharterRestoreRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+	Version         int64  `json:"version"`
+}
+
+// Save the whole new text as the next version while the charter is still at
+// expected_version (0 when it has none). A stale base answers pa_stale_version
+// with field charter_version.
+type ProjectAssistantCharterSaveRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+	Reason          string `json:"reason,omitempty"`
+	Text            string `json:"text"`
+}
+
+// One Project's current charter in the machine listing.
+type ProjectAssistantCharterSummary struct {
+	PendingProposals int64                         `json:"pending_proposals"`
+	ProjectID        string                        `json:"project_id"`
+	UpdatedAt        string                        `json:"updated_at"`
+	UpdatedBy        ProjectAssistantCharterAuthor `json:"updated_by"`
+	Version          int64                         `json:"version"`
+}
+
+// One immutable charter version. text is present only on the version a read
+// selected.
+type ProjectAssistantCharterVersion struct {
+	Author    ProjectAssistantCharterAuthor `json:"author"`
+	CreatedAt string                        `json:"created_at"`
+	Reason    string                        `json:"reason"`
+	Text      string                        `json:"text,omitempty"`
+	Version   int64                         `json:"version"`
+}
+
+// Every Project of the machine with a charter, and the Projects that have Bots
+// but no charter yet.
+type ProjectAssistantChartersResponse struct {
+	Charters               []ProjectAssistantCharterSummary `json:"charters"`
+	ContractVersion        string                           `json:"contract_version"`
+	Limits                 ProjectAssistantCharterLimits    `json:"limits"`
+	MachineID              string                           `json:"machine_id"`
+	ProjectsWithoutCharter []string                         `json:"projects_without_charter"`
+}
+
 // SHA-256 of canonical validated content, recomputed by source. Scope is
 // machine/Bot/operation/key, not device. At create, client chooses a stable
 // opaque bot_id; same command returns same Bot.

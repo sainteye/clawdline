@@ -13,6 +13,16 @@
     },
     {
       "method": "*",
+      "pattern": "/v1/project-assistant-charters",
+      "guide": "project"
+    },
+    {
+      "method": "*",
+      "pattern": "/v1/project-assistant-charters/",
+      "guide": "project"
+    },
+    {
+      "method": "*",
       "pattern": "/v1/project-assistant-floors",
       "guide": "project"
     },

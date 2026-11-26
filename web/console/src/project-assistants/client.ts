@@ -21,6 +21,9 @@ export type MemoryReadDetail={source_epoch:string;layer:string;entry_id:string;r
 export type ProjectMemoryPage={page:number;page_size:number}
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
+/** A charter write's body: always the machine, Project and idempotency key. */
+export type CharterRequestBody = W.ProjectAssistantCharterSaveRequest | W.ProjectAssistantCharterRestoreRequest | W.ProjectAssistantCharterApplyRequest | W.ProjectAssistantCharterDismissRequest | W.ProjectAssistantCharterChangeRequest
+
 export interface SourceClient {
   beginReadObservation?(mode: BotReadMode, start: number, interactionID?: string): BotReadObservation | undefined
   canFirstRun?(): boolean
@@ -36,6 +39,9 @@ export interface SourceClient {
  canModelCatalog?():boolean
  modelCatalog?(agent:string|undefined,signal:AbortSignal):Promise<W.ModelCatalogAnswer>
  towerFloors?(signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
+ /** Team charters (API 122); charter-api.ts shapes the path, query and body. */
+ canCharters?():boolean
+ charterRequest?<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,signal:AbortSignal):Promise<T>
  saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean
  networkSettings?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>

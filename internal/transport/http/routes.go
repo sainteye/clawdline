@@ -64,7 +64,8 @@ import (
 // Inline Bot progress history arrives at API 118.
 // Bot request card reads, the person's card actions and the Bot card tools arrive at API 119.
 // The daemon's one model catalog, GET /v1/model-catalog and its Cloud word, arrives at API 120.
-const APILevel = 121
+// Team charters for every Project's Bots, and their Cloud words, arrive at API 122.
+const APILevel = 122
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
