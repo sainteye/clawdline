@@ -2429,6 +2429,8 @@
   "capacityRow.run.claimed_items.what": "Session 根據你的一則訊息，最多能認領或交給新 Session 幾個 Board 項目。避免一個指令變成一口氣把半個 Board 都搶走。",
   "capacityRow.run.created_items.full": "這是單則訊息的上限。Session 再建項目會被拒絕，什麼都不會寫入；如果真的要更多，再傳一則訊息，或請它開一個規劃項目。",
   "capacityRow.run.created_items.what": "Session 根據你的一則訊息，最多能建立幾個 Board 項目。要求更多的訊息其實是一份計畫；設上限也能擋住鬼打牆的 Session 把 Board 灌爆。",
+  "capacityRow.run.decision_answer_age.full": "超過時間的回答會被拒絕，什麼都不會寫入；Bot 會再問你一次。",
+  "capacityRow.run.decision_answer_age.what": "你回答 Bot 的問題卡之後，那個 Bot 能憑這個回答建立 Board 項目的時間；和你的一則訊息讓 Session 建項目的期限一樣，都是一天。",
   "capacityRow.schedule.history_page_rows.full": "按「載入更多項目」展開下一批。這項顯示限制不會刪除已儲存的歷史；排程詳細資料目前最多包含最新 200 筆執行紀錄。",
   "capacityRow.schedule.history_page_rows.what": "排程歷史每次展開的執行紀錄筆數，讓較長的歷史也方便瀏覽。",
   "capacityRow.schedule.run_transcript_head.full": "這是單次讀取的上限。第一則訊息如果在更後面，那次排程就對不上，不會有「繼續」按鈕；對話檔不受影響。你不用做任何事。",

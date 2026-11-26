@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -137,5 +138,77 @@ func TestABotCreatesAnItemOnThePersonsAnswerToItsQuestionCard(t *testing.T) {
 	}
 	if len(asked) != 0 {
 		t.Fatalf("the Session path read question cards: %v", asked)
+	}
+}
+
+// decisionServer is sessionItemServer with bot_decision_items on and a card
+// lookup that admits every card as an answer of the Bot whose Project is
+// botProject.
+func decisionServer(t *testing.T, botProject func(p *pane) string) (*Server, *pane, string) {
+	t.Helper()
+	s, p, project := sessionItemServer(t)
+	s.cfg.Dir = t.TempDir()
+	if err := os.WriteFile(s.settingsFile().Path(), []byte(`{"bot_decision_items":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if botProject != nil {
+		decisionAuthorityByServer.Store(s, decisionAuthorityFunc(func(_ context.Context, conversation, offerID string) (pa.DecisionAuthority, error) {
+			return pa.DecisionAuthority{OfferID: offerID, BotID: "xavia", ConversationID: "chat-1", NativeSessionID: conversation,
+				CanonicalID: botProject(p), Question: "Open it?", Answer: "Yes", AnsweredAt: time.Now().Add(-time.Minute)}, nil
+		}))
+		t.Cleanup(func() { decisionAuthorityByServer.Delete(s) })
+	}
+	return s, p, project
+}
+
+func postDecisionItem(s *Server, body, key string) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, agentWorkV2Request(http.MethodPost, "/v1/work/v2/agent/items", body, key))
+	return rec
+}
+
+// A Bot's card speaks only for the Bot's own Project, whatever the kind: a
+// Plan that names another Project is refused like any other item.
+func TestADecisionCardCreatesNothingInAnotherProject(t *testing.T) {
+	s, _, project := decisionServer(t, func(*pane) string { return "/code/the-bots-own-project" })
+	for _, kind := range []string{"plan", "feature"} {
+		extra := map[string]any{"kind": kind, "project_id": project}
+		if kind == "plan" {
+			extra["steps"] = []string{}
+		}
+		rec := postDecisionItem(s, decisionItemBody(t, "bot-native", map[string]string{"decision": "card-" + kind}, extra), "elsewhere-"+kind)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), `"error":"project_mismatch"`) {
+			t.Fatalf("a %s in another Project: %d %s", kind, rec.Code, rec.Body)
+		}
+	}
+	rec := httptest.NewRecorder()
+	s.workV2Route(rec, httptest.NewRequest(http.MethodGet, "/v1/work/v2/items", nil))
+	if strings.Contains(rec.Body.String(), "Shared event stream follow-ups") {
+		t.Fatalf("a refused card created an item: %s", rec.Body)
+	}
+}
+
+// Before the Bot host is up nobody can say whether the card exists, so the
+// answer is a retry, not a claim that the card is unknown.
+func TestADecisionCardBeforeTheBotHostStartsIsRetried(t *testing.T) {
+	s, _, _ := decisionServer(t, nil)
+	rec := postDecisionItem(s, decisionItemBody(t, "bot-native", map[string]string{"decision": "card-1"}, nil), "no-host")
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), `"error":"store_unavailable"`) {
+		t.Fatalf("a card with no Bot host: %d %s", rec.Code, rec.Body)
+	}
+}
+
+// One card backs as many items as one message does (run.created_items).
+func TestADecisionCardBacksAtMostFiveItems(t *testing.T) {
+	s, _, _ := decisionServer(t, func(p *pane) string { return p.s.CWD })
+	for i := 1; i <= 6; i++ {
+		body := decisionItemBody(t, "bot-native", map[string]string{"decision": "card-1"}, map[string]any{"title": fmt.Sprintf("Follow-up %d", i)})
+		rec := postDecisionItem(s, body, fmt.Sprintf("key-%d", i))
+		if i <= 5 && rec.Code != http.StatusCreated {
+			t.Fatalf("item %d: %d %s", i, rec.Code, rec.Body)
+		}
+		if i == 6 && (rec.Code != http.StatusTooManyRequests || !strings.Contains(rec.Body.String(), `"error":"run_items_exhausted"`)) {
+			t.Fatalf("the sixth item on one card: %d %s", rec.Code, rec.Body)
+		}
 	}
 }

@@ -42,10 +42,20 @@ func (s *Server) decisionAuthority(ctx context.Context, conversation, offerID st
 	h := p.host
 	p.mu.RUnlock()
 	if h == nil {
-		return pa.DecisionAuthority{}, &pa.DecisionRefusal{Code: pa.DecisionUnknown}
+		// The Bot host has not started, or has stopped: whether the card
+		// exists is unknown, which is a retry (store_unavailable), not a
+		// refusal telling the Bot to ask the person again.
+		return pa.DecisionAuthority{}, errBotHostUnavailable
 	}
-	return h.DecisionAuthority(ctx, conversation, offerID, work.RelayWindow)
+	return h.DecisionAuthority(ctx, conversation, offerID, decisionAnswerAgeLimit)
 }
+
+var errBotHostUnavailable = errors.New("the Bot host is not running")
+
+// decisionAnswerAgeLimit is how long the person's answer to a question card
+// backs a Board item: as long as a person's message does (work.RelayWindow),
+// registered as run.decision_answer_age.
+const decisionAnswerAgeLimit = work.RelayWindow
 
 // decisionRefusals are the typed answers to a card that does not authorize
 // the write.
@@ -103,6 +113,15 @@ func (s *Server) agentCreateDecisionItem(w http.ResponseWriter, r *http.Request,
 	project, ok := catalog.resolve(req.project, auth.CanonicalID)
 	if !ok {
 		refuse(&app.WorkError{Status: http.StatusUnprocessableEntity, Code: "project_not_found", Message: workV2ProjectNotFound})
+		return
+	}
+	// The card speaks for the Bot's own Project only, whatever the kind:
+	// CreateFromSession compares Projects only outside Planning, so a Plan
+	// naming another Project would otherwise be written there.
+	if project.Path != auth.CanonicalID {
+		refuse(&app.WorkError{Status: http.StatusConflict, Code: "project_mismatch",
+			Message: "That question card's Bot works in another Project; nothing was created. " +
+				"A Bot creates Board items only in its own Project."})
 		return
 	}
 	n.Run = work.Run{ID: auth.OfferID, Session: conversation, Principal: "bot_decision:" + auth.BotID,
