@@ -174,6 +174,13 @@ type DecisionRepository interface {
 	ForwardDecision(context.Context, pa.BotKey, pa.Turn, string, time.Time) (pa.Exchange, error)
 }
 
+// QuestionRepository lets a Bot review and withdraw its own open questions
+// for the person. Withdrawing never answers one.
+type QuestionRepository interface {
+	PendingQuestions(context.Context, pa.Fence, string) ([]pa.PendingQuestion, error)
+	WithdrawQuestion(context.Context, pa.Fence, string, pa.WithdrawQuestionRequest, time.Time) (pa.PermissionOffer, pa.Exchange, error)
+}
+
 // RoomRepository finishes a group member's room turn: the member's own
 // terminal facts, the final ticket check and the room line commit in one
 // transaction. A refused ticket still finishes the member's own turn; only

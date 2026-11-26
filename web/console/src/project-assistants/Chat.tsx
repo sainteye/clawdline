@@ -10,6 +10,7 @@ import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
+import { decisionReplyOf } from "./decision-reply"
 import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
@@ -67,7 +68,7 @@ import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
 import { ProjectMark } from "./ProjectMark"
-import { BotMentionText, botMentionCandidates } from "./BotMentionField"
+import { BotMentionText, botMentionCandidates, type BotMentionCandidate } from "./BotMentionField"
 import { decodeBotMentions, encodeBotMentions } from "./bot-mentions"
 import { canMarkConversationRead, markConversationRead } from "./conversation-read"
 import type { Words } from "./words"
@@ -1935,11 +1936,11 @@ ${currentDraft}`:submitted)
       const queuedTurn=turns.find(turn=>turn.message_id===message.id&&turn.state==="queued")
       const pending=queueAction?.id===message.id?queueAction.operation:null
       const hold=queuedTurn?.queue_edit_id
-      const editable=!thread&&message.kind==="user"&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
+      const editable=!thread&&message.kind==="user"&&!decisionReplyOf(message)&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
       return <div className="pa-queued" role="listitem" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
-          <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span>{message.text?<BotMentionText text={message.text} candidates={mentions}/>:queuedAttachments(message,w.heldPictures)}</span>
+          <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span><QueuedText message={message} mentions={mentions} w={w}/></span>
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}
@@ -2091,4 +2092,11 @@ function compactBlockFor(enabled:boolean,agent:string,working:boolean,session:bo
   if(agent!=="claude"&&agent!=="codex")return "agent"
   if(working)return "working"
   return session?null:"noSession"
+}
+
+/** A queued message's words: a decision card's answer on one line, else the text or its pictures. */
+function QueuedText({message,mentions,w}:{message:W.ProjectAssistantMessage;mentions:BotMentionCandidate[];w:Words}){
+  const reply=decisionReplyOf(message)
+  if(reply)return <><span className="pa-queued-decision">{w.decisionReplyLabel} · </span>{reply.answer}</>
+  return message.text?<BotMentionText text={message.text} candidates={mentions}/>:<>{queuedAttachments(message,w.heldPictures)}</>
 }

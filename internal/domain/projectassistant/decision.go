@@ -63,6 +63,87 @@ type DecisionRequest struct {
 	// turn answering another Bot. Only the person's MemorySaveOptionID press
 	// on the console's answer route writes it, as the person's own entry.
 	Memory string `json:"memory,omitempty"`
+	// WithdrawnReason is the Bot's own short reason for withdrawing the
+	// question before the person answered it.
+	WithdrawnReason string `json:"withdrawn_reason,omitempty"`
+}
+
+// DecisionReply marks the person's message that answered a question card, so
+// a reader can show it as the card's answer instead of the quoted prompt the
+// Bot receives. It is display data copied from the resolved offer.
+type DecisionReply struct {
+	OfferID     string `json:"offer_id"`
+	Question    string `json:"question"`
+	Answer      string `json:"answer"`
+	SourceBotID string `json:"source_bot_id,omitempty"`
+}
+
+// NewDecisionReply describes the message that answers a resolved question.
+func NewDecisionReply(offer PermissionOffer) *DecisionReply {
+	if offer.Kind != DecisionOfferKind || offer.Decision == nil || offer.Decision.Memory != "" {
+		return nil
+	}
+	d := offer.Decision
+	return &DecisionReply{OfferID: offer.ID, Question: d.Question, Answer: d.AnswerText, SourceBotID: d.SourceBotID}
+}
+
+// WithdrawQuestionRequest is the withdraw_question tool's input: a question
+// the Bot asked the person that is no longer needed, and why.
+type WithdrawQuestionRequest struct {
+	QuestionID string `json:"question_id"`
+	Reason     string `json:"reason"`
+}
+
+// PendingQuestion is one open question card in the Bot's own chat, as the
+// list_questions tool returns it.
+type PendingQuestion struct {
+	QuestionID       string    `json:"question_id"`
+	Question         string    `json:"question"`
+	SuggestedReplies []string  `json:"suggested_replies"`
+	FromBotID        string    `json:"from_bot_id,omitempty"`
+	Request          string    `json:"request,omitempty"`
+	AskedAt          time.Time `json:"asked_at"`
+}
+
+// CheckWithdrawQuestion admits a withdrawal; the reason reuses the bound of a
+// suggested reply.
+func CheckWithdrawQuestion(q WithdrawQuestionRequest) error {
+	if strings.TrimSpace(q.QuestionID) == "" {
+		return fail(Invalid, "withdraw_question_id")
+	}
+	reason := strings.TrimSpace(q.Reason)
+	if reason == "" || !utf8.ValidString(reason) {
+		return fail(Invalid, "withdraw_question_reason")
+	}
+	if len(reason) > MaxDecisionReplyBytes {
+		return fail(CapacityFull, "withdraw_question_reason_bytes")
+	}
+	return nil
+}
+
+// QuestionWithdrawable reports whether a Bot may withdraw this offer: a
+// pending ask_person question, never a host-owned memory card or a native
+// tool permission.
+func QuestionWithdrawable(offer PermissionOffer) bool {
+	return offer.Kind == DecisionOfferKind && offer.Decision != nil && offer.Decision.Memory == "" && offer.State == PermissionPending
+}
+
+// PendingQuestionOf is the list_questions view of a pending question.
+func PendingQuestionOf(offer PermissionOffer) PendingQuestion {
+	q := PendingQuestion{QuestionID: offer.ID, Question: offer.Decision.Question, FromBotID: offer.Decision.SourceBotID, Request: offer.Decision.Request, SuggestedReplies: []string{}}
+	if !offer.ExpiresAt.IsZero() {
+		q.AskedAt = offer.ExpiresAt.Add(-DecisionOfferTTL)
+	}
+	for _, o := range offer.Options {
+		q.SuggestedReplies = append(q.SuggestedReplies, o.Label)
+	}
+	return q
+}
+
+// WithdrawnQuestionReply is what a requesting Bot receives when the Bot it
+// asked withdraws the question it was waiting on the person for.
+func WithdrawnQuestionReply(question, reason string) string {
+	return "The question for the user was withdrawn before the user answered it, so there is no user decision.\nQuestion: " + strings.TrimSpace(question) + "\nReason: " + strings.TrimSpace(reason)
 }
 
 const (

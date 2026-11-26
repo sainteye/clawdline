@@ -139,6 +139,13 @@ type DecisionTools interface {
 	AskPerson(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
 }
 
+// QuestionTools lets a Bot review its open questions for the person and
+// withdraw one that is no longer needed. Neither can answer a question.
+type QuestionTools interface {
+	ListQuestions(context.Context) ([]pa.PendingQuestion, error)
+	WithdrawQuestion(context.Context, pa.WithdrawQuestionRequest) (pa.PermissionOffer, error)
+}
+
 // OutputTools is additive so older native tool adapters remain compatible.
 type OutputTools interface {
 	PublishOutput(context.Context, string, OutputRequest) (pa.Output, error)

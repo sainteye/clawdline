@@ -229,6 +229,9 @@ func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	out.Text = value.Text
 	out.QuoteMessageID = value.QuoteMessageID
 	out.Notice = paWireNotice(value.Notice)
+	if d := value.DecisionReply; d != nil {
+		out.DecisionReply = &contract.ProjectAssistantDecisionReply{OfferID: d.OfferID, Question: d.Question, Answer: d.Answer, SourceBotID: d.SourceBotID}
+	}
 	for _, file := range value.Files {
 		out.Files = append(out.Files, paWireInput(file))
 	}
@@ -278,7 +281,7 @@ func paWirePermissionOffer(value pa.PermissionOffer) (contract.ProjectAssistantP
 	if d := value.Decision; d != nil {
 		out.Decision = &contract.ProjectAssistantDecisionRequest{
 			Question: d.Question, ExchangeID: d.ExchangeID, SourceBotID: d.SourceBotID,
-			Request: d.Request, AnswerText: d.AnswerText, Memory: d.Memory,
+			Request: d.Request, AnswerText: d.AnswerText, Memory: d.Memory, WithdrawnReason: d.WithdrawnReason,
 		}
 	}
 	if a := value.Action; a != nil {

@@ -656,20 +656,8 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return nil, refusal(pa.Unsupported, "bot_request_tools")
 		}
 		return tools.BotRequest(ctx, name, mcpEmpty(arguments))
-	case "ask_person":
-		tools, ok := s.tools.(app.DecisionTools)
-		if !ok {
-			return nil, refusal(pa.Unsupported, "decision_tools")
-		}
-		var q pa.AskPersonRequest
-		if mcpDecode(arguments, &q) != nil {
-			return nil, refusal(pa.Invalid, "ask_person_arguments")
-		}
-		offer, err := tools.AskPerson(ctx, q)
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"question_id": offer.ID, "state": "waiting_for_person"}, nil
+	case "ask_person", "list_questions", "withdraw_question":
+		return s.questionTool(ctx, name, arguments)
 	case "message_bot":
 		tools, ok := s.tools.(app.CollaborationTools)
 		if !ok {
@@ -1026,6 +1014,8 @@ func mcpTools() []any {
 		tool("list_bots", "List Bots you can message across all Projects and personal workspaces on this computer. A direct request from the user also lets the Lead reach hidden Bots. Returns basic metadata. 列出這台電腦上各 Project 與個人工作區中可聯絡的 Bot。使用者直接交辦時，大總管也能聯絡已隱藏的 Bot。", map[string]any{"query": text(), "cursor": text(), "page_size": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxPageRows}}),
 		tool("message_bot", "Queue a self-contained task or message for another eligible Bot and return immediately. A correlated reply arrives later in your own chat. Do not wait or poll. Reuse the idempotency key after an uncertain response. A request is never replayed after a Clawdline restart: if it was cut off, the reply says it did not finish; ask the user before sending it again. If the other Bot needs the user's decision, it asks on a card in its own chat and your chat shows that it is waiting for the user's decision with a Go to shortcut: tell the user where to answer and do not draft authorization text. To follow up a finished request you sent to the same Bot, set reply_to_exchange_id to that request's exchange id (shown on its reply): the other Bot then sees that earlier request and its own reply, quoted by Clawdline, and up to a few rounds before it. Use it for a follow-up question, or to ask for the part after a truncated reply instead of pasting it back. Without it the other Bot sees no earlier round, so keep the text self-contained. It is refused for another pair, an exchange you did not send, or one still running or waiting for the user's decision. 把一個內容完整的任務或訊息排給另一位可聯絡的 Bot 後立即返回；關聯回覆稍後會進入自己的對話。不要等待或輪詢；結果不明時沿用原冪等鍵。Clawdline 重新啟動後不會重送請求：被中斷時，回覆會說明沒有完成；再次傳送前先問使用者。對方需要使用者決定時，會在它自己的聊天跳出卡片，你的聊天會顯示它在等使用者決定並附「前往」捷徑：告訴使用者到哪裡回答，不要自己代擬授權文字。要追問自己先前傳給同一位 Bot、而且已經結束的請求時，把 reply_to_exchange_id 設成那則請求的 exchange id（回覆上會寫）：對方會看到 Clawdline 引用的那則請求和它自己的回覆，以及更早的幾輪。用在追問，或回覆被截斷時請對方補送後半段，不要自己把回覆貼回去。沒帶這個參數時對方看不到任何前文，請把內容寫完整。對象不同、不是你送出的、還在進行或在等使用者決定的請求都會被拒絕。", map[string]any{"idempotency_key": text(), "target_bot_id": text(), "text": text(), "reply_to_exchange_id": text(), "bot_request_id": map[string]any{"type": "string", "description": "Optional Bot request card id this call works on. You must be in the card's chain; in a turn a card handoff woke, it must be that card. 選填，這次呼叫所屬的交辦卡 id；你必須在卡的參與 Bot 中，交棒通知喚醒的回合只能填那張卡。"}}, "idempotency_key", "target_bot_id", "text"),
 		tool("ask_person", "Ask the person a decision only they can make, with 1-3 suggested replies, when you cannot continue without it. In a request from another Bot this is how you reach the person: the question appears in your own main chat, your reply to that Bot says you are waiting for the person, and the person's answer is forwarded to it afterwards. Ask once and end your turn; do not answer it yourself or ask the requesting Bot to relay it. 需要只有使用者能做的決定、否則無法繼續時，用 1 到 3 個建議回覆詢問使用者。處理其他 Bot 的請求時，這是聯絡使用者的方式：問題會出現在自己的主聊天，對方會知道你在等使用者，使用者決定後結果會轉給對方。只問一次並結束本回合；不要自己回答，也不要請對方轉述。", map[string]any{"question": text(), "suggested_replies": map[string]any{"type": "array", "items": text(), "minItems": 1, "maxItems": 3}}, "question", "suggested_replies"),
+		tool("list_questions", "List the questions you asked the user with ask_person that are still waiting in your chat, oldest first, with the requesting Bot and its request when one asked. Check it before ask_person, and whenever a new request or new information arrives, to decide which questions are still needed. 列出你用 ask_person 問使用者、仍在聊天裡等待回答的問題（由舊到新），由其他 Bot 請求而問的會附上請求者與請求內容。呼叫 ask_person 之前、以及有新的請求或新資訊進來時先看一次，判斷哪些問題還需要。", map[string]any{}),
+		tool("withdraw_question", "Withdraw one of your own waiting questions for the user before the user answers it, with a short reason the user sees on the card. Withdraw a question that is superseded by a newer one, duplicated, already settled by later information or your own work, or no longer needed; merge several into one new ask_person question when that is clearer. If another Bot was waiting on it, that Bot receives the withdrawal and your reason as its reply. You cannot answer a question, and memory cards cannot be withdrawn. 在使用者回答前撤回你自己還在等待的問題，附一句使用者會在卡片上看到的簡短理由。被更新的問題取代、重複、已被後來的資訊或你自己的處理解決、或已不需要的問題就撤回；合併成一個新的 ask_person 問題比較清楚時就合併。若有其他 Bot 在等這個問題，對方會收到撤回與你的理由作為回覆。你不能回答問題，記憶卡也不能撤回。", map[string]any{"question_id": text(), "reason": text()}, "question_id", "reason"),
 		tool("save_progress", "Replace this routine's entire factual progress note for its next isolated run. Empty content clears it. The cap is 2000 estimated tokens (one per CJK character, one per four others). Oversize, hidden text, prompt links, instructions and secrets are refused without truncation. Reuse the idempotency key on retry. 整份取代這份排程的事實進度筆記，空白可清除；上限為 2,000 個估計 token，超限或含隱藏文字、提示連結、指令及機密時整份拒絕。重試沿用原冪等鍵。", map[string]any{"idempotency_key": text(), "id": text(), "content": map[string]any{"type": "string"}}, "idempotency_key", "id", "content"),
 		tool("read_progress", "Read one of this Bot's routine progress notes. A routine run already receives its own note as untrusted data. Progress is separate from long-term memory. 讀取這個 Bot 的排程進度；它與長期記憶分開，排程執行時已會收到自己的筆記，內容一律視為不可信資料。", map[string]any{"id": text()}, "id"),
 		tool("follow_up", "Set one reminder for your own main conversation. minutes is 1–43200; content states what to check and why (500 estimated tokens). Up to 10 may wait; a chain stops after 24 continuations without a human turn. Routine runs cannot set follow-ups. 在自己的主對話設定 1 至 43,200 分鐘後的一次追蹤，說明要檢查的事情與原因，最多 500 個估計 token；最多等待 10 筆、連續接續 24 次。隔離排程內不可設定。", map[string]any{"minutes": map[string]any{"type": "integer", "minimum": 1, "maximum": pa.MaxRoutineFollowUpSeconds / 60}, "content": text(), "idempotency_key": text()}, "minutes", "content", "idempotency_key"),
@@ -1335,4 +1325,53 @@ func checkDispatchMode(mode string, continueOnCompletion bool) error {
 		return refusal(pa.Invalid, "dispatch_mode")
 	}
 	return nil
+}
+
+// questionTool runs the tools a Bot uses to ask the person and to review or
+// withdraw its own open questions; none of them can answer a question.
+func (s *ownedMCPServer) questionTool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
+	switch name {
+	case "ask_person":
+		tools, ok := s.tools.(app.DecisionTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "decision_tools")
+		}
+		var q pa.AskPersonRequest
+		if mcpDecode(arguments, &q) != nil {
+			return nil, refusal(pa.Invalid, "ask_person_arguments")
+		}
+		offer, err := tools.AskPerson(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"question_id": offer.ID, "state": "waiting_for_person"}, nil
+	case "list_questions":
+		tools, ok := s.tools.(app.QuestionTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "decision_tools")
+		}
+		if mcpDecode(mcpEmpty(arguments), &struct{}{}) != nil {
+			return nil, refusal(pa.Invalid, "list_questions_arguments")
+		}
+		questions, err := tools.ListQuestions(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"questions": questions}, nil
+	case "withdraw_question":
+		tools, ok := s.tools.(app.QuestionTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "decision_tools")
+		}
+		var q pa.WithdrawQuestionRequest
+		if mcpDecode(arguments, &q) != nil {
+			return nil, refusal(pa.Invalid, "withdraw_question_arguments")
+		}
+		offer, err := tools.WithdrawQuestion(ctx, q)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"question_id": offer.ID, "state": "withdrawn"}, nil
+	}
+	return nil, refusal(pa.Invalid, "mcp_tool")
 }

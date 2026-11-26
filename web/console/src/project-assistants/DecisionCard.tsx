@@ -150,7 +150,7 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
   const sent=state==="pending"&&choice?.phase==="sent"
   const locked=busy||sent
-  const status=state==="answered"?(answered?w.decisionAnswered.replace("{text}",answered):""):state==="expired"?w.decisionExpired:state==="pending"?"":state==="unknown"?w.unknown:w.decisionWithdrawn
+  const status=state==="answered"?(answered?w.decisionAnswered.replace("{text}",answered):""):state==="expired"?w.decisionExpired:state==="pending"?"":state==="unknown"?w.unknown:decision?.withdrawn_reason?w.decisionWithdrawnReason.replace("{reason}",decision.withdrawn_reason):w.decisionWithdrawn
   // Right after the press the reply is "sent" before any turn is observed.
   const progress=state==="answered"?followUp:sent?followUp??"working":undefined
   const optionState=(id:string|null)=>choice&&choice.option===id&&choice.phase!=="failed"?"chosen":choice&&choice.phase!=="failed"?"other":undefined

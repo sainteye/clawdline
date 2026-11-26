@@ -27,6 +27,23 @@ func (w NativeWork) AskPerson(ctx context.Context, q pa.AskPersonRequest) (pa.Pe
 	return w.askPerson(ctx, q)
 }
 
+// ListQuestions lists the open questions in this Bot's visible chat.
+func (w NativeWork) ListQuestions(ctx context.Context) ([]pa.PendingQuestion, error) {
+	if w.listQuestions == nil {
+		return nil, failure(pa.Disabled, "decision_tools")
+	}
+	return w.listQuestions(ctx)
+}
+
+// WithdrawQuestion withdraws one of this Bot's open questions; it never
+// answers one.
+func (w NativeWork) WithdrawQuestion(ctx context.Context, q pa.WithdrawQuestionRequest) (pa.PermissionOffer, error) {
+	if w.withdrawQuestion == nil {
+		return pa.PermissionOffer{}, failure(pa.Disabled, "decision_tools")
+	}
+	return w.withdrawQuestion(ctx, q)
+}
+
 // BotRequest runs one Bot request card tool for this turn.
 func (w NativeWork) BotRequest(ctx context.Context, tool string, arguments json.RawMessage) (any, error) {
 	if w.botRequest == nil {

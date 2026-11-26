@@ -391,6 +391,9 @@ type Message struct {
 	// Notice names a notice Clawdline wrote by key and values, so each
 	// reader renders it in its own language. Text is the English fallback.
 	Notice *NoticeRef `json:"notice,omitempty"`
+	// DecisionReply is set on the person's message that answered a question
+	// card; Text still holds the full prompt the Bot receives.
+	DecisionReply *DecisionReply `json:"decision_reply,omitempty"`
 }
 
 // NoticeCompacted is the key of the notice for a turn during which the agent

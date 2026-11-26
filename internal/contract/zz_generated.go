@@ -4982,6 +4982,17 @@ type ProjectAssistantCreateSettings struct {
 	Target           ProjectAssistantProjectSelection `json:"target"`
 }
 
+// Marks the person's message that answered a question card. The message text
+// still holds the full prompt the Bot receives; readers show this instead.
+type ProjectAssistantDecisionReply struct {
+	Answer   string `json:"answer"`
+	OfferID  string `json:"offer_id"`
+	Question string `json:"question"`
+
+	// The requesting Bot when the question came from a peer request.
+	SourceBotID string `json:"source_bot_id,omitempty"`
+}
+
 // A question a Bot asked the person. Bot-authored display data: only the
 // person's press in the console answers it.
 type ProjectAssistantDecisionRequest struct {
@@ -5000,6 +5011,10 @@ type ProjectAssistantDecisionRequest struct {
 	// The requesting Bot's message, shortened to the registered bound.
 	Request     string `json:"request,omitempty"`
 	SourceBotID string `json:"source_bot_id,omitempty"`
+
+	// The Bot's own short reason for withdrawing the question before the person
+	// answered it.
+	WithdrawnReason string `json:"withdrawn_reason,omitempty"`
 }
 
 // Deletes the Bot and its conversation, as Codync's Delete; files it changed
@@ -5996,6 +6011,7 @@ type ProjectAssistantMemoryWriteRequest struct {
 type ProjectAssistantMessage struct {
 	At             string                          `json:"at"`
 	Attachments    []ProjectAssistantAttachment    `json:"attachments,omitempty"`
+	DecisionReply  *ProjectAssistantDecisionReply  `json:"decision_reply,omitempty"`
 	Exchange       *ProjectAssistantExchange       `json:"exchange,omitempty"`
 	Fence          ProjectAssistantFence           `json:"fence"`
 	Files          []ProjectAssistantInputFile     `json:"files,omitempty"`

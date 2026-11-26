@@ -930,6 +930,17 @@
 .project-assistants .pa-decision-form { display:flex;flex-direction:column;gap:8px;margin-top:10px; }
 .project-assistants .pa-decision-form textarea { width:100%;box-sizing:border-box;resize:vertical;border-radius:14px;padding:10px 12px;background:var(--pa-bg);color:inherit;border:1px solid var(--pa-line);font:inherit; }
 .project-assistants .pa-decision-form button { align-self:flex-end; }
+/* A person's answer to a decision card: a label, the reply, the question folded to one line. */
+.project-assistants .pa-decision-reply { display:flex;flex-direction:column;gap:4px;min-width:0; }
+.project-assistants .pa-decision-reply-label { display:inline-flex;align-items:center;gap:6px;color:var(--pa-dim);font-size:12px;font-weight:600; }
+.project-assistants .pa-decision-reply-label::before { content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7; }
+.project-assistants .pa-decision-reply-answer { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
+.project-assistants .pa-decision-reply-question { color:var(--pa-dim);font-size:12px;min-width:0; }
+.project-assistants .pa-decision-reply-question>summary { cursor:pointer;list-style:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-decision-reply-question>summary::-webkit-details-marker { display:none; }
+.project-assistants .pa-decision-reply-question[open]>summary { display:none; }
+.project-assistants .pa-decision-reply-question p { margin:0;white-space:pre-wrap;overflow-wrap:anywhere; }
+.project-assistants .pa-queued-decision { color:var(--pa-dim); }
 .project-assistants .pa-decision-pointer { display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;margin-top:6px;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-decision-pointer button { background:transparent;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit; }
 /* Context meter menu: a quiet anchored menu; a bottom sheet on a phone. */

@@ -30,6 +30,7 @@ import type { ExchangeScope } from "./exchanges"
 import { sameConversation, sameBot } from "./view-state"
 import type { Words } from "./words"
 import { sessionReportLine } from "./session-report"
+import { decisionReplyOf } from "./decision-reply"
 
 function renderTimelineFact(item: Exclude<ChatItem,{kind:"message"}>, {
   timeFormat, reviews, w, language, source, onOpenWork, requestAbove, renderPermission, peerDispatchCards,
@@ -202,9 +203,7 @@ export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderEx
           <summary><span className="pa-session-report-head"><span>{w.sessionReport}</span>{sessionReportLine(item.message.text)&&<span className="pa-session-report-line">{sessionReportLine(item.message.text)}</span>}</span><ChevronIcon direction="right"/></summary>
           <p>{item.message.text}</p>
         </details>:item.message.kind==="assistant"?<BotMessageMarkdown text={item.message.text} w={w}/>:
-          workReviewNotice(item.message)?.key==="work_review_held"?
-            <details><summary>{w.workReviewHeld}</summary><p>{item.message.text}</p></details>:
-          <p>{item.dispatch?peerDispatchNoticeText(item.dispatch,w):item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:compactedNoticeText(item.message,w)??<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
+          foldedMessageBody(item.message,w)??<p>{item.dispatch?peerDispatchNoticeText(item.dispatch,w):item.message.kind==="notice"&&item.message.text.startsWith("[Clawdline restarted")?w.resumedNotice:compactedNoticeText(item.message,w)??<BotMentionText text={item.message.text} candidates={mentions}/>}</p>
       )}
       {byID.get(item.id)?.joined_turn_id&&<small className="pa-steered-status">{w.steeredMessage}</small>}
       {onOpenBrowser&&botReplyHasBrowser(item.message,browserTraces)&&<button type="button" className="pa-reply-browser pa-pill" onClick={event=>onOpenBrowser(event.currentTarget)}>{catalogWord("botBrowser","openReply")}</button>}
@@ -266,4 +265,24 @@ export function BotPicture({id,localURL,source,botKey,w}:{id:string;localURL:str
   const current=result?.source===source&&result?.id===id&&result?.machine===machine&&result?.bot===bot?result:null
   const url=localURL??current?.url
   return url?<a href={url} target="_blank" rel="noreferrer"><img src={url} alt={w.picture} loading="lazy"/></a>:<span className="pa-picture-missing" role="status">{current?.error?<>{w.pictureUnavailable} ({current.error}) <button type="button" onClick={()=>setAttempt(n=>n+1)}>{w.retry}</button></>:source?.attachment?w.pictureLoading:w.picture}</span>
+}
+
+/** A message shown folded: a decision card's answer, or a held work review. */
+function foldedMessageBody(message:W.ProjectAssistantMessage,w:Words){
+  const reply=decisionReplyOf(message)
+  if(reply)return <DecisionReplyBody reply={reply} w={w}/>
+  if(workReviewNotice(message)?.key==="work_review_held")return <details><summary>{w.workReviewHeld}</summary><p>{message.text}</p></details>
+  return null
+}
+
+/** A person's answer to a decision card: the card it answered, then the reply. */
+function DecisionReplyBody({reply,w}:{reply:{question:string;answer:string};w:Words}){
+  return <div className="pa-decision-reply">
+    <span className="pa-decision-reply-label">{w.decisionReplyLabel}</span>
+    <p className="pa-decision-reply-answer">{reply.answer}</p>
+    {reply.question&&<details className="pa-decision-reply-question">
+      <summary>{w.decisionReplyQuestion.replace("{text}",reply.question)}</summary>
+      <p>{reply.question}</p>
+    </details>}
+  </div>
 }

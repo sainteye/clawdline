@@ -3,6 +3,7 @@ package projectassistantstore
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"strconv"
 	"time"
@@ -170,22 +171,34 @@ func (s *Store) ForwardDecision(ctx context.Context, key pa.BotKey, turn pa.Turn
 	if x.Outcome != pa.ExchangeNeedsPerson {
 		return x, nil
 	}
-	prior := x.Revision
-	x.Revision++
+	outcome := pa.ExchangeFailed
 	switch turn.State {
 	case pa.TurnSucceeded:
-		x.Outcome = pa.ExchangeCompleted
-		x.Reply = pa.CollaborationReply(text)
+		outcome = pa.ExchangeCompleted
+	case pa.TurnCancelled:
+		outcome = pa.ExchangeCancelled
+	case pa.TurnUnknown:
+		outcome = pa.ExchangeUnknown
+	}
+	if x, err = finishPersonExchange(ctx, tx, x, outcome, text, "-decided-source", at); err != nil {
+		return x, err
+	}
+	return x, s.commitRoster(ctx, tx, key.MachineID)
+}
+
+// finishPersonExchange completes an exchange that waited for the person and
+// queues its result to the requester as an ordinary correlated reply.
+// reply is used only for a completed outcome.
+func finishPersonExchange(ctx context.Context, tx *sql.Tx, x pa.Exchange, outcome pa.ExchangeOutcome, reply, suffix string, at time.Time) (pa.Exchange, error) {
+	prior := x.Revision
+	x.Revision++
+	x.Outcome = outcome
+	if outcome == pa.ExchangeCompleted {
+		x.Reply = pa.CollaborationReply(reply)
 		x.ReplyAt = time.Time{}
 		if x.Reply != "" {
 			x.ReplyAt = at
 		}
-	case pa.TurnCancelled:
-		x.Outcome = pa.ExchangeCancelled
-	case pa.TurnUnknown:
-		x.Outcome = pa.ExchangeUnknown
-	default:
-		x.Outcome = pa.ExchangeFailed
 	}
 	b, e := load(ctx, tx, x.Source.Key)
 	if e != nil && pa.Code(e) != pa.NotFound {
@@ -193,31 +206,28 @@ func (s *Store) ForwardDecision(ctx context.Context, key pa.BotKey, turn pa.Turn
 	}
 	x.Delivery = "dropped"
 	if e == nil && b.Bot.Project == x.Project && b.Conversation.ID == x.Source.ConversationID {
-		var reply *pa.Turn
+		var turn *pa.Turn
 		x.Delivery = "queued"
 		x.ReplyTurnID = x.ID + "-reply-turn"
 		if collaborationQueueFull(b) {
 			x.Delivery = "waiting"
 		} else {
-			reply = exchangeReplyTurn(b, x)
+			turn = exchangeReplyTurn(b, x)
 		}
 		body := x.Reply
 		if body == "" {
 			body = x.Request
 		}
-		msgID, turnID := x.ID+"-decided-source", ""
-		if reply != nil {
-			msgID, turnID = reply.MessageID, reply.ID
+		msgID, turnID := x.ID+suffix, ""
+		if turn != nil {
+			msgID, turnID = turn.MessageID, turn.ID
 		}
-		mb := exchangeMutation(b, x.ID+"-decided-source", at, reply, []pa.Message{exchangeNotice(b, x, msgID, body, turnID, at)})
-		if err = exchangeApply(ctx, tx, &b, mb); err != nil {
+		mb := exchangeMutation(b, x.ID+suffix, at, turn, []pa.Message{exchangeNotice(b, x, msgID, body, turnID, at)})
+		if err := exchangeApply(ctx, tx, &b, mb); err != nil {
 			return x, err
 		}
 	}
-	if err = exchangeWrite(ctx, tx, x, prior); err != nil {
-		return x, err
-	}
-	return x, s.commitRoster(ctx, tx, key.MachineID)
+	return x, exchangeWrite(ctx, tx, x, prior)
 }
 
 // withdrawDecision closes a question its exchange no longer waits for.

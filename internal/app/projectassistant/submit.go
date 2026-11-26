@@ -401,6 +401,9 @@ func (r *Engine) commitSubmissionLocked(ctx context.Context, a *runtimeActor, st
 		return pa.Receipt{}, err
 	}
 	message := pa.Message{ID: turn.MessageID, Fence: fence, TurnID: turn.ID, Kind: kind, Text: s.Message.Text, QuoteMessageID: s.Message.QuoteMessageID, At: r.o.Clock(), Attachments: s.Message.Attachments, Files: st.files}
+	if s.Decision != nil {
+		message.DecisionReply = pa.NewDecisionReply(*s.Decision)
+	}
 	switch {
 	case s.RestartSource != "":
 		message.Notice = &pa.NoticeRef{Key: pa.NoticeRestartContinuation, Cause: pa.WorkCompletionTask(st.unknown[0])}

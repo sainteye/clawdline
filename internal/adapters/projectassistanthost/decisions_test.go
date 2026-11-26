@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -138,6 +139,9 @@ func TestPeerQuestionWaitsForThePersonAndForwardsTheAnswer(t *testing.T) {
 	}
 	if got := decisionOffers(t, f, b.Key); len(got) != 1 || got[0].State != pa.PermissionResolved || got[0].Decision.AnswerText != "Yes, roll it out" {
 		t.Fatalf("offer was not resolved with the answer: %+v", got)
+	}
+	if got, err := f.h.store.Export(ctx, b.Key); err != nil || !answerMarked(got.Messages, offer.ID, "Yes, roll it out") {
+		t.Fatalf("the answer message does not name the card it answered: %v", err)
 	}
 	// Single use: a second, different answer is refused.
 	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "decide-again"}, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, OptionID: "reply-2"}); err == nil {
@@ -292,4 +296,108 @@ func TestDecisionPressSurvivesARevokedBindingAndReplaysItsReceipt(t *testing.T) 
 	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "press-other"}, press); pa.Code(err) != pa.StaleVersion {
 		t.Fatalf("a second, different answer = %v", err)
 	}
+}
+
+func answerMarked(messages []pa.Message, offerID, answer string) bool {
+	for _, m := range messages {
+		if m.Kind == pa.UserMessage && m.DecisionReply != nil {
+			d := m.DecisionReply
+			return d.OfferID == offerID && d.Answer == answer && d.Question == "Authorize the dev rollout now?" && strings.Contains(m.Text, answer)
+		}
+	}
+	return false
+}
+
+type questionTools interface {
+	ListQuestions(context.Context) ([]pa.PendingQuestion, error)
+	WithdrawQuestion(context.Context, pa.WithdrawQuestionRequest) (pa.PermissionOffer, error)
+	AskPerson(context.Context, pa.AskPersonRequest) (pa.PermissionOffer, error)
+}
+
+// A Bot reviewing a newer request withdraws the question a peer was waiting
+// on: the card closes with its reason, the waiting exchange completes and
+// the requester is told there was no decision.
+func TestBotWithdrawsAQuestionAPeerWaitedOn(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	a, b, x, offer := startPeerQuestion(t, f)
+	if _, err := f.send(t, b, "A newer request supersedes the rollout."); err != nil {
+		t.Fatal(err)
+	}
+	fixtureReceive(t, f.p.sent)
+	main := fixtureReceive(t, f.p.sessions)
+	tools, ok := main.q.Tools.(questionTools)
+	if !ok {
+		t.Fatal("the Bot's turn has no question tools")
+	}
+	listed, err := tools.ListQuestions(ctx)
+	if err != nil || len(listed) != 1 || listed[0].QuestionID != offer.ID || listed[0].FromBotID != a.Key.BotID || len(listed[0].SuggestedReplies) != 2 {
+		t.Fatalf("list_questions = %+v, %v", listed, err)
+	}
+	if _, err = tools.WithdrawQuestion(ctx, pa.WithdrawQuestionRequest{QuestionID: offer.ID}); pa.Code(err) != pa.Invalid {
+		t.Fatalf("a withdrawal without a reason was accepted: %v", err)
+	}
+	if _, err = tools.WithdrawQuestion(ctx, pa.WithdrawQuestionRequest{QuestionID: "decision-missing", Reason: "gone"}); pa.Code(err) != pa.NotFound {
+		t.Fatalf("an unknown question was withdrawn: %v", err)
+	}
+	got, err := tools.WithdrawQuestion(ctx, pa.WithdrawQuestionRequest{QuestionID: offer.ID, Reason: "Superseded by the newer request."})
+	if err != nil || got.State != pa.PermissionCancelled {
+		t.Fatalf("withdraw = %+v, %v", got, err)
+	}
+	if cards := decisionOffers(t, f, b.Key); len(cards) != 1 || cards[0].State != pa.PermissionCancelled || cards[0].Decision.WithdrawnReason != "Superseded by the newer request." {
+		t.Fatalf("the card did not close with its reason: %+v", cards)
+	}
+	if _, err = tools.WithdrawQuestion(ctx, pa.WithdrawQuestionRequest{QuestionID: offer.ID, Reason: "again"}); pa.Code(err) != pa.StaleVersion {
+		t.Fatalf("a closed question was withdrawn twice: %v", err)
+	}
+	if listed, err = tools.ListQuestions(ctx); err != nil || len(listed) != 0 {
+		t.Fatalf("a withdrawn question is still listed: %+v, %v", listed, err)
+	}
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = service.Answer(ctx, pa.Command{Key: b.Key, Operation: pa.AnswerOperation, IdempotencyKey: "late"}, pa.PermissionAnswer{Fence: offer.Fence, OfferID: offer.ID, OptionID: "reply-1"}); err == nil {
+		t.Fatal("a withdrawn question was still answerable")
+	}
+	done, err := f.h.store.Exchange(ctx, a.Key, x.ID)
+	if err != nil || done.Outcome != pa.ExchangeCompleted || !strings.Contains(done.Reply, "Superseded by the newer request.") || done.Delivery != "queued" {
+		t.Fatalf("the waiting exchange did not complete with the withdrawal: %+v, %v", done, err)
+	}
+	main.reply <- app.PromptResult{FinalText: "Handled the newer request."}
+	follow := fixtureReceive(t, f.p.sessions)
+	reply := fixtureReceive(t, f.p.sent)
+	if follow.q.Bot.Key != a.Key || reply.Turn.Origin != pa.BotReplyOrigin || !strings.Contains(reply.Text, "withdrawn") {
+		t.Fatalf("the requester was not told the question was withdrawn: %+v %q", reply.Turn, reply.Text)
+	}
+	follow.reply <- app.PromptResult{FinalText: "Noted."}
+}
+
+// A memory card is the host's prompt, not the Bot's question: it cannot be
+// withdrawn and is not listed.
+func TestBotCannotWithdrawAMemoryCard(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	b := f.create(t, "keeper")
+	if _, err := f.send(t, b, "Remember this."); err != nil {
+		t.Fatal(err)
+	}
+	prompt := fixtureReceive(t, f.p.sent)
+	main := fixtureReceive(t, f.p.sessions)
+	memory, err := f.h.store.OfferDecision(ctx, main.q.Binding.Fence, prompt.Turn.ID, pa.AskPersonRequest{Question: pa.MemoryProposalQuestion, SuggestedReplies: []string{"Save", "Don't save"}, Memory: "The rollout window is Tuesday."}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	tools := main.q.Tools.(questionTools)
+	if listed, err := tools.ListQuestions(ctx); err != nil || len(listed) != 0 {
+		t.Fatalf("a memory card was listed as a question: %+v, %v", listed, err)
+	}
+	if _, err = tools.WithdrawQuestion(ctx, pa.WithdrawQuestionRequest{QuestionID: memory.ID, Reason: "no"}); pa.Code(err) != pa.NotFound {
+		t.Fatalf("a memory card was withdrawn: %v", err)
+	}
+	main.reply <- app.PromptResult{FinalText: "ok"}
 }
