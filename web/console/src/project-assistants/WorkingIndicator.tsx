@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import type * as W from "@clawdline/contract"
-import { elapsed } from "./working"
+import { elapsed, rowActivity } from "./working"
 import type { Words } from "./words"
 import { ThinkingOrb } from "./ThinkingOrb"
 
@@ -24,7 +24,7 @@ export function WorkingIndicator({turn,activity,subject,steps,stopStatus,w,anima
     const timer=setInterval(()=>setNow(Date.now()),1000)
     return()=>clearInterval(timer)
   },[animated])
-  const text=stopStatus||(waiting?w.waiting_permission:activity==="writing"?w.writingReply:activity==="thinking"?w.thinking:activity||w.running)
+  const text=stopStatus||(waiting?w.waiting_permission:rowActivity(activity,w)||w.running)
   const time=elapsed(turn.started_at,now)
   return <details className="pa-working-steps pa-flow-disclosure" onToggle={event=>{
     const open=event.currentTarget.open

@@ -5,6 +5,7 @@ import { botFailureText } from "./source-errors.ts"
 import { sessionReportLine } from "./session-report.ts"
 // @ts-expect-error Node executes source extensions.
 import { compactedNoticeText, legacyMemoryProposalTitle } from "./notice-text.ts"
+import type { Words } from "./words"
 
 export type BotMood = "idle" | "working" | "needsInput" | "waitingOnWork"
 export function liveActivity(source:W.ProjectAssistantSourceStatus):boolean {
@@ -33,8 +34,8 @@ export function chatMood(source:W.ProjectAssistantSourceStatus,turn:W.ProjectAss
 
 /**
  * What a running Bot is doing, from the latest trace event of its turn, as
- * Codync's working indicator shows it: a tool call's title, "writing" while
- * reply text streams, or nothing yet.
+ * Codync's working indicator shows it: a tool call's title, a writing or
+ * thinking state while text streams, or nothing yet.
  */
 export function activityOf(trace: W.ProjectAssistantTrace | undefined): string | "writing" | "" {
   if (!trace) return ""
@@ -53,13 +54,49 @@ export function elapsed(startedAt: string | undefined, now: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`
 }
 
-/** The roster's activity is the running turn's state word; it is shown in
- *  the person's language, and anything else as it came. */
+const toolActivityWords = new Map<string, keyof Words>([
+  ["browser_command", "activityBrowser"],
+  ["browser_status", "activityBrowser"],
+  ["send_message", "activitySendMessage"],
+  ["message_bot", "activitySendMessage"],
+  ["message_work", "activitySendMessage"],
+  ["add_work", "activityDispatch"],
+  ["dispatch_work", "activityDispatch"],
+  ["work_status", "activityCheckWork"],
+  ["read_memory", "activityReadMemory"],
+  ["search_memory", "activityReadMemory"],
+  ["edit_memory", "activityEditMemory"],
+  ["bash", "backgroundRunningCommand"],
+  ["exec_command", "backgroundRunningCommand"],
+  ["shell_command", "backgroundRunningCommand"],
+  ["run_shell_command", "backgroundRunningCommand"],
+  ["read", "activityReadFile"],
+  ["read_file", "activityReadFile"],
+  ["edit", "activityEditFile"],
+  ["write", "activityEditFile"],
+  ["write_file", "activityEditFile"],
+  ["apply_patch", "activityEditFile"],
+  ["grep", "activitySearch"],
+  ["glob", "activitySearch"],
+  ["rg", "activitySearch"],
+  ["toolsearch", "activitySearch"],
+  ["websearch", "activityWebSearch"],
+  ["web_search", "activityWebSearch"],
+  ["webfetch", "activityReadPage"],
+  ["web_fetch", "activityReadPage"],
+])
+
+/** Live traces and daemon summaries both carry the provider's tool title. */
 export function rowActivity(activity: string, w: Record<string, string>): string {
   if (activity === "writing") return w.writingReply
   if (activity === "thinking") return w.thinking
   if (/^guardian[ _]review$/i.test(activity)) return w.reviewingAction
   if (activity === "running" || activity === "waiting_permission" || activity === "queued" || activity === "accepted") return w[activity] ?? activity
+  const title = activity.trim().toLowerCase()
+  const name = title.replace(/^(?:mcp__clawdline__|clawdline\.|functions\.)/, "").split(/\s*[:(]/,1)[0]
+  const label = toolActivityWords.get(name)
+  if (label) return w[label]
+  if (/mcp__|^(?:clawdline\.|functions\.)|^[a-z][a-z0-9]*_[a-z0-9_]+(?=$|[\s(:])/.test(title)) return w.activityTool
   return activity
 }
 
