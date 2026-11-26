@@ -33,9 +33,11 @@ func baseConsoleBounds() []Entry {
 		// A fleet stream the daemon answered with an HTTP error is opened again
 		// after FLEET_RECONNECT_FIRST_MS, then twice as long each time up to
 		// FLEET_RECONNECT_CEILING_MS, at most FLEET_RECONNECT_ATTEMPTS times
-		// before the tab stops until it is shown again (client.ts).
-		{Name: "console.fleet_retry_first_milliseconds", Class: Cache, Unit: Milliseconds, Limit: 1000, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
-		{Name: "console.fleet_retry_ceiling_milliseconds", Class: Cache, Unit: Milliseconds, Limit: 30000, AtLimit: Expire, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		// before the tab stops until it is shown again (client.ts). The two waits
+		// are backoff intervals, registered as the other retry delays are: nothing is
+		// cached or expired, the wait just stops growing at the ceiling.
+		{Name: "console.fleet_retry_first_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 1000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		{Name: "console.fleet_retry_ceiling_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 30000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.fleet_retry_attempts", Class: Buffer, Unit: Rows, Limit: 6, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Person},
 		// Native fetch gives up the connection if the local chat snapshot or
 		// memory read cannot finish (LOCAL_BOT_READ_TIMEOUT_MS); the measured

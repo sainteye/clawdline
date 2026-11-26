@@ -508,8 +508,8 @@
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
 | `console.fleet_retry_attempts` | 6 | `rows` | `refuse` | `diagnostics` | — |
-| `console.fleet_retry_ceiling_milliseconds` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |
-| `console.fleet_retry_first_milliseconds` | 1000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.fleet_retry_ceiling_milliseconds` | 30000 | `milliseconds` | `refuse` | `diagnostics` | — |
+| `console.fleet_retry_first_milliseconds` | 1000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |
 | `console.health_ui_body_bytes` | 1572864 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.health_ui_budget_seconds` | 12 | `seconds` | `expire` | `diagnostics` | — |

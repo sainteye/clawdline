@@ -10023,11 +10023,11 @@
   {
     "Register": "daemon",
     "Name": "console.fleet_retry_ceiling_milliseconds",
-    "Class": "cache",
+    "Class": "buffer",
     "Unit": "milliseconds",
     "Limit": 30000,
     "WarnAt": 0,
-    "AtLimit": "expire",
+    "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics"
@@ -10040,11 +10040,11 @@
   {
     "Register": "daemon",
     "Name": "console.fleet_retry_first_milliseconds",
-    "Class": "cache",
+    "Class": "buffer",
     "Unit": "milliseconds",
     "Limit": 1000,
     "WarnAt": 0,
-    "AtLimit": "expire",
+    "AtLimit": "refuse",
     "Deviation": "",
     "Told": [
       "diagnostics"
