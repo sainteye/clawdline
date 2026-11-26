@@ -53,7 +53,7 @@ export function PermissionCard({summary,offer:loaded,enabled,onDetail,onAnswer,c
   const canExpand=!!(action&&(action.detail||action.diffs.length||action.shortened)||!offer&&onDetail)
   return <section className={team?"pa-card pa-permission pa-team-proposal":"pa-card pa-permission"} data-permission-id={value.id} aria-label={team?actionHeading(kind,w):w.permission} tabIndex={team?-1:undefined} aria-busy={busy||undefined} data-state={state}>{team?
       <TeamProposalSummary heading={actionHeading(kind,w)} title={title} proposal={proposal} context={context} machine={machine} status={status} pending={state==="pending"} w={w}/>:
-      <><h3>{actionHeading(kind,w)}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>{title&&<p className="pa-permission-title">{title}</p>}<small className="pa-permission-source">{context||offer?.fence.key.machine_id}</small><p className="pa-permission-state" role="status">{status}</p></>}
+      <><h3>{actionHeading(kind,w)}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>{title&&<p className="pa-permission-title">{title}</p>}{context&&<small className="pa-permission-source">{context}</small>}<p className="pa-permission-state" role="status">{status}</p></>}
     {kind==="source_command"&&<p className="pa-approval-detail">{w.permissionSourceAuthority}</p>}
     {canExpand&&<details className="pa-permission-detail" open={expanded} onToggle={event=>{
       const open=event.currentTarget.open

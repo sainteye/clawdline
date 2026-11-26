@@ -42,6 +42,10 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 	}
 	out.Status, out.Activity, out.Failure = "needsInput", "", nil
 	if d := a.Permissions[selected].Decision; d != nil {
+		out.PendingDecisionKind = pa.RosterDecisionQuestion
+		if d.Memory != "" {
+			out.PendingDecisionKind = pa.RosterDecisionMemorySave
+		}
 		if q := strings.TrimSpace(strings.SplitN(d.Question, "\n", 2)[0]); q != "" {
 			out.Activity = "Asks: " + q
 		}

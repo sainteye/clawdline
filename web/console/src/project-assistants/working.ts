@@ -3,6 +3,8 @@ import type * as W from "@clawdline/contract"
 import { botFailureText } from "./source-errors.ts"
 // @ts-expect-error Node executes source extensions.
 import { sessionReportLine } from "./session-report.ts"
+// @ts-expect-error Node executes source extensions.
+import { compactedNoticeText, legacyMemoryProposalTitle } from "./notice-text.ts"
 
 export type BotMood = "idle" | "working" | "needsInput" | "waitingOnWork"
 export function liveActivity(source:W.ProjectAssistantSourceStatus):boolean {
@@ -56,6 +58,7 @@ export function elapsed(startedAt: string | undefined, now: number): string {
 export function rowActivity(activity: string, w: Record<string, string>): string {
   if (activity === "writing") return w.writingReply
   if (activity === "thinking") return w.thinking
+  if (/^guardian[ _]review$/i.test(activity)) return w.reviewingAction
   if (activity === "running" || activity === "waiting_permission" || activity === "queued" || activity === "accepted") return w[activity] ?? activity
   return activity
 }
@@ -67,11 +70,14 @@ export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<str
   const state = item.status || (item.pending_permissions > 0 || item.activity === "waiting_permission" ? "needsInput"
     : ["running","accepted","queued"].includes(item.activity) ? "working" : "idle")
   const shown = live ? state : "idle"
-  let caption = item.latest_message_kind === "work" && item.latest_message ? w.sessionReportPreview.replace("{summary}", sessionReportLine(item.latest_message)) : item.latest_message
+  let caption = compactedNoticeText({kind:item.latest_message_kind,text:item.latest_message,notice:item.latest_message_notice}, w) ?? item.latest_message
+  if (item.latest_message_kind === "work" && item.latest_message) caption = w.sessionReportPreview.replace("{summary}", sessionReportLine(item.latest_message))
   if (shown === "needsInput") {
     const activity=item.activity
-    caption=activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))
-      : activity.startsWith("Asks: ")?w.decisionActivity.replace("{question}",activity.slice("Asks: ".length))
+    const question=activity.startsWith("Asks: ")?activity.slice("Asks: ".length):undefined
+    caption=item.pending_decision_kind==="memory_save"||(!item.pending_decision_kind&&legacyMemoryProposalTitle(question))?w.memoryCardTitle
+      : activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))
+      : question!==undefined?w.decisionActivity.replace("{question}",question)
       : activity && !["waiting_permission","running","accepted","queued"].includes(activity)?activity:w.pending
   }
   else if (shown === "working") caption = rowActivity(item.activity,w) || w.running

@@ -228,17 +228,7 @@ func paWireMessage(value pa.Message) (contract.ProjectAssistantMessage, error) {
 	out.Kind = contract.ProjectAssistantMessageKind(value.Kind)
 	out.Text = value.Text
 	out.QuoteMessageID = value.QuoteMessageID
-	if value.Notice != nil {
-		n := value.Notice
-		out.Notice = &contract.ProjectAssistantNoticeRef{
-			Key: n.Key, TokensBefore: n.TokensBefore, TokensAfter: n.TokensAfter, Cause: n.Cause,
-			Requester: n.Requester, TaskTitle: n.TaskTitle, FailureCode: n.FailureCode, FailureField: n.FailureField,
-		}
-		if n.RequesterAppearance != nil {
-			appearance := paWireAppearance(*n.RequesterAppearance)
-			out.Notice.RequesterAppearance = &appearance
-		}
-	}
+	out.Notice = paWireNotice(value.Notice)
 	for _, file := range value.Files {
 		out.Files = append(out.Files, paWireInput(file))
 	}
@@ -430,6 +420,8 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.LatestMessage = value.LatestMessage
 	out.LatestMessageKind = string(value.LatestMessageKind)
+	out.LatestMessageNotice = paWireNotice(value.LatestMessageNotice)
+	out.PendingDecisionKind = value.PendingDecisionKind
 	out.Activity = value.Activity
 	convertedActivityAt, err := paWireTime(value.ActivityAt)
 	if err != nil {
@@ -464,6 +456,21 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.Source = convertedSource
 	return out, nil
+}
+
+func paWireNotice(n *pa.NoticeRef) *contract.ProjectAssistantNoticeRef {
+	if n == nil {
+		return nil
+	}
+	out := &contract.ProjectAssistantNoticeRef{
+		Key: n.Key, TokensBefore: n.TokensBefore, TokensAfter: n.TokensAfter, Cause: n.Cause,
+		Requester: n.Requester, TaskTitle: n.TaskTitle, FailureCode: n.FailureCode, FailureField: n.FailureField,
+	}
+	if n.RequesterAppearance != nil {
+		appearance := paWireAppearance(*n.RequesterAppearance)
+		out.RequesterAppearance = &appearance
+	}
+	return out
 }
 
 func paWireTrace(value pa.Trace) contract.ProjectAssistantTrace {

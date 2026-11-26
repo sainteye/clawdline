@@ -2,7 +2,7 @@ import { ContextMenu, type CompactBlock } from "./ContextMenu"
 import { ContextActionStatusRow, useContextActionStatus } from "./NewSessionStatusRow"
 import { compactRefusalCode } from "./compact-status"
 import { ChatModel, modelEdit } from "./ChatModel"
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react"
 import "../session/jump.css"
 import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
@@ -55,6 +55,7 @@ import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionState, samePermission } from "./PermissionCard"
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
+import { legacyMemoryProposalTitle } from "./notice-text"
 import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
@@ -169,6 +170,45 @@ export interface ChatProps {
   focusDecision?:string;onDecisionFocused?:()=>void
 }
 const chatInitialPageRows = 20
+
+type ChatPermissionCard = {
+  summary:W.ProjectAssistantReadPermissionSummary
+  offer:W.ProjectAssistantPermissionOffer|undefined
+  identity:string
+}
+
+function permissionSections(cards:ChatPermissionCard[],visible:ChatPermissionCard[],pending:number,head:W.ProjectAssistantReadViewHead|null) {
+  const memory=cards.filter(({summary,offer})=>summary.tool_kind==="decision"&&
+    (offer?.decision?!!offer.decision.memory:legacyMemoryProposalTitle(summary.title)))
+  const memoryIDs=new Set(memory.map(({summary})=>summary.id))
+  const approvals=visible.filter(({summary})=>!memoryIDs.has(summary.id))
+  const pendingMemory=memory.filter(({summary,offer})=>currentPermission(summary,head)&&permissionState(offer??summary)==="pending").length
+  const pendingApprovals=Math.max(0,pending-pendingMemory)
+  return {
+    memory:visible.filter(({summary})=>memoryIDs.has(summary.id)),
+    approvals,pendingApprovals,
+    showApprovalHeading:approvals.length>0||pendingApprovals>cards.length-memoryIDs.size,
+  }
+}
+
+function ChatJump({mobile,shown,working,scroll,followingRef,setFollowing,w}:{
+  mobile?:boolean;shown:boolean;working:boolean;scroll:RefObject<HTMLDivElement|null>;
+  followingRef:RefObject<boolean>;setFollowing:(following:boolean)=>void;w:Words
+}) {
+  const onJump=()=>{
+    followingRef.current=true
+    setFollowing(true)
+    const el=scroll.current
+    if(el)el.scrollTop=el.scrollHeight
+  }
+  return <div className={mobile?"tx-jump pa-jump-mobile":"tx-jump pa-jump"} data-end="bottom" data-shown={shown?"on":"off"} data-fresh="off">
+    <button type="button" className="tx-jump-go" tabIndex={shown?0:-1} aria-hidden={!shown||undefined} title={w.jump} aria-label={working?`${w.jump} · ${w.jumpWorking}`:undefined} onClick={onJump}>
+      <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
+      <span>{w.jump}</span>
+      {working&&<span className="pa-jump-working"><span className="pa-background-mark" data-active="" aria-hidden="true"/>{w.jumpWorking}</span>}
+    </button>
+  </div>
+}
 
 export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
@@ -1784,8 +1824,9 @@ ${currentDraft}`:submitted)
   const heldSend=heldOutcome?.intent.command.operation==="send"?heldOutcome:null
   const reviewPending=[heldSend,...pendingRows].some(row=>row?.intent.command.idempotency_key.startsWith(TURN_REVIEW_PREFIX)&&!admittedReceipt(row.receipt))
 
-  const permissionMachine=machineName||source.machineName||key.machine_id
-  const permissionContext=[permissionMachine,projectName||bot.project.project_id].join(" · ")
+  const permissionMachine=source.machineName===key.machine_id?undefined:source.machineName
+  const permissionContext=[permissionMachine,projectName||bot.project.project_id].filter(Boolean).join(" · ")
+  const permissionSection=permissionSections(permissionCards,sectionPermissions,pendingPermissionCount,head)
   const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
   const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} botID={key.bot_id} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
@@ -1794,6 +1835,7 @@ ${currentDraft}`:submitted)
     const offer=detail&&"fence" in detail&&samePermission(detail,card)&&detail.state!=="pending"?detail:card
     return <PermissionCard offer={offer} enabled={enabled&&currentPermission(offer,head)&&permissionRows.current.some(row=>row.id===offer.id)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>
   }
+  const jump={shown:!following&&!queueEditorOpen,working:backgroundRunning,scroll,followingRef,setFollowing,w}
   // While a turn runs, a new message waits behind it: it is sent, and then queued, at the end of the conversation.
   const sendingBubble=sending!==null&&!confirmed&&<article key={localSend||pendingSend?.intent.command.idempotency_key} data-local-entrance={!!localSend||undefined} className="pa-message pa-mine pa-sending" aria-live="polite">
     {!hideProvisionalText&&<p>{sending}</p>}
@@ -1864,7 +1906,12 @@ ${currentDraft}`:submitted)
       })}
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
-      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions"><h3>{w.permission}{pendingPermissionCount>0&&` · ${pendingPermissionCount}`}</h3>{sectionPermissions.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}{permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}</section>}
+      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions">
+        {permissionSection.memory.map(renderDecision)}
+        {permissionSection.showApprovalHeading&&<h3>{w.permission}{permissionSection.pendingApprovals>0&&` · ${permissionSection.pendingApprovals}`}</h3>}
+        {permissionSection.approvals.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}
+        {permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}
+      </section>}
       {visibleInterruptions.map(turn=>
         <TurnInterruption key={turn.id} turn={turn} w={w}
           onProgress={turn===restartInterruption&&messages.some(message=>message.id===turn.message_id)?()=>viewHandoffHistory(turn.message_id):undefined}/>)}
@@ -1950,17 +1997,9 @@ ${currentDraft}`:submitted)
         const loose=requests.loose.length>0&&<div className="pa-request-loose">{requests.loose.map(card=><BotRequestLine key={card.id} card={card} w={w} onOpen={setOpenRequest}/>)}</div>
         return <>{loose}{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id} card={openRequest} bots={[bot,...(roster??[])]} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=botOf(card.baton.bot,roster??[]);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
-      {/* The same floating capsule as an ordinary Session's transcript (session/jump.css): it takes no line of its own. */}
-      {/* Hidden while a queued message is edited, so it never covers the message being edited. */}
-      <div className="tx-jump pa-jump" data-end="bottom" data-shown={following||queueEditorOpen?"off":"on"} data-fresh="off">
-        <button type="button" className="tx-jump-go" tabIndex={following||queueEditorOpen?-1:0} aria-hidden={following||queueEditorOpen?true:undefined} title={w.jump} aria-label={backgroundRunning?`${w.jump} · ${w.jumpWorking}`:undefined} onClick={()=>{followingRef.current=true;setFollowing(true);if(scroll.current)scroll.current.scrollTop=scroll.current.scrollHeight}}>
-          <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M8 3v10M3.5 8.5 8 13l4.5-4.5"/></svg>
-          <span>{w.jump}</span>
-          {/* The stop control now scrolls with the conversation; while reading earlier messages, the way back says work is running. */}
-          {backgroundRunning&&<span className="pa-jump-working"><span className="pa-background-mark" data-active="" aria-hidden="true"/>{w.jumpWorking}</span>}
-        </button>
-      </div>
+      <ChatJump {...jump}/>
     </div>
+      <ChatJump {...jump} mobile/>
       {inlineReview&&!following&&<button type="button" className="pa-pill pa-team-jump" onClick={()=>{
         const card=Array.from(scroll.current?.querySelectorAll<HTMLElement>("[data-permission-id]")??[]).find(node=>node.dataset.permissionId===inlineReview.id)
         card?.focus({preventScroll:true});card?.scrollIntoView({block:"nearest"})

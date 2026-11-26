@@ -4823,10 +4823,17 @@ type ProjectAssistantBotSummary struct {
 
 	// The kind of the message latest_message came from, such as work for a Session
 	// report. Empty or absent on older sources.
-	LatestMessageKind  string                       `json:"latest_message_kind,omitempty"`
-	PendingPermissions int64                        `json:"pending_permissions"`
-	ReadCursor         ProjectAssistantReadCursor   `json:"read_cursor"`
-	Source             ProjectAssistantSourceStatus `json:"source"`
+	LatestMessageKind string `json:"latest_message_kind,omitempty"`
+
+	// Language-neutral values for a compaction notice that is the latest message.
+	LatestMessageNotice *ProjectAssistantNoticeRef `json:"latest_message_notice,omitempty"`
+
+	// Distinguishes a pending Bot question from a host-owned memory proposal. Absent
+	// on older sources.
+	PendingDecisionKind string                       `json:"pending_decision_kind,omitempty"`
+	PendingPermissions  int64                        `json:"pending_permissions"`
+	ReadCursor          ProjectAssistantReadCursor   `json:"read_cursor"`
+	Source              ProjectAssistantSourceStatus `json:"source"`
 
 	// The Bot’s own chat activity, independent of background work, unread count and
 	// source connection. Optional for older daemons.
