@@ -32,7 +32,8 @@ import "./styles.css"
 
 export interface BotsProps {
   onRosterUnavailable?:(evidence:RosterScreenEvidence)=>void
-  onRosterObserved?:(items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[])=>void
+  /** completeSources: sources whose whole unfiltered roster is loaded, so the host badge can adopt it. */
+  onRosterObserved?:(items:readonly W.ProjectAssistantBotSummary[],loadedSources:readonly string[],completeSources:readonly string[])=>void
   sources: readonly SourceClient[]
   connection?: ConnectionLightState
   onClose:()=>void
@@ -52,6 +53,11 @@ export interface BotsProps {
 }
 interface SourcePage {revision:string;query:string;requestQuery:string;items:W.ProjectAssistantBotSummary[];cursor:string;statuses:W.ProjectAssistantSourceStatus[];error:string;failure?:RosterFailure;loadedPages?:number;checked?:number;waitingForConnection?:boolean}
 type SourcePages=Record<string,SourcePage>
+
+/** A settled live roster, or a whole unfiltered snapshot, holds every row the badge counts. */
+function completeRosterSources(pages:SourcePages,livePending:Record<string,boolean>,loaded:readonly string[]) {
+  return loaded.filter(id=>!livePending[id]&&!pages[id].requestQuery&&!pages[id].cursor)
+}
 
 function useManualRosterRefresh(sources:readonly SourceClient[],pages:SourcePages) {
   const [rosterRetry,setRosterRetry]=useState(0)
@@ -143,8 +149,8 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
   const allItems=mergeRoster(Object.entries(pages).filter(([id,p])=>sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([,p])=>p.items))
   useEffect(()=>{
     const loaded=Object.entries(pages).filter(([id,p])=>!p.error&&sources.some(s=>s.machineID===id&&s.authorizationRevision===p.revision)).map(([id])=>id)
-    if(loaded.length)onRosterObserved?.(allItems,loaded)
-  },[pages,authorization,onRosterObserved])
+    if(loaded.length)onRosterObserved?.(allItems,loaded,completeRosterSources(pages,livePending,loaded))
+  },[pages,livePending,authorization,onRosterObserved])
   const matching=allItems.filter(i=>matchesRosterQuery(i,query,projectNames))
   const items=matching.filter(i=>!i.bot.hidden),hiddenItems=matching.filter(i=>i.bot.hidden)
   const unhide=async(item:W.ProjectAssistantBotSummary)=>{const source=sources.find(s=>s.machineID===item.bot.key.machine_id);if(!source?.setHidden)return;await authorized(source,current,s=>source.setHidden!({command:command(item.bot.key,"visibility"),hidden:false},s),new AbortController().signal);void load()}
