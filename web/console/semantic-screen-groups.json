@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14745,
+  "englishContentKeys": 14744,
   "riskKeys": 6247,
-  "nonRiskCount": 8498,
+  "nonRiskCount": 8497,
   "groups": [
     {
       "name": "acp / other",
@@ -8420,7 +8420,7 @@
     },
     {
       "name": "teamCharter / other",
-      "count": 65,
+      "count": 64,
       "sources": [
         null
       ],
@@ -8440,7 +8440,6 @@
         "teamCharter.diffRemoved",
         "teamCharter.dismissed",
         "teamCharter.editSection",
-        "teamCharter.editShort",
         "teamCharter.history",
         "teamCharter.historyClose",
         "teamCharter.historyDiff",

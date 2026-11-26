@@ -192,7 +192,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
               <BotMessageMarkdown text={section.text} w={w}/>
               <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
                 onClick={() => startEdit(index)}>
-                {narrow ? <span>{charterWord("editShort")}</span> : <PencilIcon/>}
+                <PencilIcon/>
               </button>
             </article>)}
           {api.remove && doc.version > 0 && (removing

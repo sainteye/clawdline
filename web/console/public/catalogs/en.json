@@ -14668,7 +14668,6 @@
   "teamCharter.restore": "Restore version {arg0}",
   "teamCharter.restored": "Restored: the text of version {arg0} is now version {arg1}.",
   "teamCharter.editSection": "Edit section {arg0}",
-  "teamCharter.editShort": "Edit",
   "teamCharter.sectionText": "Text of section {arg0}",
   "teamCharter.editHint": "Plain words are fine; no format needed. Use **bold** and lists if you like and they will be laid out when shown.",
   "teamCharter.afterSave": "After saving",

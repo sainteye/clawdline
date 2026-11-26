@@ -83,7 +83,8 @@
   .project-assistants .pa-charter-scroll { padding:12px 16px 20px; }
   .project-assistants .pa-charter-request { padding-inline:16px; }
   .project-assistants .pa-charter-section { padding:12px 64px 12px 14px; }
-  .project-assistants .pa-charter-edit { font-size:14px;color:#fafafa;border-color:var(--pa-line); }
+  .project-assistants .pa-charter-edit { color:#fafafa;border-color:var(--pa-line); }
+  .project-assistants .pa-charter-edit svg { width:18px;height:18px; }
   .project-assistants .pa-charter-status { flex-wrap:wrap; }
   .project-assistants .pa-charter-pill { font-size:13px; }
   /* The section edit fills the screen, with Cancel and Save in its top bar. */

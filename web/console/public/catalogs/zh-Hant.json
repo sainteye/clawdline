@@ -14668,7 +14668,6 @@
   "teamCharter.restore": "還原成第 {arg0} 版",
   "teamCharter.restored": "已還原：第 {arg0} 版的內容存成第 {arg1} 版。",
   "teamCharter.editSection": "編輯第 {arg0} 段",
-  "teamCharter.editShort": "改",
   "teamCharter.sectionText": "第 {arg0} 段內容",
   "teamCharter.editHint": "直接寫白話就好，不用照格式。需要的話可以用 **粗體** 和條列，顯示時會排好。",
   "teamCharter.afterSave": "儲存後",
