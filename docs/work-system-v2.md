@@ -47,6 +47,9 @@ and projects an assigned item into its owner's Session to-do panel.
    *(Amended 2026-09-27:)* the owner Session of an Epic past its plan gate may also create Feature
    and Issue items under that Epic (§6.5): the person's assignment of the Epic is the authority, so
    no run is needed, and nothing else may be created that way.
+   *(Amended 2026-11-26:)* a Bot chat has no run, so it creates an item on the person's answer to
+   its own `ask_person` question card instead (§7.1, "A Bot's question card"). The daemon finds and
+   checks the card; the model's claim that the person agreed authorizes nothing.
 2. **Only a person assigns, reassigns, unassigns, deletes/cancels, completes by hand, or reopens an
    item, including actions a Session relays from that person's message.** An Agent may not
    appoint itself or another Session — except that an item created under §7.1 with
@@ -705,6 +708,34 @@ list rows exactly as a person's assignment seeds them. Explicit steps replace th
 later assignment seeds nothing when steps exist, so no step is written twice. An item that was a
 Plan never seeds from its description, so a converted Plan carries only steps its owner adds. A Plan is created
 unassigned in Planning, as a person's would be.
+
+**A Bot's question card** *(added 2026-11-26)*. A Bot chat is not a Session: nobody types into it
+through the send route, so it never has a run, and `clawdline item add` from a Bot answered
+`no_run` even when the person had just agreed on the Bot's decision card. A team charter that has a
+Bot open Board items for another Bot could not work. The Bot names its card instead of a run:
+
+```
+POST /v1/work/v2/agent/items
+{"session_id": "<the Bot's native conversation id>", "via": {"decision": "<question card id>"}, …}
+```
+
+(`clawdline item add --decision <card id>`). The daemon looks the card up in this machine's Bot
+chats and admits it only when it is an `ask_person` question of that Bot's own — not a host memory
+card (`decision_unknown`), not a question relayed for another Bot (`decision_not_the_persons`) —
+the person answered it on the console's answer route, which no Bot tool can write
+(`decision_unanswered`, also for a withdrawn or expired card), the answer is within the same
+one-day window as a run (`decision_expired`), and `session_id` is the current, unrevoked native
+session of the Bot chat that asked it (`decision_other_conversation`: another Bot, another chat, or
+a session the person replaced with New session). A body naming both a run and a card is refused
+(`via_ambiguous`), and so is any `assign`: the item arrives unassigned for Atlas or the person to
+assign (`invalid_assignment`). The item belongs to the Bot's own Project (`project_mismatch`
+otherwise), is written with `created_by = user_via_bot_decision:<card>`, an `item.created` event
+carrying `via_decision`, and `created_via` naming `decision_id`, `bot_id`, the answer's time and
+the start of the person's answer. One card backs at most five items, as one run does. Alternatives
+considered: issuing a run when the person answers a card was rejected because a run asserts a live
+broker Session, which a Bot chat is not, and every run consumer would then have to tell the two
+apart; letting `item propose` take a card as its source was rejected because the person had
+already decided and would be asked a second time. The Session path is unchanged.
 
 *(Amended 2026-09-30.)* The executable item is created **unassigned**, in `created`, where an
 unassigned item of its kind waits on the Board, and the answer says `assignment_state:
