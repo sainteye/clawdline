@@ -94,3 +94,29 @@
   .project-assistants .pa-charter-editor-full textarea { min-height:40dvh;font-size:16px; }
   .project-assistants .pa-charter-editor-full .pa-charter-title { font-size:16px; }
 }
+/* The Bots' conflict reports: a reminder above the charter and a side panel
+   (a full-screen sheet on a phone, as the history panel is). */
+.project-assistants .pa-charter-conflict-banner { display:flex;align-items:center;gap:10px;min-height:44px;padding:8px 14px;border:1px solid #6b5a33;border-radius:12px;background:rgba(227,149,103,.08);color:inherit;text-align:left;font-size:14px; }
+.project-assistants .pa-charter-conflict-banner>svg { flex:none;color:#e39567; }
+.project-assistants .pa-charter-conflict-banner>span { flex:1;min-width:0; }
+.project-assistants .pa-charter-conflict-banner>strong { flex:none;color:#e39567;font-weight:550; }
+.project-assistants .pa-charter-conflicts-intro { margin:0;color:var(--pa-dim);font-size:13px;line-height:1.6; }
+.project-assistants .pa-charter-conflict-list { list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px; }
+.project-assistants .pa-charter-conflict { display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--pa-line);border-radius:14px;background:var(--pa-card); }
+.project-assistants .pa-charter-conflict p { margin:0; }
+.project-assistants .pa-charter-conflict-who { display:flex;align-items:center;gap:8px;font-size:13px;color:var(--pa-dim); }
+.project-assistants .pa-charter-conflict-who>svg { flex:none;color:#e39567; }
+.project-assistants .pa-charter-conflict-outdated { font-size:12px;color:#e8a39b; }
+.project-assistants .pa-charter-conflict-quote small { display:block;margin-bottom:4px;font-size:12px;color:var(--pa-dim);font-weight:550; }
+.project-assistants .pa-charter-conflict-path { font-weight:400;overflow-wrap:anywhere; }
+.project-assistants .pa-charter-conflict-quote blockquote { margin:0;padding:8px 10px;border-radius:10px;font-size:14px;line-height:1.55;overflow-wrap:anywhere; }
+.project-assistants .pa-charter-conflict-quote[data-side="bot"] blockquote { background:var(--pa-diff-del,rgba(164,77,65,.24)); }
+.project-assistants .pa-charter-conflict-quote[data-side="charter"] blockquote { background:var(--pa-diff-add,rgba(77,139,91,.23)); }
+.project-assistants .pa-charter-conflict-actions { display:flex;flex-direction:column;gap:8px; }
+.project-assistants .pa-charter-conflict-actions button { min-height:44px;width:100%; }
+.project-assistants .pa-charter-conflict-actions>div { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+.project-assistants .pa-charter-conflict-done { font-size:13px;color:#86c997; }
+.project-assistants .pa-charter-conflicts-others { margin:0;padding-top:4px;color:var(--pa-dim);font-size:13px;text-align:center; }
+@media(min-width:701px) {
+  .project-assistants .pa-charter-conflicts.pa-info-panel { width:380px;max-width:380px; }
+}

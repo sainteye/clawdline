@@ -16,6 +16,8 @@ type CharterDocument = W.ProjectAssistantCharterResponse
 type CharterReader = W.ProjectAssistantCharterReader
 type CharterProposal = W.ProjectAssistantCharterProposal
 type CharterVersion = W.ProjectAssistantCharterVersion
+type CharterConflicts = W.ProjectAssistantCharterConflictsResponse
+type CharterConflict = W.ProjectAssistantCharterConflict
 type Notice = { text: string; tone: "ok" | "error" }
 type Editing = { index: number; title: string; draft: string }
 /** A change request is with the lead: the ids it may answer past, and when to stop waiting. */
@@ -41,6 +43,7 @@ function useCharterDocument(api: CharterApi, project: CharterProject, opened: nu
   const [readers, setReaders] = useState<CharterReader[]>([])
   const [proposals, setProposals] = useState<CharterProposal[]>([])
   const [proposalsFailed, setProposalsFailed] = useState(false)
+  const [conflicts, setConflicts] = useState<CharterConflicts | null>(null)
   const [awaiting, setAwaiting] = useState<Awaiting | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [busy, setBusy] = useState(false)
@@ -49,9 +52,12 @@ function useCharterDocument(api: CharterApi, project: CharterProject, opened: nu
   const reload = useCallback(async () => {
     const signal = life.current.signal
     // refusal-ok: a refused readers or proposals read keeps the list already shown, a refused proposals read says so under it, and the next read retries; only the charter's own refusal replaces the page.
-    const [next, who, pending] = await Promise.allSettled([api.read(project, 0, signal), api.readers(project, signal), api.proposals(project, signal)])
+    const [next, who, pending, reports] = await Promise.allSettled([api.read(project, 0, signal), api.readers(project, signal), api.proposals(project, signal),
+      api.conflicts ? api.conflicts(project, signal) : Promise.resolve(null)])
     if (signal.aborted) return null
     if (who.status === "fulfilled") setReaders(shownReaders(who.value))
+    // refusal-ok: a refused conflicts read keeps the reports already shown; the next read retries.
+    if (reports.status === "fulfilled") setConflicts(reports.value)
     if (pending.status === "fulfilled") { setProposals(pending.value.proposals); setProposalsFailed(false) } else setProposalsFailed(true)
     if (next.status === "rejected") { setLoadError(charterProblem(next.reason)); return null }
     setDoc(next.value); setLoadError("")
@@ -102,21 +108,25 @@ function useCharterDocument(api: CharterApi, project: CharterProject, opened: nu
     const signal = life.current.signal
     api.readers(project, signal).then(answer => { if (!signal.aborted) setReaders(shownReaders(answer)) }, () => {})
   }
-  return { doc, loadError, readers, proposals, proposalsFailed, waiting: !!awaiting, notice, busy, reload, write, refreshReaders, expectProposal }
+  return { doc, loadError, readers, proposals, proposalsFailed, conflicts, waiting: !!awaiting, notice, busy, reload, write, refreshReaders, expectProposal }
 }
+
+type Panel = "history" | "conflicts" | null
 
 export function CharterPage({ api, project, projectName, opened = 0, narrow, showBack, onBack, onChanged, onRemoved, w, language }: {
   api: CharterApi; project: CharterProject; projectName: string; opened?: number; narrow: boolean; showBack: boolean
   onBack: () => void; onChanged: () => void; onRemoved?: () => void; w: Words; language: string
 }) {
-  const { doc, loadError, readers, proposals, proposalsFailed, waiting, notice, busy, reload, write, refreshReaders, expectProposal } = useCharterDocument(api, project, opened, onChanged)
+  const { doc, loadError, readers, proposals, proposalsFailed, conflicts, waiting, notice, busy, reload, write, refreshReaders, expectProposal } = useCharterDocument(api, project, opened, onChanged)
   const [editing, setEditing] = useState<Editing | null>(null)
   const [removing, setRemoving] = useState(false)
-  const [historyOpen, setHistoryOpen] = useState(false)
+  const [panel, setPanel] = useState<Panel>(null)
+  const historyOpen = panel === "history"
   const [request, setRequest] = useState("")
   const [retouch, setRetouch] = useState<string | null>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const historyButton = useRef<HTMLButtonElement>(null)
+  const conflictsButton = useRef<HTMLButtonElement>(null)
 
   const sections = doc ? charterSections(doc.text) : []
   const shown = sections.map((section, index) => ({ section, index })).filter(({ section }) => shownCharterSection(section))
@@ -161,14 +171,35 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
     const parts = sectionParts(section)
     setEditing({ index, title: parts.title, draft: parts.body }); refreshReaders()
   }
-  const closeHistory = () => { setHistoryOpen(false); requestAnimationFrame(() => historyButton.current?.focus({ preventScroll: true })) }
+  const closePanel = () => {
+    const back = panel === "conflicts" ? conflictsButton : historyButton
+    setPanel(null); requestAnimationFrame(() => back.current?.focus({ preventScroll: true }))
+  }
+  const closeHistory = closePanel
+  const open = conflicts?.conflicts.filter(item => item.state === "open") ?? []
+  // A report names the section by its heading; the page numbers the shown sections.
+  const sectionLabel = (heading: string) => {
+    const position = shown.findIndex(({ section }) => section.heading === heading)
+    return position >= 0 ? charterFormat("conflictSection", position + 1) : heading ? charterFormat("conflictSectionNamed", heading) : charterWord("conflictSectionUnknown")
+  }
+  const reporter = (item: CharterConflict) => item.bot_name || charterWord("conflictsUnknownBot")
+  const resolve = (item: CharterConflict, action: W.ProjectAssistantCharterConflictAction, done: string) => api.resolveConflict &&
+    write(signal => api.resolveConflict!(project, { conflict_id: item.id, action }, signal), () => done)
+  const changeCharter = async (item: CharterConflict) => {
+    const words = charterFormat("conflictChangeRequest", reporter(item), charterWord(`conflictSourceShort_${item.source}`), item.bot_sentence, sectionLabel(item.section), item.charter_sentence)
+    if (await resolve(item, "change_charter", charterWord("conflictChangeReady"))) {
+      setRequest(words.slice(0, doc?.limits.request_bytes ?? words.length)); setRetouch(null)
+      if (narrow) setPanel(null)
+      requestAnimationFrame(() => composer.current?.focus())
+    }
+  }
 
   const editedSection = editing ? shown.findIndex(item => item.index === editing.index) + 1 : 0
   const editor = editing && doc && <SectionEditor key={editing.index} n={editedSection} editing={editing} heading={sections[editing.index]?.heading ?? ""} readers={readers} next={next} busy={busy} full={narrow}
     onDraft={draft => setEditing({ ...editing, draft })} onTitle={title => setEditing({ ...editing, title })} onCancel={() => setEditing(null)} onSave={() => void saveSection()}/>
 
-  return <section className={`pa-chat-layout pa-chat-surface pa-charter${historyOpen ? " pa-info-open" : ""}`} aria-label={charterWord("title")}>
-    <div className="pa-charter-main" inert={narrow && historyOpen ? true : undefined}>
+  return <section className={`pa-chat-layout pa-chat-surface pa-charter${panel ? " pa-info-open" : ""}`} aria-label={charterWord("title")}>
+    <div className="pa-charter-main" inert={narrow && panel ? true : undefined}>
       <header className="pa-chat-header pa-charter-header">
         <button type="button" className="pa-circle pa-chat-back" data-show-back={showBack || undefined} onClick={onBack} aria-label={w.back} title={w.back}>‹</button>
         <h2 className="pa-chat-heading"><span className="pa-charter-pill"><CharterIcon size={14}/><span>{[charterWord("title"), projectName, doc ? charterFormat("version", doc.version) : ""].filter(Boolean).join(" · ")}</span></span></h2>
@@ -177,9 +208,13 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
         {loadError && !doc && <div className="pa-charter-problem" role="alert"><p>{loadError}</p><button type="button" className="pa-pill" onClick={() => void reload()}>{w.retry}</button></div>}
         {!doc && !loadError && <p className="pa-charter-loading" role="status">{w.loading}</p>}
         {doc && <>
+          {open.length > 0 && <button ref={conflictsButton} type="button" className="pa-charter-conflict-banner" aria-expanded={panel === "conflicts"}
+            onClick={() => panel === "conflicts" ? closePanel() : setPanel("conflicts")}>
+            <ConflictIcon/><span>{charterFormat(open.length === 1 ? "conflictsBannerOne" : "conflictsBannerMany", open.length)}</span><strong>{charterWord("conflictsView")}</strong>
+          </button>}
           <div className="pa-charter-status">
             <p>{status}</p>
-            <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setHistoryOpen(true)}>{charterWord("history")}</button>
+            <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setPanel("history")}>{charterWord("history")}</button>
           </div>
           {notice && notice.text && <p className="pa-charter-notice" data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
           {waiting && !proposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
@@ -220,6 +255,12 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
       </form>}
     </div>
     {narrow && editor}
+    {doc && api.conflicts && <aside hidden={panel !== "conflicts"} inert={panel !== "conflicts" ? true : undefined} className="pa-info-panel pa-side-inspector pa-charter-conflicts" aria-label={charterWord("conflictsTitle")}
+      onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); closePanel() } }}>
+      {panel === "conflicts" && <ConflictsPanel answer={conflicts} busy={busy} language={language} sectionLabel={sectionLabel} reporter={reporter} onClose={closePanel}
+        onFollow={item => void resolve(item, "follow_charter", charterWord("conflictFollowed"))} onChange={item => void changeCharter(item)}
+        onDismiss={item => void resolve(item, "dismiss", charterWord("conflictDismissed"))}/>}
+    </aside>}
     {doc && <aside hidden={!historyOpen} inert={!historyOpen ? true : undefined} className="pa-info-panel pa-side-inspector pa-charter-history" aria-label={charterWord("history")}
       onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); closeHistory() } }}>
       {historyOpen && <CharterHistory key={doc.version} api={api} project={project} doc={doc} busy={busy} language={language} onClose={closeHistory}
@@ -227,6 +268,59 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
           saved => charterFormat("restored", from, version(saved)))}/>}
     </aside>}
   </section>
+}
+
+/** The Bots' reports beside the charter: one card per report, its Bot's sentence and the charter's. */
+function ConflictsPanel({ answer, busy, language, sectionLabel, reporter, onClose, onFollow, onChange, onDismiss }: {
+  answer: CharterConflicts | null; busy: boolean; language: string; sectionLabel: (heading: string) => string; reporter: (item: CharterConflict) => string
+  onClose: () => void; onFollow: (item: CharterConflict) => void; onChange: (item: CharterConflict) => void; onDismiss: (item: CharterConflict) => void
+}) {
+  const panel = useRef<HTMLDivElement>(null)
+  useEffect(() => { panel.current?.querySelector<HTMLElement>(".pa-charter-history-close")?.focus({ preventScroll: true }) }, [])
+  const date = new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  const items = answer?.conflicts ?? []
+  const others = answer?.checked_without_report ?? 0
+  return <div ref={panel} className="pa-charter-history-body pa-charter-conflicts-body">
+    <header className="pa-charter-history-head">
+      <h3>{charterWord("conflictsTitle")}</h3>
+      <button type="button" className="pa-circle pa-charter-history-close" onClick={onClose} aria-label={charterWord("conflictsClose")} title={charterWord("conflictsClose")}>×</button>
+    </header>
+    <p className="pa-charter-conflicts-intro">{charterWord("conflictsIntro")}</p>
+    {!items.length && <p className="pa-charter-hint">{charterWord("conflictsNone")}</p>}
+    <ol className="pa-charter-conflict-list">
+      {items.map(item => <li key={item.id}>
+        <article className="pa-charter-conflict" data-state={item.state} aria-label={charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}>
+          <p className="pa-charter-conflict-who"><ConflictIcon/><span>{charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}</span></p>
+          {item.outdated && <p className="pa-charter-conflict-outdated">{charterFormat("conflictOutdated", item.version)}</p>}
+          <div className="pa-charter-conflict-quote" data-side="bot">
+            <small>{charterWord(`conflictSource_${item.source}`)}{item.path && <span className="pa-charter-conflict-path"> · {item.path}</span>}</small>
+            <blockquote>{item.bot_sentence}</blockquote>
+          </div>
+          <div className="pa-charter-conflict-quote" data-side="charter">
+            <small>{sectionLabel(item.section)}</small>
+            <blockquote>{item.charter_sentence}</blockquote>
+          </div>
+          {item.state === "open"
+            ? <div className="pa-charter-conflict-actions">
+              <button type="button" className="pa-charter-primary" disabled={busy} onClick={() => onFollow(item)}>{charterWord("conflictFollow")}</button>
+              <div>
+                <button type="button" disabled={busy} onClick={() => onChange(item)}>{charterWord("conflictChange")}</button>
+                <button type="button" disabled={busy} onClick={() => onDismiss(item)}>{charterWord("conflictDismiss")}</button>
+              </div>
+            </div>
+            : <p className="pa-charter-conflict-done" role="status">{item.state === "handed_to_bot" ? charterFormat("conflictHandedToBot", reporter(item)) : charterWord(item.state === "fixed" ? "conflictFixed" : "conflictHandedToCharter")}</p>}
+        </article>
+      </li>)}
+    </ol>
+    {answer && <p className="pa-charter-conflicts-others">{charterFormat(others === 1 ? "conflictsOthersOne" : "conflictsOthersMany", others)}</p>}
+    <p className="pa-charter-hint">{charterWord("conflictsJudgment")}</p>
+  </div>
+}
+
+function ConflictIcon() {
+  return <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M8 2.2 14.3 13.3H1.7z"/><path d="M8 6.5v3"/><path d="M8 11.6v.1"/>
+  </svg>
 }
 
 function SectionEditor({ n, editing, heading, readers, next, busy, full, onDraft, onTitle, onCancel, onSave }: {
