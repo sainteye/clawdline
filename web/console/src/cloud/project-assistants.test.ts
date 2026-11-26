@@ -547,6 +547,20 @@ test("the source exposes the current machine name without replacing the roster c
   assert.equal(source.machineName,undefined)
 })
 
+test("a missing capability is named for what it is: pending, offline or an older source", () => {
+  const registry = new ProjectAssistantRegistry("account","trusted-reader")
+  const transport = () => async () => Response.json(sourceStatus())
+  registry.sync([{...grant(),apiLevel:undefined,descriptorPending:true}],transport)
+  assert.equal(registry.getSnapshot()[0].capabilityGap!(),"pending")
+  registry.sync([{...grant(),apiLevel:undefined,descriptorPending:false}],transport)
+  assert.equal(registry.getSnapshot()[0].capabilityGap!(),"outdated")
+  registry.sync([{...grant(),online:false}],transport)
+  assert.equal(registry.getSnapshot()[0].capabilityGap!(),"offline")
+  registry.sync([{...grant(),apiLevel:3}],transport)
+  assert.equal(registry.getSnapshot()[0].capabilityGap!(),"outdated")
+  registry.revoke()
+})
+
 test("a source's readable status never grants content writes by itself",async () => {
   let writes=0
   const {source} = make(async (path,init) => {if(init?.method !== "GET")writes++;const answer=sourceStatus();answer.sources[0].writable=false;return Response.json(path.endsWith("/status")?answer:{})})

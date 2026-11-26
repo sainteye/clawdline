@@ -16,7 +16,7 @@ import {AgentModelPicker} from "./AgentModelPicker"
 import {NetworkSettingsPanel} from "./NetworkSettingsPanel"
 import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
-import {botFailureText,providerSetupFailure} from "./source-errors"
+import {botFailureText,capabilityHint,providerSetupFailure} from "./source-errors"
 import {settingsBase,settingsConflicts} from "./settings-conflicts"
 import "./bot-settings.css"
 import { useSharedMemorySwitch } from "./BotsSettingsModal"
@@ -242,7 +242,7 @@ function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,da
           {bot.background_threads!==undefined&&<PaSelect label={w.backgroundConcurrency} value={String(backgroundThreads)}
             onChange={value=>setBackgroundThreads(Number(value))} options={[1,2,3,4,5,6].map(n=>({value:String(n),label:String(n)}))}/>}
           <ApprovalSelect agent={agent} policy={approval.permission_policy} mode={approval.mode} w={w} onChange={id=>setApproval(withApproval(id))}/>
-          {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),catalogWord("projectAssistants",!teamAvailable?"teamUnavailable":"teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
+          {showTeamSetting&&switchRow(catalogWord("projectAssistants","teamManage"),!teamAvailable?capabilityHint(source,catalogWord("projectAssistants","teamUnavailable"),w):catalogWord("projectAssistants","teamManageHint"),manageTeam,!teamAvailable,setManageTeam)}
         </SettingsGroup>
         <SettingsGroup>
           <SettingsDisclosure title={w.extensions}>

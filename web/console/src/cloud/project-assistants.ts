@@ -3,6 +3,7 @@ import { BotReadObservation, type BotReadMode } from "../project-assistants/read
 import { base64Bytes } from "../legacy/js/net/cloud-crypto.js"
 import { isFailureCode, RELAY_CTL_MAX_BYTES } from "../legacy/js/net/cloud-failure.js"
 import type * as W from "@clawdline/contract"
+import type { CapabilityGap } from "../project-assistants/source-errors.ts"
 import type { CharterRequestBody, MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SharedSettingsAnswer, SharedSettingsWrite, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
@@ -152,6 +153,12 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canReadProgress() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_PROGRESS_API_LEVEL }
   canSettingsBase() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_SETTINGS_BASE_API_LEVEL }
   canGroups() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUPS_API_LEVEL }
+  capabilityGap(): CapabilityGap {
+    const live = this.currentGrant()
+    if (!live || !live.online) return "offline"
+    if (live.apiLevel === undefined) return live.descriptorPending ? "pending" : "outdated"
+    return "outdated"
+  }
   canLeadTeamDefault() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_LEAD_TEAM_API_LEVEL }
   canGroupContext() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_CONTEXT_API_LEVEL }
   canGroupDescription() { return (this.grant.apiLevel??0)>=PROJECT_ASSISTANTS_GROUP_DESCRIPTION_API_LEVEL }

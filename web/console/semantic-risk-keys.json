@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14744,
+  "englishKeys": 14745,
   "counts": {
     "negation": 3728,
     "state": 2514,
     "permission": 876,
     "deletion": 344,
-    "uncertainty": 584
+    "uncertainty": 585
   },
-  "unionCount": 6247,
+  "unionCount": 6248,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -7962,6 +7962,7 @@
       "playbook.startUnknown",
       "playbook.zeroReviewBody",
       "projectAssistants.artifactSendUnknown",
+      "projectAssistants.capabilitiesPending",
       "projectAssistants.checkUnavailable",
       "projectAssistants.connectorPrepared",
       "projectAssistants.discardFiles",
@@ -13175,6 +13176,7 @@
     "projectAssistants.botUnavailable",
     "projectAssistants.cancelled",
     "projectAssistants.cannotEdit",
+    "projectAssistants.capabilitiesPending",
     "projectAssistants.chatModelSaved",
     "projectAssistants.checkDelivered",
     "projectAssistants.checkEarlierDelivered",

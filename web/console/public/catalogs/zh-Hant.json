@@ -11880,6 +11880,7 @@
   "projectAssistants.sourceError": "無法讀取來源",
   "projectAssistants.sourceIDs": "來源 ID（每行一筆）",
   "projectAssistants.sourceOffline": "暫時連不上這台機器。",
+  "projectAssistants.capabilitiesPending": "這台機器還沒回報它支援哪些功能，可能正忙或暫時連不上；回報後就能設定。",
   "projectAssistants.sourcePairingRequired": "請確認這台機器的配對與存取權限。",
   "projectAssistants.sourceRetryHint": "會自動重試，連線恢復後便會更新 Bot 清單。",
   "projectAssistants.sourceRetrying": "正在重試…",

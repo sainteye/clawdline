@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
-import { retryableSourceError, shownSourceError } from "./source-errors.ts"
+import { botWorkspaceName, capabilityHint, retryableSourceError, settingsReadOnlyReason, shownSourceError } from "./source-errors.ts"
 test("a machine without Bots is left out of the roster's errors, a real failure is not",()=>{
   assert.equal(shownSourceError("pa_unsupported"), false)
   assert.equal(shownSourceError("pa_disabled"), false)
@@ -45,4 +45,37 @@ test("an interrupted turn explains a known cause and preserves uncertainty",()=>
     assert.equal(botTurnOutcome({state:"unknown",failure_code:"pa_unsupported",failure_field:field},w),w.turnUnknownNext)
   }
   assert.equal(botTurnOutcome({state:"failed",failure_code:"execution_effect_unknown",failure_field:"acknowledged"},w),w.failAcknowledged)
+})
+
+test("a workspace without a readable name shows the fallback word, never its raw ID",()=>{
+  const w={unnamedProject:"Project"}
+  assert.equal(botWorkspaceName("clawdline",w),"clawdline")
+  assert.equal(botWorkspaceName(undefined,w),"Project")
+  assert.equal(botWorkspaceName("  ",w),"Project")
+})
+
+test("a setting a source cannot offer says why instead of always asking for an update",()=>{
+  const w={capabilitiesPending:"pending",sourceOffline:"offline"}
+  assert.equal(capabilityHint({capabilityGap:()=>"pending"},"update",w),"pending")
+  assert.equal(capabilityHint({capabilityGap:()=>"offline"},"update",w),"offline")
+  assert.equal(capabilityHint({capabilityGap:()=>"outdated"},"update",w),"update")
+  assert.equal(capabilityHint({},"update",w),"update")
+  assert.equal(capabilityHint(undefined,"update",w),"update")
+})
+
+test("an offline source says it cannot be reached rather than a bare unavailable",()=>{
+  const ok={state:"online",fresh:true,writable:true,access:"interactive"}
+  const w={unavailable:"目前無法使用",sourceOffline:"暫時連不上這台機器。"}
+  assert.equal(readOnlyReason({...ok,state:"offline"},w),"暫時連不上這台機器。")
+  assert.equal(readOnlyReason({...ok,fresh:false},w),"目前無法使用")
+})
+
+test("read-only Bot settings on Cloud name a pending or offline source before the generic reason",()=>{
+  const ok={state:"online",fresh:true,writable:true,access:"interactive"}
+  const w={unavailable:"目前無法使用",sourceOffline:"暫時連不上這台機器。",capabilitiesPending:"還沒回報"}
+  const pending={capabilityGap:()=>"pending" as const},older={capabilityGap:()=>"outdated" as const}
+  assert.equal(settingsReadOnlyReason(true,pending,true,ok,w),"")
+  assert.equal(settingsReadOnlyReason(false,pending,true,{...ok,state:"unsupported"},w),"還沒回報")
+  assert.equal(settingsReadOnlyReason(false,older,true,ok,w),"目前無法使用")
+  assert.equal(settingsReadOnlyReason(false,undefined,false,{...ok,writable:false},{...w,readOnlySource:"唯讀"}),"唯讀")
 })
