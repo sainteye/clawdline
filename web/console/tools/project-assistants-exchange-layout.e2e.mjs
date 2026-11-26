@@ -80,10 +80,11 @@ async function checkActiveExchange({page,origin,language,width,scenario}) {
   },mobile?78:61)
   await jump.waitFor()
   await screenshot("jump")
-  await check(`${scenario} the jump occupies a row outside the transcript`,async()=>{
+  await check(`${scenario} the jump floats over the transcript, clear of the composer`,async()=>{
     const [button,pane,composer]=await Promise.all([jump.boundingBox(),scroller.boundingBox(),footer.boundingBox()])
-    assert.ok(button.y>=pane.y+pane.height-1,JSON.stringify({button,pane}))
-    assert.ok(button.y+button.height<=composer.y+1,JSON.stringify({button,composer}))
+    assert.ok(button.y>=pane.y&&button.y+button.height<=pane.y+pane.height+1,JSON.stringify({button,pane}))
+    assert.ok(Math.abs(pane.y+pane.height-composer.y)<=1,JSON.stringify({pane,composer}))
+    assert.ok(button.y+button.height<=composer.y-6,JSON.stringify({button,composer}))
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),true)
   })
   await check(`${scenario} the keyboard reaches the jump and returns to the transcript`,async()=>{
