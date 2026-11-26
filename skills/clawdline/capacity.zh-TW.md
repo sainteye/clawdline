@@ -525,6 +525,9 @@
 | `console.health_ui_trend_lanes` | 12 | `rows` | `refuse` | `diagnostics` | — |
 | `console.health_ui_trend_signals` | 20 | `rows` | `refuse` | `diagnostics` | — |
 | `console.held_read_lost_milliseconds` | 180000 | `milliseconds` | `expire` | `diagnostics` | — |
+| `console.local_bot_read_timeout` | 15 | `seconds` | `expire` | `sender, diagnostics` | — |
+| `console.local_fleet_stream_frames` | 2 | `rows` | `coalesce` | `diagnostics` | — |
+| `console.local_fleet_stream_lease` | 1 | `rows` | `refuse` | `diagnostics` | — |
 | `console.local_performance_body_bytes` | 2097152 | `bytes` | `refuse` | `diagnostics` | — |
 | `console.local_performance_points` | 168 | `rows` | `refuse` | `diagnostics` | — |
 | `console.local_performance_refresh_ms` | 30000 | `milliseconds` | `expire` | `diagnostics` | — |

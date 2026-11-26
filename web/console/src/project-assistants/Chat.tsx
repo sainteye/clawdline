@@ -8,7 +8,7 @@ import {BACKOFF} from "../session/transcript-follow"
 import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
-import { authorized, command, errorCode, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
+import { authorized, command, errorCode, errorField as refusalField, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { decisionReplyOf } from "./decision-reply"
 import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
@@ -96,6 +96,29 @@ function backgroundWorkPlacement(tasks: BackgroundTask[], timeline: readonly W.P
 function transientChatRead(error:unknown) {
   const code=errorCode(error)
   return code==="pa_offline"||code==="pa_cursor_expired"||code==="pa_stale_generation"
+}
+
+function useBotMemoryPanel(read: () => Promise<W.ProjectAssistantMemoryViewResponse>, revision: number | undefined, fail: (error: unknown) => void) {
+  const [memory, setMemory] = useState<W.ProjectAssistantMemoryViewResponse | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
+  const shown = useRef(false)
+  const load = async () => {
+    const value = await read()
+    if (shown.current) setMemory(previous => previous && previous.view.memory.revision > value.view.memory.revision ? previous : value)
+  }
+  const latest = useRef({load, fail})
+  latest.current = {load, fail}
+  useEffect(() => {
+    if (shown.current) void latest.current.load().catch(fail)
+  }, [revision, fail])
+  const panel = useRef<ReturnType<typeof memoryOpener> | null>(null)
+  panel.current ??= memoryOpener(() => latest.current.load(), {
+    open: open => { shown.current = open; if (!open) setMemory(null) },
+    loading: waiting => { if (waiting) setTimedOut(false); setLoading(waiting) },
+    fail: error => { if (refusalField(error) === "read_deadline") setTimedOut(true); else latest.current.fail(error) },
+  })
+  return { memory, loading, timedOut, shown, panel: panel.current, load }
 }
 
 // These facts belong to the page's journal rows. A full reload restores a row
@@ -241,7 +264,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const backgroundStopControl=useRef<AbortController|null>(null)
   const [backgroundError,setBackgroundError]=useState("")
   const setSettings=(open:boolean)=>{if(open)setInfoTab("settings");setInfoOpen(open)}
-  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);setInfoOpen(true);if(tab==="details")servers.refresh();if(tab==="memory"&&!memoryShown.current)void memoryPanel.current?.open()}
+  const openInfo=(tab:BotInfoTab)=>{setInfoTab(tab);setInfoOpen(true);if(tab==="details")servers.refresh();if(tab==="memory"&&!memoryShown.current)void memoryPanel.open()}
   const profileName=useRef<HTMLInputElement>(null),focusedProfile=useRef(0)
   useLayoutEffect(()=>{
     if(editProfileRequest){setInfoTab("settings");setInfoOpen(true)}
@@ -350,7 +373,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [reconnecting,setReconnecting]=useState(false),retryDelay=useRef(BACKOFF.firstMs)
   const [error,setError]=useState(""),[errorField,setErrorField]=useState<string>(),[receipt,setReceipt]=useState<W.ProjectAssistantReceipt|null>(()=>view.heldOutcomes.get(draftKey)?.receipt??null),[busy,setBusy]=useState(!!inFlightAtMount),[sending,setSending]=useState<string|null>((inFlightAtMount??acceptedAtMount)?.text??null)
   const [localSend,setLocalSend]=useState("")
-  const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[memory,setMemory]=useState<W.ProjectAssistantMemoryViewResponse|null>(null),[memoryLoading,setMemoryLoading]=useState(false),[earlierLoading,setEarlierLoading]=useState(false)
+  const [unknown,setUnknown]=useState(()=>(uncertain()&&!inFlightAtMount)||view.heldOutcomes.problem(draftKey)==="unreadable"),[earlierLoading,setEarlierLoading]=useState(false)
   const [more,setMore]=useState(""),[following,setFollowing]=useState(true),[draftDurable,setDraftDurable]=useState(true)
   const [legacyRemoveFailed,setLegacyRemoveFailed]=useState(false)
   const [journalRevision,setJournalRevision]=useState(0)
@@ -383,7 +406,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const [queueEditBusy,setQueueEditBusy]=useState(false)
   const [queueEditError,setQueueEditError]=useState("")
   const [memoryNoteDraft,setMemoryNoteDraft]=useState<MemoryNoteDraft|null>(null)
-  const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null),memoryShown=useRef(false)
+  const memorySave=useRef<W.ProjectAssistantMemoryWriteRequest|null>(null),memoryForget=useRef<W.ProjectAssistantForgetRequest|null>(null)
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
   const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
   const pushedRef=useRef(pushed);pushedRef.current=pushed
@@ -437,9 +460,11 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     if(!valid())return
     if(errorCode(error)!=="pa_capacity_full")lock()
     const retry=transientChatRead(error)
-    setReconnecting(retry)
-    if(!retry){fail(error);return}
-    setError("")
+    const timedOut=refusalField(error)==="read_deadline"
+    setReconnecting(retry&&!timedOut)
+    if(timedOut||!retry)fail(error)
+    else setError("")
+    if(!retry)return
     const delay=retryDelay.current
     retryDelay.current=Math.min(delay*2,BACKOFF.maxMs)
     scheduleRead(delay,true)
@@ -1423,19 +1448,8 @@ ${currentDraft}`:submitted)
     return value
   }
   const botMemoryPage=projectMemoryPages?{page:0,page_size:projectMemoryPageSize}:undefined
-  const loadExport=async()=>{
-    const value=await readMemory(new AbortController().signal,undefined,botMemoryPage)
-    if(memoryShown.current)setMemory(previous=>previous&&previous.view.memory.revision>value.view.memory.revision?previous:value)
-  }
-  // The panel opens at once with placeholders; a failed read closes it onto the chat's error line.
-  const loadExportRef=useRef(loadExport);loadExportRef.current=loadExport
-  useEffect(()=>{if(memoryShown.current)void loadExportRef.current().catch(fail)},[data?.conversation.memory_revision,fail])
-  const failRef=useRef(fail);failRef.current=fail
-  const memoryPanel=useRef<ReturnType<typeof memoryOpener>|null>(null)
-  memoryPanel.current??=memoryOpener(()=>loadExportRef.current(),{
-    open:open=>{memoryShown.current=open;if(!open)setMemory(null)},
-    loading:setMemoryLoading,
-    fail:error=>failRef.current(error)})
+  const {memory,loading:memoryLoading,timedOut:memoryTimedOut,shown:memoryShown,panel:memoryPanel,load:loadExport}=useBotMemoryPanel(
+    () => readMemory(new AbortController().signal,undefined,botMemoryPage), data?.conversation.memory_revision, fail)
   const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
   const saveMemory=async(input:string|MemoryNoteDraft)=>{
     const note=typeof input==="string"?null:input,text=typeof input==="string"?input:input.text
@@ -1889,8 +1903,8 @@ ${currentDraft}`:submitted)
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>
     </header>}
     {(reconnecting||error)&&<div className="pa-chat-error" role={reconnecting?"status":"alert"} data-reconnecting={reconnecting||undefined}>
-      <span>{reconnecting?w.chatReconnecting:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
-      <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{w.refresh}</button>
+      <span>{reconnecting?w.chatReconnecting:errorField==="read_deadline"?w.readTimedOut:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
+      <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{errorField==="read_deadline"?w.retry:w.refresh}</button>
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
       {!reconnecting&&error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
     </div>}
@@ -2077,7 +2091,7 @@ ${currentDraft}`:submitted)
         <BackgroundList slots={bot.background_threads??3} section="recent" tasks={tasks} workspace={projectName||bot.project.project_id} open={openTask} w={w}/>
       </>,
       library:<OutputLibrary embedded artifactComposer={artifactComposer} source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
-      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{w.unavailable} <button type="button" onClick={()=>void memoryPanel.current?.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{
+      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{memoryTimedOut?w.readTimedOut:w.unavailable} <button type="button" onClick={()=>void memoryPanel.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{
         const value=await readMemory(signal,{source_epoch:epoch,layer:"project",entry_id:"",revision:""},page)
         const layer=value.view.layers.find(layer=>layer.layer==="project")
         if(!layer)throw failure("pa_invalid")

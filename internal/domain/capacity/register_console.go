@@ -10,6 +10,15 @@ const (
 // consoleBounds is every registered row named console.*.
 func baseConsoleBounds() []Entry {
 	return append(append(append(append(append(append(publicAnalyticsUIBounds(), connectionHealthUIBounds()...), servicePerformanceUIBounds()...), supportUIBounds()...), viewerHealthBounds()...), ownerRetentionBounds()...), []Entry{
+		// The browser's exclusive Web Lock admits one background fleet SSE
+		// per local origin (client.ts). Other tabs use authenticated reads.
+		{Name: "console.local_fleet_stream_lease", Class: Buffer, Unit: Rows, Limit: 1, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		// The local shared stream retains only the latest fleet and task frames
+		// for a listener that joins after its tab's connection is open.
+		{Name: "console.local_fleet_stream_frames", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
+		// Native fetch gives up the connection if the local chat snapshot or
+		// memory read cannot finish (LOCAL_BOT_READ_TIMEOUT_MS).
+		{Name: "console.local_bot_read_timeout", Class: Cache, Unit: Seconds, Limit: 15, AtLimit: Expire, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_batch", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_refs", Class: Cache, Unit: Rows, Limit: 24, AtLimit: EvictOldest, Told: []Channel{Sender, Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.copilot_session_report_sessions", Class: Buffer, Unit: Rows, Limit: 24, AtLimit: Refuse, Told: []Channel{Sender, Diagnostics}, EvictedBy: Person},

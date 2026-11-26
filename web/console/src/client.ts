@@ -1,4 +1,5 @@
-import { ClawdlineClient, nativeEventSourceTransport, pollingTransport, type StreamTransport } from "@clawdline/core"
+import { ClawdlineClient, nativeEventSourceTransport, pollingTransport, type StreamHandle, type StreamTransport } from "@clawdline/core"
+import { shareLocalEvents } from "./local-events.js"
 
 /**
  * One client for the whole console.
@@ -18,6 +19,8 @@ export const client = new ClawdlineClient({ fetch: (input, init) => globalThis.f
 
 let fleetStream: StreamTransport | null = null
 let fleetMayWrite: (() => boolean) | null = null
+const native = nativeEventSourceTransport(["sessions", "orchestrator", "screen"])
+const localStream = native && shareLocalEvents(native)
 
 /**
  * The live connection the session list follows: the daemon's `/v1/events`, or
@@ -27,12 +30,8 @@ export function fleetTransport(): StreamTransport | undefined {
   return fleetStream ?? quietableTransport()
 }
 
-// A browser opens about six connections to one host at a time, and a stream
-// holds one for as long as it is open. A terminal on screen holds its own
-// stream (pages/terminal), so while one is shown this tab reads the session
-// list every few seconds instead of holding `/v1/events` open as well: three
-// terminal tabs and two console tabs are then five held connections, not
-// eight, and there is still one left for the keystrokes.
+// A visible terminal has its own stream. Its tab polls the fleet while the
+// terminal is open so there is capacity left for keystrokes and other reads.
 let quiet = 0
 const quietChanged = new Set<() => void>()
 
@@ -51,26 +50,67 @@ export function quietFleetStream(): () => void {
 
 /** Every few seconds while quiet, the stream otherwise; the switch reopens with the same handlers. */
 const QUIET_READ_MS = 5_000
+const FLEET_STREAM_LOCK = "clawdline-local-fleet-stream"
 
 function quietableTransport(): StreamTransport | undefined {
-  const stream = nativeEventSourceTransport(["sessions", "orchestrator"])
+  const stream = localStream
   if (!stream) return undefined
   const reads = pollingTransport(async () => JSON.stringify(await client.sessions()), QUIET_READ_MS)
   return {
     open(url, handlers) {
-      let reading = quiet > 0
-      let inner = (reading ? reads : stream).open(url, handlers)
+      const locks = globalThis.navigator?.locks
+      let inner: StreamHandle | undefined
+      let using: StreamTransport | undefined
+      let claim: AbortController | undefined
+      let release: (() => void) | undefined
+      const use = (transport: StreamTransport) => {
+        if (using === transport) return
+        inner?.close()
+        using = transport
+        inner = transport.open(url, handlers)
+      }
       const change = () => {
-        if (reading === quiet > 0) return
-        reading = quiet > 0
-        inner.close()
-        inner = (reading ? reads : stream).open(url, handlers)
+        if (quiet > 0) {
+          use(reads)
+          claim?.abort()
+          release?.()
+          claim = undefined
+          release = undefined
+          return
+        }
+        if (!locks) { use(stream); return }
+        if (claim) return
+        const control = new AbortController()
+        claim = control
+        const hold = () => {
+          if (control.signal.aborted) return
+          return new Promise<void>(done => {
+            release = done
+            use(stream)
+          })
+        }
+        // The first tab starts the live stream. Followers keep their own
+        // authenticated reads and queue for the lease with no retry timer.
+        let waiting = false
+        void locks.request(FLEET_STREAM_LOCK, { ifAvailable: true }, lock => {
+          if (control.signal.aborted) return
+          if (lock) return hold()
+          waiting = true
+          use(reads)
+        }).then(async () => {
+          if (waiting && !control.signal.aborted) await locks.request(FLEET_STREAM_LOCK, { signal: control.signal }, hold)
+        }).catch(() => {
+          if (!control.signal.aborted) use(reads)
+        })
       }
       quietChanged.add(change)
+      change()
       return {
         close() {
           quietChanged.delete(change)
-          inner.close()
+          inner?.close()
+          claim?.abort()
+          release?.()
         },
       }
     },
@@ -84,6 +124,15 @@ function quietableTransport(): StreamTransport | undefined {
  */
 export function followsRelay(): boolean {
   return fleetStream !== null
+}
+
+/** Screen observations only exist on the machine's own event stream. */
+export function watchLocalScreen(onFrame: (data: string) => void, onOpen?: () => void, onError?: () => void): StreamHandle | undefined {
+  if (followsRelay()) return undefined
+  return localStream?.open(client.url("/v1/events"), {
+    onFrame: (event, data) => { if (event === "screen") onFrame(data) },
+    onOpen, onError,
+  })
 }
 
 /** A presentation hint; the daemon still checks every write. */

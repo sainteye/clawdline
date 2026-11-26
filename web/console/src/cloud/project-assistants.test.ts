@@ -259,6 +259,36 @@ const make = (transport: AssistantFetch, first = grant()) => {
   const source = new ProjectAssistantSourceClient(first,transport,() => current)
   return {source,setGrant(next: AssistantGrant | null) {current = next}}
 }
+
+test("stalled local Bot snapshot and memory reads release their fetch and can retry", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const reads = [
+    (source: ProjectAssistantSourceClient) => source.view(viewRequest, signal()),
+    (source: ProjectAssistantSourceClient) => source.memoryView(key, "chat", signal()),
+  ]
+  for (const read of reads) {
+    let blocked: AbortSignal | null | undefined
+    let rejectBlocked!: (reason: unknown) => void
+    const refusal = { contract_version: "project-assistants.v1", error: { code: "pa_not_found", field: "fixture", retry_after_seconds: 0 } }
+    let requests = 0
+    const { source } = make(async (_path, init) => {
+      if (++requests > 1) return Response.json(refusal, { status: 404 })
+      blocked = init?.signal
+      return new Promise((_resolve, reject) => {
+        rejectBlocked = reject
+        blocked?.addEventListener("abort", () => reject(blocked?.reason), { once: true })
+      })
+    }, { ...grant(), accountKey: "local", apiLevel: 121 })
+    const attempt = read(source)
+    const deadline = assert.rejects(attempt, e => errorCode(e) === "pa_offline" && clientModule.errorField(e) === "read_deadline")
+    t.mock.timers.tick(15_000)
+    if (!blocked?.aborted) rejectBlocked(new Error("The stalled local fetch was still open at the deadline"))
+    await deadline
+    assert.equal(blocked?.aborted, true)
+    await assert.rejects(read(source), e => { assert.deepEqual(e, refusal); return true })
+    assert.equal(requests, 2)
+  }
+})
 test("a group description requires API101 and keeps older edits sendable",async()=>{
   const sent: {path:string;body:unknown}[]=[]
   const transport:AssistantFetch=async(path,init)=>{
