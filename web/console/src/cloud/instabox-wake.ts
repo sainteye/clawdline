@@ -1,4 +1,5 @@
 import { nextWord } from "../next-strings.js"
+import { instaBoxWakeReasonWord } from "./instabox-wake-reason.js"
 
 export const instaBoxProviderPath = "/v1/cloud-providers/instabox"
 export const instaBoxWakePath = (machine: string) => `/v1/machines/${encodeURIComponent(machine)}/instabox-wake`
@@ -21,19 +22,7 @@ export async function instaBoxRequest<T>(origin: string, path: string, method = 
 }
 
 export function instaBoxWakeReason(error: unknown) {
-  switch (error instanceof Error ? error.message : "") {
-    case "wake_cooldown": return nextWord("msInstaCooldown")
-    case "wake_in_progress": return nextWord("msInstaInProgress")
-    case "wake_unconfirmed": return nextWord("msInstaUnconfirmed")
-    case "wake_manual_required": return nextWord("msInstaManualStart")
-    case "wake_key_missing":
-    case "wake_key_relink": return nextWord("msInstaKeyMissing")
-    case "instabox_key_invalid":
-    case "instabox_key_too_broad":
-    case "instabox_key_refused": return nextWord("msInstaKeyRefused")
-    case "instabox_machine_not_found": return nextWord("msInstaMachineGone")
-    default: return nextWord("msInstaFailed")
-  }
+  return nextWord(instaBoxWakeReasonWord(error instanceof Error ? error.message : ""))
 }
 
 export type InstaBoxBinding = { schedule_clock_ready?: boolean; configured: boolean; credential_ready: boolean; schedule_webhook_wake_enabled?: boolean; schedule_webhook_wake_status?: string | null }
