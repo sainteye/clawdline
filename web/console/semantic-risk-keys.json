@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14880,
+  "englishKeys": 14886,
   "counts": {
     "negation": 3762,
-    "state": 2535,
-    "permission": 879,
+    "state": 2537,
+    "permission": 880,
     "deletion": 356,
     "uncertainty": 585
   },
-  "unionCount": 6303,
+  "unionCount": 6305,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -5965,6 +5965,8 @@
       "projectAssistants.settingsSaveUnknownCheck",
       "projectAssistants.settingsSaved",
       "projectAssistants.statusNotUsed",
+      "projectAssistants.steerFallbackPermission",
+      "projectAssistants.steerFallbackTurnEnded",
       "projectAssistants.stopAcknowledged",
       "projectAssistants.succeeded",
       "projectAssistants.teamApprovalHint",
@@ -7015,6 +7017,7 @@
       "projectAssistants.settingsRules",
       "projectAssistants.setup_cli_not_installed",
       "projectAssistants.sourcePairingRequired",
+      "projectAssistants.steerFallbackPermission",
       "projectAssistants.teamApprovalHint",
       "projectAssistants.templateClipboardError",
       "projectAssistants.templateCoverage",
@@ -13591,6 +13594,8 @@
     "projectAssistants.statusNotUsed",
     "projectAssistants.statusStale",
     "projectAssistants.statusWithoutBots",
+    "projectAssistants.steerFallbackPermission",
+    "projectAssistants.steerFallbackTurnEnded",
     "projectAssistants.stopAcknowledged",
     "projectAssistants.stopUnconfirmed",
     "projectAssistants.succeeded",

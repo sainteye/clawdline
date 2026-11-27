@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
-import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary,replyInputPreference,steerFallback,queuedSendNowShown,steerFallbackReason,replyInputPatch } from "./read-views.ts"
+import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary,replyInputPreference,steerFallback,queuedSendNowShown,steerFallbackReason,replyInputPatch,queuedSendNow } from "./read-views.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { en,zhHant as zh } from "./words.ts"
 // @ts-expect-error -- Node executes source extensions.
@@ -311,4 +311,12 @@ test("saving settings sends reply_input only when the switch moved from what the
   assert.deepEqual(replyInputPatch(bot,"queue"),{reply_input:"queue"})
   assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"queue"),{})
   assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"steer"),{reply_input:"steer"})
+})
+test("send now on a queued message follows the source's steering capability and the Agent's refusal",()=>{
+  const steering={canReplyInput:()=>true},older={}
+  assert.equal(queuedSendNow(steering,bot,{steer_fallback:""},[]),false)
+  assert.equal(queuedSendNow(steering,bot,{steer_fallback:"turn_ended"},[]),true)
+  assert.equal(queuedSendNow(steering,bot,{steer_fallback:"turn_ended"},[bot.agent]),false)
+  assert.equal(queuedSendNow(older,bot,undefined,[]),true)
+  assert.equal(queuedSendNow(steering,{...bot,reply_input:"queue"},undefined,[]),true)
 })

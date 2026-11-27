@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14880,
-  "riskKeys": 6303,
-  "nonRiskCount": 8577,
+  "englishContentKeys": 14886,
+  "riskKeys": 6305,
+  "nonRiskCount": 8581,
   "groups": [
     {
       "name": "acp / other",
@@ -6376,7 +6376,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 747,
+      "count": 751,
       "sources": [
         null
       ],
@@ -6984,6 +6984,10 @@
         "projectAssistants.statusOffline",
         "projectAssistants.statusOneOk",
         "projectAssistants.statusShow",
+        "projectAssistants.steerFallbackAgent",
+        "projectAssistants.steerFallbackImages",
+        "projectAssistants.steerFallbackQueued",
+        "projectAssistants.steerFallbackScope",
         "projectAssistants.steeredMessage",
         "projectAssistants.stop",
         "projectAssistants.stopSending",

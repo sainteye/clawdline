@@ -297,6 +297,11 @@ export function steerFallback(turn:object|undefined):string {
 export function queuedSendNowShown(preference:"queue"|"steer",fallback:string):boolean {
   return preference==="queue"||fallback!==""
 }
+/** Whether a queued message offers send now: never on an Agent that refused steering, and on a
+ *  steering Bot only after the source put it back in the queue. */
+export function queuedSendNow(source:{canReplyInput?:()=>boolean},bot:Pick<W.ProjectAssistantBot,"reply_input"|"agent">,turn:object|undefined,refused:readonly string[]):boolean {
+  return !refused.includes(bot.agent)&&queuedSendNowShown(source.canReplyInput?.()?replyInputPreference(bot):"queue",steerFallback(turn))
+}
 type FallbackWords={steerFallbackAgent:string;steerFallbackImages:string;steerFallbackPermission:string;steerFallbackTurnEnded:string;steerFallbackScope:string;steerFallbackQueued:string}
 /** The short reason shown under a message the source put back in the queue. */
 export function steerFallbackReason(code:string,w:FallbackWords):string {
