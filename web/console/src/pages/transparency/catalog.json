@@ -6060,7 +6060,7 @@
     "web/console/src/realtime/copilot-reports.ts": "fab8d50097148fca089bd64286e8e3d7b162ad1cd9ed7e3f7147043c073af598",
     "web/console/src/realtime/copilot-session-boards.ts": "160620f182f4024e6a5a7b5e2efbf08797b1dcfb1863eefc7db1354d3bcdebc2",
     "web/console/src/realtime/copilot-speech.ts": "8b8eb91730f934c0081bbce5dc176f400cd279653b1a18e543ac71e6688fa502",
-    "web/console/src/realtime/copilot-tools.ts": "00d4b7fbfe5630170c12ae43c758f6e34ea33adcd79bf46b6068cd37c90efd65",
+    "web/console/src/realtime/copilot-tools.ts": "88e51e5ae0a1be625bca3c4cb6cd2022ba88e4eeeb2394c8af6184770b8c6775",
     "web/console/src/realtime/realtime-copilot.ts": "85f57c0aed8034ff6264f8d0c16324cc1ad3229562c4307fa3329516f062b441",
     "web/console/src/session/Composer.tsx": "29c567ffce527079e3269cdb17bcf5dcfbda1da9c1dfdb3fff5825470cafca42",
     "web/console/src/session/RotationNotice.tsx": "2a5d87ade804894bc409279d44ae2df642d71d113a2baa6f9b54d6e5dbeab714",
@@ -6078,7 +6078,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "01484a2a923a0bd416f3e7d495038343a76d235e802108cc48055c5277532e3f",
-    "zh-Hant": "3b3f97e093d1d5a404b985614d84d3b22b3d6d1400acb143b6f66c0e29cc2ccf"
+    "en": "6bee272da6235379e75d4e7b417f59c16d3ade1bbaad087e54f19968f46ceafa",
+    "zh-Hant": "5ab3f4f455edaca90dce08eb008633ccbfa02bab4b3bd2d831bbca2d3fd9e994"
   }
 }

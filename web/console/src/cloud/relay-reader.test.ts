@@ -20,6 +20,8 @@ import { SESSION_LIST_READ } from "../pages/work/session-assignment.ts"
 import { SESSION_INVENTORY_ID } from "../legacy/js/net/client.js"
 // @ts-expect-error -- Node runs the source test with type stripping.
 import { listRunningAgents, backgroundCounts, showsBackground } from "../session/background.ts"
+// @ts-expect-error -- Node runs the source test with type stripping.
+import { runCopilotTool } from "../realtime/copilot-tools.ts"
 
 test("Cloud restores provider work from the rich row when its display list omits agents", async () => {
   for (const fleet of [false, true]) {
@@ -2629,6 +2631,30 @@ test("a voice question read targets its named machine and applies the returned r
  assert.equal(res.status,200)
  assert.deepEqual(client.reads.at(-1),{machine:'mac-b',word:'sessions.row',body:{row:'%19'}})
  assert.deepEqual(applied,['mac-b'])
+})
+
+test("Cloud fleet voice close reads the selected machine's full closeability", async () => {
+  const client = new FakeClient()
+  Object.assign(client, { _machineImplements: (_machine: string, word: string) => word === "sessions.row" ? "yes" : "unknown" })
+  const session = { id: "%19", label: "Fixture Session", execution_generation: "a".repeat(32) }
+  client.readAnswer = async () => ({ sessions: ["%19"], complete: true, row: {
+    session: { ...session, closeability: {
+      state: "blocked", version: "cl1_fixture", reasons: [{ kind: "obligation", code: "board_item_open" }],
+    } }, at: 10, scan: {},
+  } })
+  const cloud = reader(client, { t: 10_000 })
+  const result = await runCopilotTool("close_session", JSON.stringify({
+    session_id: "fleet:mac-b:%2519", session_label: session.label,
+  }), {
+    fetch: (path, init) => cloud.fetch(path, init),
+    sleep: async () => {},
+    fleet: async () => [{ machine: "mac-b", machineName: "Machine B", row: session }],
+  })
+  const output = JSON.parse(result.output)
+  assert.match(output.error, /unfinished Board item/)
+  assert.equal(output.needs_confirmation, true)
+  assert.equal(output.closeability_version, "cl1_fixture")
+  assert.deepEqual(client.reads, [{ machine: "mac-b", word: "sessions.row", body: { row: "%19" } }])
 })
 
 test('GitHub report asks the selected Session machine with its exact conversation and date bounds', async () => {

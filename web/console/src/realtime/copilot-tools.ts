@@ -36,6 +36,8 @@ import { UNOPENED_MACHINE_HEADER, UNOPENED_READ_HEADER } from "../cloud/unopened
 import { helpContents, helpRead, type HelpSection } from "./copilot-help.ts"
 // @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
 import { menuFingerprint } from "../session/fingerprint.ts"
+// @ts-expect-error -- Node's strip-types runner loads this source in its test suite.
+import { listSeparator } from '../punctuation.ts'
 // @ts-expect-error -- Node executes the TypeScript source in tests.
 import { COPILOT_SPEECH_GUIDANCE, COPILOT_WORK_DISABLED_GUIDANCE } from './copilot-speech.ts'
 
@@ -260,7 +262,7 @@ export const COPILOT_INSTRUCTIONS = `你是 Clawdline 的語音副駕駛，也�
 - end_call：依對話脈絡判斷使用者要結束這通電話時就呼叫。工具接受後，只說一句簡短的道別。
 - set_speaking_speed、set_answer_length：使用者要你講快／慢一點、簡短／詳細一點時，直接呼叫，不必再確認；調完用一句話說「好，我會講慢一點」之類，然後照新的方式講。
 - smart_rename_sessions：用 Clawdline 的「智慧命名」替一個或幾個 Session 重新取名（機器上的助理依它的對話內容取名）。見下面【智慧命名】。
-- close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。機器說它還不能安全關閉（例如還在工作、還有交付沒落地）時，照實說原因，再問一次「它還不能安全關閉，還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 再呼叫一次，沒說要就不關。
+- close_session：使用者要你關閉某個 Session 時，先用名稱問一次「確定要關閉某某嗎？」，得到肯定回答才呼叫。工具回報無法關閉時，先照實說具體原因。只有 needs_confirmation 為 true 才問「還是要關閉嗎？」；使用者明確說要，才帶 force_confirmed: true 和結果原樣回傳的 closeability_version 再呼叫。版本只交給工具，不要念給使用者。
 - send_message_to_session：呼叫即會送出，不是準備擬稿。凡是你整理、改寫或推測的內容，呼叫前先念完整收件對象與訊息、詢問並等同意。由你判斷確認是否完成，已同意的相同內容不要重問；不得先送出再確認。switch_confirmed 只表示已確認收件對象。
 - clawdline_help：使用者問 Clawdline 怎麼用、功能在哪、怎麼設定時呼叫，只依回傳的說明段落回答，兩三句講出步驟與位置；沒有回傳任何段落，就說說明文件沒有寫到這個，不要自己猜。
 - get_devstack_links：使用者要看或打開某個專案的 Dev Stack（連結清單、網站、伺服器）時呼叫；要在畫面上打開就填 open=true。專案名稱不確定就先呼叫 list_projects。念連結時只說名稱和狀態，絕對不要念網址（使用者要網址時才念）。
@@ -646,7 +648,7 @@ export const COPILOT_TOOLS = [
   {
     type: 'function',
     name: 'close_session',
-    description: '關閉一個 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因；使用者聽過原因、仍明確說要關閉時，帶 force_confirmed: true 再呼叫一次。',
+    description: '關閉一個 Session。只在使用者明確要求關閉、而且你已經問過「確定要關閉某某嗎」並得到肯定回答之後呼叫。機器判斷還不能安全關閉時不會關，會回報原因。結果有 needs_confirmation 時，使用者聽過原因、仍明確說要關閉，才帶 force_confirmed: true 和原樣照抄的 closeability_version 再呼叫。',
     parameters: {
       type: 'object',
       properties: {
@@ -654,6 +656,7 @@ export const COPILOT_TOOLS = [
         session_label: { type: 'string', description: '你跟使用者講的這個 Session 的名稱，必須就是這個 id 的 Session' },
         switch_confirmed: { type: 'boolean', description: '要動的不是目前正在討論的 Session，而使用者已明確確認要改到這個時才填 true' },
         force_confirmed: { type: 'boolean', description: '你已經把「還不能安全關閉」的原因告訴使用者，而他明確說還是要關閉時才填 true' },
+        closeability_version: { type: 'string', description: '強制關閉時照抄使用者剛確認的那次 close_session 工具結果所回傳的 closeability_version' },
       },
       required: ['session_id', 'session_label'],
     },
@@ -1001,9 +1004,7 @@ function rowsOf(data: unknown): CopilotSessionRow[] {
       if (close && typeof close === 'object') {
         row.closeable = str(close.state)
         if (str(close.version)) row.closeVersion = str(close.version)
-        if (Array.isArray(close.reasons)) {
-          row.closeReasons = close.reasons.map((r) => (r && typeof r === 'object' ? str((r as { code?: unknown }).code) : str(r))).filter(Boolean)
-        }
+        row.closeReasons = closeReasonCodes(close.reasons)
       }
       if (str(s.sessionId)) row.conversation = str(s.sessionId)
       const menu = s.menu as { question?: unknown; options?: unknown } | undefined
@@ -2899,13 +2900,74 @@ export function adjustEvent(snapshot: string, options: CallOptions): Record<stri
     audio: { output: { speed: full.session.audio.output.speed } } } }
 }
 
-/** What a close refusal's reason codes mean to a person. */
-const CLOSE_REASONS: Record<string, string> = {
-  terminal_working: '它還在工作',
-  session_identity_unbound: '機器還認不出它是哪個對話',
+/** What the daemon's closeability reasons mean aloud. */
+const CLOSE_REASONS: Record<string, [string, string]> = {
+  terminal_working: ['it is still working', '它還在工作'],
+  terminal_waiting_you: ['it is waiting for your answer', '它還在等你回答'],
+  terminal_unreadable: ['the machine could not read its terminal state', '機器讀不到它的終端狀態'],
+  session_identity_unbound: ['the machine could not identify its conversation', '機器還認不出它是哪個對話'],
+  session_identity_ambiguous: ['the machine could not identify a unique Session execution', '機器無法核對唯一的 Session 執行身分'],
+  session_inventory_missing: ['the machine has no Session inventory yet', '機器還沒有 Session 清單的掃描結果'],
+  session_inventory_stale: ['the latest Session scan is stale or incomplete', '最新的 Session 清單掃描已過期或尚未完成'],
+  obligation_list_unreadable: ['the machine could not read its outstanding obligations', '機器讀不到它尚未結清的責任'],
+  session_work_unreadable: ['the machine could not read its Board items or to-dos', '機器讀不到它的看板項目或待辦'],
+  own_records_unreadable: ['the machine could not read its task or coordination records', '機器讀不到它的任務或協調紀錄'],
+  own_task_unfinished: ['its own task is unfinished', '它負責的任務尚未完成'],
+  live_descendant_task: ['a child Session is still working', '有子 Session 還在工作'],
+  task_without_result: ['a finished task has yet to return its result', '有已完成的任務尚未回傳成果'],
+  pending_landing_owned: ['a delivery still needs to be landed or closed out', '有交付尚未落地或結案'],
+  coordination_wait_owned: ['another Session is waiting for it to release work', '有其他 Session 在等它釋放工作'],
+  coordination_wait_waiting: ['it is waiting for another Session to release work', '它在等其他 Session 釋放工作'],
+  open_handoff: ['a handoff is still open', '有交接尚未完成'],
+  completion_undelivered: ['a completion message has yet to be acknowledged', '有完成通知尚未確認'],
+  owed_decision: ['a decision is still pending', '有決定尚未作出'],
+  dirty_isolated_worktree: ['a task worktree has uncommitted changes', '有任務工作樹還有未提交的修改'],
+  touched_claims_without_closure: ['changed files still need to be landed or closed out', '有修改的檔案尚未落地或結案'],
+  board_item_unstarted: ['it owns a Board item that has yet to start', '它負責的看板項目尚未開始'],
+  board_item_open: ['it owns an unfinished Board item', '它負責的看板項目尚未完成'],
+  session_todo_open: ['it has an unfinished to-do', '它還有待辦未完成'],
+  dispatch_todo_open: ['it has an unfinished dispatch to-do', '它還有派工待辦未完成'],
+  wait: ['a coordination wait is still open', '有協調等待尚未結束'],
+  landing: ['a delivery still needs to be landed', '有交付尚未落地'],
+  handoff: ['a handoff is still open', '有交接尚未完成'],
+  succession: ['a machine role handover is unfinished', '有機器角色交接尚未完成'],
+  assignment: ['an assignment is still pending', '有指派尚未結案'],
+  deadletter: ['a completion message has yet to be acknowledged', '有完成通知尚未確認'],
+  review: ['a delivery is awaiting independent review', '有交付正在等待獨立審查'],
 }
 
-async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, said = '', switchConfirmed = false, forceConfirmed = false): Promise<unknown> {
+function closeReasonCodes(reasons: unknown): string[] {
+  if (!Array.isArray(reasons)) return []
+  return reasons.map((r) => str(r && typeof r === 'object' ? (r as { code?: unknown }).code : r)).filter(Boolean)
+}
+
+function closeReasonText(reasons: string[]): string {
+  const messages = reasons.map(code => Object.hasOwn(CLOSE_REASONS, code)
+    ? say(...CLOSE_REASONS[code]!)
+    : say(`the machine reported an unfamiliar reason (${code})`, `機器回報了無法辨識的原因（${code}）`))
+  return [...new Set(messages)].join(listSeparator())
+}
+
+async function readFleetCloseability(deps: ToolDeps, row: CopilotSessionRow): Promise<CopilotSessionRow | { error: string }> {
+  const res = await rowFetch(deps, row)(`/v1/sessions?look=${encodeURIComponent(sid(row))}`, NAMED_READ).catch(() => null)
+  if (!res) return { error: say('the target machine did not answer the read', '指定的機器沒有回應查詢') }
+  const body: unknown = await res.json().catch(() => null)
+  if (!res.ok) {
+    const { code, message } = copilotRefusal(body, res.status)
+    return { error: message || code }
+  }
+  // Cloud sessions.row wraps the full Session in its signed rich-row payload.
+  const answer = body as { row?: { session?: unknown } } | null
+  const [fresh] = rowsOf({ sessions: [answer?.row?.session] })
+  if (!fresh) return { error: say('the machine returned no current Session row', '機器沒有回傳目前的 Session 資料') }
+  if (!row.execution || fresh.execution !== row.execution || fresh.id !== sid(row)) {
+    return { error: say('the Session execution changed or could not be verified', 'Session 執行身分已變更或無法核對') }
+  }
+  return fresh
+}
+
+async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, said: string, switchConfirmed: boolean,
+  forceConfirmed: boolean, confirmedVersion: string): Promise<unknown> {
   const read = await readRows(deps)
   if ('error' in read) {
     logs.push({ level: 'error', text: read.error })
@@ -2922,44 +2984,47 @@ async function closeSession(deps: ToolDeps, logs: ToolLog[], wanted: string, sai
     logs.push({ level: 'error', text: refused })
     return { error: refused }
   }
-  const meaning = (codes: string[]) => codes.map((c) => CLOSE_REASONS[c] ?? c)
-  // As the console's close sheet does (`overlays/action-confirm.ts`): a close
-  // the machine calls unsafe is said with its reasons and asked again; only
-  // the person's second, explicit "still close" sends `force`, pinned to the
-  // reading those reasons came from, and the machine still decides.
-  const unsafe = (reasons: string[]) => ({
-    error: `「${row.label}」現在還不能安全關閉${reasons.length ? `：${meaning(reasons).join('、')}` : ''}。先把原因告訴使用者，問他「還是要關閉嗎？」；他明確說要，才帶 force_confirmed: true 再呼叫`,
-    needs_confirmation: true,
-    reasons,
-  })
-  const force = forceConfirmed && row.closeable !== 'safe'
-  if (row.closeable !== 'safe' && !forceConfirmed) {
-    const asked = unsafe(row.closeReasons ?? [])
-    logs.push({ level: 'info', text: say(`"${row.label}" cannot be closed safely yet; waiting for the person to confirm`, `「${row.label}」還不能安全關閉，等使用者確認`) })
-    return asked
+  const failure = (why: string, reasons: string[] = [], code?: string) => {
+    const error = say(`Could not close "${row.label}". ${why}`, `沒有關閉「${row.label}」。${why}`)
+    logs.push({ level: 'error', text: error })
+    return { error, label: row.label, reasons, ...(code ? { code } : {}) }
   }
+  // Fleet presentations deliberately omit closeability. Read the named
+  // execution's full row before judging whether the user needs to confirm.
+  const reading = row.machine && (!row.closeVersion || row.closeable !== 'safe' && !row.closeReasons?.length)
+    ? await readFleetCloseability(deps, row) : row
+  if ('error' in reading) {
+    return failure(say(`Could not read its closeability because ${reading.error}`, `讀不到關閉判定，原因是${reading.error}`))
+  }
+  const { closeable, closeVersion, closeReasons: reasons = [] } = reading
+  const why = closeReasonText(reasons)
+  if (closeable !== 'safe') {
+    if (!why) return failure(say('The machine returned no closeability reasons for this Session.', '機器沒有回傳這個 Session 的關閉判定原因。'))
+    if (!closeVersion || reasons.includes('session_inventory_stale') || reasons.includes('session_inventory_missing') ||
+        (closeable !== 'blocked' && closeable !== 'unknown')) {
+      return failure(why, reasons)
+    }
+    // The confirmation covers this execution and the reasons the user heard.
+    if (!forceConfirmed || confirmedVersion !== closeVersion) {
+      const error = say(`"${row.label}" cannot be closed safely yet because ${why}. Do you want to close it anyway?`,
+        `「${row.label}」現在還不能安全關閉，原因是${why}。還是要關閉嗎？`)
+      logs.push({ level: 'info', text: error })
+      return { error, label: row.label, needs_confirmation: true, closeability_version: closeVersion, reasons }
+    }
+  }
+  if (!closeVersion) return failure(say('The machine did not provide a closeability version.', '機器沒有回傳可核對的關閉判定版本。'))
+
+  const force = closeable !== 'safe'
   const res = await rowFetch(deps, row)(`/v1/sessions/${encodeURIComponent(sid(row))}/close`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Idempotency-Key': (deps.newRequestID ?? (() => crypto.randomUUID()))(), [UNOPENED_READ_HEADER]: '1' },
-    body: JSON.stringify({ force, ...(row.closeVersion ? { expected_closeability_version: row.closeVersion } : {}) }),
+    body: JSON.stringify({ force, expected_closeability_version: closeVersion }),
   })
   if (!res.ok) {
-    let reasons: string[] = []
-    try {
-      const body = (await res.clone().json()) as { error?: { code?: unknown; reasons?: unknown } }
-      if (Array.isArray(body.error?.reasons)) reasons = body.error.reasons.map((r) => (r && typeof r === 'object' ? str((r as { code?: unknown }).code) : str(r))).filter(Boolean)
-    } catch {
-      // refusal-ok: a refusal without reasons is still said by its HTTP status and message below.
-    }
-    // The row said safe but the machine found something owed: ask, as above.
-    if (!force && res.status === 409 && reasons.length) {
-      logs.push({ level: 'info', text: say(`"${row.label}" cannot be closed safely yet; waiting for the person to confirm`, `「${row.label}」還不能安全關閉，等使用者確認`) })
-      return unsafe(reasons)
-    }
-    const detail = await refusalText(res)
-    const error = `沒有關閉「${row.label}」（HTTP ${res.status}${reasons.length ? `：${meaning(reasons).join('、')}` : detail ? `：${detail}` : ''}）`
-    logs.push({ level: 'error', text: error })
-    return { error, reasons }
+    const body = await res.json().catch(() => null) as { reasons?: unknown; error?: { reasons?: unknown } } | null
+    const { code, message } = copilotRefusal(body, res.status)
+    const returned = closeReasonCodes(body?.reasons ?? body?.error?.reasons)
+    return failure(closeReasonText(returned) || message || code, returned, code)
   }
   logs.push({ level: 'info', text: force ? say(`Force-closed "${row.label}" as the person confirmed`, `已照使用者確認強制關閉「${row.label}」`) : say(`Closed "${row.label}"`, `已關閉「${row.label}」`) })
   return { closed: true, label: row.label, ...(force ? { forced: true } : {}) }
@@ -3257,7 +3322,7 @@ async function executeCopilotTool(name: string, argsJson: string, deps: ToolDeps
     else if (name === 'get_call_status') result = callStatusOf(deps, logs)
     else if (name === 'end_call') result = endCallTool(deps, logs)
     else if (name === 'smart_rename_sessions') result = await smartRenameSessions(deps, logs, Array.isArray(args.sessions) ? args.sessions.map(str) : [], args.confirmed === true)
-    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true)
+    else if (name === 'close_session') result = await closeSession(deps, logs, str(args.session_id), str(args.session_label), args.switch_confirmed === true, args.force_confirmed === true, str(args.closeability_version))
     else if (name === 'list_machines') result = await listMachines(deps, logs)
     else if (name === 'list_projects') result = await listProjects(deps, logs, str(args.machine_id))
     else if (name === 'start_session') result = await startSession(deps, logs, args)

@@ -232,12 +232,17 @@ said so instead. A call placed from a Session on 所有機器 is first told the 
 asked the person to confirm three times before a send by whole name went through. Once the
 opening handover finds the listed row, the instructions are resent with its id, and a write or
 read naming the raw id of the Session under discussion resolves to that row; a raw id never
-selects another machine's Session of the same id. `close_session` closes a Session the person named and confirmed, with `force:
-false` and that reading's version when its row's closeability is `safe`. When it is not, or the
-machine answers 409 with reasons, the copilot says the reasons and asks again whether to close
-anyway, as the console's close sheet does (`overlays/action-confirm.ts`); only the person's
-explicit yes (`force_confirmed`) sends `force: true`, pinned to the version those reasons came
-from, and the machine still decides.
+selects another machine's Session of the same id.
+
+**Closing a Session.** The fleet list omits the closeability reading. `close_session` asks
+the named machine for the full row when the list lacks that evidence and checks that the row
+belongs to the selected execution. It says the machine's specific reasons in everyday words,
+or explains why it could not verify the reading. A safe reading sends `force: false` and the
+reading's version. An eligible blocked or unreadable reading offers a separate confirmation
+with that version. Only an explicit yes for that reading sends `force: true`. A change to the
+reading requires a new decision. The daemon still checks the identity, inventory and version
+before closing. If the daemon refuses the write, the voice tool reports the refusal's reasons
+or detail.
 
 **Smart naming.** Asked which Sessions' names no longer match their work, the copilot reads
 `get_sessions_summary`, says which ones it would rename and why, and asks once. On a yes,
