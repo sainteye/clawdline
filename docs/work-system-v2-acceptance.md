@@ -118,8 +118,9 @@ requires a new person-created item. Deployment-policy changes remain versioned a
 
 Given Session A owns item X and Session B owns item Y, A may edit X's title/description,
 documents, steps, condition, and lifecycle phase. A is refused on Y; B is refused on X; an
-unassigned item refuses both. A stale live-session reading produces `owner_identity_unknown`, not
-permission.
+unassigned item refuses both. A stale live-session reading is refused, not treated as
+permission: the daemon answers `session_unresolved` (503) or the broker's typed refusal from
+`LiveRootSession`; no route answers `owner_identity_unknown`.
 
 ### WS2-A03 — Concurrent edits do not overwrite
 

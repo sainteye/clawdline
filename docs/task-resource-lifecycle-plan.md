@@ -203,7 +203,8 @@ this plan does not change existing native tool permissions.
 ## Policy decision
 
 The selected settings below are approved for implementation, not a statement
-that the running daemon has changed. Each value is configurable per machine.
+that the running daemon has changed. The values are compiled constants
+(`taskresource.DefaultPolicy`); no per-machine setting exists yet.
 Register every new bound in `internal/domain/capacity` and demonstrate its guard
 rejecting an unregistered bound before the final green check.
 
