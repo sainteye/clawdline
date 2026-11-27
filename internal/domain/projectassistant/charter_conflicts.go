@@ -105,7 +105,7 @@ func ValidateCharterConflict(c CharterConflict) error {
 			return fail(Invalid, "path")
 		}
 	case ConflictInPlaybook:
-		if !strings.HasPrefix(c.Path, "pb-") || len(c.Path) > maxCharterPlaybookIDBytes || !validOneLine(c.Path) {
+		if !strings.HasPrefix(c.Path, "pb-") || len(c.Path) > MaxCharterPlaybookIDBytes || !validOneLine(c.Path) {
 			return fail(Invalid, "path")
 		}
 	default:

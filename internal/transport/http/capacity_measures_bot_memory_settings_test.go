@@ -34,13 +34,24 @@ func TestBotCharterCapacityReadsDurableUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for i, p := range []pa.CharterPlaybook{{Title: "發布", Text: "Tag", BotIDs: []string{"a", "b"}}, {Title: "Review", Text: "Two approvals"}} {
+		if _, err := st.SaveCharterPlaybook(t.Context(), projectassistantstore.CharterPlaybookWrite{MachineID: "two", ProjectID: "p1", ExpectedVersion: int64(i + 1), Playbook: p, IdempotencyKey: p.Title, At: time.Now()}); err != nil {
+			t.Fatal(err)
+		}
+	}
 	measures := f.s.capacityMeasures()
 	for name, want := range map[string]int64{
-		"bots.charter_versions":     2,
-		"bots.charter_proposals":    2,
-		"bots.charter_projects":     2,
-		"bots.charter_text_bytes":   int64(len("團隊章程")),
-		"bots.charter_reason_bytes": int64(len("章程")),
+		"bots.charter_playbooks":            2,
+		"bots.charter_playbook_text_bytes":  int64(len("Two approvals")),
+		"bots.charter_playbook_title_bytes": int64(len("發布")),
+		"bots.charter_playbook_bots":        2,
+		"bots.charter_playbook_id_bytes":    int64(len("pb-") + 16),
+		"bots.charter_document_bytes":       int64(len("Remote") + len("Tag") + len("Two approvals")),
+		"bots.charter_versions":             3,
+		"bots.charter_proposals":            2,
+		"bots.charter_projects":             2,
+		"bots.charter_text_bytes":           int64(len("團隊章程")),
+		"bots.charter_reason_bytes":         int64(len("章程")),
 	} {
 		if got := measures[name](); !got.Known || got.Used != want {
 			t.Errorf("%s = %+v; want known usage %d", name, got, want)

@@ -24,8 +24,8 @@ const (
 	// MaxCharterDocumentBytes bounds one version's charter text plus the text
 	// of all its playbooks, which is the most any Bot's prompt can carry.
 	MaxCharterDocumentBytes = 128 << 10
-	// maxCharterPlaybookIDBytes bounds a daemon-issued playbook identifier.
-	maxCharterPlaybookIDBytes = 64
+	// MaxCharterPlaybookIDBytes bounds a daemon-issued playbook identifier.
+	MaxCharterPlaybookIDBytes = 64
 )
 
 // CharterPlaybook is one playbook of a charter version. ID is issued by the
@@ -140,7 +140,7 @@ func validOneLine(s string) bool {
 // ValidateCharterPlaybook checks one playbook as the person wrote it. The id
 // is empty for a new one.
 func ValidateCharterPlaybook(p CharterPlaybook) error {
-	if p.ID != "" && (!strings.HasPrefix(p.ID, "pb-") || len(p.ID) > maxCharterPlaybookIDBytes || !validOneLine(p.ID) || strings.ContainsAny(p.ID, `"<>& `)) {
+	if p.ID != "" && (!strings.HasPrefix(p.ID, "pb-") || len(p.ID) > MaxCharterPlaybookIDBytes || !validOneLine(p.ID) || strings.ContainsAny(p.ID, `"<>& `)) {
 		return fail(Invalid, "playbook_id")
 	}
 	if strings.TrimSpace(p.Title) == "" || !validOneLine(p.Title) {
