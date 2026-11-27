@@ -732,3 +732,54 @@ func (s *Store) BotRequestOccupancy(ctx context.Context, now time.Time) (BotRequ
 	) SELECT coalesce(max(depth), 0) FROM walk`, br.MaxMergeHops).Scan(&o.MergeHops)
 	return o, err
 }
+
+// ClearBotRequestWaitingTx takes every open card waiting on question out of
+// "Waiting for you", inside the commit that closed that question, so the
+// card and the question can never disagree (docs/bot-request-cards.md §7.3).
+// by is the person when they answered, and the asking Bot when it withdrew
+// the question or the question expired. A card already cleared, or waiting
+// on another question, is not written, so a replayed commit writes nothing.
+func (s *Store) ClearBotRequestWaitingTx(ctx context.Context, tx *sql.Tx, question string, by br.Actor, now time.Time) error {
+	if question == "" {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT id FROM bot_request_cards WHERE state = 'open' AND waiting = ? ORDER BY id`, question)
+	if err != nil {
+		return err
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		prev, err := loadBotRequest(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		next := prev
+		// The person is the one actor allowed to clear a wait without holding
+		// the card; a Bot's withdrawal is recorded under its name below.
+		if changed, err := next.SetWaiting(br.Actor{Person: true}, ""); err != nil || !changed {
+			return err
+		}
+		next.Version, next.UpdatedAt = prev.Version+1, now
+		if err := saveBotRequest(ctx, tx, next, prev.Verdicts); err != nil {
+			return err
+		}
+		if err := appendBotRequestEvent(ctx, tx, next, br.Event{Kind: br.EventWaitingCleared, Actor: by.Name(), Detail: question, At: now}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
