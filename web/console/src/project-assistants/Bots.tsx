@@ -27,7 +27,7 @@ import { emptyRosterState, getRosterState } from "./roster-state"
 import { TowerSlot, savedBotsView, saveBotsView, type BotsView } from "./tower/TowerSlot"
 import { useSheetSwipe } from "./tower/sheet-swipe"
 import { requestStatusRefresh } from "../status-refresh"
-import { personalWorkspaceNames, useCharterView } from "./useCharterView"
+import { charterAppearances, personalWorkspaceNames, useCharterView } from "./useCharterView"
 import type { CharterProject } from "./charter-api"
 import "./styles.css"
 
@@ -315,7 +315,7 @@ export function Bots({sources,connection="live",onClose,language="en",accountKey
     if(replace)history.replaceState(state,"")
     else history.pushState(state,"")
   }
-  const chatOpened=useRef<{ id: string; at: number } | null>(null),charter=useCharterView({sources,current,authorization,projectNames,personalNames:personalWorkspaceNames(allItems),w,language,narrow,manageHistory,historyID,writeHistory,selected,groupOpen,
+  const chatOpened=useRef<{ id: string; at: number } | null>(null),charter=useCharterView({sources,current,authorization,projectNames,personalNames:personalWorkspaceNames(allItems),appearances:charterAppearances(allItems),w,language,narrow,manageHistory,historyID,writeHistory,selected,groupOpen,
     setSettings:setBotsSettings,clear:{setSelected,setDestination,setGroupRoute,selectRef,lastSelected}})
   const select=(item:W.ProjectAssistantBotSummary,fromGroup=false)=>{
     const id=botIdentity(item.bot.key)
