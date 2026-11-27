@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14795,
-  "riskKeys": 6259,
-  "nonRiskCount": 8536,
+  "englishContentKeys": 14797,
+  "riskKeys": 6260,
+  "nonRiskCount": 8537,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 805,
+      "count": 806,
       "sources": [
         null
       ],
@@ -722,6 +722,7 @@
         "capacityRow.bots.config_cache_seconds.what",
         "capacityRow.bots.config_choices.what",
         "capacityRow.bots.config_probes.what",
+        "capacityRow.bots.connector_notifications.what",
         "capacityRow.bots.decision_answer_bytes.what",
         "capacityRow.bots.decision_offer_seconds.what",
         "capacityRow.bots.decision_question_bytes.what",

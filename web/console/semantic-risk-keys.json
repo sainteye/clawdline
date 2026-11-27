@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14795,
+  "englishKeys": 14797,
   "counts": {
-    "negation": 3734,
-    "state": 2520,
+    "negation": 3735,
+    "state": 2521,
     "permission": 876,
     "deletion": 345,
     "uncertainty": 585
   },
-  "unionCount": 6259,
+  "unionCount": 6260,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -218,6 +218,7 @@
       "capacityRow.bots.cloud_refresh_seconds.what",
       "capacityRow.bots.config_probes.full",
       "capacityRow.bots.config_value_bytes.full",
+      "capacityRow.bots.connector_notifications.full",
       "capacityRow.bots.connector_secret_targets.what",
       "capacityRow.bots.decision_offer_seconds.full",
       "capacityRow.bots.dispatch_hint_bytes.full",
@@ -3915,6 +3916,7 @@
       "capacityRow.bots.config_value_bytes.what",
       "capacityRow.bots.connector_credential_holds.full",
       "capacityRow.bots.connector_credentials.full",
+      "capacityRow.bots.connector_notifications.full",
       "capacityRow.bots.connector_processes.full",
       "capacityRow.bots.connector_secret_targets.full",
       "capacityRow.bots.decision_answer_bytes.full",
@@ -8492,6 +8494,7 @@
     "capacityRow.bots.connector_credential_holds.what",
     "capacityRow.bots.connector_credentials.full",
     "capacityRow.bots.connector_credentials.what",
+    "capacityRow.bots.connector_notifications.full",
     "capacityRow.bots.connector_processes.full",
     "capacityRow.bots.connector_processes.what",
     "capacityRow.bots.connector_secret_targets.full",
