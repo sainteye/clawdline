@@ -11,7 +11,7 @@ interface LocalEventConnection {
 /** EventSource.CLOSED: the browser gave up on this connection and will not retry. */
 const CLOSED = 2
 
-function closedForGood(cause: unknown): boolean {
+export function closedForGood(cause: unknown): boolean {
   return (cause as { target?: { readyState?: unknown } } | null)?.target?.readyState === CLOSED
 }
 

@@ -25,6 +25,9 @@ func TestConsoleReadWaitsAreRegistered(t *testing.T) {
 		{"web/console/src/pages/schedules-lane.ts", "SCHEDULE_RETRY_CEILING_MS", "console.schedule_retry_ceiling_milliseconds", Milliseconds, Expire},
 		{"web/console/src/poll.ts", "READS_OUT_PER_TARGET", "console.reads_out_per_target", Rows, Coalesce},
 		{"web/console/src/poll.ts", "HELD_READ_LOST_MS", "console.held_read_lost_milliseconds", Milliseconds, Expire},
+		{"web/console/src/client.ts", "FLEET_RECONNECT_FIRST_MS", "console.fleet_retry_first_milliseconds", Milliseconds, Refuse},
+		{"web/console/src/client.ts", "FLEET_RECONNECT_CEILING_MS", "console.fleet_retry_ceiling_milliseconds", Milliseconds, Refuse},
+		{"web/console/src/client.ts", "FLEET_RECONNECT_ATTEMPTS", "console.fleet_retry_attempts", Rows, Refuse},
 	} {
 		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(spec.file)))
 		if err != nil {
