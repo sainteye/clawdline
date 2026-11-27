@@ -2,6 +2,8 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
+import { inCatalog } from "../catalog-testing.ts"
+// @ts-expect-error -- Node executes source extensions.
 import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary,replyInputPreference,steerFallback,steerFallbackReason,replyInputPatch,queuedSendNow } from "./read-views.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { en,zhHant as zh } from "./words.ts"
@@ -332,6 +334,14 @@ test("each steer fallback code reads as a short reason, and an unknown code as p
   assert.equal(steerFallbackReason("agent_unsupported",zh),"這個 agent 不支援插話，已排隊")
   assert.equal(steerFallbackReason("images_unsupported",zh),"這個 agent 不支援帶圖插話，已排隊")
   assert.equal(steerFallbackReason("permission_pending",zh),"等待權限確認，已排隊")
+})
+test("steer_busy explains the other follow-up in both languages",()=>{
+  inCatalog("en",()=>assert.equal(steerFallbackReason("steer_busy",en),"Another message is being added to the reply, so this one is queued"))
+  inCatalog("zh-Hant",()=>assert.equal(steerFallbackReason("steer_busy",zh),"另一則訊息正在插話，已排隊"))
+})
+test("not_sent explains that the message did not reach the agent in both languages",()=>{
+  inCatalog("en",()=>assert.equal(steerFallbackReason("not_sent",en),"This message didn’t reach the agent, so it’s queued"))
+  inCatalog("zh-Hant",()=>assert.equal(steerFallbackReason("not_sent",zh),"Agent 沒有收到這則訊息，已排隊"))
 })
 test("saving settings sends reply_input only when the switch moved from what the Bot holds",()=>{
   assert.deepEqual(replyInputPatch(bot,"steer"),{})

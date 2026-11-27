@@ -12410,6 +12410,8 @@
   "projectAssistants.steerFallbackPermission": "等待權限確認，已排隊",
   "projectAssistants.steerFallbackTurnEnded": "回覆已結束，已排隊",
   "projectAssistants.steerFallbackScope": "這則訊息無法加入目前回覆，已排隊",
+  "projectAssistants.steerFallbackBusy": "另一則訊息正在插話，已排隊",
+  "projectAssistants.steerFallbackNotSent": "Agent 沒有收到這則訊息，已排隊",
   "projectAssistants.steerFallbackQueued": "已排隊",
   "projectAssistants.reviewingAction": "正在審查操作",
   "projectAssistants.activityTool": "正在使用工具",

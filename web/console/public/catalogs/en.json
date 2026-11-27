@@ -12410,6 +12410,8 @@
   "projectAssistants.steerFallbackPermission": "Waiting for a permission answer, so it’s queued",
   "projectAssistants.steerFallbackTurnEnded": "The reply had already finished, so it’s queued",
   "projectAssistants.steerFallbackScope": "This message can’t join the current reply, so it’s queued",
+  "projectAssistants.steerFallbackBusy": "Another message is being added to the reply, so this one is queued",
+  "projectAssistants.steerFallbackNotSent": "This message didn’t reach the agent, so it’s queued",
   "projectAssistants.steerFallbackQueued": "Queued",
   "projectAssistants.reviewingAction": "Reviewing an action",
   "projectAssistants.activityTool": "Using a tool",

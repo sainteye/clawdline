@@ -3,6 +3,8 @@ import {inputMetadata} from "./inputs.ts"
 // @ts-expect-error -- Node strip-types source extension.
 import {outputMetadata} from "./outputs.ts"
 import type * as W from "@clawdline/contract"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { catalogWord } from "../catalog.ts"
 // @ts-expect-error -- Runtime enums use the generated source extension for Node's strip-types runner.
 import { ProjectAssistantAccessValues, ProjectAssistantAgentValues, ProjectAssistantShapeValues, ProjectAssistantPermissionPolicyValues, ProjectAssistantSourceStateValues, ProjectAssistantNativeMemoryModeValues, ProjectAssistantTurnStateValues, ProjectAssistantPermissionStateValues, ProjectAssistantMessageKindValues, ProjectAssistantWorkStateValues, ProjectAssistantEventKindValues, ProjectAssistantErrorCodeValues, ProjectAssistantReadViewModeValues } from "../../../contract/src/generated.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -301,6 +303,8 @@ export function steerFallbackReason(code:string,w:FallbackWords):string {
     case "permission_pending":return w.steerFallbackPermission
     case "turn_ended":return w.steerFallbackTurnEnded
     case "scope":return w.steerFallbackScope
+    case "steer_busy":return catalogWord("projectAssistants", "steerFallbackBusy")
+    case "not_sent":return catalogWord("projectAssistants", "steerFallbackNotSent")
     default:return w.steerFallbackQueued
   }
 }
