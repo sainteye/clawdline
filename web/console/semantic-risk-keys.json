@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14802,
+  "englishKeys": 14804,
   "counts": {
-    "negation": 3739,
-    "state": 2522,
+    "negation": 3740,
+    "state": 2523,
     "permission": 878,
     "deletion": 345,
     "uncertainty": 585
   },
-  "unionCount": 6263,
+  "unionCount": 6264,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -595,6 +595,7 @@
       "capacityRow.diagnostics.api_snapshot.full",
       "capacityRow.diagnostics.api_store.what",
       "capacityRow.diagnostics.doctor_version_seconds.full",
+      "capacityRow.diagnostics.report_bytes.full",
       "capacityRow.diagnostics.route_latency_samples.full",
       "capacityRow.diagnostics.route_stat_keys.full",
       "capacityRow.dispatch.also_work_ids.full",
@@ -4330,6 +4331,7 @@
       "capacityRow.diagnostics.doctor_history_seconds.full",
       "capacityRow.diagnostics.doctor_report_bytes.full",
       "capacityRow.diagnostics.doctor_version_bytes.what",
+      "capacityRow.diagnostics.report_bytes.full",
       "capacityRow.dispatch.also_work_ids.full",
       "capacityRow.dispatch.brief_held_grace_seconds.full",
       "capacityRow.dispatch.brief_held_grace_seconds.what",
@@ -9189,6 +9191,7 @@
     "capacityRow.diagnostics.doctor_report_bytes.full",
     "capacityRow.diagnostics.doctor_version_bytes.what",
     "capacityRow.diagnostics.doctor_version_seconds.full",
+    "capacityRow.diagnostics.report_bytes.full",
     "capacityRow.diagnostics.route_latency_samples.full",
     "capacityRow.diagnostics.route_stat_keys.full",
     "capacityRow.dispatch.also_work_ids.full",

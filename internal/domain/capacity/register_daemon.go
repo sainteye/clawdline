@@ -120,6 +120,15 @@ func legacyDaemonBounds() []Entry {
 			Sources: []string{"internal/transport/http.MaxRouteStatKeys"},
 		},
 		{
+			// One diagnostic report a page sends with "Send to Mac". Over it
+			// the report is refused whole, never truncated, and the last good
+			// report stays (docs/diagnostics.md). Half the daemon's command
+			// body bound, so report_too_large is the refusal a page sees.
+			Name: DiagnosticsReportBytes, Class: Buffer, Unit: Bytes,
+			Limit: 1 << 20, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+		},
+		{
 			// The recent durations each counted route keeps for its p50 and
 			// p90; the oldest is overwritten first. `max` is kept apart.
 			Name: DiagnosticsRouteLatencySamples, Class: Observation, Unit: Rows,

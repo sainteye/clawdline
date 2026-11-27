@@ -272,6 +272,11 @@
       "guide": "connect"
     },
     {
+      "method": "POST",
+      "pattern": "/v1/diagnostics/report",
+      "guide": "connect"
+    },
+    {
       "method": "*",
       "pattern": "/v1/events",
       "guide": "connect"

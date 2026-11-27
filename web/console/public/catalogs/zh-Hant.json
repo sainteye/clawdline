@@ -2117,6 +2117,8 @@
   "capacityRow.diagnostics.doctor_version_bytes.what": "CLI 版本檢查接受的輸出大小上限。",
   "capacityRow.diagnostics.doctor_version_seconds.full": "CLI 回應過慢時標示逾時，不阻擋其他檢查。",
   "capacityRow.diagnostics.doctor_version_seconds.what": "手動檢查每個 CLI 版本時的期限。",
+  "capacityRow.diagnostics.report_bytes.full": "超過上限的報告會整份拒收，不會截短；上一份留下的報告維持不變。",
+  "capacityRow.diagnostics.report_bytes.what": "頁面從診斷面板送出的診斷報告大小上限，報告會存成這台機器記錄資料夾裡的一個檔案。",
   "capacityRow.diagnostics.route_latency_samples.full": "最舊的一筆會被最新的蓋掉；看過最慢的那次另外保存。你不用做任何事。",
   "capacityRow.diagnostics.route_latency_samples.what": "診斷資料替每種請求保留幾筆最近的回應時間，用來算出一般和偏慢的耗時。只留最近的，daemon 跑再久記憶體用量都不會變多。",
   "capacityRow.diagnostics.route_stat_keys.full": "超過的種類會合併算進一筆「overflow」；每個請求照常回應，只是在診斷資料裡沒有自己的那一行。你不用做任何事。",
