@@ -1,8 +1,8 @@
 # A real-console website demo
 
 The trial uses the production `web/console/src/main.tsx` entry, including its normal App,
-Session list, conversation, composer and CSS. The separate `web/console/demo/main.ts` installs
-an in-memory data adapter before importing that entry. Normal daemon and hosted builds do not
+Session list, conversation, composer and CSS. The separate `web/console/demo/main.ts` imports
+`web/console/demo/bridge.ts`, which installs an in-memory data adapter, before importing that entry. Normal daemon and hosted builds do not
 import the adapter.
 
 Build it from the product checkout:
@@ -12,7 +12,8 @@ cd web
 npm run build:demo --workspace @clawdline/console
 ```
 
-The output is `web/console/dist/demo/`. Copy that directory into the marketing site's
+The script type-checks with `tsconfig.demo.json` and builds with `vite.demo.config.ts`, which
+reads `CLAWDLINE_DEMO_STORY` and chooses the output. The output is `web/console/dist/demo/`. Copy that directory into the marketing site's
 `public/demo/console/` and embed `/demo/console/?lang=en` or `?lang=zh-Hant`. The trial marketing
 component retains the original Clawdline/Terminal tabs, offers desktop and phone
 viewport sizes, and restarts by reloading its iframe. Selection messages are scoped
@@ -30,7 +31,7 @@ feeds the website's original Terminal renderer so both views retain the same cas
 The original design attachment is rendered as a PNG for the production image tile. Sending a message
 or choosing a menu option changes this document's in-memory story only. Unknown operations
 return `demo_unavailable`; requests never fall through to a real service. The standalone demo
-also uses `connect-src 'none'`. Its localStorage and sessionStorage implementations are local
+also uses `connect-src 'none'`, set by the meta CSP in `web/console/demo/index.html`. Its localStorage and sessionStorage implementations are local
 to the iframe document, so it does not read or reset the visitor's saved console data.
 
 This is a reviewable prototype, not a production backend or a deployed homepage. The full

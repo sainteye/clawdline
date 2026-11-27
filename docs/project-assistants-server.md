@@ -103,13 +103,15 @@ refusals. Remembering an old path is insufficient. This code does not enumerate
 home/provider history, launch a terminal or change the deliberately empty legacy
 `/v1/projects` endpoint.
 
-The production Provider is the installed Claude route (`InstalledClaudeProvider`).
-An initial Send sets it up on first use from the person's own Claude Code and
+The production Provider is `InstalledProviderWithProfiles`, which sends each Bot
+to its installed Claude Code, Codex, Grok or Gemini route. For Claude, an initial
+Send sets it up on first use from the person's own Claude Code and
 Node and the adapter Clawdline supplies (`project-assistants-native-entry.md`);
 without Claude Code or Node it returns typed `cli_not_installed`. Since 2026-11-14 the first version follows CodyNC: the
 native CLI keeps its own tools, works in the Bot's Project as the person and
-asks before acting; the person may allow an action once, and a standing allow
-rule is refused. There is no OS sandbox and no read-only claim. Native config,
+asks before acting; the person may allow or refuse an action once or always. An
+always answer hands the agent the rule it defines, and the Project's standing
+rules are read through `ClaudeLocalRules` so one can be revoked. There is no OS sandbox and no read-only claim. Native config,
 history and memory live in a feature-owned directory per Bot, Project,
 conversation and revision. The production DispatchPolicy is fixed source
 policy (`projectAssistantDispatchPolicy`): any exact relative file inside the

@@ -69,15 +69,18 @@ second; the earlier drafts above are retained for comparison.
 
 ## Project icon sources
 
-`internal/domain/icon` resolves a local mark in this order:
+`internal/domain/icon` resolves a local mark in this order; `Registry.Resolve`
+reports the source as `mirrored`, `override`, `registry` or `generated`:
 
-1. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
+1. A mark mirrored from the owning machine by
+   [project settings sync](project-sync.md), attached with `SetMirror`.
+2. A saved mark in `CLAWDLINE_NEXT_DIR/project-icon-overrides.json`, using the
    longest containing path. Existing overrides remain readable so an upgrade
    does not make a chosen mark disappear. The console no longer creates them.
-2. The longest containing entry in `~/.claude/project-icons.json`. This
+3. The longest containing entry in `~/.claude/project-icons.json`. This
    compatibility input remains read-only. A home-directory entry names only
    the home directory, not every project below it.
-3. A deterministic creature generated from the working directory's FNV-1a
+4. A deterministic creature generated from the working directory's FNV-1a
    hash.
 
 The Project health check measures whether a project-specific identity is set.
@@ -99,8 +102,8 @@ Creation, edits, atomic replacement and removal take effect on the next read;
 the legacy registry is also reread and compared by content. A malformed or
 unreadable setting keeps the last valid mark in memory, while Project and
 Session list requests report `icon_store_unavailable` (HTTP 503) instead of
-claiming a successful refresh. Saving an icon also refuses the write until an
-externally changed override file can be read again.
+claiming a successful refresh. No daemon route writes the override file;
+`Registry.Save` exists but has no production caller.
 
 Run `clawdline project refresh [directory]` to ask the running daemon to read
 one listed Project's current display state. The directory defaults to the

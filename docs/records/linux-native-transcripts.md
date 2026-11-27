@@ -3,8 +3,12 @@
 
 # Linux native transcript adapter boundary
 
-Status: implemented in the Linux runtime and Cloud command route; signed-image live-host acceptance
-is still required before declaring provider-version support. Linux `transcript` reads provider
+Status (Swift generation, through 2026-09-19): implemented in the Linux runtime and Cloud command
+route; signed-image live-host acceptance was still required before declaring provider-version
+support. The Go daemon does not implement this contract: its Cloud `transcript` read is an ordinary
+read op whose only transcript-specific refusals are `503 read_transcript_unavailable` and
+`403 read_transcript_required` (`internal/app/cloudops`), and none of the codes under *External
+outcomes* below are produced by it. Linux `transcript` reads provider
 JSONL through the native identity adapter. The `screen` route remains separate and is the only
 Cloud reply that preserves SGR and safe OSC links.
 

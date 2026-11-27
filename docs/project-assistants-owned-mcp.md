@@ -69,6 +69,14 @@ available agent of the rule whose kind matches, then Claude Code. A wrong value 
 agents and their launcher vocabularies), so a model argument cannot name an agent this machine
 cannot run. See `docs/bots.md`, Bots settings.
 
+`dispatch_work` also takes an optional `mode`, `child` (the default) or `root`. `root` opens an
+independently owned Root Session for integration, release or a whole feature handed off end to
+end: it may merge, push, deploy and record landings under the repository's ordinary rules, and it
+is nobody's child. Only a turn the person started, or a Bot request card the caller holds, may open
+a Root; its claims may be empty and `continue_on_completion` is not used. Both `dispatch_work` and
+`message_bot` take an optional `bot_request_id`, the request card the call works on: the caller
+must be in that card's chain, and in a turn a card handoff woke it must be that card.
+
 Any Bot that may dispatch can also set `persona` on `dispatch_work`, with or
 without `project`, to start the work Session with a Session persona
 (`docs/personas.md`). The MCP layer only carries the id: the Broker admits it
@@ -88,7 +96,8 @@ The ACP provider creates an HTTP MCP capability only after native capability
 admission. Its random bearer is independent of the daemon's credential. It is
 restricted to a literal loopback address with an explicit port, one execution
 fence and one listener. Metadata/capability reads do not start a listener or
-native process. Production still has no configured, admitted native provider.
+native process. Production Host composition installs
+`projectassistantacp.InstalledProviderWithProfiles` as its default provider.
 
 The transport follows the JSON-response profile of
 [MCP Streamable HTTP](https://modelcontextprotocol.io/specification/2025-06-18/basic/transports).

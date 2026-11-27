@@ -2,8 +2,12 @@
 
 Status: design proposal with a standalone prototype
 ([`admin-connection-health-preview.html`](admin-connection-health-preview.html)) that draws all six
-screens, M01–M06. Nothing here is
-shipped console behaviour. Every threshold below is a **proposal, not a measurement**; every number
+screens, M01–M06. The prototype is not shipped console behaviour. A page at `/admin/health` has
+since shipped in the admin shell (`AdminGate.tsx` lazily loads `health/ConnectionHealth.tsx`); it
+reads the Cloud's stored evidence and follows
+[admin-connection-health-ui-integration.md](admin-connection-health-ui-integration.md) where it
+differs from this design — for one, its overall verdict is always `unknown` with
+`no_presence_contract` (`health/stored.ts`). Every threshold below is a **proposal, not a measurement**; every number
 in the prototype is an illustrative fixture.
 
 ## 1. What the page is for
@@ -26,16 +30,16 @@ slowness, an error, an offline machine or an unknown stretch draws the eye.
 
 | Piece | Where | What this design takes from it |
 |---|---|---|
-| Admin shell: sidebar on desktop, drawer on phone | `web/console/src/cloud/admin/admin.css:82-184`, `AdminGate.tsx:303`, `:379-403` The existing admin has five routes (overview, survey, accounts, usage, promotions); connection health is a separate group of screens added after them in the same shell. |
+| Admin shell: sidebar on desktop, drawer on phone | `web/console/src/cloud/admin/admin.css:82-184`, `AdminGate.tsx` (`Shell`) | The existing admin has five business pages (overview, accounts, promotions, usage, survey; `ADMIN_ROUTES` in `words.ts`); connection health is a separate group of screens added after them in the same shell. |
 | Palette and its reason for being dark only | `web/console/src/legacy/tokens.css:1-29` | Same tokens; no light theme (see §11). |
 | Text-contrast rule | `admin.css:1-5` | `--faint` and `--bad` never colour words, only bars and outlines. |
-| Tiles, panels, tables, phone card tables | `admin.css:343-413`, `:480-496`; `AdminDashboard.tsx:312` (`Tile`) | Tiles row, panels, table → card-per-row below 560 px. |
-| Stale and demo treatments | `AdminGate.tsx:197-211`, `admin.css:141-149`, `:437-441` | A refresh failure keeps dated figures; demo is labelled and inert. |
-| Unknown is a word, not a zero | `AdminDashboard.tsx:296-299`, `admin.css:424` | Empty latency is "Unknown", never 0 ms. |
+| Tiles, panels, tables, phone card tables | `admin.css:343-413`, `:480-496`; `AdminDashboard.tsx` (`Tile`) | Tiles row, panels, table → card-per-row below 560 px. |
+| Stale and demo treatments | `AdminGate.tsx` (the `stale` phase and the `adm-stale` notice), `admin.css:141-149`, `:437-441` | A refresh failure keeps dated figures; demo is labelled and inert. |
+| Unknown is a word, not a zero | `AdminDashboard.tsx` (`Measured`), `admin.css:424` | Empty latency is "Unknown", never 0 ms. |
 | Browser-only direct history | `web/console/src/cloud/direct-history.ts:1-16`, `:100-108` | A browser's record speaks for that browser only; idle hours are not failures. |
-| Machine road and offline wording | `web/console/src/pages/devices/AccountMachines.tsx:67-85` | Offline / relay / direct / failing roads; owner sheet is the owner boundary. |
-| Machine Cloud status snapshot | `internal/adapters/cloud/status.go:28-55`, `:95` | Counters and drop reasons the machine already keeps. |
-| Relay inbound queue bound (64 rows, refuse) | `internal/domain/capacity/register_cloud.go:170-180`, `internal/transport/cloud/relay.go:123` | The queue tile uses the registered limit, not a new one. |
+| Machine road and offline wording | `web/console/src/pages/devices/AccountMachines.tsx` (`roadOf`, `roadWords`) | Offline / relay / direct / failing roads; owner sheet is the owner boundary. |
+| Machine Cloud status snapshot | `internal/adapters/cloud/status.go` (`Status`, `StatusRecorder.Dropped`) | Counters and drop reasons the machine already keeps. |
+| Relay inbound queue bound (64 rows, refuse) | `internal/domain/capacity/register_cloud.go` (`CloudRelayQueue`), `internal/transport/cloud/relay.go` (`(*Relay).start`) | The queue tile uses the registered limit, not a new one. |
 | Staged truth vocabulary | `docs/cloud-request-architecture-v2.md:95-96`, `:469-500`; `docs/cloud-error-transparency.md:100-116` | Waterfall stages are separate receipts. |
 | Bounded diagnostics with completeness | `docs/diagnostics.md:81-100`, `:184-212` | Evidence states what was dropped and how complete it is. |
 
@@ -105,7 +109,7 @@ error, offline, unknown) and **evidence quality** (complete, partial, stale, not
 unsupported, not permitted, no requests). Plus the newest active incident, *since HH:MM UTC (N
 ago)*, and *Open incident*. A blocked verdict has an accent frame; unknown has a dashed frame, so
 "we cannot see" never looks like "fine". Loading: skeleton. Load failure with prior data: keep the
-old verdict, dated, with the stale notice (`AdminGate.tsx:208-211`). First-load failure: no verdict
+old verdict, dated, with the stale notice (`adm-stale` in `AdminGate.tsx`). First-load failure: no verdict
 at all, the typed failure code — never a green guess.
 
 **Tiles.** A line under the tiles and the segment table states that these figures are a fixed
@@ -241,7 +245,7 @@ quality **partial**, never complete.
 
 | Scope | Who | Reads | Never reads |
 |---|---|---|---|
-| Cloud service | Strict superuser (the admin gate's API decision, `AdminGate.tsx:16-25`) | Relay metadata, presence, collector health, anonymous aggregates | Owner machine detail; any decrypted content. Superuser cannot decrypt a machine's data. |
+| Cloud service | Strict superuser (the admin gate's API decision, described in the module comment of `AdminGate.tsx`) | Relay metadata, presence, collector health, anonymous aggregates | Owner machine detail; any decrypted content. Superuser cannot decrypt a machine's data. |
 | Your machine | Account owner on a paired device | Its own machine snapshot and this viewer's record, plus the Cloud-side rows for that machine | Other accounts. |
 | This viewer | Any signed-in viewer | This browser's own attempts and probe | Anything else. |
 
@@ -294,12 +298,14 @@ drawer animation.
 
 - Route: `/admin/health` with subroutes per M-screen; restore window, scope and selected incident
   from opaque ids in the URL; unauthorized deep links return a typed refusal with no data flash.
-- Strings: the prototype's `WORDS` dictionary maps one-to-one onto `cloud/admin/words.ts` keys
-  (English and Taiwan Traditional Chinese together, as the admin catalogue already does).
+- Strings: the prototype's `WORDS` dictionary maps onto the shipped page's own
+  `cloud/admin/health/words.ts`, read as `health.<key>` from the public catalogues (English and
+  Taiwan Traditional Chinese together, as the admin catalogue already does).
 - Components to reuse rather than copy: `Tile`, `adm-panel`, `adm-table` with the phone card
   pattern, `adm-stale`, `adm-demo-control`, `adm-skeleton`. New: lane track, waterfall row,
-  severity glyph, quality chip. The lane colours `--lane-ok` and `--lane-unknown` are new
-  admin-local tokens (dark only, like the rest).
+  severity glyph, quality chip. The lane colours `--lane-ok` and `--lane-unknown` were proposed as
+  admin-local tokens (dark only, like the rest); the shipped page defines only `--lane-ok`, scoped
+  to `.adh` in `health/health.css`.
 - **Diagnostics must stay readable when the failing relay is unusable.** M06 and the machine's own
   snapshot (`cloud-status`, `status.go`) are read through a path that does not depend on the relay
   being healthy; when that path also fails, the page shows the failed query, this viewer's probe
@@ -310,15 +316,17 @@ drawer animation.
   no paid service dependency.
 - The dashboard is passive: no alerts by default, no commands, no automatic retry of a user
   mutation from an incident or a lost receipt.
-- The evidence JSON shape (`clawdline.connection-evidence/0.1-draft`) is a starting point for the
-  agent query contract, not a frozen schema.
+- The evidence JSON shape (`clawdline.connection-evidence/0.1-draft`, kept in the draft
+  `health/model.ts`) is a starting point for the agent query contract, not a frozen schema. The
+  shipped page exports `clawdline.connection-evidence.stored/1-draft` (`health/stored-export.ts`).
 
 ## 11. Proposals left to the person
 
 - **Light theme.** The console is dark only on purpose (`tokens.css:1-5`); this page follows it.
   A light admin would be a product-wide change, not this page's.
 - **New lane tokens** (`--lane-ok`, `--lane-unknown`) in the admin palette. Cost: two tokens in
-  `admin.css`; no other screen is affected.
+  `admin.css`; no other screen is affected. (Shipped so far: `--lane-ok` only, in
+  `health/health.css`.)
 - **A stable stage-to-source map.** Until it exists, code locations stay location codes with
   hypothetical paths. Cost: a registered table of stage codes owned beside the instrumentation.
 

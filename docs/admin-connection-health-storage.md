@@ -5,8 +5,12 @@ opens it: `cmd/clawdline/health.go` `startConnectionHealth` opens it under
 `<state>/connection-health/journal` on its own goroutine after the runtime starts (never on the
 startup path), and `Watchdog.Attach` makes the watchdog's one journal writer hand each record it
 appended, as the journal stamped it, to `Offer` — no `Journal.Read` per record; the ring is read
-once, at attach, under the writer's lock, so nothing is offered twice or skipped. A failed open is
-reported by its code on the status route and the boot stays memory only. The in-memory ring in
+once, at attach, under the writer's lock, so nothing is offered twice or skipped. While `Open` runs
+the status route says `opening`. A failed open is reported by its code on the status route and the
+boot stays memory only; the owner-sealed diagnostics (`internal/adapters/healthsealed`), which are
+fed from the same `Watchdog.Attach` callback, are still attached in that case.
+`CLAWDLINE_CONNECTION_HEALTH=off` (`connectionHealthOffEnv`) turns the whole runtime, and this
+store with it, off for a boot. The in-memory ring in
 `internal/domain/connectionhealth` still says `memory_only_lost_on_restart`; this store does not
 relabel it. `GET /v1/connection-health/history?cursor&limit` and `clawdline health history` page
 it (this machine's own token only, never through Cloud). Product scope is
@@ -118,9 +122,10 @@ once (shedding one segment) on a full disk. Age uses wall time from the record s
 backwards delays age pruning, never byte pruning.
 
 Every page and Status carry the **actual** retention floor (`retention_floor`: wall time of the
-oldest retained record; absent when nothing is retained — unknown, not "now") next to the target,
-and `pruned_before_target_total` counts segments removed by bytes, count or shedding rather than
-age, so a reader never takes 100 MiB of a busy day for seven days.
+oldest retained record; absent when nothing is retained — unknown, not "now") next to the target.
+A page's coverage also carries `pruned_before_target_total`, the segments removed by bytes, count
+or shedding rather than age (Status has no such total; it reports `pruned_segments_bytes`, which
+includes shedding, and `pruned_segments_count` separately), so a reader never takes 100 MiB of a busy day for seven days.
 
 ## 7. Reading
 
@@ -184,6 +189,4 @@ minute, stall after 5 s, worker tick 1 s, write retry backoff 1 s → 60 s.
 - Upload is `internal/adapters/healthupload` (contract §9a); it reads pages with `Read` and keeps
   its own cursor, so the store is unchanged by it.
 - Measured budgets: the bounds above are the plan's proposals.
-- Three store rows (`_segment_bytes`, `_dir_entries`, `_lost_ranges`) read as unmeasured: `Status`
-  does not report their occupancy.
 - Windows and Linux were compiled and vetted, not run.

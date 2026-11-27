@@ -78,12 +78,12 @@ three Sessions that report did not cover, each in another state: Search rebuild 
 story told while its conversation is read down), Offline sync (working, with news) and Release
 2.4 (a long run of tests, fixes and tool output that has just stopped on a decision with
 trade-offs, too much to read on a phone, so the summary is worth hearing). Opening one Session
-that wanted a decision at once showed none of that. `auto` is the default since a call from the list began
-reporting by itself: the person lets it tell the Sessions, waiting ones first and then what the
+that wanted a decision at once showed none of that. `auto` was the default once a call from the list began
+reporting by itself, until `tour` replaced it: the person lets it tell the Sessions, waiting ones first and then what the
 working ones are doing, and the take goes on from there as `triage` does. It surfaced a defect:
 the report went to GPT-Live as one append of over 500 tokens, OpenAI refused it, and the call
 said nothing; the rules and evidence now go as thinking pieces (`liveContextPieces`, at most
-`LIVE_APPEND_TOKENS` = 400 estimated tokens) and the spoken note names the batch. `triage`, the default since 2026-11-16, is what a person on
+`LIVE_APPEND_TOKENS` = 400 estimated tokens) and the spoken note names the batch. `triage`, the first default (2026-11-16), is what a person on
 a phone wants from a call, one selling point a step: "Anything need me right now?" (the copilot
 picks out what waits on them), the finger opens Release 2.4 from the list (it tells that
 Session's state unasked, its kept recap and then the latest, which brings the iPad failures),
@@ -205,13 +205,13 @@ line again. The recorder refuses to run while a line has no voice.
 
 ## How the recording is made
 
-`--phone` records a 390 × 844 phone at device scale 3 with touch, as a portrait 1080 × 2338
+`--phone` records a 390 × 844 phone at device scale 2 with touch, as a portrait 1080 × 2338
 film. A tap shows a ring where it lands instead of a pointer. The page reports itself as opened
 from the Home Screen, as the console is used on an iPhone, so the sidebar does not ask to be
 added there. After the sheet shrinks, a finger drags the bubble down beside the composer, and
 the finished Session's conversation is scrolled by the page rather than a wheel.
 
-Chrome runs headless at 1600 × 900 CSS pixels and device scale 1.2 through the DevTools
+Chrome runs headless at 1600 × 900 CSS pixels and device scale 1.5 through the DevTools
 protocol. The screencast's frames keep their own timestamps and become a constant 30 fps H.264
 video; a drawn cursor follows the dispatched mouse. The page logs when each voice starts, and the
 same files are laid under the video at those moments, so the sound needs no separate sync. A

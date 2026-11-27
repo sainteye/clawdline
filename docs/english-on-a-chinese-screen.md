@@ -18,9 +18,11 @@ point of this page.
 
 **The original TypeScript AST pass sees none of B.** It catches a refusal that
 lost its name, not a refusal whose English became the sentence. The
-cross-language pass now coordinated by `refusals/scan.ts` accounts for all
-eighteen rows below and treats `.detail`, `.message`, and daemon-produced error
-prose reaching a screen without `failureSentence` as `producer_prose`.
+cross-language pass now coordinated by `refusals/scan.ts` has a rule for twelve
+of the eighteen rows below (2, 6, 8–11 and 13–18; `refusals/audit.ts`); rows 1,
+3–5, 7 and 12 have none. It treats `.detail`, `.message`, and daemon-produced
+error prose reaching a screen without `failureSentence` as `producer_prose`
+(rows 11 and 15–17); row 18, the schedule notifications, is `daemon_ui_english`.
 
 ## In the order a new person meets them
 

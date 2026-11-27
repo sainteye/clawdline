@@ -42,7 +42,8 @@ rounded down to the interval resolution. The returned `from_ms`, `until_ms`
 and `resolution_seconds` are authoritative. Unknown or repeated parameters,
 an invalid interval, a future end, an end older than the configured retention,
 or a query string longer than 256 bytes are refused with 400
-`api_performance_bad_query`. The string cap is checked before parsing.
+`api_performance_bad_query`. The string cap is checked before parsing; it is
+the route-shape constant `MaxRouteBytes`, not a capacity row of its own.
 
 | hours | Point resolution | Points | Range |
 | ---: | ---: | ---: | --- |
@@ -60,13 +61,17 @@ latency sum, with route spelling as the tie-breaker. They contain every
 retained route, at most 128 shapes plus overflow.
 
 GET and HEAD return `Cache-Control: no-store`. HEAD has the same query and
-permission checks and no body. Other methods are refused. The gate also sets
+permission checks and no body. A caller without read permission is refused
+403 `forbidden` by the handler itself; after that check, other methods are
+refused 405 `bad_request` with `Allow: GET, HEAD`. The gate also sets
 no-store on unauthenticated refusals for this path. Reader admission, worker
 availability, query cancellation/deadline and response size failures return
 503 `api_performance_unavailable`; the caller may retry later. A stopped
 monitor is unavailable, not an empty healthy response. The outer gate uses
 its existing 401/403 authentication envelope. Unattributed Cloud denial is
-403 `api_performance_owner_local`.
+403 `api_performance_owner_local`. The handler's own refusal messages follow
+the product language: Taiwan Traditional Chinese when it is `zh-Hant`, English
+otherwise.
 
 ## JSON contract and interpretation
 
@@ -138,7 +143,8 @@ streams. Start times use 512 slots; when any active start is untracked,
 `active_coverage_complete` is false and oldest age is null. Counts continue
 even when start-time slots are exhausted. Zero active work has age zero.
 
-`storage_state` is `ok`, `unavailable` or `snapshot_too_large` after opening.
+`storage_state` is `opening` until the store worker has loaded, then `ok`,
+`unavailable` or `snapshot_too_large`.
 `store_failures` counts failures this boot. `persisted_at_ms` advances only
 after SQLite commits successfully; zero means no durable checkpoint.
 `checkpoint_interval_seconds` is the intended 15-second cadence, **not a
@@ -353,7 +359,9 @@ go run ./tools/contract-gen
 The route inventory also needs `api/v1/agent-routes.json`; contract-gen updates
 both route guides and both generated capacity guides. This is discoverability,
 not broader Agent authority. UI, operator Cloud collectors, deployment, installation and release acceptance
-belong to the integrating feature, not this producer.
+belong to the integrating feature, not this producer. The console's reader is
+`web/console/src/machine/LocalAPIPerformance.tsx` (the Machine dashboard's API pane), with its
+interpretation in `web/console/src/machine/api-performance.ts`.
 
 ## Integrating root measurements (2026-10-28)
 

@@ -121,7 +121,7 @@ push service 可能只收到一半的那些 bytes 也成立。
 |---|---|
 | `web/console/src/push/api.ts` | 四個呼叫。訂閱**原樣**上傳——那是瀏覽器自己的物件，這一端改過的形狀都是把 credential 弄錯的機會 |
 | `web/console/src/push/push.ts` | `input/push.js` ＋ `input/settings.js` 的通知那一半，**移植**而非照抄 |
-| `web/console/public/sw.js` | service worker，**逐位元組照抄**自 `RemotePage.serviceWorker()` |
+| `web/console/public/sw.js` | service worker，起點是**逐位元組照抄**自 `RemotePage.serviceWorker()`，之後在這裡改過，已不再與那份照抄相同 |
 | `web/console/src/Sessions.tsx` | 清單頁底下那一條 `#notify` |
 | `web/console/src/pages/settings.tsx` | 設定頁的「通知」區塊 |
 
@@ -152,13 +152,14 @@ listener 綁到它自己查出來的元素上，而這裡的元素是 React 的�
 
 | 路徑 | 怎麼來的 |
 |---|---|
-| `/sw.js` | 逐位元組照抄 `RemotePage.serviceWorker()`，`tools/extract-service-worker.py` 抽的，`--check` 驗得出漂移 |
+| `/sw.js` | 起點是逐位元組照抄 `RemotePage.serviceWorker()`（`tools/extract-service-worker.py` 抽的）；之後在這裡改過，現在的檔已不是那份照抄 |
 | `/manifest.webmanifest` | 488 bytes，照抄 |
-| `/icon-192.png`、`/icon-512.png`、`/favicon.ico` | 照抄。這三個裡面有一個圓角方塊，AppKit 那一條曲線的 rasteriser 不是移植能對到像素的東西，所以直接拿 bytes |
-| `/splash-<寬>x<高>.png` | **移植**（`internal/domain/icon/app.go`）。二十種幾何、每年秋天還會長，而且塞進 repo 是 1.1MB 的 PNG |
+| `/icon-192.png`、`/icon-512.png`、`/favicon.ico` | 最初照抄 AppKit 畫的 bytes；現在由 `splashgen -brand`（`internal/domain/icon/cmd/splashgen`）用 `icon.AppIcon` 從 `internal/domain/icon/brand.svg` 產生，再提交進 repo |
+| `/splash-<寬>x<高>.png` | **移植**（`internal/domain/icon/app.go`）。daemon 在請求時畫；Cloud 託管沒有 daemon 可以畫，所以 `splashgen` 也把二十張 PNG（約 1.3MB）產生並提交在 `web/console/public/`，並檢查它們沒有過期 |
 
-四個照抄的檔在 `web/console/public/`，由 `page` 送出去；它們的來源記在
-`web/console/src/legacy/MANIFEST.json` 的 `inlined` 區塊——`tools/check-legacy-css.sh` 檢查
+這些檔在 `web/console/public/`，由 `page` 送出去；它們 2026-09-18 照抄時的來源記在
+`web/console/src/legacy/MANIFEST.json` 的 `inlined` 區塊（`sw.js` 與三個圖示之後都換過，所以那裡的
+`copySha` 已對不上現在的檔）——`tools/check-legacy-css.sh` 檢查
 不到這些（它比對 `Resources/web` 底下的檔案，而這些是一個函式畫出來的）。
 
 啟動圖是這裡唯一畫的，而且非畫不可。它是平底色上的一堆軸對齊矩形，所以 `icon.Splash` 是忠實
@@ -284,7 +285,7 @@ Web Push**，手機只訂閱一次，帳號上每台機器都叫得到它，不�
   （`Link.PushClient`），http 層在送的那一刻透過 `pushCourier` 取得。
 - Cloud 的回答在 `send.go` 的 `forward` 變成判決，規則跟直送的一樣：2xx 算送達；**410
   `subscription_gone` 在本機刪掉那一列**；429 照 `retry_after` 重試（超過 60 秒的上限就放棄，不排隊）；
-  502 裡的 `push_status` 是 0 或可重試的就重試，其餘不重試；其他 5xx 重試；其餘（包括
+  502 裡的 `push_status` 是 0 或可重試的就重試，其餘不重試；其他狀態只有 408、500、503、504 重試；其餘（包括其他 5xx、
   `404 unknown_subscription`、401、403）**原封不動留著**——只有 Cloud 的 410 算「已經不在」的證據。
 - 沒有 `CloudID` 的列照舊直送，用這台機器自己的 VAPID 金鑰（免費版／本機 console 的路徑，沒變）。
   整個 fan-out 裡只要沒有直送的列，就**不會產生**這台機器自己的金鑰。
@@ -365,12 +366,12 @@ and `TestTwoCloudViewersDoNotShareReceipts` in `internal/transport/http`.
 
 ## 還沒接的線
 
-- **session 開始等待時的通知接上了（上一節），但只有這一條。** 舊版另外在 `DeployWatch.swift`、
-  `Orchestrator.swift`、`SmartNotification.swift` 呼叫 `WebPush.send`，那三條在 Go 版還沒有對應的
-  觀察點。現在會送出通知的：設定頁的測試按鈕、容量告警、dead letter、child 與 root 的 `/notify`、
-  blocking decision、排程失敗，以及上一節這一條。
-- **機器自己的推播沒有自己的開關。** 等待推播沿用 `orchestrator_agent_notify`；要分開需要一個新的
-  設定鍵（`nextconfig`、contract、設定頁三處）。
+- **現在會送出通知的**：設定頁的測試按鈕、容量告警、dead letter、child 與 root 的 `/notify`、
+  blocking decision、排程失敗、上一節的 session 等待與模型容量拒絕、Board 提案的決定
+  （`push_on_board_decision`）、Board 項目完成（`push_on_board_done`）、Bot 完成（`push_on_bot_done`）
+  與 Bot 的提問、session 交付與 fan-out 完成（`push_on_delivery`、`push_on_fanout`，開了
+  `smart_notifications` 時內文換成摘要），以及 agent 自己寫、使用者沒要求的 note。等待推播有自己的
+  開關 `push_on_waiting`，沒設定時才沿用 `orchestrator_agent_notify`。
 - **通知上的專案圖示。** 舊版帶 `icon: /project-<size>-<packed>.png`，那是一條動態路由
   （`RemoteIcon.project`）。`Notification.Icon` 欄位已經在，路由還沒有。
 - **撤銷裝置不會連帶清掉它的訂閱。** `Store.RemoveDevice` 寫好了也測了，但 `/v1/auth/devices/{id}/revoke`

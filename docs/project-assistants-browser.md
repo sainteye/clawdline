@@ -51,8 +51,11 @@ restarted turn keeps its tabs; another conversation, Project, Bot, machine or a
 forget does not reach them. The owner is a key, not a credential: authority
 comes from each call's `bound()` check.
 
-First version: only the person's main chat lane. A routine `SessionSlot` and
-Bot-to-Bot or host-notice turns answer `pa_scope_denied`.
+`browserScope` admits the person's main chat lane, host-notice turns and a Bot
+answering another Bot's `message_bot` on this machine; the owner comes from the
+turn's own conversation, so a peer request's thread worker reaches only the tabs
+it opened. A routine `SessionSlot`, a group room turn and any other turn origin
+answer `pa_scope_denied`.
 
 ## Engine rules for an owner
 
@@ -91,6 +94,9 @@ fields are `pa_invalid`. A screenshot answers a text caption plus a standard MCP
 `image` content (`image/jpeg`, base64 as the extension produced it). A result
 that would not fit the existing owned-MCP frame answers
 `browser_result_too_large`; nothing is truncated and no limit was raised.
+The Host answers `release` itself without reaching the browser: the tab stays
+owned by the Bot, so the person can still take it over from the Bot's chat, and
+the result tells the Bot to use `close` when it no longer needs the tab.
 
 ## Verification
 
@@ -203,9 +209,6 @@ have separate acceptance below.
 ## Remaining integration and acceptance
 
 - Real Chrome and native Claude Code / Codex acceptance, and production Cloud.
-- The transparency page has no card describing the `browser_status` and
-  `browser_command` tool text a Bot receives; only the source receipts were
-  refreshed. A card needs its English and Taiwan Traditional Chinese copy.
 
 
 ## Leaving the person's browser panel

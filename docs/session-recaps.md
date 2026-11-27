@@ -78,8 +78,16 @@ as an error or reached after more than one turn is discarded.
   a fourth is refused as `session_recaps_busy`. The copilot waits up to 45 s; a slower fork goes on
   and its recap is kept.
 
-The copilot's tools (`forkedRecap` in `copilot-tools.ts`) use a current recap from the row, ask the
-machine for one in either mode when it is missing or stale, and fall back to the stale one.
+The copilot's tools (`forkedRecap` in `copilot-tools.ts`) use a current recap from the row. A stale
+one is still read as it is, with its age, when it is recent enough: up to `KEPT_RECAP_SECONDS`
+(30 minutes) old in `background`, and up to `FRESH_RECAP_SECONDS` (5 minutes) old in either mode
+when the person asks for the latest. Otherwise they ask the machine for one when it is missing or
+stale, and fall back to the stale one.
+
+The whole-history `get_session_recap` tool is separate. It asks `POST /v1/voice/copilot-recap`
+without `fork` for the machine's account of the record and the Board, and reads the record itself
+when the machine cannot answer; the copilot is told to use it when `get_session_summary` has no
+`recap_detail` and the person wants the start-to-finish account.
 
 ## Storage and visibility
 

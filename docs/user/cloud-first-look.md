@@ -8,7 +8,7 @@ On macOS, open Clawdline's **Cloud** tab and do the steps it still shows; skip a
 
 1. Choose **Continue with GitHub**, sign in in your default browser, allow it to open Clawdline, and return to the Cloud tab.
 2. Choose **Connect this machine**, approve the native confirmation, approve the machine in your default browser with the same GitHub account, and return to Clawdline.
-3. Choose **Pair this app**, then **Pair directly with this app's machine**. Approve the native confirmation, compare the fingerprints, and choose **They match — done**.
+3. Choose **Enable this app**, then **Pair directly with this app's machine**. Approve the native confirmation, compare the fingerprints, and choose **They match — start using Clawdline**.
 
 **Done when:** this machine's Sessions appear in the Cloud tab. For a machine without the app, use [the terminal steps](remote-access.md#connect-the-machine).
 
@@ -17,7 +17,7 @@ On macOS, open Clawdline's **Cloud** tab and do the steps it still shows; skip a
 1. In the browser and profile you will keep using, open [app.clawdline.com](https://app.clawdline.com/) and sign in to the same GitHub account.
 2. Open **Pair** and choose **Show the pairing code**. You do not need to select a machine first.
 3. Choose **Open Clawdline to pair**, allow the browser to open the app, check the machine it names, and choose **Pair with this machine**.
-4. Return to the same browser page, compare the fingerprints, and choose **They match — done**.
+4. Return to the same browser page, compare the fingerprints, and choose **They match — start using Clawdline**.
 
 **Done when:** the app says **Browser paired** and the browser shows the machine's Sessions. If the app does not open, use [the code or command fallback](remote-access.md#pair-with-a-code-or-command).
 
@@ -29,7 +29,7 @@ Set up the phone first, in the place you will keep using. Safari, the Home Scree
    - **iPhone or iPad:** in Safari, open app.clawdline.com and choose **Share → Add to Home Screen**. Open Clawdline from the Home Screen icon and sign in there.
    - **Android:** choose a Chrome profile, or install Clawdline from Chrome's menu. Sign in there.
 2. **Show the QR on the computer.** In the app's **Local browser** tab, open **Settings → Remote → Pair a browser or phone** (the Cloud tab offers the same controls). Choose **Show a pairing QR code** and approve the native confirmation. Click the QR to enlarge it.
-3. **Scan from the phone,** in that same app or profile: choose **Pair → Scan the machine's QR**, allow the camera, compare the fingerprints, and choose **They match — done**.
+3. **Scan from the phone,** in that same app or profile: choose **Pair → Scan the machine's QR**, allow the camera, compare the fingerprints, and choose **They match — start using Clawdline**.
 
 **Done when:** the phone shows the machine's Sessions and the computer says **Browser paired**. For an expired QR, a denied camera or a black preview, see [phone recovery](remote-access.md#pair-an-iphone-ipad-or-android-phone).
 

@@ -30,6 +30,7 @@ tools/check-private.sh -history               # the commits, from the last check
 tools/check-private.sh -history -new          # red only for one today added
 tools/check-private.sh -history -full         # every commit, whatever the checkpoint says
 tools/check-private.sh -history -revs=--all   # every ref, which is what a push sends
+tools/check-private.sh -history -revs=HEAD -since=origin/main   # only what a push would add; writes no checkpoint
 tools/check-private.sh -rules                 # what each rule catches, and what passes it
 ```
 
@@ -105,7 +106,8 @@ build, and one did, and the two together wedged a push for two and a half hours.
 old refs had accumulated, 2026-09-22: `-history -full -revs=--all` read 2,254 commits, 13,809
 objects and 923.1 MB in 602.1 seconds.
 
-The earlier automatic range scan is retained here as a measured record, not as current behavior.
+The earlier automatic range scan is retained here as a measured record, not as current behavior;
+the range read itself remains available as the manual `-since` flag.
 `tools/test-pre-push-privacy.sh` now proves that the hook makes one working-tree check and no
 historical call.
 

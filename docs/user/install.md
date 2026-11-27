@@ -34,9 +34,9 @@ one, the daemon runs the carried tmux on a server of its own
 (`~/.config/clawdline-next/tmux/sessions.sock`), so it never meets another tmux. Setup says which
 it chose: `✓ tmux found`, or `✓ tmux: this release carries tmux 3.6a`.
 
-The last row is the only one you can skip and still lose something visible: Claude Code hands its
-`5h`/`7d` plan percentages only to the stdin of `statusLine.command`, so without one the Status
-Line's right edge reads `Plan limits unknown`. [usage.md](usage.md) says what to configure.
+The last row is a fallback. The daemon asks Claude Code itself for its `5h`/`7d` plan percentages
+and reads the status-line file only when that answer has no live windows; when neither has a
+reading, the quota reads `Quota unknown`. [usage.md](usage.md) says what to configure.
 
 ## 1. Install
 

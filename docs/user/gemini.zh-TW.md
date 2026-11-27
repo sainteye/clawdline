@@ -110,8 +110,8 @@ Clawdline 會從 CLI 自己的紀錄讀取，並即時顯示它的進度說明�
 
 ## 預覽範圍
 
-目前預覽不提供原生終端附掛，
-也不提供只取消當前回合的操作。此原生程序接線支援 macOS 與 Linux，尚未啟用 Windows。
+目前預覽不提供原生終端附掛。
+中斷自有 Session 時只取消當前回合，對話仍保持開啟。此原生程序接線支援 macOS 與 Linux，尚未啟用 Windows。
 
 連線問題請參考[恢復操作說明](recovery.md)；手機與其他機器的使用方式請參考
 [Clawdline Cloud](cloud-first-look.md)。

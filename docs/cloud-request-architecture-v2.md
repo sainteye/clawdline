@@ -336,6 +336,16 @@ catalog row fails the focused protocol suite. In addition, `orch/` machine snaps
 replicated status; `ho/` handoff payloads are target-addressed bulk transfer; and `ctlr/` command
 answers are command receipts. None may fall into a global compatibility spool.
 
+> **Go daemon (current machine end):** this classification is a target, not code. The daemon's
+> closed catalog is `internal/domain/cloudvocab/vocabulary.json`, and it classifies each operation
+> only as `kind: read` or `kind: command`; there is no replicated status, transcript, blob, live
+> query or `unsupported` class, and no test checks reads against the table above. The catalog has
+> no `timeline` operation and holds many reads the table does not list (for example `capacity`,
+> `doctor`, `provider-quotas` and `provider-quotas-refresh`, the latter a `read`).
+> `project-worktree-lifecycle-refresh` is a `command`, as above. `orch/` and `s/` are still
+> published as latest-value channels through the shared publication spool, which coalesces a newer
+> envelope over an older queued one (`internal/transport/cloud/publish.go`).
+
 ### 4.5 Typed availability and integrity gaps
 
 Successful empty data is never used to represent an availability or history gap. The common typed

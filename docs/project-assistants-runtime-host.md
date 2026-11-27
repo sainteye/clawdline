@@ -1,9 +1,11 @@
 # Lazy Bot runtime host
 
 `internal/adapters/projectassistanthost` composes the existing Service, SQLite
-Store, Engine, ACP provider port and work Broker. It is default off. This module
+Store, Engine, ACP provider port and work Broker. The HTTP layer constructs it
+(`internal/transport/http/project_assistants_host.go`, `ensureProjectAssistantHost`);
+an absent `project_assistants_enabled` setting counts as on. This module itself
 does not mount HTTP or MCP, change settings, start a daemon, install a provider,
-run a model, deploy Cloud or establish native acceptance.
+deploy Cloud or establish native acceptance.
 
 ## Composition API
 
@@ -24,6 +26,13 @@ host, err := projectassistanthost.New(ctx, projectassistanthost.Options{
 })
 ```
 
+This is the core of `Options`. The full struct in `host.go` also carries
+`Reader`, `ReadViews`, `Rules`, `SharedMemory`, `ManageBots`, `Attachments`,
+`Inputs`, `Outputs`, `Browser`, the `Network*` and `Assistants` services,
+`Extensions`, `LoginProfiles`, `ProjectMemory`, `NativeHistory`,
+`RoutineWebhookURL`, `ProductLanguage`, the lead and dev-server seams, and
+`DeferBackgroundStart`.
+
 All names on the right are supplied by the composition owner. No identity,
 directory, permission ceiling, runtime limit, worker timeout or expiry comes
 from an HTTP body or model argument. Runtime limits have no defaults here.
@@ -32,14 +41,15 @@ Worker `TimeoutMinutes` is a separate work lifetime from the native actor's
 
 | Method | Result and responsibility |
 | --- | --- |
-| `New(ctx, Options)` | `(*Host, error)`; inspect existing schema/data without installing tables or constructing an Engine/provider. |
-| `Status(ctx)` | `(pa.FeatureState, error)`; source opt-in plus real retained Bots for this machine. An empty schema is not data. |
+| `New(ctx, Options)` | `(*Host, error)`; inspect existing schema/data. A fresh source gets no feature tables; an already installed feature schema has its additive migrations (`app.InstallSchemas`, `serverstore.InstallCatalog`) run and its Service built. No Engine/provider. |
+| `Status(ctx)` | `(pa.FeatureState, error)`; source opt-in plus real retained Bots or Bot groups for this machine. An empty schema is not data. |
 | `Service()` | `(*projectassistant.Service, error)`; metadata/history facade, or typed disabled when no feature schema exists. |
-| `Enable(ctx)` | Install feature tables explicitly, prepare the shared Store/Service and connect the existing Broker. No provider factory or capability probe. |
+| `Enable(ctx)` | Install feature and dev-server catalog/restart tables, prepare dev servers and the shared Store/Service, connect the existing Broker, resume the dev-server registry, set up the lead Bot and, unless `DeferBackgroundStart` is set, call `StartBackgroundWork`. No provider factory or capability probe. |
 | `Disable(ctx)` | Reject writes, seal Engine admission, cancel owned work and wait for cleanup under `CleanupTimeout`. Retain data and unknown owners. |
 | `Close(ctx)` | As Disable, permanently close this Host, without closing the shared database or ordinary Broker. |
 | `Usage()` | Existing counts-only `RuntimeUsage`; unresolved cleanup is not a known zero. |
-| `Recover(ctx, key)` | Explicit enabled queue recovery. Mark interrupted turns unknown; execute only proven unsent queued turns. Unknown barriers do not initialize a provider. |
+| `StartBackgroundWork()` | Start the enabled Host's periodic `routineTick` and one `resumeInterrupted`/`reconcileSettledWork` pass, which calls the runtime's `Recover` for Bots with pending turns. |
+| `Recover(ctx, key)` | Enabled queue recovery. Mark interrupted turns unknown; execute only proven unsent queued turns. Unknown barriers do not initialize a provider. |
 | `RecoverWork(ctx, key, taskID, expires)` | Human-authorized, pure ReadWork reconciliation without creating a provider/Engine; retained disabled history is readable. Expiry is trusted composition input. |
 
 `Authority(ctx, key, write)` returns the current authenticated human Authority,
@@ -52,31 +62,34 @@ workers descend from actor-owned background lifetimes. Human request contexts
 authorize human operations only.
 
 `DispatchPolicy(ctx, key)` returns `DispatchPolicy{Allowed, AllowedClaims,
-Assistant, PermissionMode, TimeoutMinutes}`. Missing/error policy denies work
-while keeping chat/history available. AllowedClaims are exact relative files;
-the existing Broker still checks claims, paths, worktrees, concurrency, quota,
+AnyProjectFile, Assistant, TimeoutMinutes, Shared, Agents}`. Missing/error policy
+denies work while keeping chat/history available. AllowedClaims are exact
+relative files, and `AnyProjectFile` is forwarded beside them; `Shared` and
+`Agents` feed dispatch rule resolution. The existing Broker still checks claims, paths, worktrees, concurrency, quota,
 worker launch and landing. Each authority operation re-reads the real Bot,
 Conversation, Binding, active Turn, Source and canonical Project. A changed
 canonical identity cannot reuse an old execution binding.
 
 The composition owner calls New before starting feature work and exclusively owns
-the Broker's two optional assistant fields. A foreign non-nil authority or sink
-is refused, never overwritten. Once installed, this Host reuses its authority
+the Broker's three optional assistant fields (`AssistantAuthority`,
+`AssistantWorkChanged`, `AssistantWorkCompleted`), and sets `BotPermission`
+when it is unset. A foreign non-nil authority or sink is refused, never overwritten. Once installed, this Host reuses its authority
 and `bridge.Sync` across disable/enable; it does not replace them during a
 running callback. Do not externally rebind these fields while this Host lives.
 They remain installed for durable result projection and disabled history reads.
 Close does not stop ordinary Sessions, schedules, workers or the Broker.
 The composition root must finish a persisted opt-out on startup by calling
 Disable, including when there is retained history and no live Engine, before
-offering a later Enable. New itself remains a read-only inspection; it cannot
-infer whether a previous process completed its durable opt-out.
+offering a later Enable. New only inspects and migrates an existing schema; it
+cannot infer whether a previous process completed its durable opt-out.
 
 ## Database and lazy execution
 
 `store.Store.ProjectAssistantDatabase()` lends its existing writer `*sql.DB` to
-the internal Host. There is no second database/pool and no global schema edit.
-Feature Close never closes that database. Installation is an explicit Enable
-operation. Unknown feature schema versions are rejected without changing data or
+the internal Host, and `ProjectAssistantReader()` lends its existing query-only
+pool as `Options.Reader` for status and read views. There is no new database/pool
+and no global schema edit. Feature Close never closes either. First installation
+is an explicit Enable operation; New migrates an already installed schema. Unknown feature schema versions are rejected without changing data or
 the host `PRAGMA user_version`.
 
 One `projectassistantstore.Store` instance serves Repository, Memory and
@@ -98,9 +111,14 @@ does not turn a fake or absent evidence into native readiness.
 NativeWork func(context.Context, projectassistant.OpenRequest, NativeWork) (func(), error)
 
 func (NativeWork) SendMessage(ctx context.Context, id, text string) error
-func (NativeWork) Dispatch(ctx context.Context, id, brief string, claims []string) (pa.WorkLink, error)
+func (NativeWork) Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)
 func (NativeWork) Status(ctx context.Context, taskID string) (pa.WorkLink, error)
 ```
+
+`DispatchToProject`, `DispatchWithPersona`, `DispatchWithBoard` and
+`DispatchWithCompletion` extend `Dispatch`. `NativeWork` in `provider.go` also
+carries routine, memory, output, dev-server, browser, team, network and
+collaboration functions.
 
 Only the Host's actual Provider.Open wrapper invokes the registration callback.
 Before registration it reads one Export, checks the exact Open binding against
@@ -128,8 +146,9 @@ Host first atomically invalidates callable functions, then invokes unregister
 through `sync.Once`. It handles unregister-plus-error, Open failure, original
 context cancellation, Session.Close and Disable. Registration and provider
 operations must honor their contexts. Native transport/MCP request concurrency
-remains with its existing bounded owner; this seam introduces no registry,
-polling loop, model retry or fallback provider.
+remains with its existing bounded owner; this seam introduces no model retry or
+fallback provider. (The Host's own `routineTick` loop and dev-server registry are
+separate; see `StartBackgroundWork`.)
 
 The integrating root still owns real MCP registration/authentication and its
 transport cleanup. These private function tests do not establish that an actual
@@ -171,7 +190,7 @@ Any page/SQL/CAS error or deadline keeps Host's source cleanup pending and
 Usage.Known false, even if there is no Engine and the process count is zero.
 Enable must successfully repeat the durable cleanup before it can reopen
 admission. Completed Bot mutations are idempotent across partial-scan retries;
-there is no per-page deadline reset, retained cursor registry or background loop.
+there is no per-page deadline reset, retained cursor registry or cleanup background loop.
 
 No new fixed operational bound is introduced. Actors and cleanup retries
 are bounded by the existing host-injected MaxBots/CleanupTimeout.
@@ -218,8 +237,7 @@ acceptance remain with the integrating root. No paid API/model call was made.
 
 ## Removal
 
-Remove `internal/adapters/projectassistanthost/{host.go,host_test.go,provider.go,
-provider_test.go}`, `internal/app/projectassistant/{lifecycle.go,lifecycle_test.go}`,
+Remove the whole `internal/adapters/projectassistanthost/` package, `internal/app/projectassistant/{lifecycle.go,lifecycle_test.go}`,
 `internal/adapters/store/project_assistant_database.go` and this document. Revert
 only this Host delivery's lifecycle/persisted-link changes in
 `internal/app/projectassistant/{runtime.go,runtime_test.go}`. No worker change
@@ -227,7 +245,7 @@ was needed in `project_assistant_database_test.go`.
 
 At the composition root remove Host construction, persisted-setting enable/
 disable hooks, Service/Status forwarding, usage measurements, native registration
-and historical RecoverWork wiring, plus this Host's two Broker assistant fields
+and historical RecoverWork wiring, plus this Host's three Broker assistant fields
 after all owners are proven clean. Root separately owns its transparency/catalog
 entries and HTTP/MCP/UI additions. Preserve the shared database, original
 Sessions/schedules/Broker and retained Bot data; disable/removal never implies

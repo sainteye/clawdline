@@ -76,5 +76,6 @@ image tile. The recording never opens the full-screen image viewer.
 
 Capture the console at 390 × 844 CSS pixels, device scale 2, approximately ten frames per
 second. Keep capturing during the actions and retain each frame's elapsed time when encoding
-the GIF. Both READMEs display the recording at 390 pixels wide. Do not replace the console
+the GIF. Neither README embeds the recording any more: both open with
+`docs/assets/readme-overview-{en,zh-Hant}.png` (`docs/share-images.md`). Do not replace the console
 with drawn screens, title cards or a slide sequence.

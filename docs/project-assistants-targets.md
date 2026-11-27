@@ -11,8 +11,9 @@ provider readiness. It neither starts a provider nor enables the feature.
 
 ## Request and response
 
-All three query parameters are required exactly once. Unknown keys, duplicate
-keys, malformed query encoding and non-integer page sizes are refused.
+The three query parameters below are required exactly once. An optional
+`include_gemini` parameter may appear once and must equal `true`. Unknown keys,
+duplicate keys, malformed query encoding and non-integer page sizes are refused.
 
 | Parameter | Meaning |
 | --- | --- |
@@ -34,9 +35,10 @@ The generated DTOs are `ProjectAssistantProjectsRequest`,
 | --- | --- |
 | `contract_version` | `project-assistants.v1`. |
 | `source` | The existing current source-status envelope, including actual read/write access. |
-| `agents` | `claude` and `codex`, the configuration kinds accepted by Create. These are not native capability evidence. |
+| `agents` | `claude`, `codex` and `grok`, the configuration kinds accepted by Create; with `include_gemini=true`, every `ProjectAssistantAgentValues` entry, which adds `antigravity`. Earlier consoles reject a catalog with an unknown agent, so it is opt-in. These are not native capability evidence. |
 | `revision` | SHA-256 of the complete, stably sorted registered metadata snapshot. |
-| `items` | Complete `{target: {machine_id, project_id}, label}` choices. |
+| `items` | Complete `{target: {machine_id, project_id}, label, icon}` choices; `icon` is the Project icon resolved from the icon registry. |
+| `personal_workspace` | `true`: an empty Project choice creates a source-owned personal workspace. |
 | `next_cursor` | Continuation after the last returned choice; empty on the final page. |
 | `has_more` | Whether at least one actual choice remains in the same snapshot. |
 
@@ -63,7 +65,10 @@ and native-turn admission continue to enforce their own write requirements.
 After the response has been encoded, the handler rereads the registry and
 revalidates current authority immediately before publication. A changed
 snapshot or changed principal, reader, authorization revision, feature or
-source policy refuses the entire response. This is an in-process publication
+source policy refuses the entire response: a registry change returns
+`pa_cursor_expired` with `project_registry_changed`, and an authority change
+returns `pa_revoked` with `source_authority_changed`. A missing local signing
+token returns `pa_revoked` with `cursor_key` before any page is built. This is an in-process publication
 fence, not a transaction with an external Cloud relay.
 
 ## Registered metadata and continuation

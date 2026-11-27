@@ -33,6 +33,9 @@ ago first.
 - **Restore resumes through the reboot restore's path** (`resumeConversation` in
   `internal/transport/http/session_restore.go`): the same opening queue, the row's directory added
   to the places the starter may resolve, and the same `Starter`. There is no second launcher.
+  An Antigravity conversation, which the archive admits as well (`restorable` in
+  `internal/app/session_restore.go`), is reopened instead through its owned-protocol host's
+  `Import` (`projects.OwnedAssistant`), as a reboot restore does.
 
 ## Old conversations are past the past list
 
@@ -102,7 +105,8 @@ The bounds — 500 archived conversations and 20 per restore — are registered 
 - **The swipe.** A row that names its conversation (`sessionId`) swipes open to two 88px buttons,
   Archive left of Close (`session/swipe.ts` `actionWidth`, `session/swipe-archive.css`); a row without
   one keeps the 126px close alone and draws no Archive. Neither button acts: each opens the
-  confirmation.
+  confirmation. Both are disabled on a stale or unverified row, and Archive is also disabled,
+  though still drawn, on a `claude_remote` row (`sessionSwipeActions`).
 - **The confirmation** is the close's sheet with the kind `archive` (`overlays/action-confirm.ts`):
   the same work reminder, the same `close_blocked` reopen and forced second decision, sent to
   `POST /v1/sessions/{id}/archive`. It waits for the archive's own answer rather than the row
@@ -110,5 +114,6 @@ The bounds — 500 archived conversations and 20 per restore — are registered 
 - **The Archive page** (`pages/archive.tsx`, drawer row Archive) lists `GET /v1/sessions/archived`
   with each entry's mark, title in the row's tint, folder, assistant, persona and when it was
   archived, and restores one conversation per press. An entry leaves when it opened or when the person confirms removing its archive record.
-- The three relay words are carried (`cloud/carry.ts`), wired in `cloud/relay-writer.ts`.
+- The four relay words are carried (the generated `cloud/carry-generated.ts`, from
+  `internal/domain/cloudvocab/vocabulary.json`), wired in `cloud/relay-writer.ts`.
 - `session/archive.e2e.ts` drives the whole path on a 390px phone.

@@ -155,7 +155,8 @@ or `canceled` is left alone even if Cloud offers the same delivery again.
 asserts zero across three polls, with `TestAnAcceptedDeliveryReachesTheBrokerOnce` as its control;
 with the re-offer guard disabled it failed, sending receipt versions 2 and 3 for a delivery Cloud had
 already declared expired. A `schedule_dispatch_refused` receipt carries a stable code, never text:
-`schedule_not_found`, `schedule_disabled`, `schedule_active`,
+`schedule_not_found`, `schedule_disabled`, `schedule_active`, `schedule_invalid` (an investigation
+hook whose schedule is not investigation-bound),
 `orchestrator_disabled`, `hook_unbound`, `binding_store_unavailable`, `outcome_unknown` or
 `dispatch_failed`. A finished run sends `task_execution_terminal` with `success`, `failure`,
 `timed_out` (the broker's `timeout`), `cancelled` or `spawn_failed`;
@@ -435,7 +436,8 @@ changed (`TestTheSchedulePermissionFieldRoundTrips`, `TestAnAgentMayNotSetOrChan
   已經有 `schedules`、`schedule-create`、`schedule-update` 等 op，Cloud 的排程面板就是走它們。
 - 推播：missed 與派工被拒（`refused`）時會推播（`internal/app/scheduler.go`）；run 以
   failure／timeout／spawn_failed **結束**時的推播這次沒有查證，照舊列為未確認。
-- 範本裡 broker 還不支援的欄位（`serialize`、`graph`）會在發射時被具名拒絕（`bad_task`）。
+- 範本裡 broker 還不支援的欄位（`serialize`~~、`graph`~~）會在發射時被具名拒絕（`bad_task`）。`graph` 現在由 broker 收下
+  （`admitGraph`，`internal/app/orchestrator/graphs.go`），只剩 `serialize` 會被拒絕。
 - ~~執行紀錄的 `terminal_id`／`session_id`、`finished_at`~~：2026-10-15 補上，見下方「執行紀錄可以接回去」。
 - 搬移只能從表單做，一次一個；表單沒有「只跑一次」的日期欄位，所以只跑一次的排程搬移時帶著原本的 `on`，
   但無法在搬移時改它。

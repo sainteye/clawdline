@@ -15,8 +15,9 @@ tools/configure-public-remote.sh
 
 It adds `origin` with the public fetch URL and sets this checkout's
 `core.hooksPath` to `tools/git-hooks`. The tracked `pre-push` hook permits only
-the public `main` and `swift` branches and checks the working tree for private
-material. It does not scan Git history. `tools/test-public-remote-guard.sh`
+the public `main` and `swift` branches, and checks the working tree for private
+material before a push to `main` (a push to `swift` is not checked). It does not
+scan Git history. `tools/test-public-remote-guard.sh`
 proves that another branch is rejected against a disposable local bare
 repository and that no remote ref was created; `tools/test-pre-push-privacy.sh`
 proves that the working-tree privacy answer is asked once, that no historical
@@ -52,14 +53,12 @@ word list that must not be committed, so run the required local and publication
 checks on a machine that has that list. A green CI result is not publication
 approval.
 
-`tools/test-go-ci.sh` names four host-integration exclusions in every run and
+`tools/test-go-ci.sh` names three host-integration exclusions in every run and
 first verifies that every named test still exists:
 
 - `TestADaemonThatCannotBindNamesWhoHasThePort` and
   `TestTheSystemNamesThisProcessAsTheListener` require the host process table
   to identify and timestamp a live listener.
-- `TestReclaim` must prove a live child command from the host process table
-  before it signals that process.
 - `TestTheRealListingCarriesWhateverItCouldNotRead` needs both the live
   process table and an iTerm2 Apple Event.
 
@@ -120,22 +119,22 @@ line redraws on its normal cadence; the success mark is eligible for 15
 minutes from the run's start. A failure remains visible for 6 hours before the
 poller replaces it with `{"state":"none","why":"stale-fail"}`.
 
-Clawdline reads the same file. Its project-links cache is fresh for 30 seconds,
-so a links request may serve one old reading while it refreshes in the
-background.
+Clawdline reads the same file. Its project-links cache is fresh for 30 seconds;
+a reading up to 2 minutes old is still served while a fresh one is read in the
+background, and an older one is read again before the request is answered.
 
 With a matching local and GitHub branch, the conservative path from a
 completed run to the terminal status line is therefore about 90 seconds plus
 one GitHub CLI request and a redraw; if the running state was already seen, it
 is about 5 seconds plus the request and redraw. Clawdline's links/status
-surface can add up to another 30 seconds after the next request.
+surface can add up to another 2 minutes after the next request.
 
-There is one current branch-name limitation: this development checkout uses
-`master`, while the public repository runs CI on `main`. `gh-run-status.py`
-passes the local branch name directly to `gh run list --branch`, and all
-worktrees of the same remote share one `ghrun-<owner>-<repo>.json` file. A
-`main` checkout can write the real verdict, but a simultaneously rendering
-`master` checkout can later overwrite it with `no-runs`. CI and the remote are
+There is one branch-name limitation: `gh-run-status.py` passes the local
+branch name directly to `gh run list --branch`, and all worktrees of the same
+remote share one `ghrun-<owner>-<repo>.json` file. The development checkout
+now uses `main`, as the public repository's CI does, but a simultaneously
+rendering worktree on a branch GitHub has no runs for can later overwrite the
+real verdict with `no-runs`. CI and the remote are
 necessary, but they do not by themselves make the shared cache stable until
 the producer resolves the local branch to its upstream/default GitHub branch.
 

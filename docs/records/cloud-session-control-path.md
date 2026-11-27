@@ -123,8 +123,11 @@ timeout said their outcome was unknown. Each number now reads the stored ceiling
 renewed from that ceiling, and a tab whose block another tab has reserved past leaves it and
 continues above, so an idle tab is not left more than the machine's 1,024-number window behind.
 `web/console/src/cloud/viewer-sequence.test.ts` drives two instances over one storage against a
-copy of the machine's window. What remains is the storage itself: `localStorage` is not a lock
-across tabs, so two tabs renewing in the same instant can still read one ceiling.
+copy of the machine's window. What remained then was the storage itself: `localStorage` is not a
+lock across tabs, so two tabs renewing in the same instant could still read one ceiling. **Closed
+2026-10-07:** a block is now reserved in one IndexedDB `readwrite` transaction, which runs one at a
+time across the origin's tabs; `localStorage` is kept only as a hint, and a browser without
+IndexedDB numbers no envelope (`no_sequence_store`).
 
 ### 2. The transport's replay refusal answers before the ledger's receipt can
 
@@ -389,4 +392,5 @@ fork that design, but it does mean re-reading v2 §4.1 and §6 before starting, 
 - Mechanism 1's collision is proven in the allocator and its consequence is proven in the Mac's
   counters. The link between them — that this device's two tabs are what produced those
   sequences — is inference from the run-of-60 pattern, not an observation of that browser.
-- Nothing here has been implemented, and none of it is a Cloud deployment claim.
+- Apart from mechanism 1 (done 2026-10-06, its storage gap closed 2026-10-07), nothing here has
+  been implemented, and none of it is a Cloud deployment claim.

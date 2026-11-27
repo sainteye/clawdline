@@ -31,7 +31,7 @@ An accepted receipt does not prove that the conversation has been observed.
 Chat retains the accepted command and text in the existing journal until a
 user message in the same Bot, Project and conversation names the receipt's
 turn. Another message with identical text cannot replace it. Until then the
-row says **Sent · updating conversation…**; a read failure keeps both that row
+row says **Received by the Bot’s computer** (「主機已收到訊息」); a read failure keeps both that row
 and its typed error, including after reload. A new send can proceed after the
 previous admission receipt arrives. Until the corresponding message is visible,
 its receipt stays in the journal. Plain text and quoted text use the known

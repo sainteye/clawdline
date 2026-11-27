@@ -1,14 +1,16 @@
 # Bot login profiles and selected application extensions
 
 This construction extends `b3a182748e8bfd1b6c538a26d7f428d90143ff14`
-(API 81). Its original compatibility tier is API 82 and feature schema 8.
+(API 81). Its login-profile and extension operations are API 81 with feature
+schema 7; its API-key login secret is API 82 with feature schema 8.
 The folder/transport construction advances this to API 83/schema 9; see
 [Selected Bot skill folders and connector transports](project-assistants-extensions.md). Integration
 must choose a higher monotonic tier if another API change lands first.
 The login construction includes account and encrypted API-key profiles and
 selected fallback identities. Application text skills and configured HTTP
 connectors retain the previous implementation. Folder assets, selected stdio and dedicated connector credentials are described in the extension construction.
-Actual network reachability remains open. No deployment,
+Network reachability is described in [Bot network source boundary](project-assistants-network.md)
+and [Cloud source composition](project-assistants-network-cloud.md). No deployment,
 installed-native account acceptance or public Release is claimed here.
 
 ## Account identity and native launch
@@ -120,8 +122,9 @@ by the existing instruction-byte ceiling.
 HTTP connector definitions are a source-owned `project-assistants/connectors.json`
 file below application state. The private file contains `ID`, `Name`, `URL`, full
 `Project`, `Agent`, and `Enabled`; unknown fields, symlinked definitions,
-credential-bearing URLs, query strings and environment/command fields are
-refused. A definition is offered only for its exact source Project and Agent.
+credential-bearing URLs and query strings are refused. The extension construction
+also accepts `Executable`, `Arguments`, `CredentialHeader` and `CredentialEnv`
+and validates them rather than refusing them. A definition is offered only for its exact source Project and Agent.
 Reading this file installs or activates nothing. No connector is configured on
 the person's machine by the task. The extension construction adds selected stdio and credential-backed HTTP/stdio adapters while preserving these HTTP definitions.
 
@@ -142,27 +145,28 @@ disable independent native Project/global tools, hooks or MCP configuration.
 The bilingual UI states that boundary. The visual community plugin system and
 opt-in toolbox are separate and are never treated as native connector catalogs.
 
-## Network reachability remains construction work
+## Network reachability
 
 CodyNC's `NetworkSwitches.tsx` means remote Bots on other computers in a joined
 network, or Cloud assistants in the account. It does not mean Internet egress.
-No network/Internet switch or effective-looking saved flag is added here.
+No network/Internet switch or effective-looking saved flag is added here; the
+Bot network settings, typed Bot endpoint and Cloud-assistant principal were built
+later and are described in [Bot network source boundary](project-assistants-network.md)
+and [Cloud source composition](project-assistants-network-cloud.md).
 
-The current authenticated peer path is execution/Session based:
+The Session peer path is execution/Session based:
 `domain/agenthandoff.Endpoint` requires a Session ID and execution generation;
 `transport/http.Server.PeerExecute` admits that execution, stores a peer inbox
 and delivers a broker notice to the Session. `PeerControlInput` grants also name
-source/target Session generations. There is no Bot endpoint or Cloud-assistant
-principal to substitute into those calls. A Bot ID, local-team membership, a
+source/target Session generations. A Bot endpoint or Cloud-assistant principal
+is never substituted into those calls. A Bot ID, local-team membership, a
 browser bearer or an ordinary person's paired phone is not such a principal.
 
-The remaining boundary is a typed Bot execution endpoint bound to account,
-machine, full Project and current Bot generation, its publication/admission
-policy on the existing signed/encrypted peer transport, and a distinct
-Cloud-assistant issuer/service. It still needs the two isolated real-source
-transport proof requested by the task. No existing peer crypto/grant policy or
-paired-person write semantics are changed. This open requirement is not
-cancelled or marked complete.
+The Bot rail uses a separate typed `agenthandoff.BotEndpoint` bound to account,
+machine, Project, Bot, conversation and generation, and a distinct
+Cloud-assistant protocol; its remaining acceptance is listed in the network
+pages. No existing peer crypto/grant policy or paired-person write semantics are
+changed.
 
 The pinned CodyNC Git tree contains the login-profile modules, editor,
 fallback identity, launch/skill/connector integration and both referenced
@@ -227,8 +231,8 @@ native/browser passes. The decoder golden audit retains 276,750 previous inputs
 with zero removals or changed decisions; added probes are distinct new inputs.
 
 The folder-skill and stdio/authenticated connector extension is now documented in
-the linked API-83 construction. True remote-Bot/Cloud-assistant reachability remains
-with the next construction unit. This does not complete the parent Board step or
+the linked API-83 construction. Remote-Bot/Cloud-assistant reachability is documented
+in the network pages linked above. This does not complete the parent Board step or
 its later installed/Cloud acceptance card.
 
 ## API-key Secret Handoff and protected-file vault

@@ -5,7 +5,7 @@ Open **Keyboard shortcuts** in the navigation menu, press `?`, or press **⌘/**
 Session controls and message editing, and shows the modifier for your keyboard. Close it with
 Escape, its Close button, or a click outside; focus returns to the control you came from.
 
-The shortcuts work in the local console and Clawdline Cloud. A terminal keeps its own keys;
+The shortcuts work in the local console and Clawdline Cloud, except the Session keys noted below. A terminal keeps its own keys;
 press F6 to return keyboard focus to the page before using console shortcuts.
 
 ## Navigation
@@ -38,6 +38,9 @@ existing machine chooser when a machine must be selected. Message and attention 
 an open Session.
 
 ## In a Session
+
+These keys act in the local console. On Clawdline Cloud's Sessions page they do nothing: that list
+has its own rows and search, and only Esc (to close the navigation menu) is handled there.
 
 | Key | Does |
 | --- | --- |

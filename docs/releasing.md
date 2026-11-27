@@ -9,10 +9,11 @@ published, and how the signing key is kept. What a machine does with a release i
 
 | Asset | Holds |
 | --- | --- |
-| `clawdline_<v>_<os>_<arch>.tar.gz` (linux amd64/arm64, darwin arm64/amd64) | `clawdline` and `dist/` (the local console, with `BUILD.json`) at the archive root — the layout `~/.local/share/clawdline-next/current` points at |
+| `clawdline_<v>_<os>_<arch>.tar.gz` (linux amd64/arm64, darwin arm64/amd64) | `clawdline` (and, in a darwin archive, its copy `clawdline-daemon`), `dist/` (the local console, with `BUILD.json`), the pinned tmux as `libexec/tmux` with `libexec/tmux.json`, and `licenses/`, at the archive root — the layout `~/.local/share/clawdline-next/current` points at |
 | `Clawdline-<v>-macos-arm64.tar.gz` | `Clawdline Next.app` (tar, so modes, symlinks and the signature survive) |
+| `Clawdline-<v>-macos-arm64.dmg`, its `.delivery.json` and `.spdx.json` | the same App in a notarized disk image for a first installation; a delivery container the updater does not read ([below](#an-apple-silicon-dmg-from-an-already-published-app)) |
 | `SHA256SUMS` | manual checksum comparisons and compatibility with older installers; not a trust root |
-| `manifest.json` | version, commit, `committed_at`, channel, `min_version`, `non_additive_migration`, and each artifact's os, arch, kind, URL, size and sha256 |
+| `manifest.json` | version, commit, `committed_at`, channel, `min_version`, `non_additive_migration`, `notes_url` (left empty by `build.sh`), and each artifact's os, arch, kind, name, URL, size and sha256 |
 | `manifest.sig.json` | a list of `{key_id, sig}` Ed25519 signatures over `manifest.json`'s exact bytes |
 | `<archive>.spdx.json` | the SPDX 2.3 SBOM of each archive (`tools/release/sbom.sh`) |
 
@@ -265,8 +266,9 @@ retain local evidence. After success, root may delete the staging draft with `gh
 Root records the run, both commits, asset digests and acceptance outputs before cleaning its
 task-owned review directory.
 
-Future ordinary Releases create the same DMG inside `build.sh`, using `release.yml` and the same
-source/packaging commit. The ordinary Release workflow attests and drafts all three extra assets;
+Ordinary Releases now create the same DMG inside `build.sh`, using `release.yml` and the same
+source/packaging commit; the supplemental workflow above is for an App published without one. The
+ordinary Release workflow attests and drafts all three extra assets;
 `gate.sh` recognizes only that exact delivery set and verifies it before publication. The updater
 manifest and `SHA256SUMS` continue to describe the tar archives; DMG digest verification uses its
 independently attested delivery record. A historical supplementary DMG passed to a later local

@@ -1,6 +1,13 @@
 # Connection health administration
 
-Status: product plan, 2026-10-20. No monitoring implementation or production rollout is implied.
+Status: product plan, 2026-10-20. Parts of it have since been implemented: the daemon's
+connection-health runtime (`internal/domain/connectionhealth`: active slots, journal, watchdog,
+stall capture, location map), started from `cmd/clawdline/health.go`, its durable store
+([admin-connection-health-storage.md](admin-connection-health-storage.md)), its bounds
+(`internal/domain/capacity/register_connection_health.go`) and the operator page
+(`web/console/src/cloud/admin/health/`,
+[admin-connection-health-ui-integration.md](admin-connection-health-ui-integration.md)). The rest
+of this page is still the plan, and no production rollout is implied.
 
 The product should let an operator open one page, see which user operation is blocked, slow or
 failing, establish when it began, then give an agent enough evidence to find the last progressing
@@ -30,23 +37,23 @@ permissions, even when the same person holds both. Existing business administrat
 
 ## What exists, and what it does not establish
 
-The initial source review used the product tree at `d2ed0c063`; locations below must be refreshed
-when implementation starts. They describe source behavior, not proof of the deployed incident cause.
+The initial source review used the product tree at `d2ed0c063`; the locations below have been
+refreshed against the current tree and cite symbols where lines move often. They describe source behavior, not proof of the deployed incident cause.
 
 | Existing evidence | Source | Limit |
 | --- | --- | --- |
-| Admin loads independently of machine CloudGate and relay | `web/console/src/cloud/admin/AdminGate.tsx:16` | Preserve this failure independence. |
-| Operations overview, accounts, usage and promotions | `web/console/src/cloud/admin/api.ts:62`; `words.ts:17` | No connection-health or incident contract. |
-| Per-browser direct-attempt history | `web/console/src/cloud/direct-history.ts:13`; `pages/devices/AccountMachines.tsx:293` | Browser-local, 24 hours; not durable machine/Cloud history. |
+| Admin loads independently of machine CloudGate and relay | `web/console/src/cloud/admin/AdminGate.tsx` (module comment) | Preserve this failure independence. |
+| Operations overview, accounts, usage and promotions | `web/console/src/cloud/admin/api.ts` (`Overview`); `words.ts` (`ADMIN_ROUTES`) | Connection health is its own page (`health`), not part of the business overview. |
+| Per-browser direct-attempt history | `web/console/src/cloud/direct-history.ts:13`; `pages/devices/AccountMachines.tsx` (`directHistory`) | Browser-local, 24 hours; not durable machine/Cloud history. |
 | Carrier state | `web/console/src/cloud/carrier-state.ts:4` | Read carrier; command/status paths may differ. |
-| Socket state and lifetime counters | `internal/adapters/cloud/status.go:27` | Connected is not application progress; no persisted stage timeline. |
-| Synchronous socket read and frame handler | `internal/adapters/cloud/transport.go:445` | A stuck callback can prevent the next read, outside the next socket deadline. |
-| Sender lookup, verification and callback | `internal/adapters/cloud/transport.go:675` | Needs separate active phases before each dependency. |
-| Shared WebSocket writer lock | `internal/adapters/cloud/websocket.go:292` | Write deadline is set after taking the lock; lock wait needs separate observation. |
-| Eight read slots and bounded command lane | `internal/transport/cloud/link.go:1082` | Occupancy alone does not name each holder or its age/stage. |
-| Spool capacity, receipts and loss readings | `internal/adapters/cloud/spool.go:956` | Mutex-backed normal snapshot cannot be the watchdog's only evidence. |
-| Route duration samples and totals | `internal/transport/http/route_stats.go:18` | Completed-request samples omit a request that never finishes; recent samples are not windowed SLO data. |
-| Local diagnostics and Cloud status | `internal/transport/http/server.go:722`; `cloud.go:3` | Raw local-only endpoints must not simply be opened to remote viewers. |
+| Socket state and lifetime counters | `internal/adapters/cloud/status.go` (`Status`) | Connected is not application progress; the stage timeline is the connection-health journal, not this snapshot. |
+| Synchronous socket read and frame handler | `internal/adapters/cloud/transport.go` (`(*Transport).read`, `handle`, `handleFrame`) | A stuck callback can prevent the next read, outside the next socket deadline. |
+| Sender lookup, verification and callback | `internal/adapters/cloud/transport.go` (`handleEnvelopeTraced`) | The lookup is its own watchdog location (`LocSenderLookup`); other dependencies need their own phases. |
+| Shared WebSocket writer lock | `internal/adapters/cloud/websocket.go` (`(*Conn).writeFrame`) | Write deadline is set after taking the lock; the lock wait is observed separately as `StageWriterLockWaiting`, started before the lock is taken. |
+| Eight read slots and bounded command lane | `internal/transport/cloud/link.go` (`CloudReadConcurrencyLimit`, `CloudReadQueueLimit`) | Occupancy alone does not name each holder or its age/stage. |
+| Spool capacity, receipts and loss readings | `internal/adapters/cloud/spool.go` (`ChannelByteLimit`, `Rows`, `Readings`) | Mutex-backed normal snapshot cannot be the watchdog's only evidence. |
+| Route duration samples and totals | `internal/transport/http/route_stats.go` (`routeStat`, `routeStats`) | Completed-request samples omit a request that never finishes; recent samples are not windowed SLO data. |
+| Local diagnostics and Cloud status | `internal/transport/http/server.go` (`/v1/diagnostics`, `/v1/cloud/status` routes); `cloud.go:3` | Raw local-only endpoints must not simply be opened to remote viewers. |
 | Content-free direct attempt trace | `internal/transport/cloud/direct_trace.go:3` | Useful correlation model; not an end-to-end request history. |
 
 The Cloud source review found an existing superuser operations overview, metadata-only bounded
@@ -243,7 +250,7 @@ retained less. The exact Cloud schema/index overhead and compressed/uncompressed
 | Captured incidents | 20, 10 MiB each, 100 MiB total | Eviction policy exposes a tombstone; active/pinned quota is finite. |
 | Watchdog | 1-second cadence, per-stage operation deadlines | Record scheduling gaps; exclude healthy long-lived streams. |
 | Initial finite-operation warning/block | 5 / 15 seconds, overridden by operation contract | Explicit proposed heuristic, not a measured SLO or proof of deadlock. |
-| Stack evidence | One capture per transition; 60-second cooldown; 512 KiB export cap | Mark truncation; no capture loop. |
+| Stack evidence | One capture per transition, at most four a minute; 512 KiB export cap | Mark truncation; no capture loop. |
 | Normal background export | 1 MiB/machine/hour, maximum 32 KiB batch | Delay/drop optional detail; preserve loss counters. |
 | Incident export | 5 MiB/incident, maximum 4/day/machine; shared tenant caps apply | Keep local capture and metadata marker; no budget expansion. |
 | Cloud routine detail | 24 hours, within 50 MiB/machine and 500 MiB/account | Show quota/retention floor; finite fair allocation. |
@@ -290,9 +297,11 @@ No fallback to LAN/tunnels or broad local access is implied.
 ## Query and agent investigation contract
 
 Proposed Cloud operator reads: overview, source/machine timeline, bounded events, trace, incidents
-and collector health under `/su/v1/health/`. Owner reads have separate tenant-bound routes. Local
-`clawdline health` commands provide status/events/trace/incidents/export with explicit `--since`,
-`--until`, source, machine/carrier and JSON output. These commands do not exist yet.
+and collector health under `/su/v1/health/`. Owner reads have separate tenant-bound routes. The local
+`clawdline health` commands exist (`cmd/clawdline/health.go`): `status`, `events`, `trace`,
+`export` and `history`, with `--since`, `--until`, `--after-seq`, `--limit`, `--boot-id`,
+`--correlation`, `--cursor`, `--json` and `--port`. The planned `incidents` subcommand and the
+source and machine/carrier filters are not there.
 
 Dedicated ingest accepts authenticated versioned bounded batches, deduplicates event IDs and returns
 accepted/rejected counts plus a durable ingest receipt. Accepted is not persisted until that receipt
@@ -383,17 +392,20 @@ list. An investigation row whose state, reason, report conclusion or recovery ba
 not know keeps that value as unknown and is still shown; it never refuses the incident, and an open
 row the page cannot place blocks a start because it may hold the one live slot.
 
-*Hand to an agent…* lists the operator's own active schedule webhooks from
-`GET /v1/schedule-webhooks` (`clawdline.schedule_webhook.list.v1`). That list has no field saying
-which hook is bound to an investigation schedule, so the page says so and asks the operator to
-confirm the binding; a machine without it refuses the delivery and the investigation reads
-*Needs you / refused*. The page creates no webhook and changes no schedule. The start is
+*Hand to an agent…* reads `GET /su/v1/health/investigation-destinations`
+(`clawdline.health_investigation.destinations.v1`): one row per real machine, as Cloud resolves
+it, in the state `ready`, `setup_required`, `ambiguous`, `offline` or `unknown`. Only a `ready`
+row carries a `hook_id` and can be chosen; the others are shown with their reason. A 404 is a
+Cloud without the route and reads *not supported*; the page does not fall back to the schedule
+webhook list, which cannot say which hook runs an investigation
+(`health/investigation-actions.ts`). The page creates no webhook and changes no schedule. The start is
 `POST /su/v1/health/incidents/:id/investigations` with exactly `hook_id` and
 `expected_incident_revision` (the latest revision; `deliver_within_seconds` is left to Cloud's
 default) and an `Idempotency-Key` the page keeps until a definite answer. A lost answer, an
 untyped 5xx or an unreadable 202 keeps the key and body and offers *Send the same request again*;
-Cloud's typed refusals spend it. `investigation_open` and `incident_revision_moved` reload the
-incident so the live investigation or newer revision is shown. Task success is never recovery,
+Cloud's typed refusals spend it. `investigation_open`, `incident_revision_moved` and `investigation_limit` (Cloud allows 5
+investigations per incident) reload the incident so the live investigation, newer revision or
+used-up limit is shown. Task success is never recovery,
 and human review stays separate: acknowledgement changes no investigation.
 
 ## Delivery plan and ownership

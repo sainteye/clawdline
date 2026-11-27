@@ -55,7 +55,11 @@ switch-back mutation. Primary rest expiry applies to the next explicit input.
 The Host journals every authorized NativeWork callback before its operation:
 team availability and calls, Bot directory and messaging, routines, output
 publication and artifact listing, memory read/edit, browser status/commands,
-chat publication, dispatch and work status. Each callback allocates a
+chat publication, dispatch and work status, and the categories later features
+added: reactions, network Bots, connectors, person questions and their
+withdrawal, Bot requests, Bot management, source approval, memory detail,
+background work, `message_work`, charter proposals and conflict reports, and
+dev-server list/logs/start/stop. Each callback allocates a
 source-owned invocation identity from its execution binding, category and
 atomic invocation sequence. The identity remains fixed for that journal
 attempt. This is an invocation record, not a tool-completion or effect receipt;
@@ -72,7 +76,8 @@ wait on a journal while Send holds the memory lock. No no-effect guarantee is
 derived from that refusal.
 
 Construction verification includes SQLite journal-failure injection across the
-14 actual Host callbacks, durable distinct read invocation IDs and Send callback
+14 original Host callbacks (`TestEveryNativeWorkToolStopsBeforeEffectWhenJournalFails`;
+the categories added later are not in that test), durable distinct read invocation IDs and Send callback
 refusal. `TestProjectAssistantFallbackProgressStoredHTTP` exercises real
 authenticated TCP, Host execution and SQLite while an alternate is waiting for
 an answer and after it closes. Set `CLAWDLINE_FALLBACK_PROGRESS_DIR` to a
@@ -209,10 +214,15 @@ fallback chain does not consult shared rest to block its primary. When every
 configured Agent is resting, a new human turn still tries its primary, as
 upstream `relay_turn` uses `next_step(now).unwrap_or(0)`. An already attempted
 Agent is never retried inside the same logical turn. An omitted edit preserves
-the saved chain; an explicit empty array clears it. The primary Agent cannot be
-edited. Identities must be unique, including the primary, within Codync's
-three-fallback ceiling. With only these two default-login enums available, at
-most one alternate is currently valid. A fixed non-Auto mode refuses an
+the saved chain; an explicit empty array clears it. Identities must be unique,
+including the primary, within Codync's three-fallback ceiling. In this slice
+the primary Agent could not be edited and, with only two default-login enums,
+at most one alternate was valid. Since API 82 create and edit also accept
+`fallback_steps`, each an Agent plus an optional source-owned login profile
+(empty means that Agent's default login); uniqueness is per (Agent, login)
+step, so the same Agent on another login is a valid alternate. An edit that
+changes the primary Agent is accepted and resets mode, runtime settings, login
+profile, extensions and both fallback configurations. A fixed non-Auto mode refuses an
 alternate until a no-freer stand-in mapping is qualified; this does not block
 new primary input merely because the alternate mode is unqualified.
 
@@ -251,7 +261,8 @@ entered and setup registrations were reclaimed; it never permits fallback. Provi
 share an MCP lifetime. There is no same-Agent Send retry.
 
 Turn `attempts` is an append-only sequence of immutable facts: ordinal, effective
-Agent, full fence, stage, whether Send began, effect knowledge, cleanup knowledge
+Agent and its login profile, whether it was a fallback and the primary's rest
+reason when a resting primary was skipped, full fence, stage, whether Send began, effect knowledge, cleanup knowledge
 and normalized reason. A `sending` fact commits before the external write.
 After Send, effects remain `unknown` even if an answer and successful Close are
 observed; this implementation has no authoritative native side-effect ledger.
@@ -305,7 +316,8 @@ The read-only reference was verified at Codync commit
   cleanup and a filtered fresh-session handoff; the runtime extension below
   restores each Agent's own confirmed-clean history.
 
-Rests are keyed by machine plus Agent and survive Host/database reopen and Bot
+Rests are keyed by machine plus login identity (`LoginKey(agent, profile)`;
+the bare Agent for its default login) and survive Host/database reopen and Bot
 deletion. They are separate from Bot memory/export. A successful answer clears
 the answering identity's rest in the terminal transaction. Clock expiry changes
 selection only on the next message, never mid-turn. The capacity register covers
@@ -359,8 +371,13 @@ order is omitted. Saving configuration never opens a provider or sends a
 prompt. Selecting an identity does not qualify an installed native adapter to
 issue the pre-send guarantee described above.
 
-Deliberate differences from Codync: no per-alternate model or login profile
-(Clawdline alternates are default-login Agent identities only), no rest/"In use"
+On API 82 sources the form is `SelectedFallbackSettings`: it loads each
+Agent's login profiles and offers every Agent's default login plus its other
+signed-in or signed-out logins, excluding the primary step and steps already
+listed, and saves `fallback_steps`. The Agent-only list above remains for older
+sources.
+
+Deliberate differences from Codync: no per-alternate model, no rest/"In use"
 status rows and no switch-back button (status and switch-back are later work),
 and moves are buttons rather than a menu so they stay reachable on phones.
 
@@ -394,11 +411,11 @@ Focused helper and captured-client tests cover omission/clearing, both shipped
 identities, fixed modes, API71, read-only and revoked authority, and late
 revocation becoming an unknown write without retry. The optional
 `TestProjectAssistantFallbackSettingsBrowser` starts a real authenticated Go TCP
-source with empty SQLite and a scripted provider, then invokes the installed
-Clawdline browser CLI through `project-assistants-fallback-settings.e2e.mjs`.
+source with empty SQLite and a scripted provider, then runs
+`web/console/tools/project-assistants-fallback-settings.e2e.mjs`.
 It never installs or probes a vendor executable and makes zero vendor/model/API
 requests. Set `CLAWDLINE_FALLBACK_SETTINGS_E2E_DIR` to a task-owned evidence
-directory and `BOTS_BROWSER_HOME` only for the existing browser broker's CLI.
+directory and `CHROME` to an existing test browser executable.
 The product fixture itself retains its empty isolated HOME and store.
 
 The initial same-page acceptance exposed a pre-existing producer defect:
@@ -411,10 +428,9 @@ post-send event handling; the source projection needs separate integration
 before that claim. The read validator and authority fence are not relaxed by
 this increment.
 
-The browser run drives the person's configured Chrome through `clawdline
-browser` (the same broker the routines acceptance uses); set
-`BOTS_BROWSER_CLAWDLINE_DIR` to that broker's configuration directory because
-the Go fixture isolates HOME. It covers: empty list, add/save/reopen, remove,
+The harness launches a task-owned fresh headless Chrome from `CHROME` and
+drives it over CDP; it uses no installed CLI and not the person's usual
+browser. It covers: empty list, add/save/reopen, remove,
 unrelated save omitting the field, a real send that switches to Codex before
 sending, idempotent receipt replay, Taiwan Traditional Chinese at phone width,
 API71 (control disabled with its reason, field omitted), a read-only grant

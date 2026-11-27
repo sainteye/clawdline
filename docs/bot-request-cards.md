@@ -1,9 +1,11 @@
 # Bot request cards
 
-Status: design approved by the person on 2026-11-24; phases 1 and 2 (backend) are being implemented.
+Status: design approved by the person on 2026-11-24. Phases 1 and 2 (record, Bot tools,
+notifications) and the console of phase 4 are built for the local daemon; split and merge (phase 3)
+and Cloud parity (phase 5) are not. §12 records what was built and what was not.
 
-No schema, wire word or tool name in this page exists yet unless it is cited with a `file:line` as
-current behaviour. The names it reserves are listed once, in §4.1.
+A schema, wire word or tool name in this page exists only where §12 records it as built. The names
+it reserves are listed once, in §4.1.
 
 The person's summary in Traditional Chinese is [`bot-request-cards.zh-TW.md`](bot-request-cards.zh-TW.md).
 
@@ -52,13 +54,14 @@ What exists today:
   shipped in `523e059d7`, whose subject calls it a "Bot work card") shows **one dispatched
   Session's** result in the Bot's chat: its delivery commit,
   target branch and Broker landing, read from the task's work link
-  (`WorkLink`, `internal/domain/projectassistant/types.go:466-490`), plus the linked Board item's
+  (`WorkLink`, `internal/domain/projectassistant/types.go`), plus the linked Board item's
   independent verification, and it opens the worker Session
   (`docs/project-assistants-owned-mcp.md:101-110`). It is per task. It has no notion of one request
   crossing several Bots, of who holds it, or of a review verdict by another Bot.
 - **Board v2 items** are created and assigned only by a person or a Session relaying a person's run
   (`docs/work-system-v2.md:41-62`); a Bot can *link* an item the person named
-  (`internal/adapters/projectassistantacp/mcp.go:1004`, `:803`) but never creates or moves one.
+  (`board_item_id` on `dispatch_work`, `internal/adapters/projectassistantacp/mcp.go`) but never
+  creates or moves one.
 - **Agent proposals** are drafts a person must accept (`docs/work-system-v2.md:918-934`): the wrong
   shape for work the person already authorized by asking.
 
@@ -67,7 +70,7 @@ What exists today:
 - A **new record type**, separate from Board v2 work items, modelled on Agent proposals: its own
   tables and its own Board section, never counted in Board counts. Not a new `kind` on work items.
 - **Delivery is self-reported.** Each destination is a checklist entry the holding Bot marks, as
-  Board v2's `--deployment` text is today (`internal/domain/work/v2.go:900`). The daemon does not
+  Board v2's `--deployment` text is today (`internal/domain/work/v2.go`). The daemon does not
   compute it.
 - **Nothing is enforced.** A verdict is recorded and shown; it blocks no commit, push or deploy.
   Enforcement was considered and deliberately deferred until a problem recurs (§13).
@@ -120,7 +123,7 @@ card without them simply does not show them.
 
 | Record | Scope | What it is to a card |
 |---|---|---|
-| **Work result card** (`WorkResultCard`, from a `WorkLink`) | one dispatched Session | the card's **execution detail**. Each attached task's work result card appears under the Bot request card, unchanged. The card defines no delivery or landing facts of its own: it displays the work link's (`delivery_commit`, `landing`, `landing_commit`, `landing_target`, `types.go:474-487`) |
+| **Work result card** (`WorkResultCard`, from a `WorkLink`) | one dispatched Session | the card's **execution detail**. Each attached task's work result card appears under the Bot request card, unchanged. The card defines no delivery or landing facts of its own: it displays the work link's (`delivery_commit`, `landing`, `landing_commit`, `landing_target` on `WorkLink`, `types.go`) |
 | Broker task | one dispatch | attaches to a card through `bot_request_id` on the task (§8.1); a card may have none |
 | Board v2 item | the person's work | optional `board_item_id` link when the person's message named it; the card never edits or moves the item. The linked item's independent verification keeps showing on the work result card as it does now |
 | Agent proposal, Quick Session to-do | — | unrelated |
@@ -162,7 +165,7 @@ own entries instead of the default.
    open entries, the Bot as holder.
 2. The Bot writes the draft, marks `draft` done with a note saying where the draft is, and asks the
    person to read it with the existing `ask_person` tool
-   (`internal/adapters/projectassistantacp/mcp.go:975`). The card's `waiting` is set, so it sits
+   (`mcpTools()`, `internal/adapters/projectassistantacp/mcp.go`). The card's `waiting` is set, so it sits
    under **Waiting for you** at the top of the section (§9) until the person answers.
 3. The person answers in the Bot's chat. The Bot marks `reviewed by the person` done, noting the
    answer, and revises first if the answer asked for changes.
@@ -179,16 +182,17 @@ already can ask, and templates beyond one default checklist per kind of work.
 
 ## 4. Record shape
 
-Tables (names reserved in §4.1, not created), in the same store as `work_v2_proposals`
+Tables (`internal/adapters/store/bot_request.go`), in the same store as `work_v2_proposals`
 (`internal/adapters/store/work_v2.go:170`) and never joined into Board counts:
-`bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist`.
+`bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist`, and
+`bot_request_receipts`, which holds the idempotency window (`botrequest.receipts`, §10).
 
 `bot_request_cards`:
 
 | Field | Meaning |
 |---|---|
 | `id` | lowercase UUID (§7.1, §6) |
-| `project_id`, `project_path` | the Bot's Project and path snapshot. A Project need not be a repository (`ProjectScope`, `internal/domain/projectassistant/types.go:44-52`) and the card reads nothing from it |
+| `project_id`, `project_path` | the Bot's Project and path snapshot. A Project need not be a repository (`ProjectScope`, `internal/domain/projectassistant/types.go`) and the card reads nothing from it |
 | `kind` | optional short label, e.g. `development`, `publishing`; selects a default checklist (§3.3) |
 | `title`, `description` | plain language; bounded (§10) |
 | `authority` | `{bot, conversation_id, turn_id, message_id}` of the person's message; a merged card also lists the authorities it absorbed |
@@ -199,6 +203,7 @@ Tables (names reserved in §4.1, not created), in the same store as `work_v2_pro
 | `state` | `open`, `done`, `cancelled`, `merged` |
 | `waiting` | empty, or the id of an `ask_person` question the holder is waiting on |
 | `split_from`, `merged_into` | set by §6 |
+| `cycle` | starts at 1 and counts reopens; part of the completion key (§5) |
 | `version` | optimistic version; every write names the version it read |
 | `created_at`, `updated_at`, `closed_at` | timestamps. `updated_at` is the time of the card's last event and every read shows it as "last updated", so a stalled handoff is visible. It is a read-model field, not a timer |
 
@@ -219,25 +224,26 @@ not resolve in the Project is refused. A verdict is never edited; a later verdic
 `bot_request_events` is append-only, one row per accepted write, with actor, versions and time:
 `card.created`, `baton.handed`, `verdict.recorded`, `checklist.added`, `checklist.marked`,
 `waiting.set`, `waiting.cleared`, `card.split`, `card.merged`, `card.done`, `notified`,
-`card.cancelled`, `card.reopened`.
+`card.cancelled`, `card.reopened`, and `chain.joined` when a second create or a `message_bot` adds a
+Bot to the chain.
 
 ### 4.1 Reserved names
 
-Every identifier this design reserves, stated once. None exists yet. Tables, tool names and wire
-words are irreversible once shipped (§12).
+Every identifier this design reserves, stated once. Those §12 records as built exist now; the rest
+are reserved. Tables, tool names and wire words are irreversible once shipped (§12).
 
 | What | Reserved names |
 |---|---|
 | Person-facing name | Bot request card／Bot 交辦卡 |
 | Board section label | Bot work／Bot 工作 |
-| Tables | `bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist` |
+| Tables | `bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist`, `bot_request_receipts` |
 | Field on the broker task, the work link, `dispatch_work` and `message_bot` | `bot_request_id` (Go: `WorkLink.BotRequestID`) |
 | Bot tools | `bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`, `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`, `bot_request_done` |
-| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope` |
+| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope`; also shipped: `bot_request_forbidden`, `bot_request_invalid`, `bot_request_not_found`, `bot_request_closed`, `bot_request_no_person_authority` |
 | Turn origin | `bot_request_handoff` |
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
 | Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
-| Outbox effect key | `bot-request-done-<card id>-<cycle>` |
+| Outbox effects | kinds `bot_request.done` and `bot_request.done.notice`, both keyed `bot-request-done-<card id>-<cycle>`; `bot_request.handoff`, keyed `bot-request-handoff-<card id>-<version>` |
 | Capacity names | `botrequest.page_rows`, `.merge_hops`, `.receipts` (§10). The register's names allow no underscore in the area, so the area is `botrequest`, not `bot_request` |
 
 Unchanged by this design: the existing `WorkResultCard` component, `WorkLink`, `work_id` and
@@ -268,7 +274,7 @@ that time.
 
 One entry has evidence that already exists, and the card reuses it instead of asking for a report:
 on a card that has a `main` entry, when an attached task's work link says the Broker recorded its landing (`landing` is `landed` or
-`incorporated`, `types.go:484-487`), the card shows that task's `landing_commit` and
+`incorporated`, `WorkLink.Landing` in `types.go`), the card shows that task's `landing_commit` and
 `landing_target` beside the `main` entry, labelled as the Broker's record. It does not mark the
 entry: with several tasks on one card, whether "it is on main" is the holder's call. Nothing else
 is read: no fetch, no build stamp, no timer.
@@ -283,15 +289,15 @@ batch writes nothing. A call may name any number of cards (§10).
 refuses it otherwise (`bot_request_checklist_open`). The person can complete, cancel or reopen any
 card at any time, with a reason.
 
-**Notification.** `card.done` is written in one transaction with one outbox effect, keyed
-`bot-request-done-<card id>-<cycle>` (`cycle` counts reopens), which delivers:
+**Notification.** `card.done` is written in one transaction with its outbox effects (two rows, §12),
+keyed `bot-request-done-<card id>-<cycle>` (`cycle` counts reopens), which deliver:
 
 - one notification to the person (assumption: over the daemon's existing notification channel;
   which call carries it was not read for this page), and
 - one host notice to each asking Bot — the card's authorities and `created_by`, excluding the Bot
   that marked it done — through the wake path dispatched work already uses (`WakeWorkCompletion`,
-  `docs/project-assistants-broker.md:172`), marked as a report and counted against
-  `bots.follow_up_chain` (`docs/project-assistants-broker.md:180`).
+  `docs/project-assistants-broker.md`), marked as a report and counted against
+  `bots.follow_up_chain` (same page).
 
 A retry or a daemon restart delivers neither twice; `notified` records the receipt.
 
@@ -342,9 +348,9 @@ and it covers tasks with no dispatch at all. The daemon never parses the person'
 scope and never opens a card on its own.
 
 **When the Bot is unsure whether a task deserves a card, it asks the person**: an ordinary short
-question in chat, or `ask_person` (`mcp.go:975`) when it cannot continue without the answer. The
-person shapes the habit in words — "always open a card for release notes", "never for typo fixes" —
-kept in the Bot's standing instructions (`docs/bots.md:90`) or memory (`docs/bots.md:71-75`). There
+question in chat, or `ask_person` (`mcpTools()`, `mcp.go`) when it cannot continue without the
+answer. The person shapes the habit in words — "always open a card for release notes", "never for
+typo fixes" — kept in the Bot's standing instructions or memory (`docs/bots.md`, "Use a Bot"). There
 is no setting, rule table or per-kind switch for it.
 
 **A card needs a person's message behind it.** `bot_request_create` is accepted in a turn that roots
@@ -352,8 +358,8 @@ in a person:
 
 - the turn's origin is `user`, or
 - it is a `bot_request` whose exchange chain (`source_turn_id`,
-  `internal/domain/projectassistant/collaboration.go:53`) reaches a `user` turn within
-  `MaxCollaborationHops` (`collaboration.go:23`).
+  `internal/domain/projectassistant/collaboration.go`) reaches a `user` turn within
+  `MaxCollaborationHops` (same file).
 
 A routine, a host notice or a webhook turn cannot open one.
 
@@ -382,7 +388,7 @@ replaces that", "landed together with that card". It is prose on the card instea
 chat, and that is all this version claims for it.
 
 A Bot answering another Bot's request cannot call `message_bot`
-(`collaboration.go:125`) and has no dispatch (`native_work` is disabled for that turn); the card
+(`CheckCollaborationRequest`, `collaboration.go`) and has no dispatch (`native_work` is disabled for that turn); the card
 tools are allowed in such a turn, so a reviewer reached that way can still record its verdict and
 hand the baton on.
 
@@ -428,12 +434,13 @@ Sessions only read. A dispatched child's work attaches through its task; it cann
 `bot_request_id` on the broker task record, beside `work_id`
 (`internal/app/orchestrator/draft.go:68`), set only by the Bot dispatch door from the resolved
 card. It enters the assistant request hash only when non-empty, like `board_item_id`.
-`AssistantWorkSnapshotOf` (`internal/app/orchestrator/project_assistant_actor.go:436`) copies it
+`AssistantWorkSnapshotOf` (`internal/app/orchestrator/project_assistant_actor.go`) copies it
 into `WorkLink.BotRequestID` (`json:"bot_request_id,omitempty"`), next to the fields `523e059d7` added.
 
 ### 8.2 Bot tools
 
-Added to `mcpTools()` (`internal/adapters/projectassistantacp/mcp.go:962`):
+Offered in `mcpBotRequestTools()`, separate from `mcpTools()`
+(`internal/adapters/projectassistantacp/mcp.go`):
 `bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`
 (add or mark a checklist entry), `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`,
 `bot_request_done`. Every writing tool takes `idempotency_key` and `expected_version`; a stale version
@@ -457,6 +464,10 @@ POST /v1/bot-request/agent/...                                                  
 
 Person routes are device-authenticated; agent routes take the Bot host's credential, the same split
 as `/v1/work/v2/` and `/v1/work/v2/agent/`.
+
+Built (`internal/transport/http/bot_request_http.go`): the two reads and the person's `handoff`,
+`check`, `complete`, `cancel` and `reopen`. Not built: `split`, `merge` and the agent routes; the
+Bot tools write the daemon store through the host instead (§12).
 
 ## 9. Console
 
@@ -493,7 +504,7 @@ The list below is the earlier outline; where it differs, §9.1 wins.
     link has one, labelled as the Broker's.
 - **Waiting for you.** Cards with `waiting` set are pinned at the top of the section; the question
   also appears in the Bot's chat and as a notification, as `ask_person` does now.
-- **Bot chat.** The dispatched strip (`docs/bots.md:325-340`) and the work result cards are
+- **Bot chat.** The dispatched strip (`docs/bots.md`, "Dispatched Sessions") and the work result cards are
   grouped under their Bot request card when `bot_request_id` is present, with the card's lights in one line.
   Without a card nothing changes.
 - **Phone and Cloud.** The same section in the phone layout. Cloud carries new advertised read
@@ -622,7 +633,9 @@ Built on 2026-11-24 (second delivery, same API level, now 119):
 - **Handoff can start work: built for the handoff-notice turn.** In a turn whose key names a card
   (`pa.BotRequestHandoffCard`), `dispatch_work` and `message_bot` are accepted only when they name that
   card and `br.HandoffDispatch` holds (open, person authority, this Bot holds it); anything else is
-  `bot_request_handoff_scope`. Other turns keep today's refusals.
+  `bot_request_handoff_scope`. Such a dispatch may also open a Root Session (`mode: root`), as a
+  turn the person started may (`dispatchScope`, `internal/adapters/projectassistanthost/provider.go`).
+  Other turns keep today's refusals.
 - **Completion delivery: built.** A completion queues two rows under the cycle's key:
   `bot_request.done` pushes the person once (not idempotent, so an interrupted push is recorded unknown
   and never resent) and `bot_request.done.notice` wakes each asking Bot once (idempotent through the
@@ -668,12 +681,16 @@ Built on 2026-11-24 (third delivery, console, phase 4, local daemon only):
   and with it off. The chat part of that script renders the card line beside the real work result
   card in a harness, not inside the whole chat.
 
-Not built in the console: the Bot filter, split and merge lineage, reopening a closed card, and
-ticking entries as the person.
+Not built in the console: the Bot filter, split and merge lineage, reopening a closed card,
+ticking entries as the person, the linked Board item, the Broker's landing beside the `main` entry,
+and the per-entry, build and review lights of the §9 outline and phase 4a: a row shows one state dot
+and "n/m ✓", and the detail shows the latest verdict as text.
 
 Not built yet: a Bot-to-Bot request turn whose exchange names a card (the recipient of a
 `message_bot` with `bot_request_id`) still cannot dispatch for it: the exchange does not record the
 card, and such turns keep their `peer_dispatch` / `bot_request_tools` refusals. Split and merge.
+The agent routes of §8.3. Editing a card's title or description (§7.3). Setting `board_item_id`:
+`bot_request_create` takes no such argument, so no card has one yet.
 
 **Relation to the wider Bot-to-Bot tool loss.** A separate report says Bots lose their tools in
 every Bot-to-Bot turn (`pa_disabled` / `bot_request_tools`). The handoff rule in §7.2 deliberately

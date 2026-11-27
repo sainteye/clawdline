@@ -1,6 +1,13 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
+> **Under the Go daemon** ([devstack.md](devstack.md) says what it does today): only the declared
+> `processes` and their ports are read, probed on `127.0.0.1` only. No command in the file is run, so
+> the "full shape" below, which declares commands and no ports, shows as `unknown`
+> (`status_not_run`) with nothing to press, and the checks in "Before you say it works" exercise
+> the Makefile targets, not the panel. A server that binds only `[::1]` (field note 5) is reported
+> `stopped`.
+
 # Making a project speak devstack
 
 A working guide for whoever does this next — including an agent asked to "set this project up

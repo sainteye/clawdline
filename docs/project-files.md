@@ -44,8 +44,9 @@ says it is truncated; text above 128 KiB or containing NUL or invalid UTF-8 is r
 A file named like a credential is listed with `sensitive: true` and its content is refused with
 `403 sensitive_file`, for every viewer, including this machine's own console. The rule is in
 `projectfiles.Sensitive`: `.env` and `.env.*` (except `.example`, `.sample`, `.template`,
-`.dist`), `.envrc`, `.npmrc`, `.netrc`, `.pypirc`, `.git-credentials`, `credentials(.json)`,
-`secrets.*`, SSH private keys, Terraform state, key and certificate-store extensions (`.pem`,
+`.dist`), `.envrc`, `.npmrc`, `.netrc`, `_netrc`, `.pypirc`, `.git-credentials`, `.htpasswd`,
+`.pgpass`, `.dockercfg`, `credentials(.json)`, `service-account.json`, `secrets.json`,
+`secrets.yml`, `secrets.yaml`, `secrets.toml`, SSH private keys, Terraform state, key and certificate-store extensions (`.pem`,
 `.key`, `.p8`, `.p12`, `.pfx`, `.jks`, `.keystore`, `.ppk`, `.kdbx`, `.tfvars`), and anything
 under `.ssh`, `.gnupg` or `.aws`. The reason is the read-only device: it cannot open a terminal,
 so the preview was its only way to a credential it was never given. Ops documents read files

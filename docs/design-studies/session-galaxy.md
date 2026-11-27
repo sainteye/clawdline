@@ -37,8 +37,10 @@ Motion is reserved for states that are actually moving and fresh:
 - **Stale or unknown freshness removes all motion and bloom**, adds a dashed outline and a
   "可能過時 / 新鮮度不明" tag. After a host disconnect every row renders as stale immediately and
   a banner says so.
-- No completion percentages, ages, transcript content or progress are invented: the projection
-  only carries `ref`, `title`, `project`, `workState`, `freshness`.
+- No completion percentages, ages, transcript content or progress are invented: the mock
+  projection only carries `ref`, `title`, `project`, `workState`, `freshness`. The runtime
+  contract's `sessions.read` has since gained optional Session vitals (View Plugin v1
+  revision 13); this prototype does not project them.
 
 ## Interaction
 
@@ -75,7 +77,8 @@ The single file has three clearly separated parts:
 | C. Demo host shell | Status-bar entry, badge, Session list, open/close, Escape, scroll/focus restoration, a labelled "示範宿主控制" dock | `MockHost`, `GalaxyPlugin` |
 
 The scene follows the adapter contract from View Plugin v1 revision 1 (an implementation
-specification, not a shipped capability):
+specification when this study was written; the spec now describes an experimental
+browser-local host in `web/console/src/view-plugins`):
 
 ```js
 const view = await connect();                         // connectViewPlugin() in a real host
@@ -100,9 +103,12 @@ view.dispose();                                       // on close; reopening sta
   hidden. Closing disposes the adapter, stops the loop and drops the scene DOM. With reduced
   motion it renders only when something changes.
 
-**Not implemented here** (belongs to the future host, per the spec): ZIP install/activation,
+**Not implemented here** (belongs to the host, per the spec): ZIP install/activation,
 the sandboxed `allow-scripts` iframe, `clawdline.plugin.hello`/MessagePort bootstrap, CSP,
-Cloud resource transport, capacity limits, conformance tests. In this prototype the plugin
+Cloud resource transport, capacity limits, conformance tests. The browser-local host now
+provides ZIP import and package management, the sandboxed frame (`Frame.tsx`) and the
+hello/MessagePort bootstrap (`plugins/sdk/view-plugin-v1.js`); machine-owned installation is
+deferred. In this prototype the plugin
 shares the document with the mock host; a real host would load Part B in a sandboxed frame and
 replace Part A with its SDK, unchanged scene code being the goal. The host-owned badge is
 computed by the mock host, not the plugin.
@@ -159,4 +165,4 @@ uses its close control and desktop Escape.
 The complete integrated check passed in 13m22s with `GOFLAGS=-p=1`, without excluding tests.
 Earlier full runs had native-hook timeouts; focused tests in the original base and the spec tree
 passed, which does not establish the cause of those timeouts. This evidence applies to the
-prototype and contract, not to an unimplemented runtime plugin installer or production Cloud host.
+prototype and contract, not to the later browser-local plugin host or a production Cloud host.

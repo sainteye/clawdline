@@ -34,7 +34,9 @@ Installed history can be read while disabled without creating a Runtime/provider
 
 The existing authenticated handler accepts exactly one value for each query key:
 `machine_id`, `conversation_id`, `mode`, `source_epoch`, `cursor`, `after_seq`,
-`page_size`. GET bodies, unknown/duplicate/missing keys, fractional/negative numeric
+`page_size`, plus three optional flags that must be `true` when present:
+`team_cards`, `defer_trace_count` and `exchange_excerpts` (snapshot and history
+only). GET bodies, unknown/duplicate/missing keys, fractional/negative numeric
 fields and mode-incompatible fields are refused. Bot IDs retain the existing
 single-segment rule; display names are not reserved. Current machine/principal
 identity comes from the existing gate witness revalidation, not the request.
@@ -46,7 +48,7 @@ cursor values and zero after_seq survive. A read does not require content-write
 permission or the remote command switch. Source mode/page validation remains
 authoritative. No second schema, plugin or Export fallback is introduced.
 
-The six modes and their source epoch/cursor semantics are defined in
+The seven modes and their source epoch/cursor semantics are defined in
 [the read contract](project-assistants-read-views.md). Events request up to256 rows,
 other pages up to100, detail exactly1. Only snapshot includes mandatory snapshot
 state and replaces the initial event cursor with the machine event frontier.
@@ -56,10 +58,12 @@ empty page; neither history heads nor other Bots' frontiers skip later events.
 ## Complete-object packing
 
 The adapter finishes its short SQL transaction before transport conversion.
-Transport encodes each complete generated item once, then measures complete
-generated envelopes for candidate prefixes. HTTP includes its newline; Cloud uses
-the actual payload serializer with `read:` plus128 '<' characters, the worst legal
-existing correlation name. Both complete bodies must fit the existing8MiB limit.
+Transport encodes each complete generated item once. The Cloud payload serializer
+runs once, on the mandatory header, with `read:` plus128 '<' characters, the worst
+legal existing correlation name; its difference from the header is a fixed reply
+overhead. Each candidate prefix is then judged by arithmetic: header plus row bytes
+plus commas, with the HTTP newline or the Cloud overhead. Both complete bodies must
+fit the existing8MiB limit.
 
 Mandatory head/source/snapshot are never sliced. Each item has exactly one payload
 matching kind; collections are non-null arrays. Internal AfterCursor, CursorFailure
@@ -123,7 +127,8 @@ live encrypted production Cloud request or native execution.
 
 The backend vocabulary and its captured console parser are delivered together.
 The parser carries all seven view query fields, including empty strings and
-zeroes, and rejects bodies, duplicate or extra fields, unknown modes and unsafe
+zeroes, plus the optional `team_cards`, `defer_trace_count` and `exchange_excerpts`
+flags, and rejects bodies, duplicate or extra fields, unknown modes and unsafe
 numeric encodings before transport. Six-mode relay tests retain the complete
 request envelope. The source remains authoritative for cursor and mode-state
 validation. The original API58 Legacy16 capture remains unchanged; the full

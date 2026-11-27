@@ -214,3 +214,8 @@ rejected; source verification does not establish installation or deployment.
 The [combined three-target round](api-round-two-2026-11-08.md) adds outstanding-work
 and full-inventory projections, with separate HTTP measurements, historical replay
 comparison and rejected low-impact candidates.
+
+The single-process ancestry candidate reverted in the ledger above was later
+retained with endpoint evidence by the
+[inventory Git reads follow-up](inventory-git-reads-2026-11-08.md): `Git.Merged`
+now runs one `merge-base --is-ancestor` and treats only exit 1 as known-unmerged.

@@ -7,6 +7,15 @@ unrelated machine settings. A local console or a paired device with send authori
 may write; a read-only device may only read. Writes merge named fields atomically,
 so repeating the same write is idempotent and other provider defaults survive.
 
+The route (`defaultModelsRoute` and `defaultModelsSnapshot` in
+`internal/transport/http/settings.go`; contract in `api/v1/settings.schema.json`)
+answers and accepts five keys: `codex_default_model`, `codex_default_effort`,
+`claude_default_model`, `antigravity_default_model` and `antigravity_default_effort`.
+A write is `application/json`; any other key is refused with `bad_request`
+(`not a default model key`), and an invalid value with `invalid_default_model` or
+`invalid_default_effort`. A saved Antigravity model that is no longer valid is
+answered as `null`; a saved Antigravity effort is answered as saved.
+
 Antigravity uses `antigravity_default_model` and `antigravity_default_effort`.
 An empty value leaves the choice to the native provider. The model uses the existing
 safe model slug grammar and bound. Effort accepts `low`, `medium`, `high`, `xhigh`
@@ -23,7 +32,9 @@ a validated saved model without inventing model names, context sizes, quota, or 
 changed; an invalid new write is refused. Saving a choice does not authorize paid
 calls or paid fallback.
 
-Startup and broker composition must explicitly consume the provider-specific effort
-helper before a new launch can honor it. Configuration persistence alone does not
+Startup (`internal/transport/http/start.go`) and broker composition
+(`internal/transport/http/orchestrator_wiring.go`) consume the provider-specific
+effort through `nextconfig.DefaultEffort`, which sends Antigravity to
+`nextconfig.DefaultAntigravityEffort`. Configuration persistence alone does not
 establish native launch readiness or permission support. The guarded launch path
 continues to own those decisions. See [schedules](schedules.md) for scheduled values.

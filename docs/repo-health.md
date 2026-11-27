@@ -29,7 +29,7 @@ three questions without reading code they do not want to read:
 3. **Which rules and guards still earn their place?** There are about 50 guard tests named
    `TestEvery…`/`TestNothing…` and seven `tools/check-*` scripts. No record says when any of them
    last caught something: `tools/check.sh` deletes its logs when every check passes
-   (`tools/check.sh:98-99`).
+   (`tools/check.sh:320`).
 
 What the person refuses is just as specific: **no new step or token on ordinary agent runs.** The
 token ledger explains why that matters. In the week of 2026-09-25, 73% of cost was cache reads, and
@@ -321,7 +321,7 @@ which exclusions were actually needed. This is open decision D2.
 ### Console page (P3)
 
 `web/console/src/pages/governance.tsx`, picked up automatically like every page, by
-`import.meta.glob` (`web/console/src/App.tsx:74-82`), at `#page=governance` (`web/console/src/page-route.ts:13-16`).
+`import.meta.glob` (`web/console/src/App.tsx:127`), at `#page=governance` (`web/console/src/page-route.ts:14-16`).
 It shows the list of runs per Project, the report, a treemap of M1 by module coloured by M3 hotspot
 rank, and the document table from M5, sortable by tokens. The "Run governance review" button lives
 on the Project's card and on this page.
@@ -331,7 +331,7 @@ on the Project's card and on this page.
 Each run's S2 includes one governance review. **Every rule, guard and memory entry must answer: when
 did it last catch something?**
 
-- **Guards.** Today nothing records a red run (`tools/check.sh:98-99`). The smallest product-wide
+- **Guards.** Today nothing records a red run (`tools/check.sh:320`). The smallest product-wide
   addition is in `clawdline heavy`, which every check here already goes through (`AGENTS.md`). It
   appends `{project, command, exit, at}` for each run it wraps to `<state>/governance/<slug>/checks.jsonl`
   (P4). "Last went red" per command comes from that file. A Go guard test inside `go test ./...` is
@@ -412,9 +412,9 @@ read sizes, so M6 can show per-document carry cost (size × calls remaining, the
   categories-sum-to-total test still passes (`docs/token-ledger.md:64`).
 
 **P5 (later, optional): scheduled runs.** Today a schedule cannot carry a persona: the template accepts
-only the fields in `allowedTaskFields` (`internal/domain/schedule/schedule.go:215-220`), and anything
-else is refused as `unknown task field` (`:423-425`). The smallest addition is to allow `persona` there.
-`Broker.DispatchScheduled` turns the template into `task.json` (`internal/app/orchestrator/scheduled.go:57-83`),
+only the fields in `allowedTaskFields` (`internal/domain/schedule/schedule.go:229-233`), and anything
+else is refused as `unknown task field` (`:464-465`). The smallest addition is to allow `persona` there.
+`Broker.DispatchScheduled` turns the template into `task.json` (`internal/app/orchestrator/scheduled.go`, `DispatchScheduled`),
 and the brief already admits a persona. But a schedule starts a **child**, and a child cannot dispatch
 or own an Epic. So a scheduled run could only do S1 plus a read-only report. G1 and everything after
 it still need the person to start the Epic. Not verified in depth, by instruction.

@@ -128,9 +128,14 @@ the exact Session, machine and conversation captured when speech starts. Switchi
 the screen while transcription finishes cannot rewrite that identity. Read tools
 answer ordinary Session questions immediately, without a CLI planning turn. For
 continuing work the voice model calls `queue_voice_work` with original saved input
-IDs; a single plain message instead uses the deterministic proposal path below.
-It cannot paraphrase the saved request or perform a direct mutation. This
-routing still depends on model compliance and needs recorded-call acceptance.
+IDs; it cannot paraphrase the saved request. Sending a message, answering a
+Session's question, opening a Session or its snippets and ending the call are
+immediate actions the voice model runs directly (see the confirmed-messages
+section below); any other mutation is refused with
+`voice_work_confirmation_required` and must go through the work list. The
+browser no longer uses the server's `prepare_message`/`confirm_message`
+actions, which the daemon still accepts. This routing still depends on model
+compliance and needs recorded-call acceptance.
 
 Explicit submission promotes those inputs for the organizer. Each input may carry
 bounded earlier read evidence from the same Session, identified as historical,
@@ -329,7 +334,10 @@ or durable prepare-message round trip in conversational message sending. The
 send tool is an effect, not a drafting tool; its description says so. Routing
 still resolves the exact recipient and handles live questions, transport
 idempotency and actual receipts. A changed call cannot execute an old admitted
-request. Background work-list approval contracts for other mutations remain.
+request. Answering a Session's menu question is immediate in the same way:
+a managed call runs answer_session_question directly, matching the person's
+decision to one current option and checking the expected question. Background
+work-list approval contracts for other mutations remain.
 Prompt compliance is not a programmatic proof that the assistant obtained
 consent. Local transport tests do not establish actual model compliance or
 what someone heard on their phone; those remain separate acceptance.

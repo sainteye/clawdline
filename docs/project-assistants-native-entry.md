@@ -9,7 +9,7 @@ default.
 ## What a person needs
 
 Since 2026-11-14 setup follows CodyNC: a Bot uses the programs the person
-already has. Supported: macOS, Claude Code 2.1.323 or newer, and Node 22 or
+already has. Supported: macOS and Linux, Claude Code 2.1.323 or newer, and Node 22 or
 newer with its npm. Claude Code updates itself, so only that floor is
 checked; a newer version is accepted without new setup. The person signs in
 to Claude Code as they normally do. Nothing asks them to place files.
@@ -70,14 +70,18 @@ Which actions it asks about is Claude Code's own choice: with no configured
 default the adapter starts in `auto`, where a classifier approves most
 actions, or `acceptEdits` for a model without it. The person decided on
 2026-11-14 to keep that rather than force a card for every change. A card
-that does appear may be allowed once; standing allow or reject rules are
-refused. Bypass mode stays off. Its configuration, history and memory live in a
+that does appear may be allowed or refused once, or, as in Codync, for good:
+an always option hands the agent the rule it defines. A Bot whose permission
+policy is `approve` ("Approve automatically") answers every request with the
+agent's allow-once option without a person. Bypass mode stays off. Its configuration, history and memory live in a
 feature-owned record of which native sessions belong to each Bot, Project,
 conversation and revision. As in Codync (the person decided on 2026-11-14),
 the native CLI uses the person's own Claude Code configuration and login:
 their settings, skills and permission rules, and the Project's CLAUDE.md,
 settings, hooks and MCP servers all load. Only native auto memory and
-dreaming are off.
+dreaming are off. A Bot that selects a managed login profile instead runs with
+that profile's account and configuration environment added to the probe and
+execution; see [Bot login profiles](project-assistants-login-capabilities.md).
 
 A permission card says what the tool would do before it is answered, as
 Codync's does: the adapter's title and ACP tool kind, the command, URL or

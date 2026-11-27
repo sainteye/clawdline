@@ -1,8 +1,11 @@
 # Local Antigravity Project hook consent
 
 This page covers local consent storage, its filesystem coordinator and the
-authenticated website/Cloud consent interface. Production Session launch
-permission remains disabled until its native behavior and policy are verified.
+authenticated website/Cloud consent interface. Managed Session launch
+permission through this consent remains disabled until its native behavior and
+policy are verified. Antigravity Sessions started through the owned ACP Session
+host ([Existing Session preview](antigravity-acp-client.md#existing-session-preview))
+do not consult this consent or require an active Project grant.
 The provider is fixed to Antigravity. State lives in the
 private local SQLite store, never in repository files, shared Project Unify
 settings, a Cloud mirror, or native workspace trust.
@@ -21,8 +24,9 @@ authority check**.
 canonical local Project root, action, expected revision, operation identity,
 helper and plan digests, actor, and request key. The caller must prove catalog
 identity and worktree membership. Storage validates only a clean absolute path;
-it neither accesses the filesystem nor resolves symlinks. The future consent UI
-must explicitly describe whether it includes worktrees and which ones. Creating
+it neither accesses the filesystem nor resolves symlinks. The consent UI
+([website consent](#website-consent-and-cloud-transport)) must explicitly describe
+whether it includes worktrees and which ones. Creating
 a worktree never creates a grant. An arbitrary actor label is structural data,
 not authenticated person or device identity; the HTTP boundary must enforce
 actual authentication and explicit opt-in.
@@ -101,6 +105,11 @@ unreadable storage instead of a diagnostic zero. The register and measurement
 snapshots and generated English/Traditional Chinese capacity guides include all
 three new rows; their console explanations ship in both languages.
 
+The website route adds two registered input guards:
+`projects.antigravity_consent_request_ms` (the website's 15,000 ms whole-answer
+deadline) and `projects.antigravity_consent_body_bytes` (the 4,096-byte change
+body). Neither retains a request, so both report a known reading with no usage.
+
 Opening an older database adds one table with `CREATE TABLE IF NOT EXISTS`;
 opening it again is idempotent. No legacy setting is imported as consent. Foreign
 settings and receipts remain intact. Older binaries ignore the added table;
@@ -131,8 +140,10 @@ rewrites with restored mtime, mode changes, removal and cancellation refuse.
 Subsequent fingerprint reads use metadata, not repeated full executable reads.
 These primitives start no vendor process or worker and publish no production
 policy. Their private transactional coordinator is described below. Authenticated Project settings and catalog composition are implemented below.
-Effective-mode evidence and the production launch policy publisher remain required
-before Session launch admission can be enabled.
+The runtime launch policy publisher now reads the consent manager (see
+[native policy](antigravity-native-policy.md)); effective-mode evidence and a
+verified native behavior row remain required before managed Session launch
+admission can be enabled.
 
 ## Private transactional coordinator
 
@@ -191,8 +202,10 @@ policy publisher is enabled by this coordinator.
 
 The server now owns one private consent manager and immutable helper pin for
 its boot. Stopping or cancelling that owner makes its captured resolver refuse;
-a new boot cannot be borrowed by a stale owner. Startup publishes neither a
-native behavior row nor production permission inputs. This owner now backs the authenticated Project settings route. Missing helper bytes leave revocation
+a new boot cannot be borrowed by a stale owner. Runtime composition
+(`publishAntigravityPolicy`) publishes this manager, the launch store and the
+bridge as policy inputs; no native behavior row is published, and the compiled
+resolver refuses with `native_behavior_unverified`. This owner now backs the authenticated Project settings route. Missing helper bytes leave revocation
 available while preview and live authority remain unavailable.
 
 The resolver requires the current Project catalog and
@@ -225,7 +238,7 @@ replays, revocation during installation, helper loss, cleanup uncertainty,
 linked-worktree revision stability and cross-Project refusal. A one-time source
 counterfactual removes the final live read: the targeted test fails after the
 revocation actually commits. The original sources remain untouched by that
-experiment. Root still owns production launch policy publication, native effective-mode
+experiment. Root still owns native effective-mode
 acceptance, independent full UI/UX/brand review and any release.
 
 ## Website consent and Cloud transport
@@ -251,7 +264,8 @@ Hook inspection and durable consent are separate from Session availability.
 `POST` on that route needs a person's authenticated send access and a visible
 ASCII `Idempotency-Key` of at most the store's existing 128-byte identity bound.
 The orchestrator token cannot grant consent. A closed 4096-byte JSON input accepts
-only enable/disable, revision, exact scope and (for enable) the three digests.
+only enable/disable, revision, exact scope and (for enable) the three digests; a
+larger body is refused with 413 `antigravity_consent_body_too_large`.
 The server owns the catalog root, workspace, executable and actor. Route-scoped
 hashed keys retain the same namespace across enable and disable: changing the
 body under a key conflicts. Manager phase receipts recover the same approved

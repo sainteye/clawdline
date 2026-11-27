@@ -19,7 +19,7 @@ client. The query shapes in §9 remain a proposal; Cloud's implemented API is it
 | Segment truth table, stage progress, local export | implemented | `evidence.go` |
 | One runtime per daemon boot (fresh random `boot_id`, build from the binary's commit), watchdog run for the daemon's lifetime, Cloud on or off | implemented; `CLAWDLINE_CONNECTION_HEALTH=off` turns it off | `runtime.go`, `cmd/clawdline/health.go` `startConnectionHealth` |
 | Capacity rows `cloud.health_*` | measured from the tracker snapshot, journal occupancy and transition queue; unmeasured with a reason when monitoring is off | `internal/transport/http/capacity_measures_connection_health.go` |
-| Daemon call sites | **partial**: see §4.1 for the exact list. One correlation now runs from the transport's frame phase through the relay queue (`Inbound.Correlation`), the lane and handler, the answer's reservation, seal and spool enqueue (the handler's context, `connectionhealth.WithCorrelation`), the spool row (`SpoolRow.Correlation`, local only) and every drain write and reconnect re-send of that row. Answers published outside a handler (status snapshots, terminal frames, carrier answers) are still uncorrelated | `internal/adapters/cloud/transport.go`, `websocket.go`, `spool.go`, `internal/transport/cloud/link.go`, `relay.go` |
+| Daemon call sites | **partial**: see §4.1 for the exact list. One correlation now runs from the transport's frame phase through the relay queue (`Inbound.Correlation`), the lane and handler, the answer's reservation, seal and spool enqueue (the handler's context, `connectionhealth.WithCorrelation`), the spool row (`SpoolRow.Correlation`, local only) and every drain write and reconnect re-send of that row. Answers published outside a handler (status snapshots, terminal frames, carrier answers) and refusals sent by `refuseBusy` are still uncorrelated | `internal/adapters/cloud/transport.go`, `websocket.go`, `spool.go`, `internal/transport/cloud/link.go`, `relay.go` |
 | Local route `GET /v1/connection-health/{status,events,trace,export}` and `clawdline health` | implemented, this machine's own token only, refused through Cloud | `internal/transport/http/connection_health.go`, `cmd/clawdline/health.go` |
 | Per-build location map | **partial**: every wired location code names its Go function (checked by `runtime.FuncForPC` in the owning package's tests); no file lines | `locations.go` |
 | Durable segmented store, boot markers on disk | implemented and opened by the daemon off the startup path; the watchdog's journal writer offers each stamped record (`Watchdog.Attach`); history route and CLI read it. The ring itself is still memory only and says so | `internal/adapters/healthjournal`, `docs/admin-connection-health-storage.md` |
@@ -27,10 +27,17 @@ client. The query shapes in §9 remain a proposal; Cloud's implemented API is it
 | Daemon uploader to Cloud ingest (opt-in, own HTTPS client, bounded, durable progress) | implemented, off by default (§9a) | `internal/adapters/healthupload`, `cmd/clawdline/health.go` |
 | Shutdown: watchdog and writer stopped, uploader stopped, store flushed and closed within 3 s | implemented on SIGTERM/interrupt | `cmd/clawdline/health.go` `stopConnectionHealthOnSignal` |
 | Browser viewer producer (opt-in, own HTTPS upload, bounded) | implemented, off by default; installed only by an explicit `startViewerHealth` call (§11) | `web/console/src/health-viewer`, `web/console/src/legacy/js/net/viewer-health-hook.js` |
-| Cloud stored queries in a UI, owner sealing | **not built here** (separate tasks) | — |
+| Owner-sealed diagnostics worker (opt-in, own HTTPS client, bounded, durable pending store) | implemented, off by default; started by the daemon (§9b, `docs/health-identity-handover.md`) | `internal/adapters/healthsealed`, `cmd/clawdline/health.go` `newSealedDiagnostics` |
+| Cloud stored queries in a UI | **not built here** (separate task) | — |
 
 Every export carries the same list as `wiring[]` (`evidence.go` `Unwired`), so no reader can take
-the foundation for the pipeline.
+the foundation for the pipeline. That list lags this table: it still reports `cloud_ingest` and
+`relay_and_viewer_producers` as `unimplemented`, although the daemon uploader (§9a), the relay call
+sites (§4.1) and the browser viewer producer (§11) exist, and it has no entry for the uploader or
+the owner-sealed worker.
+
+Bounds are registered in `internal/domain/capacity`: `register_connection_health.go`,
+`register_healthupload.go`, `register_viewer_health.go` and `register_healthsealed.go`.
 
 ## 2. Identifiers
 
@@ -102,7 +109,9 @@ socket with nothing completed is `no_requests`, a source with no receipt is
 
 ## 4. Local evidence export v1 (implemented)
 
-Produced by `Export(&report, journal, query)`. The block below is the exact output of
+Produced by `Export(&report, journal, query)`; `Runtime.Export`, which the route and CLI call, also
+sets `locations` (§4.1) and `stall_capture` (§4.2), which the example therefore omits. The block
+below is the exact output of
 `ExampleExport` in `internal/domain/connectionhealth/example_test.go`, which the test suite pins:
 a read handler that started 40 ms after being queued and then made no progress for 16 s, beside
 an idle reader loop. Durations are nanoseconds of the producer's monotonic clock; `wall` is for
@@ -302,7 +311,9 @@ off, or a test or old caller that passes none) records nothing. A full table mea
 recorded and the overflow is counted; the business call proceeds.
 
 `GET /v1/connection-health/status` (latest report, journal coverage, wiring, report age; quality
-`not_collected` before the first scan and `stale` when the report is more than three scans old),
+`not_collected` before the first scan, `partial` when the report's `trace_coverage` or
+`transitions` is not `complete`, and `stale` when the watchdog is not running or the report is more
+than three scans old),
 `events?boot_id&after_seq&limit&since&until`, `trace?correlation=` (active findings and journal
 records naming it) and `export` (§4 plus `locations`, the map above bound to `build_commit`). Only
 this machine's own token reads them; a paired device or the machine token is refused, and a request
@@ -531,7 +542,11 @@ classes.
 
 An item the scope cannot read stays as `{ "source": "<source>", "forbidden": true }` with no body.
 
-## 9. Upload, ingest and query — proposal, not implemented
+## 9. Upload, ingest and query — query still a proposal
+
+The upload side is implemented as §9a describes, and its batches differ from the example below:
+`batch_id` is `s<first_seq>-<last_seq>` or a loss batch's `ll-<epoch>-<n>`; an event batch carries
+`build_commit`, and only a loss batch carries `local_loss`. The query shapes remain a proposal.
 
 Aligned with the Cloud plan's proposed v1 so the root can unify them. Field names in the Go
 records (`producer_seq`, `event_id`, `boot_id`, `build_commit`) are already the ones below.
@@ -655,7 +670,8 @@ never does. Off states make no request at all: `not_opted_in`, `cloud_off`, `no_
 `identity_unreadable`, `origin_refused`, `source_not_open`.
 
 **Wire.** One batch per request, one boot per batch: `schema_version: 1`, `batch_id`
-`s<first_seq>-<last_seq>`, `producer_instance: "daemon"`, `boot_id`, `build_commit` from the
+`s<first_seq>-<last_seq>` (an event batch) or `ll-<counter epoch>-<n>` (a loss batch, below),
+`producer_instance: "daemon"`, `boot_id`, `build_commit` from the
 store's boot header, `events[]` of record/1. Each event is copied through a fixed struct
 (`wireEvent`) with exactly Cloud's keys: `schema, producer_seq, event_id, boot_id, event, wall
 (UTC), mono_ns, build_commit, source, stage, class, kind, phase_id, correlation, count, rule,
@@ -673,11 +689,15 @@ reports `clock_offset_ms: null` for this producer. The bearer is the machine cre
 not one of Cloud's three (`state_unsupported_by_cloud`), an event or stage Cloud does not list, a source other than `daemon`, `mono_ns` or any integer above 2^53−1, an id
 or rule that fails Cloud's pattern, and a single record that alone would exceed the body bound.
 Durable-store loss markers (`loss` entries) have no producer sequence and cannot be record/1
-events; they are counted as `storage_loss_records`, and store gaps by reason as `store_gaps`. Both
-stay visible locally only — **wire gap for Cloud**: Cloud has no field for producer-side storage
-loss yet. A batch-envelope `local_loss` counter is a proposal awaiting its own receiver; until it is
-built the uploader sends none and invents no record to carry the counts, so Cloud reports such a
-gap as unexplained. A progress file written before this change may still hold the retired reason
+events; they are counted as `storage_loss_records`, and store gaps by reason as `store_gaps`. Their
+totals, with `totals.excluded`, travel to Cloud in a `local_loss` block
+(`clawdline.connection-health.local-loss/1`, Cloud contract §12.1: `counter_epoch`, `observed_at`,
+`storage_lost_records`, `store_gaps`, `excluded`, the last two limited to Cloud's allowlists with
+an `unlisted` bucket). It rides only on a separate metadata-only batch with no events (`lossOnly`),
+built when the settled totals moved and there is nothing else to send; an event batch never
+carries it, so a rebuilt event batch still replays. The counter epoch (`ue-…`) lives for one
+progress file, which also records `counter_epoch`, the last reported totals and the loss-batch
+count. No record is invented to carry the counts. A progress file written before this change may still hold the retired reason
 `state_after_loss_unsupported_by_cloud` in its cumulative totals.
 
 **Delivery and retries.** One batch in flight. Its exact body is written to
@@ -716,11 +736,9 @@ Cloud never makes it, the local query or any business path wait.
 (`TestTheUploaderDoesNotDependOnTheCloudLine`): its own `http.Transport` (one connection, 5 s
 dial/TLS), its own goroutine, no relay socket, writer lock, spool or lane.
 
-**Not done.** Owner-sealed diagnostics (encryption is the next separate capability; until then the
-private fields stay on this machine and no remote investigation is complete); Cloud fields for
-storage loss and `state_after_loss`; heartbeat/presence; uploading on a schedule tighter than 30 s.
+**Not done.** Cloud fields for `state_after_loss`; heartbeat/presence; uploading on a schedule tighter than 30 s.
 
-## 9b. Owner-sealed diagnostic clients (implemented, not wired to a live key)
+## 9b. Owner-sealed diagnostic clients (implemented, off by default)
 
 The private Cloud contract §13 defines the wire. This repository holds both clients:
 
@@ -757,23 +775,27 @@ The private Cloud contract §13 defines the wire. This repository holds both cli
 
 Both sides pin the §13.7 synthetic vector in `internal/adapters/healthsealed/testdata/vector.json`.
 
-**Why nothing can be sealed or opened yet.** No content-key epoch is recorded anywhere in the
-product, and the PWA keeps the master secret only as a non-extractable AES-GCM `CryptoKey`
-(`legacy/js/net/cloud-crypto.js` `importMasterSecret`), which cannot seed HKDF. Both clients
-therefore answer `key_handover_required` rather than guess. Closing it needs the pairing handover
-to also keep an HKDF import of the master secret together with its content-key epoch, the device
-and identity epochs to be known to the client, and the content-key grant contract. The daemon
-does not yet construct the uploader (`cmd/clawdline/health.go`).
+**Keys come from the identity handover.** A daemon seals only for a content-key epoch the identity
+handover recorded: `ContentEpochStore` in `internal/adapters/cloud/health_pairing.go` keeps it
+(`content-key-epoch-v1.json`), and `sealedKeys.master` in `cmd/clawdline/health.go` reads it for
+the very master secret it holds. No record, another account or another secret answers
+`key_handover_required` before any request. In the PWA, the handover
+(`web/console/src/cloud/health-owner/identity-pair.ts`, `handover.ts`, `IdentityHandoverDialog.tsx`)
+keeps the master secret as non-extractable HKDF and AES-GCM keys with its content-key epoch, one
+IndexedDB record per account and machine. A browser paired before the handover holds only the
+AES-GCM key (`legacy/js/net/cloud-crypto.js` `importMasterSecret`), which cannot seed HKDF, so it
+answers `key_handover_required` until it is paired through the handover once. The daemon builds
+the uploader and worker in `newSealedDiagnostics` and feeds it from the journal writer
+(`sealedFeed`); `docs/health-identity-handover.md` is the daemon side in full.
 
-**The content-key grant (Cloud §13.9) is not signed by this daemon.** Cloud records a grant only
-when the machine's `confirm` on `POST /v1/pairing/identity/phases/confirm` carries a
-`handover_attestation`, which the machine may sign only after the viewer's `activate` proved it
-holds the master secret of that content-key epoch. This daemon pairs through
-`/v1/pairing/invitations/start`, `/poll` and `/v1/pairing/complete`
-(`internal/adapters/cloud/pairing.go`), has no identity-phase client, and no viewer sends a key
-confirmation in `activate`. Signing without that proof would record a grant Cloud cannot tell
-from a true one, so no attestation is sent. Until then a sealed read answers
-`403 key_handover_required`, which the panel shows as "pair this device again" and never retries.
+**The content-key grant (Cloud §13.9).** Cloud records a grant only when the machine's `confirm` on
+`POST /v1/pairing/identity/phases/confirm` carries a `handover_attestation`, which the machine may
+sign only after the viewer's `activate` proved it holds the master secret of that content-key
+epoch. The daemon's identity-phase client (`IdentityClient` and `MachineIdentityPairing` in
+`internal/adapters/cloud/health_pairing.go`, constructed in `internal/transport/cloud/link.go` and
+`pairing.go`) verifies that `activate` and only then adds the attestation to `confirm`
+(`WritePhase`). A sealed read for a device without that grant answers `403 key_handover_required`,
+which the panel shows as "pair this device again" and never retries.
 
 
 ## 10. Remaining wiring, in order
@@ -787,7 +809,7 @@ from a true one, so no attestation is sent. Until then a sealed read answers
 4. Done: durable store opened and fed (`docs/admin-connection-health-storage.md`), and flushed and
    closed at daemon shutdown.
 5. Done: the daemon uploader (§9a) and the stall capture worker (§4.2). Next: Cloud fields for
-   storage loss and `state_after_loss` and full real-source acceptance of M01–M06 remain pending. Owner sealing is
+   `state_after_loss` and full real-source acceptance of M01–M06 remain pending. Owner sealing is
    now wired into daemon startup; loss counters use separate immutable metadata-only batches.
 6. Done, off by default: the browser viewer producer (§11), hosted-page lifecycle behind
    `VITE_VIEWER_HEALTH=on` (§11.4), and relay write observation. Still pending: direct-carrier

@@ -62,7 +62,13 @@ option) or trace; it does not invent tool/question text or authorize an answer.
 Trace references identify the selected latest event; superseded references
 expire. Runtime permission/fence checks remain authoritative.
 
-Snapshot/history merge messages and WorkLinks into a single descending
+Progress returns `trace` rows: the latest narration (`agent_message_chunk`)
+chunk text for each step of the Bot's own turns, newest first, excluding turns
+that answer another Bot's or the Network's request. Like a `defer_trace_count`
+read, its head skips the trace aggregation and reports a zero trace count.
+
+Snapshot/history merge messages and WorkLinks, and with `team_cards` also team
+create/update permission entries as a third kind, into a single descending
 `(anchor_message_seq, kind, stable_ID COLLATE BINARY)` order. Work anchors come
 from Turn.MessageID to Message.Seq. There is one total page allowance, with a
 sentinel and no skipped ties. History is LIVE across requests, not a retained
@@ -149,7 +155,7 @@ These are module tests, not Host/HTTP/Cloud/native/phone/removal acceptance.
 The integrating root owns exact-tree full-gate and deployed-surface evidence.
 There are zero product-model or paid external API requests in this module work.
 Removal consists of detaching the optional ReadViews composition and deleting
-the three adapter sources/two tests/this document; no schema or stored-data
+the four adapter sources/two tests/this document; no schema or stored-data
 rollback is necessary.
 
 ### Long-history source deadline

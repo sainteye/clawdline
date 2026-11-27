@@ -2,7 +2,7 @@
 
 This inventory records the 2026-10-20 source review and gives each screen a stable feedback ID. Keep IDs and names when priority or implementation status changes; do not renumber the table. The Taiwan Traditional Chinese names are the person's reference labels.
 
-SK-01 was implemented and browser-checked in the original inventory. The person subsequently approved the 19 Recommended entries (SK-02, SK-04, SK-09–SK-17, SK-19, SK-21–SK-24, SK-26, SK-30 and SK-31). These now use skeletons; Conditional entries remain proposals. EX entries already have skeletons; NO entries should retain meaningful action or connection state. The review covered console pages, Session panels, project dialogs, Cloud entry points, admin panels and onboarding statistics. It did not measure production waiting times or establish end-to-end coverage for every loading branch.
+SK-01 was implemented and browser-checked in the original inventory. The person subsequently approved the 19 Recommended entries (SK-02, SK-04, SK-09–SK-17, SK-19, SK-21–SK-24, SK-26, SK-30 and SK-31). These now use skeletons. SK-36 and SK-37 (Session message boards) were added and implemented on 2026-11-18, so 22 IDs are Implemented in all. Conditional entries remain proposals. EX entries already have skeletons; NO entries should retain meaningful action or connection state. The review covered console pages, Session panels, project dialogs, Cloud entry points, admin panels and onboarding statistics. It did not measure production waiting times or establish end-to-end coverage for every loading branch.
 
 Person-triggered asynchronous writes and submissions have a separate [action waiting inventory](console-action-loading.md), with AL IDs and a screenshot report.
 
@@ -45,8 +45,8 @@ Person-triggered asynchronous writes and submissions have a separate [action wai
 | SK-33 | Admin campaign list | 管理後台的活動清單 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:269` |
 | SK-34 | Admin campaign detail and redemption codes | 管理後台的活動詳情與兌換碼 | Conditional | P3 | `web/console/src/cloud/admin/PromoManagement.tsx:577`; `web/console/src/cloud/admin/PromoManagement.tsx:781` |
 | SK-35 | Onboarding survey statistics | 新手問卷統計 | Conditional | P3 | `web/console/src/onboarding/Statistics.tsx:64` |
-| SK-36 | Session message board list | Session 留言板清單 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:395` |
-| SK-37 | Session message board thread | Session 留言板留言 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:517` |
+| SK-36 | Session message board list | Session 留言板清單 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:557` |
+| SK-37 | Session message board thread | Session 留言板留言 | Implemented | P1 | `web/console/src/session/SessionBoards.tsx:934` |
 
 ## Existing skeletons and states to retain
 
@@ -82,7 +82,7 @@ For future candidates, retain existing rows during refresh when they are still v
 
 ## Recommended screens implementation
 
-The 19 approved screens share decorative row, card, detail and text geometry through `LoadingSkeleton.tsx` and `loading-skeleton.js`. Each loading region carries its stable `data-loading-id`. The shapes use existing neutral theme tokens, hide decorative content from assistive technology, keep the existing translated loading label, delay their appearance to avoid flashing on quick reads, and stop the sheen for reduced motion. Narrow panels shrink without horizontal overflow.
+The 19 approved screens, and the two message-board screens added later, share decorative row, card, detail and text geometry through `LoadingSkeleton.tsx`, `loading-skeleton.js` and `loading-skeleton.css`; the arrival delay and the reduced-motion rule come from `page-skeleton.css`, which `loading-skeleton.css` imports. Each loading region carries its stable `data-loading-id`. The shapes use existing neutral theme tokens, hide decorative content from assistive technology, keep the existing translated loading label, delay their appearance to avoid flashing on quick reads, and stop the sheen for reduced motion. Narrow panels shrink without horizontal overflow. The Bot chat skeleton (`project-assistants/PaLoading.tsx`, `data-loading-id="bots-chat"`) reuses the same stylesheet but has no ID in this inventory.
 
 Fleet Sessions keep each machine heading and its offline or refusal explanation. Device cards, verification rows and details, schedules and their history, document lists, project readiness, explorer directories and file contents, instruction files, worktrees, terminal lists, token bills, assignment choices and their task details, Session tasks, Git files and diffs, Playbook sources and squad import sources now have an initial-reading footprint. File lists and instruction content use independent regions; loaded directory context stays visible while a selected file is read.
 

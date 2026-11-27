@@ -78,11 +78,14 @@ on 2026-11-01; the form links to Atlassian's token page, and the token is checke
   running as the same OS user are inside the endpoint trust boundary
   (`platform-trust-boundary.md`), as they are for every other secret on the machine.
 - **Refresh**: GitHub retires the old token pair as soon as it answers a refresh, so the new pair
-  is saved before use and refreshes are serialized. A refused refresh is `reauthorize`.
+  is saved before use and refreshes are serialized. A refused refresh shows the connection as
+  `reauthorize`, and the item's call fails with `github_reauthorization_required`.
   Disconnecting forgets the token on this machine; GitHub keeps the grant until the person revokes
   it under Settings → Applications, because revoking needs the client secret.
 - **Link record** per item: provider, target, observed state, external key, URL, typed last error,
-  attempts, version. Every change writes an item event.
+  attempts, next attempt time. An item event, carrying the item's version, is written when the
+  observed state changes (`issue.synced`) or the failure code changes (`issue.failed`); a Retry
+  writes none.
 - **Reconciler, not an outbox**: the link row (`work_v2_issue_links`) records the target and the
   last observed tracker state; `internal/app/issuesync` compares it with the item's phase
   (`work.NextIssueOp`) every 15 seconds and on a wake after create, assign and retry, at most
@@ -90,7 +93,8 @@ on 2026-11-01; the form links to Atlassian's token page, and the token is checke
   (GitHub: the body marker among the newest issues; Jira: the label `clawdline-item-<id>`), so a lost
   answer never opens a second issue. Failures back off from one minute to an hour, or follow
   `Retry-After`, and are typed (`github_rate_limited`, `jira_reauthorization_required`,
-  `issue_target_not_found`, `jira_transition_missing`, …); each new code writes one item event.
+  `issue_target_not_found`, `jira_transition_missing`, …; the full mapping is `githubFailure` and
+  `jiraFailure` in `internal/app/issuesync/trackers.go`); each new code writes one item event.
   Bounds are registered in `internal/domain/capacity` (`work.issue_sync_*`).
 - **What is sent**: the item's title and description, plus a line saying Clawdline opened it. The
   form says so before sending and warns that a public repository's issue is public. No automatic

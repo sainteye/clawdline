@@ -1,6 +1,6 @@
 # Scheduled tasks and webhooks
 
-After this page you can save a task that Claude Code or Codex runs on its own — once, on chosen
+After this page you can save a task that Claude Code, Codex or Gemini runs on its own — once, on chosen
 days at a chosen time, or with no time at all, only when you or a webhook start it — see each
 run's result, and, through Clawdline Cloud, start the same task from a webhook and wait for its
 result. You can tell it worked from the schedule's history.
@@ -35,15 +35,18 @@ running when a schedule is due; see [platforms.md](platforms.md) for keeping it 
      **Run now** does not change those dates.
    - **Machine** — shown only when your Cloud account has more than one machine.
    - **Where** — the project the session opens in.
-   - **With** — Claude Code or Codex.
+   - **With** — Claude Code, Codex or Gemini (the Antigravity preview; see [gemini.md](gemini.md)).
+     Gemini can be chosen only while the machine reports it ready to start.
    - **First message** — the instructions the session starts with.
 4. Open **More** for the rest, all optional:
    - **Close the tab when it finishes** — **If it worked** (the default),
      **Always**, or **Leave it open**.
    - **Enabled** and **Tell me if it fails** — both on by default.
+   - **Archive the Codex chat after its tab closes** — Codex schedules only, on a machine that
+     supports it; on by default for a new schedule.
    - **If it was missed, catch up within (hours)** — default 6, from 0 to 168.
    - **Give up if it is not done in (minutes)** — default 30, from 1 to 240.
-   - **Model**
+   - **Model** — for Codex and Gemini also the reasoning effort.
    - **Permission** — **This machine's default**, **Ask me at every step**, **May edit files directly**, or **Full permission (never asks)**. Only a person can set this field; an agent that tries is refused.
 5. Press **Create**. Nothing is scheduled until you do.
 

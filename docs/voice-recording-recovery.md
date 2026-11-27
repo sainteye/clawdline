@@ -53,7 +53,9 @@ The machine cannot measure another browser's recording memory.
 
 Cloud recovery events use the existing `diagnostics.events` delivery path.
 `voice.recording.recovery` contains machine, stage, a typed recovery code, byte
-count and completion flag. Audio, words, Session titles and raw browser error
+count, completion flag and, when known, `elapsed_ms`. The live Whisper preview
+reports under its own `preview` stage, with codes such as `preview_text`,
+`preview_empty`, `preview_no_reply` and `preview_no_pcm`. Audio, words, Session titles and raw browser error
 messages are not included. This is diagnostic delivery, not audio backup.
 
 ## Verification

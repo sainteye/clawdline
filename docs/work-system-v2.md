@@ -156,8 +156,8 @@ The current owner is the one active assignment. A failed attempt is history, not
 ### 5.2 Documents
 
 An item may have ordered document references with a closed role: `spec`, `design`, `test`,
-`deploy`, `completion_report`, `other`, and — on an Epic or Feature (`document_role_not_applicable`
-elsewhere) — `plan` and `plan_review`, the record §6.4's gate reads. A document may carry Markdown content or a repository-relative path/URL with
+`deploy`, `completion_report`, `other`, and — on an Epic, Feature or Refactor
+(`document_role_not_applicable` elsewhere) — `plan` and `plan_review`, the record §6.4's gate reads. A document may carry Markdown content or a repository-relative path/URL with
 a summary. The system does not copy an entire repository document merely to show that it exists.
 
 Writing a document with the role and title of one the item already holds revises it in place: the
@@ -413,8 +413,11 @@ review, and the person replaced that classification with this switch. Such docum
 earlier remain ordinary `other` documents the gate does not read.
 
 The owner of a checked Feature or a planning-on Epic writes a plan (`clawdline item doc <id> --role plan`), dispatches a read-only
-child with `--kind plan_review --work-id <id>`, and records the child's substantive review as a
-`plan_review` whose `reference` is the task id. For a Feature plan revised after a review, a
+child with `--kind plan_review --work-id <id>`, and the child's substantive review becomes a
+`plan_review` whose `reference` is the task id. The daemon records it on the item by itself when
+that child finishes successfully, with the child's review receipt as the body
+(`AddPlanReviewFromTask`); the owner adds it with `clawdline item doc` only when that recording
+was refused. For a Feature plan revised after a review, a
 fresh review is required unless the owner adds an `other` document titled
 `Review boundary assessment` after that revision, with JSON
 `{"new_risk_boundary":false,"reason":"..."}` explaining why the change remains inside the
@@ -422,7 +425,12 @@ earlier review's risk boundary. A changed or uncertain boundary requires a focus
 The existing Epic revision rule remains in force. Issue remains exempt from this planning gate;
 planning off bypasses the forced Epic and Feature planning checks.
 
-The phase route refuses an Epic or checked Feature planning-on transition when required plan or review evidence is absent. The document route accepts
+The phase route refuses an Epic or checked Feature planning-on transition when required plan or review evidence is absent.
+It also reads the latest review's receipt: while that review has a finding of severity `blocking`
+it refuses with `<prefix>_plan_review_blocking` (`feature_` or `epic_`), naming up to 8 of the
+findings and counting the rest. An Epic plan revised after that review answers it. While such a
+review stands on an assigned item, a `--work-id` dispatch for it is refused with the same code
+unless the dispatch is a new `plan_review` (`PlanReviewDispatchGate`). The document route accepts
 a `plan_review` only when its task is a real review of this plan, read from the broker's task
 record in the same transaction as the item's owner: the task exists
 (`plan_review_task_unknown`), was dispatched by the item's owning Session

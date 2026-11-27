@@ -11,7 +11,8 @@ The target is `Clawdline-v2.1.2-macos-arm64.dmg`, Apple Silicon, macOS 13 or new
 The native shell reads `CLAWDLINE_NEXT_PORT`, then a configured service port,
 then 7727 (`shell/darwin/main.swift`, `let port`).
 `ServiceMode.load()` reads `<state>/service.json`; with no service record,
-`startBundledDaemon()` starts `Contents/MacOS/clawdline serve` and sets
+`startBundledDaemon()` starts `Contents/MacOS/clawdline-daemon serve` (a copy of
+`clawdline` that `tools/package-macos.sh` makes) and sets
 `CLAWDLINE_NEXT_WEB` to `Contents/Resources/web`.
 `BundledDaemon.start()` launches that executable directly, with its inherited
 environment (`shell/darwin/Daemon.swift`). There is no CLI setup prerequisite

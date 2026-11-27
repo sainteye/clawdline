@@ -30,7 +30,8 @@ of each mode/profile before loading receipts
 or polling, and stays held until that host ends. Another port waits without polling;
 closing its port cancels that wait. The lock file stays in place, and process exit
 releases ownership. The receipt file contains command IDs, tab IDs,
-success flags and a generic failure classification, never page content, URLs,
+success flags, a generic failure classification and the boolean that says whether
+the action touched a password field, never page content, URLs,
 input text or pictures. Its row and byte limits are registered in the capacity
 inventory. A host restart replays these receipts until the daemon acknowledges
 and then removes the file. Failed writes apply backpressure and retain the result

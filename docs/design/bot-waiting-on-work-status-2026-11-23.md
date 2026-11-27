@@ -1,8 +1,25 @@
 # Bots: a "waiting on its Sessions" state and a dispatched count per row (design direction, 2026-11-23)
 
-Status: design proposal only. Nothing here is implemented or approved. It continues
+Status: proposed 2026-11-23; since built. It continues
 `bot-dispatched-sessions-strip-2026-11-23.md` (commit `34119b37f`), whose direction D
 (A: a quiet strip above the Bot chat composer; B: a grey line in the roster) this page keeps.
+The design and the "What the code does today" table below are kept as written. What shipped
+(`dispatched_work`, the `waitingOnWork` presentation state in `working.ts` `botRosterActivity`,
+the `waitingOnWork` avatar mood, the tower's `oversee` mood, a needs-you section first in the
+unread-first order) differs in these ways:
+
+- `dispatched_work` has a fourth counter, `executing`. `delivered` has no display window: a
+  finished link counts while its landing is owed, and a failed link with a pending landing counts
+  too (`countDispatchedWork` in `internal/adapters/projectassistantstore/active_work.go`).
+- The fix "an own error is not hidden by background work" applies only when `dispatched_work` is
+  present and the switch is on; otherwise background working still shows as `working`.
+- When a background thread already needs input, a clone waiting for the person shows the
+  background caption, not "A dispatched Session needs you".
+- A `waitingOnWork` row shows a ThinkingOrb while any dispatched Session is executing.
+- The tower's helper count still comes from `active_work`, which mixes background threads and
+  dispatched Sessions; `towerSummary` does not count `oversee` Bots.
+- The switch is "Show dispatched Sessions" / 「顯示派出的分身」, a check item in the roster's options
+  menu, stored per browser (`localStorage`), so it does not follow the person across devices.
 
 ## The request
 

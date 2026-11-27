@@ -70,10 +70,12 @@ day have no such problem.
 ## Cleaning up worktrees after a landing
 
 After recording a landing, run `tools/check-worktrees.sh`. It is a dry run and has four answers:
-0 means nothing is owed, 1 means it found proved landed-and-clean residue, 2 means it could not
+0 means nothing is owed, 1 means it found proved removal candidates, 2 means it could not
 check, and 3 means at least one checkout is unknown. Inspect the report before running
-`tools/check-worktrees.sh --apply` for every proved `landed_clean` checkout; apply removes only
-broker-owned, landed, clean checkouts and never deletes their branches. Remove a root-owned task
+`tools/check-worktrees.sh --apply` for every proved `landed_clean` or `settled_clean` checkout;
+apply removes only clean checkouts the broker proves disposable (landed, or settled as
+`incorporated`, `nothing_to_land` or `abandoned`) and idle Root checkouts on `main` that their
+`--root-checkout` owner record names, and never deletes their branches. Remove a root-owned task
 checkout after its commit is on `main`, Git says it is clean, and its owner has finished using it.
 Dirty, live, unlanded and unknown checkouts stay. A merge commit or an old modification time alone
 does not authorize deletion. Report the number actually removed and name any candidates kept with

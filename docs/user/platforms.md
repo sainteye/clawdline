@@ -95,7 +95,7 @@ tools/deploy-linux-user.sh
 
 It builds from a clean checkout, switches the release atomically, restarts only the daemon — tmux
 and the assistants it opened keep running — checks `GET /` and the build stamp, and rolls back if
-either fails. It prints `deployed <commit>; daemon pid N; console 200`. Such a machine is not
+either fails. It prints `deployed <commit>; daemon pid N; console 200 on port P`. Such a machine is not
 offered releases; `clawdline setup --adopt` moves it onto them.
 
 On a machine with no desktop, `clawdline open --print` prints the sign-in address; reach it over an

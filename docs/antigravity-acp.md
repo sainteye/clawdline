@@ -1,9 +1,14 @@
 # Antigravity ACP v1 codec
 
-This preparatory component implements initialization and native permission-offer
-decoding under `internal/adapters/antigravityacp`. It prepares reply bytes; it has
-no process, transport, account, model, HTTP, broker, Cloud or UI effect. It does
-not enable a production provider capability or compatibility row. The full
+This component implements initialization, native permission-offer and
+`session/update` decoding, plus tool-input projection, under
+`internal/adapters/antigravityacp`. It prepares reply bytes; the codec itself has
+no process, transport, account, model, HTTP, broker, Cloud or UI effect. Its
+production caller is the [owned process client](antigravity-acp-client.md)
+(`internal/adapters/antigravityprocess`), which reads frames with its own bounded
+`frame_reader.go` and decodes live permission requests and updates with this
+codec; the daemon enables that client automatically on macOS and Linux where a
+compatible `agy` CLI is installed. The full
 [integration scope](antigravity-cli.md) and existing
 [native launch and policy ownership](antigravity-native-policy.md) remain required.
 
@@ -15,7 +20,10 @@ version 1. IDs are JSON string values or integer number tokens; strings and
 numbers are distinct and integers never pass through a floating-point value.
 Fractional and exponent tokens are refused; numeric token spelling is compared
 conservatively (including negative zero). A valid RPC error exposes its numeric
-code through `CodecError`, never its provider message or data.
+code through `CodecError`, never its provider message or data. The production
+process client issues only monotonically increasing integer IDs and requires
+an exact numeric-token match on replies; string IDs reach the codec only on
+native permission requests.
 
 The returned initialization contains only declarations. Optional boolean
 pointers distinguish missing/null from explicit false. Missing object
@@ -56,6 +64,15 @@ Errors have stable, path-free `CodecError.Code` values: `invalid_message`,
 `invalid_id`, `unexpected_id`, `rpc_error`, `unsupported_protocol`,
 `invalid_initialize`, `invalid_owner`, `invalid_permission`, `wrong_session`,
 `unsupported_option_kind`, `stale_offer` and `unknown_option`.
+
+`DecodeSessionUpdate(message, expectedSession)` accepts one complete,
+already transport-bounded `session/update` notification for exactly the expected
+session and returns independently owned values. Unsupported and unknown
+extension variants are returned as ignored; a wrong session is an error even
+for an ignored variant. Tool input is projected from both live objects and the
+JSON strings of historical replay (`tool_input.go`); it never authorizes a file
+read. Update errors use the separate `UpdateDecodeError.Code` values
+`invalid_owner`, `invalid_message`, `invalid_update` and `wrong_session`.
 
 ## Evidence and unknowns
 
@@ -100,11 +117,11 @@ session creation is not permission-enforcement acceptance.
 
 ## Next integration seam
 
-Root must give the future owned transport a production frame/IO bound and
+Root must give the owned transport a production frame/IO bound and
 deadline, feed already bounded complete messages into this codec, and allocate
 one connection generation per actual connection lifetime. No growing registry,
 cache, queue, worker, retry, frame reader or numerical policy limit is added
-here; no missing transport bound is claimed to exist.
+in this package; the frame reader and its bounds belong to the process client.
 
 The existing launch/receipt owner must persist the exact pending request and
 revision, reserve its durable answer receipt, enforce its current product
@@ -112,13 +129,19 @@ ceiling, and recheck the real live connection/session/offer owner immediately
 before writing once. A copied fence alone cannot establish current authority.
 Owner loss, restart and uncertain/lost writes must reconcile through that same
 durable owner without replaying grants or opening a fallback send lane. This
-codec deliberately accepts no arbitrary effective-policy callback.
+codec deliberately accepts no arbitrary effective-policy callback. The owned
+process client that shipped does not implement this durable design: it holds
+the live `PermissionRequest` in memory only, offers are not persisted or
+restored after restart, and there is no durable answer receipt for permission
+replies.
 
 Complete runtime/auth discrimination and the native tool-family, cached-grant,
 failure, resume and restart matrix before activating compatibility rows. Retain
 accepted standalone discovery/history/resume, exact identity, immutable roles
 and explicit skill receipts, local and encrypted Cloud flows, and independent
-desktop/mobile bilingual UX and brand acceptance. This codec is not completion
+desktop/mobile bilingual UX and brand acceptance. The owned runtime is already
+offered as a start option wherever a compatible `agy` CLI is installed; no code
+or document records that this matrix was completed. This codec is not completion
 of the full Antigravity integration. There is no storage migration or new wire
 endpoint; existing readers and native policies are unchanged.
 

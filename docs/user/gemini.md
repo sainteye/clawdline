@@ -154,7 +154,8 @@ can arrive after the assistant's reply.
 ## Preview boundaries
 
 This preview does not provide native terminal
-attachment or turn-only cancellation. The owned native process implementation
+attachment. Interrupting an owned Session cancels only its current turn; the
+conversation stays open. The owned native process implementation
 supports macOS and Linux; Windows is not enabled by this path.
 
 For connection problems, see [Recovery](recovery.md). For another machine or a

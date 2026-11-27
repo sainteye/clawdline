@@ -6,7 +6,9 @@ is available for readers who prefer a document.
 
 For passwords, credentials and API keys handed to a Session, see [Secret Handoff](secret-handoff.md).
 
-The proposed third-provider integration is described in [Antigravity CLI integration design](antigravity-cli.md).
+The third provider, Antigravity, was designed in [Antigravity CLI integration design](antigravity-cli.md);
+its Sessions now run through the owned ACP host described in
+[Existing Session preview](antigravity-acp-client.md#existing-session-preview).
 
 One Go binary is both the daemon and its command line. Work always runs on your own machine. Every
 client, whether the native window, a browser tab or the Cloud console, reads the same HTTP + SSE
@@ -28,7 +30,7 @@ API, which is defined once, as JSON Schema, before any code is written against i
   |                                                                                   |
   |  transport/http    the gate, the routes, the event stream                         |
   |  transport/cloud   the line to the relay, pairing, publishing session rows        |
-  |  app               the broker, schedules, the three structures, Cloud commands    |
+  |  app               the broker, schedules, work, Bots, Squad, Cloud commands       |
   |  domain            pure rules: sessions, tasks, work, auth, capacity, Cloud crypto|
   |  adapters          terminals, processes, transcripts, the SQLite store, push, keys|
   +-----------------------------------------------------------------------------------+
@@ -84,13 +86,17 @@ inventory body (a map), `/v1/strings` (its keys are the catalog), and `/v1/cloud
 | Package | Holds |
 | --- | --- |
 | `internal/domain/*` | Rules without I/O: session identity and state, tasks, work items, device auth, the capacity register, Cloud envelopes and crypto |
-| `internal/app/*` | Use cases: the broker (`app/orchestrator`), schedules, work, Cloud commands (`app/cloudops`), and the ports they need (`app/ports`) |
+| `internal/app/*` | Use cases: the broker (`app/orchestrator`), schedules, work, Cloud commands (`app/cloudops`), Bots (`app/projectassistant`), the Bot network (`app/botnetwork`), Bot dev servers (`app/botdevserver`), the browser bridge (`app/browserbridge`), Squad packages (`app/squadpackages`), and the ports they need (`app/ports`) |
 | `internal/adapters/*` | One implementation per port, split by platform in file names (`*_darwin.go`, `*_windows.go`) |
 | `internal/transport/http`, `internal/transport/cloud` | The ways in: routes, the gate, SSE; the Cloud line |
+| `internal/contract` | The generated wire types |
+| `internal/config` | Where the daemon keeps its state and which ports it uses, plus the repository shape guards |
+| `internal/productcopy` | The daemon's fixed, person-facing notification copy |
 | `cmd/clawdline` | The binary: `serve`, and the commands that talk to a running daemon |
 
 The rule that holds is the first one in [plan.md](plan.md) §3: **`domain` imports no adapter, no
-transport and no app package**. One domain package, `domain/icon`, still reads a file itself. The second rule there, that transport does not
+transport and no app package**. Three domain packages still do file I/O themselves: `domain/icon`,
+`domain/projectsync` (its mirror file) and `domain/apiperformance` (its history database). The second rule there, that transport does not
 import adapters, is not true today: `internal/transport/http` is also where the daemon is wired
 together, and the broker in `internal/app/orchestrator` uses the store and terminal adapters
 directly.
@@ -130,7 +136,9 @@ capability is missing, rather than recording a task that then fails to spawn
 ## Sessions
 
 The daemon lists tmux panes, and iTerm2 sessions on macOS, and matches each terminal to the
-`claude` or `codex` process running in it through the process table. A session's state comes from
+`claude`, `codex` or Antigravity (`agy`) process running in it through the process table. Sessions
+whose protocol process the daemon owns itself, such as Antigravity over ACP, use the `owned`
+backend. A session's state comes from
 evidence: what its screen shows and what its own records say. With no evidence, the state is
 `unknown`. Transcripts are read from the assistant's own files under `~/.claude` and `~/.codex`.
 Nothing is written there.
@@ -176,7 +184,8 @@ open. In the console they are folded into **Session to-dos**, with only their ru
 closed row. Broker children stay in the main session list, where each already has its own session
 row, and are not drawn a second time as provider subagents.
 
-Only a terminal running Claude or Codex is a Session. An ordinary shell is never a row, and every
+Only a terminal running a known assistant (Claude, Codex or Antigravity), or a process the daemon
+owns for one, is a Session. An ordinary shell is never a row, and every
 route under `/v1/sessions/{id}/` answers `409 not_an_agent_session` for one, whether it would have
 typed, read its screen or read its directory, and whether it came from this machine's network or
 from Cloud. The broker's own typing does not pass through those routes, so a child's pane still
@@ -185,7 +194,9 @@ receives its briefing in the seconds before `claude` replaces its shell.
 `GET /v1/sessions` answers one inventory. `GET /v1/events` streams whole snapshots, named
 `sessions` and `orchestrator`, plus `screen` frames for a session being watched. Whole snapshots,
 not patches, because a view built from two sources that update at different times shows a state
-that never existed ([plan.md](plan.md) §6).
+that never existed ([plan.md](plan.md) §6). The one exception is `orchestrator-progress`: per-task
+progress notes, de-duplicated by sequence number and carrying no event id, which a reconnect's
+snapshot supersedes.
 
 ## What another program writes, and this one only reads
 
@@ -283,23 +294,26 @@ pure Go. There is no cgo anywhere, which is what lets one machine build every pl
   [limits.md](limits.md)). `clawdline doctor capacity --drill <row>` fills one row on purpose, in a
   throwaway directory, so you can see the warning that fires.
 
-## Three structures
+## Work
 
-Board, backlog and a session's own to-do list are three tables in the same SQLite file, with one
-`work` identity that an item keeps as it moves between them, and an append-only log of every move.
-Because they share the broker's database, "the task landed", "the to-do is done" and "the board
-item is done" can be one transaction instead of two stores that must agree.
+The Board runs on Work system v2 ([work-system-v2.md](work-system-v2.md), which wins over older
+board designs). Its routes are under `/v1/work/v2/`: items, reference images, the Epic gates
+(`gate-export`, `gate-purge`, `gate-decision`), `seen`, `persona-suggestion`, Session to-dos
+(`session-todos`), human interventions, proposals, and Agent writes under `/v1/work/v2/agent/`.
+Items carry steps, documents, phases, Epic children and landing evidence (`internal/app/work_v2*.go`),
+in the same SQLite file as the broker, so landing evidence and an item's state can be read in one
+transaction. A person's quick to-dos for a Session are the `session_direct_todos` table. The old
+v1 `/v1/work/board`, `/v1/work/backlog` and `/v1/work/items/…` paths have no handler.
 
 | | Routes | Created by | Closed by |
 | --- | --- | --- | --- |
-| Board | `/v1/work/board`, `/v1/work/items/…` | a person, or a proposal a person accepted | evidence, or a person |
-| Backlog | `/v1/work/backlog` | a person | a person, or a move to the board |
-| Session to-do | `/v1/sessions/<id>/todos`, `/v1/orchestrator/sessions/<id>/todos` | the broker | the broker |
+| Board item | `/v1/work/v2/items`, `/v1/work/v2/items/<id>/…` | a person, or a Session on a person's message | its owning Agent's transition requests, or a person |
+| Session to-do | `/v1/work/v2/session-todos/…`, `/v1/work/v2/agent/session-todos/…` | a person, or its Session | the person or its Session |
+| Broker to-do | `/v1/sessions/<id>/todos`, `/v1/orchestrator/sessions/<id>/todos` | the broker | the broker |
 
-Proposals and decisions (`/v1/work/proposals`, `/v1/work/decisions`) are where a person joins in.
-The display states on a card ("queued", "in review", "landed") are derived from evidence each time
-they are read, never written back. [board-redesign.md](board-redesign.md) has the reasoning and the
-lifecycle of each structure.
+Proposals and decisions (`/v1/work/proposals`, `/v1/work/decisions`, and v2 proposals) are where a
+person joins in. Display states are derived from evidence each time they are read, never written
+back. [board-redesign.md](board-redesign.md) has the earlier reasoning.
 
 ## Session reasoning effort
 
@@ -329,12 +343,15 @@ them.
 Off by default, and a failure in it never stops the daemon.
 
 - `internal/domain/cloud`: the envelope, canonical JSON (a safe-integer subset of RFC 8785),
-  AES-256-GCM with a 12-byte nonce, Ed25519 signatures, HKDF for pairing, and the replay window.
+  AES-256-GCM with a 12-byte nonce, Ed25519 signatures, HKDF for pairing, health pairing, the
+  replay window, channels, the ledger, key epochs and rekeying, and CPace over ristretto255 for
+  browser invitations (the one primitive that brings in a dependency, `github.com/gtank/ristretto255`).
   Checked byte for byte against known-answer vectors.
-- `internal/transport/cloud`: the line (`wss://…/v1/connect?role=machine`, backoff, an outbound
-  spool), the machine's half of pairing, and publishing session rows for the hosted console.
-- `internal/adapters/cloud`, `internal/adapters/cloudkeys`: the account client, the device roster,
-  the devices this machine pinned itself, and key files (mode 0600).
+- `internal/adapters/cloud`: the line (`wss://…/v1/connect?role=machine`, the challenge handshake,
+  backoff, an outbound spool), plus the account client, the device roster and the devices this
+  machine pinned itself. `internal/adapters/cloudkeys` holds key files (mode 0600).
+- `internal/transport/cloud`: the seam between the line and the daemon's routes, the link and its
+  open retry, the machine's half of pairing, and publishing session rows for the hosted console.
 - `internal/app/cloudops`: the commands a viewer can send. **A Cloud command is answered by the
   same route handler, behind the same gate, as a local request**, so there is one set of
   permission checks, not two.
@@ -377,7 +394,7 @@ The web side is three npm workspaces:
 | `web/console` | the React DOM screens | both of the above |
 
 `web/console/src/ui/ProjectPicker.tsx` is the shared project selection control used by
-the work board (including its create sheet) and usage overview. It accepts caller-owned IDs,
+the work board (including its create sheet), the usage overview and the ops documents page. It accepts caller-owned IDs,
 labels and marks; callers retain their surrounding layout and control dimensions. The control
 owns its non-native menu, keyboard navigation, dismissal and optional refresh on opening.
 Usage filter choices come from configured project places, using their configured names and marks.
@@ -401,13 +418,13 @@ shows when it cannot.
 
 ### Settings navigation
 
-The local console settings page has one tablist for browser, work, status, general
-machine settings, voice, remote access, session dispatch and dispatch rules. Machine
+The local console settings page has one tablist for browser, work, status, workflow, Chrome,
+general machine settings, voice, remote access, session dispatch and dispatch rules. Machine
 panes share one mounted `SettingsWindow` with a controlled stable pane name; switching
 machine panes retains the window-level settings state and in-flight writes. Leaving the machine settings
 unmounts the window so background reads and listeners stop. Its embedded mode still uses the browser
 settings API and excludes privileged Cloud sign-in and pairing controls.
-Cloud browsers expose browser, work, status and workflow settings. The standalone
+Cloud browsers expose browser, work, status, workflow, Chrome, remote access and voice settings. The standalone
 `settings.html` document and macOS settings window have been removed; the local
 browser console embeds the machine-authorized controls in its Settings tabs.
 Update deep links continue to open the status pane.
@@ -417,7 +434,10 @@ Update deep links continue to open the status pane.
 [View Plugin v1](plugins/view-plugin-v1.md) defines the browser-local runtime in
 `web/console/src/view-plugins`: an IndexedDB archive registry, a fixed fleet projection covering all
 authorized machines and Projects, an opaque srcdoc iframe and a dedicated MessagePort SDK.
-Galaxy, List, Pop and Deadpan are independent static ZIP packages, not compiled page modules.
+The shipped views (`plugins/session-codecraft`, `session-departures`, `session-galaxy`,
+`session-kaiju`, `session-lantern-deep`, `session-night-city`, `session-orrery` and
+`session-territory`) are independent static ZIP packages, not compiled page modules. The withdrawn
+List, Pop and Deadpan identities stay reserved in `view-plugins/retired.ts`.
 Each new package supplies a validated, embedded PNG cover. Packing, import and
 publication checks refuse a missing cover; the library and launcher use package
 artwork rather than an ID-based generic image. Exact previously shipped archives

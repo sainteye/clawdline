@@ -15,10 +15,12 @@ operators still verify the deployment. Discussion alone never authorizes source 
 The labeled `/help/admin` area remains the operator inbox, FAQ editorial queue and answering-service
 configuration. Every Admin request rechecks operations access on the server. Public moderation links
 do not grant authority. A staff reply is an explicit operator action; a member comment is never
-presented as an official reply merely because its author has Admin access.
+presented as an official reply merely because its author has Admin access. The Admin reply form on a
+discussion requires a source URL and its revision before the reply can be sent.
 
-Community navigation uses a single row of flat tabs with the speech-bubble, alert-circle and
-lightbulb icons from its share preview. Tabs have no filled surface or rounded outline; the active
+Community navigation uses a single row of flat tabs: Questions, Issues and Ideas with the
+speech-bubble, alert-circle and lightbulb icons from its share preview, and My discussions
+(`/community/mine`) with a person icon. Tabs have no filled surface or rounded outline; the active
 destination has a warm underline and brighter text, an explicit `aria-current`, and a separate
 keyboard focus outline. Icons remain visible on narrow screens.
 
@@ -66,9 +68,12 @@ are separate from local SQLite and encrypted Session traffic.
    only the question author or an Admin can mark a usage question resolved. An explicit Agent request
    schedules a new answer; ordinary community comments do not create new Agent jobs. Legacy private
    follow-ups retain their original rescheduling behavior. A visible thread
-   refreshes on focus and on a bounded interval. A read cursor acknowledges only the message the
-   browser actually saw, never a newer reply that arrived during that acknowledgement. Question
-lists refresh when the browser regains focus or becomes visible, without a page refresh button.
+   refreshes on focus and on a bounded interval. Community lists, including My discussions, also
+   refresh when the window regains focus and on the same interval while the page is visible,
+   without a page refresh button. Legacy private `/v1/support` threads keep an unread flag and a
+   read cursor that acknowledges only the message the browser actually saw, never a newer reply
+   that arrived during that acknowledgement; their question list also refreshes when the page
+   becomes visible. Community discussions have no unread state or read cursor.
 
 The internal storage revision changes for leases and delivery metadata. The member-facing
 conversation revision changes for content and explicit conversation actions; background delivery
@@ -119,8 +124,9 @@ static FAQ content and local search; a build without it keeps DB-backed reads. R
 not fetch member data or make live API requests. Editing continues in DB after static publication.
 
 The private service owns `SUPPORT_LIMITS`, migrations, deployment and the scoped worker transport.
-The public daemon registers the help tab's request deadline, refresh interval and title bound in
-`internal/domain/capacity`; its diagnostics explain that these limits are enforced by the browser.
+The public daemon registers the help tab's request deadline, refresh interval and title bound, the
+three share-preview bounds and the five image bounds (count, source bytes, encoded bytes, edge and
+upload seconds) in `internal/domain/capacity` (`register_support_ui.go`); its diagnostics explain that these limits are enforced by the browser.
 
 ## Restricted answering runtime
 
@@ -132,9 +138,11 @@ the restricted support permission profile, regardless of the machine's general d
 The workspace contains `docs/` (pinned public user guides and a `source/` product-code export with their source manifest),
 `support-worker.py` (the scoped client), `private/worker-token` (mode 0600), and `state/` (mode 0700).
 Only the client's state and the current task's own receipt directory are writable. Documentation, source code,
-client and credential are read-only. Other machine data, repositories, Sessions, tasks and Cloud
+client, credential, the resolved Clawdline executable and Codex's `:minimal` platform set are read-only
+(`supportPermissionArgs` in `internal/app/orchestrator/support.go`). Other machine data, repositories, Sessions, tasks and Cloud
 deployment credentials are outside the filesystem grant. The network proxy allows only the
-support API and loopback task receipts. A separate `.codex-runtime` home contains the operator's
+support API host and the loopback hosts `127.0.0.1` and `localhost`, which carry task receipts;
+the loopback allowance is by host, not by port or path. A separate `.codex-runtime` home contains the operator's
 ChatGPT login; model-generated commands cannot read that directory. API-key login, apps, plugins,
 web search and further agents are disabled. The operator installs an empty runtime configuration
 and no MCP servers, hooks or project configuration. Keep the answering workspace outside a
@@ -163,21 +171,26 @@ have been installed and validated. No paid model or translation API is provision
 this implementation; recurring usage-priced calls require separate approval and a cap.
 
 Admin new-question notifications and private image attachments are supported through separate
-service paths. Replies remain in the member thread with unread state and refresh; notification
+service paths. Replies remain in the member thread and refresh (legacy private threads also keep
+unread state); notification
 transport is not a prerequisite for reading an answer. A provider-backed automatic translation service is also not
 configured: editors maintain separate language drafts through the same API.
 
 ## Question images
 
-Members write the question itself; the server derives its list title. A member can select or
+Members write the question itself; the community composer derives its list title from the first
+line of the body and sends it with the submission. A member can select or
 paste up to five JPEG, PNG or WebP images with a question or follow-up. The browser prepares
 small previews and uploads the images before the idempotent question submission. Only image
 references enter the pending question body; image bytes do not enter its session-storage draft.
 Members can enlarge a received thumbnail and close it with Escape or the close button.
 
-Images stay private with the question and are never copied into FAQ drafts or static exports.
+Community discussions and replies upload images through the public `/v1/community/images` route
+with explicit public consent, and readers load them from the discussion's public image route (see
+[the content boundary](#the-content-boundary)). Images on legacy private `/v1/support` threads stay
+private with the question. No image is copied into FAQ drafts or static exports.
 The service checks file signatures and dimensions, decodes and re-encodes to JPEG without source
-metadata, and keeps bytes in separate private storage. Account ownership protects member reads;
+metadata, and keeps legacy private bytes in separate private storage. Account ownership protects member reads;
 operator reads require the existing admin authority. Worker downloads require the current worker
 binding and an unexpired question lease. The client downloads only API-owned image identifiers,
 verifies size and SHA-256, and keeps private task images until confirmed completion. Text and
@@ -227,11 +240,14 @@ pinned revision before claiming absence; distinguish role recommendation from mo
 ## Page metadata and source links
 
 Hosted community and public FAQ URLs include a title, plain-text description, canonical URL,
-Open Graph fields and a large-image Twitter card in the initial HTML. The Cloud-only Pages
-worker reads only the anonymous public API, never forwards browser cookies or authorization,
+Open Graph fields and a large-image Twitter card in the initial HTML. The Pages worker, whose
+source is `web/console/edge/worker.mjs` and which is deployed only with the hosted console, reads only the anonymous public API, never forwards browser cookies or authorization,
 and uses the original post for a discussion excerpt. It does not preview member uploads.
-The fixed 1200×630 PNG is derived from the committed SVG with local resvg 2.6.2; it uses the
-existing brand palette. Daemon builds do not contain the edge worker.
+The 1200×630 share PNGs, one English and one Traditional Chinese (`community-share-v2-en.png` and
+`community-share-v2-zh-Hant.png`, chosen by locale in `SHARE_IMAGES`), are derived from their
+committed SVGs with local resvg 2.6.2; they use the existing brand palette. The same worker answers
+`410 Gone` with localized text for every retired built-in view download in `RETIRED_DOWNLOADS`.
+Daemon builds do not contain the edge worker.
 
 List descriptions are available in English and Taiwan Traditional Chinese; the initial response
 uses Accept-Language, while client navigation follows the existing interface locale. A topic

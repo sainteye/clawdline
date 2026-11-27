@@ -62,8 +62,13 @@ The sequence database is separate from the key database. In public source
   sequence blocks in IndexedDB. Its transaction error/abort branch maps failures
   to `no_sequence_store` and retains the cached database handle.
 - The same file's `CloudSession.machinePairing` reads pairing bindings and keys
-  from IndexedDB during operations. Fixing sequence allocation alone therefore
-  does not make active operations independent of IndexedDB.
+  from IndexedDB. `CloudClient._machinePairing` in `cloud-client.js` keeps a
+  resolved pairing (and a known absent or incomplete one) in memory and calls
+  that IndexedDB-backed resolver only on a miss; a store that failed to answer
+  is asked again at the next envelope. A machine not yet resolved in this page
+  therefore still depends on IndexedDB, and every sequence block reservation
+  does. Fixing sequence allocation alone therefore does not make active
+  operations independent of IndexedDB.
 - `web/console/src/legacy/js/net/cloud-client.js`, `_publishCommand`, needs both
   a sequence and a complete machine pairing before publishing a request.
 - `internal/domain/cloud/replay.go` keys incoming replay state by sender and

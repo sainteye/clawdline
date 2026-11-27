@@ -2,31 +2,40 @@
 
 This module is an opt-in dispatch boundary, not a second task system. A Bot is
 not a Session, terminal, human run, schedule or detached automation. Without a
-source authority and result sink the typed entry point refuses work. Mounting
+source authority and result sink the typed entry point refuses work; a
+dispatch that continues on completion also needs the completion callback. Mounting
 HTTP/MCP tools, enabling the feature, native-provider acceptance, Cloud delivery
 and release acceptance are separate host integration work.
 
 ## Host construction
 
 Construct `orchestrator.NewAssistantAuthority(AssistantAuthorityOptions)` with
-`Current func(context.Context, pa.BotKey) (AssistantCurrent, error)` and an
-explicit `Clock func() time.Time`. The constructor returns
+`Current func(context.Context, pa.BotKey) (AssistantCurrent, error)`, an
+explicit `Clock func() time.Time` and `ResolveProject func(context.Context,
+pa.ProjectSelection) (pa.ProjectResolution, error)`. The constructor returns
 `(*AssistantAuthority, error)` and rejects a missing dependency.
 
 `Current` must read the source machine's canonical registered Project, Bot,
 Conversation, binding, active turn, feature/source access and dispatch policy.
-It supplies `Fence`, `Source`, `Feature`, `ActiveTurnID`, `BindingRevoked`,
-`Project` (a current `pa.ProjectResolution`), `DispatchAllowed`, `AllowedClaims`,
-`Assistant`, `PermissionMode` and `TimeoutMinutes`. None of these may be decoded
+It supplies `Fence`, `Source`, `Feature`, `BotName`, `BotAppearance`, `BotAgent`,
+`ActiveTurnID`, `BindingRevoked`, `Project` (a current `pa.ProjectResolution`),
+`DispatchAllowed`, `ProjectDispatchAllowed`, `ProjectDispatchAskable`,
+`ApprovedProjects`, `AllowedClaims`, `AnyProjectFile`, `Assistant`,
+`TimeoutMinutes`, `SharedSettings`, `DispatchAgents`, `Resolved` and `WorkOwner`;
+the broker itself sets `BotRequestID`. None of these may be decoded
 from model arguments or copied from a client-provided absolute directory.
 `AllowedClaims` is an explicit list of exact relative files authorized by host
-policy. Native read approval and model prose do not establish this policy.
+policy; `AnyProjectFile` instead admits any exact relative file inside the
+Project, and the production dispatch policy sets it. Native read approval and
+model prose do not establish this policy.
 
 Assign the authority to `Broker.AssistantAuthority`. Construct
 `projectassistant.NewWorkBridge(WorkBridgeOptions{Repository, Broker, Clock})`,
 which returns `(*BrokerWorkBridge, error)`, then connect
 `Broker.AssistantWorkChanged = bridge.Sync`. The callback has the exact type
-`func(context.Context, orchestrator.AssistantWorkSnapshot) error`.
+`func(context.Context, orchestrator.AssistantWorkSnapshot) error`. A dispatch
+with `ContinueOnCompletion` also requires `Broker.AssistantWorkCompleted`, of the
+same type; without it the request is refused as `work_result_sink`.
 
 Only the host calls
 `authority.Issue(ctx, fence, operations, expiresAt)` to obtain a
@@ -52,8 +61,10 @@ historical task from the same Bot/Project/conversation.
 
 `CapabilityID` is private credential material. Do not serialize the actor into
 prompts, task files, public API responses or logs. `AssistantOwner`, stored as
-`Record.assistant_owner`, contains only the historical fence, turn, original
-command and request digest. It grants no authority.
+`Record.assistant_owner`, contains only public provenance: the historical
+fence, Bot name and appearance, turn, original command, request digest, target
+Project, persona, `ContinueOnCompletion` and peer-dispatch attribution. It
+grants no authority.
 
 ## Admission and ownership
 
@@ -64,8 +75,8 @@ dispatch still validates its root Session and Squad capability as before.
 Replaying a Bot task through an ordinary dispatch request is refused.
 
 The Bot door runs the existing broker claims validator and rejects traversal,
-absolute paths, globs, directory claims, symlink components and files outside
-the host's allowed list. An explicitly targeted investigation or a dispatch
+absolute paths, globs, directory claims, symlink components and, unless
+`AnyProjectFile` is set, files outside the host's allowed list. An explicitly targeted investigation or a dispatch
 with a completion callback may declare an empty list for read-only work. It
 always selects `isolation: worktree`; the host chooses the canonical directory,
 worker provider, permission ceiling and timeout. It retains inventory freshness,
@@ -178,10 +189,9 @@ derive the task ID from the authenticated original command and call `Status`;
 the command's Runtime receipt resource is a turn ID, not a task ID. Missing task
 evidence is not permission to dispatch again.
 
-The initial Runtime implementation also writes a `runtime-work-...` WorkLink
-projection after a successful Bridge return. Integration must reconcile that
-overlap with the persisted-return contract; it must not make the Bridge
-overwrite the original Runtime command receipt.
+After a successful Bridge return the Runtime writes no WorkLink of its own:
+`Engine.finishDispatch` reads back the link the Bridge persisted. The Bridge
+must not overwrite the original Runtime command receipt.
 
 ## Results and reading
 

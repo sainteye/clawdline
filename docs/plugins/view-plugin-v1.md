@@ -190,8 +190,8 @@ A card opens the view full screen. Its corner button pins it; that button and th
 **Pinned to the right** badge appear only where a pane exists. Disabled packages are
 not cards; the launcher counts them and links to Manage.
 
-Each supplied cover has editable `cover.svg` source beside its manifest. They
-can be rendered using an already installed local Playwright module, without a
+Each supplied cover except Codecraft's and Kaiju's, which are PNG, has editable
+`cover.svg` source beside its manifest. Those SVG covers can be rendered using an already installed local Playwright module, without a
 network request or a new dependency:
 
 ```sh
@@ -491,7 +491,7 @@ sync, plugin database or native capabilities are included.
 
 `runtime.test.mjs` exercises actual ZIP parsing, scoped references, capability
 refusal, event ordering/coalescing, disconnection, flood isolation and Cloud
-revocation during a delayed read. `tools/view-plugins.e2e.mjs` bundles the production
+revocation during a delayed read. `web/console/tools/view-plugins.e2e.mjs` bundles the production
 manager/frame/registry and supplied packages with synthetic Session sources. It
 exercises import, Galaxy plus a synthetic community view, multiple machines/Projects, Back/focus, hostile label
 text, revocation, persisted packages without persisted grants, direct opening

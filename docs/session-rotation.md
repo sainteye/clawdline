@@ -34,10 +34,14 @@ waits for idle. It sends a conversation-bound request
 through the existing send receipt and pending-message controls. A recorded or
 accepted request is not proof that a receiver exists or has read the package.
 Failed or uncertain sends retain the normal retry/read-back controls; the notice
-never launches a second request automatically. A recorded milestone handoff
-in progress or already delivered suppresses further suggestions, including after
-a page reload; unreadable broker history offers no new launch. Machine-role Sessions are excluded
-because their role needs a separate succession protocol.
+never launches a second request automatically. Any recorded milestone handoff
+from this conversation and terminal suppresses further suggestions, including after
+a page reload, except one that failed to spawn before typing was attempted, which
+can be prepared again; unreadable broker history offers no new launch. Machine-role Sessions are excluded
+because their role needs a separate succession protocol. The Console also offers
+no reminder for a child Session or a coordinator-bound Session, and the daemon
+reports no `rotation` for a `claude_remote` Session or one without a
+conversation id.
 
 The original assistant prepares a milestone summary using `clawdline handoff
 --summary <file>`. See [milestone handoffs](handoff.md#milestone-handoffs) for the

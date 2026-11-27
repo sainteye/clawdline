@@ -1,4 +1,4 @@
-> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
+> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links. The `pre-commit` guard, `tools/install-git-hooks.sh` and `Tests/git-hooks.mjs` belonged to that repository and are not in this one: `tools/git-hooks` now holds only a `pre-push` ref and privacy guard, and the Go broker keeps a worktree-isolated task's claims as its declared writes (still warning `claims_ignored_for_worktree`) rather than emptying them.
 <!-- clawdline-doc: kind=record audience=both -->
 
 # The shared-tree commit guard

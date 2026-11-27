@@ -16,12 +16,12 @@ files, and nothing keeps them together:
 |---|---|---|---|
 | Project rules | `CLAUDE.md` (and `.claude/CLAUDE.md`, `CLAUDE.local.md`) | `AGENTS.md` | Lists and edits both side by side (`docs/project-files.md:3-9`); never relates them |
 | Project skills | `.claude/skills/<name>/SKILL.md` | `.agents/skills`, `.codex/skills` | Browses each provider's folders separately to build the squad catalog (`internal/transport/http/squad_skill_sources.go:55-82`); copies nothing across |
-| The Clawdline skill | `~/.claude/skills/clawdline/SKILL.md` | — | Installed for Claude only (`internal/adapters/skillfile/skillfile.go:87-89`) |
-| Role / persona prompt | System prompt via `--append-system-prompt-file` (`internal/adapters/projects/launch.go:194,288`) | A `-c developer_instructions` sentence telling Codex to read the file (`launch.go:198,279-285`), which also replaces the person's own `developer_instructions` for that session (`docs/personas.md:206-209`) | Same file, two delivery strengths |
+| The Clawdline skill | `~/.claude/skills/clawdline/SKILL.md` | `~/.agents/skills/clawdline/SKILL.md` | Before 2026-10-07: installed for Claude only. Now `clawdline skill install` writes both (`skillfile.Targets`, §4) |
+| Role / persona prompt | System prompt via `--append-system-prompt-file` (`internal/adapters/projects/launch.go:208,358`) | A `-c developer_instructions` sentence telling Codex to read the file (`launch.go:230`), which also replaces the person's own `developer_instructions` for that session (`docs/personas.md:206-209`) | Same file, two delivery strengths |
 | Project memory | Claude's own auto-memory under `~/.claude/projects/<slug>/memory/` (*assumption*: Claude Code behaviour, not Clawdline's) | Nothing equivalent found | Before 2026-10-07: none. Now one store per Project (`docs/project-memory.md`) |
 
 The result, seen on this repository: `CLAUDE.md` is a pointer to `AGENTS.md` by hand convention
-(`CLAUDE.md:1`), there is no `.agents/` directory, and whatever Claude's auto-memory has learned
+(`CLAUDE.md:1`), there is no `.agents/skills` directory, and whatever Claude's auto-memory has learned
 about the Project is invisible to a Codex session on it. A rule learned twice costs twice; a rule learned
 once is followed by half the sessions.
 
@@ -71,7 +71,7 @@ approves before anything is written. The flow is called **unify** and has three 
 
 | Where | Command | What it does |
 |---|---|---|
-| Terminal | `clawdline project unify <path>` | Opens the Feature for that Project and runs step 1; a sibling of the existing `clawdline project add\|remove\|list` |
+| Terminal | `clawdline project unify <path>` | Prints the plan the daemon computes; `--apply` sends the shown plan version back and the daemon applies it directly, with no Feature or child (`cmd/clawdline/project_unify.go`); a sibling of the existing `clawdline project add\|remove\|list` |
 | Terminal | `clawdline project unify --check <path>` | Step 5's drift check only: read-only, writes nothing, exit 0 unified, 1 drifting, 3 unknown |
 | Inside a Session | `/clawdline unify` | The same flow for the Session's own Project, the way `/clawdline close` is an argument of the Clawdline skill |
 | Console | Project gear → Settings and instructions → **Unify** | The same flow, with the step 1 table shown before the Feature opens |

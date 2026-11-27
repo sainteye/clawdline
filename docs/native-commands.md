@@ -121,7 +121,9 @@ Claude Code and Codex Sessions. Returning to the conversation keeps the explicit
 Terminal entrance available and does not cancel the CLI dialog. Once a confirmed
 delivery has a verified native frame, its pending card stops waiting for a matching
 transcript turn. Aliases may be recorded under another name, and some commands
-write no turn at all. Uncertain deliveries are kept and never resent automatically.
+write no turn at all. One name-specific path remains beside that: a waiting Codex
+Session whose menu asks exactly "Select Model and Effort" also drops its accepted
+`/model` card (`PendingSends.settleModelPicker`, called from `Transcript.tsx`). Uncertain deliveries are kept and never resent automatically.
 The Session to-do row is hidden in Terminal and returns with the conversation.
 
 Measured command behavior and the limits of the real CLI probes are recorded in

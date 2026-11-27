@@ -37,7 +37,8 @@ The phone Board keeps its existing layout and controls.
 1. Open **Board** and press **＋ Create item**.
 2. In **Create Board item**, choose the Project and the kind (**Type**):
    - **Feature** and **Issue** go to **Unassigned** and can be assigned to a session.
-   - **Epic** is assignable like Feature and Issue; **Refactor** and **Plan** stay in **Planning**.
+   - **Epic** and **Refactor** are assignable like Feature and Issue (a Refactor follows a Feature's
+     rules); only **Plan** stays in **Planning**.
 3. Give it a title (**Title**), description (**Description**) and **Acceptance criteria (Markdown)**. You can dictate the description and add
    up to six reference pictures. If the description has two or more top-level list items, they
    become the item's steps when it is assigned.
@@ -45,9 +46,9 @@ The phone Board keeps its existing layout and controls.
 
 ## Assign it to a session
 
-On the card, either choose an existing session (**Choose existing Session**) and press **Assign**, or choose
-Claude or Codex. Expand **Model**, choose the model for this ticket, then press
-**Start a new … Session**. The model choice starts collapsed and shows the selected model in its summary.
+On the card, either choose an existing session (**Choose existing Session**) and press **Assign**, or, under
+**Open new Session**, choose the assistant (Codex, Claude, Gemini or Grok). Expand **Model**, choose
+the model for this ticket, then press **Open a new … Session**. The model choice starts collapsed and shows the selected model in its summary.
 It applies only to this new Session; leaving the choice at its default uses the machine's existing
 assistant default. Switching assistant does not reuse a model selected for the other assistant.
 Choosing a model does not start work: the final start button confirms the assignment.
@@ -65,7 +66,7 @@ verification is off. Open these controls in website Settings; the standalone mac
 settings window has been removed.
 The two values are captured on the item's first successful assignment in each cycle; changing the
 switches later affects future cycles. With planning on, Feature and Epic need observable acceptance
-criteria before implementation. An Epic needs a plan and independent review; a Feature needs those
+criteria before implementation. An Epic needs a plan and independent review; a Feature or Refactor needs those
 only when its **Needs independent review** switch is on. An Issue is exempt. Planning off also lets
 an Epic skip forced planning. With independent verification on, the card shows the latest result, and
 detail shows
@@ -77,11 +78,14 @@ that it is saved, then clear eligible old detail. The latest state and lifetime 
 
 | Phase | On the card | The agent must show |
 | --- | --- | --- |
-| implementing | Implementation | — |
-| verifying | Verification | — |
-| merging | Merge into Git | how it was verified |
+| implementing | Implement | — |
+| verifying | Verify | — |
+| merging | Merge | how it was verified |
 | deploying | Deploy | a verified landing of the commit |
 | done | Done | every step completed |
+
+When the item's captured verification gate is off, the card leaves out **Verify** and **Merge**
+unless the item is already standing in one of them.
 
 Each card carries a **Token bill**: what the work cost so far
 ([usage.md](usage.md)).
@@ -90,7 +94,7 @@ Each card carries a **Token bill**: what the work cost so far
 **↑ Epic〈title〉**, with **done** or **cancelled** when the Epic is closed; pressing it opens the
 Epic's detail, and each row under **Child items** in an Epic's detail opens that child the same way.
 A card a session made rather than you carries an **Agent-made** badge and a dashed top edge:
-either a session created it from one of your messages (**Created by a Session from your HH:MM message**), or the
+either a session created it from one of your messages (**Created by the Session from your message at HH:MM**), or the
 Epic's owning session split it out of the Epic (**Split out by the Epic's owner Session**). Your own
 items carry no badge.
 
@@ -127,7 +131,7 @@ clawdline todo done <to-do id>
 Some changes can only be judged later: lower a setting and see a week later whether it helped.
 **Verify** (headed **Waiting to be verified**) keeps each such change with
 **Why**, **What counts as it holding**, **Data**,
-**Notes** and **Verdicts**.
+**Notes** and **Verdict**.
 
 - Mark each criterion **Mark passed** or **Mark failed**, add notes with **Add note**,
   and finish with **Accept** or **Reject**; a reason is required.

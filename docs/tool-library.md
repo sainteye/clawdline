@@ -223,7 +223,8 @@ operation. Attachments bind machine, terminal, conversation and execution; chang
 identity blocks submission rather than redirecting the prepared task.
 
 The capacity register owns saved-project count, project/request bytes and retry
-key length. Tests cover persistence, optimistic conflicts, idempotent replay,
+key length; the handler enforces the key length with `toollibrary.MaxRequestKeyBytes`, which the
+register entry describes, and reads the other three from the register. Tests cover persistence, optimistic conflicts, idempotent replay,
 read-only denial, stale conversations, catalog pins, setup prompts, draft restore
 and Cloud route transport. UI acceptance uses synthetic Sessions and a temporary
 store; it must never proxy test writes into a person's running daemon.
@@ -237,7 +238,8 @@ From an isolated checkout, run `CLAWDLINE_TOOL_PREVIEW=1 go test
 --port 5287 --strictPort`. Open `/tools/fixtures/tool-library.html` at that
 Vite origin; `?lang=en` selects English, otherwise the fixture uses Traditional
 Chinese. This fixture renders the actual Session Detail, library and composer.
-Its API wrapper routes only library operations and send to the real handler;
+Its API wrapper routes only library operations, send and the integrations setting
+(`/v1/settings/integrations`) to the real handler;
 every terminal and other read is synthetic. No local provider is discovered.
 
 After sending, GET the fixture's `/v1/fixture-result` to inspect the synthetic

@@ -55,8 +55,12 @@ has a separate admission path and receipt scope. `task.message` and
 
 The source CLI exposes `clawdline remote machines`, `clawdline remote dispatch
 --pair <id> --machine <id> --project <id> --assistant <name> --title <title>
---instructions-file <file>`, `clawdline remote show <task-id>`,
-`clawdline remote send <task-id>`, and `clawdline remote ack <task-id>`.
+--instructions-file <file> [--task-id <uuid> --request-id <uuid>]` (the two IDs
+together repeat an earlier start), `clawdline remote show <task-id>`,
+`clawdline remote send <task-id>`, `clawdline remote retry <task-id>` (resends the
+stored start frame under the same task and request IDs), and `clawdline remote ack <task-id>`.
+`remote machines` lists the active outgoing pairs; it does not report whether a
+target is online and always answers `"presence": "unknown"`.
 The target CLI uses `clawdline remote finish <task-id>` to publish one result.
 The CLI reads local credentials, pair and execution identities; it does not
 ask the Agent to compose wire headers or use a browser. The target Agent gets

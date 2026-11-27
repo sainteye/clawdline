@@ -230,7 +230,8 @@ prints an entry's body. A public Project's lessons that every Session needs on e
 
 ## Not built
 
-A console view of memory, Cloud wording for it, memory entries in `clawdline project unify
---check`, and any change to Claude Code's own auto-memory.
+Cloud wording for the Projects memory view (the console view itself is described above),
+memory entries in `clawdline project unify --check`, and any change to Claude Code's own
+auto-memory.
 
 <!-- clawdline-doc: kind=spec audience=agent -->

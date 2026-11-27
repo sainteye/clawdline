@@ -81,7 +81,7 @@ Open Clawdline, press <kbd>⌘</kbd><kbd>J</kbd> if you want to watch, and send 
 >    checking that `whisper-cli` is on the PATH and that the model is the only `ggml-*.bin` in
 >    `~/.cache/whisper/`.
 >
-> Do not change `~/.config/clawdline/config.json` unless step 4 shows it is needed.
+> Do not change `~/.config/clawdline-next/config.json` unless step 4 shows it is needed.
 
 Then press <kbd>⌘</kbd><kbd>L</kbd> in Clawdline. It will say Whisper is going to take another
 look when you stop — and when you do, the words you watched appear get replaced by its reading of
@@ -103,7 +103,10 @@ ls -lh ~/.cache/whisper/          # ~570 MB. A few kilobytes means the download 
 
 That is the whole installation. Clawdline looks for `whisper-cli` in the usual places and for the
 largest `ggml-*.bin` in `~/.cache/whisper` or `~/models`, and switches over as soon as it finds
-both. An existing model in the retired app's Application Support can be selected explicitly with
+both. On Linux it also searches `~/.local/share/whisper`, `/usr/share/whisper`,
+`/usr/local/share/whisper` and `/opt/whisper.cpp/models`; on Windows, `%LOCALAPPDATA%\whisper` and
+`%LOCALAPPDATA%\whisper.cpp\models`. A file whose name contains `for-tests` (Homebrew's
+`for-tests-ggml-tiny.bin`) is a fixture and is skipped. An existing model in the retired app's Application Support can be selected explicitly with
 `whisper_model`; it is no longer searched automatically because macOS may request access to the
 other app's data.
 
@@ -173,14 +176,23 @@ Nothing here is required; set it only to override what was found.
 
 ```jsonc
 {
-  "voice_engine": "auto",        // auto | apple | whisper
-  "voice_language": "auto",      // "zh-TW", "en", … — auto lets Whisper decide
-  "voice_settle_seconds": 1.8,   // how long a pause ends a sentence; 0 turns it off
-  "voice_stop_seconds": 4.0,     // how long a silence ends the session; 0 leaves it listening
+  "voice_engine": "auto",        // auto | apple | whisper — accepted, not read (see below)
+  "voice_language": "auto",      // "zh-TW", "en", … — auto follows Clawdline's language, then this machine's
+  "voice_settle_seconds": 1.8,   // accepted, not read (see below)
+  "voice_stop_seconds": 4.0,     // accepted, not read (see below)
   "whisper_binary": "",          // a specific whisper-cli
   "whisper_model": ""            // a specific .bin
 }
 ```
+
+The Go daemon's `/v1/voice` always transcribes with Whisper. It still accepts `voice_engine`,
+`voice_settle_seconds` and `voice_stop_seconds` in the settings file, but nothing reads them, so
+they do not affect transcription ([`shell-bridge.md`](shell-bridge.md)).
+
+With `voice_language` at `auto`, the language comes from this machine's side: Clawdline's own
+`language` setting, then the machine's locale, then the catalog fallback. When the first usable
+answer is Chinese, the language is pinned to `zh` with that answer's script seed; otherwise
+Whisper detects the language itself.
 
 ### Language and script
 
@@ -191,8 +203,11 @@ switch languages and wrong in a quiet room, because a model asked what silence s
 anyway — usually with a short, confident English sentence.
 
 It also **fixes the script**. Whisper writes Chinese in Simplified whichever way you ask, so
-`zh-TW` seeds the prompt with a Traditional sentence — and then converts what comes back, using
-the transliterator macOS already ships. The seed is a preference; the conversion is the
+`zh-TW` seeds the prompt with a Traditional sentence — and then converts what comes back. The Go
+daemon builds without cgo, so it cannot call the ICU transliterator macOS ships; it carries a table
+generated from that transliterator and converts one character at a time. Without ICU's context,
+about 0.69% of characters in a measured round trip land on the wrong side of a one-to-many pair
+such as 复/複/復 or 里/裡. The seed is a preference; the conversion is the
 guarantee. English inside a Chinese sentence passes through untouched, which is the whole point
 of using Whisper here.
 
@@ -291,11 +306,14 @@ is in rather than leaving a dead button.
 that may be macOS or Linux when `whisper-cli` and a model are installed. With more than one capable
 machine it is the one this browser chose under **Devices** in the sidebar: the card marked *Voice
 input* is where the recording goes, and *Use for voice input* on another machine's card moves it
-there. With no choice made, the one capable machine whose inventory is current is used; if that
-still leaves two, nothing is sent and the page asks you to choose under Devices
-(`cloud_voice_host_ambiguous`), and an account with no capable machine this browser is paired with
-says so (`cloud_voice_host_unavailable`) instead of waiting on a machine that cannot answer. The
-choice is kept in this browser only, so a phone and a laptop can dictate to different machines. The same resolver
+there. Dictation inside a Session goes first to the machine that owns that Session when it is
+current and capable, even over a saved choice; that is never saved, so moving to another Session
+moves dictation with it. With no usable choice, the one capable machine whose inventory is current
+is used, and among several the single current macOS machine; if that still leaves two, nothing is
+sent and the page asks you to choose under Devices (`cloud_voice_host_ambiguous`), and an account with no capable machine this browser is paired with
+says so (`cloud_voice_host_unavailable`) instead of waiting on a machine that cannot answer. A
+machine that answers `no_whisper` is dropped for the rest of the page's life and the same
+recording is retried on the next eligible machine. The choice is kept in this browser only, so a phone and a laptop can dictate to different machines. The same resolver
 chooses the machine for every other hosted-console feature that names none
 ([`cloud.md`](cloud.md), *Which machine a request goes to*); dictation adds only the choice.
 

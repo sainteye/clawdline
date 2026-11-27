@@ -64,7 +64,8 @@ The console carries all twelve: the charter page sends them through the captured
 Over Cloud `reason` is required (empty is allowed); the text bounds are copies of
 `MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`.
 
-Projects retains `machine_id`, `cursor`, and `page_size` on its independent route.
+Projects retains `machine_id`, `cursor`, `page_size` and the optional
+`include_gemini` on its independent route.
 List retains `machine_id`, `query`, `cursor`, and `page_size`. History retains
 `key`, `conversation_id`, `before_seq`, and `page_size`; events retain `key`,
 `after_seq`, and `page_size`. Get/export retain their complete Bot key. The
@@ -214,14 +215,18 @@ unsupported and never fall back to the legacy `projects` word or `/v1/projects`.
 That legacy word remains available for its other callers. The new read has no
 body, credential, principal or role field. Its exact closed required fields are
 `machine_id`, `cursor`, and integer `page_size` (the existing 1..100 bound).
+One optional boolean, `include_gemini`, is also declared; Local accepts it
+only as `true`, and the captured client sends it only from API 102.
 It uses the authenticated current connection sender and the captured machine,
 without consulting the shell's active machine. Read-only grants may read fresh,
 readable metadata; creation still requires a fresh interactive writable status.
 
 `projects(request, signal)` returns the generated
 `ProjectAssistantProjectsResponse`: contract version, one source, `agents`,
-revision, complete `items`, next cursor and `has_more`. Configuration agents
-(`claude`, `codex`) are independent of native capability readiness. Returning
+revision, complete `items`, `personal_workspace` (always true), next cursor
+and `has_more`. Configuration agents (`claude`, `codex`, `grok`; every
+`ProjectAssistantAgentValues` entry when `include_gemini` is set, because
+earlier consoles reject a catalog with an unknown agent) are independent of native capability readiness. Returning
 these choices does not admit an adapter, authenticate a CLI, verify read-only
 execution or memory isolation, or start a model. The normal first-Send runtime
 admission still refuses an unavailable production provider.

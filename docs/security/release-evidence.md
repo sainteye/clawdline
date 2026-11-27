@@ -120,8 +120,13 @@ codesign --verify --strict -R='anchor apple generic and certificate 1[field.1.2.
 spctl --assess --type execute -vv "app/Clawdline Next.app"   # source=Notarized Developer ID
 xcrun stapler validate "app/Clawdline Next.app"
 tar -xzf "rel-$v/clawdline_${v}_darwin_arm64.tar.gz" -C daemon
-codesign --verify --strict --check-notarization -R=notarized daemon/clawdline daemon/libexec/tmux
+codesign --verify --strict --check-notarization -R=notarized "app/Clawdline Next.app/Contents/MacOS/clawdline-daemon"
+codesign --verify --strict --check-notarization -R=notarized daemon/clawdline daemon/clawdline-daemon daemon/libexec/tmux
 ```
+
+`clawdline-daemon` is a copy of `clawdline` that the build makes for darwin, signed and notarized
+with the others; it is the executable the App starts as its background service, and its signing
+identifier must be `clawdline-daemon`.
 
 The `-R` requirement is checked by `codesign` against the certificate chain: a Developer ID
 Application leaf, under Apple's Developer ID intermediate, issued to team `83D62P566Q`. Any other

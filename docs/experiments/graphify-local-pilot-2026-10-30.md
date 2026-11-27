@@ -2,6 +2,8 @@
 
 For maintainers considering an optional code-navigation aid. This is a small local retrieval and index-maintenance pilot, not an independent Agent A/B study.
 
+> **Later status:** a `graphify_enabled` setting was integrated after this pilot and has since been retired from active settings, launch guidance, HTTP/Cloud operations and the viewer. Optional local code navigation is now CodeGraph; see [`codegraph-integration.md`](../codegraph-integration.md). This record describes 2026-10-30.
+
 ## Decision
 
 Do not enable Graphify as a default Session rule from this evidence. Manual code-navigation use remains a candidate, with source verification and an explicit refresh. A fresh-process query accepted a stale index and returned the old call as `EXTRACTED` without a freshness warning. The previously defined reliability condition for automatic adoption therefore failed; the larger model experiment was not started. No product integration, global skill, hooks, daemon changes, deployment or paid model calls were made.

@@ -52,9 +52,10 @@ An independent review returned `changes_required` (three important, five minor).
   all types without looking; a capture that failed this once is asked again next round.
 - **F4** — the send script's second look recognises Claude Code's `❯` caret.
 - **F5** — an unbriefed iTerm2 child is closed by the session id iTerm2 gave back
-  (`CloseITermSession`, iterm.js's `close`: the session, never its tab). `ITerm.Close` is
-  implemented with the same script and a 10-second limit; a timeout or `-1712` is a typed
-  `Failure` with `Attention`.
+  (`CloseITermChild`, through `closeITermByID` and iterm.js's `close`: the session, never its tab).
+  `ITerm.Close` now walks a farewell ladder (look, polite send, tty signal) and ends with the same
+  `closeITermByID`, which has a 10-second limit; a timeout or `-1712` is looked for again by the
+  same id and answers `Unconfirmed`, keeping `Attention`, unless the session is then gone.
 - **F6** — the tmux close kills the proven pane, not the session: a window somebody added
   survives.
 - **F7** — a script that did not find its session past an unreadable window says "not seen",
