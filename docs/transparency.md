@@ -4,6 +4,13 @@ The public **What Clawdline changes** page lives at `https://clawdline.com/docs/
 
 The page describes a reviewed product revision, not a person's configuration. English and Taiwan Traditional Chinese share the website's language control. Original excerpts stay in their source language. Source links point to the imported product commit; the website build refuses an outdated content snapshot.
 
+The voice-work explanation now covers Session closing from the fleet list.
+The voice tool reads the full row from the selected execution's machine and
+passes on the machine's closeability reasons or a read failure. Agreement to
+force-close is checked against the version whose reasons the assistant said.
+The English and Taiwan Traditional Chinese copies describe the read and consent
+boundary, and the voice tool's source receipt records the review.
+
 The rounded brand update changes only the image shown beside a voice-assistant
 reply in `RealtimeCopilotModal.tsx`. Review of the registered diff and the
 English and Taiwan Traditional Chinese `voice-work` explanations confirms that

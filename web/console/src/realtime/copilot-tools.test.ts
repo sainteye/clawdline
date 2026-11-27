@@ -718,16 +718,96 @@ test("a finished Session is closed on request, never forced, at the reading that
 test("a Session that cannot close safely is asked about again, and closed with force only once the person says so", async () => {
   const { deps, calls } = fakeMachine({})
   const out = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9","session_label":"Fix the login test"}', deps)).output)
-  assert.match(out.error, /還不能安全關閉：它還在工作/)
-  assert.match(out.error, /還是要關閉嗎/)
+  assert.match(out.error, /cannot be closed safely yet because it is still working/)
+  assert.match(out.error, /Do you want to close it anyway/)
   assert.equal(out.needs_confirmation, true)
   assert.equal(calls.some((c) => c.path.endsWith("/close")), false)
 
-  const forced = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9","session_label":"Fix the login test","force_confirmed":true}', deps)).output)
+  const forced = JSON.parse((await runCopilotTool("close_session", '{"session_id":"%9","session_label":"Fix the login test","force_confirmed":true,"closeability_version":"cl1_def"}', deps)).output)
   assert.deepEqual(forced, { closed: true, label: "Fix the login test", forced: true })
   const close = calls.at(-1)!
   assert.equal(close.path, "/v1/sessions/%259/close")
   assert.deepEqual(JSON.parse(String(close.init?.body)), { force: true, expected_closeability_version: "cl1_def" })
+})
+
+test("a fleet close explains the named execution's blockers before sending a close", async () => {
+  const { deps, calls } = fakeMachine({})
+  const { closeability: _closeability, ...row } = ROWS[3]!
+  const execution = "1".repeat(32)
+  const id = "fleet:other-machine:%259"
+  deps.fleet = async () => [{ machine: "other-machine", machineName: "Studio",
+    row: { ...row, execution_generation: execution } }]
+  let version = "cl1_first"
+  let executionOnMachine = execution
+  const fetch = deps.fetch
+  deps.fetch = async (path, init) => {
+    if (path === "/v1/sessions?look=%259") {
+      calls.push({ path, init })
+      return Response.json({ sessions: ["%9"], complete: true, row: { session: {
+        ...row, execution_generation: executionOnMachine,
+        closeability: { state: "blocked", version, reasons: [
+          { code: "pending_landing_owned" }, { code: "session_todo_open" },
+        ] },
+      } } })
+    }
+    return fetch(path, init)
+  }
+  const close = async (more = {}) => JSON.parse((await runCopilotTool("close_session", JSON.stringify({
+    session_id: id, session_label: row.label, ...more,
+  }), deps)).output)
+
+  const first = await close()
+  assert.match(first.error, /delivery.*landed/)
+  assert.match(first.error, /to-do/)
+  assert.equal(first.needs_confirmation, true)
+  assert.equal(first.closeability_version, "cl1_first")
+  assert.equal(new Headers(calls[0]?.init?.headers).get("X-Clawdline-Unopened-Machine"), "other-machine")
+
+  version = "cl1_second"
+  const changed = await close({ force_confirmed: true, closeability_version: first.closeability_version })
+  assert.equal(changed.needs_confirmation, true)
+  assert.equal(changed.closeability_version, "cl1_second")
+  assert.equal(calls.some(c => c.path.endsWith("/close")), false)
+
+  executionOnMachine = "2".repeat(32)
+  const replaced = await close({ force_confirmed: true, closeability_version: changed.closeability_version })
+  assert.match(replaced.error, /execution changed/)
+  assert.equal(replaced.needs_confirmation, undefined)
+  assert.equal(calls.some(c => c.path.endsWith("/close")), false)
+
+  executionOnMachine = execution
+  assert.equal((await close({ force_confirmed: true, closeability_version: changed.closeability_version })).closed, true)
+  assert.deepEqual(JSON.parse(String(calls.at(-1)?.init?.body)), { force: true, expected_closeability_version: "cl1_second" })
+})
+
+test("a fleet close with no verified closeability explains the failed read and sends no close", async () => {
+  const { deps, calls } = fakeMachine({})
+  deps.fleet = async () => [{ machine: "other-machine", machineName: "Studio",
+    row: { id: "%9", label: "Fix the login test", execution_generation: "1".repeat(32) } }]
+  for (const force_confirmed of [false, true]) {
+    const out = JSON.parse((await runCopilotTool("close_session", JSON.stringify({
+      session_id: "fleet:other-machine:%259", session_label: "Fix the login test", force_confirmed,
+    }), deps)).output)
+    assert.match(out.error, /Could not read.*closeability.*HTTP 404/)
+    assert.equal(out.needs_confirmation, undefined)
+  }
+  assert.deepEqual(calls.map(c => c.path), ["/v1/sessions?look=%259", "/v1/sessions?look=%259"])
+})
+
+test("a local close refusal explains its flat reasons and detail", async () => {
+  const { deps } = fakeMachine({})
+  const fetch = deps.fetch
+  let refusal = Response.json({
+    error: "close_blocked", detail: "This Session still has unfinished work.",
+    reasons: [{ code: "board_item_open" }],
+  }, { status: 409 })
+  deps.fetch = (path, init) => path.endsWith("/close") ? Promise.resolve(refusal) : fetch(path, init)
+  const close = async () => JSON.parse((await runCopilotTool("close_session", JSON.stringify({
+    session_id: "%2", session_label: "Prepare screenshots",
+  }), deps)).output)
+  assert.match((await close()).error, /unfinished Board item/)
+  refusal = Response.json({ error: "close_not_proven", detail: "The Session changed since it was shown." }, { status: 409 })
+  assert.match((await close()).error, /Session changed since it was shown/)
 })
 
 test("a Session the machine calls safe is never sent force, even when the copilot says it was confirmed", async () => {
