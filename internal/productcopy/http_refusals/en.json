@@ -1377,5 +1377,7 @@
   "http.f83c60ec892ca7ae": "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry.",
   "http.07ec92f4cf2b6ddd": "Managed storage could not be verified. Inspect resource diagnostics before retrying.",
   "http.6de36a1deafc189c": "This compile request was cancelled; use a new request to queue again.",
-  "http.ff9f00ccebec851b": "This compile lease was released; use a new request to queue again."
+  "http.ff9f00ccebec851b": "This compile lease was released; use a new request to queue again.",
+  "http.08b20a21540ba2df": "The closed body needs only from_session, to_session and 0…100000 characters of text.",
+  "http.3608b9b5acd39a67": "A session message needs text."
 }

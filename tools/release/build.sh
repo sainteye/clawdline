@@ -4,7 +4,8 @@
 # on a machine that only builds.
 #
 # usage: tools/release/build.sh <version> <out-dir> [--channel stable|beta|dev]
-#          [--base-url URL] [--min-version vX.Y.Z] [--no-app] [--skip-tests]
+#          [--base-url URL] [--min-version vX.Y.Z] [--non-additive-migration]
+#          [--notes-url URL] [--no-app] [--skip-tests]
 #          [--test-key <base64 public key>] [--tmux-from <dir>] [--host-only]
 #          [--tmux-installed]
 #
@@ -41,12 +42,14 @@ die() { echo "release build: $*" >&2; exit 2; }
 [ "$#" -ge 2 ] || die "usage: tools/release/build.sh <version> <out-dir> [options]"
 version=$1 out=$2
 shift 2
-channel=stable base_url="" min_version="" app=1 tests=1 test_key="" tmux_from="" host_only=0 tmux_installed=0
+channel=stable base_url="" min_version="" non_additive=0 notes_url="" app=1 tests=1 test_key="" tmux_from="" host_only=0 tmux_installed=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --channel) channel=${2:?}; shift ;;
     --base-url) base_url=${2:?}; shift ;;
     --min-version) min_version=${2:?}; shift ;;
+    --non-additive-migration) non_additive=1 ;;
+    --notes-url) notes_url=${2:?}; shift ;;
     --no-app) app=0 ;;
     --skip-tests) tests=0 ;;
     --test-key) test_key=${2:?}; shift ;;
@@ -60,6 +63,9 @@ done
 
 [[ "$version" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.]+)?$ ]] || die "$version is not vX.Y.Z[-pre]"
 case "$channel" in stable|beta|dev) ;; *) die "--channel is stable, beta or dev" ;; esac
+# A store an older binary cannot read raises the oldest version it may be
+# upgraded from and rolled back to (docs/releasing.md).
+[ "$non_additive" = 0 ] || [ -n "$min_version" ] || die "--non-additive-migration needs --min-version"
 [ "$channel" = stable ] && [[ "$version" == *-* ]] && die "a pre-release version belongs on the beta channel"
 [ "$channel" = dev ] && [[ ! "$version" =~ -dev\.[0-9a-f]+$ ]] && die "a dev build is vX.Y.Z-dev.<commit>"
 [ "$channel" != dev ] && [[ "$version" =~ -dev\. ]] && die "a -dev. version is built with --channel dev"
@@ -205,6 +211,8 @@ fi
 ( cd "$out" && shasum -a 256 ./*.tar.gz | sed 's# \./# #' >SHA256SUMS )
 args=(-version "$version" -commit "$commit" -committed-at "$committed_at" -channel "$channel" -base-url "$base_url")
 [ -z "$min_version" ] || args+=(-min-version "$min_version")
+[ "$non_additive" = 0 ] || args+=(-non-additive-migration)
+[ -z "$notes_url" ] || args+=(-notes-url "$notes_url")
 go run ./tools/release manifest ${args[@]+"${args[@]}"} "$out"
 # A release carries an SBOM per archive (docs/security/release-evidence.md);
 # a dev build stays on the machine that built it and needs none.

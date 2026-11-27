@@ -342,8 +342,9 @@ func runHeavy(opts heavyOptions, argv []string, d heavyDeps) int {
 	return heavyExit(code, err, say)
 }
 
-// heavySlot is this run's side of the compile slot lease. Every failure to
-// reach the broker turns it off rather than stopping the run.
+// heavySlot is this run's side of the compile slot lease. Once a broker is
+// selected, a request it cannot confirm stops the run (exit 1) rather than
+// building outside the slot; only having no daemon at all runs the command.
 type heavySlot struct {
 	b    *broker
 	id   string
@@ -351,8 +352,9 @@ type heavySlot struct {
 	held bool
 }
 
-// acquire returns 0 when the command can proceed, 75 on timeout, or 76 after
-// a callback accepted the command.
+// acquire returns 0 when the command can proceed, 1 when the broker could not
+// confirm the request or refused it, 75 on timeout, or 76 after a callback
+// accepted the command.
 //
 // While queued it asks again every poll (the broker passes over a waiter that
 // stops asking), and says nothing: one line when it joins the line, one when

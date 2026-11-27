@@ -2964,10 +2964,12 @@ const (
 // DevStackCommandValues is every value the contract allows, in contract order.
 var DevStackCommandValues = []DevStackCommand{DevStackCommandStatus, DevStackCommandUp, DevStackCommandDown, DevStackCommandRestart, DevStackCommandLogs, DevStackCommandAttach}
 
-// `running`: every declared process answered. `partial`: some did. `stopped`:
-// none did. `unknown`: nothing could be asked without running one of the
-// project's commands, and `unknown` is never reported as `stopped` — a live
-// site under a mark that says it is down is worse than no mark.
+// `running`: every process that declares a port answered. `partial`: some did.
+// `stopped`: none did. A process the file gives only a `url` has no port to ask
+// and is not counted either way. `unknown`: nothing could be asked without
+// running one of the project's commands, and `unknown` is never reported as
+// `stopped` — a live site under a mark that says it is down is worse than no
+// mark.
 type DevStackState string
 
 const (

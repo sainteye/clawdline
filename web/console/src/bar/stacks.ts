@@ -33,6 +33,11 @@ export async function readStacks(): Promise<DevStacksReply> {
   return reply
 }
 
+/** How many processes declare a port: the only ones a probe can ask, and so the count's total. */
+export function askedCount(stack: DevStack): number {
+  return stack.processes.filter((p) => typeof p.port === "number" && p.port > 0).length
+}
+
 /** `upCount`: how many are up out of how many are declared. */
 export function upCount(stack: DevStack): number {
   return stack.processes.filter((p) => p.state === "running" || p.state === "healthy" || p.state === "completed")
@@ -41,7 +46,7 @@ export function upCount(stack: DevStack): number {
 
 /** The mark and count, or the words for a stack nothing here can ask about. */
 export function stackStateSaid(stack: DevStack): { text: string; tone: "ok" | "bad" | "off" } {
-  const total = stack.processes.length
+  const total = askedCount(stack)
   switch (stack.state) {
     case "running":
       return { text: `▮ ${upCount(stack)}/${total}`, tone: "ok" }
@@ -62,7 +67,7 @@ export function stackStateSaid(stack: DevStack): { text: string; tone: "ok" | "b
 /** The row's hover: `stackTip`, or why nothing could be asked. */
 export function stackTip(stack: DevStack): string {
   if (stack.state === "unknown") return nextWord("stackUnknownTip", { root: stack.root })
-  return stackTipSaid(upCount(stack), stack.processes.length)
+  return stackTipSaid(upCount(stack), askedCount(stack))
 }
 
 /** Each place an answering process can be opened: its port, then the address the file gives it. */

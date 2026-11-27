@@ -133,6 +133,9 @@ func manifest(args []string) error {
 	if fs.NArg() != 1 || *version == "" || *commit == "" || *baseURL == "" {
 		usage()
 	}
+	if *notes == "" && *channel != "dev" {
+		*notes = releasePage(*baseURL, *version)
+	}
 	dir := fs.Arg(0)
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -258,4 +261,15 @@ func verify(args []string) error {
 	}
 	fmt.Printf("release %s (%s) verified: %d artifacts\n", m.Version, m.Commit[:12], len(m.Artifacts))
 	return nil
+}
+
+// releasePage is the GitHub release page of a release downloaded from that
+// release's assets, where docs/release-notes/<version>.md or GitHub's
+// generated notes are published; any other download location has none.
+func releasePage(baseURL, version string) string {
+	prefix, ok := strings.CutSuffix(strings.TrimSuffix(baseURL, "/"), "/releases/download/"+version)
+	if !ok || !strings.HasPrefix(prefix, "https://github.com/") {
+		return ""
+	}
+	return prefix + "/releases/tag/" + version
 }

@@ -26,6 +26,11 @@ on:
         description: "Oldest version this release may be upgraded from (optional)"
         required: false
         default: ""
+      non_additive_migration:
+        description: "The store migration cannot be read by an older binary (needs min_version)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -63,6 +68,7 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       MIN_VERSION: ${{ inputs.min_version }}
+      NON_ADDITIVE: ${{ inputs.non_additive_migration }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -153,6 +159,7 @@ jobs:
           [[ "$VERSION" == *-beta.* ]] && channel=beta
           args=(--channel "$channel" --skip-tests --tmux-from "$RUNNER_TEMP/tmux")
           [ -z "$MIN_VERSION" ] || args+=(--min-version "$MIN_VERSION")
+          [ "$NON_ADDITIVE" != true ] || args+=(--non-additive-migration)
           tools/release/build.sh "$VERSION" "$RUNNER_TEMP/release" "${args[@]}"
 
       - name: Sign the manifest

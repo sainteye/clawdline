@@ -548,7 +548,7 @@ func (s *Server) brokerMessages(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeAuthRefusal(w, http.StatusBadRequest, "bad_request",
-			"The closed body needs only from_session, to_session, 0…100000 characters of text and optional images.")
+			"The closed body needs only from_session, to_session and 0…100000 characters of text.")
 		return
 	}
 	// The key is a receipt (D03): the same key and body answers what the

@@ -46,8 +46,10 @@ func (r *Engine) retain(a *runtimeActor, err error) {
 }
 
 // retryRetained re-attempts an unconfirmed cleanup CleanupRetries times with a
-// doubling delay, then keeps re-checking with the delay capped at
-// CleanupSlowRetryDelay until cleanup is confirmed or the Engine closes, so a Bot whose Agent process stopped a moment after
+// doubling delay, then re-checks CleanupSlowRetries more times with the delay
+// capped at CleanupSlowRetryDelay; if cleanup is still unconfirmed it releases
+// the owner with cause "degraded" (releaseUnconfirmed). It also stops when
+// cleanup is confirmed or the Engine closes. So a Bot whose Agent process stopped a moment after
 // the first check no longer refuses every message until Clawdline restarts
 // (Beacon and Lens, 2026-11-23). Each attempt is the same verified
 // retryCleanup that shutdown uses: the owner is released only when Close

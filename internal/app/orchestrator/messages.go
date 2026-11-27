@@ -101,15 +101,15 @@ func (b *Broker) RemoteTaskNotice(ctx context.Context, sessionID, text, key stri
 func (b *Broker) relay(ctx context.Context, m Message, key string, allowSelf bool) (Relayed, error) {
 	if m.From == "" || m.To == "" {
 		return Relayed{}, refuse(http.StatusBadRequest, "bad_request",
-			"The closed body needs only from_session, to_session, 0…100000 characters of text and optional images.")
+			"The closed body needs only from_session, to_session and 0…100000 characters of text.")
 	}
 	if strings.TrimSpace(m.Text) == "" {
 		return Relayed{}, refuse(http.StatusBadRequest, "bad_request",
-			"A session message needs text or at least one local image.")
+			"A session message needs text.")
 	}
 	if utf8.RuneCountInString(m.Text) > messageTextLimit {
 		return Relayed{}, refuse(http.StatusBadRequest, "bad_request",
-			"The closed body needs only from_session, to_session, 0…100000 characters of text and optional images.")
+			"The closed body needs only from_session, to_session and 0…100000 characters of text.")
 	}
 	if m.From == m.To && !allowSelf {
 		return Relayed{}, refuse(http.StatusConflict, "same_session",

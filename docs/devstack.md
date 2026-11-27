@@ -7,8 +7,9 @@
 > — not `status`, `up`, `down`, `restart` or `logs` — because that route is reachable by every paired
 > device. So there are no buttons, no state document is read, no placeholder is substituted, and
 > there is no trust file or fingerprint. A process is only `running` or `stopped`; a stack is
-> `running`, `partial`, `stopped` or `unknown`, and an `unknown` stack says why: `status_not_run`
-> (it names `status` but declares no ports) or `nothing_declared`. Discovery walks up from every
+> `running`, `partial`, `stopped` or `unknown`, counted over the processes that declare a port (one
+> given only a `url`, such as a tunnel, has nothing to ask and counts neither way), and an `unknown`
+> stack says why: `status_not_run` (it names `status` but declares no ports) or `nothing_declared`. Discovery walks up from every
 > live Session's directory and every directory in the icon registry, stops at the home directory,
 > and keeps a linked Git worktree's copy only while a live Session is in it. One answer holds at most
 > 64 stacks; a file is read up to 64 KiB with 32 declared processes. The `examples/` files named at
