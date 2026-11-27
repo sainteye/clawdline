@@ -220,6 +220,7 @@ func exchangeApply(ctx context.Context, tx *sql.Tx, a *aggregate, m app.Mutation
 	if err := validateAggregate(*a); err != nil {
 		return err
 	}
+	syncMessageEvents(*a, m.Events)
 	for _, e := range m.Events {
 		seq, err := appendEvent(ctx, tx, *a, e)
 		if err != nil {
@@ -805,7 +806,11 @@ func (s *Store) PostPeerNote(ctx context.Context, q app.PeerNote) (pa.Message, e
 	if owner.Bot.Project != x.DestinationProject() || owner.Conversation.ID != x.Target.ConversationID {
 		return pa.Message{}, failure(pa.ScopeDenied, "peer_note")
 	}
-	m := exchangeMutation(owner, q.ID, q.At, nil, []pa.Message{{ID: q.ID, Fence: exchangeFence(owner), Kind: pa.AssistantMessage, Text: q.Text, At: q.At}})
+	note := pa.Message{ID: q.ID, Fence: exchangeFence(owner), Kind: pa.AssistantMessage, Text: q.Text, At: q.At}
+	if q.ForPerson {
+		note.ForPerson = pa.ForPersonFlag(true)
+	}
+	m := exchangeMutation(owner, q.ID, q.At, nil, []pa.Message{note})
 	if p, e := receipt(ctx, tx, m.Command); e != nil {
 		return pa.Message{}, e
 	} else if p != nil {
@@ -821,6 +826,9 @@ func (s *Store) PostPeerNote(ctx context.Context, q app.PeerNote) (pa.Message, e
 		return pa.Message{}, failure(pa.CapacityFull, "peer_notes")
 	}
 	if err = exchangeApply(ctx, tx, &owner, m); err != nil {
+		return pa.Message{}, err
+	}
+	if err = s.tellPerson(ctx, tx, owner, owner.addressed); err != nil {
 		return pa.Message{}, err
 	}
 	return m.Messages[0], s.commitRoster(ctx, tx, x.Project.MachineID)

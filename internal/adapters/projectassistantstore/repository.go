@@ -21,8 +21,11 @@ import (
 // Store neither opens a database nor installs schema implicitly. Share a Store
 // per database so WithCurrent and all memory writers share the same Bot lock.
 type Store struct {
-	// CompletionIntent adds only database writes to this Bot transaction. It must not perform external IO.
-	CompletionIntent func(context.Context, *sql.Tx, pa.Bot, pa.Turn) error
+	// PersonIntent is told, inside the Bot transaction that writes it, of each
+	// message addressed to the person (pa.CountsAsUnread): the reply to the
+	// person's own message or a notify_person message. It adds only database
+	// writes and must not perform external IO.
+	PersonIntent func(context.Context, *sql.Tx, pa.Bot, pa.Message) error
 	// DecisionIntent is told, inside the same transaction, of each permission
 	// or question this commit first makes pending, and of each pending one it
 	// closes (answered, withdrawn, written past). Database writes only.
@@ -67,6 +70,9 @@ type aggregate struct {
 	Entries     map[string]pa.MemoryEntry
 	ReadCursors map[string]pa.ReadCursor
 	RosterTrace *pa.Event `json:",omitempty"`
+	// addressed holds the messages this commit addressed to the person
+	// (stampForPerson); it is never stored.
+	addressed []pa.Message
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }
@@ -465,16 +471,15 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if !validEffect(result.State) {
 		return pa.Receipt{}, failure(pa.Invalid, "receipt_state")
 	}
+	syncMessageEvents(a, m.Events)
 	if err = appendEvents(ctx, tx, &a, m.Events, &result, wasActive); err != nil {
 		return pa.Receipt{}, err
 	}
 	if completed {
 		a.Completion = &pa.BotCompletion{TurnID: m.Turn.ID, ConversationID: m.Turn.Fence.ConversationID}
-		if s.CompletionIntent != nil {
-			if err = s.CompletionIntent(ctx, tx, a.Bot, *m.Turn); err != nil {
-				return pa.Receipt{}, err
-			}
-		}
+	}
+	if err = s.tellPerson(ctx, tx, a, a.addressed); err != nil {
+		return pa.Receipt{}, err
 	}
 	if s.DecisionIntent != nil {
 		for _, offer := range opened {
@@ -589,6 +594,10 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		a.Turns[id] = t.AcknowledgeUnknown()
 	}
+	var previous pa.TurnState
+	if m.Turn != nil {
+		previous = a.Turns[m.Turn.ID].State
+	}
 	if m.Turn != nil {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {
@@ -663,6 +672,7 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		a.Messages = append(a.Messages, msg)
 	}
+	a.addressed = stampForPerson(a, m, len(m.Messages), previous)
 	a.Conversation.LastMessageSeq = int64(len(a.Messages))
 	for _, p := range m.Permissions {
 		// Only a pending offer changes state, except that an answer recorded as
@@ -1139,8 +1149,12 @@ func summary(a aggregate, reader string) pa.BotSummary {
 			}
 		}
 		out.ActivityAt = msg.At
-		if reader != "" && pa.CountsAsUnread(msg.Kind) && msg.Seq > r.MessageSeq && (msg.Exchange == nil || msg.Exchange.Target.Key != a.Bot.Key) {
-			out.UnreadCount++
+		if reader != "" && msg.Seq > r.MessageSeq {
+			if pa.CountsAsUnread(msg, a.Bot.Key) {
+				out.UnreadCount++
+			} else if pa.NewActivity(msg, a.Bot.Key) {
+				out.HasActivity = true
+			}
 		}
 	}
 	now := time.Now()

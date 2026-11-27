@@ -319,6 +319,9 @@ func (s *Server) pushDestinationURL(ctx context.Context, sessionID string) strin
 		if decision := adapterpush.BotDecisionFromContext(ctx); decision != "" {
 			url += "&decision=" + neturl.QueryEscape(decision)
 		}
+		if message := adapterpush.BotMessageFromContext(ctx); message != "" {
+			url += "&message=" + neturl.QueryEscape(message)
+		}
 		return url
 	}
 	return s.pushSessionURL(ctx, sessionID)

@@ -801,6 +801,17 @@ func (s *toolScope) bindDispatchTools(tools *NativeWork) {
 		}
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text})
 	}
+	tools.notify = func(ctx context.Context, id, text string) error {
+		ctx, cancel, e := bound(ctx)
+		if e != nil {
+			return e
+		}
+		defer cancel()
+		if e = journal(ctx, "notifyPerson"); e != nil {
+			return e
+		}
+		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text, ForPerson: true})
+	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
 		botRequestID := pa.BotRequestFrom(ctx)
 		if e := dispatchScope(ctx, h.botRequestCards(), q.Bot.Key.BotID, turn, botRequestID); e != nil {

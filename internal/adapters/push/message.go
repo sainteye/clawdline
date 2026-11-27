@@ -26,6 +26,19 @@ func WithBotDecision(ctx context.Context, permission string) context.Context {
 	return context.WithValue(ctx, botDecisionKey{}, permission)
 }
 
+type botMessageKey struct{}
+
+// WithBotMessage names the Bot message a notification is about, so the tap
+// opens the chat at that message.
+func WithBotMessage(ctx context.Context, message string) context.Context {
+	return context.WithValue(ctx, botMessageKey{}, message)
+}
+
+func BotMessageFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(botMessageKey{}).(string)
+	return id
+}
+
 type quietKey struct{}
 
 // WithQuiet marks a notification that replaces an earlier one under the same

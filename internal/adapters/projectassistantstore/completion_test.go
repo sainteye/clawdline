@@ -10,7 +10,10 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
-func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
+// A turn that ends without a message for the person used to push "finished"
+// anyway, and the tap led to a chat with nothing new in it. The person is told
+// only of the reply, inside the commit that writes it, once.
+func TestPersonIntentCommitsWithTheReplyAndNeverForAnEmptyTurn(t *testing.T) {
 	db, s, _ := testDB(t)
 	b := seed(t, s, "completion")
 	_, err := db.Exec(`CREATE TABLE completion_intents (turn TEXT PRIMARY KEY)`)
@@ -32,8 +35,11 @@ func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
 	}
 	injected := errors.New("intent transaction failed")
 	fail := true
-	s.CompletionIntent = func(ctx context.Context, tx *sql.Tx, _ pa.Bot, completed pa.Turn) error {
-		if _, err := tx.ExecContext(ctx, `INSERT INTO completion_intents(turn) VALUES(?)`, completed.ID); err != nil {
+	s.PersonIntent = func(ctx context.Context, tx *sql.Tx, _ pa.Bot, told pa.Message) error {
+		if told.ForPerson == nil || !*told.ForPerson || told.ID != "reply-turn" {
+			t.Fatalf("told the person of %+v", told)
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO completion_intents(turn) VALUES(?)`, told.TurnID); err != nil {
 			return err
 		}
 		if fail {
@@ -44,7 +50,18 @@ func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
 	c.Version++
 	c.ActiveTurnID = ""
 	turn.State = pa.TurnSucceeded
-	m := app.Mutation{Command: command(b.Key, pa.SendOperation, "finish"), ExpectedVersion: 2, Conversation: &c, Turn: &turn, Receipt: pa.Receipt{ID: "finished", State: pa.EffectDelivered}}
+	fail = false
+	quiet := seed(t, s, "quiet")
+	qf, qt := startTurn(t, s, quiet, nil)
+	finishTurn(t, s, quiet, qf, qt, "")
+	var count int
+	if err = db.QueryRow(`SELECT count(*) FROM completion_intents`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("a turn that wrote nothing told the person: %d %v", count, err)
+	}
+	fail = true
+	c.LastMessageSeq = 2
+	reply := pa.Message{ID: "reply-turn", Seq: 2, Fence: fence, TurnID: turn.ID, Kind: pa.AssistantMessage, Text: "Done"}
+	m := app.Mutation{Command: command(b.Key, pa.SendOperation, "finish"), ExpectedVersion: 2, Conversation: &c, Turn: &turn, Messages: []pa.Message{reply}, Receipt: pa.Receipt{ID: "finished", State: pa.EffectDelivered}}
 	if _, err = s.Commit(testContext, m); !errors.Is(err, injected) {
 		t.Fatalf("failure injection: %v", err)
 	}
@@ -52,7 +69,6 @@ func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
 	if saved.State != pa.TurnRunning {
 		t.Fatal("failed intent changed the turn")
 	}
-	var count int
 	if err = db.QueryRow(`SELECT count(*) FROM completion_intents`).Scan(&count); err != nil || count != 0 {
 		t.Fatalf("rollback %d %v", count, err)
 	}
@@ -68,7 +84,13 @@ func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
 	}
 	views := newTestViews(t, db)
 	page := rosterRead(t, views, rosterQuery())
-	if len(page.Frame.Changes) != 1 || page.Frame.Changes[0].Summary.CompletedTurnID != turn.ID {
+	var marked *pa.BotSummary
+	for _, change := range page.Frame.Changes {
+		if change.Key == b.Key {
+			marked = change.Summary
+		}
+	}
+	if marked == nil || marked.CompletedTurnID != turn.ID {
 		t.Fatalf("durable roster marker %+v", page.Frame)
 	}
 	// A different command cannot enqueue the same terminal turn again.
@@ -76,6 +98,7 @@ func TestCompletionIntentAndMarkerCommitWithTheSuccessfulTurn(t *testing.T) {
 	m.ExpectedVersion = fresh.Version
 	m.Command = command(b.Key, pa.SendOperation, "repeat-terminal")
 	m.Receipt.ID = "repeat-terminal"
+	m.Messages = nil
 	if _, err = s.Commit(testContext, m); err != nil {
 		t.Fatal(err)
 	}

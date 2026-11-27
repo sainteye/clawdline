@@ -149,6 +149,13 @@ type CompletionDispatchTools interface {
 	DispatchWithCompletion(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string) (pa.WorkLink, error)
 }
 
+// PersonNoticeTools writes a notify_person message: text addressed to the
+// person in the Bot's own main chat, counted as unread and pushed. id makes a
+// repeated call the same message.
+type PersonNoticeTools interface {
+	NotifyPerson(ctx context.Context, id, text string) error
+}
+
 type NativeTools interface {
 	SendMessage(context.Context, string, string) error
 	Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error)
@@ -380,6 +387,8 @@ type ProtocolEvent struct {
 	// ToolDiscovery is set by the Host for its own read-only tool catalog
 	// lookup, which is journaled but cannot execute a model tool.
 	ToolDiscovery bool
+	// ForPerson marks Message as a notify_person message for the person.
+	ForPerson bool
 }
 
 // PromptFile contains only an owned, verified path for this native execution.

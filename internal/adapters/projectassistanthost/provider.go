@@ -74,6 +74,7 @@ type NativeWork struct {
 	botRequest       func(context.Context, string, json.RawMessage) (any, error)
 	routines         func(context.Context, app.RoutineRequest) (app.RoutineResult, error)
 	send             func(context.Context, string, string) error
+	notify           func(context.Context, string, string) error
 	dispatch         func(context.Context, string, string, string, []string, string, string, string, bool) (pa.WorkLink, error)
 	status           func(context.Context, string) (pa.WorkLink, error)
 	workReceipt      func(context.Context, string) (app.WorkReceipt, error)
@@ -164,6 +165,12 @@ func (w NativeWork) SendMessage(ctx context.Context, id, text string) error {
 		return failure(pa.Disabled, "native_work")
 	}
 	return w.send(ctx, id, text)
+}
+func (w NativeWork) NotifyPerson(ctx context.Context, id, text string) error {
+	if w.notify == nil {
+		return failure(pa.Disabled, "native_work")
+	}
+	return w.notify(ctx, id, text)
 }
 func (w NativeWork) Dispatch(ctx context.Context, id, title, brief string, claims []string) (pa.WorkLink, error) {
 	return w.DispatchToProject(ctx, id, title, brief, claims, "")

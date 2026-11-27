@@ -382,14 +382,42 @@ const (
 	NoticeMessage    MessageKind = "notice"
 )
 
-// CountsAsUnread reports whether a message raises the unread badge. As in
-// Codync (host/src/store/bots.rs UNREAD_MESSAGE), only what the Bot finished
-// saying to the person counts: a Bot reply or a work result. The person's own
-// message never does, so a chat that is still working shows no badge; host
-// notices are narration.
-func CountsAsUnread(kind MessageKind) bool {
+// CountsAsUnread reports whether a message raises the unread badge for the
+// person reading self's chat. Only what the Bot addresses to the person
+// counts: the final reply of a turn the person started, a notify_person
+// message, recorded when the message is written as ForPerson. The person's own
+// message never counts, nor does a reply delivered to another Bot.
+//
+// A message written before ForPerson existed has no field and keeps the
+// earlier rule, copied from Codync (host/src/store/bots.rs UNREAD_MESSAGE): any
+// Bot reply or work result. A badge the person has not read is therefore never
+// silently zeroed by an upgrade; it clears when the chat is read.
+func CountsAsUnread(m Message, self BotKey) bool {
+	if m.Kind == UserMessage || m.Exchange != nil && m.Exchange.Target.Key == self {
+		return false
+	}
+	if m.ForPerson != nil {
+		return *m.ForPerson
+	}
+	return legacyUnreadKind(m.Kind)
+}
+
+// NewActivity reports whether a message is news that does not need the
+// person: a reply or work result that CountsAsUnread leaves out. The roster
+// shows it as a grey dot without a number.
+func NewActivity(m Message, self BotKey) bool {
+	if m.Kind == UserMessage || m.Exchange != nil && m.Exchange.Target.Key == self {
+		return false
+	}
+	return legacyUnreadKind(m.Kind) && !CountsAsUnread(m, self)
+}
+
+func legacyUnreadKind(kind MessageKind) bool {
 	return kind == AssistantMessage || kind == WorkMessage
 }
+
+// ForPersonFlag is a recorded answer for a message's ForPerson field.
+func ForPersonFlag(v bool) *bool { return &v }
 
 type Message struct {
 	Reactions      []ReactionActor `json:"reactions,omitempty"`
@@ -413,6 +441,10 @@ type Message struct {
 	// DecisionReply is set on the person's message that answered a question
 	// card; Text still holds the full prompt the Bot receives.
 	DecisionReply *DecisionReply `json:"decision_reply,omitempty"`
+	// ForPerson records, when the message is written, whether it is addressed
+	// to the person and so counts as unread; see CountsAsUnread. Absent only
+	// on messages written before this field existed.
+	ForPerson *bool `json:"for_person,omitempty"`
 }
 
 // NoticeCompacted is the key of the notice for a turn during which the agent
@@ -740,8 +772,11 @@ type BotSummary struct {
 	Activity            string      `json:"activity"`
 	ActivityAt          time.Time   `json:"activity_at"`
 	UnreadCount         int64       `json:"unread_count"`
-	ReadCursor          ReadCursor  `json:"read_cursor"`
-	PendingPermissions  int64       `json:"pending_permissions"`
+	// HasActivity is true when the reader has not read a newer message that
+	// does not count as unread (NewActivity): the roster's grey dot.
+	HasActivity        bool       `json:"has_activity,omitempty"`
+	ReadCursor         ReadCursor `json:"read_cursor"`
+	PendingPermissions int64      `json:"pending_permissions"`
 	// ActiveWork counts work this Bot handed elsewhere that has not finished:
 	// Board work links still accepted, waiting for the person or executing,
 	// plus background tasks still waiting or active. Absent means none.

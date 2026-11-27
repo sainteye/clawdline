@@ -171,6 +171,9 @@ type PeerNote struct {
 	ID         string
 	Text       string
 	At         time.Time
+	// ForPerson marks a notify_person note: it counts as unread and tells
+	// the person, although the turn serves another Bot.
+	ForPerson bool
 }
 
 // DecisionRepository holds questions a Bot asks the person. Only the

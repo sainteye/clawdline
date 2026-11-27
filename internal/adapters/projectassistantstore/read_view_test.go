@@ -815,7 +815,7 @@ func viewDeadlineFixture(t *testing.T) (*sql.DB, *Store, *ViewStore, pa.Bot, []p
 	}
 	messages := make([]pa.Message, 9001)
 	for i := range messages {
-		messages[i] = pa.Message{ID: fmt.Sprintf("message-%d", i+1), Fence: fence, Seq: int64(i + 1), Kind: pa.AssistantMessage, Text: "synthetic visible fact", At: b.CreatedAt}
+		messages[i] = pa.Message{ID: fmt.Sprintf("message-%d", i+1), Fence: fence, Seq: int64(i + 1), Kind: pa.AssistantMessage, Text: "synthetic visible fact", At: b.CreatedAt, ForPerson: pa.ForPersonFlag(false)}
 	}
 	events := make([]pa.Event, 600)
 	for i := range events {

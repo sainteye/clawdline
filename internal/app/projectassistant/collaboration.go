@@ -371,7 +371,7 @@ func (r *Engine) postPeerNote(ctx context.Context, t pa.Turn, e ProtocolEvent) e
 	if source, e := r.o.Repository.Bot(ctx, x.Source.Key); e == nil {
 		name = strings.TrimSpace(source.Name)
 	}
-	_, err = notes.PostPeerNote(ctx, PeerNote{Caller: e.Fence, TurnID: t.ID, ExchangeID: x.ID, ID: "peer-note-" + x.ID + "-" + e.ID, Text: peerNoteText(name, e.Message), At: r.o.Clock()})
+	_, err = notes.PostPeerNote(ctx, PeerNote{Caller: e.Fence, TurnID: t.ID, ExchangeID: x.ID, ID: "peer-note-" + x.ID + "-" + e.ID, Text: peerNoteText(name, e.Message), At: r.o.Clock(), ForPerson: e.ForPerson})
 	return err
 }
 
