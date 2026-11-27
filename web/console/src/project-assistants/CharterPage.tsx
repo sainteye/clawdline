@@ -4,6 +4,8 @@ import type * as W from "@clawdline/contract"
 import { charterPlaybooks, charterRefusal, charterRefusalCode, readsCurrentAt, shownReaders, type CharterApi, type CharterProject } from "./charter-api"
 import { PlaybookDiffs, usePlaybooks, type BotAppearanceOf } from "./CharterPlaybooks"
 import { changedPlaybooks } from "./charter-playbooks"
+import { AskPolicyEditor, AskPolicyView } from "./CharterAsk"
+import { askLanguageOf, askPolicyFromText, isAskSectionHeading, sectionAskPolicy, serializeAskPolicy, type AskPolicy } from "./charter-ask"
 import { changedCharterSections, charterSections, replaceCharterSection, sectionFromParts, sectionParts, shownCharterSection, type ChangedSection } from "./charter-text"
 import { charterFormat, charterNames, charterProblem, charterWord } from "./charter-words"
 import type { Words } from "./words"
@@ -21,7 +23,8 @@ type CharterVersion = W.ProjectAssistantCharterVersion
 type CharterConflicts = W.ProjectAssistantCharterConflictsResponse
 type CharterConflict = W.ProjectAssistantCharterConflict
 type Notice = { text: string; tone: "ok" | "error" }
-type Editing = { index: number; title: string; draft: string }
+/** A section being edited; an ask policy is edited as rows and saved back as its Markdown. */
+type Editing = { index: number; title: string; draft: string; ask?: AskPolicy; converted?: boolean }
 /** A change request is with the lead: the ids it may answer past, and when to stop waiting. */
 type Awaiting = { known: readonly string[]; until: number }
 
@@ -146,7 +149,8 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const saveSection = async () => {
     if (!doc || !editing) return
     const section = sections[editing.index]
-    const text = replaceCharterSection(doc.text, editing.index, section ? sectionFromParts(section, editing.title, editing.draft) : editing.draft)
+    const body = editing.ask ? serializeAskPolicy(editing.ask) : editing.draft
+    const text = replaceCharterSection(doc.text, editing.index, section ? sectionFromParts(section, editing.title, body) : body)
     if (text === doc.text) { setEditing(null); return }
     const ok = await write(signal => api.save(project, { expected_version: doc.version, text, reason: charterFormat("reasonEdit", section?.heading || charterWord("intro")) }, signal),
       saved => charterFormat("saved", version(saved)), current => charterFormat("conflictEdit", version(current)))
@@ -171,7 +175,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
     const section = sections[index]
     if (!section) return
     const parts = sectionParts(section)
-    setEditing({ index, title: parts.title, draft: parts.body }); refreshReaders()
+    setEditing({ index, title: parts.title, draft: parts.body, ask: sectionAskPolicy(section) ?? undefined }); refreshReaders()
   }
   const closePanel = () => {
     const back = panel === "conflicts" ? conflictsButton : historyButton
@@ -201,7 +205,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
 
   const editedSection = editing ? shown.findIndex(item => item.index === editing.index) + 1 : 0
   const editor = editing && doc && <SectionEditor key={editing.index} n={editedSection} editing={editing} heading={sections[editing.index]?.heading ?? ""} readers={readers} next={next} busy={busy} full={narrow}
-    onDraft={draft => setEditing({ ...editing, draft })} onTitle={title => setEditing({ ...editing, title })} onCancel={() => setEditing(null)} onSave={() => void saveSection()}/>
+    onDraft={draft => setEditing({ ...editing, draft })} onAsk={(ask, converted) => setEditing({ ...editing, ask, converted: converted || editing.converted })} onTitle={title => setEditing({ ...editing, title })} onCancel={() => setEditing(null)} onSave={() => void saveSection()}/>
 
   return <section className={`pa-chat-layout pa-chat-surface pa-charter${panel ? " pa-info-open" : ""}`} aria-label={charterWord("title")}>
     <div className="pa-charter-main" inert={narrow && panel ? true : undefined}>
@@ -229,7 +233,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
           {shown.map(({ section, index }, position) => editing?.index === index && !narrow
             ? <div key={index}>{editor}</div>
             : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
-              <BotMessageMarkdown text={section.text} w={w}/>
+              <SectionBody section={section} w={w}/>
               <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
                 onClick={() => startEdit(index)}>
                 <PencilIcon/>
@@ -330,12 +334,18 @@ function ConflictIcon() {
   </svg>
 }
 
-function SectionEditor({ n, editing, heading, readers, next, busy, full, onDraft, onTitle, onCancel, onSave }: {
+/** A section's card body: an ask policy as its two columns, anything else as Markdown. */
+function SectionBody({ section, w }: { section: ReturnType<typeof charterSections>[number]; w: Words }) {
+  const ask = sectionAskPolicy(section)
+  return ask ? <AskPolicyView heading={section.heading} policy={ask}/> : <BotMessageMarkdown text={section.text} w={w}/>
+}
+
+function SectionEditor({ n, editing, heading, readers, next, busy, full, onDraft, onAsk, onTitle, onCancel, onSave }: {
   n: number; editing: Editing; heading: string; readers: readonly CharterReader[]; next: number; busy: boolean; full: boolean
-  onDraft: (draft: string) => void; onTitle: (title: string) => void; onCancel: () => void; onSave: () => void
+  onDraft: (draft: string) => void; onAsk: (ask: AskPolicy, converted?: boolean) => void; onTitle: (title: string) => void; onCancel: () => void; onSave: () => void
 }) {
   const area = useRef<HTMLTextAreaElement>(null)
-  useEffect(() => { area.current?.focus({ preventScroll: !full }) }, [])
+  useEffect(() => { if (!editing.ask) area.current?.focus({ preventScroll: !full }) }, [])
   const waiting = readers.filter(r => !r.running), running = readers.filter(r => r.running)
   const title = charterFormat("editSection", n)
   return <div className={`pa-charter-editor${full ? " pa-charter-editor-full" : ""}`} role={full ? "dialog" : undefined} aria-modal={full || undefined} aria-label={title}
@@ -348,8 +358,13 @@ function SectionEditor({ n, editing, heading, readers, next, busy, full, onDraft
     <div className="pa-charter-editor-body">
       {heading && <input className="pa-charter-title" type="text" value={editing.title} aria-label={charterFormat("titleText", n)} placeholder={heading}
         onChange={event => onTitle(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); area.current?.focus() } }}/>}
-      <textarea ref={area} value={editing.draft} aria-label={charterFormat("sectionText", n)} onChange={event => onDraft(event.target.value)} rows={Math.min(16, Math.max(5, editing.draft.split("\n").length + 1))}/>
-      <p className="pa-charter-hint">{charterWord("editHint")}</p>
+      {editing.ask
+        ? <AskPolicyEditor policy={editing.ask} onChange={onAsk}/>
+        : <textarea ref={area} value={editing.draft} aria-label={charterFormat("sectionText", n)} onChange={event => onDraft(event.target.value)} rows={Math.min(16, Math.max(5, editing.draft.split("\n").length + 1))}/>}
+      {editing.converted && <p className="pa-charter-ask-converted" role="status">{charterWord("askConverted")}</p>}
+      <p className="pa-charter-hint">{charterWord(editing.ask ? "askEditHint" : "editHint")}</p>
+      {!editing.ask && isAskSectionHeading(heading) && <button type="button" className="pa-charter-ask-convert"
+        onClick={() => onAsk(askPolicyFromText(editing.draft, askLanguageOf(heading)), true)}>{charterWord("askConvert")}</button>}
       {readers.length > 0 && <div className="pa-charter-after">
         <strong>{charterWord("afterSave")}</strong>
         {waiting.length > 0 && <p>{charterFormat("afterNext", charterNames(waiting.map(r => r.name)))}</p>}
