@@ -4,10 +4,12 @@ import { readFileSync } from "node:fs"
 // @ts-expect-error Node executes source extensions.
 import { ProjectAssistantSourceClient, assistantRelayRequest, type AssistantGrant } from "../cloud/project-assistants.ts"
 // @ts-expect-error Node executes source extensions.
-import { CharterRefusal, charterApiFor, charterProjectKey, personalWorkspaceNames } from "./charter-api.ts"
+import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, personalWorkspaceNames, playbookReaders } from "./charter-api.ts"
+// @ts-expect-error Node executes source extensions.
+import { createCharterFixture, samplePlaybooks } from "./charter-fixture.ts"
 
 // The charter screens' every call, sent through a real captured source, must be
-// one of the twelve routes the daemon serves with exactly its Cloud word's local
+// one of the fourteen routes the daemon serves with exactly its Cloud word's local
 // query or body (internal/domain/cloudvocab/vocabulary.json is the contract).
 
 type Row = { op: string; local: { method: string }; shapes: { path: string; query?: string[]; local_body?: string[] }[] }
@@ -15,7 +17,7 @@ const vocabulary = JSON.parse(readFileSync(new URL("../../../../internal/domain/
 const rows = vocabulary.operations.filter(row => row.op?.startsWith("project-assistants.charter"))
 
 const signal = () => new AbortController().signal
-const grant = (apiLevel = 124): AssistantGrant => ({ accountKey: "local", readerID: "person", machineID: "machine", authorizationRevision: "one", apiLevel, paired: true, online: true, writable: true })
+const grant = (apiLevel = 126): AssistantGrant => ({ accountKey: "local", readerID: "person", machineID: "machine", authorizationRevision: "one", apiLevel, paired: true, online: true, writable: true })
 const project = { machine_id: "machine", project_id: "project-one" }
 
 const sourceStatus = { contract_version: "project-assistants.v1", sources: [{ machine_id: "machine", state: "online", access: "interactive", readable: true, writable: true, fresh: true, observed_at: "", capabilities: [] }] }
@@ -34,7 +36,7 @@ async function source(held: AssistantGrant, answer: (word: string) => unknown, s
 }
 
 test("every charter call is one daemon route with exactly its Cloud word's fields", async () => {
-  assert.equal(rows.length, 12)
+  assert.equal(rows.length, 14)
   const seen: Parameters<typeof source>[2] = []
   const api = charterApiFor(await source(grant(), () => ({ contract_version: "project-assistants.v1" }), seen))
   assert.ok(api)
@@ -53,7 +55,12 @@ test("every charter call is one daemon route with exactly its Cloud word's field
   assert.ok(api.conflicts && api.resolveConflict)
   await api.conflicts(project, signal())
   await api.resolveConflict(project, { conflict_id: "cc-1", action: "follow_charter" }, signal())
-  const words = ["charters", "charter", "charter", "charter-save", "charter-restore", "charter-remove", "charter-readers", "charter-proposals", "charter-proposal-apply", "charter-proposal-dismiss", "charter-change-request", "charter-conflicts", "charter-conflict-resolve"].map(w => "project-assistants." + w)
+  assert.ok(api.savePlaybook && api.removePlaybook)
+  await api.savePlaybook(project, { expected_version: 3, playbook: { title: "Release", text: "Tag.", bot_ids: ["bot-1"] } }, signal())
+  await api.savePlaybook(project, { expected_version: 4, playbook: { id: "pb-1", title: "Release", text: "Tag, then ship.", bot_ids: [] }, reason: "edit" }, signal())
+  await api.removePlaybook(project, { expected_version: 5, id: "pb-1" }, signal())
+  const words = ["charters", "charter", "charter", "charter-save", "charter-restore", "charter-remove", "charter-readers", "charter-proposals", "charter-proposal-apply", "charter-proposal-dismiss", "charter-change-request", "charter-conflicts", "charter-conflict-resolve",
+    "charter-playbook-save", "charter-playbook-save", "charter-playbook-remove"].map(w => "project-assistants." + w)
   assert.deepEqual(seen.map(r => r.word), words)
   for (const request of seen) {
     const row = rows.find(r => r.op === request.word)!, shape = row.shapes[0], url = new URL(request.path, "http://source.invalid")
@@ -71,6 +78,43 @@ test("every charter call is one daemon route with exactly its Cloud word's field
   assert.equal(seen[2].fields.version, 3)
   // A save carries its reason even when it is empty, as Cloud requires.
   assert.equal(seen[3].fields.reason, "")
+  // A new playbook names no id; an edit names its own. Both always carry a reason.
+  assert.deepEqual(seen[13].fields.playbook, { title: "Release", text: "Tag.", bot_ids: ["bot-1"] })
+  assert.equal(seen[13].fields.reason, "")
+  assert.equal((seen[14].fields.playbook as { id: string }).id, "pb-1")
+})
+
+test("a machine at API 125 offers no playbook writes, and never sends one", async () => {
+  const seen: Parameters<typeof source>[2] = []
+  const api = charterApiFor(await source(grant(125), () => ({ contract_version: "project-assistants.v1" }), seen))
+  assert.ok(api && api.conflicts)
+  assert.equal(api.savePlaybook, undefined)
+  assert.equal(api.removePlaybook, undefined)
+  assert.equal(seen.length, 0)
+})
+
+test("the fixture's playbooks say which assigned Bots heard their latest content", async () => {
+  const bots = ["bot-0", "bot-1", "bot-2", "bot-3"].map(bot_id => ({ bot_id, name: bot_id.toUpperCase() }))
+  const fixture = createCharterFixture("machine", [{ project_id: "project-one", bots, versions: [{ text: "## Who\n\nLead plans.", author: "template", reason: "" }], playbooks: samplePlaybooks(bots.map(b => b.bot_id)) }])
+  const api = charterApiFor({ machineID: "machine", ...fixture } as never)!
+  assert.ok(api.savePlaybook && api.removePlaybook)
+  const split = async () => playbookReaders(await api.read(project, 0, signal()), await api.readers(project, signal()))
+    .map(row => [row.playbook.title, row.read.map(r => r.bot_id), row.unread.map(r => r.bot_id)])
+  assert.equal(fixture.version("project-one"), 3)
+  assert.deepEqual(await split(), [["Release steps", [], ["bot-0", "bot-1"]], ["Review checklist", [], ["bot-2"]]])
+  fixture.markRead("project-one", "bot-0")
+  assert.deepEqual(await split(), [["Release steps", ["bot-0"], ["bot-1"]], ["Review checklist", [], ["bot-2"]]])
+  // bot-3 has no playbook, so it heard everything that is current for it at version 1.
+  const summary = (await charterSummaries(api, "machine", signal()))[0]
+  assert.equal(summary.readers_current, 2)
+  // Editing the review checklist re-delivers only to its Bot; a text save keeps the playbooks.
+  const charter = await api.read(project, 0, signal()), review = charter.playbooks![1]
+  await api.savePlaybook(project, { expected_version: 3, playbook: { ...review, text: "- Read the whole diff." } }, signal())
+  const saved = await api.save(project, { expected_version: 4, text: "## Who\n\nLead plans; makers build.", reason: "" }, signal())
+  assert.deepEqual(saved.playbooks!.map(p => p.title), ["Release steps", "Review checklist"])
+  await assert.rejects(api.savePlaybook(project, { expected_version: 5, playbook: { title: "Ghost", text: "", bot_ids: ["nobody"] } }, signal()), (e: unknown) => e instanceof CharterRefusal && e.field === "bot_ids")
+  const removed = await api.removePlaybook(project, { expected_version: 5, id: review.id }, signal())
+  assert.deepEqual(removed.playbooks!.map(p => p.title), ["Release steps"])
 })
 
 test("a stale write is a version conflict that names what was stale", async () => {
