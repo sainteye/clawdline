@@ -15,10 +15,13 @@ import (
 // steers that reached the agent.
 type steerSession struct {
 	*runtimeSession
-	refuse   error
-	outcome  SteerOutcome
-	native   *atomic.Int32
-	noImages bool
+	refuse     error
+	outcome    SteerOutcome
+	native     *atomic.Int32
+	noImages   bool
+	noSteering bool
+	// lose: the write reaches the agent and its answer is lost.
+	lose bool
 }
 
 func TestPersonFollowUpSteersByBotPreference(t *testing.T) {
@@ -27,21 +30,31 @@ func TestPersonFollowUpSteersByBotPreference(t *testing.T) {
 		preference   pa.ReplyInput
 		permission   bool
 		notSupported bool
+		noSteering   bool
+		refuse       error
+		lose         bool
 		wantJoined   bool
+		wantWrites   int32
+		wantFallback pa.SteerFallback
 		outcome      SteerOutcome
 	}{
-		{name: "existing Bot"},
+		{name: "Bot with no saved choice", wantJoined: true, outcome: SteerJoined},
 		{name: "working Bot with pictures", preference: pa.ReplyInputSteer, wantJoined: true, outcome: SteerJoined},
-		{name: "permission card", preference: pa.ReplyInputSteer, permission: true},
-		{name: "incapable session", preference: pa.ReplyInputSteer, notSupported: true},
-		{name: "adapter deferred input", preference: pa.ReplyInputSteer, outcome: SteerNext},
+		{name: "Bot set to queue", preference: pa.ReplyInputQueue, outcome: SteerJoined},
+		{name: "permission card", permission: true, outcome: SteerJoined, wantFallback: pa.SteerFallbackPermissionPending},
+		{name: "unverified picture build", notSupported: true, outcome: SteerJoined, wantFallback: pa.SteerFallbackImagesUnsupported},
+		{name: "agent without steering", noSteering: true, outcome: SteerJoined, wantFallback: pa.SteerFallbackAgentUnsupported},
+		{name: "adapter deferred input", outcome: SteerNext, wantWrites: 1, wantFallback: pa.SteerFallbackTurnEnded},
+		{name: "refused unread", refuse: SteerRefused(errors.New("pipe closed before the write")), wantFallback: pa.SteerFallbackNotSent},
+		{name: "refused as unsupported", refuse: SteerRefused(runtimeFailure(pa.Unsupported, "steering")), wantFallback: pa.SteerFallbackImagesUnsupported},
+		{name: "answer lost after the write", lose: true, wantWrites: 1},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newRuntimeFixture(t)
 			f.store.bot.ReplyInput = tt.preference
 			native := &atomic.Int32{}
 			f.provider.wrap = func(s *runtimeSession) ProviderSession {
-				return &steerSession{runtimeSession: s, native: native, outcome: tt.outcome, noImages: tt.notSupported}
+				return &steerSession{runtimeSession: s, native: native, outcome: tt.outcome, noImages: tt.notSupported, noSteering: tt.noSteering, refuse: tt.refuse, lose: tt.lose}
 			}
 			first, err := f.submit(t, "first", "first")
 			if err != nil {
@@ -66,42 +79,95 @@ func TestPersonFollowUpSteersByBotPreference(t *testing.T) {
 			}
 			receipt, err := f.r.Submit(t.Context(), submission)
 			if err != nil {
-				t.Fatal(err)
+				t.Fatalf("a follow-up that fell back must not report an error: %v", err)
 			}
 			turn := f.turn(t, receipt.ResourceID)
+			// The same message delivered twice reaches the agent at most once.
+			replay, err := f.r.Submit(t.Context(), submission)
+			if err != nil || replay != receipt {
+				t.Fatalf("idempotent retry: %+v, %v", replay, err)
+			}
 			if tt.wantJoined {
-				if turn.State != pa.TurnSucceeded || turn.JoinedTurnID != first.ResourceID || native.Load() != 1 {
+				if turn.State != pa.TurnSucceeded || turn.JoinedTurnID != first.ResourceID || native.Load() != 1 || turn.SteerFallback != "" {
 					t.Fatalf("follow-up did not join the active turn: %+v, native writes %d", turn, native.Load())
-				}
-				replay, err := f.r.Submit(t.Context(), submission)
-				if err != nil || replay != receipt || native.Load() != 1 {
-					t.Fatalf("idempotent retry: %+v, %v, native writes %d", replay, err, native.Load())
 				}
 				return
 			}
-			var wantWrites int32
-			if tt.outcome == SteerNext {
-				wantWrites = 1
+			if tt.lose {
+				if turn.State != pa.TurnUnknown || turn.Failure == nil || turn.Failure.Field != pa.SteerUnknownField || native.Load() != 1 {
+					t.Fatalf("a lost answer must be unknown, never resent: %+v, native writes %d", turn, native.Load())
+				}
+				return
 			}
-			if turn.State != pa.TurnQueued || turn.Steering || turn.JoinedTurnID != "" || native.Load() != wantWrites {
+			if turn.State != pa.TurnQueued || turn.Steering || turn.JoinedTurnID != "" || turn.Failure != nil || native.Load() != tt.wantWrites {
 				t.Fatalf("the entire message must queue: %+v, native writes %d", turn, native.Load())
+			}
+			if turn.SteerFallback != tt.wantFallback {
+				t.Fatalf("steer_fallback %q, want %q", turn.SteerFallback, tt.wantFallback)
 			}
 			f.provider.session().reply <- PromptResult{FinalText: "first"}
 			next := receivePrompt(t, f.provider)
 			if next.Turn.ID != turn.ID || next.Text != "follow up" || len(next.Images) != 1 || !bytes.Equal(next.Images[0].Data, picture) {
 				t.Fatalf("queued follow-up lost content: %+v", next)
 			}
+			if native.Load() != tt.wantWrites {
+				t.Fatalf("the queued message was also steered: native writes %d", native.Load())
+			}
 		})
 	}
 }
 
-func (s *steerSession) SupportsSteering(images bool) bool { return !images || !s.noImages }
+// Only the person's own words join a reply. Clawdline's notices and input
+// without the sender's authority wait for their own turn even when the Bot
+// steers; personMessage also excludes rooms, other Bots' requests,
+// compaction and lead calls.
+func TestOnlyThePersonsMessagesSteer(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		change func(*Submission)
+	}{
+		{name: "host notice", change: func(s *Submission) { s.Notice, s.AuthorityCheck = true, nil }},
+		{name: "no sender authority", change: func(s *Submission) { s.AuthorityCheck = nil }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newRuntimeFixture(t)
+			native := &atomic.Int32{}
+			f.provider.wrap = func(s *runtimeSession) ProviderSession {
+				return &steerSession{runtimeSession: s, native: native, outcome: SteerJoined}
+			}
+			if _, err := f.submit(t, "first", "first"); err != nil {
+				t.Fatal(err)
+			}
+			receivePrompt(t, f.provider)
+			s := Submission{
+				Command: pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "other", ContentHash: strings.Repeat("c", 64)},
+				Message: pa.SendMessage{Fence: f.fence(), Text: "not the person"},
+				Feature: pa.FeatureState{Enabled: true}, Source: f.source, AuthorityCheck: func(context.Context) error { return nil },
+			}
+			tt.change(&s)
+			receipt, err := f.r.Submit(t.Context(), s)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if turn := f.turn(t, receipt.ResourceID); native.Load() != 0 || turn.State != pa.TurnQueued || turn.SteerFallback != "" {
+				t.Fatalf("a message that is not the person's was steered: %+v, native writes %d", turn, native.Load())
+			}
+		})
+	}
+}
+
+func (s *steerSession) SupportsSteering(images bool) bool {
+	return !s.noSteering && (!images || !s.noImages)
+}
 
 func (s *steerSession) Steer(context.Context, PromptRequest) (SteerOutcome, error) {
 	if s.refuse != nil {
 		return "", s.refuse
 	}
 	s.native.Add(1)
+	if s.lose {
+		return "", errors.New("connection reset after the write")
+	}
 	return s.outcome, nil
 }
 

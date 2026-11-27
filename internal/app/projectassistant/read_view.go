@@ -60,6 +60,7 @@ type ReadTurnSummary struct {
 	QueueEditID     string
 	Origin          pa.TurnOrigin
 	ReleasedRestart bool
+	SteerFallback   pa.SteerFallback
 	ID              string
 	Fence           pa.Fence
 	MessageID       string

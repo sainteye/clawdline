@@ -339,6 +339,45 @@ func TestProjectAssistantReplyInputSettingCrossesCloud(t *testing.T) {
 	}
 }
 
+// A phone built before reply_input existed sends settings and a base without
+// it. Cloud forwards them without inventing a value, so the machine reads the
+// absent choice as steering; a stored Bot without a value reads back as steer.
+func TestProjectAssistantReplyInputAbsentFromAnOlderPhoneStaysAbsent(t *testing.T) {
+	for _, row := range projectAssistantRows(t) {
+		if row.Op != "project-assistants.edit" && row.Op != "project-assistants.team-settings" {
+			continue
+		}
+		t.Run(row.Op, func(t *testing.T) {
+			fields := projectAssistantExample(t, row)
+			settings := fields["settings"].(map[string]any)
+			delete(settings, "reply_input")
+			settings["base"] = map[string]any{"name": settings["name"], "appearance": settings["appearance"], "instructions": ""}
+			calls := 0
+			bridge := open(projectAssistantRouter(func(_ context.Context, req LocalRequest) (LocalResponse, error) {
+				calls++
+				var form struct {
+					Settings map[string]json.RawMessage `json:"settings"`
+				}
+				if err := json.Unmarshal(req.Body, &form); err != nil {
+					t.Fatal(err)
+				}
+				var base map[string]json.RawMessage
+				_ = json.Unmarshal(form.Settings["base"], &base)
+				if _, ok := form.Settings["reply_input"]; ok {
+					t.Fatalf("Cloud invented a reply_input: %s", req.Body)
+				}
+				if _, ok := base["reply_input"]; ok {
+					t.Fatalf("Cloud invented a base reply_input: %s", req.Body)
+				}
+				return LocalResponse{Status: 200, Body: []byte(`{"contract_version":"project-assistants.v1","bot":{"reply_input":"steer"}}`)}, nil
+			}))
+			if answer := bridge.Handle(t.Context(), request(t, ClassCtl, fields)); !answer.OK() || calls != 1 {
+				t.Fatalf("Cloud refused an older phone's settings: %d, calls %d", answer.Status, calls)
+			}
+		})
+	}
+}
+
 func TestProjectAssistantMemoryViewCloudPage(t *testing.T) {
 	calls := 0
 	bridge := open(projectAssistantRouter(func(_ context.Context, req LocalRequest) (LocalResponse, error) {

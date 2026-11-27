@@ -824,11 +824,8 @@ func validateAggregate(a aggregate) error {
 		if err := pa.ValidateTurnOrigin(t); err != nil {
 			return err
 		}
-		if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
-			return failure(pa.Invalid, "queue_edit")
-		}
-		if t.Steering && (t.State != pa.TurnQueued || t.StartedAt != nil || t.QueueEditID != "") {
-			return failure(pa.Invalid, "steer_state")
+		if err := validateQueuedInput(t); err != nil {
+			return err
 		}
 		// Send now can join an existing conversation without its own snapshot.
 		steerUnknown := t.State == pa.TurnUnknown && t.StartedAt == nil && t.Failure != nil && t.Failure.Field == pa.SteerUnknownField
@@ -1501,4 +1498,19 @@ func newlyClosedPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// validateQueuedInput checks the queue edit hold, the steering intent and
+// the recorded steering fallback of a turn.
+func validateQueuedInput(t pa.Turn) error {
+	if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
+		return failure(pa.Invalid, "queue_edit")
+	}
+	if t.Steering && (t.State != pa.TurnQueued || t.StartedAt != nil || t.QueueEditID != "") {
+		return failure(pa.Invalid, "steer_state")
+	}
+	if !t.SteerFallback.Valid() {
+		return failure(pa.Invalid, "steer_fallback")
+	}
+	return nil
 }
