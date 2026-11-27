@@ -3,6 +3,7 @@ package projectassistant
 import (
 	"context"
 	"errors"
+	"log"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/capacity"
@@ -24,8 +25,7 @@ func SteerRefused(err error) error {
 	return &SteerNotSent{Err: err}
 }
 
-// SteeringField is the field of a Send now the agent cannot take: the page
-// stops offering Send now for it.
+// SteeringField identifies a Send now refusal specific to the agent.
 const SteeringField = "steering"
 
 // checkQueueScope is the fence of an action on a turn already queued. Every
@@ -96,15 +96,30 @@ func (r *Engine) trySteerFollowUpLocked(ctx context.Context, a *runtimeActor, bo
 		!personMessage(s) || s.Message.Handoff != nil || s.Decision != nil || s.RestartSource != "" {
 		return
 	}
+	// Admission is durable. Losing the caller no longer decides whether the
+	// native write is confirmed, but live authority still gates that write.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Duration(capacity.MaximumBotAutoSteerMilliseconds)*time.Millisecond)
+	defer cancel()
 	bot, err := r.o.Repository.Bot(ctx, a.key)
-	if err != nil || bot.ReplyInput.Effective() != pa.ReplyInputSteer {
+	if err != nil {
+		logAutoSteerFailure(t.ID, err)
+		return
+	}
+	if bot.ReplyInput.Effective() != pa.ReplyInputSteer {
 		return
 	}
 	command := r.command(a.key, pa.SendNowOperation, "runtime-auto-steer-"+t.ID, s.Command)
 	// Admission already succeeded. A pre-write refusal leaves the full message
 	// queued with the reason. An ambiguous write is recorded on the turn and
 	// never replayed.
-	_, _ = r.steerQueuedLocked(ctx, a, bot, c, command, t, &m, s.AuthorityCheck)
+	if _, err := r.steerQueuedLocked(ctx, a, bot, c, command, t, &m, s.AuthorityCheck); err != nil {
+		logAutoSteerFailure(t.ID, err)
+	}
+}
+
+func logAutoSteerFailure(turnID string, err error) {
+	// Native and repository errors may contain message content.
+	log.Printf("project assistant: automatic steer failed; turn=%s code=%s error_type=%T", turnID, pa.Code(err), err)
 }
 
 func (r *Engine) steerQueuedLocked(ctx context.Context, a *runtimeActor, bot pa.Bot, c pa.Conversation, command pa.Command, t pa.Turn, m *pa.Message, check func(context.Context) error) (pa.Receipt, error) {
@@ -288,6 +303,7 @@ func (r *Engine) settleSteeringLocked(ctx context.Context, a *runtimeActor, comm
 		}
 		if outcome == SteerJoined {
 			t.State, t.JoinedTurnID, effect = pa.TurnSucceeded, running, pa.EffectDelivered
+			t.SteerFallback = ""
 		}
 		receipt, err := r.mutate(ctx, bot, Mutation{Command: command, Turn: &t, Receipt: pa.Receipt{State: effect, ResourceID: t.ID},
 			Events: []pa.Event{{Fence: t.Fence, Kind: pa.TurnUpdated, Turn: &t}}})

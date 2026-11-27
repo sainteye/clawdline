@@ -817,6 +817,7 @@ const (
 	BotsMemoryEntries          = "bots.memory_entries"
 	BotsMemorySearchResults    = "bots.memory_search_results"
 	BotsSteerAnswer            = "bots.steer_answer_ms"
+	BotsAutoSteer              = "bots.auto_steer_ms"
 	BotsRulesFileBytes         = "bots.rules_file_bytes"
 	BotsReviewPending          = "bots.review_pending"
 	BotsReviewPerSender        = "bots.review_per_sender"

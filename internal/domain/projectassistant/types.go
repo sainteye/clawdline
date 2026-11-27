@@ -164,7 +164,7 @@ const (
 	SteerFallbackNotSent SteerFallback = "not_sent"
 )
 
-// SteerFallbacks is every reason a stored turn may carry, in wire order.
+// SteerFallbacks lists the reasons this version can write.
 var SteerFallbacks = []SteerFallback{SteerFallbackAgentUnsupported, SteerFallbackImagesUnsupported, SteerFallbackPermissionPending,
 	SteerFallbackTurnEnded, SteerFallbackScope, SteerFallbackBusy, SteerFallbackNotSent}
 

@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14937,
+  "englishKeys": 14939,
   "counts": {
     "negation": 3767,
-    "state": 2547,
-    "permission": 880,
+    "state": 2549,
+    "permission": 881,
     "deletion": 361,
-    "uncertainty": 585
+    "uncertainty": 586
   },
-  "unionCount": 6322,
+  "unionCount": 6324,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3916,6 +3916,8 @@
       "capacityRow.bots.assistant_grants.full",
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.attachment_bytes.full",
+      "capacityRow.bots.auto_steer_ms.full",
+      "capacityRow.bots.auto_steer_ms.what",
       "capacityRow.bots.background_waiting.full",
       "capacityRow.bots.charter_body_bytes.full",
       "capacityRow.bots.charter_conflict_sentence_bytes.full",
@@ -6404,6 +6406,7 @@
       "capacityRow.antigravity.acp_call_seconds.what",
       "capacityRow.artifacts.output_index_bytes.full",
       "capacityRow.bots.assistant_grants.what",
+      "capacityRow.bots.auto_steer_ms.full",
       "capacityRow.bots.cloud_receipts.what",
       "capacityRow.bots.connector_credential_holds.what",
       "capacityRow.bots.connector_credentials.what",
@@ -7608,6 +7611,7 @@
       "capacityRow.bots.assistant_frames.full",
       "capacityRow.bots.assistant_receipts.full",
       "capacityRow.bots.assistant_receipts.what",
+      "capacityRow.bots.auto_steer_ms.full",
       "capacityRow.bots.carry_quote_bytes.full",
       "capacityRow.bots.cleanup_retries.what",
       "capacityRow.bots.cleanup_retry_ms.what",
@@ -8526,6 +8530,8 @@
     "capacityRow.bots.assistant_receipts.full",
     "capacityRow.bots.assistant_receipts.what",
     "capacityRow.bots.attachment_bytes.full",
+    "capacityRow.bots.auto_steer_ms.full",
+    "capacityRow.bots.auto_steer_ms.what",
     "capacityRow.bots.background_waiting.full",
     "capacityRow.bots.carry_messages.full",
     "capacityRow.bots.carry_quote_bytes.full",

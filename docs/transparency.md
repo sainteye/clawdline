@@ -321,10 +321,13 @@ queue choice queues, and the stored value stays absent rather than being
 rewritten. Pictures steer only into the adapter builds listed in
 `VerifiedImageSteering` (claude-agent-acp 0.106.0 and codex-acp 2.6.0) when
 their initialize also declares steering and image input. A follow-up that
-falls back records `steer_fallback` on its queued turn: `agent_unsupported`,
+falls back can record `steer_fallback` while queued: `agent_unsupported`,
 `images_unsupported`, `permission_pending`, `turn_ended`, `scope`,
-`steer_busy` or `not_sent`. The English and Taiwan Traditional Chinese card
-text names the default and these fallbacks.
+`steer_busy` or `not_sent`. A queued message can offer Send now during a
+reply even without a recorded reason. After durable admission, automatic
+steering uses its own bounded context so a disconnected caller cannot
+interrupt confirmation. The English and Taiwan Traditional Chinese card
+text names the default and the queue behavior.
 
 ## Updating an instruction or entry
 

@@ -26,7 +26,7 @@ const say=(id:string,text:string)=>source.scriptMessage(bot,"person-"+id,"user",
 say("t1",language==="en"?"Start the synthetic running reply":"開始一段合成的回覆");turn("t1","running")
 say("t2",language==="en"?"Waiting for the permission answer":"等權限確認的這則");turn("t2","queued","permission_pending")
 say("t3",language==="en"?"This one carries a picture":"這則帶了圖片");turn("t3","queued","images_unsupported")
-say("t4",language==="en"?"Still being steered":"正在插話的這則");turn("t4","queued")
+say("t4",language==="en"?"Queued before the upgrade":"升級前已排隊的訊息");turn("t4","queued")
 const summary=(await source.list({machine_id:bot.key.machine_id,cursor:"",query:"",page_size:100},signal)).items[0]
 const saves:W.ProjectAssistantEditSettings[]=[]
 Object.assign(window,{steerFixture:{saves}})

@@ -6976,11 +6976,8 @@ type ProjectAssistantReadTurnSummary struct {
 	StartedAt string                    `json:"started_at"`
 	State     ProjectAssistantTurnState `json:"state"`
 
-	// Why a message the person sent while the Bot replied waits for its own turn
-	// instead of joining that reply: the agent cannot steer, it is not verified to
-	// take pictures while it replies, a permission card is waiting, the reply ended
-	// first, the reply is automatic work or another scope, another message was being
-	// steered, or the agent refused it unread. Absent when nothing fell back.
+	// Optional reason for a queued follow-up. Readers ignore it in all other states
+	// and show unrecognized reasons as queued.
 	SteerFallback string `json:"steer_fallback,omitempty"`
 }
 
@@ -7685,11 +7682,8 @@ type ProjectAssistantTurn struct {
 	StartedAt string                    `json:"started_at,omitempty"`
 	State     ProjectAssistantTurnState `json:"state"`
 
-	// Why a message the person sent while the Bot replied waits for its own turn
-	// instead of joining that reply: the agent cannot steer, it is not verified to
-	// take pictures while it replies, a permission card is waiting, the reply ended
-	// first, the reply is automatic work or another scope, another message was being
-	// steered, or the agent refused it unread. Absent when nothing fell back.
+	// Optional reason for a queued follow-up. Readers ignore it in all other states
+	// and show unrecognized reasons as queued.
 	SteerFallback string `json:"steer_fallback,omitempty"`
 }
 

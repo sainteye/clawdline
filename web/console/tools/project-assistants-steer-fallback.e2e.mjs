@@ -1,4 +1,4 @@
-/** A steering Bot: the settings switch starts on, and only messages the source put back in the queue offer "Send now" with a reason. */
+/** A steering Bot offers Send now during a reply, including for older queued messages. */
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
 import {mkdir,mkdtemp,writeFile,access,rm} from "node:fs/promises"
@@ -55,8 +55,8 @@ try{
     await open(`lang=${language}`,mobile)
     await waitFor("document.querySelectorAll('.pa-queued').length===3")
     const rows=await evaluate(`[...document.querySelectorAll('.pa-queued')].map(row=>({text:row.querySelector('.pa-queued-preview')?.textContent??'',reason:row.querySelector('.pa-queued-reason')?.textContent??'',sendNow:!!row.querySelector('button[aria-label="${words.send}"]')}))`)
-    const steering=rows.find(r=>!r.reason),permission=rows.find(r=>r.reason===words.permission),images=rows.find(r=>r.reason===words.images)
-    assert.ok(steering&&!steering.sendNow,"a message the source is still steering offers no send now: "+JSON.stringify(rows))
+    const legacy=rows.find(r=>!r.reason),permission=rows.find(r=>r.reason===words.permission),images=rows.find(r=>r.reason===words.images)
+    assert.ok(legacy?.sendNow,"an older queued message can Send now with no fallback reason: "+JSON.stringify(rows))
     assert.ok(permission?.sendNow&&images?.sendNow,"messages put back in the queue offer send now with their reason: "+JSON.stringify(rows))
     const overflow=await evaluate("document.documentElement.scrollWidth>innerWidth")
     assert.equal(overflow,false,"no horizontal page scroll")
@@ -64,7 +64,7 @@ try{
     await shot(tag+"-queued-fallback")
     await close()
     results.push({tag,language,rows})
-    console.log(`PASS ${tag} ${language}: switch on by default; send now only on the ${rows.filter(r=>r.sendNow).length} fallen-back messages`)
+    console.log(`PASS ${tag} ${language}: switch on by default; Send now on all ${rows.filter(r=>r.sendNow).length} queued messages, including one without a fallback reason`)
   }
   await writeFile(path.join(artifacts,"steer-fallback-results.json"),JSON.stringify(results,null,2))
 }catch(error){console.error("FAIL",error);process.exitCode=1}

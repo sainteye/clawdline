@@ -8091,11 +8091,8 @@ export interface ProjectAssistantReadTurnSummary {
   state: ProjectAssistantTurnState
 
   /**
-   * Why a message the person sent while the Bot replied waits for its own turn
-   * instead of joining that reply: the agent cannot steer, it is not verified to
-   * take pictures while it replies, a permission card is waiting, the reply ended
-   * first, the reply is automatic work or another scope, another message was being
-   * steered, or the agent refused it unread. Absent when nothing fell back.
+   * Optional reason for a queued follow-up. Readers ignore it in all other states
+   * and show unrecognized reasons as queued.
    */
   steer_fallback?: string
 }
@@ -8913,11 +8910,8 @@ export interface ProjectAssistantTurn {
   state: ProjectAssistantTurnState
 
   /**
-   * Why a message the person sent while the Bot replied waits for its own turn
-   * instead of joining that reply: the agent cannot steer, it is not verified to
-   * take pictures while it replies, a permission card is waiting, the reply ended
-   * first, the reply is automatic work or another scope, another message was being
-   * steered, or the agent refused it unread. Absent when nothing fell back.
+   * Optional reason for a queued follow-up. Readers ignore it in all other states
+   * and show unrecognized reasons as queued.
    */
   steer_fallback?: string
 }

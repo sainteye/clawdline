@@ -5896,7 +5896,7 @@
     "internal/app/orchestrator/session_pause.go": "779e6d86ac295c0e5064015e3e5422190ec77b3036b1227d24910109a162a4b7",
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
-    "internal/app/projectassistant/attempt.go": "610568a204262437a931f949932f1af684079800066570ec74a508298c239225",
+    "internal/app/projectassistant/attempt.go": "d7eb4c6ea1b9791c057d076382971ea261043d6bcdd657c2a72bed72fde84c43",
     "internal/app/projectassistant/collaboration.go": "a849eaab7c687041e8ff0ac616476c44e8b886bc7b9693d481496762d540464c",
     "internal/app/projectassistant/configuration.go": "39df67333a7764f211f57d430aad5b54863bd1854a78ac5025f5155189d77e4b",
     "internal/app/projectassistant/decisions.go": "3f8ab6f05cc39bf975e5b93a997abff868891f4c55a348069f10f9c4257d69df",
@@ -5918,10 +5918,10 @@
     "internal/app/projectassistant/restart.go": "d1bc28469c94bfe7d03f20dafcaeac83bb41d536376d06ab58744f073fd72968",
     "internal/app/projectassistant/routines.go": "56fbd5d9567a867cb223afe0bfc8f3eed072dc77fbfddd9db2b255ab67ff4cb2",
     "internal/app/projectassistant/routines_human.go": "77d54c38f89d1c132d54ecfbce80fa530e219cbaadbf18d7b13072b1a93d45ca",
-    "internal/app/projectassistant/runtime.go": "d7e27b67f42e9b3acbdb64c065c09ac0364fb3a011ff1b1bdb14d2b18d0cb285",
+    "internal/app/projectassistant/runtime.go": "7f9c54e0174af607747ff70f8c6b1f76a3309e38a5658951fc8d94c0fce33cf9",
     "internal/app/projectassistant/runtime_groups.go": "83b7086262a37a790fd26d053afffc49c98acb7147e76afeff4778aa4d2d6b97",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
-    "internal/app/projectassistant/send_now.go": "faefc951ba7899f05e08535b755c724e67281b33c372d1f598a516bbe19603a9",
+    "internal/app/projectassistant/send_now.go": "89d258ba518c0140941e9b86d7ef88da54b641d4c4cb6db9ae7fd302e7d2a06f",
     "internal/app/projectassistant/service_routines.go": "47b4f2ab953551938f828229ff837d77c8361bed25aafdaa653c5be943a3eed3",
     "internal/app/projectassistant/service_team_call.go": "7ee303d4a9608080703e66c78b437c50f9319349e2fae59ce2247c5a36f6c322",
     "internal/app/projectassistant/session_handoff.go": "8dc05936996650d664da7b7dfec574dc74da655eb4b7746c893c9fefbcceffb9",
@@ -6026,7 +6026,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotSettings.tsx": "0236e06b378851dc837494915fb69c32f269e1c41cc5de8de3533cf96e301f10",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "dc7b1435a30ba2caa0c9067995aa208f48e81d7b0bc29a32fbf1782247476f2e",
+    "web/console/src/project-assistants/Chat.tsx": "f21cf2259ef61cf21c9804df3ec3119a5bb78969c844c94af7f5ddbcd75e08d8",
     "web/console/src/project-assistants/ChatRows.tsx": "b8b1e0ec14d9ac1ab194830371d104130659852b95c626728fc16a7b8676db7c",
     "web/console/src/project-assistants/DecisionCard.tsx": "6286a5464ef0597d9c36c167664ba0af4ee0052a5505d91ffca9209fdd2387ee",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
@@ -6085,7 +6085,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "96903fa4f821158214d874a63cb0e65d05b14dd607bceb0dd71e90c1a1e1af4c",
-    "zh-Hant": "347c4ad5ef0d3c4afc7ca755a49e36e19b572f4809643bb8c8fea477afdb0508"
+    "en": "1363885bd712012c2334b58c1d9be5b88954cd28ea49f3a606a00beb8b6ce01b",
+    "zh-Hant": "ab06d4421401e7c82f1964b83885e44337dc3534dfae477e8d42ac24ae0ed1c0"
   }
 }

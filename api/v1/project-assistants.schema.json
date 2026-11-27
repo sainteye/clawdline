@@ -895,8 +895,7 @@
         },
         "steer_fallback": {
           "type": "string",
-          "enum": ["agent_unsupported", "images_unsupported", "permission_pending", "turn_ended", "scope", "steer_busy", "not_sent"],
-          "description": "Why a message the person sent while the Bot replied waits for its own turn instead of joining that reply: the agent cannot steer, it is not verified to take pictures while it replies, a permission card is waiting, the reply ended first, the reply is automatic work or another scope, another message was being steered, or the agent refused it unread. Absent when nothing fell back."
+          "description": "Optional reason for a queued follow-up. Readers ignore it in all other states and show unrecognized reasons as queued."
         },
         "joined_turn_id": {
           "type": "string",
@@ -2874,8 +2873,7 @@
         },
         "steer_fallback": {
           "type": "string",
-          "enum": ["agent_unsupported", "images_unsupported", "permission_pending", "turn_ended", "scope", "steer_busy", "not_sent"],
-          "description": "Why a message the person sent while the Bot replied waits for its own turn instead of joining that reply: the agent cannot steer, it is not verified to take pictures while it replies, a permission card is waiting, the reply ended first, the reply is automatic work or another scope, another message was being steered, or the agent refused it unread. Absent when nothing fell back."
+          "description": "Optional reason for a queued follow-up. Readers ignore it in all other states and show unrecognized reasons as queued."
         },
         "queue_edit_id": {
           "type": "string"

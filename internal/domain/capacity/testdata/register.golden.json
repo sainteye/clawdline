@@ -1259,6 +1259,25 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.auto_steer_ms",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 20000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotAutoSteerMilliseconds"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.automation_backlog",
     "Class": "buffer",
     "Unit": "rows",

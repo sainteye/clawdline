@@ -67,6 +67,7 @@
 | `bots.assistant_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.assistant_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.attachment_bytes` | 12582912 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.auto_steer_ms` | 20000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `bots.automation_backlog` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.background_threads` | 6 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.background_waiting` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |

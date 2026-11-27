@@ -20,8 +20,41 @@ type steerSession struct {
 	native     *atomic.Int32
 	noImages   bool
 	noSteering bool
+	afterWrite func()
 	// lose: the write reaches the agent and its answer is lost.
 	lose bool
+}
+
+func TestAcceptedFollowUpSettlesAfterTheRequestDisconnects(t *testing.T) {
+	f := newRuntimeFixture(t)
+	ctx, disconnect := context.WithCancel(t.Context())
+	defer disconnect()
+	native := &atomic.Int32{}
+	f.provider.wrap = func(s *runtimeSession) ProviderSession {
+		return &steerSession{runtimeSession: s, native: native, outcome: SteerJoined, afterWrite: disconnect}
+	}
+	first, err := f.submit(t, "first", "first")
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivePrompt(t, f.provider)
+	submission := Submission{
+		Command: pa.Command{Key: f.key, Operation: pa.SendOperation, IdempotencyKey: "disconnect", ContentHash: strings.Repeat("a", 64)},
+		Message: pa.SendMessage{Fence: f.fence(), Text: "follow up"}, Feature: pa.FeatureState{Enabled: true}, Source: f.source,
+		AuthorityCheck: func(ctx context.Context) error { return ctx.Err() },
+	}
+	receipt, err := f.r.Submit(ctx, submission)
+	if err != nil || receipt.State != pa.EffectAccepted || ctx.Err() != context.Canceled {
+		t.Fatalf("expected admission followed by disconnect: state=%s request=%v err=%v", receipt.State, ctx.Err(), err)
+	}
+	turn := f.turn(t, receipt.ResourceID)
+	if turn.State != pa.TurnSucceeded || turn.JoinedTurnID != first.ResourceID || turn.Steering {
+		t.Fatalf("accepted follow-up did not join: state=%s joined=%q steering=%t", turn.State, turn.JoinedTurnID, turn.Steering)
+	}
+	replay, err := f.r.Submit(t.Context(), submission)
+	if err != nil || replay != receipt || native.Load() != 1 {
+		t.Fatalf("retry must replay only the receipt: state=%s native writes=%d err=%v", replay.State, native.Load(), err)
+	}
 }
 
 func TestPersonFollowUpSteersByBotPreference(t *testing.T) {
@@ -160,11 +193,17 @@ func (s *steerSession) SupportsSteering(images bool) bool {
 	return !s.noSteering && (!images || !s.noImages)
 }
 
-func (s *steerSession) Steer(context.Context, PromptRequest) (SteerOutcome, error) {
+func (s *steerSession) Steer(ctx context.Context, _ PromptRequest) (SteerOutcome, error) {
 	if s.refuse != nil {
 		return "", s.refuse
 	}
 	s.native.Add(1)
+	if s.afterWrite != nil {
+		s.afterWrite()
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+	}
 	if s.lose {
 		return "", errors.New("connection reset after the write")
 	}

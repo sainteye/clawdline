@@ -176,15 +176,28 @@ func viewTurnProjection(value string) string {
 	// an arbitrary field. Only host diagnostic categories are public summaries.
 	field := "json_extract(" + value + ",'$.failure.field')"
 	detail := "CASE WHEN " + field + " IN ('prompt_timeout','prompt_stopped','acp_eof','prompt_result','prompt_max_tokens','prompt_max_turn_requests','owned_cleanup','owned_cleanup_timeout','restart','restart_confirmed','restart_resumed','acknowledged','provider_usage_limit','provider_out_of_credits','provider_rate_limited','provider_overloaded','provider_signed_out','provider_model_missing') THEN " + field + " ELSE '' END"
+	fallback := viewSteerFallbackProjection(value)
 	return `json_object('id',json_extract(` + value + `,'$.id'),'fence',json_extract(` + value + `,'$.fence'),
  'message_id',json_extract(` + value + `,'$.message_id'),'state',json_extract(` + value + `,'$.state'),
  'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'),
  'origin',json_extract(` + value + `,'$.origin'),'idempotency_key',json_extract(` + value + `,'$.idempotency_key'),
  'steering',json(CASE WHEN json_extract(` + value + `,'$.steering') THEN 'true' ELSE 'false' END),
- 'steer_fallback',json_extract(` + value + `,'$.steer_fallback'),
+ 'steer_fallback',` + fallback + `,
  'released_restart',json(CASE WHEN json_extract(` + value + `,'$.released_restart') THEN 'true' ELSE 'false' END),
  'room',CASE WHEN json_extract(` + value + `,'$.room') IS NOT NULL THEN json_object() END,
  'network',CASE WHEN json_extract(` + value + `,'$.network') IS NOT NULL THEN json_object() END)`
+}
+
+func viewSteerFallbackProjection(value string) string {
+	reason := "json_extract(" + value + ",'$.steer_fallback')"
+	known := make([]string, len(pa.SteerFallbacks))
+	for i, code := range pa.SteerFallbacks {
+		known[i] = "'" + strings.ReplaceAll(string(code), "'", "''") + "'"
+	}
+	// Project future reasons to the generic queue label without adding
+	// arbitrary legacy data to the bounded snapshot.
+	return "CASE WHEN json_extract(" + value + ",'$.state') = 'queued' AND " + reason + " <> '' THEN CASE WHEN " +
+		reason + " IN (" + strings.Join(known, ",") + ") THEN " + reason + " ELSE 'unknown' END END"
 }
 
 func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {

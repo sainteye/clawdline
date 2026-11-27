@@ -300,6 +300,11 @@
     "Note": true
   },
   {
+    "Name": "bots.auto_steer_ms",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.automation_backlog",
     "Known": true,
     "Note": true

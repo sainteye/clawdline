@@ -1256,7 +1256,6 @@ ${currentDraft}`:submitted)
     }
   }
 
-  const [noSteering,setNoSteering]=useState<readonly string[]>([])
   const actOnQueued=async(id:string,turnID:string,operation:"send_now"|"stop")=>{
     const request=operation==="send_now"?source.sendNow:source.unqueue
     if(!request||queueInFlight.current||busy||!valid()||recovery.current)return
@@ -1267,8 +1266,8 @@ ${currentDraft}`:submitted)
       const result=await mutate((d,s)=>request.call(source,{command:command(key,operation),fence:fence(d),turn_id:turnID},s))
       if(valid()){setReceipt(result.receipt);await refresh()}
     }catch(e){
-      if(operation==="send_now"&&steeringRefused(e)){if(valid()){setNoSteering(old=>old.includes(bot.agent)?old:[...old,bot.agent]);void refresh(true)}}
-      else fail(e)
+      fail(e)
+      if(operation==="send_now"&&steeringRefused(e)&&valid())void refresh(true)
     }
     finally{
       queueInFlight.current=false
@@ -2000,7 +1999,7 @@ ${currentDraft}`:submitted)
             onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
-          {queuedTurn&&(source.canReplyInput?.()||!message.files?.length&&!message.attachments?.length)&&source.canSendNow?.()&&queuedSendNow(source,bot,queuedTurn,noSteering)&&activeTurn?.state==="running"&&!restartTurn&&
+          {queuedTurn&&(source.canReplyInput?.()||!message.files?.length&&!message.attachments?.length)&&queuedSendNow(source,queuedTurn,activeTurn)&&
             <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
