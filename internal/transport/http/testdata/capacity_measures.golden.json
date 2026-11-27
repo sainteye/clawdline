@@ -345,6 +345,36 @@
     "Note": true
   },
   {
+    "Name": "bots.charter_document_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_playbook_bots",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_playbook_id_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_playbook_text_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_playbook_title_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_playbooks",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.charter_projects",
     "Known": true,
     "Note": true

@@ -272,3 +272,61 @@ func TestRemovedCharterIsAnnouncedOnceAndNotReopened(t *testing.T) {
 	}
 	finish(fourth)
 }
+
+// A playbook reaches only the Bots it is assigned to: a resumed session of an
+// assigned Bot hears the changed charter once, another Bot's session hears
+// nothing, and a Bot that loses the playbook hears the charter without it.
+func TestCharterPlaybooksReachOnlyTheirBots(t *testing.T) {
+	ctx := context.Background()
+	f := newHostFixture(t)
+	f.start(t)
+	f.enable(t)
+	maker, other := f.create(t, "maker"), f.create(t, "other")
+	turn := func(b pa.Bot, text string) string {
+		t.Helper()
+		if _, err := f.send(t, b, text); err != nil {
+			t.Fatal(err)
+		}
+		prompt := fixtureReceive(t, f.p.sent)
+		session := fixtureReceive(t, f.p.sessions)
+		out := prompt.Text
+		if prompt.Handoff != nil {
+			out = fixtureOpening(t, prompt)
+		}
+		session.reply <- app.PromptResult{FinalText: "ok"}
+		fixtureEventually(t, func() bool { return f.h.Usage().ActiveActors == 0 })
+		return out
+	}
+	saveFixtureCharter(t, f, maker.Project, 0, "Rule one: ask before deploying.")
+	turn(maker, "one")
+	turn(other, "one")
+	save := func(expected int64, p pa.CharterPlaybook, key string) pa.CharterVersion {
+		t.Helper()
+		v, err := f.h.store.SaveCharterPlaybook(ctx, featurestore.CharterPlaybookWrite{MachineID: maker.Project.MachineID, ProjectID: maker.Project.ProjectID, ExpectedVersion: expected, Playbook: p, IdempotencyKey: key, At: time.Now()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	v2 := save(1, pa.CharterPlaybook{Title: "Release", Text: "Tag, then ship.", BotIDs: []string{maker.Key.BotID}}, "assign")
+	if got := turn(maker, "two"); !strings.HasPrefix(got, `<team_charter_update version="2">`) || !strings.Contains(got, "Rule one") || !strings.Contains(got, `title="Release">`+"\nTag, then ship.\n</playbook>") {
+		t.Fatalf("the assigned Bot hears its playbook once: %q", got)
+	}
+	if got := turn(other, "two"); strings.Contains(got, "team_charter") || strings.Contains(got, "Tag, then ship.") {
+		t.Fatalf("another Bot's playbook is not delivered: %q", got)
+	}
+	if got := turn(maker, "three"); strings.Contains(got, "team_charter") {
+		t.Fatalf("an unchanged delivery is not repeated: %q", got)
+	}
+	reads, err := f.h.store.CharterReads(ctx, maker.Project.MachineID, maker.Project.ProjectID)
+	if err != nil || reads[maker.Key.BotID].Version != 2 || reads[other.Key.BotID].Version != 1 {
+		t.Fatalf("readers record each Bot's delivery version: %+v %v", reads, err)
+	}
+	save(2, pa.CharterPlaybook{ID: v2.Playbooks[0].ID, Title: "Release", Text: "Tag, then ship.", BotIDs: []string{other.Key.BotID}}, "move")
+	if got := turn(maker, "four"); !strings.HasPrefix(got, `<team_charter_update version="3">`) || strings.Contains(got, "Tag, then ship.") {
+		t.Fatalf("a Bot that lost a playbook hears the charter without it: %q", got)
+	}
+	if got := turn(other, "four"); !strings.HasPrefix(got, `<team_charter_update version="3">`) || !strings.Contains(got, "Tag, then ship.") {
+		t.Fatalf("the newly assigned Bot hears it: %q", got)
+	}
+}

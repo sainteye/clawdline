@@ -55,7 +55,14 @@ type CharterCheckRecorder interface {
 }
 
 type CharterSource interface {
+	// CurrentCharter is a Project's charter text as the person wrote it,
+	// for a lead proposing a change against its current version.
 	CurrentCharter(context.Context, pa.ProjectScope) (version int64, text string, err error)
+	// DeliveredCharter is what one Bot hears of its Project's charter: the
+	// text with the playbooks assigned to it, and the version at which that
+	// last changed for this Bot. A prompt compares that version with the one
+	// its session last heard.
+	DeliveredCharter(context.Context, pa.Bot) (version int64, text string, err error)
 	CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error
 }
 

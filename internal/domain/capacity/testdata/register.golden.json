@@ -1436,6 +1436,126 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.charter_document_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 131072,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterDocumentBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_playbook_bots",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterPlaybookBots"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_playbook_id_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterPlaybookIDBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_playbook_text_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 16384,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterPlaybookTextBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_playbook_title_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterPlaybookTitleBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_playbooks",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 20,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterPlaybooks"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.charter_projects",
     "Class": "buffer",
     "Unit": "rows",

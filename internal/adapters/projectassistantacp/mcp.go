@@ -986,13 +986,13 @@ func mcpCharterConflictTool() map[string]any {
 	}
 	return map[string]any{
 		"name":        "report_charter_conflict",
-		"description": "Report one sentence of yours that the team charter of your Project contradicts, after you compare a new charter version with your memory, your instructions and any playbook or workspace file your instructions tell you to follow. Call it once for each disagreement. charter_version is the version you compared; source is memory, instructions or workspace_file; give path (relative to your workspace) for a file and memory_entry_id when it is a memory entry; bot_sentence and charter_sentence are exact quotes; section is the charter heading; suggested_replacement is your sentence rewritten to agree with the charter, or empty to remove it. Change nothing yourself: the person decides on the charter page. 比對新版團隊章程與你的記憶、指示，以及指示要你遵循的 playbook 或工作區檔案後，回報一句與章程矛盾的你自己的話，每個不一致呼叫一次。charter_version 是你比對的版本；source 填 memory、instructions 或 workspace_file；檔案要附 path（工作區內的相對路徑），記憶條目附 memory_entry_id；bot_sentence 與 charter_sentence 必須逐字引用；section 是章程段落標題；suggested_replacement 是改成符合章程的句子，留空表示刪除。不要自己修改，由使用者在章程頁決定。",
+		"description": "Report one sentence of yours that the team charter of your Project contradicts, after you compare a new charter version with the charter playbooks assigned to you, your memory, your instructions and any workspace file your instructions tell you to follow. Call it once for each disagreement. charter_version is the version you compared; source is memory, instructions, workspace_file or playbook; give path (relative to your workspace) for a file, the playbook id as path for a charter playbook, and memory_entry_id when it is a memory entry; bot_sentence and charter_sentence are exact quotes; section is the charter heading; suggested_replacement is your sentence rewritten to agree with the charter, or empty to remove it. Change nothing yourself: the person decides on the charter page. 比對新版團隊章程與指派給你的章程 playbook、你的記憶、指示，以及指示要你遵循的工作區檔案後，回報一句與章程矛盾的你自己的話，每個不一致呼叫一次。charter_version 是你比對的版本；source 填 memory、instructions、workspace_file 或 playbook；檔案要附 path（工作區內的相對路徑），章程 playbook 的 path 填 playbook id，記憶條目附 memory_entry_id；bot_sentence 與 charter_sentence 必須逐字引用；section 是章程段落標題；suggested_replacement 是改成符合章程的句子，留空表示刪除。不要自己修改，由使用者在章程頁決定。",
 		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
 			"required": []string{"charter_version", "source", "bot_sentence", "charter_sentence", "section"},
 			"properties": map[string]any{
 				"charter_version":       map[string]any{"type": "integer", "minimum": 1},
-				"source":                map[string]any{"type": "string", "enum": []string{"memory", "instructions", "workspace_file"}},
-				"path":                  text("Workspace-relative file path, for workspace_file only."),
+				"source":                map[string]any{"type": "string", "enum": []string{"memory", "instructions", "workspace_file", "playbook"}},
+				"path":                  text("Workspace-relative file path for workspace_file; the playbook id for playbook."),
 				"memory_entry_id":       text("The memory entry id, for memory only, when you know it."),
 				"bot_sentence":          text("Your exact sentence."),
 				"charter_sentence":      text("The charter's exact sentence."),

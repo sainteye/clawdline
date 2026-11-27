@@ -5842,15 +5842,17 @@ export interface ProjectAssistantCharterConflictResolveRequest {
 }
 
 /**
- * Where the Bot's sentence lives: its memory, its instructions, or a file in its
- * workspace its instructions point to.
+ * Where the Bot's sentence lives: its memory, its instructions, a file in its
+ * workspace its instructions point to, or one of the charter playbooks assigned to
+ * it (API 127; path is the playbook id).
  */
 export type ProjectAssistantCharterConflictSource =
     "memory"
   | "instructions"
   | "workspace_file"
+  | "playbook"
 
-export const ProjectAssistantCharterConflictSourceValues: readonly ProjectAssistantCharterConflictSource[] = ["memory", "instructions", "workspace_file"] as const
+export const ProjectAssistantCharterConflictSourceValues: readonly ProjectAssistantCharterConflictSource[] = ["memory", "instructions", "workspace_file", "playbook"] as const
 
 /**
  * What became of a report. fixed: the daemon replaced the Bot's sentence;
@@ -5897,11 +5899,94 @@ export interface ProjectAssistantCharterDismissRequest {
  * The charter bounds the source enforces.
  */
 export interface ProjectAssistantCharterLimits {
+  /**
+   * One version's charter text plus the text of all its playbooks (API 127).
+   */
+  document_bytes?: number
+
+  /**
+   * Bots one playbook is assigned to (API 127).
+   */
+  playbook_bots?: number
+
+  /**
+   * One playbook's text (API 127); absent from an older daemon.
+   */
+  playbook_text_bytes?: number
+
+  /**
+   * One playbook's one-line title (API 127).
+   */
+  playbook_title_bytes?: number
+
+  /**
+   * Playbooks one charter version holds (API 127).
+   */
+  playbooks?: number
   proposals: number
   reason_bytes: number
   request_bytes: number
   text_bytes: number
   versions: number
+}
+
+/**
+ * One playbook of a charter version (API 127): a named Markdown document assigned
+ * to some of the Project's Bots. Each assigned Bot hears it inside its charter
+ * block, after the charter text; the charter wins over a playbook and a playbook
+ * over the Bot's own instructions and memory. id is issued by the daemon and stays
+ * the same across versions.
+ */
+export interface ProjectAssistantCharterPlaybook {
+  bot_ids: string[]
+  id: string
+  text: string
+  title: string
+}
+
+/**
+ * A playbook as the person writes it. An empty or absent id creates a new playbook;
+ * a known id replaces that one. bot_ids must be Bots of the Project.
+ */
+export interface ProjectAssistantCharterPlaybookInput {
+  bot_ids: string[]
+  id?: string
+  text: string
+  title: string
+}
+
+/**
+ * Remove one playbook as the next charter version while the charter is still at
+ * expected_version (API 127). The Bots it was assigned to hear the charter without
+ * it.
+ */
+export interface ProjectAssistantCharterPlaybookRemoveRequest {
+  expected_version: number
+  id: string
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+}
+
+/**
+ * Create or replace one playbook as the next charter version while the charter is
+ * still at expected_version (API 127). The charter text and the other playbooks are
+ * kept. A Project without a charter answers pa_invalid with field charter; a stale
+ * base answers pa_stale_version with field charter_version; a Bot that is not the
+ * Project's answers pa_invalid with field bot_ids.
+ */
+export interface ProjectAssistantCharterPlaybookSaveRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  playbook: ProjectAssistantCharterPlaybookInput
+  project_id: string
+
+  /**
+   * Why the playbook changed, for the charter history; may be empty but is always
+   * sent.
+   */
+  reason: string
 }
 
 /**
@@ -5932,13 +6017,25 @@ export interface ProjectAssistantCharterProposalsResponse {
 
 /**
  * One Bot of the Project: the charter version its most recent prompt carried (0
- * before any) and whether it has a running or queued turn now.
+ * before any) and whether it has a running or queued turn now. A Bot has read the
+ * current charter when version is at least delivery_version.
  */
 export interface ProjectAssistantCharterReader {
   bot_id: string
+
+  /**
+   * The newest charter version at which what this Bot hears changed: the text or
+   * its playbooks (API 127); absent from an older daemon.
+   */
+  delivery_version?: number
   hidden: boolean
   lead: boolean
   name: string
+
+  /**
+   * The current playbooks assigned to this Bot (API 127).
+   */
+  playbook_ids?: string[]
   queued: boolean
   read_at?: string
   running: boolean
@@ -5980,6 +6077,12 @@ export interface ProjectAssistantCharterResponse {
   limits: ProjectAssistantCharterLimits
   machine_id: string
   pending_proposals: number
+
+  /**
+   * The current version's playbooks with the Bots each is assigned to (API 127);
+   * absent from an older daemon.
+   */
+  playbooks?: ProjectAssistantCharterPlaybook[]
   project_id: string
   selected?: ProjectAssistantCharterVersion
   text: string
@@ -6028,12 +6131,17 @@ export interface ProjectAssistantCharterSummary {
 }
 
 /**
- * One immutable charter version. text is present only on the version a read
- * selected.
+ * One immutable charter version. text and playbooks are present only on the version
+ * a read selected.
  */
 export interface ProjectAssistantCharterVersion {
   author: ProjectAssistantCharterAuthor
   created_at: string
+
+  /**
+   * The version's playbooks (API 127).
+   */
+  playbooks?: ProjectAssistantCharterPlaybook[]
   reason: string
   text?: string
   version: number

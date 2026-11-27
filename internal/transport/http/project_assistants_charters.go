@@ -35,6 +35,10 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer, err = s.charterRestore(w, r)
 	case "POST " + chartersPath + "/remove":
 		answer, err = s.charterRemove(w, r)
+	case "PUT " + chartersPath + "/playbook":
+		answer, err = s.charterPlaybookSave(w, r)
+	case "POST " + chartersPath + "/playbook-remove":
+		answer, err = s.charterPlaybookRemove(w, r)
 	case "GET " + chartersPath + "/readers":
 		answer, err = s.charterReaders(r)
 	case "GET " + chartersPath + "/proposals":
@@ -61,7 +65,8 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 
 func charterLimits() contract.ProjectAssistantCharterLimits {
 	return contract.ProjectAssistantCharterLimits{TextBytes: pa.MaxCharterTextBytes, Versions: pa.MaxCharterVersions, Proposals: pa.MaxCharterProposals,
-		ReasonBytes: pa.MaxCharterReasonBytes, RequestBytes: pa.MaxCharterRequestBytes}
+		ReasonBytes: pa.MaxCharterReasonBytes, RequestBytes: pa.MaxCharterRequestBytes, PlaybookTextBytes: pa.MaxCharterPlaybookTextBytes, Playbooks: pa.MaxCharterPlaybooks,
+		PlaybookTitleBytes: pa.MaxCharterPlaybookTitleBytes, PlaybookBots: pa.MaxCharterPlaybookBots, DocumentBytes: pa.MaxCharterDocumentBytes}
 }
 
 func charterTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
@@ -70,6 +75,7 @@ func wireCharterVersion(v pa.CharterVersion, text bool) contract.ProjectAssistan
 	out := contract.ProjectAssistantCharterVersion{Version: v.Version, Author: contract.ProjectAssistantCharterAuthor(v.Author), Reason: v.Reason, CreatedAt: charterTime(v.CreatedAt)}
 	if text {
 		out.Text = v.Text
+		out.Playbooks = wirePlaybooks(v.Playbooks)
 	}
 	return out
 }
@@ -166,7 +172,7 @@ func (s *Server) charterAnswer(ctx context.Context, machine, project string, sel
 		return contract.ProjectAssistantCharterResponse{}, err
 	}
 	out := contract.ProjectAssistantCharterResponse{ContractVersion: pa.ContractVersion, MachineID: machine, ProjectID: project, Version: current.Version, Text: current.Text,
-		History: make([]contract.ProjectAssistantCharterVersion, 0, len(history)), PendingProposals: int64(len(proposals)), Limits: charterLimits()}
+		Playbooks: wirePlaybooks(current.Playbooks), History: make([]contract.ProjectAssistantCharterVersion, 0, len(history)), PendingProposals: int64(len(proposals)), Limits: charterLimits()}
 	for _, v := range history {
 		out.History = append(out.History, wireCharterVersion(v, false))
 	}
@@ -298,7 +304,11 @@ func (s *Server) charterReaders(r *http.Request) (contract.ProjectAssistantChart
 		if b.ProjectID != project {
 			continue
 		}
-		reader := contract.ProjectAssistantCharterReader{BotID: b.BotID, Name: b.Name, Lead: b.Lead, Hidden: b.Hidden, Running: b.Running, Queued: b.Queued}
+		reader := contract.ProjectAssistantCharterReader{BotID: b.BotID, Name: b.Name, Lead: b.Lead, Hidden: b.Hidden, Running: b.Running, Queued: b.Queued,
+			DeliveryVersion: current.DeliveryVersion(b.BotID), PlaybookIds: []string{}}
+		for _, p := range current.PlaybooksFor(b.BotID) {
+			reader.PlaybookIds = append(reader.PlaybookIds, p.ID)
+		}
 		if read, ok := reads[b.BotID]; ok {
 			reader.Version, reader.TurnID, reader.ReadAt = read.Version, read.TurnID, charterTime(read.At)
 		}

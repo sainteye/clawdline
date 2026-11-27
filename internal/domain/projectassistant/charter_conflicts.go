@@ -104,6 +104,10 @@ func ValidateCharterConflict(c CharterConflict) error {
 		if c.Path == "" || path.IsAbs(c.Path) || strings.HasPrefix(c.Path, `\`) || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(c.Path, ":") || !validConflictText(c.Path, true) || strings.Contains(c.Path, "\n") {
 			return fail(Invalid, "path")
 		}
+	case ConflictInPlaybook:
+		if !strings.HasPrefix(c.Path, "pb-") || len(c.Path) > MaxCharterPlaybookIDBytes || !validOneLine(c.Path) {
+			return fail(Invalid, "path")
+		}
 	default:
 		return fail(Invalid, "source")
 	}
@@ -135,8 +139,8 @@ func ValidateCharterConflict(c CharterConflict) error {
 func CharterCheck(version int64) string {
 	v := strconv.FormatInt(version, 10)
 	return "<charter_check version=\"" + v + "\">\n" +
-		"Before you answer, compare version " + v + " of the team charter once with your own memory, your instructions and any playbook or workspace file your instructions tell you to follow. For each sentence of yours the charter contradicts, call report_charter_conflict once with the exact sentence, the exact charter sentence and its section. Change nothing yourself: the person decides on the charter page. Do not mention this check unless you found something; then continue with the request below. " +
-		"回答前，請把第 " + v + " 版團隊章程與你的記憶、指示，以及指示要你遵循的 playbook 或工作區檔案對照一次。每找到一句和章程矛盾的話，就呼叫一次 report_charter_conflict，填入你的原句、章程原句與所在段落。不要自己修改，由使用者在章程頁決定。沒有發現就不必提起這次對照，接著處理下面的請求。\n" +
+		"Before you answer, compare version " + v + " of the team charter once with the playbooks it assigns to you, your own memory, your instructions and any workspace file your instructions tell you to follow. For a sentence in a charter playbook use source playbook with the playbook id as path. For each sentence of yours the charter contradicts, call report_charter_conflict once with the exact sentence, the exact charter sentence and its section. Change nothing yourself: the person decides on the charter page. Do not mention this check unless you found something; then continue with the request below. " +
+		"回答前，請把第 " + v + " 版團隊章程與它指派給你的 playbook、你的記憶、指示，以及指示要你遵循的工作區檔案對照一次；章程 playbook 裡的句子，source 填 playbook、path 填 playbook id。每找到一句和章程矛盾的話，就呼叫一次 report_charter_conflict，填入你的原句、章程原句與所在段落。不要自己修改，由使用者在章程頁決定。沒有發現就不必提起這次對照，接著處理下面的請求。\n" +
 		"</charter_check>\n\n"
 }
 
@@ -187,6 +191,8 @@ func CharterFixContext(f CharterFix) string {
 	switch f.Source {
 	case ConflictInWorkspaceFile:
 		where = "the workspace file " + f.Path
+	case ConflictInPlaybook:
+		where = "the charter playbook " + f.Path + " (only the person can edit it: tell them the replacement instead of editing a file)"
 	case ConflictInMemory:
 		where = "your memory"
 		if f.MemoryEntryID != "" {

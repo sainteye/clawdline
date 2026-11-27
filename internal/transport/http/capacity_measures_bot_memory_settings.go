@@ -1,6 +1,7 @@
 package http
 
 import (
+	"database/sql"
 	"errors"
 	"maps"
 	"sync"
@@ -11,6 +12,8 @@ import (
 type charterCapacityUsage struct {
 	versions, proposals, projects, textBytes, reasonBytes int64
 	openConflicts, handledConflicts, conflictBytes        int64
+	playbooks, playbookText, playbookTitle, playbookBots  int64
+	playbookID, documentBytes                             int64
 }
 
 func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
@@ -47,6 +50,9 @@ func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
 	if err != nil {
 		return usage, errors.New("Bot charter rows cannot be read")
 	}
+	if err = readPlaybookCapacity(db, &usage); err != nil {
+		return usage, err
+	}
 	var conflicts int
 	if err = db.QueryRow(`SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='project_assistant_charter_conflicts'`).Scan(&conflicts); err != nil {
 		return usage, errors.New("Bot charter conflict table cannot be inspected")
@@ -64,6 +70,36 @@ func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
 		return usage, errors.New("Bot charter conflict rows cannot be read")
 	}
 	return usage, nil
+}
+
+// readPlaybookCapacity reads the playbooks of every retained version, when
+// the version table has the playbook column yet.
+func readPlaybookCapacity(db interface {
+	QueryRow(string, ...any) *sql.Row
+}, usage *charterCapacityUsage) error {
+	var column int
+	if err := db.QueryRow(`SELECT count(*) FROM pragma_table_info('project_assistant_charter_versions') WHERE name='playbooks'`).Scan(&column); err != nil {
+		return errors.New("Bot charter playbook column cannot be inspected")
+	}
+	if column == 0 {
+		return nil
+	}
+	err := db.QueryRow(`WITH p AS (
+		SELECT v.machine, v.project, v.version, octet_length(v.text) AS charter_bytes,
+			octet_length(json_extract(e.value,'$.text')) AS text_bytes, octet_length(json_extract(e.value,'$.title')) AS title_bytes,
+			octet_length(json_extract(e.value,'$.id')) AS id_bytes, json_array_length(e.value,'$.bot_ids') AS bots
+		FROM project_assistant_charter_versions v, json_each(v.playbooks) e
+	), per AS (
+		SELECT count(*) AS n, max(charter_bytes) + sum(text_bytes) AS document FROM p GROUP BY machine, project, version
+	)
+	SELECT coalesce((SELECT max(n) FROM per), 0), coalesce((SELECT max(text_bytes) FROM p), 0), coalesce((SELECT max(title_bytes) FROM p), 0),
+		coalesce((SELECT max(bots) FROM p), 0), coalesce((SELECT max(id_bytes) FROM p), 0),
+		max(coalesce((SELECT max(document) FROM per), 0), coalesce((SELECT max(octet_length(text)) FROM project_assistant_charter_versions), 0))`).
+		Scan(&usage.playbooks, &usage.playbookText, &usage.playbookTitle, &usage.playbookBots, &usage.playbookID, &usage.documentBytes)
+	if err != nil {
+		return errors.New("Bot charter playbooks cannot be read")
+	}
+	return nil
 }
 
 func (s *Server) withCharterCapacityMeasures(measures map[string]func() capacity.Reading) map[string]func() capacity.Reading {
@@ -87,6 +123,12 @@ func (s *Server) withCharterCapacityMeasures(measures map[string]func() capacity
 		"bots.charter_conflicts_resolved": charter(func(u charterCapacityUsage) int64 { return u.handledConflicts },
 			"largest kept handled or superseded charter conflict report count per Project and machine"),
 		"bots.charter_conflict_sentence_bytes": charter(func(u charterCapacityUsage) int64 { return u.conflictBytes }, "largest quoted sentence, heading, path or entry id of a kept conflict report in UTF-8 bytes"),
+		"bots.charter_playbooks":               charter(func(u charterCapacityUsage) int64 { return u.playbooks }, "largest playbook count of one retained charter version"),
+		"bots.charter_playbook_text_bytes":     charter(func(u charterCapacityUsage) int64 { return u.playbookText }, "largest retained playbook text in UTF-8 bytes"),
+		"bots.charter_playbook_title_bytes":    charter(func(u charterCapacityUsage) int64 { return u.playbookTitle }, "largest retained playbook title in UTF-8 bytes"),
+		"bots.charter_playbook_bots":           charter(func(u charterCapacityUsage) int64 { return u.playbookBots }, "largest count of Bots one retained playbook is assigned to"),
+		"bots.charter_playbook_id_bytes":       charter(func(u charterCapacityUsage) int64 { return u.playbookID }, "largest retained daemon-issued playbook identifier in bytes"),
+		"bots.charter_document_bytes":          charter(func(u charterCapacityUsage) int64 { return u.documentBytes }, "largest retained charter text plus all its playbook text in UTF-8 bytes"),
 		"bots.charter_request_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-change-request text guard; accepted text belongs to Bot conversation storage"}
 		},

@@ -210,10 +210,53 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   ~380px side panel (a full-screen sheet on a phone) lists one card per report with
   以章程為準，改掉它的那一句, 改章程 and 先不管, the count of Bots that reported nothing, and the
   plain warning that each report is that Bot's own judgment and may miss things.
+- **Playbooks** (API 127). A playbook is a named Markdown document that belongs to the charter
+  and is assigned to some of the Project's Bots (章程管理裡的 playbook). It is part of the charter
+  document: creating, editing, reassigning or removing one saves a new charter version authored by
+  `person`, so history, restore, readers and the conflict check cover it. Its `id` (`pb-` and 16
+  hex digits) is issued by the daemon and stays the same across versions; its title is one line.
+  A Project without a charter cannot hold one (`pa_invalid`, field `charter`); only Bots of the
+  same Project can be assigned (`pa_invalid`, field `bot_ids`). Saving the charter text, applying a
+  lead proposal and the template create keep the current playbooks, so a client that knows nothing
+  of playbooks never removes them; restoring a version brings back that version's text and
+  playbooks; removing the charter removes them too.
+  - *Delivery.* The daemon delivers a Bot only the playbooks assigned to it, inside the same
+    `<team_charter>` or `<team_charter_update>` block, after the charter text and a bilingual rule
+    giving the order: charter, then the Bot's playbooks, then its own instructions, then its
+    memory. Each appears as `<playbook id="…" title="…">…</playbook>`. A private background
+    helper hears its owner's playbooks.
+  - *Delivery version.* What a Bot hears changes at its own version: the newest charter version at
+    which the text changed or the playbooks it hears changed. Each version row stores this at write
+    time (`text_version`, and `deliveries` {bot: version} for Bots whose playbooks changed after the
+    text), so a prompt never reads history. A text change moves every Bot; a playbook change moves
+    only the Bots it was or is assigned to, so editing one re-delivers once to the Bots it concerns
+    and an unassigned Bot hears the charter without it. The binding's charter version, the reader
+    row, the `<charter_check>` and a conflict report's version are all this per-Bot number.
+  - *Who has read it.* `GET …/readers` adds each Bot's `delivery_version` and `playbook_ids`; a Bot
+    has heard its latest content when its read `version` is at least its `delivery_version`.
+  - *Conflicts.* The check also asks the Bot to compare the charter with its playbooks; a sentence
+    in one is reported with source `playbook` and the playbook id as `path`. `follow_charter` on such
+    a report replaces the sentence when it appears exactly once in that playbook, as a new charter
+    version authored by the person; otherwise it hands the report to the Bot as a `charter_fix`
+    turn. A report is current when its version is the reporting Bot's delivery version.
+  - *Routes and words.* `PUT …/playbook` with `machine_id, project_id, expected_version,
+    idempotency_key, playbook {id?, title, text, bot_ids}, reason` creates (no id) or replaces (an
+    id) one playbook; `POST …/playbook-remove` with `id, expected_version`. Both answer the charter
+    as `GET …/charter` does, which now carries `playbooks` (and `selected.playbooks` for a requested
+    version). A stale base is `pa_stale_version`, field `charter_version`. The Cloud words are
+    `project-assistants.charter-playbook-save` and `project-assistants.charter-playbook-remove`.
+  - *Limits.* 16 KiB of text per playbook, 120 bytes per title, 64 Bots per playbook, 20 playbooks
+    per charter version and 128 KiB for one version's text plus all its playbooks; the 256 KiB
+    body bound covers a full playbook write even when every character is escaped.
 - **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
   Bot's own record, keyed by machine and Project. They were added without a schema version bump,
   like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops
   the recorded charter version, which only means the next prompt carries the charter once more.
+  The version table's `playbooks`, `text_version` and `deliveries` columns were added the same way,
+  as `ALTER TABLE … ADD COLUMN` with defaults when missing; a row saved before them reads as no
+  playbooks whose text changed at its own version. An older daemon reads charters without the
+  playbooks and never delivers them; a version it saves takes the column defaults, so it carries no
+  playbooks and the current charter loses them until a newer daemon restores the version before it.
 
 ## Use a Bot
 

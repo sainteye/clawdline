@@ -42,7 +42,9 @@ func (s *Server) charterConflictsAnswer(ctx context.Context, machine, project st
 	if err != nil {
 		return out, err
 	}
-	reported, err := store.ReportedBots(ctx, machine, project, current.Version)
+	// Each Bot compares the charter as it heard it, so its reports and checks
+	// are current at its own delivery version.
+	reported, err := store.ReportedVersions(ctx, machine, project)
 	if err != nil {
 		return out, err
 	}
@@ -52,7 +54,8 @@ func (s *Server) charterConflictsAnswer(ctx context.Context, machine, project st
 			continue
 		}
 		names[b.BotID] = b.Name
-		if b.ProjectID == project && current.Version > 0 && checks[b.BotID] == current.Version && !reported[b.BotID] {
+		delivered := current.DeliveryVersion(b.BotID)
+		if b.ProjectID == project && delivered > 0 && checks[b.BotID] == delivered && !reported[b.BotID][delivered] {
 			out.CheckedWithoutReport++
 		}
 	}
@@ -62,7 +65,7 @@ func (s *Server) charterConflictsAnswer(ctx context.Context, machine, project st
 			resolved = charterTime(c.ResolvedAt)
 		}
 		out.Conflicts = append(out.Conflicts, contract.ProjectAssistantCharterConflict{ID: c.ID, BotID: c.BotID, BotName: names[c.BotID], TurnID: c.TurnID, Version: c.Version,
-			Outdated: c.Version != current.Version, Source: contract.ProjectAssistantCharterConflictSource(c.Source), Path: c.Path, MemoryEntryID: c.MemoryEntryID,
+			Outdated: c.Version != current.DeliveryVersion(c.BotID), Source: contract.ProjectAssistantCharterConflictSource(c.Source), Path: c.Path, MemoryEntryID: c.MemoryEntryID,
 			BotSentence: c.BotSentence, CharterSentence: c.CharterSentence, Section: c.Section, Suggested: c.Suggested,
 			State: contract.ProjectAssistantCharterConflictState(c.State), CreatedAt: charterTime(c.CreatedAt), ResolvedAt: resolved})
 	}
@@ -88,6 +91,7 @@ const (
 	planCharter      = "charter"
 	planInstructions = "instructions"
 	planMemory       = "memory:"
+	planPlaybook     = "playbook"
 	planBot          = "bot"
 )
 
@@ -154,9 +158,9 @@ func (s *Server) resolveCharterConflict(ctx context.Context, machine, project, i
 }
 
 // followCharterPlan decides who changes the Bot's sentence. The daemon itself
-// replaces it in a short memory fact or in the instructions when the
-// sentence appears there exactly once; a topic note, a workspace file, or a
-// sentence that is not there exactly once goes to the Bot.
+// replaces it in a short memory fact, the instructions or a charter playbook
+// when the sentence appears there exactly once; a topic note, a workspace
+// file, or a sentence that is not there exactly once goes to the Bot.
 func followCharterPlan(ctx context.Context, store *projectassistantstore.Store, machine string, c pa.CharterConflict) (string, error) {
 	key := pa.BotKey{MachineID: machine, BotID: c.BotID}
 	switch c.Source {
@@ -175,6 +179,14 @@ func followCharterPlan(ctx context.Context, store *projectassistantstore.Store, 
 		}
 		if ok {
 			return planMemory + entry.ID, nil
+		}
+	case pa.ConflictInPlaybook:
+		current, err := store.Charter(ctx, machine, c.ProjectID)
+		if err != nil {
+			return "", err
+		}
+		if p, ok := current.Playbook(c.Path); ok && strings.Count(p.Text, c.BotSentence) == 1 {
+			return planPlaybook, nil
 		}
 	}
 	return planBot, nil
@@ -234,6 +246,32 @@ func followCharter(ctx context.Context, store *projectassistantstore.Store, serv
 				break
 			}
 			_, _, err = service.Edit(ctx, command(pa.EditOperation), pa.EditBot{ExpectedVersion: bot.Version, Name: bot.Name, Appearance: bot.Appearance, Instructions: text})
+			if err == nil {
+				return pa.ConflictFixed, nil
+			}
+			if pa.Code(err) != pa.StaleVersion {
+				return "", err
+			}
+		}
+	case res.Plan == planPlaybook:
+		// The playbook is the person's, so the replacement is a new charter
+		// version written as theirs.
+		for attempt := 0; attempt < 3; attempt++ {
+			current, err := store.Charter(ctx, machine, c.ProjectID)
+			if err != nil {
+				return "", err
+			}
+			p, ok := current.Playbook(c.Path)
+			text, n := pa.ReplaceExactlyOnce(p.Text, c.BotSentence, c.Suggested)
+			if (!ok || n == 0) && res.Repeated {
+				return pa.ConflictFixed, nil
+			}
+			if !ok || n != 1 {
+				break
+			}
+			p.Text = text
+			_, err = store.SaveCharterPlaybook(ctx, projectassistantstore.CharterPlaybookWrite{MachineID: machine, ProjectID: c.ProjectID, ExpectedVersion: current.Version,
+				Playbook: p, Author: pa.CharterByPerson, IdempotencyKey: "charter-fix-" + idem, At: time.Now()})
 			if err == nil {
 				return pa.ConflictFixed, nil
 			}
