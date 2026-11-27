@@ -7009,8 +7009,8 @@ type ProjectAssistantReadViewHead struct {
 // Exactly one payload matching kind. Internal per-prefix cursor/failure data
 // are omitted.
 type ProjectAssistantReadViewItem struct {
-	// Immutable admission message anchor for timeline rows; zero for other
-	// collections.
+	// Immutable admission message anchor for timeline rows and memory proposal
+	// summaries. Zero when absent.
 	AnchorMessageSeq int64                  `json:"anchor_message_seq"`
 	Event            *ProjectAssistantEvent `json:"event,omitempty"`
 	ID               string                 `json:"id"`

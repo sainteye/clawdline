@@ -571,6 +571,8 @@ func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQ
  'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),
  'kind',json_extract(p.value,'$.kind'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision'
  THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
+ 'anchor_message_seq',CASE WHEN coalesce(json_extract(p.value,'$.decision.memory'),'')<>''
+ THEN json_extract(p.value,'$.anchor_message_seq') END,
  'expires_at',json_extract(p.value,'$.expires_at')) j
  FROM a,fact_permissions p WHERE p.type='object' AND (json_extract(p.value,'$.state')='pending'
  OR (json_extract(p.value,'$.state')='answered' AND json_extract(p.value,'$.kind')='decision'
@@ -614,6 +616,10 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		}
 		if offer.Kind == pa.DecisionOfferKind && offer.Decision != nil {
 			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Decision.Question, pa.DecisionOfferKind
+			if offer.AnchorMessageSeq < 0 || offer.AnchorMessageSeq > out.Head.Conversation.LastMessageSeq {
+				return failure(pa.Invalid, "memory_anchor_message_seq")
+			}
+			item.AnchorMessageSeq = offer.AnchorMessageSeq
 		}
 		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "permissions", ID: id})
 		out.Items = append(out.Items, item)

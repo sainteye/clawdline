@@ -242,9 +242,10 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 		t.Fatalf("permission summaries = %v, want saved and skipped memory cards alongside the pending offer", ids)
 	}
 	for i, want := range []pa.PermissionOffer{memory, skipped} {
-		summary := page.Items[i].PermissionSummary
-		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question {
-			t.Fatalf("answered memory summary = %+v", summary)
+		item := page.Items[i]
+		summary := item.PermissionSummary
+		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question || item.AnchorMessageSeq != want.AnchorMessageSeq {
+			t.Fatalf("answered memory summary = %+v, anchor = %d", summary, item.AnchorMessageSeq)
 		}
 		detailQuery := q
 		detailQuery.Request.Mode, detailQuery.Request.Cursor, detailQuery.Request.PageSize = pa.ReadViewDetail, summary.DetailCursor, 1
@@ -253,6 +254,9 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 		if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &want) {
 			t.Fatalf("answer detail = %+v, want %+v", detail.Items, want)
 		}
+	}
+	if page.Items[2].AnchorMessageSeq != 0 {
+		t.Fatalf("ordinary decision unexpectedly has a timeline anchor: %+v", page.Items[2])
 	}
 }
 

@@ -6,6 +6,8 @@ import {build} from "esbuild"
 import React from "react"
 import {renderToStaticMarkup} from "react-dom/server"
 import type * as W from "@clawdline/contract"
+// @ts-expect-error Node executes source extensions.
+import {answeredMemoryRows,memoryCardsInSection} from "./chat-items.ts"
 
 // A Bot asked by another Bot to get the person's decision: the asked Bot (Beacon)
 // shows the question under the exchange's capsule, and the asking Bot (Atlas)
@@ -121,6 +123,35 @@ test("memory proposals use localized controls and show the confirmed detail whil
       }
     }
   }
+})
+
+test("answered memory cards leave the bottom while pending memory stays there",()=>{
+  const card=(id:string,state:W.ProjectAssistantPermissionState,title:string,tool_kind="decision")=>
+    ({summary:{...summary(state),id,title,tool_kind,turn_id:"",anchor_message_seq:1},identity:id,offer:undefined})
+  const saved=card("saved","answered","Save this to memory?")
+  const pending=card("pending","pending","Save this to memory?")
+  const approval=card("approval","pending","Approve a tool","execute")
+  const cards=[saved,pending,approval]
+  assert.deepEqual(memoryCardsInSection(cards).map(card=>card.summary.id),[pending.summary.id])
+})
+
+test("memory replies render at their proposal anchor alongside newer messages",async()=>{
+  const {ChatRows,DecisionCard,words}=await load(),w=words("en")
+  const question="Save this to memory?"
+  const old:W.ProjectAssistantMessage={id:"old",seq:1,at,kind:"user",text:"Original message",turn_id:"t",quote_message_id:"",fence:fence(beacon)}
+  const newer:W.ProjectAssistantMessage={...old,id:"new",seq:2,at:"2026-11-23T00:02:00Z",text:"Newer message"}
+  const messages=timeline(old,newer)
+  const memoryOffer={...offer("answered"),turn_id:"",selected_option_id:"reply-memory-save",decision:{question,memory:"The meeting starts at nine."}}
+  const card={summary:{...summary(),turn_id:"",title:question,anchor_message_seq:1},offer:memoryOffer}
+  const rendered=renderToStaticMarkup(React.createElement(ChatRows,{w,language:"en",timeline:[...messages,...answeredMemoryRows([card],messages,false)],
+    renderMemoryCard:(id:string)=>id===card.summary.id?React.createElement(DecisionCard,{summary:card.summary,offer:card.offer,enabled:true,onAnswer:async()=>{},askerName:"Beacon",w}):null}))
+  const before=rendered.indexOf(old.text),memory=rendered.indexOf("Saved to memory"),after=rendered.indexOf(newer.text)
+  assert.ok(before>=0&&before<memory&&memory<after,rendered)
+  assert.doesNotMatch(rendered,/Reply yourself|Don't save/)
+  assert.deepEqual(answeredMemoryRows([card],timeline(newer),true),[],"an older card waits for history")
+
+  const legacy={summary:{...card.summary,state:"answered" as const,anchor_message_seq:0,expires_at:"2026-11-24T00:01:00Z"},offer:undefined}
+  assert.equal(answeredMemoryRows([legacy],messages,false)[0]?.anchor_message_seq,old.seq,"older sources use the proposal time")
 })
 
 test("only a decision whose exchange capsule is loaded moves under it; others stay in the permission section",async()=>{
