@@ -25,6 +25,9 @@ type Daemon struct {
 	// RetryEvery replaces AutoApplyRetrySecondsLimit (tests).
 	RetryEvery time.Duration
 
+	// from names the release at startup, even if the supervisor later replaces Exe.
+	from string
+
 	// wg is the background Execute, so a test or a shutdown can wait for it.
 	wg sync.WaitGroup
 	// waiting is set while an auto-apply that found a busy session looks
@@ -35,7 +38,7 @@ type Daemon struct {
 // NewDaemon is the daemon's updater for the release exe runs from.
 func NewDaemon(env Env, exe string) *Daemon {
 	from, _ := Running(env.Layout, exe)
-	return &Daemon{Env: env, Exe: exe, Checker: &Checker{Env: env, Channel: ChannelFor(from)}}
+	return &Daemon{Env: env, Exe: exe, from: from, Checker: &Checker{Env: env, Channel: ChannelFor(from)}}
 }
 
 func (d *Daemon) logf(format string, args ...any) {
@@ -49,7 +52,7 @@ func (d *Daemon) logf(format string, args ...any) {
 // Status is GET /v1/update for a release install, from what is held and
 // what is on disk; it never touches the network.
 func (d *Daemon) Status() contract.UpdateStatus {
-	from, _ := Running(d.Env.Layout, d.Exe)
+	from := d.from
 	commit, at := buildOf(d.Env.Layout, from)
 	out := contract.UpdateStatus{
 		InstallKind: contract.UpdateInstallKindRelease,

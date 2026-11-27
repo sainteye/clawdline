@@ -13,6 +13,13 @@ import (
 // its LaunchAgent still names service/clawdline, but this CLI hands serve to
 // the dedicated signed daemon before it opens state or listens on a port.
 func namedDaemonPath(exe string, layout install.Layout) (string, error) {
+	if filepath.Clean(exe) == filepath.Clean(layout.ServiceBin) {
+		detached, err := layout.DetachServiceBinary()
+		if detached {
+			return layout.ServiceBin, nil
+		}
+		return "", err
+	}
 	if filepath.Base(exe) == install.DaemonBinary {
 		return "", nil
 	}
@@ -22,6 +29,9 @@ func namedDaemonPath(exe string, layout install.Layout) (string, error) {
 		}
 		if layout.ServiceExecutable(name) == layout.ServiceBin {
 			if err := layout.InstallServiceBinary(name); err != nil {
+				return "", err
+			}
+			if _, err := layout.DetachServiceBinary(); err != nil {
 				return "", err
 			}
 			return layout.ServiceBin, nil

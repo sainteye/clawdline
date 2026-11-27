@@ -36,9 +36,7 @@ type Layout struct {
 	Releases string
 	Current  string
 	Staging  string
-	// ServiceBin is a real, stable path for the macOS LaunchAgent. It is a
-	// hard link to the selected release, never a symlink through current: TCC
-	// records an unbundled executable by its resolved path.
+	// ServiceBin is the stable executable path for the macOS LaunchAgent.
 	ServiceBin string
 	// BinLink is the `clawdline` on PATH.
 	BinLink string
@@ -151,39 +149,6 @@ func (l Layout) KindOf(exe string) Kind {
 	return KindSourceCheckout
 }
 
-// ServiceRelease identifies the release whose binary is hard-linked at the
-// stable service path. The inode comparison keeps rollback truthful even when
-// current has switched but the supervisor has not installed the next link.
-func (l Layout) ServiceRelease(exe string) (string, Kind) {
-	if filepath.Clean(exe) != filepath.Clean(l.ServiceBin) && filepath.Clean(exe) != filepath.Clean(l.LegacyServiceBin()) {
-		return "", KindNone
-	}
-	service, err := os.Stat(exe)
-	if err != nil {
-		return "", KindNone
-	}
-	current, _ := l.CurrentRelease()
-	if current != "" {
-		if l.serviceMatches(service, current, exe) {
-			return current, kindOfRelease(current)
-		}
-	}
-	entries, err := os.ReadDir(l.Releases)
-	if err != nil {
-		return "", KindNone
-	}
-	for _, entry := range entries {
-		name := entry.Name()
-		if name == current || kindOfRelease(name) == KindNone {
-			continue
-		}
-		if l.serviceMatches(service, name, exe) {
-			return name, kindOfRelease(name)
-		}
-	}
-	return "", KindNone
-}
-
 // LegacyServiceBin remains available for rollback to releases predating the name.
 func (l Layout) LegacyServiceBin() string { return filepath.Join(l.Root, "service", "clawdline") }
 
@@ -196,19 +161,9 @@ func (l Layout) ServiceExecutable(name string) string {
 	return l.LegacyServiceBin()
 }
 
-func (l Layout) serviceMatches(service os.FileInfo, name, exe string) bool {
-	binary := "clawdline"
-	if filepath.Clean(exe) == filepath.Clean(l.ServiceBin) {
-		binary = DaemonBinary
-	}
-	candidate, err := os.Stat(filepath.Join(l.ReleaseDir(name), binary))
-	return err == nil && os.SameFile(service, candidate)
-}
-
-// InstallServiceBinary atomically selects the macOS daemon at a fixed real
-// path. The release remains untouched and available for rollback. Hard links
-// require the service and releases to be on the same filesystem, which they
-// are under one installation root.
+// InstallServiceBinary atomically selects the macOS daemon at a fixed path.
+// The hard link lets older daemons identify their release after a rollback.
+// Current named daemons detach the link before serving.
 func (l Layout) InstallServiceBinary(name string) error {
 	if kindOfRelease(name) == KindNone {
 		return fmt.Errorf("%q is not a release or commit name", name)

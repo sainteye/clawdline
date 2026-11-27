@@ -27,9 +27,12 @@ up.
 ## Release-day procedure for an installed Mac
 
 The macOS LaunchAgent uses `<install-root>/service/clawdline-daemon`, a stable real
-path selected atomically from the installed release. TCC records an unbundled
-daemon's Automation permission against that path, so the version directory
-can change without changing the path shown to TCC. Service installations keep
+path selected atomically from the installed release. Before serving, the named
+daemon replaces the installer's hard link with an independent copy of the signed
+executable and re-execs it. macOS can resolve a hard-linked process to either
+name, including a version directory, and record a separate Automation entry.
+The updater can still roll back to an older executable that expects a hard link.
+Service installations keep
 the existing App bundle when its native shell revision is unchanged; the
 daemon serves the current web console. A native shell change replaces the App
 and needs an authorized Developer ID Application signature to preserve its
