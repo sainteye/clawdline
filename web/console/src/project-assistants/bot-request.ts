@@ -7,12 +7,13 @@ import type {Words} from "./words"
  * a state the daemon did not answer.
  */
 
-export type BotRequestProgress = "in_progress" | "waiting" | "done" | "cancelled" | "merged"
+export type BotRequestProgress = "stalled" | "in_progress" | "waiting" | "done" | "cancelled" | "merged"
 
 /** The card's light. An unknown word from a newer daemon falls back to the card's own state. */
 export function progressOf(card: Pick<W.BotRequestView, "progress_state" | "state" | "waiting">): BotRequestProgress {
   switch (card.progress_state) {
     case "waiting_for_you": return "waiting"
+    case "stalled": return "stalled"
     case "in_progress": return "in_progress"
     case "done": return "done"
     case "cancelled": return "cancelled"
@@ -23,7 +24,7 @@ export function progressOf(card: Pick<W.BotRequestView, "progress_state" | "stat
 }
 
 export function progressLabel(progress: BotRequestProgress, w: Words): string {
-  return {in_progress: w.requestStateInProgress, waiting: w.requestStateWaiting, done: w.requestStateDone,
+  return {stalled: w.requestStateStalled, in_progress: w.requestStateInProgress, waiting: w.requestStateWaiting, done: w.requestStateDone,
     cancelled: w.requestStateCancelled, merged: w.requestStateMerged}[progress]
 }
 
@@ -33,9 +34,9 @@ export function checklistProgress(card: Pick<W.BotRequestView, "done" | "total">
   return w.requestProgress.replace("{done}", String(card.done)).replace("{total}", String(card.total))
 }
 
-const rank: Record<BotRequestProgress, number> = {waiting: 0, in_progress: 1, done: 2, cancelled: 2, merged: 2}
+const rank: Record<BotRequestProgress, number> = {stalled: 0, waiting: 1, in_progress: 2, done: 3, cancelled: 3, merged: 3}
 
-/** Cards waiting for the person first, then the ones in progress, then closed ones; newest update first within each. */
+/** Stalled cards first, then those waiting for the person, then the ones in progress, then closed ones; newest update first within each. */
 export function sortBotRequests(cards: readonly W.BotRequestView[]): W.BotRequestView[] {
   const at = (card: W.BotRequestView) => { const t = Date.parse(card.updated_at); return Number.isFinite(t) ? t : 0 }
   return [...cards].sort((a, b) => rank[progressOf(a)] - rank[progressOf(b)] || at(b) - at(a) || a.id.localeCompare(b.id))
@@ -220,8 +221,9 @@ export async function writeBotRequest(id: string, action: BotRequestAction, writ
   signal?: AbortSignal, fetcher: Fetcher = fetch): Promise<W.BotRequestWriteResult> {
   let res: Response
   try {
+    const body = Object.fromEntries(Object.entries({...write, idempotency_key: key}).filter(([, value]) => value !== "" && value !== undefined))
     res = await fetcher(`/v1/bot-request/cards/${encodeURIComponent(id)}/${action}`, {method: "POST", credentials: "same-origin", signal,
-      headers: {"Content-Type": "application/json", "Idempotency-Key": key}, body: JSON.stringify(write)})
+      headers: {"Content-Type": "application/json", "Idempotency-Key": key}, body: JSON.stringify(body)})
   } catch {
     throw new BotRequestRefused("unconfirmed")
   }
@@ -230,9 +232,51 @@ export async function writeBotRequest(id: string, action: BotRequestAction, writ
   return body as W.BotRequestWriteResult
 }
 
-/** Cards are read from the local daemon only; a machine reached through Cloud has no wire words for them yet. */
-export function readsBotRequests(source: {authorizationRevision: string} | undefined): boolean {
-  return source?.authorizationRevision === "local"
+type CardSource = {authorizationRevision: string; canBotRequests?(): boolean; botRequestFetch?(): Fetcher}
+
+/** Cards are read from the Bot's own machine: this daemon, or a machine through Cloud from API 130. */
+export function readsBotRequests(source: CardSource | undefined): boolean {
+  return source?.authorizationRevision === "local" || source?.canBotRequests?.() === true
+}
+
+/** The fetch that reaches the source's machine for the card routes, or undefined when it has none. */
+export function botRequestFetcher(source: CardSource | undefined): Fetcher | undefined {
+  if (source?.canBotRequests?.() === true && source.botRequestFetch) return source.botRequestFetch()
+  return source?.authorizationRevision === "local" ? (input, init) => fetch(input, init) : undefined
+}
+
+/** Why a stalled card stopped, in the person's words. */
+export function stalledWords(card: Pick<W.BotRequestView, "stalled_reason">, w: Words): string {
+  switch (card.stalled_reason) {
+    case "work_failed": return w.requestStalledWork
+    case "turn_unsettled": return w.requestStalledTurn
+    case "turn_and_work": return w.requestStalledTurnAndWork
+  }
+  return w.requestStalledOther
+}
+
+/** The open cards a Bot holds, stalled first, and how many it has closed as done. */
+export function heldCards(cards: readonly W.BotRequestView[], bot: string): {open: W.BotRequestView[]; done: W.BotRequestView[]} {
+  const held = cards.filter(card => card.baton.bot === bot)
+  return {open: sortBotRequests(held.filter(card => card.state === "open")), done: sortBotRequests(held.filter(card => card.state === "done"))}
+}
+
+/** Open cards held per Bot id, for the roster's chip. */
+export function heldCounts(cards: readonly W.BotRequestView[]): Map<string, {count: number; progress: BotRequestProgress}> {
+  const out = new Map<string, {count: number; progress: BotRequestProgress}>()
+  for (const card of cards) {
+    if (card.state !== "open" || !card.baton.bot) continue
+    const progress = progressOf(card), known = out.get(card.baton.bot)
+    out.set(card.baton.bot, {count: (known?.count ?? 0) + 1, progress: known && rank[known.progress] <= rank[progress] ? known.progress : progress})
+  }
+  return out
+}
+
+/** Who gave the holder the card: the Bot before it in the chain, or its creator. */
+export function cardFrom(card: Pick<W.BotRequestView, "chain" | "created_by" | "baton">): {actor: string; handed: boolean} {
+  const at = card.chain.lastIndexOf(card.baton.bot)
+  if (at > 0) return {actor: card.chain[at - 1], handed: true}
+  return {actor: card.created_by, handed: false}
 }
 
 export const BOT_WORK_SHOWN_KEY = "clawdline.board.bot-work"

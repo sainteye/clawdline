@@ -577,10 +577,24 @@ export interface BotRequestView {
   id: string
   kind?: string
   merged_into?: string
+
+  /**
+   * in_progress, waiting_for_you, stalled, done, cancelled or merged. stalled is an
+   * open card nobody is working on after its last attempt went wrong;
+   * stalled_reason says how.
+   */
   progress_state: string
   project_id: string
   project_path: string
   split_from?: string
+
+  /**
+   * Set only when progress_state is stalled: work_failed (its latest dispatched
+   * work failed or ended unknown), turn_unsettled (the turn its handoff woke
+   * failed, was stopped or ended unknown, and dispatched nothing) or turn_and_work
+   * (that turn ended unsettled and its work failed).
+   */
+  stalled_reason?: string
 
   /**
    * open, done, cancelled or merged.

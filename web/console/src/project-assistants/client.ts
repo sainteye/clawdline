@@ -33,6 +33,11 @@ export interface SourceClient {
  react?(request:W.ProjectAssistantReactRequest,signal:AbortSignal):Promise<W.ProjectAssistantReceiptResponse>
  /** The machine's Bots tower floor placements (API 97). */
  canTowerFloors?():boolean
+ /** Bot request cards on this source's machine (API 130): reads, and whether the person's writes may be sent. */
+ canBotRequests?():boolean
+ canWriteBotRequests?():boolean
+ /** A fetch for /v1/bot-request/… paths that reaches this source's machine, locally or over Cloud. */
+ botRequestFetch?():(input:string,init?:RequestInit)=>Promise<Response>
  /** The machine's Bots shared settings, read and saved whole with the version read. */
  sharedSettings?(signal:AbortSignal):Promise<SharedSettingsAnswer>
  saveSharedSettings?(request:SharedSettingsWrite,signal:AbortSignal):Promise<SharedSettingsAnswer>

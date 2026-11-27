@@ -456,7 +456,10 @@ test("one word, one list, and every route names a word the table carries", () =>
   assert.equal(CARRIED["session-boards.threads"], "SessionBoards.tsx, captured machine GET /v1/orchestrator/session-boards?view=threads")
   assert.equal(CARRIED["session-boards.change"], "SessionBoards.tsx, captured machine POST /v1/orchestrator/session-boards")
   assert.equal(CARRIED["project-assistants.group-react"], "captured Bot source POST /v1/project-assistants/rooms/groups/{command.key.bot_id}/reactions")
-  assert.equal(Object.keys(CARRIED).length, 345)
+  // A Bots chat reads and acts on its Bot request cards through the captured source.
+  assert.equal(CARRIED["bot-request.cards"], "captured Bot source GET /v1/bot-request/cards")
+  assert.equal(CARRIED["bot-request.write"], "captured Bot source POST /v1/bot-request/cards/{id}/{action}")
+  assert.equal(Object.keys(CARRIED).length, 348)
 })
 
 test("the Cloud coordination panel reads current leases, waits and pauses from its selected machine", async () => {

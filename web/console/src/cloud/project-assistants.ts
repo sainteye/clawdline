@@ -85,6 +85,8 @@ export const PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL = 124
 export const PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL = 127
 /** Charter workflows, workflow proposals, the change-request target and PUT …/workflow (API 128). */
 export const PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL = 128
+/** Bot request cards, their person actions and the stalled light, read from a Bot's own machine (API 130). */
+export const BOT_REQUESTS_API_LEVEL = 130
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -683,6 +685,17 @@ export class ProjectAssistantSourceClient implements SourceClient {
       :route===chartersPath+"/workflow"||route===chartersPath+"/change-request"&&body!==undefined&&"target" in body?PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL
     return this.request<T>(path,s,body,method,true,level)
   }
+  canBotRequests(){try{this.check(new AbortController().signal,false,true,BOT_REQUESTS_API_LEVEL);return true}catch{return false}}
+  canWriteBotRequests(){try{this.check(new AbortController().signal,true,true,BOT_REQUESTS_API_LEVEL);return true}catch{return false}}
+  /** The card routes answer their own JSON and typed refusals; bot-request.ts reads them alike locally and over Cloud. */
+  botRequestFetch(){
+    return async (input:string,init:RequestInit={}) => {
+      const write=(init.method??"GET")!=="GET", signal=init.signal??new AbortController().signal
+      if(!input.startsWith(botRequestPath+"/"))throw notSent(failure("pa_invalid"))
+      try{this.check(signal,write,true,BOT_REQUESTS_API_LEVEL)}catch(error){throw notSent(error)}
+      return this.transport(input,{...init,cache:"no-store"})
+    }
+  }
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   saveTowerFloor(r:W.ProjectAssistantTowerFloorRequest,s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors",s,r,"POST",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
   canModelCatalog(){return (this.grant.apiLevel??0)>=MODEL_CATALOG_API_LEVEL}
@@ -737,6 +750,36 @@ export class ProjectAssistantSourceClient implements SourceClient {
 }
 
 const chartersPath = "/v1/project-assistant-charters"
+const botRequestPath = "/v1/bot-request"
+const BOT_REQUEST_ACTIONS = new Set(["handoff","check","complete","cancel","reopen"])
+/**
+ * The three Bot request card words: the list (bot, state and cursor, each
+ * only when set), one card, and the person's action on a card, whose body
+ * repeats its Idempotency-Key.
+ */
+export function botRequestRelayRequest(url: URL, method: string, init?: RequestInit) {
+  const parts = url.pathname.slice(botRequestPath.length+1).split("/")
+  if (parts[0] !== "cards") throw failure("pa_invalid")
+  if (method === "GET") {
+    if (init?.body != null) throw failure("pa_invalid")
+    if (parts.length === 1) {
+      const q = Object.fromEntries(url.searchParams)
+      if ([...url.searchParams.keys()].some(key => !["bot","state","cursor"].includes(key)) || Object.keys(q).length !== url.searchParams.size ||
+        Object.values(q).some(value => !value) || q.state !== undefined && !["open","done","cancelled","merged"].includes(q.state)) throw failure("pa_invalid")
+      return {word:"bot-request.cards",kind:"read" as const,fields:q as Record<string,unknown>,id:""}
+    }
+    if (parts.length === 2 && parts[1] && !url.search) return {word:"bot-request.card",kind:"read" as const,fields:{id:decodeURIComponent(parts[1])},id:""}
+    throw failure("pa_invalid")
+  }
+  if (method !== "POST" || parts.length !== 3 || !parts[1] || !BOT_REQUEST_ACTIONS.has(parts[2]) || url.search || typeof init?.body !== "string") throw failure("pa_invalid")
+  let body
+  try { body = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
+  const id = decodeURIComponent(parts[1]), action = parts[2]
+  if (!body || typeof body !== "object" || Array.isArray(body) || "id" in body && body.id !== id || "action" in body && body.action !== action ||
+    typeof body.idempotency_key !== "string" || !body.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== body.idempotency_key ||
+    !Number.isSafeInteger(body.expected_version) || body.expected_version < 1) throw failure("pa_invalid")
+  return {word:"bot-request.write",kind:"action" as const,fields:{...body,id,action} as Record<string,unknown>,id:body.idempotency_key as string}
+}
 // The team charter's fifteen Cloud words (docs/project-assistants-cloud-wire.md), each
 // with its exact local query or body. Over Cloud a save always names its reason;
 // optional body fields ride a second shape of the same word.
@@ -791,6 +834,7 @@ export function charterRelayRequest(url: URL, method: string, init?: RequestInit
 
 // The two route families with their own vocabulary tables: browser tabs and team charters.
 function prefixedRelayRequest(url: URL, method: string, init?: RequestInit) {
+  if (url.pathname.startsWith(botRequestPath+"/")) return botRequestRelayRequest(url, method, init)
   if (!url.pathname.startsWith("/v1/browser/")) return charterRelayRequest(url, method, init)
   return browserRelayRequest(url,method,init?.body?JSON.parse(String(init.body)):undefined,new Headers(init?.headers).get("Idempotency-Key")??"")
 }
@@ -837,7 +881,7 @@ function groupRelayFields(action: string, fields: Record<string, unknown>) {
 
 export function assistantRelayRequest(input: string, init?: RequestInit) {
   const url = new URL(input,"http://source.invalid"), method = init?.method ?? "GET"
-  if(url.pathname.startsWith("/v1/browser/")||url.pathname===chartersPath||url.pathname.startsWith(chartersPath+"/"))return prefixedRelayRequest(url,method,init)
+  if(url.pathname.startsWith("/v1/browser/")||url.pathname===chartersPath||url.pathname.startsWith(chartersPath+"/")||url.pathname.startsWith(botRequestPath+"/"))return prefixedRelayRequest(url,method,init)
   if (url.pathname === base+"/roster-events") throw failure("pa_unsupported")
   if (url.pathname === "/v1/projects" && method === "GET") return {word:"projects",kind:"read" as const,fields:{},id:""}
   if (url.pathname === "/v1/project-assistant-targets" && method === "GET") {

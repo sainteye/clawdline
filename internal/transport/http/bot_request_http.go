@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/contract"
 	br "github.com/sainteye/clawdline/internal/domain/botrequest"
@@ -98,6 +99,7 @@ func (s *Server) botRequestList(w http.ResponseWriter, r *http.Request) {
 	for _, c := range cards {
 		page.Cards = append(page.Cards, botRequestView(c, nil))
 	}
+	s.markStalledBotRequests(r, page.Cards)
 	writeJSON(w, page)
 }
 
@@ -112,10 +114,46 @@ func (s *Server) botRequestRead(w http.ResponseWriter, r *http.Request, id strin
 		s.writeBotRequestError(w, err)
 		return
 	}
-	writeJSON(w, botRequestView(c, events))
+	view := []BotRequestView{botRequestView(c, events)}
+	s.markStalledBotRequests(r, view)
+	writeJSON(w, view[0])
+}
+
+// markStalledBotRequests turns the light of each open card nobody is working
+// on into stalled, from its holder's turns and work. Without the Bots host,
+// or when that read fails, the cards keep the light the card alone gives:
+// stalled is claimed only on evidence.
+func (s *Server) markStalledBotRequests(r *http.Request, views []BotRequestView) {
+	var holds []featurestore.BotRequestHold
+	for _, v := range views {
+		if v.State == br.StateOpen && v.ProgressState == br.ProgressInProgress && v.Baton.Bot != "" {
+			holds = append(holds, featurestore.BotRequestHold{CardID: v.ID, Bot: v.Baton.Bot})
+		}
+	}
+	if len(holds) == 0 {
+		return
+	}
+	s.projectAssistants.mu.RLock()
+	host := s.projectAssistants.host
+	s.projectAssistants.mu.RUnlock()
+	if host == nil {
+		return
+	}
+	stalls, err := host.BotRequestStalls(r.Context(), holds)
+	if err != nil {
+		return
+	}
+	for i := range views {
+		if reason := stalls[views[i].ID]; reason != "" {
+			views[i].ProgressState, views[i].StalledReason = br.ProgressStalled, reason
+		}
+	}
 }
 
 type botRequestPersonBody struct {
+	// IdempotencyKey repeats the header when the body comes over Cloud as
+	// project-assistants.bot-request-write; it must name the same key.
+	IdempotencyKey  string    `json:"idempotency_key,omitempty"`
 	ExpectedVersion int64     `json:"expected_version"`
 	ToBot           string    `json:"to_bot,omitempty"`
 	Role            string    `json:"role,omitempty"`
@@ -135,6 +173,10 @@ func (s *Server) botRequestPersonWrite(w http.ResponseWriter, r *http.Request, i
 	}
 	var body botRequestPersonBody
 	if _, ok := readWorkV2Body(w, r, &body); !ok {
+		return
+	}
+	if body.IdempotencyKey != "" && body.IdempotencyKey != key {
+		writeRawRefusal(w, http.StatusBadRequest, br.CodeInvalid, "idempotency_key")
 		return
 	}
 	if body.ExpectedVersion <= 0 {
@@ -190,7 +232,9 @@ func (s *Server) botRequestPersonWrite(w http.ResponseWriter, r *http.Request, i
 		s.writeBotRequestError(w, err)
 		return
 	}
-	writeJSON(w, contract.BotRequestWriteResult{Card: botRequestView(res.Card, events), Changed: res.Changed, Replayed: res.Replayed})
+	view := []BotRequestView{botRequestView(res.Card, events)}
+	s.markStalledBotRequests(r, view)
+	writeJSON(w, contract.BotRequestWriteResult{Card: view[0], Changed: res.Changed, Replayed: res.Replayed})
 }
 
 func (s *Server) writeBotRequestError(w http.ResponseWriter, err error) {

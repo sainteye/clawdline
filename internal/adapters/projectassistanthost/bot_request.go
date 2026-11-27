@@ -8,6 +8,7 @@ import (
 	"time"
 
 	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
+	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -38,6 +39,18 @@ func (h *Host) botRequestCards() botRequestStore {
 		return nil
 	}
 	return h.o.Broker.Store
+}
+
+// BotRequestStalls answers why each held card on this machine is stalled
+// (featurestore.BotRequestStalls); nothing before the Bots store is open.
+func (h *Host) BotRequestStalls(ctx context.Context, holds []featurestore.BotRequestHold) (map[string]string, error) {
+	h.mu.Lock()
+	st := h.store
+	h.mu.Unlock()
+	if st == nil {
+		return nil, nil
+	}
+	return st.BotRequestStalls(ctx, h.o.MachineID, holds)
 }
 
 // botTurnLookup reads the turns and exchanges a creation walks back through.

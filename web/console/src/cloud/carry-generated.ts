@@ -25,6 +25,15 @@ export const CARRIED = {
   "archived-sessions": "GET /v1/sessions/archived",
   board: "GET /v1/board?project=&item=",
   "board-command": "POST /v1/board",
+  // Bots chat: one Bot request card with its history and progress, read from
+  // the Bot's machine.
+  "bot-request.card": "captured Bot source GET /v1/bot-request/cards/{id}",
+  // Bots chat and list: the Bot request cards a Bot holds, with the daemon's
+  // stalled light, read from the Bot's machine.
+  "bot-request.cards": "captured Bot source GET /v1/bot-request/cards",
+  // Bots chat: the person hands on, checks, completes, cancels or reopens a Bot
+  // request card on the Bot's machine.
+  "bot-request.write": "captured Bot source POST /v1/bot-request/cards/{id}/{action}",
   "browser-invite-cancel": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
   "browser-invite-decide": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",
   "browser-invite-list": "BrowserInvites.tsx manager.ask (Devices → a machine → Name and access)",

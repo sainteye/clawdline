@@ -462,12 +462,33 @@ export function fixtureSource(machineID="studio",log:FixtureLog[]=[]) {
   })
 }
 
+/** Synthetic Bot request cards held by studio's bot-2, answered as the card routes answer them. */
+function heldCardsFixture(source:SourceClient,language:string){
+  const zh=language.startsWith("zh"),hour=3_600_000,now=Date.now(),at=(ago:number)=>new Date(now-ago).toISOString()
+  const card=(id:string,title:string,extra:Partial<W.BotRequestView>):W.BotRequestView=>({id,title,project_id:"project",project_path:"/fixture",created_by:"bot-1",created_at:at(5*hour),updated_at:at(hour),
+    authority:[],baton:{bot:"bot-2",role:"maker"},chain:["bot-1","bot-2"],checklist:[],cycle:1,done:0,total:0,progress_state:"in_progress",state:"open",version:2,...extra})
+  const cards=[
+    card("held-ci",zh?"追蹤 GitHub main CI，有紅燈就派修":"Watch GitHub main CI and dispatch a fix on red",{progress_state:"stalled",stalled_reason:"turn_and_work",total:3,updated_at:at(3*hour)}),
+    card("held-export",zh?"匯出報表欄位補查":"Recheck the export fields",{progress_state:"waiting_for_you",waiting:"q1",created_by:"person",chain:["bot-2"],done:3,total:3}),
+    card("held-checks",zh?"整理今天的檢查結果":"Summarize today’s checks",{baton:{bot:"bot-2",role:"reviewer"},done:2,total:4,updated_at:at(300_000)}),
+    ...[1,2,3,4].map(n=>card(`held-done-${n}`,(zh?"已完成的工作 ":"Finished work ")+n,{state:"done",progress_state:"done",updated_at:at(n*24*hour)})),
+  ]
+  const fetcher=async(input:string)=>{
+    const url=new URL(input,"http://fixture.invalid"),id=decodeURIComponent(url.pathname.split("/")[4]??"")
+    if(id){const found=cards.find(c=>c.id===id);return Response.json(found?{...found,events:[]}:{error:"bot_request_not_found"},{status:found?200:404})}
+    const bot=url.searchParams.get("bot"),state=url.searchParams.get("state")
+    return Response.json({cards:cards.filter(c=>(!bot||c.baton.bot===bot||c.chain.includes(bot))&&(!state||c.state===state)),next_cursor:""})
+  }
+  Object.assign(source,{canBotRequests:()=>true,canWriteBotRequests:()=>true,botRequestFetch:()=>fetcher})
+}
+
 export function mountFixture() {
   const log:FixtureLog[]=[],a=fixtureSource("studio",log),b=fixtureSource("notebook",log)
   let sourceList:SourceClient[]=[a,b]
   const params=new URLSearchParams(location.search)
   const root=createRoot(document.getElementById("fixture")!),language=params.get("lang")??"zh-Hant"
   if(params.has("exchange-layout"))a.exchangeLayoutFixture(language,params.get("exchange-layout")==="review")
+  if(params.has("held-cards"))heldCardsFixture(a,language)
   const view=createViewState(window.localStorage)
   let accountKey="fixture-account",hostGeneration=0,opened=false,opener:HTMLElement|null=null
   const paint=()=>root.render(React.createElement(React.Fragment,null,

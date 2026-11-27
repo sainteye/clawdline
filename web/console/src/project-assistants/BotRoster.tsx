@@ -30,6 +30,7 @@ import { rosterIcon } from "./roster-icons"
 import { CharterRosterEntry } from "./CharterRosterRow"
 import type { CharterSummary } from "./charter-api"
 import "./roster-controls.css"
+import { HeldCountsScope } from "./HeldCards"
 export function BotRoster({view="list",onView,tower,rosterScope,items,machines,selected,query,onQuery,machine,onMachine,onSelect,onCreate,onClose,w,language,loading,unavailable,onUnavailable,onRetry,onRefresh,onMore,projectNames,projectIcons,machineNames,hidden,sources=[],current,readerID,onRead,groupsItems,onOpenGroup,onGroupOpenChange,groupRoute,onGroupBack,botActions,saveRoster,newSection,onSettings,charters,selectedCharter,onOpenCharter}: {
   /** Each Project's charter by projectKey; a Project with one shows it as the section's first row. */
   charters?:ReadonlyMap<string,CharterSummary>;selectedCharter?:string|null;onOpenCharter?:(summary:CharterSummary)=>void;
@@ -226,7 +227,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
       })}
     </>
   }
-  return <aside ref={root} className="pa-roster pa-roster-compact" data-sorting={sorting||undefined} aria-label={w.allBots}>
+  return <HeldCountsScope sources={sources}><aside ref={root} className="pa-roster pa-roster-compact" data-sorting={sorting||undefined} aria-label={w.allBots}>
     <Groups sources={sources} items={groupsItems??items} projectNames={projectNames} projectIcons={projectIcons} query={query} machine={machine} selected={selected} onOpenGroup={onOpenGroup} onSelectMember={item=>onSelect(item,true)} onGroupOpenChange={onGroupOpenChange} groupRoute={groupRoute} onGroupBack={onGroupBack}>
       {group=>{
         const createItems:PaMenuItem[]=[]
@@ -262,7 +263,7 @@ export function BotRoster({view="list",onView,tower,rosterScope,items,machines,s
         </>
       }}
     </Groups>
-  </aside>
+  </aside></HeldCountsScope>
 }
 
 function visibleRosterRooms(rows:readonly GroupRosterEntry[],awaitingBots:boolean):readonly GroupRosterEntry[] {

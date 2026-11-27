@@ -508,6 +508,27 @@ func TestEveryOperationIsAnsweredAsItself(t *testing.T) {
 		session: machine, name: "action:dismiss-decision-1",
 		method: "POST", path: "/v1/work/decisions/10000000-0000-4000-8000-000000000001/dismiss",
 	}, {
+		word: "bot-request.cards",
+		body: map[string]any{"type": "bot-request.cards", "session": machine,
+			"request": "req-bot-request-cards", "bot": "bot-one", "state": "open"},
+		session: machine, name: "read:req-bot-request-cards",
+		method: "GET", path: "/v1/bot-request/cards",
+		query: map[string]string{"bot": "bot-one", "state": "open"},
+	}, {
+		word: "bot-request.card",
+		body: map[string]any{"type": "bot-request.card", "session": machine,
+			"request": "req-bot-request-card", "id": "card-one"},
+		session: machine, name: "read:req-bot-request-card",
+		method: "GET", path: "/v1/bot-request/cards/card-one",
+	}, {
+		word: "bot-request.write",
+		body: map[string]any{"type": "bot-request.write", "session": machine,
+			"request": "press-card-1", "idempotency_key": "press-card-1", "id": "card-one", "action": "complete",
+			"expected_version": 4, "reason": "Checked"},
+		session: machine, name: "action:press-card-1",
+		method: "POST", path: "/v1/bot-request/cards/card-one/complete",
+		body2: `{"expected_version":4,"idempotency_key":"press-card-1","reason":"Checked"}`,
+	}, {
 		word: "work.digests",
 		body: map[string]any{"type": "work.digests", "session": machine,
 			"request": "req-work-digests", "kind": "daily"},

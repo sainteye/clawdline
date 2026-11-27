@@ -242,7 +242,7 @@ are reserved. Tables, tool names and wire words are irreversible once shipped (�
 | Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope`; also shipped: `bot_request_forbidden`, `bot_request_invalid`, `bot_request_not_found`, `bot_request_closed`, `bot_request_no_person_authority` |
 | Turn origin | `bot_request_handoff` |
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
-| Cloud wire words | `bot.request.cards`, `bot.request.card` (read); the send-capability word is not named yet |
+| Cloud wire words | `bot-request.cards`, `bot-request.card` (read) and `bot-request.write` (the person's action), API 130 |
 | Outbox effects | kinds `bot_request.done` and `bot_request.done.notice`, both keyed `bot-request-done-<card id>-<cycle>`; `bot_request.handoff`, keyed `bot-request-handoff-<card id>-<version>` |
 | Capacity names | `botrequest.page_rows`, `.merge_hops`, `.receipts` (§10). The register's names allow no underscore in the area, so the area is `botrequest`, not `bot_request` |
 
@@ -712,6 +712,40 @@ The agent routes of §8.3. Editing a card's title or description (§7.3). Settin
 every Bot-to-Bot turn (`pa_disabled` / `bot_request_tools`). The handoff rule in §7.2 deliberately
 grants only card-scoped dispatch in a handoff turn and does not fix that wider defect; if the
 wider fix lands first, the card scope still applies on top of it rather than being replaced.
+
+Built on 2026-11-27 (the cards a Bot holds, the stalled light and Cloud parity, API 130):
+
+- **The cards a Bot holds, at the top of its chat.** The person had not noticed any card: the chat
+  showed only a small line per card, and nothing at all on Cloud or the phone. A Bot that holds open
+  cards now shows one line above its chat, "持有 N 張交辦卡 · N 張停住了 · N 張等你"
+  (`HeldCards.tsx`). It opens a list on a desktop and a bottom sheet at phone width; each card shows
+  its role, who handed it on or created it, "n/m ✓" and the last update. A stalled card says why
+  and offers 叫 <Bot> 重新處理 (puts a request to reread the card in the composer; the person sends
+  it), 交給其他 Bot and 查看卡片 (the detail, opened on its handoff form or as is); a card waiting for
+  the person offers 核對並完成 (the detail, opened on its complete form). The list's foot counts the
+  Bot's done cards and, on this machine, links to the Board. That line replaces the loose card lines
+  that used to sit at the chat's end; the line above a work result card stays.
+- **A roster chip.** A Bot row shows "● N 卡", lit by its most urgent card, from one read of the
+  open cards per machine every 30 seconds while the page is visible.
+- **停住了 (stalled).** `progress_state` is `stalled`, with `stalled_reason`, when the card is
+  open, not waiting for the person, its holder has no turn running or queued that will run on its
+  own, no work dispatched for it is still active, and its last attempt went wrong: its latest
+  dispatched work failed or ended unknown (`work_failed`); or the turn its latest handoff notice
+  woke failed, was stopped or ended unknown and dispatched nothing (`turn_unsettled`); or both, the
+  failed work being that turn's (`turn_and_work`). A queue waiting behind a turn a restart
+  interrupted is not "will run on its own": only the person's next message releases it. A Bot that
+  simply has not acted is not stalled. The daemon's reads decide it
+  (`projectassistantstore.BotRequestStalls`, applied by the card list, the card read and a write's
+  answer); the card alone cannot tell, and Bots' own `bot_request_read` is unchanged. Measured on
+  this machine's data: the card the person asked about was `turn_and_work` (its notice turn ended
+  `unknown` after a restart, nine work reports queued behind it, its one dispatched task failed);
+  the other open card was not stalled.
+- **Cloud.** The console reads and writes cards through the Bot's own source
+  (`SourceClient.botRequestFetch`), so a machine reached through Cloud from API 130 answers the same
+  routes as this daemon. Its three words are decoded from the vocabulary table; a write repeats its
+  Idempotency-Key in the body (`idempotency_key`, which the route checks against the header) and
+  leaves out empty optional fields, so it matches one of the word's exact shapes. A source below
+  API 130 still hides cards, as before. The Board's Bot work section is still local only.
 
 ## 13. Deferred until needed
 

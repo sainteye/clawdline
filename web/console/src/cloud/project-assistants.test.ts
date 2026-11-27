@@ -1539,3 +1539,22 @@ test("an offline machine whose version was never read is offline, not too old", 
   const online: AssistantGrant = {...grant(), apiLevel: undefined, online: true}
   await assert.rejects(make(async () => { calls++; return Response.json({}) }, online).source.sharedSettings(signal()), e => errorCode(e) === "pa_unsupported")
 })
+
+test("Bot request card paths become their three Cloud words, and a write keeps its key", () => {
+  assert.deepEqual(assistantRelayRequest("/v1/bot-request/cards?bot=atlas&state=open"), {word:"bot-request.cards",kind:"read",fields:{bot:"atlas",state:"open"},id:""})
+  assert.deepEqual(assistantRelayRequest("/v1/bot-request/cards"), {word:"bot-request.cards",kind:"read",fields:{},id:""})
+  assert.deepEqual(assistantRelayRequest("/v1/bot-request/cards/c%201"), {word:"bot-request.card",kind:"read",fields:{id:"c 1"},id:""})
+  const body = JSON.stringify({expected_version:3,idempotency_key:"press-1",reason:"Checked"})
+  assert.deepEqual(assistantRelayRequest("/v1/bot-request/cards/c1/complete",{method:"POST",body,headers:{"Idempotency-Key":"press-1"}}),
+    {word:"bot-request.write",kind:"action",fields:{expected_version:3,idempotency_key:"press-1",reason:"Checked",id:"c1",action:"complete"},id:"press-1"})
+  for (const [input, init] of [
+    ["/v1/bot-request/cards?state=paused", undefined],
+    ["/v1/bot-request/cards?bot=", undefined],
+    ["/v1/bot-request/cards?project=p", undefined],
+    ["/v1/bot-request/cards/c1/merge", {method:"POST",body,headers:{"Idempotency-Key":"press-1"}}],
+    ["/v1/bot-request/cards/c1/complete", {method:"POST",body,headers:{"Idempotency-Key":"press-2"}}],
+    ["/v1/bot-request/cards/c1/complete", {method:"POST",body:JSON.stringify({expected_version:0,idempotency_key:"k"}),headers:{"Idempotency-Key":"k"}}],
+    ["/v1/bot-request/cards/c1/complete", {method:"POST",body:JSON.stringify({expected_version:3,idempotency_key:"k",id:"c2"}),headers:{"Idempotency-Key":"k"}}],
+  ] as const) assert.throws(() => assistantRelayRequest(input, init as RequestInit | undefined), `${input} ${init?.body ?? ""}`)
+  assert.ok(["bot-request.cards","bot-request.card","bot-request.write"].every(word => word in CARRIED))
+})

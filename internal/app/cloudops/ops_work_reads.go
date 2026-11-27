@@ -16,6 +16,13 @@ func init() {
 
 		op{name: "work.digests", read: true},
 
+		// Bot request cards, asked by a Bots chat's captured machine source.
+		// The card routes answer their own JSON and typed bot_request_*
+		// refusals, which the console reads as it reads them locally.
+		op{name: "bot-request.cards", read: true},
+		op{name: "bot-request.card", read: true},
+		op{name: "bot-request.write"},
+
 		// Work-system v2 is the console's current Board. These are separate
 		// words because a machine descriptor must be able to say exactly which
 		// reads and person-only writes it implements. Every write is stamped as

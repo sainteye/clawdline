@@ -11,6 +11,9 @@ var generatedDecoders = map[string]genDecoder{
 	"archived-sessions":                  genDecodeArchivedSessions,
 	"board":                              genDecodeBoard,
 	"board-command":                      genDecodeBoardCommand,
+	"bot-request.card":                   genDecodeBotRequestCard,
+	"bot-request.cards":                  genDecodeBotRequestCards,
+	"bot-request.write":                  genDecodeBotRequestWrite,
 	"browser-invite-cancel":              genDecodeBrowserInviteCancel,
 	"browser-invite-decide":              genDecodeBrowserInviteDecide,
 	"browser-invite-list":                genDecodeBrowserInviteList,
@@ -552,6 +555,112 @@ func genDecodeBoardCommand(b body) (plan, LocalRequest, bool) {
 	req := LocalRequest{Method: "POST", Path: path}
 	req.Header = asDevice()
 	req.Body = b.genObject("command")
+	return p, req, true
+}
+
+// genDecodeBotRequestCard is the `bot-request.card` row's decode.
+func genDecodeBotRequestCard(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/bot-request/cards/" + segment(genText(b["id"]))
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeBotRequestCards is the `bot-request.cards` row's decode.
+func genDecodeBotRequestCards(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "request", "session"},
+		[]string{"type", "request", "session", "state"},
+		[]string{"type", "bot", "request", "session"},
+		[]string{"type", "bot", "request", "session", "state"},
+		[]string{"type", "bot", "cursor", "request", "session", "state"},
+		[]string{"type", "cursor", "request", "session", "state"},
+		[]string{"type", "bot", "cursor", "request", "session"},
+		[]string{"type", "cursor", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("bot", genRule{kind: "string", maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("cursor", genRule{kind: "string", maxBytes: 1024}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("state", genRule{kind: "string", enum: []string{"", "open", "done", "cancelled", "merged"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := machinePlan(b)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/bot-request/cards"
+	req := LocalRequest{Method: "GET", Path: path}
+	req.Query = b.genQuery(map[string]genValue{"bot": genValue{from: "bot", omitEmpty: true}, "cursor": genValue{from: "cursor", omitEmpty: true}, "state": genValue{from: "state", omitEmpty: true}})
+	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeBotRequestWrite is the `bot-request.write` row's decode.
+func genDecodeBotRequestWrite(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "action", "expected_version", "id", "idempotency_key", "note", "request", "role", "session", "to_bot"},
+		[]string{"type", "action", "expected_version", "id", "idempotency_key", "request", "role", "session", "to_bot"},
+		[]string{"type", "action", "entries", "expected_version", "id", "idempotency_key", "request", "session"},
+		[]string{"type", "action", "expected_version", "id", "idempotency_key", "reason", "request", "session"},
+		[]string{"type", "action", "expected_version", "id", "idempotency_key", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("action", genRule{kind: "string", enum: []string{"handoff", "check", "complete", "cancel", "reopen"}}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("entries", genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"label": genRule{kind: "string", nonEmpty: true, maxBytes: 500}, "note": genRule{kind: "string", maxBytes: 4096}, "state": genRule{kind: "string", maxBytes: 32}}, required: []string{"label"}, closed: true}, minItems: genCount(1), maxItems: genCount(64)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("note", genRule{kind: "string", maxBytes: 4096}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("reason", genRule{kind: "string", maxBytes: 4096}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("role", genRule{kind: "string", maxBytes: 32}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("to_bot", genRule{kind: "string", maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/bot-request/cards/" + segment(genText(b["id"])) + "/" + segment(genText(b["action"]))
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"entries": genValue{from: "entries"}, "expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "note": genValue{from: "note"}, "reason": genValue{from: "reason"}, "role": genValue{from: "role"}, "to_bot": genValue{from: "to_bot"}})
 	return p, req, true
 }
 

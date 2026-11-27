@@ -81,6 +81,10 @@ const (
 	ProgressDone       = "done"
 	ProgressCancelled  = "cancelled"
 	ProgressMerged     = "merged"
+	// ProgressStalled is an open card nobody is working on after its last
+	// attempt went wrong. The card alone cannot tell; the daemon's read
+	// decides it from its holder's turns and work (§9.1).
+	ProgressStalled = "stalled"
 )
 
 // Refusal codes. The first five are reserved by §4.1; the rest are the

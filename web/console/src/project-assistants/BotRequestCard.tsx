@@ -97,7 +97,7 @@ const ROLES = ["maker", "reviewer", "integrator"] as const
  * A card's detail: a dialog on desktop, a bottom sheet at phone width. It
  * rereads the card for its history, and after every write or version conflict.
  */
-export function BotRequestDetail({card: listed, bots, links = [], w, language, onClose, onChanged, onOpenChat, onOpenWork, boardItem, read = readBotRequest, write = writeBotRequest}: {
+export function BotRequestDetail({card: listed, bots, links = [], w, language, onClose, onChanged, onOpenChat, onOpenWork, boardItem, read = readBotRequest, write = writeBotRequest, initialMode = "view"}: {
   card: W.BotRequestView
   bots: readonly W.ProjectAssistantBot[]
   /** The card's dispatched Sessions, where the opener knows them. */
@@ -113,11 +113,13 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
   boardItem?: ReactNode
   read?: typeof readBotRequest
   write?: typeof writeBotRequest
+  /** The form the detail opens on: a held card's Hand on or Check and complete press opens straight on it. */
+  initialMode?: "view" | "handoff" | "complete"
 }) {
   const dialog = useRef<HTMLDialogElement>(null), titleID = useId(), formID = useId()
   const [card, setCard] = useState(listed)
   const [history, setHistory] = useState<"loading" | "ready" | "failed">(listed.events ? "ready" : "loading")
-  const [mode, setMode] = useState<Mode>("view")
+  const [mode, setMode] = useState<Mode>(initialMode)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState("")
   const [reason, setReason] = useState(""), [note, setNote] = useState("")

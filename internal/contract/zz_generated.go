@@ -500,17 +500,27 @@ type BotRequestView struct {
 	CreatedBy string            `json:"created_by"`
 
 	// 1 for the first completion, one more after each reopen.
-	Cycle         int64             `json:"cycle"`
-	Description   string            `json:"description,omitempty"`
-	Done          int64             `json:"done"`
-	Events        []BotRequestEvent `json:"events,omitempty"`
-	ID            string            `json:"id"`
-	Kind          string            `json:"kind,omitempty"`
-	MergedInto    string            `json:"merged_into,omitempty"`
-	ProgressState string            `json:"progress_state"`
-	ProjectID     string            `json:"project_id"`
-	ProjectPath   string            `json:"project_path"`
-	SplitFrom     string            `json:"split_from,omitempty"`
+	Cycle       int64             `json:"cycle"`
+	Description string            `json:"description,omitempty"`
+	Done        int64             `json:"done"`
+	Events      []BotRequestEvent `json:"events,omitempty"`
+	ID          string            `json:"id"`
+	Kind        string            `json:"kind,omitempty"`
+	MergedInto  string            `json:"merged_into,omitempty"`
+
+	// in_progress, waiting_for_you, stalled, done, cancelled or merged. stalled is an
+	// open card nobody is working on after its last attempt went wrong; stalled_reason
+	// says how.
+	ProgressState string `json:"progress_state"`
+	ProjectID     string `json:"project_id"`
+	ProjectPath   string `json:"project_path"`
+	SplitFrom     string `json:"split_from,omitempty"`
+
+	// Set only when progress_state is stalled: work_failed (its latest dispatched work
+	// failed or ended unknown), turn_unsettled (the turn its handoff woke failed, was
+	// stopped or ended unknown, and dispatched nothing) or turn_and_work (that turn
+	// ended unsettled and its work failed).
+	StalledReason string `json:"stalled_reason,omitempty"`
 
 	// open, done, cancelled or merged.
 	State string `json:"state"`

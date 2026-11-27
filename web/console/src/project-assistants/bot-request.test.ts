@@ -2,7 +2,7 @@ import type * as W from "@clawdline/contract"
 import { test } from "node:test"
 import assert from "node:assert/strict"
 import {
-  BotRequestRefused, actorName, checklistProgress, handoffHistory, lastUpdated, linkRequestID, noteParts, placeBotRequests,
+  BotRequestRefused, actorName, botRequestFetcher, cardFrom, checklistProgress, heldCards, heldCounts, stalledWords, handoffHistory, lastUpdated, linkRequestID, noteParts, placeBotRequests,
   progressLabel, progressOf, readBotRequests, readBotWorkShown, readsBotRequests, refusalWords, sortBotRequests, writeBotRequest, writeBotWorkShown,
   // @ts-expect-error Node executes source extensions.
 } from "./bot-request.ts"
@@ -149,7 +149,7 @@ test("a write carries the version and its key, and a refusal keeps its code and 
   assert.equal(result.card.version, 5)
   assert.equal(sent!.path, "/v1/bot-request/cards/c%201/complete")
   assert.equal((sent!.init!.headers as Record<string, string>)["Idempotency-Key"], "key-1")
-  assert.deepEqual(JSON.parse(String(sent!.init!.body)), {expected_version: 4, reason: "Shipped"})
+  assert.deepEqual(JSON.parse(String(sent!.init!.body)), {expected_version: 4, reason: "Shipped", idempotency_key: "key-1"})
   await assert.rejects(writeBotRequest("c1", "cancel", {expected_version: 4}, "key-2", undefined,
     json(409, {error: "bot_request_version_conflict", detail: "expected_version", version: 6})),
     (error: unknown) => error instanceof BotRequestRefused && error.code === "bot_request_version_conflict" && error.version === 6)
@@ -159,7 +159,7 @@ test("a write carries the version and its key, and a refusal keeps its code and 
 
 test("cards are read only from the local daemon, and the Board section is shown until this browser hides it", () => {
   assert.equal(readsBotRequests({authorizationRevision: "local"}), true)
-  assert.equal(readsBotRequests({authorizationRevision: "cloud-7"}), false)
+  assert.equal(readsBotRequests({authorizationRevision: "cloud-7"}), false, "an older machine without the card words")
   assert.equal(readsBotRequests(undefined), false)
   const kept = new Map<string, string>()
   const store = {getItem: (key: string) => kept.get(key) ?? null, setItem: (key: string, value: string) => { kept.set(key, value) }}
@@ -170,4 +170,49 @@ test("cards are read only from the local daemon, and the Board section is shown 
   assert.equal(readBotWorkShown(store), true)
   assert.equal(readBotWorkShown({getItem() { throw new Error("blocked") }, setItem() {}}), true)
   assert.equal(readBotWorkShown(null), true)
+})
+
+test("a stalled card says so, says why, and sorts ahead of every other open card", () => {
+  const stalled = card({id: "s", progress_state: "stalled", stalled_reason: "turn_and_work"})
+  assert.equal(progressLabel(progressOf(stalled), w), "停住了")
+  assert.equal(stalledWords(stalled, w), "上一輪結果不明，它派出的工作也失敗了。目前沒有人在處理這張卡。")
+  assert.equal(stalledWords(card({progress_state: "stalled", stalled_reason: "work_failed"}), en), "Its latest dispatched work failed. Nobody is working on this card now.")
+  assert.equal(stalledWords(card({progress_state: "stalled", stalled_reason: "newer"}), w), "目前沒有人在處理這張卡。")
+  const waiting = card({id: "w", progress_state: "waiting_for_you", waiting: "q", updated_at: "2026-11-24T10:00:00Z"})
+  assert.deepEqual(sortBotRequests([card({id: "p"}), waiting, stalled]).map(c => c.id), ["s", "w", "p"])
+})
+
+test("the held line lists only the cards this Bot holds, and the chip lights by the most urgent", () => {
+  const cards = [card({id: "a", progress_state: "stalled"}), card({id: "b", baton: {bot: "orbit", role: "maker"}}),
+    card({id: "c", state: "done", progress_state: "done"}), card({id: "d", progress_state: "waiting_for_you", waiting: "q"})]
+  const held = heldCards(cards, "atlas")
+  assert.deepEqual(held.open.map(c => c.id), ["a", "d"])
+  assert.deepEqual(held.done.map(c => c.id), ["c"])
+  const counts = heldCounts(cards)
+  assert.deepEqual(counts.get("atlas"), {count: 2, progress: "stalled"})
+  assert.deepEqual(counts.get("orbit"), {count: 1, progress: "in_progress"})
+})
+
+test("a held card came from the Bot before its holder, or from whoever created it", () => {
+  assert.deepEqual(cardFrom(card({chain: ["orbit", "atlas"], created_by: "person"})), {actor: "orbit", handed: true})
+  assert.deepEqual(cardFrom(card({created_by: "person"})), {actor: "person", handed: false})
+})
+
+test("cards are read through the source that reaches the Bot's machine, or not at all", async () => {
+  const asked: string[] = []
+  const cloud = {authorizationRevision: "cloud-7", canBotRequests: () => true, botRequestFetch: () => async (input: string) => { asked.push(input); return new Response(JSON.stringify({cards: [card()]}), {status: 200}) }}
+  assert.equal(readsBotRequests(cloud), true)
+  assert.equal(readsBotRequests({authorizationRevision: "cloud-7", canBotRequests: () => false}), false)
+  assert.equal(botRequestFetcher({authorizationRevision: "cloud-7", canBotRequests: () => false}), undefined)
+  assert.equal((await readBotRequests({bot: "atlas"}, undefined, botRequestFetcher(cloud)))?.length, 1)
+  assert.deepEqual(asked, ["/v1/bot-request/cards?bot=atlas"])
+})
+
+test("a write repeats its key in the body and leaves out empty words, so it fits the Cloud word's shapes", async () => {
+  let sent: {body: unknown; key: string | null} | undefined
+  await writeBotRequest("c1", "complete", {expected_version: 3, reason: ""}, "press-1", undefined, async (_input, init) => {
+    sent = {body: JSON.parse(String(init?.body)), key: new Headers(init?.headers).get("Idempotency-Key")}
+    return new Response(JSON.stringify({card: card(), changed: true, replayed: false}), {status: 200})
+  })
+  assert.deepEqual(sent, {body: {expected_version: 3, idempotency_key: "press-1"}, key: "press-1"})
 })
