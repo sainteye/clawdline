@@ -3445,10 +3445,11 @@ export type DevStackCommand =
 export const DevStackCommandValues: readonly DevStackCommand[] = ["status", "up", "down", "restart", "logs", "attach"] as const
 
 /**
- * `running`: every declared process answered. `partial`: some did. `stopped`: none
- * did. `unknown`: nothing could be asked without running one of the project's
- * commands, and `unknown` is never reported as `stopped` — a live site under a
- * mark that says it is down is worse than no mark.
+ * `running`: every process that declares a port answered. `partial`: some did.
+ * `stopped`: none did. A process the file gives only a `url` has no port to ask and
+ * is not counted either way. `unknown`: nothing could be asked without running one
+ * of the project's commands, and `unknown` is never reported as `stopped` — a
+ * live site under a mark that says it is down is worse than no mark.
  */
 export type DevStackState =
     "running"

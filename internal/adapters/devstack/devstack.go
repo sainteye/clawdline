@@ -382,7 +382,18 @@ func Read(ctx context.Context, specs []Spec, probe Prober) []Stack {
 	wg.Wait()
 	for i := range out {
 		s := &out[i]
-		if len(s.Processes) == 0 {
+		// Only a declared port can be asked; a process the file gives only an
+		// address (a tunnel, a hostname) is neither up nor down here.
+		asked, up := 0, 0
+		for _, p := range s.Processes {
+			if p.Port > 0 {
+				asked++
+				if p.State == "running" {
+					up++
+				}
+			}
+		}
+		if asked == 0 {
 			s.State = "unknown"
 			s.Unknown = "nothing_declared"
 			if s.Declares("status") {
@@ -390,16 +401,10 @@ func Read(ctx context.Context, specs []Spec, probe Prober) []Stack {
 			}
 			continue
 		}
-		up := 0
-		for _, p := range s.Processes {
-			if p.State == "running" {
-				up++
-			}
-		}
 		switch up {
 		case 0:
 			s.State = "stopped"
-		case len(s.Processes):
+		case asked:
 			s.State = "running"
 		default:
 			s.State = "partial"

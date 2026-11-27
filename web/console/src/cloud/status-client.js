@@ -136,7 +136,12 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
   }
 
-  /** Dictates on this Session's machine unless a person selected another host. */
+  /**
+   * Dictates on this Session's machine when it is current and can transcribe,
+   * even over a saved host; otherwise on the saved host or the fleet fallback
+   * (`_sessionVoiceHost`). A machine that answers `no_whisper` is skipped and
+   * the same recording is tried on the next eligible host.
+   */
   async voiceFor(machine, audio, rate) {
     let missing = null
     for (;;) {

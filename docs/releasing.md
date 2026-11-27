@@ -13,7 +13,7 @@ published, and how the signing key is kept. What a machine does with a release i
 | `Clawdline-<v>-macos-arm64.tar.gz` | `Clawdline Next.app` (tar, so modes, symlinks and the signature survive) |
 | `Clawdline-<v>-macos-arm64.dmg`, its `.delivery.json` and `.spdx.json` | the same App in a notarized disk image for a first installation; a delivery container the updater does not read ([below](#an-apple-silicon-dmg-from-an-already-published-app)) |
 | `SHA256SUMS` | manual checksum comparisons and compatibility with older installers; not a trust root |
-| `manifest.json` | version, commit, `committed_at`, channel, `min_version`, `non_additive_migration`, `notes_url` (left empty by `build.sh`), and each artifact's os, arch, kind, name, URL, size and sha256 |
+| `manifest.json` | version, commit, `committed_at`, channel, `min_version`, `non_additive_migration`, `notes_url` (the GitHub release page, which the update panel links as its release notes; empty for a dev build or another download location), and each artifact's os, arch, kind, name, URL, size and sha256 |
 | `manifest.sig.json` | a list of `{key_id, sig}` Ed25519 signatures over `manifest.json`'s exact bytes |
 | `<archive>.spdx.json` | the SPDX 2.3 SBOM of each archive (`tools/release/sbom.sh`) |
 
@@ -41,7 +41,8 @@ Versions are `vX.Y.Z` on the `stable` channel and `vX.Y.Z-beta.N` on `beta`. The
 `https://github.com/sainteye/clawdline/releases/latest/download/manifest.json`, which GitHub serves
 from the newest published non-prerelease. `min_version` is the oldest version a release may be
 upgraded from and rolled back to; a release whose store change an older binary cannot read sets
-`non_additive_migration` and raises it.
+`non_additive_migration` and raises it: the release workflow's `non_additive_migration` input
+(`build.sh --non-additive-migration`), which `build.sh` refuses without `min_version`.
 
 The README and quick installation use `https://clawdline.com/install.sh`, which redirects over
 HTTPS to a reviewed installer commit and selects the latest signed stable release. The advanced

@@ -180,3 +180,24 @@ func TestDiscoveryDoesNotInspectPersonalDirectoriesFromRegistryOrLiveCWD(t *test
 		}
 	}
 }
+
+// A process the file gives only an address (a tunnel) has no port to ask, so
+// it is not counted down: the stack's verdict is over the ports it declares,
+// and a stack with no port at all is unknown, never stopped.
+func TestAnAddressOnlyProcessIsNotCountedDown(t *testing.T) {
+	specs := []Spec{
+		{Name: "api and tunnel", Declared: []Process{{Name: "api", Port: 1, State: "stopped"}, {Name: "tunnel", URL: "https://example.dev", State: "stopped"}}},
+		{Name: "tunnel only", Declared: []Process{{Name: "tunnel", URL: "https://example.dev", State: "stopped"}}},
+	}
+	got := Read(context.Background(), specs, func(_ context.Context, port int) bool { return port == 1 })
+	want := []string{"running", "unknown/nothing_declared"}
+	for i, s := range got {
+		verdict := s.State
+		if s.Unknown != "" {
+			verdict += "/" + s.Unknown
+		}
+		if verdict != want[i] {
+			t.Errorf("%s: %s, want %s", s.Name, verdict, want[i])
+		}
+	}
+}

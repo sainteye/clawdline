@@ -1,5 +1,6 @@
 // Package botcapabilities projects installed application skills and explicitly
-// configured HTTP MCP connectors. It neither installs nor activates extensions.
+// configured MCP connectors (HTTP, or a stdio command). It neither installs nor
+// activates extensions.
 package botcapabilities
 
 import (
@@ -70,9 +71,12 @@ func fingerprint(v any) string {
 	return hex.EncodeToString(h[:])
 }
 
-// This source-only file is not an HTTP input and contains no credentials,
-// environment variables or executable commands. Missing means no configured
-// HTTP connectors; malformed/unreadable is an error, never an empty inventory.
+// This source-only file is not an HTTP input and contains no credential
+// values. A connector is an HTTP URL, or an absolute stdio executable (owner-
+// writable only, its bytes digested) with arguments and the environment
+// variable its credential is handed in, MCP_CONNECTOR_TOKEN or
+// MCP_CONNECTOR_API_KEY; no other environment name is accepted. Missing means no configured connectors;
+// malformed/unreadable is an error, never an empty inventory.
 func (i Inventory) connectors(b pa.Bot) ([]Connector, error) {
 	state, e := filepath.EvalSymlinks(i.State)
 	if e != nil {
