@@ -9394,6 +9394,8 @@
   "next.msInstaKeyScope": "這把 InstaBox Key 沒有喚醒機器的權限。請建立一把有機器寫入權限的受限 Key，再重新儲存。",
   "next.msInstaKeyExpired": "這把 InstaBox Key 已過期。請建立一把不設到期日的新 Key，再重新儲存。",
   "next.msInstaKeyRevoked": "這把 InstaBox Key 已被撤銷。請建立一把不設到期日的新 Key，再重新儲存。",
+  "next.msInstaKeySaved": "已儲存。Clawdline 會用結尾 {hint} 的 Key 喚醒機器。",
+  "next.msInstaKeyRemoved": "已移除 Key。Clawdline 無法再喚醒 InstaBox 機器。",
   "next.msInstaKeyRemove": "移除 Key",
   "next.msInstaKeySave": "儲存 Key",
   "next.msInstaLaunch": "開啟安裝 Session",
