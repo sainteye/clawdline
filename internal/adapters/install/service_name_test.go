@@ -36,6 +36,52 @@ func TestNamedDaemonInstallAndLegacyRollbackUseTheirOwnExecutable(t *testing.T) 
 	}
 }
 
+func TestNamedDaemonWithCopySupportIsIndependentBeforeLaunch(t *testing.T) {
+	l := NewLayout(t.TempDir(), t.TempDir())
+	for _, version := range []string{"v2.0.0", "v2.0.1"} {
+		unpack(t, l, version)
+		if err := os.WriteFile(filepath.Join(l.ReleaseDir(version), DaemonBinary), []byte(version), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(l.ReleaseDir("v2.0.1"), daemonCopySupport), nil, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, selection := range []struct {
+		version string
+		same    bool
+	}{
+		{"v2.0.1", false},
+		{"v2.0.0", true},
+		{"v2.0.1", false},
+	} {
+		if err := l.SwitchCurrent(selection.version); err != nil {
+			t.Fatal(err)
+		}
+		if err := l.InstallServiceBinary(selection.version); err != nil {
+			t.Fatal(err)
+		}
+		service, err := os.Stat(l.ServiceBin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		packaged, err := os.Stat(filepath.Join(l.ReleaseDir(selection.version), DaemonBinary))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if same := os.SameFile(service, packaged); same != selection.same {
+			t.Fatalf("%s: service shares packaged inode = %v, want %v", selection.version, same, selection.same)
+		}
+		if service.Mode().Perm() != packaged.Mode().Perm() {
+			t.Fatalf("%s: service permissions = %v, want %v", selection.version, service.Mode(), packaged.Mode())
+		}
+		if name, kind := l.ServiceRelease(l.ServiceBin); name != selection.version || kind != KindRelease {
+			t.Fatalf("running release = %q (%s), want %s", name, kind, selection.version)
+		}
+	}
+}
+
 func TestServiceExecutableMigrationPreservesTheRestOfThePlist(t *testing.T) {
 	old := "/example/service/clawdline"
 	named := "/example/service/clawdline-daemon"
