@@ -127,5 +127,25 @@ func brokerBounds() []Entry {
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/app/orchestrator.MaxHandoffPackBytes"},
 		},
+		{
+			// A handoff package under <state dir>/handoffs/<id> is removed
+			// this long after its handoff ended (spawn_failed, or delivered
+			// with no Board transfer or milestone receiver still waiting),
+			// counted from the record's last write. One under way is never
+			// removed; a package nothing proves ended is kept and counted
+			// unknown. The handoff records package_removed_at.
+			Name: HandoffPackageRetentionSeconds, Class: Journal, Unit: Seconds,
+			Limit: 24 * 60 * 60, AtLimit: EvictOldest,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.HandoffPackageRetentionSecondsLimit"},
+		},
+		{
+			// The most expired packages one hourly sweep removes; the rest
+			// wait for the next sweep.
+			Name: HandoffPackageSweepRows, Class: Buffer, Unit: Rows,
+			Limit: 64, AtLimit: Coalesce,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/app/orchestrator.HandoffPackageSweepLimit"},
+		},
 	}
 }

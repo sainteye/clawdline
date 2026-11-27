@@ -342,6 +342,7 @@ type Broker struct {
 	// began closing tabs — the moment a deadline that passed while no broker
 	// ran is measured from (reclaim.go, linger.go).
 	reclaim       reclaimState
+	handoffSweep  handoffSweepState
 	lingerStarted time.Time
 	// landingDetect is where the landing detector's last look stopped and what it
 	// has already logged (landing_detect.go). In memory only.

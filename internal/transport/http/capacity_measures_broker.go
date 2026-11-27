@@ -44,6 +44,12 @@ func (s *Server) brokerCapacityMeasures() map[string]func() capacity.Reading {
 		capacity.HandoffWorktrees:  func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.HandoffPatchBytes: func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
 		capacity.HandoffPackBytes:  func() capacity.Reading { return capacity.Reading{Known: true, Note: "per-handoff guard"} },
+		capacity.HandoffPackageRetentionSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-package age; an hourly sweep removes ended handoffs' packages and logs what it kept"}
+		},
+		capacity.HandoffPackageSweepRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-sweep batch; the rest wait for the next sweep"}
+		},
 		capacity.OpeningStuckSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-row age ceiling; the row's updated time persists; no retained buffer"}
 		},

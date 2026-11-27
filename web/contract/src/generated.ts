@@ -1020,6 +1020,12 @@ export interface BrokerHandoff {
   milestone?: boolean
   model?: string
   opened?: BrokerOpenedSession
+
+  /**
+   * When the package directory was removed, 24 hours after the handoff ended; its
+   * files are no longer readable.
+   */
+  package_removed_at?: number
   project_dir: string
   receipt?: string
 

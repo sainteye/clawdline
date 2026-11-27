@@ -274,13 +274,13 @@ These are implementation gaps, not permissions to delete existing data:
    injection. Gate-cache tests cover interruption and retry, active and
    unknown owners, symlink escapes, and read-only directories with an external
    target that stays untouched.
-5. Handoff packages under `<state dir>/handoffs/<id>` are never reclaimed. The
-   retired Swift app swept `/tmp/.clawdline` 24 hours after a package's
-   envelope; the Go broker writes beside its task directories and has no
-   sweep, so packages accumulate (measured 2026-11-27 on one machine: 44
-   packages, 1.2 GB, the largest 453 MB). A receiver may still cite files in
-   its package, so a retention rule needs a decision about how long a
-   receiver's references must stay readable before any deletion is added.
+5. Handoff packages under `<state dir>/handoffs/<id>` were never reclaimed
+   (measured 2026-11-27 on one machine: 44 packages, 1.2 GB, the largest
+   453 MB). The person decided on 2026-11-27 that a package is kept for 24
+   hours after its handoff ended and never while it is under way; the
+   broker's hourly sweep now removes it (`docs/broker.md`, "Handoff package
+   retention"). Packages nothing proves ended are kept and counted unknown;
+   resolving them remains a person's decision.
 
 Any new retention window, byte ceiling, row limit, or scan bound belongs in
 `internal/domain/capacity` and its registration guard. A cleanup report should

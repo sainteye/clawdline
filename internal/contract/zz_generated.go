@@ -882,11 +882,15 @@ type BrokerHandoff struct {
 	HandoffID    string `json:"handoff_id"`
 
 	// The package passed the milestone summary check.
-	Milestone  bool                 `json:"milestone,omitempty"`
-	Model      string               `json:"model,omitempty"`
-	Opened     *BrokerOpenedSession `json:"opened,omitempty"`
-	ProjectDir string               `json:"project_dir"`
-	Receipt    string               `json:"receipt,omitempty"`
+	Milestone bool                 `json:"milestone,omitempty"`
+	Model     string               `json:"model,omitempty"`
+	Opened    *BrokerOpenedSession `json:"opened,omitempty"`
+
+	// When the package directory was removed, 24 hours after the handoff ended; its
+	// files are no longer readable.
+	PackageRemovedAt int64  `json:"package_removed_at,omitempty"`
+	ProjectDir       string `json:"project_dir"`
+	Receipt          string `json:"receipt,omitempty"`
 
 	// The receiving Session's conversation, once it has one.
 	ReceiverSession string             `json:"receiver_session,omitempty"`

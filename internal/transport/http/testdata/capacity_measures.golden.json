@@ -3355,6 +3355,16 @@
     "Note": true
   },
   {
+    "Name": "handoff.package_retention_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "handoff.package_sweep_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "handoff.patch_bytes",
     "Known": true,
     "Note": true

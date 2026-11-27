@@ -208,6 +208,7 @@ func (b *Broker) pass(ctx context.Context, number int64) Pulse {
 	// the beat, when one is due — the reclamation sweep (reclaim.go).
 	p.Closed += b.closeLingers(ctx, rd)
 	b.reclaimDue(ctx)
+	b.sweepHandoffPackagesDue(ctx)
 	// Last, and on one pass in twelve: pending landings whose branch has been
 	// merged are recorded landed (landing_detect.go).
 	p.Landed = b.detectLandingsDue(ctx, number)

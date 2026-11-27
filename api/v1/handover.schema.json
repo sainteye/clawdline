@@ -62,7 +62,8 @@
         "receipt": { "type": "string" },
         "milestone": { "description": "The package passed the milestone summary check.", "type": "boolean" },
         "carried_tasks": { "description": "The sender's child tasks obligations.md named: running, unacknowledged or owed a landing. They stay with the sender.", "type": "array", "items": { "type": "string" } },
-        "receiver_session": { "description": "The receiving Session's conversation, once it has one.", "type": "string" }
+        "receiver_session": { "description": "The receiving Session's conversation, once it has one.", "type": "string" },
+        "package_removed_at": { "description": "When the package directory was removed, 24 hours after the handoff ended; its files are no longer readable.", "type": "integer" }
       }
     },
     "BrokerHandoffResult": {

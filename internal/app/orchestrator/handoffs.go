@@ -343,6 +343,9 @@ type Handoff struct {
 	Carried []string `json:"carried_tasks,omitempty"`
 	// Receiver is the receiving Session's conversation, once it has one.
 	Receiver string `json:"receiver_session,omitempty"`
+	// PackageRemovedAt is when the package directory was removed, 24 hours
+	// after the handoff ended (handoff_retention.go). Its files are gone.
+	PackageRemovedAt int64 `json:"package_removed_at,omitempty"`
 }
 
 // Handoff limits, the Swift app's (OrchestratorHandoffSender.swift:42-98).

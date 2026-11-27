@@ -517,6 +517,21 @@ Session. Once the handoff has a durable record, its id replays that record witho
 files or opening or typing into a second receiver. `delivered` continues to mean that the first
 line was typed, not that the receiver read or completed the work.
 
+## Handoff package retention
+
+A package under `<state dir>/handoffs/<id>` is removed 24 hours after its handoff ended
+(`handoff.package_retention_seconds`; decided by the person on 2026-11-27). A handoff has ended
+when it is `spawn_failed`, or `delivered` with no Board or Session-board transfer still pending
+and, for a milestone handoff, a named receiver. The clock is the record's last write, which is
+never earlier than the end. An hourly sweep off the beat (`SweepHandoffPackages`) removes at most
+`handoff.package_sweep_rows` packages, records `package_removed_at` on the handoff with a
+`handoff.package_removed` event, and logs removed, in-progress, recent and unknown counts. A
+handoff still under way is never removed. A directory with no record, an unreadable record, a
+record naming another directory, a name that is not a handoff id, or a symbolic link is kept
+and counted unknown: nothing proves it ended. `GET /v1/orchestrator/handoffs` carries
+`package_removed_at`, so a receiver that cites a file after that time can be told the package
+is gone rather than reading a missing path as a fault.
+
 ## 還沒做（這一波刻意不做，或做不到）
 
 - `landing-queue`。（`detached-tasks`、`handoffs`、`root-assignments`、`tasks/<id>/respawn`、`graphs`、`waits`、`coordinator/*` 都已經接上路由，見 `internal/transport/http/server.go`。）

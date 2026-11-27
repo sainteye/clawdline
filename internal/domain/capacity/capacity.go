@@ -630,9 +630,11 @@ const (
 	SessionCloseScheduledSeconds     = "session.close_scheduled_seconds"
 	// What a reassigned in-flight item's handoff pack copies out of the
 	// previous owner's worktrees.
-	HandoffWorktrees  = "handoff.worktrees"
-	HandoffPatchBytes = "handoff.patch_bytes"
-	HandoffPackBytes  = "handoff.pack_bytes"
+	HandoffWorktrees               = "handoff.worktrees"
+	HandoffPatchBytes              = "handoff.patch_bytes"
+	HandoffPackBytes               = "handoff.pack_bytes"
+	HandoffPackageRetentionSeconds = "handoff.package_retention_seconds"
+	HandoffPackageSweepRows        = "handoff.package_sweep_rows"
 	// A callback: a command the daemon runs for a root and reports on when
 	// it exits (orchestrator/callback.go).
 	CallbackArgs         = "callback.args"

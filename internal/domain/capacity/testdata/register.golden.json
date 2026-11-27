@@ -13309,6 +13309,44 @@
   },
   {
     "Register": "daemon",
+    "Name": "handoff.package_retention_seconds",
+    "Class": "journal",
+    "Unit": "seconds",
+    "Limit": 86400,
+    "WarnAt": 0,
+    "AtLimit": "evict_oldest",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.HandoffPackageRetentionSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "handoff.package_sweep_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 64,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/app/orchestrator.HandoffPackageSweepLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "handoff.patch_bytes",
     "Class": "buffer",
     "Unit": "bytes",

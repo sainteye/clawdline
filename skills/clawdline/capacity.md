@@ -688,6 +688,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `dispatch.brief_held_grace_seconds` | 60 | `seconds` | `evict_oldest` | `diagnostics, notice` | — |
 | `epic.child_items` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `handoff.pack_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `handoff.package_retention_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics` | — |
+| `handoff.package_sweep_rows` | 64 | `rows` | `coalesce` | `diagnostics` | — |
 | `handoff.patch_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `handoff.worktrees` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `icons.request_bytes` | 98304 | `bytes` | `refuse` | `diagnostics, sender` | — |
