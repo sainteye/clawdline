@@ -493,7 +493,7 @@ Ele envia `{"deliver_within_seconds": 60}` (`--deliver-within`), então um desti
 Uma tarefa agendada que lê dados de algo aguardando para ser verificado (o 驗收 da barra lateral, docs/verifications.md) grava sua leitura como uma nota nesse registro com seu próprio segredo de tarefa - não o token do orquestrador, que não deve conter:
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```

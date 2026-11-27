@@ -840,7 +840,7 @@ docs/verifications.md) écrit sa lecture sous forme de note sur cet enregistreme
 le jeton de l'orchestrateur, qu'elle ne devrait pas contenir :
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```

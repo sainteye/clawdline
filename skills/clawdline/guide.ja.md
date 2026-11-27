@@ -492,7 +492,7 @@ clawdline webhook fire --url-file <path>
 検証待ちのデータを読み取るスケジュール済みタスク（サイドバーの「検証」、docs/verifications.md参照）は、その読み取り結果を、タスク自身のシークレット（オーケストレータートークンではなく、タスクが保持すべきではないトークン）とともに、該当レコードにメモとして書き込みます。
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```

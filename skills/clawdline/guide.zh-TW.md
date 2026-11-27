@@ -1114,7 +1114,7 @@ canceled、連不到）· `3` 被拒絕（dispatch_refused 與它的 code、網�
 task secret 把讀數寫成那筆紀錄上的一則紀錄——不用 orchestrator token，它本來就不該拿著：
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```

@@ -489,7 +489,7 @@ clawdline webhook fire --url-file <path>
 검증 대기 중인 항목(사이드바의 驗收, `docs/verifications.md`)을 위해 데이터를 읽는 예약 작업은 읽은 결과를 해당 기록의 메모로 씁니다. 작업에는 오케스트레이터 토큰을 쥐여 주지 말고 자체 작업 비밀을 사용하게 하세요.
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```
