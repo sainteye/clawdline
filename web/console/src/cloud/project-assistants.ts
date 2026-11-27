@@ -6,7 +6,7 @@ import type * as W from "@clawdline/contract"
 import type { CapabilityGap } from "../project-assistants/source-errors.ts"
 import type { CharterRequestBody, MemoryReadDetail, ProjectMemoryPage, RosterFailure, RosterScreenEvidence, SharedSettingsAnswer, SharedSettingsWrite, SourceClient } from "../project-assistants/client.js"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
-import { failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
+import { errorCode, failure, projectChoices, notSent, provablyNotSent } from "../project-assistants/client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { readViewRequest, readView } from "../project-assistants/read-views.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -692,7 +692,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
     return async (input:string,init:RequestInit={}) => {
       const write=(init.method??"GET")!=="GET", signal=init.signal??new AbortController().signal
       if(!input.startsWith(botRequestPath+"/"))throw notSent(failure("pa_invalid"))
-      try{this.check(signal,write,true,BOT_REQUESTS_API_LEVEL)}catch(error){throw notSent(error)}
+      // Off the Bots window (the Board) the machine's status may not have been read yet; a write needs it.
+      if(write&&!this.lastStatus)await this.status(signal).catch(()=>undefined)
+      try{this.check(signal,write,true,BOT_REQUESTS_API_LEVEL)}catch(error){
+        // A device that may only read is told so in the card's own words; nothing was sent.
+        if(write&&errorCode(error)==="pa_read_only")return Response.json({error:"bot_request_forbidden",detail:"device"},{status:403})
+        throw notSent(error)
+      }
       return this.transport(input,{...init,cache:"no-store"})
     }
   }

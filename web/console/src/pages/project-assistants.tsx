@@ -178,7 +178,7 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
   const readableItems = current.flatMap(([,data]) => data.readable ? data.items : [])
   const readableRef = useRef(readableItems)
   readableRef.current = readableItems
-  useEffect(() => publishBotDirectory(readableItems))
+  useEffect(() => publishBotDirectory(readableItems, sources))
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources,useDispatchedWorkShown())
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.

@@ -745,7 +745,14 @@ Built on 2026-11-27 (the cards a Bot holds, the stalled light and Cloud parity, 
   routes as this daemon. Its three words are decoded from the vocabulary table; a write repeats its
   Idempotency-Key in the body (`idempotency_key`, which the route checks against the header) and
   leaves out empty optional fields, so it matches one of the word's exact shapes. A source below
-  API 130 still hides cards, as before. The Board's Bot work section is still local only.
+  API 130 still hides cards, as before.
+- **The Board's Bot work on Cloud** (added the same day). The Bots host publishes its machine
+  sources beside its Bot directory (`publishBotDirectory`, `useBotSource` in `open-bot.ts`), and the
+  section reads and writes the cards of the machine a Cloud page shows through that machine's
+  source: the same three words, never the page's own origin. Off the Bots window that source may
+  not have read the machine's status yet, so a write reads it first; a device that may only read is
+  refused as `bot_request_forbidden` before anything is sent. A held card's list links to the Board
+  on Cloud too. `bot-request-cards.e2e.mjs` gained a Cloud page whose origin has no card routes.
 
 ## 13. Deferred until needed
 

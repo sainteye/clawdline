@@ -209,8 +209,8 @@ export function useBotRequestIO(source: SourceClient) {
 
 /**
  * The held cards line as a Bot's chat draws it: writes are offered where the
- * chat may send and the source may carry them, the Board link only on this
- * machine, and Ask again fills the composer for the person to send.
+ * chat may send and the source may carry them, and Ask again fills the
+ * composer for the person to send.
  */
 export function ChatHeldCards({source, enabled, cards, bot, botName, bots, w, onCompose, onOpen}: {
   source: SourceClient; enabled: boolean; cards: readonly W.BotRequestView[]; bot: string; botName: string; bots: readonly W.ProjectAssistantBot[]; w: Words
@@ -218,6 +218,6 @@ export function ChatHeldCards({source, enabled, cards, bot, botName, bots, w, on
 }) {
   const local = source.authorizationRevision === "local"
   return <HeldCards cards={cards} bot={bot} botName={botName} bots={bots} w={w} writable={enabled && (local || source.canWriteBotRequests?.() === true)}
-    onOpenBoard={local ? () => { window.location.hash = "page=work" } : undefined}
+    onOpenBoard={() => { window.location.hash = "page=work" }}
     onAction={(card, action) => action === "retry" ? onCompose(say(w.heldRetryText, {title: card.title, id: card.id})) : onOpen(card, action)}/>
 }

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react"
 import type * as W from "@clawdline/contract"
 import { botIdentity } from "./view-state.js"
+import type { SourceClient } from "./client.js"
 
 /**
  * Another surface (the Sessions list's Bot dispatch frame) asks the Bots host
@@ -20,8 +21,9 @@ export function openableBot(items: readonly W.ProjectAssistantBotSummary[], key:
 // openable Bot from a deleted, hidden or unreadable one before offering a press.
 let directory: ReadonlySet<string> = new Set()
 const listeners = new Set<() => void>()
-export function publishBotDirectory(items: readonly W.ProjectAssistantBotSummary[]): void {
+export function publishBotDirectory(items: readonly W.ProjectAssistantBotSummary[], sources?: readonly SourceClient[]): void {
   publishBots(items)
+  if (sources) publishSources(sources)
   const next = new Set(items.filter(item => !item.bot.hidden).map(item => botIdentity(item.bot.key)))
   if (next.size === directory.size && [...next].every(id => directory.has(id))) return
   directory = next
@@ -57,4 +59,23 @@ const botsSnapshot = () => bots
 /** Every Bot the host last read, hidden ones included so a card can still name its holder. */
 export function useBotDirectory(): readonly W.ProjectAssistantBot[] {
   return useSyncExternalStore(subscribeBots, botsSnapshot, botsSnapshot)
+}
+
+// The host's machine sources, so a surface outside the Bots window (the Board's
+// Bot work section) reads a Bot's machine the way its chat does: this daemon,
+// or the machine a Cloud page shows, through that machine's own source.
+let sources: readonly SourceClient[] = []
+const sourceListeners = new Set<() => void>()
+function publishSources(next: readonly SourceClient[]): void {
+  if (next.length === sources.length && next.every((source, index) => source === sources[index])) return
+  sources = next
+  for (const listener of sourceListeners) listener()
+}
+const subscribeSources = (listener: () => void) => { sourceListeners.add(listener); return () => { sourceListeners.delete(listener) } }
+const sourcesSnapshot = () => sources
+
+/** The host's current source for one machine, or undefined until the host has one. */
+export function useBotSource(machineID: string | null): SourceClient | undefined {
+  const current = useSyncExternalStore(subscribeSources, sourcesSnapshot, sourcesSnapshot)
+  return machineID === null ? undefined : current.find(source => source.machineID === machineID)
 }

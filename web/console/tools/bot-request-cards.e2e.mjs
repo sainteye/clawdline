@@ -26,13 +26,16 @@ import {BotRequestDetail,BotRequestLine,useBotRequests} from "./src/project-assi
 import {placeBotRequests} from "./src/project-assistants/bot-request";
 import {WorkResultCard} from "./src/project-assistants/WorkResultCard";
 import {OPEN_BOT,publishBotDirectory} from "./src/project-assistants/open-bot";
+import {readingThrough} from "./src/cloud/machine-switch";
 import {words} from "./src/project-assistants/words";
 import {bootCatalog} from "./src/catalog";
 window.fixtureErrors=[];window.addEventListener("error",e=>window.fixtureErrors.push(e.message));window.addEventListener("unhandledrejection",e=>window.fixtureErrors.push(String(e.reason)));
 const q=new URL(location.href).searchParams;localStorage.setItem("ui_language",q.get("lang")||"zh-Hant");await bootCatalog(tag=>"/catalog/"+tag+".json");
 const bot=(id,name,shape,color)=>({bot:{key:{machine_id:"m",bot_id:id},name,appearance:{shape,color},project:{kind:"personal"}}});
 const roster=[bot("atlas","Atlas","blob","#5b8def"),bot("nova","Nova","hex","#e0a458"),bot("orion","Orion 很長很長的名字的整合小幫手","pebble","#5f9e73")];
-publishBotDirectory(roster);
+// cloud=1: a Cloud page. Its own origin has no card routes; the machine's Bots source carries them (here through /cloud-relay).
+if(q.get("cloud")==="1"){readingThrough({machine:"m"});publishBotDirectory(roster,[{machineID:"m",authorizationRevision:"cloud-1",canBotRequests:()=>true,canWriteBotRequests:()=>true,
+  botRequestFetch:()=>(input,init)=>fetch("/cloud-relay"+input,init)}])}else publishBotDirectory(roster);
 window.openedBots=[];window.addEventListener(OPEN_BOT,e=>window.openedBots.push(e.detail.key.bot_id));
 const links=[{id:"l1",task_id:"task-1",title:"整理十一月的數據",state:"completed",delivery_commit:"1a2b3c4d5e6f7a8b",board_item_id:"",bot_request_id:"card-progress",landing:"pending"},
   {id:"l2",task_id:"task-2",title:"沒有交辦卡的工作",state:"executing",board_item_id:""}];
@@ -70,12 +73,14 @@ const item=(id,title,area,phase)=>({id,project:{id:"p1",label:"fixture",path:"/f
   created_at:1795000000,updated_at:1795000000,closed_at:null,cycle:1,version:1})
 const boardItems=[item("item-1","十一月營運報告","implementing","implementing"),item("item-2","修正登入頁","unassigned","created"),item("item-3","新的儀表板","verifying","verifying")]
 let cards=freshCards(),routes=true,conflictOnce=true
-const refused=[],writes=[]
+const refused=[],writes=[],relayHits=[]
 const server=createServer(async(req,res)=>{try{
   const url=new URL(req.url,"http://fixture"),chunks=[];for await(const chunk of req)chunks.push(chunk)
   const json=(status,body)=>{res.writeHead(status,{"Content-Type":"application/json"});res.end(JSON.stringify(body))}
-  if(url.pathname==="/fixture/reset"){cards=freshCards();routes=url.searchParams.get("routes")!=="off";conflictOnce=true;refused.length=0;writes.length=0;return json(200,{})}
-  if(url.pathname.startsWith("/v1/bot-request/cards")&&routes){
+  if(url.pathname==="/fixture/reset"){cards=freshCards();routes=url.searchParams.get("routes")!=="off";conflictOnce=true;refused.length=0;writes.length=0;relayHits.length=0;return json(200,{})}
+  const relayed=url.pathname.startsWith("/cloud-relay/")
+  if(relayed){relayHits.push(req.method+" "+url.pathname);url.pathname=url.pathname.slice("/cloud-relay".length)}
+  if(url.pathname.startsWith("/v1/bot-request/cards")&&(routes||relayed)){
     const [id,action]=url.pathname.slice("/v1/bot-request/cards".length).split("/").filter(Boolean),card=cards.find(c=>c.id===id)
     if(!id)return json(200,{cards:cards.filter(c=>!url.searchParams.get("bot")||c.chain.includes(url.searchParams.get("bot")))})
     if(!card)return json(404,{error:"bot_request_not_found",detail:"id"})
@@ -131,6 +136,19 @@ try{
     await until("document.querySelectorAll('.work-count').length>0&&!document.querySelector('#work[aria-busy]')","the Board without card routes")
     assert.equal(await run("document.querySelectorAll('.bot-work').length"),0,`${view}: the section is hidden without the routes`)
     const without=await counts()
+
+    // A Cloud page: the origin still has no card routes, and the section reads the machine through its source.
+    await fetch(origin+"/fixture/reset?routes=off")
+    await open("&cloud=1")
+    await until("document.querySelectorAll('.bot-work-rows .pa-request-row').length===4","the Bot work rows on a Cloud page")
+    await until("!document.querySelector('#work[aria-busy]')","the Board on a Cloud page")
+    await fits("the Cloud Board")
+    await shot("cloud-board")
+    assert.ok(relayHits.some(hit=>hit.startsWith("GET /cloud-relay/v1/bot-request/cards")),`${view}: the Cloud page read the cards through the machine's source`)
+    assert.ok(!refused.some(hit=>hit.includes("/v1/bot-request/")),`${view}: the Cloud page never asked its own origin for cards`)
+    await click('.pa-request-row[data-request-id="card-waiting"]')
+    await until("document.querySelector('.pa-request-detail[open]')","the card detail on a Cloud page")
+    await shot("cloud-detail")
 
     await fetch(origin+"/fixture/reset")
     await open("")

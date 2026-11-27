@@ -245,6 +245,15 @@ export function botRequestFetcher(source: CardSource | undefined): Fetcher | und
   return source?.authorizationRevision === "local" ? (input, init) => fetch(input, init) : undefined
 }
 
+/** The card reads and writes through one fetch: the page's own when none is given. */
+export function boundBotRequests(fetcher?: Fetcher) {
+  return {
+    list: (q: {bot?: string; state?: string}, s?: AbortSignal) => readBotRequests(q, s, fetcher),
+    read: (id: string, s?: AbortSignal) => readBotRequest(id, s, fetcher),
+    write: (id: string, a: BotRequestAction, body: W.BotRequestPersonWrite, k: string, s?: AbortSignal) => writeBotRequest(id, a, body, k, s, fetcher),
+  }
+}
+
 /** Why a stalled card stopped, in the person's words. */
 export function stalledWords(card: Pick<W.BotRequestView, "stalled_reason">, w: Words): string {
   switch (card.stalled_reason) {

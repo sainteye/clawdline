@@ -1558,3 +1558,19 @@ test("Bot request card paths become their three Cloud words, and a write keeps i
   ] as const) assert.throws(() => assistantRelayRequest(input, init as RequestInit | undefined), `${input} ${init?.body ?? ""}`)
   assert.ok(["bot-request.cards","bot-request.card","bot-request.write"].every(word => word in CARRIED))
 })
+
+test("a card write from a device that may only read is refused in the card's words, and nothing is sent", async () => {
+  const sent: string[] = []
+  const live = {...grant(), apiLevel:130, writable:false}
+  const transport: AssistantFetch = async (path) => {
+    sent.push(path)
+    return Response.json(path.endsWith("/status") ? {contract_version:"project-assistants.v1",sources:[{machine_id:"one",state:"online",access:"interactive",readable:true,writable:false,fresh:true,observed_at:"",capabilities:[]}]} : {cards:[]})
+  }
+  const source = new ProjectAssistantSourceClient(live, transport, () => live)
+  const fetcher = source.botRequestFetch()
+  const write = await fetcher("/v1/bot-request/cards/c1/complete",{method:"POST",body:"{}",headers:{"Idempotency-Key":"k"}})
+  assert.equal(write.status, 403)
+  assert.deepEqual(await write.json(), {error:"bot_request_forbidden",detail:"device"})
+  assert.ok(sent.every(path => !path.startsWith("/v1/bot-request/")), "the write never left")
+  assert.equal((await fetcher("/v1/bot-request/cards?state=open")).ok, true)
+})
