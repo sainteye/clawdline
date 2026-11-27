@@ -209,6 +209,20 @@ function playbookWrite(entry: FixtureProject, rest: string, request: CharterRequ
   append(entry, latest.text, "person", save.reason, playbooks)
 }
 
+/**
+ * The scripted lead's answer to a change request: the request added as a line
+ * at the end of the text or, for the workflow, as the start state's note of
+ * the current workflow.
+ */
+function scriptedProposal(entry: FixtureProject, latest: FixtureVersion, lead: string, sequence: string, request: W.ProjectAssistantCharterChangeRequest): W.ProjectAssistantCharterProposal {
+  const target = request.target
+  if (target !== undefined && target !== "text" && target !== "workflow") throw refuse("pa_invalid", "target")
+  const flow = target === "workflow" && latest.workflow ? structuredClone(latest.workflow) : undefined
+  if (flow) flow.states[0].note = String(request.text).slice(0, limits.workflow_note_bytes!)
+  return { id: `cp-${sequence}`, base_version: latest.version, bot_id: lead, turn_id: `turn-${sequence}`, stale: false, summary: String(request.text), created_at: at(entry.versions.length),
+    ...(target === "workflow" ? { kind: "workflow", text: "", ...(flow ? { workflow: flow } : {}) } : { kind: "text", text: latest.text.replace(/\n*$/, "") + `\n- ${request.text}\n` }) }
+}
+
 export function createCharterFixture(machineID: string, seed: { project_id: string; bots: { bot_id: string; name: string; lead?: boolean }[]; versions?: { text: string; author: W.ProjectAssistantCharterAuthor; reason: string }[]; playbooks?: CharterPlaybookDraft[];
   /** Saved as the version after the playbooks; workflow_proposal waits as the lead's proposal on it. */
   workflow?: W.ProjectAssistantCharterWorkflow; workflow_proposal?: W.ProjectAssistantCharterWorkflow }[]): CharterFixture {
@@ -288,15 +302,7 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
       case "POST /change-request": {
         const entry = find(body!.project_id), latest = entry.versions.at(-1)
         if (!latest) throw refuse("pa_not_found", "charter")
-        const lead = leadName(entry), target = (request as W.ProjectAssistantCharterChangeRequest).target
-        if (target !== undefined && target !== "text" && target !== "workflow") throw refuse("pa_invalid", "target")
-        // The scripted lead adds the request as a line at the end, or, for the
-        // workflow, as the start state's note of the current workflow.
-        const flow = target === "workflow" && latest.workflow ? structuredClone(latest.workflow) : undefined
-        if (flow) flow.states[0].note = String(body!.text).slice(0, limits.workflow_note_bytes!)
-        const proposal: W.ProjectAssistantCharterProposal = { id: `cp-${++sequence}`, base_version: latest.version, bot_id: lead.bot_id, turn_id: `turn-${sequence}`, stale: false,
-          summary: String(body!.text), created_at: at(entry.versions.length),
-          ...(target === "workflow" ? { kind: "workflow" as const, text: "", ...(flow ? { workflow: flow } : {}) } : { kind: "text" as const, text: latest.text.replace(/\n*$/, "") + `\n- ${body!.text}\n` }) }
+        const lead = leadName(entry), proposal = scriptedProposal(entry, latest, lead.bot_id, `${++sequence}`, request as W.ProjectAssistantCharterChangeRequest)
         if (held) waiting.set(entry.project_id, proposal)
         else entry.proposals = [proposal]
         return { contract_version: contractVersion, machine_id: machineID, project_id: entry.project_id, lead_bot_id: lead.bot_id,

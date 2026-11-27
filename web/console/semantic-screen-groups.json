@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14873,
-  "riskKeys": 6299,
-  "nonRiskCount": 8574,
+  "englishContentKeys": 14883,
+  "riskKeys": 6304,
+  "nonRiskCount": 8579,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 813,
+      "count": 818,
       "sources": [
         null
       ],
@@ -715,6 +715,11 @@
         "capacityRow.bots.charter_text_bytes.what",
         "capacityRow.bots.charter_versions.full",
         "capacityRow.bots.charter_versions.what",
+        "capacityRow.bots.charter_workflow_id_bytes.what",
+        "capacityRow.bots.charter_workflow_note_bytes.what",
+        "capacityRow.bots.charter_workflow_states.what",
+        "capacityRow.bots.charter_workflow_title_bytes.what",
+        "capacityRow.bots.charter_workflow_transitions.what",
         "capacityRow.bots.chat_gap_ms.what",
         "capacityRow.bots.chat_initial_page_rows.what",
         "capacityRow.bots.cleanup_ms.what",

@@ -230,13 +230,11 @@ func main() {
 		boardCommand(os.Args[2:])
 	case "project":
 		projectCommand(os.Args[2:])
-	case "memory":
-		// A Project's shared memory, for Claude and Codex alike (memory.go).
-		memoryCommand(os.Args[2:])
-	case "charter":
-		// A Project's team charter workflow, which a Session changes only on
-		// the person's words (charter.go).
-		charterCommand(os.Args[2:])
+	case "memory", "charter":
+		// A Project's shared memory, for Claude and Codex alike (memory.go),
+		// and its team charter workflow, which a Session changes only on the
+		// person's words (charter.go).
+		projectRecordCommand(os.Args[1], os.Args[2:])
 	case "ops":
 		// A Project's Ops documents: files and links (opsdocs.go).
 		opsCommand(os.Args[2:])

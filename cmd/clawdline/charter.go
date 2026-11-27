@@ -22,6 +22,16 @@ import (
 
 const charterWorkflowPath = "/v1/project-assistant-charters/workflow"
 
+// projectRecordCommand runs one of the commands that keep a Project's own
+// records: its shared memory or its charter workflow.
+func projectRecordCommand(name string, args []string) {
+	if name == "charter" {
+		charterCommand(args)
+		return
+	}
+	memoryCommand(args)
+}
+
 func charterCommand(args []string) {
 	os.Exit(runCharter(args, os.Stdin, os.Stdout, os.Stderr, openMemoryDaemon))
 }
