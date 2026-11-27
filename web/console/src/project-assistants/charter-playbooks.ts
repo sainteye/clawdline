@@ -26,7 +26,8 @@ const markup = /^(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s*)+/
  */
 export function firstSentence(text: string, max = 90): string {
   const line = text.split("\n").map(item => item.replace(markup, "").replace(/\*\*|__|`/g, "").trim()).find(Boolean) ?? ""
-  const stop = /[。！？]|[.!?](?=\s|$)/u.exec(line)
+  // Full-width stops are written as escapes: 。！？
+  const stop = /[\u3002\uff01\uff1f]|[.!?](?=\s|$)/u.exec(line)
   const sentence = stop ? line.slice(0, stop.index + stop[0].length) : line
   const chars = [...sentence]
   return chars.length > max ? chars.slice(0, max - 1).join("").trimEnd() + "…" : sentence
