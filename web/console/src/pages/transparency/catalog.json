@@ -6026,7 +6026,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotSettings.tsx": "0236e06b378851dc837494915fb69c32f269e1c41cc5de8de3533cf96e301f10",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "da6bce31cb674385514d1342264e4b02852f405aec82c338f7b78f86a753dbd0",
+    "web/console/src/project-assistants/Chat.tsx": "5aa4d8bfb1a89fda7f350ae4920ceda4e639e81dac4676fee65666fc628c5a64",
     "web/console/src/project-assistants/ChatRows.tsx": "3e805dd20fcfcc47d999614bd2c2cad7af818d32602b3dd224605a141165e985",
     "web/console/src/project-assistants/DecisionCard.tsx": "f98710cf6b589c1f12d59a7f8e505d912b4345eb1efb1ad69da57ebac2e6a04a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",

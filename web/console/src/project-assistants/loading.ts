@@ -19,24 +19,36 @@ export function showAfter(delay: number, onChange: (shown: boolean) => void) {
 }
 
 /**
- * Opening the memory panel: it is open at once and loading, then shows its
- * content; a failure closes it and goes to the chat's error line. Closing
- * while a read is in flight wins over that read, and only the latest opening
- * can settle the panel.
+ * An initial failure closes the memory view. A failed reread keeps its last
+ * content visible. Only the latest read can report content or a failure.
  */
-export function memoryOpener(load: () => Promise<void>, to: {
-  open: (open: boolean) => void; loading: (loading: boolean) => void; fail: (error: unknown) => void
+export function memoryOpener<T>(load: () => Promise<T>, to: {
+  open: (open: boolean) => void; loading: (loading: boolean) => void
+  loaded: (value: T) => void; fail: (error: unknown, opening: boolean) => void
 }) {
   let current = 0
+  let ready = false
+  async function read(report: typeof to.fail) {
+    const mine = ++current
+    const opening = !ready
+    if (opening) { to.open(true); to.loading(true) }
+    let value: T
+    try {
+      value = await load()
+    } catch (error) {
+      if (mine !== current) return
+      if (opening) { to.loading(false); to.open(false) }
+      report(error, opening)
+      return
+    }
+    if (mine !== current) return
+    ready = true
+    if (opening) to.loading(false)
+    to.loaded(value)
+  }
   return {
-    open() {
-      const mine = ++current
-      to.open(true); to.loading(true)
-      return load().then(() => { if (mine === current) to.loading(false) }, error => {
-        if (mine !== current) return
-        to.loading(false); to.open(false); to.fail(error)
-      })
-    },
-    close() { current++; to.loading(false); to.open(false) },
+    open: () => read(to.fail),
+    refresh: () => read(error => { throw error }),
+    close() { current++; ready = false; to.loading(false); to.open(false) },
   }
 }
