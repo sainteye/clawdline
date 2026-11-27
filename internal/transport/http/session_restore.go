@@ -22,6 +22,7 @@ import (
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	personas "github.com/sainteye/clawdline/internal/domain/persona"
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/squad"
 )
 
 // The sessions a reboot took away (docs/session-restore.md): the record kept
@@ -145,11 +146,12 @@ func (s *Server) restorableList(w http.ResponseWriter, r *http.Request) {
 	if offer.Previous.ID != "" {
 		out.PreviousBootLastSeen = offer.Previous.LastSeen.Unix()
 	}
+	installed := s.installedRoles(r.Context())
 	for _, row := range offer.Rows {
 		out.Sessions = append(out.Sessions, contract.RestorableSession{
 			ConversationID: row.ConversationID, Assistant: row.Assistant, Place: row.Place,
 			PlaceLabel: s.placeLabel(row.CWD), CWD: row.CWD, Title: row.Title, LastSeen: row.LastSeen.Unix(),
-			Persona: restorablePersona(row.Persona),
+			Persona: restorablePersona(row.Persona, installed),
 		})
 	}
 	writeJSON(w, out)
@@ -324,7 +326,7 @@ func (s *Server) resumeConversation(ctx context.Context, reading startReading, t
 		resume = starter.ResumeRecorded
 	}
 	// With the persona it was launched with, as its command line said.
-	made, err := resume(ctx, place, t.conversation, t.assistant, restorablePersona(t.persona))
+	made, err := resume(ctx, place, t.conversation, t.assistant, restorablePersona(t.persona, s.installedRoles(ctx)))
 	if err != nil {
 		log.Printf("audit place.%s place=%s cwd=%q assistant=%s session=%.64s ok=0 why=%v",
 			t.verb, place.ID, place.Path, t.assistant, t.conversation, err)
@@ -390,12 +392,33 @@ func (s *Server) restoreRowsReading() capacity.Reading {
 		Note: "conversations recorded per boot; evicted counts the ones left unrecorded past the limit"}
 }
 
-// restorablePersona is the persona a restored session comes back as: the one
-// it was recorded with while this build still has it. A build that dropped
-// it restores the conversation as nobody rather than not at all.
-func restorablePersona(id string) string {
-	if _, ok := personas.Known(id); !ok {
-		return ""
+// restorablePersona is the persona a restored session comes back as: a
+// built-in this build has, or a custom Squad role still installed on this
+// machine. A role that is gone restores the conversation as nobody rather
+// than not at all.
+func restorablePersona(id string, installed func(string) bool) string {
+	if _, ok := personas.Known(id); ok {
+		return id
 	}
-	return id
+	if squad.ValidCustomID(id) && installed != nil && installed(id) {
+		return id
+	}
+	return ""
+}
+
+// installedRoles reads the machine's Squad catalog once, on first use, for
+// the rows of one request. An unreadable catalog installs nothing.
+func (s *Server) installedRoles(ctx context.Context) func(string) bool {
+	var have map[string]bool
+	return func(id string) bool {
+		if have == nil {
+			have = map[string]bool{}
+			if c, err := s.squadCatalog(ctx); err == nil {
+				for _, d := range c.Definitions {
+					have[d.DefinitionID] = true
+				}
+			}
+		}
+		return have[id]
+	}
 }

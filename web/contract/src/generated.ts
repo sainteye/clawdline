@@ -7783,6 +7783,12 @@ export interface ProjectAssistantReadResponse {
 export interface ProjectAssistantReadSnapshot {
   bot: ProjectAssistantBot
   last_turn?: ProjectAssistantReadTurnSummary
+
+  /**
+   * Pending turns past the snapshot's byte budget, left out of pending_turns and
+   * queued_messages. Absent when every pending turn is present.
+   */
+  pending_omitted?: number
   pending_turns: ProjectAssistantReadTurnSummary[]
   queued_messages: ProjectAssistantMessage[]
 }

@@ -238,7 +238,9 @@ SELECT CASE WHEN spent<=? THEN j END,CASE WHEN spent<=? THEN m END
 			return nil, err
 		}
 		if !raw.Valid {
-			break
+			// Past the byte budget: counted, never silently sliced.
+			out.PendingOmitted++
+			continue
 		}
 		if !message.Valid {
 			rows.Close()

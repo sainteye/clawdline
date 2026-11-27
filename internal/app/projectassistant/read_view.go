@@ -74,6 +74,8 @@ type ReadSnapshot struct {
 	Bot            pa.Bot
 	PendingTurns   []ReadTurnSummary
 	QueuedMessages []pa.Message
+	// PendingOmitted counts pending turns past the byte budget.
+	PendingOmitted int
 	LastTurn       *ReadTurnSummary
 }
 

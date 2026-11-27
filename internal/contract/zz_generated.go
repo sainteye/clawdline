@@ -6744,8 +6744,12 @@ type ProjectAssistantReadResponse struct {
 // barriers are counted in head. Permissions and traces are separate bounded
 // collections.
 type ProjectAssistantReadSnapshot struct {
-	Bot            ProjectAssistantBot               `json:"bot"`
-	LastTurn       *ProjectAssistantReadTurnSummary  `json:"last_turn,omitempty"`
+	Bot      ProjectAssistantBot              `json:"bot"`
+	LastTurn *ProjectAssistantReadTurnSummary `json:"last_turn,omitempty"`
+
+	// Pending turns past the snapshot's byte budget, left out of pending_turns and
+	// queued_messages. Absent when every pending turn is present.
+	PendingOmitted int64                             `json:"pending_omitted,omitempty"`
 	PendingTurns   []ProjectAssistantReadTurnSummary `json:"pending_turns"`
 	QueuedMessages []ProjectAssistantMessage         `json:"queued_messages"`
 }

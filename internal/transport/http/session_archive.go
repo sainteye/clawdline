@@ -103,10 +103,10 @@ func (s *Server) forgetArchived(w http.ResponseWriter, raw []byte) {
 
 // archivedWire is one row as the console reads it, the project's mark
 // computed now from its directory.
-func (s *Server) archivedWire(row store.ArchiveRow) contract.ArchivedSession {
+func (s *Server) archivedWire(row store.ArchiveRow, installed func(string) bool) contract.ArchivedSession {
 	out := contract.ArchivedSession{ConversationID: row.ConversationID, Assistant: row.Assistant,
 		Place: row.Place, PlaceLabel: s.placeLabel(row.CWD), CWD: row.CWD, Title: row.Title,
-		Persona: restorablePersona(row.Persona), ArchivedAt: row.ArchivedAt.Unix()}
+		Persona: restorablePersona(row.Persona, installed), ArchivedAt: row.ArchivedAt.Unix()}
 	if s.icons != nil {
 		out.Icon = wireIcon(s.icons.For(row.CWD))
 	}
@@ -128,8 +128,9 @@ func (s *Server) archivedList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	out := contract.ArchivedSessions{Sessions: make([]contract.ArchivedSession, 0, len(rows)), At: time.Now().Unix()}
+	installed := s.installedRoles(ctx)
 	for _, row := range rows {
-		out.Sessions = append(out.Sessions, s.archivedWire(row))
+		out.Sessions = append(out.Sessions, s.archivedWire(row, installed))
 	}
 	writeJSON(w, out)
 }
@@ -175,7 +176,7 @@ func (s *Server) archiveSession(w http.ResponseWriter, r *http.Request, id strin
 		return
 	}
 	writeJSON(w, contract.ArchiveAnswer{OK: true, ID: id, Action: "archived", Forced: body.Force,
-		Archived: s.archivedWire(row)})
+		Archived: s.archivedWire(row, s.installedRoles(r.Context()))})
 }
 
 func (s *Server) restoreArchived(w http.ResponseWriter, raw []byte) {

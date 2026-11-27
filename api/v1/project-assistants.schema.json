@@ -2927,6 +2927,11 @@
             "$ref": "#/$defs/ProjectAssistantMessage"
           }
         },
+        "pending_omitted": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Pending turns past the snapshot's byte budget, left out of pending_turns and queued_messages. Absent when every pending turn is present."
+        },
         "last_turn": {
           "$ref": "#/$defs/ProjectAssistantReadTurnSummary"
         }

@@ -14798,5 +14798,7 @@
   "teamCharter.removeConfirm": "移除",
   "teamCharter.author_removed": "你（移除）",
   "teamCharter.reasonRemoved": "移除章程",
-  "teamCharter.personalWorkspaceOf": "{arg0} 自己的工作區"
+  "teamCharter.personalWorkspaceOf": "{arg0} 自己的工作區",
+  "capacityRow.bots.connector_notifications.full": "視為連接器故障，這次請求標示為可能已送出，不自動重送。",
+  "capacityRow.bots.connector_notifications.what": "一個 stdio 連接器在回覆單一請求前可送出的通知數。"
 }

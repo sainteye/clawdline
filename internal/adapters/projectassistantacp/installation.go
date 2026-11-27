@@ -285,7 +285,7 @@ func ensureAdapter(ctx context.Context, state string, spec adapterSpec) (ClaudeI
 var claudeResumeQualified = true
 
 func nativeLimits() Limits {
-	return Limits{RPCPending: capacity.MaximumBotRPCPending, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotProcessCensusBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond, UnscannedCensusGap: time.Duration(capacity.MaximumBotUnscannedCensusGapMilliseconds) * time.Millisecond}
+	return Limits{RPCPending: capacity.MaximumBotRPCPending, Notifications: capacity.MaximumBotConnectorNotifications, FrameBytes: capacity.MaximumBotFrameBytes, CaptureBytes: capacity.MaximumBotProcessCensusBytes, StderrBytes: capacity.MaximumBotStderrBytes, OwnedDescendants: capacity.MaximumBotOwnedDescendants, WriteTimeout: time.Duration(capacity.MaximumBotWriteMilliseconds) * time.Millisecond, CleanupTimeout: time.Duration(capacity.MaximumBotCleanupMilliseconds) * time.Millisecond, RPCTimeout: time.Duration(capacity.MaximumBotRPCMilliseconds) * time.Millisecond, DescendantPoll: time.Duration(capacity.MaximumBotSurveyMilliseconds) * time.Millisecond, UnscannedCensusGap: time.Duration(capacity.MaximumBotUnscannedCensusGapMilliseconds) * time.Millisecond}
 }
 
 // SourceProcessLimits uses the existing registered physical-process budgets.

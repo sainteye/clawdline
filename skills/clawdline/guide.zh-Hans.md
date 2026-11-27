@@ -855,7 +855,7 @@ clawdline webhook fire --url-file <path>
 而不是使用本不该持有的编排令牌：
 
 ```sh
-curl -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
+curl --fail-with-body -sS -X POST "http://127.0.0.1:$PORT/v1/orchestrator/tasks/$TASK_ID/verification-note" \
   -H "X-Clawdline-Task-Secret: $TASK_SECRET" -H 'Content-Type: application/json' \
   -H "Idempotency-Key: readout-$TASK_ID" -d '{"verification":"<record id>","text":"<readout>"}'
 ```

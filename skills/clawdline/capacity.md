@@ -104,6 +104,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.config_value_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_credential_holds` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_credentials` | 100 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.connector_notifications` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_processes` | 4 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.connector_secret_targets` | 128 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.decision_answer_bytes` | 507904 | `bytes` | `refuse` | `diagnostics, sender` | — |
@@ -678,7 +679,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `dispatch.brief_enter_presses` | 3 | `rows` | `refuse` | `diagnostics, notice` | — |
 | `dispatch.brief_held_grace_seconds` | 60 | `seconds` | `evict_oldest` | `diagnostics, notice` | — |
-| `epic.child_items` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `epic.child_items` | 32 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `handoff.pack_bytes` | 33554432 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `handoff.patch_bytes` | 8388608 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `handoff.worktrees` | 16 | `rows` | `refuse` | `diagnostics, sender` | — |

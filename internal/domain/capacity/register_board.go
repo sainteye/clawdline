@@ -83,7 +83,7 @@ func boardBounds() []Entry {
 			// open or closed; the thirty-third is refused epic_children_full
 			// and nothing is written.
 			Name: EpicChildItems, Class: Buffer, Unit: Rows,
-			Limit: 64, AtLimit: Refuse,
+			Limit: 32, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/work.EpicChildLimit"},
 		},

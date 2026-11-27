@@ -55,7 +55,7 @@ func paWireReadSnapshot(v app.ReadSnapshot) (*contract.ProjectAssistantReadSnaps
 	if err != nil {
 		return nil, err
 	}
-	out := &contract.ProjectAssistantReadSnapshot{Bot: bot,
+	out := &contract.ProjectAssistantReadSnapshot{Bot: bot, PendingOmitted: int64(v.PendingOmitted),
 		PendingTurns:   make([]contract.ProjectAssistantReadTurnSummary, len(v.PendingTurns)),
 		QueuedMessages: make([]contract.ProjectAssistantMessage, len(v.QueuedMessages))}
 	for i, turn := range v.PendingTurns {
