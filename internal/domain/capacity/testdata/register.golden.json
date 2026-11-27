@@ -13114,7 +13114,7 @@
     "Name": "epic.child_items",
     "Class": "buffer",
     "Unit": "rows",
-    "Limit": 64,
+    "Limit": 32,
     "WarnAt": 0,
     "AtLimit": "refuse",
     "Deviation": "",
