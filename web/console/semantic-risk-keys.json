@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14931,
+  "englishKeys": 14935,
   "counts": {
-    "negation": 3765,
-    "state": 2545,
+    "negation": 3766,
+    "state": 2548,
     "permission": 879,
     "deletion": 361,
     "uncertainty": 585
   },
-  "unionCount": 6320,
+  "unionCount": 6324,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -513,6 +513,7 @@
       "capacityRow.console.direct_history_machines.full",
       "capacityRow.console.execution_recovery_attempts.full",
       "capacityRow.console.execution_recovery_attempts.what",
+      "capacityRow.console.fleet_retry_first_milliseconds.full",
       "capacityRow.console.health_live_seconds.full",
       "capacityRow.console.health_ui_export_bytes.full",
       "capacityRow.console.health_ui_id_characters.full",
@@ -4251,6 +4252,9 @@
       "capacityRow.console.direct_history_hours.full",
       "capacityRow.console.direct_history_hours.what",
       "capacityRow.console.direct_history_machines.full",
+      "capacityRow.console.fleet_retry_ceiling_milliseconds.full",
+      "capacityRow.console.fleet_retry_ceiling_milliseconds.what",
+      "capacityRow.console.fleet_retry_first_milliseconds.what",
       "capacityRow.console.health_live_seconds.what",
       "capacityRow.console.health_ui_body_bytes.full",
       "capacityRow.console.health_ui_budget_seconds.full",
@@ -9087,6 +9091,10 @@
     "capacityRow.console.direct_history_machines.full",
     "capacityRow.console.execution_recovery_attempts.full",
     "capacityRow.console.execution_recovery_attempts.what",
+    "capacityRow.console.fleet_retry_ceiling_milliseconds.full",
+    "capacityRow.console.fleet_retry_ceiling_milliseconds.what",
+    "capacityRow.console.fleet_retry_first_milliseconds.full",
+    "capacityRow.console.fleet_retry_first_milliseconds.what",
     "capacityRow.console.health_live_seconds.full",
     "capacityRow.console.health_live_seconds.what",
     "capacityRow.console.health_ui_body_bytes.full",

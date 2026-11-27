@@ -10364,6 +10364,40 @@
   },
   {
     "Register": "daemon",
+    "Name": "console.fleet_retry_ceiling_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 30000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
+    "Name": "console.fleet_retry_first_milliseconds",
+    "Class": "buffer",
+    "Unit": "milliseconds",
+    "Limit": 1000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "console.health_live_seconds",
     "Class": "cache",
     "Unit": "seconds",

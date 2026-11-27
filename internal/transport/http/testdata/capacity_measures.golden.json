@@ -2571,6 +2571,14 @@
     "Note": true
   },
   {
+    "Name": "console.fleet_retry_ceiling_milliseconds",
+    "Err": true
+  },
+  {
+    "Name": "console.fleet_retry_first_milliseconds",
+    "Err": true
+  },
+  {
     "Name": "console.health_live_seconds",
     "Known": true,
     "Note": true
