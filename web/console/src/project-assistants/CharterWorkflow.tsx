@@ -24,8 +24,9 @@ const headings = new Set(["一件事怎麼走", "How one piece of work flows"])
 /** Whether a charter section is the free text the workflow replaces. */
 export const isWorkflowHeading = (heading: string) => headings.has(heading.trim())
 
-// A phone scales the drawing down to cards this wide, then scrolls it sideways in its own box.
-const minScale = 0.7
+// A phone keeps cards readable (about 168px) and scrolls the drawing sideways in its own
+// box; a wider column may shrink a little more so the whole team fits without scrolling.
+const phoneMinScale = 0.81, wideMinScale = 0.72, wideRoom = 640
 const edgeColour: Record<string, string> = { normal: "#6b6b73", pass: "#86c997", return: "#e39567" }
 const changeColour: Partial<Record<WorkflowChange, string>> = { added: "#86c997", changed: "#86c997", removed: "#db8578" }
 
@@ -45,7 +46,7 @@ function stateSentence(placed: PlacedWorkflowState, botOf: (id: string) => Workf
   return placed.unreached ? charterFormat("workflowStateUnreached", line) : line
 }
 
-/** The drawing's scale for the width its box has: never larger than drawn, never below minScale. */
+/** The drawing's scale for the width its box has: never larger than drawn, never below its floor for that width. */
 function useFit(width: number) {
   const box = useRef<HTMLDivElement>(null)
   const [room, setRoom] = useState(0)
@@ -56,7 +57,8 @@ function useFit(width: number) {
     seen.observe(el)
     return () => seen.disconnect()
   }, [])
-  return { box, scale: room > 0 ? Math.max(minScale, Math.min(1, room / width)) : 1 }
+  const floor = room >= wideRoom ? wideMinScale : phoneMinScale
+  return { box, scale: room > 0 ? Math.max(floor, Math.min(1, room / width)) : 1 }
 }
 
 function Arrowheads({ id, colours }: { id: string; colours: readonly string[] }) {
@@ -142,11 +144,15 @@ function Legend({ diff }: { diff?: boolean }) {
   </p>
 }
 
+// A Bot named "Atlas" followed by a full-width bar and its role is just Atlas on a
+// line: the role would make the return channel, and the drawing, too wide.
+export const shortBotName = (name: string | undefined) => (name ?? "").split(/[\uFF5C|]/)[0]!.trim()
+
 /** A way back up the channel names whom the work goes back to: 不通過 直接退回 Atlas; beside its card it needs not. */
 function returnLabels(workflow: Workflow, botOf: (id: string) => WorkflowBot | undefined) {
   const states = new Map(workflow.states.map(s => [s.id, s]))
   return (t: WorkflowTransition, inline: boolean) => {
-    const to = states.get(t.to), name = to?.bot_id ? botOf(to.bot_id)?.name : ""
+    const to = states.get(t.to), name = shortBotName(to?.bot_id ? botOf(to.bot_id)?.name : "")
     if (t.kind !== "return" || !name || inline) return t.label
     return t.label ? charterFormat("workflowReturnLabel", t.label, name) : charterFormat("workflowReturnPlain", name)
   }

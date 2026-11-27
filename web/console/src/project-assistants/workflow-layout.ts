@@ -20,7 +20,7 @@ export type WorkflowState = W.ProjectAssistantCharterWorkflowState
 export type WorkflowTransition = W.ProjectAssistantCharterWorkflowTransition
 
 export const workflowGeometry = {
-  cardWidth: 240, cardHeight: 64, doneWidth: 132, doneHeight: 44, rowPitch: 120,
+  cardWidth: 208, cardHeight: 64, doneWidth: 132, doneHeight: 44, rowPitch: 120,
   pad: 16, startMarker: 30, unreachedHeader: 30, labelSize: 12, labelHeight: 16, lane: 12,
 } as const
 
