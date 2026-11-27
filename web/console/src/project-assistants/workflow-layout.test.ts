@@ -70,7 +70,7 @@ test("a way back runs up a channel right of every card it passes", () => {
 test("labels are beside or above their lines and never over a card or another label", () => {
   assertLabelsClear(layoutWorkflow(sample()))
   // Longer labels, as a page writes them with the Bot sent back to.
-  assertLabelsClear(layoutWorkflow(sample(), (t: { label: string; kind: string }) => t.kind === "return" ? `${t.label}・直接退回 Atlas` : t.label))
+  assertLabelsClear(layoutWorkflow(sample(), (t: { label: string; kind: string }, inline: boolean) => t.kind === "return" && !inline ? `${t.label}・直接退回 Atlas` : t.label))
   assertLabelsClear(layoutWorkflow(sampleWorkflowProposal(sample())))
 })
 

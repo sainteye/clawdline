@@ -189,10 +189,13 @@ function laneFor(channels: Channel[], side: 1 | -1, from: number, to: number) {
   return lane
 }
 
-type Router = { placed: Map<string, PlacedWorkflowState>; frame: Frame; channels: Channel[]; labelOf: (t: WorkflowTransition) => string; pairs: Set<string> }
+/** A transition's label; inline is true when it runs straight between two cards of one row. */
+export type WorkflowLabelOf = (t: WorkflowTransition, inline: boolean) => string
+
+type Router = { placed: Map<string, PlacedWorkflowState>; frame: Frame; channels: Channel[]; labelOf: WorkflowLabelOf; pairs: Set<string> }
 
 function routeSameRow(a: PlacedWorkflowState, b: PlacedWorkflowState, t: WorkflowTransition, r: Router): RoutedTransition {
-  const dir = b.x > a.x ? 1 : -1, text = r.labelOf(t)
+  const dir = b.x > a.x ? 1 : -1, text = r.labelOf(t, true)
   const between = [...r.placed.values()].some(s => s.row === a.row && s !== a && s !== b && (s.x - a.x) * (s.x - b.x) < 0)
   if (between) {
     const y = Math.max(bottom(a), bottom(b)) + 20
@@ -208,13 +211,13 @@ function routeSameRow(a: PlacedWorkflowState, b: PlacedWorkflowState, t: Workflo
 }
 
 function routeDown(a: PlacedWorkflowState, b: PlacedWorkflowState, t: WorkflowTransition, r: Router): RoutedTransition {
-  const g = workflowGeometry, text = r.labelOf(t), key = transitionKey(t)
+  const g = workflowGeometry, text = r.labelOf(t, false), key = transitionKey(t)
   const gapTop = bottom(a), gapBottom = b.y
   const blocked = [...r.placed.values()].some(s => s !== a && s !== b && s.col === a.col && s.row > a.row && s.row < b.row)
   const sameCol = Math.abs(cx(a) - cx(b)) < 1
   if (sameCol && !blocked && b.row === a.row + 1) {
     const points: [number, number][] = [[cx(a), gapTop], [cx(b), gapBottom]]
-    return { key, transition: t, points, path: pathOf(points), label: label(text, cx(a) + 6, gapTop + (gapBottom - gapTop) / 2, "start") }
+    return { key, transition: t, points, path: pathOf(points), label: label(text, cx(a) + 6, gapTop + 14, "start") }
   }
   const side = cx(b) >= cx(a) ? 1 : -1, sx = sameCol ? cx(a) : cx(a) + side * 40
   if (b.row === a.row + 1 && !blocked) {
@@ -231,7 +234,7 @@ function routeDown(a: PlacedWorkflowState, b: PlacedWorkflowState, t: WorkflowTr
 }
 
 function routeUp(a: PlacedWorkflowState, b: PlacedWorkflowState, t: WorkflowTransition, r: Router): RoutedTransition {
-  const g = workflowGeometry, text = r.labelOf(t)
+  const g = workflowGeometry, text = r.labelOf(t, false)
   const side: 1 | -1 = Math.max(a.col, b.col) <= 0 && Math.min(a.col, b.col) < 0 ? -1 : 1
   const lane = laneFor(r.channels, side, b.row, a.row)
   const span = [...r.placed.values()].filter(s => s.row >= Math.min(a.row, b.row) && s.row <= Math.max(a.row, b.row))
@@ -245,8 +248,8 @@ function routeUp(a: PlacedWorkflowState, b: PlacedWorkflowState, t: WorkflowTran
 }
 
 /** Horizontal room between columns: the widest same-row label fits with margin. */
-function columnGap(cells: ReadonlyMap<string, WorkflowCell>, transitions: readonly WorkflowTransition[], labelOf: (t: WorkflowTransition) => string) {
-  const widths = transitions.filter(t => t.from !== t.to && cells.get(t.from)?.row === cells.get(t.to)?.row).map(t => labelWidth(labelOf(t)) + 36)
+function columnGap(cells: ReadonlyMap<string, WorkflowCell>, transitions: readonly WorkflowTransition[], labelOf: WorkflowLabelOf) {
+  const widths = transitions.filter(t => t.from !== t.to && cells.get(t.from)?.row === cells.get(t.to)?.row).map(t => labelWidth(labelOf(t, true)) + 28)
   return Math.min(200, Math.max(72, ...widths))
 }
 
@@ -255,7 +258,7 @@ function columnGap(cells: ReadonlyMap<string, WorkflowCell>, transitions: readon
  * state's box and each transition's line and label, in a frame whose origin
  * is the top-left of the drawing.
  */
-export function routeWorkflow(workflow: W.ProjectAssistantCharterWorkflow, cells: ReadonlyMap<string, WorkflowCell>, options: { labelOf?: (t: WorkflowTransition) => string; only?: ReadonlySet<string> } = {}): WorkflowLayout {
+export function routeWorkflow(workflow: W.ProjectAssistantCharterWorkflow, cells: ReadonlyMap<string, WorkflowCell>, options: { labelOf?: WorkflowLabelOf; only?: ReadonlySet<string> } = {}): WorkflowLayout {
   const g = workflowGeometry, labelOf = options.labelOf ?? (t => t.label)
   const transitions = drawable(workflow).filter(t => cells.has(t.from) && cells.has(t.to) && (!options.only || options.only.has(transitionKey(t))))
   const start = workflow.states.find(s => s.kind === "start" && cells.has(s.id) && !cells.get(s.id)!.unreached)?.id
@@ -291,7 +294,7 @@ function frameLayout(states: PlacedWorkflowState[], transitions: RoutedTransitio
 }
 
 /** The whole workflow, placed and routed. */
-export function layoutWorkflow(workflow: W.ProjectAssistantCharterWorkflow, labelOf?: (t: WorkflowTransition) => string): WorkflowLayout {
+export function layoutWorkflow(workflow: W.ProjectAssistantCharterWorkflow, labelOf?: WorkflowLabelOf): WorkflowLayout {
   return routeWorkflow(workflow, placeWorkflow(workflow), { labelOf })
 }
 
@@ -329,7 +332,7 @@ export function workflowDiff(before: W.ProjectAssistantCharterWorkflow | null, a
 }
 
 /** The diff's drawing: the union placed as a whole, then closed up around what changes. */
-export function layoutWorkflowDiff(diff: WorkflowDiff, labelOf?: (t: WorkflowTransition) => string): WorkflowLayout {
+export function layoutWorkflowDiff(diff: WorkflowDiff, labelOf?: WorkflowLabelOf): WorkflowLayout {
   const cells = focusCells(placeWorkflow(diff.workflow), diff.shownStates)
   return routeWorkflow(diff.workflow, cells, { labelOf, only: diff.shownTransitions })
 }

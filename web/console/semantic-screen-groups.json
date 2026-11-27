@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14890,
-  "riskKeys": 6310,
-  "nonRiskCount": 8580,
+  "englishContentKeys": 14926,
+  "riskKeys": 6318,
+  "nonRiskCount": 8608,
   "groups": [
     {
       "name": "acp / other",
@@ -8437,7 +8437,7 @@
     },
     {
       "name": "teamCharter / other",
-      "count": 126,
+      "count": 154,
       "sources": [
         null
       ],
@@ -8567,7 +8567,35 @@
         "teamCharter.titleText",
         "teamCharter.tooLarge",
         "teamCharter.version",
-        "teamCharter.waiting"
+        "teamCharter.waiting",
+        "teamCharter.workflowAnyBot",
+        "teamCharter.workflowApply",
+        "teamCharter.workflowAsk",
+        "teamCharter.workflowChange_added",
+        "teamCharter.workflowChange_changed",
+        "teamCharter.workflowChange_same",
+        "teamCharter.workflowDiffAdded",
+        "teamCharter.workflowDiffLabel",
+        "teamCharter.workflowDiffSame",
+        "teamCharter.workflowEdge",
+        "teamCharter.workflowEdgeBack",
+        "teamCharter.workflowEdgeWhen",
+        "teamCharter.workflowLegendNext",
+        "teamCharter.workflowLegendPass",
+        "teamCharter.workflowListLabel",
+        "teamCharter.workflowMeta",
+        "teamCharter.workflowOldText",
+        "teamCharter.workflowOtherBot",
+        "teamCharter.workflowProposalOnly",
+        "teamCharter.workflowRequestHint",
+        "teamCharter.workflowRetouch",
+        "teamCharter.workflowReturnLabel",
+        "teamCharter.workflowReturnPlain",
+        "teamCharter.workflowStart",
+        "teamCharter.workflowState",
+        "teamCharter.workflowStateDone",
+        "teamCharter.workflowStateStart",
+        "teamCharter.workflowTitle"
       ]
     },
     {

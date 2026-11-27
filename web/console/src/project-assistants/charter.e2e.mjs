@@ -17,6 +17,7 @@
 // each is for and whether they read it; the detail reminds who has not; edit,
 // reassign (a bottom sheet on a phone), delete, create, history and a playbook's
 // conflict report each do what they say; an older machine shows no section.
+// The workflow ("?workflow", API 128), at 1280x800 and 390x844: the state machine, its proposal, apply, dismiss and 請主助理修改.
 // 什麼要問你 ("?ask"), at 1280x800 and 390x844: 改成兩欄格式 sorts free text into rows,
 // the row editor's Enter, Backspace, × and 新增一條, and the two-column view.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> CHARTER_ARTIFACTS=<dir> node charter.e2e.mjs
@@ -653,12 +654,145 @@ async function askPolicy(page,name,narrow){
   check(`${name} other sections offer no conversion`,()=>assert.equal(elsewhere,0))
 }
 
+// The workflow (API 128, "?workflow"), at 1280x800 and 390x844: the charter's
+// "一件事怎麼走" is drawn as its state machine in place of the free text, which
+// stays behind 舊的文字說明; each card shows its Bot's avatar and name; no label
+// covers a card; an off-screen list reads every state and transition; the lead's
+// pending proposal draws only what changes and applies; 請主助理修改 opens the
+// composer for a workflow request, whose proposal is dismissed; a phone scrolls
+// the graph inside its own box, never the page; an older machine shows the text.
+const workflowBox=(page,scope)=>page.locator(scope).evaluate(section=>{
+  const root=section.querySelector(":scope > .pa-wf-box")
+  const rect=n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}}
+  const cards=[...root.querySelectorAll(".pa-wf-state,.pa-wf-done")].map(n=>({text:n.innerText,...rect(n)}))
+  const labels=[...root.querySelectorAll(".pa-wf-lines text")].map(n=>({text:n.textContent,...rect(n)}))
+  return {cards,labels,scroll:root.scrollWidth,client:root.clientWidth}
+})
+const covers=(a,b)=>a.x<b.x+b.w&&b.x<a.x+a.w&&a.y<b.y+b.h&&b.y<a.y+a.h
+async function workflow(page,name,narrow){
+  await open(page)
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  const older=await page.locator(".pa-wf").count(),olderText=await page.locator(".pa-charter-section").count()
+  check(`${name} an older machine shows the free text and no graph`,()=>{assert.equal(older,0);assert.equal(olderText,5)})
+  await page.goto(origin+"/?workflow")
+  await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
+  await page.evaluate(()=>window.botsFixture.open())
+  await page.locator(".pa-charter-row").click()
+  const section=page.locator(".pa-wf")
+  const graph=section.locator(":scope > .pa-wf-box")
+  await graph.locator(".pa-wf-state").first().waitFor()
+  const head=await section.locator(".pa-wf-head").innerText()
+  check(`${name} workflow header`,()=>assert.match(head,/一件事怎麼走[\s\S]*由主助理維護 · 第 4 版 · 要改流程，直接跟主助理說[\s\S]*請主助理修改/))
+  const position=await page.locator(".pa-charter-scroll").evaluate(n=>[...n.querySelectorAll(":scope > article.pa-charter-section, :scope > div > .pa-wf")].map(e=>e.matches(".pa-wf")?"flow":e.getAttribute("aria-label")))
+  check(`${name} the graph takes the free-text section's place`,()=>assert.deepEqual(position,["誰負責什麼","flow","什麼要問你","Bot 之間怎麼溝通","交辦卡"]))
+  const pencils=await section.locator(".pa-charter-edit").evaluateAll(nodes=>nodes.filter(n=>!n.closest(".pa-wf-old")).length)
+  check(`${name} no editor or pencil on the graph`,()=>assert.equal(pencils,0))
+  const cards=await graph.locator(".pa-wf-state").evaluateAll(nodes=>nodes.map(n=>({text:n.innerText.replace(/\n/g," | "),avatar:!!n.querySelector(".pa-avatar"),border:getComputedStyle(n).borderTopColor})))
+  const done=await graph.locator(".pa-wf-done").innerText()
+  check(`${name} seven cards and the done pill`,()=>{assert.equal(cards.length,7);assert.equal(done.trim(),"完成")})
+  check(`${name} each card names its Bot with its avatar`,()=>{
+    const by=t=>cards.find(c=>c.text.startsWith(t))
+    assert.equal(by("派工・審證據").text,"派工・審證據 | Project assistant");assert.ok(by("派工・審證據").avatar)
+    assert.equal(by("可靠性審查").text,"可靠性審查 | Interface design");assert.ok(by("可靠性審查").avatar)
+    assert.equal(by("開交辦卡").text,"開交辦卡 | 接到事情的 Bot");assert.ok(!by("開交辦卡").avatar)
+    assert.notEqual(by("派工・審證據").border,by("開交辦卡").border,"a Bot's card is tinted with its colour")
+  })
+  const drawn=await workflowBox(page,".pa-wf")
+  check(`${name} labels sit beside lines, never over a card`,()=>{
+    const labels=drawn.labels.filter(l=>l.w>0)
+    assert.deepEqual(labels.map(l=>l.text).filter(t=>/退回/.test(t)),["不通過 直接退回 Project assistant"])
+    for(const l of labels)for(const c of drawn.cards)assert.ok(!covers(l,c),`${l.text} covers ${c.text}`)
+  })
+  const sentences=await section.locator(":scope > ul.pa-visually-hidden li").allInnerTexts()
+  check(`${name} the off-screen list reads every state and transition`,()=>{
+    assert.equal(sentences.length,8+10)
+    assert.ok(sentences.includes("從畫面驗收退回派工・審證據，不通過時"),JSON.stringify(sentences))
+    assert.ok(sentences.includes("派工・審證據：Project assistant"))
+    assert.ok(sentences.includes("開交辦卡：流程從這裡開始，接到事情的 Bot"))
+    assert.ok(sentences.includes("從部署 Cloud到更新官網與 README，對外看得到時"))
+  })
+  const hidden=await section.locator(".pa-wf-canvas").first().getAttribute("aria-hidden")
+  check(`${name} the drawing itself is hidden from assistive technology`,()=>assert.equal(hidden,"true"))
+  if(narrow){
+    const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}))
+    check(`${name} no sideways page scroll`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))
+    check(`${name} the graph scrolls sideways in its own box`,()=>assert.ok(drawn.scroll>drawn.client,JSON.stringify(drawn)))
+    const spine=await graph.evaluate(box=>{const card=[...box.querySelectorAll(".pa-wf-state")].find(n=>n.innerText.startsWith("派工・審證據")).getBoundingClientRect(),r=box.getBoundingClientRect();return {left:card.left-r.left,right:r.right-card.right}})
+    check(`${name} the graph opens with the main column in view`,()=>assert.ok(spine.left>=0&&spine.right>=0,JSON.stringify(spine)))
+    const minCard=Math.min(...drawn.cards.filter(c=>!/完成/.test(c.text)).map(c=>c.w))
+    check(`${name} cards keep the smallest scale`,()=>assert.ok(minCard>=167,String(minCard)))
+  }else check(`${name} the graph fits its box on a desktop`,()=>assert.ok(drawn.scroll<=drawn.client+1,JSON.stringify(drawn)))
+  const small=await smallTargets(page,".pa-wf")
+  check(`${name} workflow touch targets`,()=>assert.deepEqual(small,[]))
+  await graph.scrollIntoViewIfNeeded()
+  await shot(page,`workflow-graph-${name}`)
+  // The free text it replaces, behind a disclosure.
+  const old=section.locator(".pa-wf-old")
+  const closed=await old.evaluate(n=>n.open)
+  await old.locator("summary").click()
+  const oldText=await old.innerText()
+  check(`${name} the old text stays behind 舊的文字說明`,()=>{assert.equal(closed,false);assert.match(oldText,/舊的文字說明[\s\S]*先開卡，再派工，做完回報。/)})
+  await old.locator("summary").click()
+  // The lead's pending proposal: only the changed transition and the two states it joins.
+  const proposal=section.locator(".pa-wf-proposal")
+  await proposal.scrollIntoViewIfNeeded()
+  const text=await proposal.innerText()
+  check(`${name} workflow proposal names the lead and the reason`,()=>{assert.match(text,/Project assistant 的修改提案/);assert.match(text,/可靠性審查不通過時退回派工・審證據。/)})
+  const diff=await proposal.evaluate(n=>({cards:[...n.querySelectorAll(".pa-wf-state")].map(c=>[c.querySelector("strong").textContent,c.dataset.change]),edges:[...n.querySelectorAll(".pa-wf-edge")].map(e=>[e.dataset.change,e.querySelector("path").getAttribute("stroke-dasharray")]),list:[...n.querySelectorAll("ul.pa-visually-hidden li")].map(li=>li.textContent)}))
+  check(`${name} the diff draws only what changes`,()=>{
+    assert.deepEqual(diff.cards.sort(),[["可靠性審查","same"],["派工・審證據","same"]])
+    assert.deepEqual(diff.edges,[["added","6 5"]])
+    assert.ok(diff.list.includes("新增：從可靠性審查退回派工・審證據，不通過時"),JSON.stringify(diff.list))
+  })
+  const dim=await proposal.locator(".pa-wf-state").first().evaluate(n=>getComputedStyle(n).opacity)
+  check(`${name} unchanged neighbours are dimmed`,()=>assert.equal(dim,"0.45"))
+  const actions=await proposal.locator(".pa-charter-actions").innerText()
+  check(`${name} workflow proposal buttons`,()=>assert.match(actions,/套用成第 5 版[\s\S]*先不要[\s\S]*再修一下/))
+  const textCards=await page.locator(".pa-charter-proposal:not(.pa-wf-proposal)").count()
+  check(`${name} a workflow proposal is not shown as a text diff`,()=>assert.equal(textCards,0))
+  await shot(page,`workflow-proposal-${name}`)
+  await proposal.getByRole("button",{name:"套用成第 5 版"}).click()
+  await page.getByText("已套用，存成第 5 版。").waitFor()
+  const applied=await fixture(page,()=>({version:window.charterFixture.studio.version("project"),text:window.charterFixture.studio.text("project")}))
+  check(`${name} applying saves the next version with the text unchanged`,()=>{assert.equal(applied.version,5);assert.match(applied.text,/先開卡，再派工，做完回報。/)})
+  const after=await section.locator(":scope > ul.pa-visually-hidden li").allInnerTexts()
+  check(`${name} the applied way back is drawn`,()=>assert.ok(after.includes("從可靠性審查退回派工・審證據，不通過時"),JSON.stringify(after)))
+  const appliedBox=await workflowBox(page,".pa-wf")
+  if(!narrow)check(`${name} the applied graph still fits its box`,()=>assert.ok(appliedBox.scroll<=appliedBox.client+1,JSON.stringify([appliedBox.scroll,appliedBox.client])))
+  check(`${name} a way back beside its card carries only its label`,()=>assert.ok(appliedBox.labels.some(l=>l.text==="不通過")&&appliedBox.labels.filter(l=>/直接退回/.test(l.text)).length===1,JSON.stringify(appliedBox.labels.map(l=>l.text))))
+  await graph.scrollIntoViewIfNeeded()
+  await shot(page,`workflow-applied-${name}`)
+  // 請主助理修改 opens the composer for the workflow; the lead's answer is dismissed.
+  await section.getByRole("button",{name:"請主助理修改"}).click()
+  await page.getByText("跟主助理說流程要怎麼改。").waitFor()
+  const focused=await page.evaluate(()=>document.activeElement?.getAttribute("aria-label"))
+  check(`${name} 請主助理修改 focuses the composer`,()=>assert.equal(focused,"要求修改章程"))
+  await shot(page,`workflow-ask-${name}`)
+  const composer=page.getByRole("textbox",{name:"要求修改章程"})
+  await composer.fill("開卡時先寫驗收方式")
+  await composer.press("Enter")
+  await proposal.waitFor()
+  const sent=await fixture(page,()=>window.charterFixture.studio.log.filter(r=>r.path.endsWith("/change-request")).at(-1)?.body)
+  check(`${name} the request names the workflow target`,()=>{assert.equal(sent?.target,"workflow");assert.equal(sent?.text,"開卡時先寫驗收方式")})
+  const changed=await proposal.locator(".pa-wf-state").evaluateAll(nodes=>nodes.map(n=>[n.querySelector("strong").textContent,n.dataset.change]))
+  check(`${name} a changed step is drawn as changed`,()=>assert.deepEqual(changed,[["開交辦卡","changed"]]))
+  await proposal.getByRole("button",{name:"再修一下"}).click()
+  await page.getByText("跟主助理說這個提案要怎麼改。").waitFor()
+  await proposal.getByRole("button",{name:"先不要"}).click()
+  await page.getByText("已略過這個提案，章程沒變。").waitFor()
+  const gone=await proposal.count(),version=await fixture(page,()=>window.charterFixture.studio.version("project"))
+  check(`${name} dismissing leaves the workflow`,()=>{assert.equal(gone,0);assert.equal(version,5)})
+  await shot(page,`workflow-dismissed-${name}`)
+  if(narrow){const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}));check(`${name} still no sideways page scroll`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))}
+}
+
 try{
   for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}],["1440x900",{width:1440,height:900}]]){
     const narrow=name==="390"
     // 1440x900 is the conflict panel's design size; the other screens are covered above.
     // CHARTER_ONLY=<run name> runs one check, at every size it belongs to.
-    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks,askPolicy]
+    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks,askPolicy,workflow]
     for(const run of runs.filter(r=>!process.env.CHARTER_ONLY||r.name===process.env.CHARTER_ONLY)){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)

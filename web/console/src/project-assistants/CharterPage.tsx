@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { BotMessageMarkdown } from "./BotMessageMarkdown"
 import type * as W from "@clawdline/contract"
-import { charterPlaybooks, charterRefusal, charterRefusalCode, readsCurrentAt, shownReaders, type CharterApi, type CharterProject } from "./charter-api"
+import { charterPlaybooks, charterRefusal, charterRefusalCode, charterWorkflow, proposalKind, readsCurrentAt, shownReaders, type CharterApi, type CharterChangeTarget, type CharterProject } from "./charter-api"
+import { CharterWorkflowSection, isWorkflowHeading } from "./CharterWorkflow"
 import { PlaybookDiffs, usePlaybooks, type BotAppearanceOf } from "./CharterPlaybooks"
 import { changedPlaybooks } from "./charter-playbooks"
 import { AskPolicyEditor, AskPolicyView } from "./CharterAsk"
@@ -129,6 +130,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const historyOpen = panel === "history"
   const [request, setRequest] = useState("")
   const [retouch, setRetouch] = useState<string | null>(null)
+  const [target, setTarget] = useState<CharterChangeTarget>("text")
   const composer = useRef<HTMLTextAreaElement>(null)
   const historyButton = useRef<HTMLButtonElement>(null)
   const conflictsButton = useRef<HTMLButtonElement>(null)
@@ -140,7 +142,10 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const status = !doc || !readers.length ? "" : behind.length
     ? charterFormat("statusSome", readers.length - behind.length, doc.version, charterNames(behind.map(r => r.name)))
     : charterFormat("statusAll", readers.length, doc.version)
-  const proposal = proposals[0]
+  // A workflow proposal is drawn in the workflow section; a machine older than API 128 has none.
+  const proposal = proposals.find(item => proposalKind(item) === "text")
+  const flowProposal = api.workflow ? proposals.find(item => proposalKind(item) === "workflow") : undefined
+  const flow = api.workflow && doc ? charterWorkflow(doc) : null
   const botName = (id: string) => readers.find(r => r.bot_id === id)?.name ?? charterWord("lead")
   const proposed: ChangedSection[] = doc && proposal ? changedCharterSections(doc.text, proposal.text) : []
   const proposedHeadings = new Set(proposed.map(change => change.heading))
@@ -163,14 +168,15 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const sendRequest = async () => {
     const text = request.trim()
     if (!text || busy) return
-    if (await write(signal => api.requestChange(project, { text }, signal), () => charterWord("requested"))) { setRequest(""); setRetouch(null); expectProposal() }
+    if (await write(signal => api.requestChange(project, { text, ...(target === "workflow" ? { target } : {}) }, signal), () => charterWord("requested"))) { setRequest(""); setRetouch(null); setTarget("text"); expectProposal() }
   }
   const remove = async () => {
     if (!doc || !api.remove) return
     if (await write(signal => api.remove!(project, { expected_version: doc.version }, signal), () => "", current => charterFormat("conflictVersion", version(current)))) { setRemoving(false); onRemoved?.() }
   }
-  const startRetouch = (item: CharterProposal) => setRetouch(item.id)
+  const startRetouch = (item: CharterProposal) => { setRetouch(item.id); setTarget(proposalKind(item)) }
   useEffect(() => { if (retouch) composer.current?.focus() }, [retouch])
+  const askWorkflow = () => { setRetouch(null); setTarget("workflow"); composer.current?.focus() }
   const startEdit = (index: number) => {
     const section = sections[index]
     if (!section) return
@@ -203,6 +209,13 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
     }
   }
 
+  // The workflow takes the place of its free-text section, which stays readable behind a disclosure.
+  const flowAt = flow || flowProposal ? shown.findIndex(({ section }) => isWorkflowHeading(section.heading)) : -1
+  const flowSection = (oldText?: ReactNode) => doc && (flow || flowProposal) && <CharterWorkflowSection workflow={flow} version={doc.version} busy={busy} oldText={oldText} onAsk={askWorkflow}
+    botOf={id => ({ name: readers.find(r => r.bot_id === id)?.name ?? "", appearance: appearance?.(id) })}
+    proposal={flowProposal && { proposal: flowProposal, author: botName(flowProposal.bot_id), next, busy, stale: flowProposal.stale || flowProposal.base_version !== doc.version,
+      onApply: () => apply(flowProposal), onDismiss: () => dismiss(flowProposal), onRetouch: () => startRetouch(flowProposal) }}/>
+
   const editedSection = editing ? shown.findIndex(item => item.index === editing.index) + 1 : 0
   const editor = editing && doc && <SectionEditor key={editing.index} n={editedSection} editing={editing} heading={sections[editing.index]?.heading ?? ""} readers={readers} next={next} busy={busy} full={narrow}
     onDraft={draft => setEditing({ ...editing, draft })} onAsk={(ask, converted) => setEditing({ ...editing, ask, converted: converted || editing.converted })} onTitle={title => setEditing({ ...editing, title })} onCancel={() => setEditing(null)} onSave={() => void saveSection()}/>
@@ -226,19 +239,23 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
             <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setPanel("history")}>{charterWord("history")}</button>
           </div>
           {notice && notice.text && <p className="pa-charter-notice" data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
-          {waiting && !proposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
+          {waiting && !proposal && !flowProposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
           {proposalsFailed && <p className="pa-charter-hint" role="status">{charterWord("proposalsUnavailable")}</p>}
           {proposal && <ProposalCard proposal={proposal} author={botName(proposal.bot_id)} changes={proposed} next={next} busy={busy} stale={proposal.stale || proposal.base_version !== doc.version}
             onApply={() => apply(proposal)} onDismiss={() => dismiss(proposal)} onRetouch={() => startRetouch(proposal)}/>}
-          {shown.map(({ section, index }, position) => editing?.index === index && !narrow
-            ? <div key={index}>{editor}</div>
-            : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
-              <SectionBody section={section} w={w}/>
-              <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
-                onClick={() => startEdit(index)}>
-                <PencilIcon/>
-              </button>
-            </article>)}
+          {shown.map(({ section, index }, position) => {
+            const card = editing?.index === index && !narrow
+              ? <div key={index}>{editor}</div>
+              : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
+                <SectionBody section={section} w={w}/>
+                <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
+                  onClick={() => startEdit(index)}>
+                  <PencilIcon/>
+                </button>
+              </article>
+            return position === flowAt ? <div key={index}>{flowSection(card)}</div> : card
+          })}
+          {flowAt < 0 && flowSection()}
           {playbooks.section}
           {api.remove && doc.version > 0 && (removing
             ? <div className="pa-charter-remove-confirm" role="group" aria-label={charterWord("remove")}>
@@ -253,7 +270,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
         </>}
       </div>
       {doc && <form className="pa-charter-request" onSubmit={event => { event.preventDefault(); void sendRequest() }}>
-        {retouch && <p className="pa-charter-retouch">{charterWord("retouchHint")}<button type="button" onClick={() => setRetouch(null)} aria-label={charterWord("retouchCancel")}>×</button></p>}
+        {(retouch || target === "workflow") && <p className="pa-charter-retouch">{charterWord(retouch ? "retouchHint" : "workflowRequestHint")}<button type="button" onClick={() => { setRetouch(null); setTarget("text") }} aria-label={charterWord("retouchCancel")}>×</button></p>}
         <div className="pa-composer">
           <textarea ref={composer} rows={1} value={request} aria-label={charterWord("requestLabel")} placeholder={charterWord("requestPlaceholder")} disabled={busy}
             onChange={event => setRequest(event.target.value)}
