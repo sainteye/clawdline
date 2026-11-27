@@ -32,7 +32,8 @@ func gzipReadPayload(payload []byte) []byte {
 // or a relaxation of their decoders. Media and mutating words are excluded.
 func compressedReadWord(word string) bool {
 	switch word {
-	case "work.v2.cards", "work.v2.items", "work.v2.item", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.human-interventions", "personas", "projects", "project-folders", "schedules", "snippets", "provider-quotas", "capacity", "skills", "info", "sessions.list":
+	case "work.v2.cards", "work.v2.items", "work.v2.item", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.human-interventions", "personas", "projects", "project-folders", "schedules", "snippets", "provider-quotas", "capacity", "skills", "info", "sessions.list",
+		"project-assistants.view", "project-assistants.list", "project-assistants.group-history", "project-assistants.groups", "project-assistants.history", "project-assistants.events", "project-assistants.export", "project-assistants.memory-view", "project-assistants.charters", "project-assistants.charter", "project-assistants.charter-proposals", "project-assistants.charter-conflicts", "project-assistants.routines", "project-assistants.routine-runs", "project-assistants.dev-server-logs":
 		return true
 	}
 	return false

@@ -1067,33 +1067,42 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 		return out, err
 	}
 	defer rows.Close()
+	heads := make([]aggregate, 0, min(q.PageSize, 32))
+	queryLower := strings.ToLower(q.Query)
 	for rows.Next() {
 		var machine, id string
 		var raw []byte
 		if err = rows.Scan(&machine, &id, &raw); err != nil {
 			return out, err
 		}
-		a, err := decodeAggregate(ctx, tx, pa.BotKey{MachineID: machine, BotID: id}, raw)
+		a, err := decodeHead(raw)
 		if err != nil {
 			return out, err
 		}
-		if !strings.Contains(strings.ToLower(a.Bot.Name), strings.ToLower(q.Query)) {
+		if queryLower != "" && !strings.Contains(strings.ToLower(a.Bot.Name), queryLower) {
 			continue
 		}
-		if len(out.Items) == q.PageSize {
-			last := out.Items[len(out.Items)-1].Bot.Key
+		if len(heads) == q.PageSize {
+			last := heads[len(heads)-1].Bot.Key
 			cursor.LastMachine = last.MachineID
 			cursor.LastBot = last.BotID
 			raw, _ = json.Marshal(cursor)
 			out.NextCursor = base64.RawURLEncoding.EncodeToString(raw)
 			break
 		}
-		out.Items = append(out.Items, summary(a, readerID))
+		heads = append(heads, a)
 	}
 	if err = rows.Err(); err != nil {
 		return out, err
 	}
 	rows.Close()
+	for i := range heads {
+		item, err := projectListSummary(ctx, tx, heads[i], readerID)
+		if err != nil {
+			return out, err
+		}
+		out.Items = append(out.Items, item)
+	}
 	background, err := activeBackground(ctx, tx, q.MachineID)
 	if err != nil {
 		return out, err
@@ -1103,6 +1112,174 @@ func (s *Store) ListForReader(ctx context.Context, q pa.ListBots, readerID strin
 	}
 	return out, tx.Commit()
 }
+
+func applyLatestMessage(out *pa.BotSummary, msg pa.Message) {
+	out.LatestMessage = msg.Text
+	out.LatestMessageKind = msg.Kind
+	out.LatestMessageNotice = nil
+	if msg.Kind == pa.NoticeMessage && msg.Notice != nil && msg.Notice.Key == pa.NoticeCompacted {
+		out.LatestMessageNotice = msg.Notice
+	}
+	if out.LatestMessage == "" {
+		for i, file := range msg.Files {
+			if i > 0 {
+				out.LatestMessage += " · "
+			}
+			out.LatestMessage += file.Name
+		}
+	}
+	out.ActivityAt = msg.At
+}
+
+func loadListSummaryFacts(ctx context.Context, tx *sql.Tx, key pa.BotKey, a *aggregate) error {
+	a.Turns = map[string]pa.Turn{}
+	a.Permissions = map[string]pa.PermissionOffer{}
+	a.WorkLinks = map[string]pa.WorkLink{}
+	rows, err := tx.QueryContext(ctx, `SELECT collection,member,data FROM project_assistant_bot_facts WHERE machine=? AND bot=? AND collection IN ('Permissions','WorkLinks')`, key.MachineID, key.BotID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var collection, member string
+		var data []byte
+		if err = rows.Scan(&collection, &member, &data); err != nil {
+			return err
+		}
+		switch collection {
+		case factPermissions:
+			var v pa.PermissionOffer
+			if err = json.Unmarshal(data, &v); err != nil {
+				return err
+			}
+			a.Permissions[member] = v
+		case factWorkLinks:
+			var v pa.WorkLink
+			if err = json.Unmarshal(data, &v); err != nil {
+				return err
+			}
+			a.WorkLinks[member] = v
+		}
+	}
+	return rows.Err()
+}
+
+func scanListSummaryMessages(ctx context.Context, tx *sql.Tx, key pa.BotKey, reader string, r pa.ReadCursor, needRecentTurn bool, loadTurn func(string) (pa.Turn, bool, error), out *pa.BotSummary) (pa.Turn, error) {
+	var recentTurn pa.Turn
+	haveLatest := false
+	msgRows, err := tx.QueryContext(ctx, `SELECT data FROM project_assistant_bot_facts WHERE machine=? AND bot=? AND collection='Messages' ORDER BY ord DESC`, key.MachineID, key.BotID)
+	if err != nil {
+		return recentTurn, err
+	}
+	defer msgRows.Close()
+	for msgRows.Next() {
+		var data []byte
+		if err = msgRows.Scan(&data); err != nil {
+			return recentTurn, err
+		}
+		var msg pa.Message
+		if err = json.Unmarshal(data, &msg); err != nil {
+			return recentTurn, err
+		}
+		needUnread := reader != "" && msg.Seq > r.MessageSeq
+		if haveLatest && !needRecentTurn && !needUnread {
+			break
+		}
+		turn, turnOK, err := loadTurn(msg.TurnID)
+		if err != nil {
+			return recentTurn, err
+		}
+		if needRecentTurn && (msg.Kind == pa.UserMessage || msg.Kind == pa.NoticeMessage) &&
+			turnOK && turn.Room == nil && turn.JoinedTurnID == "" && turn.MessageID == msg.ID {
+			recentTurn = turn
+			needRecentTurn = false
+		}
+		if turn.Room == nil && !withdrawnTurn(turn) && !quietMessage(msg) {
+			if !haveLatest {
+				applyLatestMessage(out, msg)
+				haveLatest = true
+			}
+			if needUnread {
+				if pa.CountsAsUnread(msg, key) {
+					out.UnreadCount++
+				} else if pa.NewActivity(msg, key) {
+					out.HasActivity = true
+				}
+			}
+		}
+		if haveLatest && !needRecentTurn && (reader == "" || msg.Seq <= r.MessageSeq+1) {
+			break
+		}
+	}
+	return recentTurn, msgRows.Err()
+}
+
+// projectListSummary reads only the bounded facts a roster row depends on:
+// Permissions, WorkLinks, the active turn, and reverse-indexed Messages down
+// to the latest own-chat message, latest own-chat turn and the reader's cursor.
+func projectListSummary(ctx context.Context, tx *sql.Tx, a aggregate, reader string) (pa.BotSummary, error) {
+	key := a.Bot.Key
+	if err := loadListSummaryFacts(ctx, tx, key, &a); err != nil {
+		return pa.BotSummary{}, err
+	}
+	missingTurns := map[string]bool{}
+	loadTurn := func(turnID string) (pa.Turn, bool, error) {
+		if turnID == "" {
+			return pa.Turn{}, false, nil
+		}
+		if t, ok := a.Turns[turnID]; ok {
+			return t, true, nil
+		}
+		if missingTurns[turnID] {
+			return pa.Turn{}, false, nil
+		}
+		var data []byte
+		err := tx.QueryRowContext(ctx, `SELECT data FROM project_assistant_bot_facts WHERE machine=? AND bot=? AND collection='Turns' AND member=?`, key.MachineID, key.BotID, turnID).Scan(&data)
+		if errors.Is(err, sql.ErrNoRows) {
+			missingTurns[turnID] = true
+			return pa.Turn{}, false, nil
+		}
+		if err != nil {
+			return pa.Turn{}, false, err
+		}
+		var t pa.Turn
+		if err = json.Unmarshal(data, &t); err != nil {
+			return pa.Turn{}, false, err
+		}
+		a.Turns[turnID] = t
+		return t, true, nil
+	}
+
+	r := pa.ReadCursor{Key: key, ConversationID: a.Conversation.ID, ReaderID: reader}
+	if reader != "" {
+		if x, ok := a.ReadCursors[reader]; ok {
+			r = x
+		}
+	}
+	out := pa.BotSummary{Bot: a.Bot, Version: a.Bot.Version, ActivityAt: a.Bot.CreatedAt, ReadCursor: r}
+	activeTurn, activeOK, err := loadTurn(a.Conversation.ActiveTurnID)
+	if err != nil {
+		return pa.BotSummary{}, err
+	}
+	needRecentTurn := !activeOK || (activeTurn.Room != nil && activeTurn.State != pa.TurnWaitingPermission)
+	recentTurn, err := scanListSummaryMessages(ctx, tx, key, reader, r, needRecentTurn, loadTurn, &out)
+	if err != nil {
+		return pa.BotSummary{}, err
+	}
+
+	now := time.Now()
+	for _, p := range a.Permissions {
+		if openPermission(p, now) {
+			out.PendingPermissions++
+		}
+	}
+	out.ActiveWork = activeWorkLinks(a)
+	out.DispatchedWork = countDispatchedWork(maps.Values(a.WorkLinks))
+	projectTurnActivityResolved(a, &out, activeTurn, activeOK, recentTurn)
+	projectOpenDecision(a, &out)
+	return out, nil
+}
+
 func summary(a aggregate, reader string) pa.BotSummary {
 	r := pa.ReadCursor{Key: a.Bot.Key, ConversationID: a.Conversation.ID, ReaderID: reader}
 	if reader != "" {
@@ -1115,21 +1292,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 		if !ownChatTurn(a, msg.TurnID) || withdrawnTurn(a.Turns[msg.TurnID]) || quietMessage(msg) {
 			continue
 		}
-		out.LatestMessage = msg.Text
-		out.LatestMessageKind = msg.Kind
-		out.LatestMessageNotice = nil
-		if msg.Kind == pa.NoticeMessage && msg.Notice != nil && msg.Notice.Key == pa.NoticeCompacted {
-			out.LatestMessageNotice = msg.Notice
-		}
-		if out.LatestMessage == "" {
-			for i, file := range msg.Files {
-				if i > 0 {
-					out.LatestMessage += " · "
-				}
-				out.LatestMessage += file.Name
-			}
-		}
-		out.ActivityAt = msg.At
+		applyLatestMessage(&out, msg)
 		if reader != "" && msg.Seq > r.MessageSeq {
 			if pa.CountsAsUnread(msg, a.Bot.Key) {
 				out.UnreadCount++

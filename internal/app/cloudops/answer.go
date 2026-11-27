@@ -648,18 +648,22 @@ func (b Bridge) refuseContentRead(cmd Command, parsed body, word string, refusal
 		return b.refuse(cmd, parsed, word, Refusal{Status: 409, Code: "wrong_machine",
 			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
-	local := make(body, len(parsed)-1)
-	for key, value := range parsed {
-		if key != "machine_id" {
-			local[key] = value
+	local := parsed
+	if !botContentReadKeepsMachineID(word) {
+		local = make(body, len(parsed)-1)
+		for key, value := range parsed {
+			if key != "machine_id" {
+				local[key] = value
+			}
 		}
 	}
 	p, ok := o.decode(local)
-	if !ok || (word != "sessions.list" && p.executionGeneration == "") {
+	machineScoped := word == "sessions.list" || botContentReadWord(word)
+	if !ok || (!machineScoped && p.executionGeneration == "") {
 		return b.refuse(cmd, parsed, word, Refusal{Status: 400, Code: "malformed_read",
 			Message: "This Cloud read is malformed.", fixedCopy: true})
 	}
-	if word == "sessions.list" {
+	if machineScoped {
 		p.target = MachineReplySession
 	} else if word == "peer-inbox" {
 		p.id = b.MachineID

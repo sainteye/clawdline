@@ -178,6 +178,53 @@ func TestNegotiatedPinnedReadsKeepProofAndOverloadRefusals(t *testing.T) {
 	}
 }
 
+func TestBotReadsNegotiateCompressionOverCtlAndContentRail(t *testing.T) {
+	largeBody := `{"contract_version":"project-assistants.v1","items":"` + strings.Repeat("bot message prose ", 2000) + `"}`
+	b := open(localRouterFunc(func(_ context.Context, r LocalRequest) (LocalResponse, error) {
+		return LocalResponse{Status: 200, Body: []byte(largeBody)}, nil
+	}))
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority { return contentReadAuthority(true) }
+
+	viewFields := map[string]any{
+		"type": "project-assistants.view", "session": MachineReplySession, "request": "bot-view-00000000-0000-4000-8000-000000000001",
+		"key": map[string]any{"machine_id": "mac-01", "bot_id": "bot-1"}, "conversation_id": "conv-1",
+		"mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": 0, "page_size": 20,
+	}
+	legacy := b.Handle(context.Background(), request(t, ClassCtl, viewFields))
+	compressedFields := map[string]any{}
+	for k, v := range viewFields {
+		compressedFields[k] = v
+	}
+	compressedFields["accept_encoding"] = "gzip-v1"
+	overCtl := b.Handle(context.Background(), request(t, ClassCtl, compressedFields))
+	overRail := b.Handle(context.Background(), contentReadRequest(t, compressedFields))
+
+	for label, got := range map[string]Answer{"ctl": overCtl, "r": overRail} {
+		if !legacy.OK() || !got.OK() || !bytes.HasPrefix(got.Payload, []byte{'g', 'z', '1', 0}) || got.Name != legacy.Name+readCompressionSuffix {
+			t.Fatalf("%s did not compress: ok=%v name=%q code=%q", label, got.OK(), got.Name, got.Code)
+		}
+		if len(got.Payload) >= len(legacy.Payload)/4 {
+			t.Fatalf("%s weak compression: %d vs %d", label, len(got.Payload), len(legacy.Payload))
+		}
+		decoded := decodedCompressedAnswer(t, got)
+		if decoded["read"] != got.Name {
+			t.Fatalf("%s payload read mismatch: %v", label, decoded["read"])
+		}
+		if label == "r" && (decoded["machine_id"] != "mac-01" || decoded["session_id"] != MachineReplySession || decoded["seq"] != float64(411)) {
+			t.Fatalf("r/ compressed Bot view lost correlation proof: %v", decoded)
+		}
+	}
+
+	// Attachments are already compressed images and must reject accept_encoding.
+	att := request(t, ClassCtl, map[string]any{
+		"type": "project-assistants.attachment", "session": MachineReplySession, "request": "att-1",
+		"machine_id": "mac-01", "bot_id": "bot-1", "id": strings.Repeat("a", 64), "accept_encoding": "gzip-v1",
+	})
+	if refused := b.Handle(context.Background(), att); refused.OK() || refused.Code != "malformed_read" {
+		t.Fatalf("attachment accepted gzip negotiation: %+v", refused)
+	}
+}
+
 // Replays only explicitly exported response bodies; no private fixture is committed.
 func TestReplayStructuredReadCompression(t *testing.T) {
 	directory := os.Getenv("CLAWDLINE_STRUCTURED_READ_REPLAY_DIR")

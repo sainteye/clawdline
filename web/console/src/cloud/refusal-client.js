@@ -16,7 +16,7 @@ export function withCatalogRefusals(BaseClient) {
   return class extends BaseClient {
     constructor(...args) { super(...args) }
 
-    _applySnapshot(channel, payload, envelope, realign) {
+    _applySnapshot(channel, payload, envelope, realign, ...rest) {
       const refusal = channel?.kind === "transcript" && payload && typeof payload === "object"
         && typeof payload.read === "string" && payload.error && typeof payload.error === "object"
         && !Array.isArray(payload.error) ? payload.error : null
@@ -30,7 +30,7 @@ export function withCatalogRefusals(BaseClient) {
             envelope,
           }
         : null
-      try { return super._applySnapshot(channel, payload, envelope, realign) }
+      try { return super._applySnapshot(channel, payload, envelope, realign, ...rest) }
       finally { this._catalogRefusal = previous }
     }
 

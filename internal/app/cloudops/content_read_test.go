@@ -130,6 +130,88 @@ func TestMachineListReadsOneLocalSnapshotWithTranscriptAuthority(t *testing.T) {
 	}
 }
 
+func TestBotReadsCrossContentRailWithTranscriptAuthorityAndProof(t *testing.T) {
+	var seen []LocalRequest
+	b := open(localRouterFunc(func(_ context.Context, req LocalRequest) (LocalResponse, error) {
+		seen = append(seen, req)
+		return LocalResponse{Status: 200, Body: []byte(`{"contract_version":"project-assistants.v1"}`)}, nil
+	}))
+	checks := 0
+	b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+		checks++
+		return contentReadAuthority(true)
+	}
+	cases := []struct {
+		name string
+		body map[string]any
+		path string
+	}{
+		{
+			name: "view",
+			body: map[string]any{
+				"type": "project-assistants.view", "session": MachineReplySession, "request": "bot-view-00000000-0000-4000-8000-000000000002",
+				"key": map[string]any{"machine_id": "mac-01", "bot_id": "bot-1"}, "conversation_id": "conv-1",
+				"mode": "snapshot", "source_epoch": "", "cursor": "", "after_seq": 0, "page_size": 20,
+			},
+			path: "/v1/project-assistants/bot-1/view",
+		},
+		{
+			name: "list",
+			body: map[string]any{
+				"type": "project-assistants.list", "session": MachineReplySession, "request": "bot-list-1",
+				"machine_id": "mac-01", "query": "", "cursor": "", "page_size": 20,
+			},
+			path: "/v1/project-assistants",
+		},
+		{
+			name: "group-history",
+			body: map[string]any{
+				"type": "project-assistants.group-history", "session": MachineReplySession, "request": "bot-gh-1",
+				"key": map[string]any{"machine_id": "mac-01", "bot_id": "room-1"}, "before_seq": 0, "page_size": 20,
+			},
+			path: "/v1/project-assistants/rooms/groups/room-1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			checks = 0
+			cmd := contentReadRequest(t, tc.body)
+			ans := b.Handle(context.Background(), cmd)
+			if !ans.OK() || ans.Session != MachineReplySession || checks != 2 || seen[len(seen)-1].Path != tc.path {
+				t.Fatalf("r/ %s: ans=%+v checks=%d route=%+v", tc.name, ans, checks, seen[len(seen)-1])
+			}
+			payload := answerOf(t, ans)
+			if payload["machine_id"] != "mac-01" || payload["session_id"] != MachineReplySession || payload["seq"] != float64(cmd.Sequence) || payload["expected_generation"] != nil {
+				t.Fatalf("r/ %s missing proof: %v", tc.name, payload)
+			}
+			// Busy and Undeliverable overloads preserve the same r/ proof.
+			for kind, overload := range map[string]Answer{"busy": b.Busy(cmd, 8), "egress": b.Undeliverable(cmd, 1024)} {
+				op := answerOf(t, overload)
+				if !overload.Published() || op["machine_id"] != "mac-01" || op["session_id"] != MachineReplySession || op["seq"] != float64(cmd.Sequence) {
+					t.Fatalf("r/ %s %s overload lost proof: %+v %v", tc.name, kind, overload, op)
+				}
+			}
+			// Revoked viewer is refused before routing.
+			b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+				return contentReadAuthority(false)
+			}
+			before := len(seen)
+			if refused := b.Handle(context.Background(), cmd); refused.Code != "read_transcript_required" || len(seen) != before {
+				t.Fatalf("revoked viewer reached route on %s: %+v", tc.name, refused)
+			}
+			b.TranscriptAuthority = func(context.Context, string, ed25519.PublicKey) Authority {
+				checks++
+				return contentReadAuthority(true)
+			}
+		})
+	}
+	// Mutating Bot commands remain refused on r/.
+	write := contentReadRequest(t, map[string]any{"type": "project-assistants.send", "session": MachineReplySession, "request": "w1"})
+	if refused := b.Handle(context.Background(), write); refused.Code != "read_only_channel" {
+		t.Fatalf("Bot write admitted on r/: %+v", refused)
+	}
+}
+
 func TestOriginalDetailCommandsAcceptAnExactExecutionPin(t *testing.T) {
 	for _, word := range []string{"focus", "smart-title"} {
 		r := &router{}

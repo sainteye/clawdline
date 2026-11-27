@@ -26,6 +26,10 @@ func rememberRosterTrace(a *aggregate, event pa.Event) {
 // belongs to no turn, and until the person answers it is what they must do.
 func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 	projectTurnActivity(a, out)
+	projectOpenDecision(a, out)
+}
+
+func projectOpenDecision(a aggregate, out *pa.BotSummary) {
 	if out.Status == "needsInput" {
 		return
 	}
@@ -53,21 +57,9 @@ func projectRosterActivity(a aggregate, out *pa.BotSummary) {
 }
 
 func projectTurnActivity(a aggregate, out *pa.BotSummary) {
-	if a.Completion != nil && a.Completion.ConversationID == a.Conversation.ID {
-		out.CompletedTurnID = a.Completion.TurnID
-	}
-	out.Status = "idle"
 	turn, active := a.Turns[a.Conversation.ActiveTurnID]
-	if active && turn.Room != nil {
-		// Execution/cancellation and approval authority stay Bot-wide, but room
-		// progress and failures do not become own-chat activity.
-		if turn.State == pa.TurnWaitingPermission {
-			out.Status = "needsInput"
-			return
-		}
-		active, turn = false, pa.Turn{}
-	}
-	if !active {
+	var recent pa.Turn
+	if !active || turn.Room != nil {
 		// Admission order comes from messages, never map iteration or a
 		// lexicographic turn ID. Restart continuations and routines enter with
 		// notices. Only a turn's own admission anchor selects it; later log
@@ -81,9 +73,30 @@ func projectTurnActivity(a aggregate, out *pa.BotSummary) {
 			if !ok || candidate.Room != nil || candidate.JoinedTurnID != "" || candidate.MessageID != m.ID {
 				continue
 			}
-			turn = candidate
+			recent = candidate
 			break
 		}
+	}
+	projectTurnActivityResolved(a, out, turn, active, recent)
+}
+
+func projectTurnActivityResolved(a aggregate, out *pa.BotSummary, activeTurn pa.Turn, active bool, recentTurn pa.Turn) {
+	if a.Completion != nil && a.Completion.ConversationID == a.Conversation.ID {
+		out.CompletedTurnID = a.Completion.TurnID
+	}
+	out.Status = "idle"
+	turn := activeTurn
+	if active && turn.Room != nil {
+		// Execution/cancellation and approval authority stay Bot-wide, but room
+		// progress and failures do not become own-chat activity.
+		if turn.State == pa.TurnWaitingPermission {
+			out.Status = "needsInput"
+			return
+		}
+		active, turn = false, pa.Turn{}
+	}
+	if !active {
+		turn = recentTurn
 	}
 	switch turn.State {
 	case pa.TurnFailed, pa.TurnUnknown:

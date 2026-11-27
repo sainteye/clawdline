@@ -1904,3 +1904,111 @@ test("an older machine cannot silently answer an unadvertised pinned summary",as
  await assert.rejects(()=>client.readForGeneration({machineID:"m",sessionID:"s",executionGeneration:genA},"info",{parts:"summary"}),{code:"cloud_machine_unsupported"})
  assert.equal(client.readWaiters.size,0);assert.equal(client.pinnedReadProofs.size,0)
 })
+
+test("Bot reads negotiate gzip-v1 only when bot_read_compression_v1 is advertised and keep independent fallback", async () => {
+ for (const flags of [{ read_compression_v1: true }, { read_compression_v1: true, bot_read_compression_v1: true }]) {
+  const client = Object.create(StatusCloudClient.prototype)
+  client.machineDescriptor = () => ({ machine: flags })
+  const calls = []
+  client._readRepresentation = async (...args) => { calls.push(args); return { items: [] } }
+  const identity = { machine: "m", session: "__clawdline_machine__" }
+  await client._read(identity, "project-assistants.view", { request: "bot-view-1", mode: "snapshot" }, "read:bot-view-1", 123, {})
+  const expected = flags.bot_read_compression_v1 === true
+  assert.equal(calls[0][2].accept_encoding, expected ? "gzip-v1" : undefined)
+  assert.equal(calls[0][3], expected ? "read:bot-view-1.encoding.gzip-v1" : "read:bot-view-1")
+  // Attachments stay uncompressed even when bot_read_compression_v1 is advertised.
+  await client._read(identity, "project-assistants.attachment", { request: "att-1" }, "read:att-1", 123, {})
+  assert.equal(calls[1][2].accept_encoding, undefined)
+ }
+ // A Bot compression fallback must not disable original read-compression-v1.
+ const client = Object.create(StatusCloudClient.prototype)
+ client.machineDescriptor = () => ({ machine: { read_compression_v1: true, bot_read_compression_v1: true } })
+ const calls = []
+ client._readRepresentation = async (...args) => {
+  calls.push(args)
+  if (args[1] === "project-assistants.view" && args[2].accept_encoding) throw Object.assign(new Error("old"), { code: "malformed_read" })
+  return { items: [] }
+ }
+ const identity = { machine: "m", session: "__clawdline_machine__" }
+ await client._read(identity, "project-assistants.view", { request: "bot-view-2" }, "read:bot-view-2")
+ await client._read(identity, "work.v2.cards", { request: "cards-1" }, "read:cards-1")
+ assert.equal(calls[1][2].accept_encoding, undefined)
+ assert.equal(calls[2][2].accept_encoding, "gzip-v1")
+})
+
+test("Bot reads use direct carrier on r/ when bot_direct_reads_v1 is advertised, record observeBotRead marks, and fall back to ctl/ on refusal", async () => {
+ const marks = []
+ let sentCarrier
+ const carrierSent = new Promise((resolve) => { sentCarrier = resolve })
+ const carrier = {
+  open: true, readReady: true, written: [],
+  send(env) { this.written.push(env); sentCarrier(env) },
+  whenDown() { return () => {} },
+  whenReadInterrupted() { return () => {} },
+  async ensure() { return true },
+ }
+ const keys = await crypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"])
+ const masterKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt", "decrypt"])
+ const client = Object.create(StatusCloudClient.prototype)
+ Object.assign(client, {
+  ready: true, retired: false, deviceID: "viewer", devicePrivateKey: keys.privateKey, allowWrites: false,
+  readTimeoutMs: 30_000, readWaiters: new Map(), pinnedReadProofs: new Map(), pendingBySequence: new Map(),
+  carrierReads: new Map(), carrierSequences: new Map(), carrierRowSequences: new Map(),
+  carrierWatched: new WeakMap(), carrierMachines: new Set(), machineOffline: new Map(), machineLacks: new Map(),
+  trail: { sealed() {}, step() {}, refused() {} },
+  machineDescriptor: () => ({ machine: { bot_read_compression_v1: true, bot_direct_reads_v1: true } }),
+  _unsupportedRefusal: () => null, _offlineRefusal: () => null,
+  _outboundMachinePairing: async () => ({ keyID: "mk", masterKey }),
+  nextSequence: async () => 77,
+  setTimeout: () => 1, clearTimeout: () => {},
+  _watchReadAbort: () => {},
+ })
+ client.useDirectCarriers({ for: () => carrier })
+ const pending = client._read(
+  { machine: "m", session: "__clawdline_machine__" },
+  "project-assistants.view",
+  { request: "bot-view-3", mode: "snapshot", key: { machine_id: "m", bot_id: "b1" } },
+  "read:bot-view-3",
+  30_000,
+  { observeBotRead: (stage, _at, seq) => marks.push([stage, seq]) },
+ )
+ await carrierSent
+ await new Promise((r) => setImmediate(r))
+ assert.equal(carrier.written.length, 1, "Bot view must travel on open direct carrier")
+ assert.equal(carrier.written[0].ch, "r/m")
+ assert.equal(client.allowWrites, false, "allowWrites restored after pinned Bot read")
+ assert.deepEqual(marks, [["sealed", 77], ["sent", undefined]])
+ const key = "m\u0000__clawdline_machine__\u0000read:bot-view-3.encoding.gzip-v1"
+ assert.equal(client.pinnedReadProofs.get(key)?.seq, 77)
+ client._settleRead(key, { contract_version: "project-assistants.v1" }, null)
+ assert.deepEqual(await pending, { contract_version: "project-assistants.v1" })
+
+ // On read_transcript_required, fall back cleanly to ctl/ without injected machine_id.
+ const fallback = Object.create(StatusCloudClient.prototype)
+ const ctlCalls = []
+ fallback.machineDescriptor = () => ({ machine: { bot_direct_reads_v1: true } })
+ fallback._readPinned = async () => { throw Object.assign(new Error("no cap"), { code: "read_transcript_required" }) }
+ Object.setPrototypeOf(fallback, Object.assign(Object.create(StatusCloudClient.prototype), {
+  _readRepresentation: StatusCloudClient.prototype._readRepresentation,
+ }))
+ // Stub CatalogCloudClient._read via prototype check using a clean subclass.
+ class FallbackClient extends StatusCloudClient {
+  _read(v, t, e, a, ms, o) { return StatusCloudClient.prototype._read.call(this, v, t, e, a, ms, o) }
+ }
+ const fc = Object.create(FallbackClient.prototype)
+ fc.machineDescriptor = () => ({ machine: { bot_direct_reads_v1: true } })
+ fc._readPinned = async () => { throw Object.assign(new Error("no cap"), { code: "read_transcript_required" }) }
+ // Monkey-patch super._read target on StatusCloudClient's prototype parent cleanly via a test spy:
+ const superProto = Object.getPrototypeOf(StatusCloudClient.prototype)
+ const origRead = superProto._read
+ superProto._read = async function (v, t, e, a) { ctlCalls.push({ v, t, e, a }); return { ok: true } }
+ try {
+  const res = await fc._read({ machine: "m", session: "__clawdline_machine__" }, "project-assistants.view", { request: "bot-view-4", mode: "snapshot" }, "read:bot-view-4")
+  assert.deepEqual(res, { ok: true })
+  assert.equal(ctlCalls.length, 1)
+  assert.equal(ctlCalls[0].e.machine_id, undefined, "fallback ctl/ must not carry injected machine_id")
+  assert.ok(fc.machineLacks.get("m")?.has("bot-direct-reads-v1"))
+ } finally {
+  superProto._read = origRead
+ }
+})

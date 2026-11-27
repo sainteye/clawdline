@@ -51,14 +51,19 @@ function pinnedReplyKey(machine, session, read) {
 }
 
 const COMPRESSED_READ_WORDS = new Set(["work.v2.cards", "work.v2.items", "work.v2.item", "work.v2.search", "work.v2.proposals", "work.v2.session-todos", "work.v2.human-interventions", "personas", "projects", "project-folders", "schedules", "snippets", "provider-quotas", "capacity", "skills", "info", "sessions.list"])
+const BOT_COMPRESSED_READ_WORDS = new Set(["project-assistants.view", "project-assistants.list", "project-assistants.group-history", "project-assistants.groups", "project-assistants.history", "project-assistants.events", "project-assistants.export", "project-assistants.memory-view", "project-assistants.charters", "project-assistants.charter", "project-assistants.charter-proposals", "project-assistants.charter-conflicts", "project-assistants.routines", "project-assistants.routine-runs", "project-assistants.dev-server-logs"])
+const BOT_DIRECT_READ_WORDS = new Set(["project-assistants.view", "project-assistants.list", "project-assistants.group-history", "project-assistants.groups", "project-assistants.history", "project-assistants.events", "project-assistants.attachment", "project-assistants.handoff-card", "project-assistants.dev-servers", "project-assistants.dev-server-logs", "project-assistants.memory-view", "project-assistants.get", "project-assistants.status"])
 const READ_COMPRESSION_SUFFIX = ".encoding.gzip-v1"
+function isBotDirectRead(type, body) {
+  return BOT_DIRECT_READ_WORDS.has(type) && typeof body?.request === "string" && body.request.length > 0
+}
 function pinnedReadName(type, body) {
  const name = basePinnedReadName(type,body)
  return name && body?.accept_encoding === "gzip-v1" ? name + READ_COMPRESSION_SUFFIX : name
 }
 
 function basePinnedReadName(type, body) {
-  if (type === "sessions.list" && typeof body?.request === "string" && body.request) return "read:" + body.request
+  if ((type === "sessions.list" || isBotDirectRead(type, body)) && typeof body?.request === "string" && body.request) return "read:" + body.request
   if (type === "info" && ["full", "summary", "remote-permission"].includes(body?.parts)) return "info." + body.parts
   if (type === "skills") return "skills"
   if (type === "session-codegraph" || type === "native-terminal-screen" || type === "git" || type === "screen" || type === "documents" || type === "outputs") return type
@@ -700,6 +705,7 @@ export class StatusCloudClient extends CatalogCloudClient {
    * the same channel (`DirectCarrier.channelGeneration`).
    */
   receiveCarrierEnvelope(machine, envelope, channelGeneration = 0) {
+    const receivedAt = performance.now()
     this.carrierReceiveQueues ??= new Map()
     this.carrierReceiveBytes ??= 0
     this.carrierReceiveRows ??= 0
@@ -718,7 +724,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     // The ordered DataChannel is not an ordered WebCrypto completion queue. Keep
     // pairing lookup, authentication, replay admission and application in wire order.
     const next = previous.catch(() => {}).then(() => {
-      if (!this.retired) return this._receiveCarrierEnvelope(machine, envelope, channelGeneration)
+      if (!this.retired) return this._receiveCarrierEnvelope(machine, envelope, channelGeneration, receivedAt)
     }).finally(() => {
       this.carrierReceiveBytes -= bytes
       this.carrierReceiveRows--
@@ -728,7 +734,7 @@ export class StatusCloudClient extends CatalogCloudClient {
     return next
   }
 
-  async _receiveCarrierEnvelope(machine, envelope, channelGeneration) {
+  async _receiveCarrierEnvelope(machine, envelope, channelGeneration, receivedAt) {
     const probe = { stage: "channel_parse", original: null, cause: null, senderKeyFound: null,
       senderKeySource: null, senderKeyLookupMs: null, routedMachine: machine,
       pairing: undefined, pairingSource: null, pairingLookupMs: null, pairingFoundBefore: null }
@@ -755,6 +761,7 @@ export class StatusCloudClient extends CatalogCloudClient {
         throw refused("unknown_sender", "the carrier's machine does not match its pairing")
       }
       probe.stage = "signature_verify"
+      const openingAt = performance.now()
       const clear = await openEnvelope(envelope, pairing.masterKey, pairing.senderKey, probe)
       probe.stage = "sequence"
       if (row) {
@@ -779,7 +786,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       // `sequenceBySender` is not raised here, and must not be: it is one floor for everything a
       // sender publishes, and the relay will publish this very envelope again on its own road.
       // A row arrives because the machine published it just now, so it is not a realignment.
-      this._applySnapshot(channel, payload, envelope, false)
+      this._applySnapshot(channel, payload, envelope, false, receivedAt, openingAt)
     } catch (error) {
       this._recordReceiveFailure(error, envelope, false, probe)
       // The same words the relay's receive path records (`cloud-client.js` `_receiveEnvelope`): an
@@ -829,6 +836,7 @@ export class StatusCloudClient extends CatalogCloudClient {
       const waiters = { waiting: [waiter], timer: null, ref: null, machine: identity.machine, type,
         request: extra && typeof extra.request === "string" ? extra.request : null,
         action: false, channel: null, retireUncertain: !!(readOptions && readOptions.retireUncertain),
+        observeBotRead: readOptions && readOptions.observeBotRead,
         // The read's connection-health trace, as a relay read's (`_read`): issued now, settled by
         // `_settleRead` under the same correlation, so a read the carrier holds and never answers
         // is a timed-out read, not a silence behind an open relay socket.
@@ -928,20 +936,29 @@ export class StatusCloudClient extends CatalogCloudClient {
     }
   }
 
+  _botDirectReadEnabled(machine, type, body) {
+    return isBotDirectRead(type, body) &&
+      !this.machineLacks?.get(machine)?.has("bot-direct-reads-v1") &&
+      this.machineDescriptor?.(machine)?.machine?.bot_direct_reads_v1 === true
+  }
+
   /** Only explicitly capable peers and bounded decoders negotiate a new representation. */
   _read(value, type, extra, answer, timeoutMs, readOptions) {
     let identity
     try { identity = this._sessionIdentity(value) } catch (error) { return Promise.reject(error) }
-    if (typeof DecompressionStream !== "function" || typeof answer !== "string" || !COMPRESSED_READ_WORDS.has(type) || extra?.accept_encoding !== undefined ||
-      this.machineLacks?.get(identity.machine)?.has("read-compression-v1") ||
-      this.machineDescriptor?.(identity.machine)?.machine?.read_compression_v1 !== true) {
+    const botCompressed = BOT_COMPRESSED_READ_WORDS.has(type)
+    const cap = botCompressed ? "bot_read_compression_v1" : "read_compression_v1"
+    const lack = botCompressed ? "bot-read-compression-v1" : "read-compression-v1"
+    if (typeof DecompressionStream !== "function" || typeof answer !== "string" || (!COMPRESSED_READ_WORDS.has(type) && !botCompressed) || extra?.accept_encoding !== undefined ||
+      this.machineLacks?.get(identity.machine)?.has(lack) ||
+      this.machineDescriptor?.(identity.machine)?.machine?.[cap] !== true) {
       return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
     }
     return this._readRepresentation(value,type,{...extra,accept_encoding:"gzip-v1"},answer+READ_COMPRESSION_SUFFIX,timeoutMs,readOptions).catch(error=>{
       if (readOptions?.signal?.aborted || !["malformed_read","unknown_command","cloud_read_timeout","read_compression_unavailable","read_payload_corrupt","read_encoding_unsupported"].includes(error?.code)) throw error
       this.machineLacks ??= new Map()
       const lacks = this.machineLacks.get(identity.machine) ?? new Set()
-      lacks.add("read-compression-v1")
+      lacks.add(lack)
       this.machineLacks.set(identity.machine,lacks)
       return this._readRepresentation(value,type,extra,answer,timeoutMs,readOptions)
     })
@@ -949,8 +966,25 @@ export class StatusCloudClient extends CatalogCloudClient {
 
   /** The copied reader's local write flag predates the read-only r/ channel. */
   _readRepresentation(value, type, extra, answer, timeoutMs, readOptions) {
+    if (value?.session === "__clawdline_machine__" && typeof value?.machine === "string" && value.machine &&
+      (extra?.machine_id === undefined || extra.machine_id === value.machine) &&
+      this._botDirectReadEnabled(value.machine, type, extra)) {
+      const directExtra = extra.machine_id === value.machine ? extra : { ...extra, machine_id: value.machine }
+      return this._readPinned(value, type, directExtra, answer, timeoutMs, readOptions, true).catch((error) => {
+        if (readOptions?.signal?.aborted || !["read_transcript_required", "read_only_channel", "malformed_read", "unknown_command"].includes(error?.code)) throw error
+        this.machineLacks ??= new Map()
+        const lacks = this.machineLacks.get(value.machine) ?? new Set()
+        lacks.add("bot-direct-reads-v1")
+        this.machineLacks.set(value.machine, lacks)
+        return super._read(value, type, extra, answer, timeoutMs, readOptions)
+      })
+    }
     if (!pinnedRead(type, extra)) return super._read(value, type, extra, answer, timeoutMs, readOptions)
-    const machineList = type === "sessions.list" && value.session === "__clawdline_machine__"
+    return this._readPinned(value, type, extra, answer, timeoutMs, readOptions, false)
+  }
+
+  _readPinned(value, type, extra, answer, timeoutMs, readOptions, botDirect) {
+    const machineList = (type === "sessions.list" || botDirect) && value.session === "__clawdline_machine__"
     if ((!machineList && !GENERATION.test(extra.expected_generation)) ||
       (machineList && extra.expected_generation !== undefined) ||
       typeof extra.machine_id !== "string" || !extra.machine_id ||
@@ -1011,8 +1045,10 @@ export class StatusCloudClient extends CatalogCloudClient {
     if (type === "peer-inbox" && !GENERATION.test(body?.expected_generation)) {
       throw refused("execution_target_required", "an exact Session execution is required")
     }
-    if (!pinnedRead(type, body)) return super._publishCommand(machine, type, body, envelopeClass, pending)
-    const machineList = type === "sessions.list" && body.session === "__clawdline_machine__" &&
+    const botDirect = body?.session === "__clawdline_machine__" && body?.machine_id === machine &&
+      body?.expected_generation === undefined && this._botDirectReadEnabled(machine, type, body)
+    if (!pinnedRead(type, body) && !botDirect) return super._publishCommand(machine, type, body, envelopeClass, pending)
+    const machineList = (type === "sessions.list" || botDirect) && body.session === "__clawdline_machine__" &&
       body.expected_generation === undefined
     if (envelopeClass !== "ctl" || body.machine_id !== machine || typeof body.session !== "string" || !body.session ||
       (!machineList && !GENERATION.test(body.expected_generation)) || !pinnedReadName(type, body)) {
@@ -1074,13 +1110,15 @@ export class StatusCloudClient extends CatalogCloudClient {
         }
         pending.waiters.ref = ref
       }
-      pending.registered = { ref, machine, key: pending.key || null, ack: pending.ack || null }
+      pending.registered = { ref, machine, key: pending.key || null, ack: pending.ack || null, observeBotRead: pending.waiters?.observeBotRead }
       this.pendingBySequence.set(sequence, pending.registered)
     }
+    pending?.waiters?.observeBotRead?.("sealed", undefined, sequence)
     this.trail.sealed({ sender: ref.sender, seq: sequence, request: ref.request, type, machine })
     try {
       if (pending?.carrier) pending.carrier.send(envelope)
       else this._send({ type: "publish", envelope })
+      pending?.waiters?.observeBotRead?.("sent")
     }
     catch (error) {
       this.pendingBySequence.delete(sequence)

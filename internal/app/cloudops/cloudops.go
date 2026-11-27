@@ -390,7 +390,28 @@ func (b Bridge) contentReadChannel(cmd Command) bool {
 	return b.MachineID != "" && cmd.Channel == "r/"+ChannelSegment(b.MachineID)
 }
 
+func botContentReadWord(word string) bool {
+	switch word {
+	case "project-assistants.view", "project-assistants.list", "project-assistants.group-history", "project-assistants.groups", "project-assistants.history", "project-assistants.events", "project-assistants.attachment", "project-assistants.handoff-card", "project-assistants.dev-servers", "project-assistants.dev-server-logs", "project-assistants.memory-view", "project-assistants.get", "project-assistants.status":
+		return true
+	default:
+		return false
+	}
+}
+
+func botContentReadKeepsMachineID(word string) bool {
+	switch word {
+	case "project-assistants.list", "project-assistants.groups", "project-assistants.attachment", "project-assistants.handoff-card", "project-assistants.memory-view", "project-assistants.get":
+		return true
+	default:
+		return false
+	}
+}
+
 func contentReadWord(word string) bool {
+	if botContentReadWord(word) {
+		return true
+	}
 	switch word {
 	case "native-terminal-screen", "session-codegraph", "info", "transcript", "skills", "image", "git", "git-diff", "outputs", "output-file", "screen", "agent", "shell", "documents", "document", "video", "peer-inbox", "sessions.list":
 		return true
@@ -412,12 +433,15 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 			Message: "This Cloud request addresses another machine.", fixedCopy: true})
 	}
 	// The r/ body repeats the machine id for a fixed three-part destination.
-	// The existing ctl/ decoders do not accept that field and keep their wire
-	// shape unchanged; only this rail removes it after checking the channel.
-	local := make(body, len(parsed)-1)
-	for key, value := range parsed {
-		if key != "machine_id" {
-			local[key] = value
+	// Words whose own decoder already names machine_id keep it; other ctl/
+	// decoders do not accept that field, so strip it after checking the channel.
+	local := parsed
+	if !botContentReadKeepsMachineID(o.name) {
+		local = make(body, len(parsed)-1)
+		for key, value := range parsed {
+			if key != "machine_id" {
+				local[key] = value
+			}
 		}
 	}
 	p, ok := o.decode(local)
@@ -432,13 +456,13 @@ func (b Bridge) serveContentRead(ctx context.Context, cmd Command, parsed body, 
 	if o.name == "peer-inbox" {
 		p.id = b.MachineID
 	}
-	if o.name == "sessions.list" {
+	if o.name == "sessions.list" || botContentReadWord(o.name) {
 		p.target = MachineReplySession
 		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
 			return b.contentReadAnswer(cmd, p, b.publish(cmd, p, refusal, nil))
 		}
 		answer := b.route(ctx, cmd, p, o)
-		// A roster revocation during the list read wins before the encrypted
+		// A roster revocation during the read wins before the encrypted
 		// presentation leaves this machine, just as for pinned Session content.
 		if refusal, denied := b.authorizeTranscript(ctx, cmd.Sender, cmd.VerifiedKey); denied {
 			answer = b.publish(cmd, p, refusal, nil)
