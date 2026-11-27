@@ -24,14 +24,14 @@ internal/adapters/codegraph/build.go	Builder.build	101	29
 internal/adapters/codegraph/view.go	View	118	28
 internal/adapters/memory/import.go	ReadClaude	125	41
 internal/adapters/projectassistantacp/client.go	Client.handle	104	31
-internal/adapters/projectassistantacp/client.go	Client.initializeSession	117	43
+internal/adapters/projectassistantacp/client.go	Client.initializeSession	114	43
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.ServeHTTP	133	34
 internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	234	92
 internal/adapters/projectassistanthost/devservers.go	Host.bindServerTools	181	54
 internal/adapters/projectassistantstore/collaboration.go	Store.FinishExchange	134	46
 internal/adapters/projectassistantstore/export.go	Store.Restore	144	64
 internal/adapters/projectassistantstore/repository.go	applyMutation	108	40
-internal/adapters/projectassistantstore/repository.go	validateAggregate	235	102
+internal/adapters/projectassistantstore/repository.go	validateAggregate	234	101
 internal/adapters/projectassistantstore/routines.go	applyRoutines	139	56
 internal/adapters/projectassistantstore/routines_human.go	ViewStore.ReadRoutines	109	34
 internal/adapters/projects/launch.go	Admit	98	45

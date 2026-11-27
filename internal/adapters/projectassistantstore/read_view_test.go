@@ -158,6 +158,20 @@ func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T
 	}
 }
 
+// The read view carries why a follow-up was left queued, so the page need not
+// guess it.
+func TestReadViewCarriesTheSteerFallbackOfAQueuedTurn(t *testing.T) {
+	e, _, _ := viewFixture(t, 1, 0, false)
+	e.Turns[0].State = pa.TurnQueued
+	e.Turns[0].StartedAt = nil
+	e.Turns[0].SteerFallback = pa.SteerFallbackImagesUnsupported
+	_, _, views, _ := restoreViews(t, e)
+	v := readView(t, views, viewQuery(e.Bot))
+	if len(v.Snapshot.PendingTurns) != 1 || v.Snapshot.PendingTurns[0].SteerFallback != pa.SteerFallbackImagesUnsupported {
+		t.Fatalf("pending turns lost steer_fallback: %+v", v.Snapshot.PendingTurns)
+	}
+}
+
 func TestReadViewKeepsAnOpenDecisionAfterTheChatRebinds(t *testing.T) {
 	e, old, current := viewFixture(t, 2, 0, false)
 	offer := pa.PermissionOffer{

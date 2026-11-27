@@ -181,6 +181,7 @@ func viewTurnProjection(value string) string {
  'attempts',json_extract(` + value + `,'$.attempts'),'failure',json_object('code',json_extract(` + value + `,'$.failure.code'),'field',` + detail + `),'started_at',json_extract(` + value + `,'$.started_at'),'queue_edit_id',json_extract(` + value + `,'$.queue_edit_id'),
  'origin',json_extract(` + value + `,'$.origin'),'idempotency_key',json_extract(` + value + `,'$.idempotency_key'),
  'steering',json(CASE WHEN json_extract(` + value + `,'$.steering') THEN 'true' ELSE 'false' END),
+ 'steer_fallback',json_extract(` + value + `,'$.steer_fallback'),
  'released_restart',json(CASE WHEN json_extract(` + value + `,'$.released_restart') THEN 'true' ELSE 'false' END),
  'room',CASE WHEN json_extract(` + value + `,'$.room') IS NOT NULL THEN json_object() END,
  'network',CASE WHEN json_extract(` + value + `,'$.network') IS NOT NULL THEN json_object() END)`
@@ -194,7 +195,7 @@ func viewTurn(raw string, h app.ReadViewHead) (app.ReadTurnSummary, error) {
 	if err := viewCheckFence(turn.Fence, h, false); err != nil {
 		return app.ReadTurnSummary{}, err
 	}
-	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts, QueueEditID: turn.QueueEditID, Origin: turn.Origin, ReleasedRestart: turn.ReleasedRestart}
+	summary := app.ReadTurnSummary{ID: turn.ID, Fence: turn.Fence, MessageID: turn.MessageID, State: turn.State, Attempts: turn.Attempts, QueueEditID: turn.QueueEditID, Origin: turn.Origin, ReleasedRestart: turn.ReleasedRestart, SteerFallback: turn.SteerFallback}
 	if turn.StartedAt != nil {
 		summary.StartedAt = turn.StartedAt.UTC().Format(time.RFC3339)
 	}

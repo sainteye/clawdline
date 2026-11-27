@@ -4170,11 +4170,11 @@
       "sources": [
         {
           "path": "internal/app/projectassistant/send_now.go",
-          "line": 91
+          "line": 94
         },
         {
           "path": "internal/adapters/projectassistantacp/client.go",
-          "line": 1192
+          "line": 1219
         },
         {
           "path": "internal/adapters/projectassistantstore/read_view_query.go",
@@ -5790,7 +5790,7 @@
     "internal/adapters/planner/recap.go": "b3ebf0eaf6db01552c2a1050b1ddcf04a1c4a5f754a7afcc96eb4580574bde31",
     "internal/adapters/planner/voice_work.go": "0b7aa68605ffd8a04e05f40c9779cdd99360a697d74bf02c47b6faf55fdba61b",
     "internal/adapters/projectassistantacp/capabilities.go": "3a6adb41cafc7074db0f447da01b735ac30a1c551ba2b3329ba6b8c11eaeba6a",
-    "internal/adapters/projectassistantacp/client.go": "8eb213df1007410edb323c6ad88c23022b67bea6172ff02dd03048d8248cd0e2",
+    "internal/adapters/projectassistantacp/client.go": "6fb91768987e3ad0bb1d8b95d1db695e73c3218443cb34761233a5e09073d428",
     "internal/adapters/projectassistantacp/client_compaction.go": "e6b3cdc3301ff2d3e605808f23e484f2a6df07635ef28112f027268b00db114f",
     "internal/adapters/projectassistantacp/client_context.go": "af9b92208ded670ec3e1f2d91af26703e02b0c912cb9e4c8e4fea4406107b525",
     "internal/adapters/projectassistantacp/compaction.go": "b9d3eb425548603dd71f1f3c3ae709de4809af8fd59175db94a19f2aa2121bdb",
@@ -5921,7 +5921,7 @@
     "internal/app/projectassistant/runtime.go": "d7e27b67f42e9b3acbdb64c065c09ac0364fb3a011ff1b1bdb14d2b18d0cb285",
     "internal/app/projectassistant/runtime_groups.go": "83b7086262a37a790fd26d053afffc49c98acb7147e76afeff4778aa4d2d6b97",
     "internal/app/projectassistant/runtime_source_permissions.go": "f94b363d047ffdb17874928e21f43fc5402b2ab18b5a8cb05f483d39454ac7fa",
-    "internal/app/projectassistant/send_now.go": "5686c6f5bd0f6411f7eb2c67ddd20ab13a77d2243ffd4c7f1ba14c447dba92ef",
+    "internal/app/projectassistant/send_now.go": "faefc951ba7899f05e08535b755c724e67281b33c372d1f598a516bbe19603a9",
     "internal/app/projectassistant/service_routines.go": "47b4f2ab953551938f828229ff837d77c8361bed25aafdaa653c5be943a3eed3",
     "internal/app/projectassistant/service_team_call.go": "7ee303d4a9608080703e66c78b437c50f9319349e2fae59ce2247c5a36f6c322",
     "internal/app/projectassistant/session_handoff.go": "8dc05936996650d664da7b7dfec574dc74da655eb4b7746c893c9fefbcceffb9",
@@ -6085,7 +6085,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "2efe41ee16b8b6b6191987f3b1388a520780acc2723639a77a398c61d572a253",
-    "zh-Hant": "3f7e59bfeac8727bca1c1cfbb3f690f5637e19ca40accd1f610ead7b6149fec0"
+    "en": "96903fa4f821158214d874a63cb0e65d05b14dd607bceb0dd71e90c1a1e1af4c",
+    "zh-Hant": "347c4ad5ef0d3c4afc7ca755a49e36e19b572f4809643bb8c8fea477afdb0508"
   }
 }

@@ -515,7 +515,7 @@
         "reply_input": {
           "type": "string",
           "enum": ["queue", "steer"],
-          "description": "How this Bot handles a message sent while it is replying. New Bots steer; Bots saved before this setting queue."
+          "description": "How this Bot handles a message sent while it is replying. Only queue makes it wait; a Bot with no saved choice steers. A message with pictures steers only into a verified adapter build."
         },
         "work_review": {
           "type": "string",
@@ -697,7 +697,7 @@
         "reply_input": {
           "type": "string",
           "enum": ["queue", "steer"],
-          "description": "How this Bot handles a message sent while it is replying. New Bots steer; Bots saved before this setting queue."
+          "description": "How this Bot handles a message sent while it is replying. Only queue makes it wait; a Bot with no saved choice steers. A message with pictures steers only into a verified adapter build."
         },
         "work_review": {
           "type": "string",
@@ -892,6 +892,11 @@
         "started_at": {
           "type": "string",
           "description": "When the turn began running, RFC 3339; absent while it waits."
+        },
+        "steer_fallback": {
+          "type": "string",
+          "enum": ["agent_unsupported", "images_unsupported", "permission_pending", "turn_ended", "scope", "steer_busy", "not_sent"],
+          "description": "Why a message the person sent while the Bot replied waits for its own turn instead of joining that reply: the agent cannot steer, it is not verified to take pictures while it replies, a permission card is waiting, the reply ended first, the reply is automatic work or another scope, another message was being steered, or the agent refused it unread. Absent when nothing fell back."
         },
         "joined_turn_id": {
           "type": "string",
@@ -2866,6 +2871,11 @@
         "released_restart": {
           "type": "boolean",
           "description": "True when the person's message released a queue held by a turn a restart interrupted; it runs before automatic work already waiting in that queue."
+        },
+        "steer_fallback": {
+          "type": "string",
+          "enum": ["agent_unsupported", "images_unsupported", "permission_pending", "turn_ended", "scope", "steer_busy", "not_sent"],
+          "description": "Why a message the person sent while the Bot replied waits for its own turn instead of joining that reply: the agent cannot steer, it is not verified to take pictures while it replies, a permission card is waiting, the reply ended first, the reply is automatic work or another scope, another message was being steered, or the agent refused it unread. Absent when nothing fell back."
         },
         "queue_edit_id": {
           "type": "string"

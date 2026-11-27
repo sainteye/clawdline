@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -106,8 +107,11 @@ type Client struct {
 	// remindFiles: a resumed native session may hold a system prompt frozen
 	// before send_file was described, so each person's turn names it (Codync
 	// host/src/agent/bot/turn.rs). Gemini hears the whole frame every open.
-	remindFiles       bool
-	promptImages      bool
+	remindFiles  bool
+	promptImages bool
+	// imageSteering: this adapter version is verified to take pictures while
+	// it replies, and its initialize declared both steering and images.
+	imageSteering     bool
 	sessionFailures   bool
 	ownedMCP          *OwnedMCP
 	mcpMu             sync.Mutex
@@ -192,10 +196,8 @@ func (c *Client) initializeSession(ctx context.Context, q app.OpenRequest, maint
 	if err = json.Unmarshal(b, &initialized); err != nil {
 		return refusal(pa.Unsupported, "initialize_response")
 	}
-	c.mu.Lock()
-	c.steering = initialized.Meta.Steering.Supported
-	c.promptImages = initialized.AgentCapabilities.PromptCapabilities.Image
-	c.mu.Unlock()
+	c.setInputCapabilities(AdapterBuild{Agent: q.Bot.Agent, Name: initialized.AgentInfo.Name, Version: initialized.AgentInfo.Version},
+		initialized.Meta.Steering.Supported, initialized.AgentCapabilities.PromptCapabilities.Image)
 	if initialized.ProtocolVersion != 1 {
 		return refusal(pa.ProviderVersionUnsupported, "acp_protocol_version")
 	}
@@ -1179,10 +1181,35 @@ func (c *Client) closeSegment() {
 	c.segmentClosed = false
 }
 
+// VerifiedImageSteering lists the adapter builds a real model was observed
+// reading a picture sent into a running reply (verified 2026-11-27).
+// A picture follow-up for any other build waits for its own turn; text
+// steering depends only on the declared capability. Empty it to queue every
+// picture follow-up.
+var VerifiedImageSteering = []AdapterBuild{
+	{Agent: pa.ClaudeCode, Name: "@agentclientprotocol/claude-agent-acp", Version: ClaudeAdapterVersion},
+	{Agent: pa.Codex, Name: "@agentclientprotocol/codex-acp", Version: CodexAdapterVersion},
+}
+
+// AdapterBuild is an adapter as its initialize answer names it.
+type AdapterBuild struct {
+	Agent         pa.Agent
+	Name, Version string
+}
+
+// setInputCapabilities records what this initialize declared. Pictures
+// steer only when steering, image input and a verified build all hold.
+func (c *Client) setInputCapabilities(build AdapterBuild, steering, images bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.steering, c.promptImages = steering, images
+	c.imageSteering = steering && images && slices.Contains(VerifiedImageSteering, build)
+}
+
 func (c *Client) SupportsSteering(images bool) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.steering && (!images || c.promptImages)
+	return c.steering && (!images || c.imageSteering)
 }
 
 // Steer is Codync's hand_to_agent: the message goes into the running turn

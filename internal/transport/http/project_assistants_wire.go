@@ -178,6 +178,7 @@ func paWireTurn(value pa.Turn) contract.ProjectAssistantTurn {
 	out.JoinedTurnID = value.JoinedTurnID
 	out.QueueEditID = value.QueueEditID
 	out.ReleasedRestart = value.ReleasedRestart
+	out.SteerFallback = string(value.SteerFallback)
 	if value.Failure != nil {
 		converted := paWireFailure(*value.Failure)
 		out.Failure = &converted
