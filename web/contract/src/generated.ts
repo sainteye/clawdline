@@ -6482,6 +6482,11 @@ export interface ProjectAssistantDecisionRequest {
    * Only the person's Save press writes it to memory.
    */
   memory?: string
+
+  /**
+   * Source exchange of a memory proposal. This exchange does not wait for approval.
+   */
+  memory_exchange_id?: string
   question: string
 
   /**
@@ -7999,6 +8004,11 @@ export const ProjectAssistantReadItemKindValues: readonly ProjectAssistantReadIt
 
 export interface ProjectAssistantReadPermissionSummary {
   /**
+   * Question or memory_save for a Bot decision; omitted by older sources.
+   */
+  decision_kind?: string
+
+  /**
    * Read reference for the complete stored offer. Summary alone never enables an
    * answer.
    */
@@ -8010,6 +8020,16 @@ export interface ProjectAssistantReadPermissionSummary {
   expires_at: string
   fence: ProjectAssistantFence
   id: string
+
+  /**
+   * Source exchange of the memory proposal, when known.
+   */
+  memory_exchange_id?: string
+
+  /**
+   * Confirmed choice for an answered memory proposal.
+   */
+  selected_option_id?: string
   state: ProjectAssistantPermissionState
 
   /**

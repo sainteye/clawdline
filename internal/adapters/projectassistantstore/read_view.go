@@ -564,22 +564,27 @@ func (c *viewEventFactChecks) verify(ctx context.Context, tx *sql.Tx, e pa.Event
 }
 
 func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, out *app.ReadView, p viewPosition) error {
-	// Memory choices stay in the same collection and order after being answered.
-	// The head still counts only pending offers. Memory text belongs to detail.
-	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, candidates AS MATERIALIZED (
- SELECT p.key id,json_object('id',json_extract(p.value,'$.id'),'fence',json_extract(p.value,'$.fence'),
- 'turn_id',json_extract(p.value,'$.turn_id'),'state',json_extract(p.value,'$.state'),
- 'kind',json_extract(p.value,'$.kind'),'decision',CASE WHEN json_extract(p.value,'$.kind')='decision'
- THEN json_object('question',json_extract(p.value,'$.decision.question')) END,
- 'expires_at',json_extract(p.value,'$.expires_at')) j
- FROM a,fact_permissions p WHERE p.type='object' AND (json_extract(p.value,'$.state')='pending'
- OR (json_extract(p.value,'$.state')='answered' AND json_extract(p.value,'$.kind')='decision'
- AND coalesce(json_extract(p.value,'$.decision.memory'),'')<>''))
- AND ` + viewPermissionFenceSQL("p.value") + ` AND (?='' OR p.key COLLATE BINARY>? COLLATE BINARY)
- ORDER BY p.key COLLATE BINARY LIMIT ?
-), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY id COLLATE BINARY) spent FROM candidates)
-SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM budget ORDER BY id COLLATE BINARY`
-	rows, err := tx.QueryContext(ctx, statement, out.Head.Key.MachineID, out.Head.Key.BotID, p.ID, p.ID, q.Request.PageSize+1, q.ByteLimit, q.ByteLimit)
+	// Keep the live proposal count on the first page even with an extensive
+	// history. The summary only exposes the receipt choice, never the fact.
+	statement := strings.TrimSuffix(viewAggregateSQL, " ") + `, offers AS NOT MATERIALIZED (
+ SELECT p.key id,p.value,
+ CASE WHEN json_extract(p.value,'$.state')='answered' THEN 2 WHEN ` + viewMemoryProposalSQL + ` THEN 0 ELSE 1 END priority
+ FROM a,fact_permissions p WHERE p.type='object' AND
+ ((json_extract(p.value,'$.state')='pending' AND (NOT (` + viewMemoryProposalSQL + `) OR ` + rosterOpenDecisionSQL("p.value") + `))
+ OR (json_extract(p.value,'$.state')='answered' AND json_extract(p.value,'$.kind')='decision' AND ` + viewMemoryProposalSQL + `))
+ AND ` + viewPermissionFenceSQL("p.value") + `
+), candidates AS MATERIALIZED (
+ SELECT id,priority,json_object('id',id,'fence',json_extract(value,'$.fence'),
+ 'turn_id',json_extract(value,'$.turn_id'),'state',json_extract(value,'$.state'),
+ 'kind',json_extract(value,'$.kind'),'decision',CASE WHEN json_extract(value,'$.kind')='decision'
+ THEN json_object('question',json_extract(value,'$.decision.question'),'memory_exchange_id',json_extract(value,'$.decision.memory_exchange_id')) END,
+ 'selected_option_id',CASE WHEN priority=2 THEN json_extract(value,'$.selected_option_id') END,
+ 'expires_at',json_extract(value,'$.expires_at')) j
+ FROM offers WHERE (?='' OR (priority,id COLLATE BINARY)>(?,? COLLATE BINARY))
+ ORDER BY priority,id COLLATE BINARY LIMIT ?
+), budget AS (SELECT *,sum(length(CAST(j AS BLOB))) OVER(ORDER BY priority,id COLLATE BINARY) spent FROM candidates)
+SELECT priority,CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM budget ORDER BY priority,id COLLATE BINARY`
+	rows, err := tx.QueryContext(ctx, statement, out.Head.Key.MachineID, out.Head.Key.BotID, p.ID, p.Kind, p.ID, q.Request.PageSize+1, q.ByteLimit, q.ByteLimit)
 	if err != nil {
 		return err
 	}
@@ -590,8 +595,9 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 			break
 		}
 		var id string
+		var priority int
 		var raw sql.NullString
-		if err = rows.Scan(&id, &raw); err != nil {
+		if err = rows.Scan(&priority, &id, &raw); err != nil {
 			return err
 		}
 		if !raw.Valid {
@@ -614,8 +620,14 @@ SELECT CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j END FROM
 		}
 		if offer.Kind == pa.DecisionOfferKind && offer.Decision != nil {
 			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Decision.Question, pa.DecisionOfferKind
+			item.PermissionSummary.DecisionKind = pa.RosterDecisionQuestion
+			if priority != 1 {
+				item.PermissionSummary.DecisionKind = pa.RosterDecisionMemorySave
+				item.PermissionSummary.MemoryExchangeID = offer.Decision.MemoryExchangeID
+				item.PermissionSummary.SelectedOptionID = offer.SelectedOptionID
+			}
 		}
-		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "permissions", ID: id})
+		item.AfterCursor, item.CursorFailure = s.cursor(q, out.Head, viewPosition{Collection: "permissions", Kind: priority, ID: id})
 		out.Items = append(out.Items, item)
 	}
 	return rows.Err()

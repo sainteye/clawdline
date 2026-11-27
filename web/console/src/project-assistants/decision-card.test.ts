@@ -33,10 +33,11 @@ const offer=(state:W.ProjectAssistantPermissionState="pending",answer=""):W.Proj
 async function load() {
   globalThis.document??={getElementById:()=>null,querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},createElement:()=>({style:{},setAttribute(){},appendChild(){},addEventListener(){}}),documentElement:{style:{},setAttribute(){},lang:"en"},body:{appendChild(){},classList:{add(){},remove(){},toggle(){},contains:()=>false}}} as never
   globalThis.location??=new URL("http://synthetic.invalid/") as never
-  const {outputFiles}=await build({stdin:{contents:'export {ChatRows} from "./ChatRows";export {DecisionCard,DecisionPointer,decisionsUnderCapsules} from "./DecisionCard";export {words} from "./words"',
+  const {outputFiles}=await build({stdin:{contents:'export {ChatRows} from "./ChatRows";export {DecisionCard,DecisionPointer,decisionsUnderCapsules,isMemoryProposal,MemoryProposalReceipt,memorySuggestionInChat} from "./DecisionCard";export {words} from "./words"',
     resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
   const compiled={exports:{} as {ChatRows:typeof import("./ChatRows").ChatRows;DecisionCard:typeof import("./DecisionCard").DecisionCard;
-    DecisionPointer:typeof import("./DecisionCard").DecisionPointer;decisionsUnderCapsules:typeof import("./DecisionCard").decisionsUnderCapsules;words:typeof import("./words").words}}
+    isMemoryProposal:typeof import("./DecisionCard").isMemoryProposal;MemoryProposalReceipt:typeof import("./DecisionCard").MemoryProposalReceipt;
+    memorySuggestionInChat:typeof import("./DecisionCard").memorySuggestionInChat;DecisionPointer:typeof import("./DecisionCard").DecisionPointer;decisionsUnderCapsules:typeof import("./DecisionCard").decisionsUnderCapsules;words:typeof import("./words").words}}
   new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
   return compiled.exports
 }
@@ -88,26 +89,29 @@ test("an answered decision shows the person's reply and no longer offers choices
 })
 
 test("memory proposals use localized controls and show the confirmed detail while the summary catches up",async()=>{
-  const {DecisionCard,words}=await load()
+  const {DecisionCard,isMemoryProposal,MemoryProposalReceipt,words}=await load()
   const fact="The maintenance window starts on Wednesday."
-  const memorySummary={...summary(),title:"Save this to memory?"}
-  const memoryOffer={...offer(),decision:{question:memorySummary.title,memory:fact},
+  const memorySummary={...summary(),title:"Save this to memory?",decision_kind:"memory_save"}
+  assert.equal(isMemoryProposal(memorySummary),true)
+  assert.equal(isMemoryProposal({...memorySummary,decision_kind:undefined}),true,"older sources")
+  assert.equal(isMemoryProposal({...memorySummary,decision_kind:"question"}),false,"a question may use the same words")
+  const memoryOffer={...offer(),decision:{question:memorySummary.title,memory:fact,source_bot_id:"atlas",request:"Use the usual template."},
     options:[{...offer().options[0],id:"reply-memory-save",label:"Save"},{...offer().options[1],id:"reply-memory-skip",label:"Don't save"}]}
   const saved={...memoryOffer,state:"answered" as const,selected_option_id:"reply-memory-save"}
   const skipped={...saved,selected_option_id:"reply-memory-skip"}
   for(const [language,title,save,skip,stored,declined] of [
-    ["zh-Hant","要記下這條嗎？","記下","不要","已記下","沒有記下"],
-    ["en","Save to memory?","Save","Don't save","Saved to memory","Not saved"],
+    ["zh-Hant","記憶提案","存到 Beacon 的記憶","略過","已存到 Beacon 的記憶","已略過記憶提案"],
+    ["en","Memory suggestion","Save to Beacon’s memory","Skip","Saved to Beacon’s memory","Memory suggestion skipped"],
   ]){
     const w=words(language)
     const render=(s:W.ProjectAssistantReadPermissionSummary,o?:W.ProjectAssistantPermissionOffer)=>
-      renderToStaticMarkup(React.createElement(DecisionCard,{summary:s,offer:o,enabled:true,onAnswer:async()=>assert.fail("rendering only"),askerName:"Beacon",w}))
+      renderToStaticMarkup(React.createElement(DecisionCard,{summary:s,offer:o,enabled:true,onAnswer:async()=>assert.fail("rendering only"),askerName:"Beacon",requesterName:"Atlas",w}))
     const loading=render(memorySummary)
-    assert.ok(loading.includes(title),"the roster can focus the localized card while its detail loads")
+    assert.ok(loading.includes(title),"the pending section names the suggestion while its detail loads")
     assert.ok(!loading.includes(memorySummary.title))
     assert.doesNotMatch(loading,/<button/)
     const pending=render(memorySummary,memoryOffer)
-    for(const value of [title,fact,`<span>${save}</span>`,`<span>${skip.replace("'", "&#x27;")}</span>`])assert.ok(pending.includes(value),value)
+    for(const value of [title,fact,"Atlas","Use the usual template.",`<span>${save}</span>`,`<span>${skip}</span>`])assert.ok(pending.includes(value),value)
     assert.doesNotMatch(pending,/pa-decision-own|pa-decision-dismiss/)
     const answeredSummary={...memorySummary,state:"answered" as const}
     assert.ok(!render(answeredSummary,memoryOffer).includes(declined),"a stale detail does not imply a skip")
@@ -118,9 +122,21 @@ test("memory proposals use localized controls and show the confirmed detail whil
         assert.ok(answered.includes(label),`${label} with a ${cardSummary.state} summary`)
         assert.ok(answered.includes(fact))
         assert.doesNotMatch(answered,/<button|aria-busy|pa-decision-spinner/)
+        const receipt=renderToStaticMarkup(React.createElement(MemoryProposalReceipt,{summary:cardSummary,offer:answer,name:"Beacon",w}))
+        assert.equal(receipt,`<p class="pa-memory-proposal-receipt">${label}</p>`)
       }
     }
   }
+})
+
+test("a memory shortcut appears only next to the exchange in the person's current turn",async()=>{
+  const {memorySuggestionInChat}=await load()
+  const current=exchange("completed")
+  const proposals=new Set([current.id])
+  assert.equal(memorySuggestionInChat(current,"s",proposals),true)
+  assert.equal(memorySuggestionInChat(current,"a newer user turn",proposals),false)
+  assert.equal(memorySuggestionInChat(current,undefined,proposals),false)
+  assert.equal(memorySuggestionInChat({...current,id:"unrelated"},"s",proposals),false)
 })
 
 test("only a decision whose exchange capsule is loaded moves under it; others stay in the permission section",async()=>{

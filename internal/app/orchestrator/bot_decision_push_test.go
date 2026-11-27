@@ -71,6 +71,42 @@ func TestABotDecisionPushesOnceAndNotAgainAfterARestart(t *testing.T) {
 	t.Logf("push payload: title=%q body=%q tag=%q bot=%q conversation=%q decision=%q", got.title, got.body, got.tag, got.bot, got.conversation, got.decision)
 }
 
+func TestMemoryProposalNeverPushesThePerson(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	s, err := store.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	bot := pa.Bot{Key: pa.BotKey{MachineID: "m", BotID: "b"}}
+	offer := pa.PermissionOffer{ID: "proposal", State: pa.PermissionPending, Kind: pa.DecisionOfferKind,
+		Decision: &pa.DecisionRequest{Question: pa.MemoryProposalQuestion, Memory: "Use the accessible template."}}
+	var sent []sentPush
+	b := decisionBroker(t, s, dir, &sent)
+	tx, err := s.ProjectAssistantDatabase().BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if err = b.BotDecisionIntent(ctx, tx, bot, "chat", offer); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.RecoverEffects(ctx); n != 0 || len(sent) != 0 {
+		t.Fatalf("proposal enqueued %d effects and sent %d pushes", n, len(sent))
+	}
+
+	// Also suppress an effect queued by a daemon that treated proposals as questions.
+	b.BotPermission = func(context.Context, pa.BotKey, string) (pa.PermissionOffer, error) { return offer, nil }
+	payload, _ := json.Marshal(botDecisionPush{Machine: "m", Bot: "b", Conversation: "chat", Permission: offer.ID, Name: "Bot", Tag: "tag"})
+	if r := runBotDecisionPush(ctx, b, store.Effect{Payload: payload}); r.outcome != "memory_panel" || len(sent) != 0 {
+		t.Fatalf("legacy proposal effect = %+v, sent %d pushes", r, len(sent))
+	}
+}
+
 func TestADecisionAnsweredBeforeItsPushIsNotPushed(t *testing.T) {
 	ctx := context.Background()
 	p := botDecisionPush{Machine: "m", Bot: "b", Conversation: "c", Permission: "decision-2", Name: "Bot", Summary: "Ship?", Tag: BotDecisionTag("m", "b", "decision-2")}

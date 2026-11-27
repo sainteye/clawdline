@@ -94,14 +94,26 @@ func (s *Store) OfferDecision(ctx context.Context, fence pa.Fence, turnID string
 	if q.Memory != "" {
 		// A memory card never holds the exchange open: the reply goes back
 		// to the requester while the card waits for the person.
-		d.Memory, d.ExchangeID = q.Memory, ""
+		d.Memory, d.MemoryExchangeID, d.ExchangeID = q.Memory, d.ExchangeID, ""
+		if t.Origin == pa.BotReplyOrigin && t.ExchangeID != "" {
+			origin, err := exchangeRead(ctx, tx, fence.Key.MachineID, t.ExchangeID)
+			if err != nil {
+				return pa.PermissionOffer{}, err
+			}
+			if origin.Source.Key != owner.Bot.Key || origin.Source.ConversationID != owner.Conversation.ID || origin.ReplyTurnID != t.ID {
+				return pa.PermissionOffer{}, failure(pa.ScopeDenied, "decision_exchange")
+			}
+			d.MemoryExchangeID = origin.ID
+			d.SourceBotID = origin.Target.Key.BotID
+			d.Request = pa.ClipUTF8(origin.Reply, pa.MaxDecisionRequestQuoteBytes)
+		}
 	}
 	if old, ok := owner.Permissions[id]; ok {
 		return old, nil
 	}
 	pending := 0
 	for _, p := range owner.Permissions {
-		if p.Kind == pa.DecisionOfferKind && p.State == pa.PermissionPending {
+		if p.Kind == pa.DecisionOfferKind && openPermission(p, at) {
 			if d.ExchangeID != "" && p.Decision != nil && p.Decision.ExchangeID == d.ExchangeID {
 				return pa.PermissionOffer{}, failure(pa.StaleVersion, "decision_exchange_pending")
 			}

@@ -81,9 +81,18 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   if(t.origin!==undefined&&typeof t.origin!=="string"||t.released_restart!==undefined&&typeof t.released_restart!=="boolean")throw failure("pa_invalid")
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
 }
+function permissionSummary(p:W.ProjectAssistantReadPermissionSummary,scope:ReadScope,fence:W.ProjectAssistantFence) {
+  if(!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid")
+  if(p.tool_kind==="decision"?p.turn_id!=="":!text(p.turn_id))throw failure("pa_invalid")
+  if(p.decision_kind!==undefined&&(p.tool_kind!=="decision"||!["question","memory_save"].includes(p.decision_kind)))throw failure("pa_invalid")
+  if(p.memory_exchange_id!==undefined&&(p.decision_kind!=="memory_save"||!text(p.memory_exchange_id)))throw failure("pa_invalid")
+  if(p.selected_option_id!==undefined&&(p.decision_kind!=="memory_save"||p.state!=="answered"||!text(p.selected_option_id)))throw failure("pa_invalid")
+  own(p.fence,scope,fence)
+}
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
   if(!p||!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!Array.isArray(p.options)||typeof p.native_request_id!=="string"||typeof p.selected_option_id!=="string")throw failure("pa_invalid")
   if(p.kind==="decision"?p.turn_id!==""||!object(p.decision)||!text(p.decision.question):!text(p.turn_id))throw failure("pa_invalid")
+  if(p.decision?.memory_exchange_id!==undefined&&(!text(p.decision.memory)||!text(p.decision.memory_exchange_id)))throw failure("pa_invalid")
   own(p.fence,scope,current)
   // Display text from the adapter; an older daemon omits it.
   const a=p.action
@@ -166,12 +175,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     const identity=JSON.stringify([row.kind,payloadID]);if(identities.has(identity))throw failure("pa_invalid");identities.add(identity)
     validateTimelineMessage(row,scope)
     if(row.work)work(row.work,scope)
-    if(row.permission_summary){
-      const p=row.permission_summary
-      if(!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid")
-      if(p.tool_kind==="decision"?p.turn_id!=="":!text(p.turn_id))throw failure("pa_invalid")
-      own(p.fence,scope,h.current_fence)
-    }
+    if(row.permission_summary)permissionSummary(row.permission_summary,scope,h.current_fence)
     if(row.trace_summary){const t=row.trace_summary;if(!text(t.id)||!text(t.turn_id)||!text(t.category)||typeof t.complete!=="boolean"||!cursor(t.detail_cursor)||!t.detail_cursor)throw failure("pa_invalid")}
     if(row.permission){
       if(q.mode==="detail")offer(row.permission,scope,h.current_fence)

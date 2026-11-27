@@ -102,7 +102,8 @@ func paWireReadItem(v app.ReadViewItem) (contract.ProjectAssistantReadViewItem, 
 		var expires string
 		expires, err = paWireTime(v.ExpiresAt)
 		out.PermissionSummary = &contract.ProjectAssistantReadPermissionSummary{ID: v.ID, Fence: paWireFence(v.Fence),
-			TurnID: v.TurnID, State: contract.ProjectAssistantPermissionState(v.State), ExpiresAt: expires, DetailCursor: v.DetailCursor, Title: v.Title, ToolKind: v.ToolKind}
+			TurnID: v.TurnID, State: contract.ProjectAssistantPermissionState(v.State), ExpiresAt: expires, DetailCursor: v.DetailCursor, Title: v.Title, ToolKind: v.ToolKind,
+			DecisionKind: v.DecisionKind, MemoryExchangeID: v.MemoryExchangeID, SelectedOptionID: v.SelectedOptionID}
 	case v.Kind == app.ReadItemTraceSummary && v.TraceSummary != nil:
 		v := v.TraceSummary
 		out.TraceSummary = &contract.ProjectAssistantReadTraceSummary{ID: v.ID, TurnID: v.TurnID,

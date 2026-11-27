@@ -21,15 +21,17 @@ test("system-generated roster captions use the reader's language",()=>{
   const legacyNotice={...compacted,latest_message_notice:undefined,latest_message:"Earlier context was summarized to make room: 345K → 41K"}
   const legacyMemory={...memory,pending_decision_kind:undefined}
 
-  for(const [locale,compaction,proposal,legacy] of [
-    ["en","Earlier context was summarized to make room: 26.2K → 22.1K","Save to memory?","Earlier context was summarized to make room: 345K → 41K"],
-    ["zh-TW","已摘要較早的內容，騰出空間：26.2K → 22.1K","要記下這條嗎？","已摘要較早的內容，騰出空間：345K → 41K"],
+  for(const [locale,compaction,legacy] of [
+    ["en","Earlier context was summarized to make room: 26.2K → 22.1K","Earlier context was summarized to make room: 345K → 41K"],
+    ["zh-TW","已摘要較早的內容，騰出空間：26.2K → 22.1K","已摘要較早的內容，騰出空間：345K → 41K"],
   ]){
     const w=words(locale)
     assert.equal(rosterActivity(compacted,w).caption,compaction)
     assert.equal(rosterActivity(legacyNotice,w).caption,legacy)
-    assert.equal(rosterActivity(memory,w).caption,proposal)
-    assert.equal(rosterActivity(legacyMemory,w).caption,proposal)
+    for(const suggestion of [memory,legacyMemory]){
+      assert.equal(rosterActivity(suggestion,w).state,"idle")
+      assert.equal(rosterActivity(suggestion,w).caption,compaction)
+    }
     assert.equal(rosterActivity(ordinary,w).caption,w.decisionActivity.replace("{question}","Save this to memory?"))
     assert.equal(rosterActivity({...legacyNotice,latest_message_kind:"assistant"},w).caption,legacyNotice.latest_message)
   }

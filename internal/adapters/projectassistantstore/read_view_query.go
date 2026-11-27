@@ -274,12 +274,15 @@ func viewTraceCTE() string {
 ) `
 }
 
+const viewMemoryProposalSQL = `coalesce(json_extract(p.value,'$.decision.memory'),'')<>''`
+
 func viewCounts(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h *app.ReadViewHead) error {
 	statement := viewAggregateSQL + `SELECT
  (SELECT count(*) FROM a,fact_turns WHERE type='object' AND json_extract(value,'$.state')='unknown'),
  (SELECT count(*) FROM a,fact_turns t WHERE t.type='object'
  AND json_extract(t.value,'$.state') IN ('accepted','queued') AND ` + ownChatTurnSQL("t.key") + `),
- (SELECT count(*) FROM a,fact_permissions p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `)`
+ (SELECT count(*) FROM a,fact_permissions p WHERE p.type='object' AND json_extract(p.value,'$.state')='pending' AND ` + viewPermissionFenceSQL("p.value") + `
+ AND (NOT (` + viewMemoryProposalSQL + `) OR ` + rosterOpenDecisionSQL("p.value") + `))`
 	counts := botreadtrace.Measure(ctx, "sqlite_turn_counts")
 	err := tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID).Scan(&h.UnknownTurnCount, &h.QueuedTurnCount, &h.PendingPermissionCount)
 	counts()

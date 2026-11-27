@@ -9,7 +9,7 @@ import type * as W from "@clawdline/contract"
 import type { SourceClient } from "./client"
 import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, errorField as refusalField, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
-import { botIdentity, canRead, canWrite, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
+import { botIdentity, canRead, canWrite, currentPermission, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { decisionReplyOf } from "./decision-reply"
 import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
@@ -57,10 +57,10 @@ import { BotVoicePanel, useBotVoice } from "./BotVoicePanel"
 import type { BotVoiceObservation } from "./bot-voice-tools"
 import { botCallSendID, isBotCallSend, handoffInputRefused, type CallInput } from "./bot-call"
 import { PermissionCard, permissionMachineLabel, permissionState, samePermission } from "./PermissionCard"
-import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
-import { legacyMemoryProposalTitle } from "./notice-text"
-import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
-import { revealInChat, useMessageFocus } from "./message-focus"
+import { DecisionCard, decisionsUnderCapsules, isMemoryProposal, MemoryProposalReceipt, memorySuggestionInChat } from "./DecisionCard"
+import { decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
+import { useChatDecisionFocus } from "./useChatDecisionFocus"
+import { useMessageFocus } from "./message-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -179,11 +179,6 @@ type PermissionViewCard={summary:W.ProjectAssistantReadPermissionSummary;offer?:
 
 const TURN_REVIEW_PREFIX = "review-interrupted-"
 
-function currentPermission(value:Pick<W.ProjectAssistantReadPermissionSummary,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
-  // Only a validated decision may have an empty turn ID. It belongs to the chat.
-  return !!head&&sameFence(value.fence,head.current_fence)&&(value.turn_id===""||value.turn_id===head.conversation.active_turn_id)
-}
-
 export function pendingPermissionView(head:W.ProjectAssistantReadViewHead|null,cards:readonly PermissionViewCard[],now:number) {
   if(!head||head.pending_permission_count===0)return {count:0,nextDeadline:Infinity}
   // The collection can be paged. Keep counting requests we have yet to read.
@@ -227,17 +222,12 @@ type ChatPermissionCard = {
 }
 
 function permissionSections(cards:ChatPermissionCard[],visible:ChatPermissionCard[],pending:number,head:W.ProjectAssistantReadViewHead|null) {
-  const memory=cards.filter(({summary,offer})=>summary.tool_kind==="decision"&&
-    (offer?.decision?!!offer.decision.memory:legacyMemoryProposalTitle(summary.title)))
+  const memory=cards.filter(({summary,offer})=>isMemoryProposal(summary,offer))
   const memoryIDs=new Set(memory.map(({summary})=>summary.id))
   const approvals=visible.filter(({summary})=>!memoryIDs.has(summary.id))
-  const pendingMemory=memory.filter(({summary,offer})=>currentPermission(summary,head)&&permissionState(offer??summary)==="pending").length
-  const pendingApprovals=Math.max(0,pending-pendingMemory)
-  return {
-    memory:visible.filter(({summary})=>memoryIDs.has(summary.id)),
-    approvals,pendingApprovals,
-    showApprovalHeading:approvals.length>0||pendingApprovals>cards.length-memoryIDs.size,
-  }
+  const pendingMemory=memory.filter(({summary,offer})=>currentPermission(summary,head)&&permissionState(summary)==="pending"&&permissionState(offer??summary)==="pending")
+  const memoryHistory=memory.filter(({summary,offer})=>summary.state==="answered"||offer?.state==="answered")
+  return {pendingMemory,memoryHistory,approvals,pendingApprovals:Math.max(0,pending-pendingMemory.length)}
 }
 
 function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
@@ -270,6 +260,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const scope=useRef({key:{...key},project:{...summary.bot.project},conversation_id:summary.bot.conversation_id}).current
   const [recoveryRequired,setRecoveryRequired]=useState(()=>view.recoveryRequired.has(draftKey)),recovery=useRef(recoveryRequired)
   const [infoTab,setInfoTab]=useState<BotInfoTab>("details"),[infoOpen,setInfoOpen]=useState(false),[settingsRevision,setSettingsRevision]=useState(0)
+  const memoryProposals=useRef<HTMLElement>(null)
   const [selectedTask,setSelectedTask]=useState("")
   const taskOpener=useRef<HTMLButtonElement|null>(null)
   const [backgroundStopping,setBackgroundStopping]=useState("")
@@ -343,13 +334,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     trace.mark("ready")
     readyRead.current=trace
   },[])
-  // The entry-time question is consumed when the current permission cards arrive.
-  const [focusTarget,setFocusTarget]=useState(focusDecision??""),[focusedDecision,setFocusedDecision]=useState(""),[decisionHandled,setDecisionHandled]=useState(false)
-  const [rosterQuestion,setRosterQuestion]=useState(()=>!thread&&summary.activity.startsWith("Asks: ")?summary.activity.slice("Asks: ".length):"")
   const [permissionsRead,setPermissionsRead]=useState(false)
   // Each decision answered from this page and the turn its reply started.
   const [decisionTurns,setDecisionTurns]=useState<Record<string,string>>({}),decisionProgress=useRef<Record<string,DecisionFollowUp|undefined>>({})
-  useEffect(()=>{if(focusDecision)setFocusTarget(focusDecision)},[focusDecision])
   // A question this chat already shows is not also pushed while it is on
   // screen. Only the console served by this machine reports it.
   useEffect(()=>hostedConsole()?undefined:watchBotViewing(key.bot_id,scope.conversation_id,browserViewingPage(),localViewingReport),[key.bot_id,scope.conversation_id])
@@ -556,7 +543,15 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       adoptHead(page)
       if(mode==="permissions"){
         const added=page.items.map(row=>row.permission_summary!)
-        const base=cursor?permissionRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];permissionRows.current=rows;setPermissions(rows);setPermissionMore(page.next_cursor);setPermissionsRead(true)
+        const rows=new Map((cursor?permissionRows.current:[]).map(row=>[row.id,row]))
+        for(const row of added){
+          const prior=rows.get(row.id)
+          // An open suggestion can move into history between pages.
+          if(prior&&!(prior.state==="pending"&&row.state==="answered"&&isMemoryProposal(row)&&samePermission(prior,row)))throw failure("pa_invalid")
+          rows.set(row.id,row)
+        }
+        const merged=[...rows.values()]
+        permissionRows.current=merged;setPermissions(merged);setPermissionMore(page.next_cursor);setPermissionsRead(true)
       }else{
         const added=page.items.map(row=>row.trace_summary!)
         const base=cursor?traceRows.current:[],ids=new Set(base.map(row=>row.id));if(added.some(row=>ids.has(row.id)))throw failure("pa_invalid");const rows=[...base,...added];traceRows.current=rows;setTraceSummaries(rows);setTraceMore(page.next_cursor)
@@ -637,7 +632,10 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
             if(event.message?.kind==="assistant"&&event.message.turn_id){const id=event.message.turn_id;setActivity(old=>old[id]?{...old,[id]:""}:old)}
             if(event.trace){if(browserToolTrace(event.trace)){const trace=event.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}const now=visibleTrace(event.trace)?activityOf(event.trace):"",id=event.trace.turn_id;if(now)setActivity(old=>({...old,[id]:now}))}
             if(event.permission&&event.permission.state!=="pending"&&detailRows.current[event.permission.id]){
-              const next={...detailRows.current};delete next[event.permission.id];detailRows.current=next;setDetails(next)
+              const next={...detailRows.current},prior=next[event.permission.id]
+              if(event.permission.decision?.memory&&"fence" in prior&&samePermission(prior,event.permission))next[event.permission.id]=event.permission
+              else delete next[event.permission.id]
+              detailRows.current=next;setDetails(next)
             }
             if(event.kind==="feature_disabled"||event.source&&!canWrite(event.source))activeMutations.current.forEach(control=>control.abort())
           }
@@ -1305,6 +1303,8 @@ ${currentDraft}`:submitted)
           throw failure("pa_stale_generation")
         }
       }
+      const prior=detailRows.current[id]
+      if(row.permission?.state==="pending"&&row.permission.decision?.memory&&prior&&"state" in prior&&prior.state==="answered"&&samePermission(prior,row.permission))return true
       adoptHead(page);const next={...detailRows.current,[id]:row.permission??row.trace!};detailRows.current=next;setDetails(next)
       if(row.trace){requestedTraceReferences.current.set(id,reference);if(browserToolTrace(row.trace)){const trace=row.trace;setObservedBrowserTraces(old=>({...old,[trace.turn_id]:trace}))}}
       return true
@@ -1462,7 +1462,7 @@ ${currentDraft}`:submitted)
   }
   const botMemoryPage=projectMemoryPages?{page:0,page_size:projectMemoryPageSize}:undefined
   const {memory,loading:memoryLoading,timedOut:memoryTimedOut,shown:memoryShown,panel:memoryPanel,load:loadExport}=useBotMemoryPanel(
-    () => readMemory(new AbortController().signal,undefined,botMemoryPage), data?.conversation.memory_revision, fail)
+    () => readMemory(new AbortController().signal,undefined,botMemoryPage), head?.memory_revision, fail)
   const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
   const saveMemory=async(input:string|MemoryNoteDraft)=>{
     const note=typeof input==="string"?null:input,text=typeof input==="string"?input:input.text
@@ -1518,37 +1518,14 @@ ${currentDraft}`:submitted)
   const exchangeDecisions=decisionsUnderCapsules(permissionCards,messages,inlinePermissionIds)
   const exchangeDecisionIds=new Set([...exchangeDecisions.values()].map(card=>card.summary.id))
   const sectionPermissions=permissionCards.filter(({summary})=>!inlinePermissionIds.has(summary.id)&&!exchangeDecisionIds.has(summary.id))
-  const focusOutcome=focusTarget?decisionFocus(focusTarget,permissionCards,permissionsRead&&!!data):"wait"
-  const rosterTarget=rosterQuestion?permissionCards.find(({summary})=>summary.tool_kind==="decision"&&currentPermission(summary,head)&&permissionState(summary)==="pending"&&summary.title?.split("\n",1)[0].trim()===rosterQuestion)?.summary.id:undefined
-  useEffect(()=>{
-    if(focusTarget){
-      if(focusOutcome==="wait")return
-      setRosterQuestion("");setFocusTarget("");onDecisionFocused?.()
-      if(focusOutcome==="handled")setDecisionHandled(true)
-      else setFocusedDecision(focusTarget)
-    }else if(rosterTarget){
-      setRosterQuestion("");setFocusedDecision(rosterTarget)
-    }
-  },[focusTarget,focusOutcome,rosterTarget])
-  const focusedUnderExchange=exchangeDecisionIds.has(focusedDecision)
-  const focusedOfferLoaded=permissionCards.some(card=>card.summary.id===focusedDecision&&!!card.offer)
-  useEffect(()=>{
-    if(!focusedDecision)return
-    const id=focusedDecision
-    // The card renders with data-focused this frame; scroll once it is laid out.
-    const frame=requestAnimationFrame(()=>{
-      const viewport=scroll.current
-      const card=viewport?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
-      if(!viewport||!card){setFocusedDecision("");setDecisionHandled(true);return}
-      followingRef.current=false;setFollowing(false)
-      revealInChat(viewport,card)
-    })
-    const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
-    return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
-  },[focusedDecision,focusedUnderExchange,focusedOfferLoaded])
+  const {focusedDecision,decisionHandled,dismissDecisionHandled}=useChatDecisionFocus({
+    focusDecision,onDecisionFocused,entryActivity:thread?"":summary.activity,cards:permissionCards,head,ready:permissionsRead&&!!data,
+    exchangeDecisionIds,scroll,memoryProposals,followingRef,setFollowing,openMemory:thread?undefined:()=>openInfo("memory"),
+  })
   useMessageFocus(focusMessage,!!data,scroll,followingRef,setFollowing,onMessageFocused)
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
+  const {pendingMemory,memoryHistory,approvals,pendingApprovals}=permissionSections(permissionCards,sectionPermissions,pendingPermissionCount,head)
   useEffect(()=>{
     if(!Number.isFinite(nextDeadline))return
     // setTimeout clamps at a signed 32-bit delay in the browser.
@@ -1596,7 +1573,7 @@ ${currentDraft}`:submitted)
       messages,
       activity:h.conversation.active_turn_id?(activity[h.conversation.active_turn_id]||summary.activity):"",
       background:(h.background_tasks??[]).filter(liveBackgroundTask),
-      permissions:permissionCards.filter(({summary,offer})=>currentPermission(summary,h)&&permissionState(offer??summary)==="pending")
+      permissions:permissionCards.filter(({summary,offer})=>!isMemoryProposal(summary,offer)&&currentPermission(summary,h)&&permissionState(offer??summary)==="pending")
         .map(({summary,offer})=>({id:summary.id,options:offer?.options.map(option=>option.label)})),
       moreHistory:!!more,
       frontier:callViewFrontier.current,caughtUp:handoff.ready&&h.event_frontier<=callViewFrontier.current,
@@ -1679,7 +1656,7 @@ ${currentDraft}`:submitted)
   const requestReading=useBotRequests({enabled:!thread&&!!requestIO&&readsBotRequests(source),bot:key.bot_id,read:requestIO?.list})
   const [openRequest,setOpenRequest]=useState<W.BotRequestView&{mode?:"view"|"handoff"|"complete"}>()
   const requestCards=requestReading.reading.state==="ready"?requestReading.reading.cards:undefined
-  const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingPermissionCount,thread||recoveryRequired?[]:head?.background_tasks):rosterMood(summary)):"idle"
+  const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingApprovals,thread||recoveryRequired?[]:head?.background_tasks):rosterMood(summary)):"idle"
   const mood=ownMood==="idle"&&live&&showDispatched&&rosterMood(summary,true)==="waitingOnWork"?"waitingOnWork":ownMood
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
   const liveTraceTurn=live?visibleTurn?.id:undefined
@@ -1871,10 +1848,16 @@ ${currentDraft}`:submitted)
 
   const permissionMachine=permissionMachineLabel(source.machineName,key.machine_id,w.thisMachine)
   const permissionContext=[botWorkspaceName(projectName,w),permissionMachine].filter(Boolean).join(" · ")
-  const permissionSection=permissionSections(permissionCards,sectionPermissions,pendingPermissionCount,head)
   const followUpOf=(id:string)=>{const next=decisionFollowUp(decisionTurns[id]??"",turns,decisionProgress.current[id]);decisionProgress.current[id]=next;return next}
-  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} botID={key.bot_id} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>b.key.bot_id===offer.decision!.source_bot_id)?.name:undefined} w={w}/>
+  const renderDecision=({summary:row,offer,identity}:(typeof permissionCards)[number])=><DecisionCard key={identity} summary={row} offer={offer} followUp={followUpOf(row.id)} highlight={focusedDecision===row.id} enabled={enabled&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} botID={key.bot_id} askerName={bot.name} requesterName={offer?.decision?.source_bot_id?roster?.find(b=>sameBot(b.key,{machine_id:key.machine_id,bot_id:offer.decision!.source_bot_id!}))?.name:undefined} w={w}/>
   const renderExchangeDecision=(exchangeID:string)=>{const card=exchangeDecisions.get(exchangeID);return card?renderDecision(card):null}
+  const latestPersonTurn=messages.filter(message=>message.kind==="user"&&!decisionReplyOf(message)).at(-1)?.turn_id
+  const proposedExchanges=new Set(pendingMemory.flatMap(({summary,offer})=>{
+    const id=summary.memory_exchange_id||offer?.decision?.memory_exchange_id
+    return id?[id]:[]
+  }))
+  const renderExchangeMemory=(exchange:W.ProjectAssistantExchange)=>!thread&&memorySuggestionInChat(exchange,latestPersonTurn,proposedExchanges)
+    ?<button type="button" className="pa-pill pa-memory-suggestion" onClick={()=>openInfo("memory")}>{w.memoryCardSuggestion.replace("{name}",bot.name)}</button>:null
   const renderTeamPermission=(card:W.ProjectAssistantPermissionOffer)=>{
     const detail=details[card.id]
     const offer=detail&&"fence" in detail&&samePermission(detail,card)&&detail.state!=="pending"?detail:card
@@ -1922,7 +1905,7 @@ ${currentDraft}`:submitted)
       {error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
     </div>}
     {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
-      <button type="button" className="pa-pill" onClick={()=>setDecisionHandled(false)}>{w.decisionHandledDismiss}</button></div>}
+      <button type="button" className="pa-pill" onClick={dismissDecisionHandled}>{w.decisionHandledDismiss}</button></div>}
     {!thread&&requestCards&&<ChatHeldCards source={source} enabled={enabled} cards={requestCards} bot={key.bot_id} botName={bot.name} bots={[bot,...(roster??[])]} w={w}
       onCompose={changeText} onOpen={(card,mode)=>setOpenRequest({...card,mode})}/>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
@@ -1930,7 +1913,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows renderExchangeWork={renderExchangeWork} requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows renderExchangeWork={renderExchangeWork} requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} renderExchangeMemory={renderExchangeMemory} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1953,10 +1936,10 @@ ${currentDraft}`:submitted)
       })}
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
-      {(pendingPermissionCount>permissionCards.length||sectionPermissions.length>0)&&<section className="pa-permissions">
-        {permissionSection.memory.map(renderDecision)}
-        {permissionSection.showApprovalHeading&&<h3>{w.permission}{permissionSection.pendingApprovals>0&&` · ${permissionSection.pendingApprovals}`}</h3>}
-        {permissionSection.approvals.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}
+      {(approvals.length>0||pendingPermissionCount>permissionCards.length||memoryHistory.length>0||!!permissionMore)&&<section className="pa-permissions">
+        {(approvals.length>0||pendingPermissionCount>permissionCards.length)&&<h3>{w.permission}{pendingApprovals>0&&` · ${pendingApprovals}`}</h3>}
+        {approvals.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}
+        {memoryHistory.map(({summary,offer,identity})=><MemoryProposalReceipt key={identity} summary={summary} offer={offer} name={bot.name} onDetail={()=>readPermissionDetails(summary.id,summary.detail_cursor)} w={w}/>)}
         {permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}
       </section>}
       {visibleInterruptions.map(turn=>
@@ -2091,7 +2074,7 @@ ${currentDraft}`:submitted)
     {browserOpener&&<BotBrowser source={source} current={current} bot={bot} writable={enabled} reason={enabled?"":recoveryRequired?w.unavailable:data?.source.state==="online"&&data.source.fresh?botBrowserWord("readOnly"):readOnlyReason(data?.source,w as unknown as Record<string,string>)||botBrowserWord("readOnly")} onClose={()=>setBrowserOpener(null)} onStale={async()=>{const fresh=await authorized(source,current,s=>source.get(key,s),new AbortController().signal);if(valid()){setData(fresh);onBotChanged(fresh.bot)}}}/>}
 
     {templateOpener&&<BotTemplate opener={templateOpener} source={source} current={current} scope={scope} available={()=>valid()&&!recovery.current&&!!currentData.current&&canRead(currentData.current.source)&&sameConversation({key:currentData.current.bot.key,project:currentData.current.bot.project,conversation_id:currentData.current.conversation.id},scope)} w={w} onClose={()=>setTemplateOpener(null)}/>}
-    {!thread&&<BotSidePanel onOverlayBack={closeTask} overlay={selected&&threadSummary?<Chat key={selected.id} thread={selected} summary={threadSummary} roster={roster} projectNameOf={projectNameOf} projectIconOf={projectIconOf} source={source} current={current} accountKey={accountKey} readerID={readerID} view={view} w={w} language={language} projectName={botWorkspaceName(projectName,w)} onBack={closeTask} onBotChanged={()=>{}}/>:undefined} inactive={!!browserOpener||!!templateOpener} opener={identityButton} bot={bot} open={infoOpen} tab={infoTab} onTab={openInfo} onClose={()=>{setInfoOpen(false);setSelectedTask("")}} w={w} detailsActions={
+    {!thread&&<BotSidePanel onOverlayBack={closeTask} overlay={selected&&threadSummary?<Chat key={selected.id} thread={selected} summary={threadSummary} roster={roster} projectNameOf={projectNameOf} projectIconOf={projectIconOf} source={source} current={current} accountKey={accountKey} readerID={readerID} view={view} w={w} language={language} projectName={botWorkspaceName(projectName,w)} onBack={closeTask} onBotChanged={()=>{}}/>:undefined} inactive={!!browserOpener||!!templateOpener} opener={identityButton} bot={bot} open={infoOpen} tab={infoTab} pendingMemories={pendingMemory.length} onTab={openInfo} onClose={()=>{setInfoOpen(false);setSelectedTask("")}} w={w} detailsActions={
         <><DevServers key={JSON.stringify([accountKey,readerID,source.authorizationRevision,bot.key,bot.project])} source={source} bot={bot} enabled={enabled} active={infoOpen&&infoTab==="details"&&!browserOpener&&!templateOpener} observation={servers} w={w}/><div className="pa-info-actions">
           {handoff.canPrepare&&<button type="button" className="pa-pill" disabled={busy||unknown||handoff.busy} onClick={()=>void prepareHandoff()}>{handoffWords(language).prepare}</button>}
           {browserAvailable&&<button type="button" className="pa-pill" disabled={!canReadActions} onClick={event=>setBrowserOpener(event.currentTarget)}>{botBrowserWord("open")}</button>}
@@ -2106,12 +2089,15 @@ ${currentDraft}`:submitted)
         <BackgroundList slots={bot.background_threads??3} section="recent" tasks={tasks} workspace={botWorkspaceName(projectName,w)} open={openTask} w={w}/>
       </>,
       library:<OutputLibrary embedded artifactComposer={artifactComposer} source={source} bot={bot} messages={messages} w={w} onClose={()=>setInfoOpen(false)}/>,
-      memory:<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{memoryTimedOut?w.readTimedOut:w.unavailable} <button type="button" onClick={()=>void memoryPanel.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{
+      memory:<>{infoOpen&&infoTab==="memory"&&pendingMemory.length>0&&<section ref={memoryProposals} className="pa-memory-proposals" aria-label={w.memoryCardTitle}>
+        <h3>{w.memoryCardTitle}</h3>
+        {pendingMemory.map(renderDecision)}
+      </section>}<div aria-busy={memoryLoading||undefined}>{!memory&&!memoryLoading?<p role="status">{memoryTimedOut?w.readTimedOut:w.unavailable} <button type="button" onClick={()=>void memoryPanel.open()}>{w.retry}</button></p>:<MemoryPanel embedded value={memory} readDetail={(detail,page)=>readMemory(new AbortController().signal,detail,page??botMemoryPage)} readProjectPage={projectMemoryPages?async(epoch,page,signal)=>{
         const value=await readMemory(signal,{source_epoch:epoch,layer:"project",entry_id:"",revision:""},page)
         const layer=value.view.layers.find(layer=>layer.layer==="project")
         if(!layer)throw failure("pa_invalid")
         return layer
-      }:undefined} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} working={!!activeTurn||queuedCount>0||exchangeRunning||turns.some(turn=>["queued","accepted","running","waiting_permission"].includes(turn.state))} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
+      }:undefined} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} working={!!activeTurn||queuedCount>0||exchangeRunning||turns.some(turn=>["queued","accepted","running","waiting_permission"].includes(turn.state))} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div></>,
       settings:null
     }}/>}
   </section>

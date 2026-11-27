@@ -987,7 +987,10 @@
 /* A pressed decision reply shows at once which one was chosen; the others
    step back. The mark keeps its width in every state so nothing shifts. */
 .project-assistants .pa-decision .pa-permission-options button { flex-direction:row;align-items:center;gap:8px; }
-.project-assistants .pa-decision.pa-memory-card .pa-permission-options { background:none;border:0;border-radius:0;overflow:visible; }
+.project-assistants .pa-decision.pa-memory-proposal { width:100%;padding:12px 14px;border-radius:16px; }
+.project-assistants .pa-decision.pa-memory-proposal .pa-permission-options { flex-flow:row wrap;gap:4px;margin-top:6px;background:none;overflow:visible; }
+.project-assistants .pa-decision.pa-memory-proposal .pa-permission-options button { min-height:44px;padding:6px 10px;border:0;border-radius:8px; }
+.project-assistants .pa-decision.pa-memory-proposal .pa-permission-options button+button { color:var(--pa-dim); }
 .project-assistants .pa-decision-mark { display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;flex:none; }
 .project-assistants .pa-decision-mark:empty { display:none; }
 .project-assistants .pa-decision button[data-choice="chosen"] { box-shadow:inset 0 0 0 2px var(--accent,currentColor);font-weight:600;opacity:1; }

@@ -296,7 +296,8 @@ var rosterProjectionSQL = `WITH a AS MATERIALIZED (
  coalesce((SELECT json_extract(message,'$.at') FROM latest_message),json_extract(j,'$.Bot.created_at')) activity_at,
  (SELECT count(*) FROM after_read WHERE ` + countsAsUnreadSQL("value") + `) unread,
  EXISTS(SELECT 1 FROM after_read WHERE ` + newActivitySQL("value") + `) activity,
- (SELECT count(*) FROM fact_permissions p WHERE json_extract(p.value,'$.state')='pending' AND ` + rosterOpenDecisionSQL("p.value") + `) pending,
+ (SELECT count(*) FROM fact_permissions p WHERE json_extract(p.value,'$.state')='pending'
+ AND coalesce(json_extract(p.value,'$.decision.memory'),'')='' AND ` + rosterOpenDecisionSQL("p.value") + `) pending,
  (SELECT count(*) FROM fact_work_links WHERE json_extract(value,'$.state') IN ` + activeWorkLinkStatesSQL + `) work,
  coalesce((SELECT json_group_array(json_object('state',json_extract(value,'$.state'),'landing',json_extract(value,'$.landing'))) FROM fact_work_links WHERE json_extract(value,'$.state') IN ` + dispatchedWorkLinkStatesSQL + `),'[]') dispatched FROM a
 ), guarded AS MATERIALIZED (

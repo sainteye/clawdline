@@ -15,12 +15,8 @@ export function liveActivity(source:W.ProjectAssistantSourceStatus):boolean {
 const silentWords:Record<string,string>=new Proxy({},{get:()=>""})
 export function rosterMood(item:W.ProjectAssistantBotSummary,showDispatched=false):BotMood {
   if(!liveActivity(item.source))return "idle"
-  if(showDispatched){
-    const state=rosterShownState(item,true)
-    return state==="needsInput"||state==="working"||state==="waitingOnWork"?state:"idle"
-  }
-  const state=item.status||(item.pending_permissions>0||item.activity==="waiting_permission"?"needsInput":["running","accepted","queued"].includes(item.activity)?"working":"idle")
-  return state==="needsInput"?"needsInput":state==="working"?"working":"idle"
+  const state=showDispatched?rosterShownState(item,true):rosterActivity(item,silentWords).state
+  return state==="needsInput"||state==="working"||state==="waitingOnWork"?state:"idle"
 }
 /** The detail head owns the active turn; historical running rows cannot animate a finished chat.
  * A background thread at work is this Bot at work while its own chat is quiet. */
@@ -106,14 +102,15 @@ export function rosterActivity(item: W.ProjectAssistantBotSummary, w: Record<str
   const live = liveActivity(item.source)
   const state = item.status || (item.pending_permissions > 0 || item.activity === "waiting_permission" ? "needsInput"
     : ["running","accepted","queued"].includes(item.activity) ? "working" : "idle")
-  const shown = live ? state : "idle"
+  const legacyMemory=state==="needsInput"&&(item.pending_decision_kind==="memory_save"||
+    (!item.pending_decision_kind&&item.activity.startsWith("Asks: ")&&legacyMemoryProposalTitle(item.activity.slice(6))))
+  const shown = live&&!legacyMemory ? state : "idle"
   let caption = compactedNoticeText({kind:item.latest_message_kind,text:item.latest_message,notice:item.latest_message_notice}, w) ?? item.latest_message
   if (item.latest_message_kind === "work" && item.latest_message) caption = w.sessionReportPreview.replace("{summary}", sessionReportLine(item.latest_message))
   if (shown === "needsInput") {
     const activity=item.activity
     const question=activity.startsWith("Asks: ")?activity.slice("Asks: ".length):undefined
-    caption=item.pending_decision_kind==="memory_save"||(!item.pending_decision_kind&&legacyMemoryProposalTitle(question))?w.memoryCardTitle
-      : activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))
+    caption=activity.startsWith("Needs approval: ")?w.approvalActivity.replace("{action}",activity.slice("Needs approval: ".length))
       : question!==undefined?w.decisionActivity.replace("{question}",question)
       : activity && !["waiting_permission","running","accepted","queued"].includes(activity)?activity:w.pending
   }

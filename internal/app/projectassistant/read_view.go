@@ -82,14 +82,17 @@ type ReadSnapshot struct {
 // A summary is not enough to approve a native operation. DetailCursor fetches
 // the complete current-fence offer/trace under fresh source authority.
 type ReadPermissionSummary struct {
-	ID           string
-	Fence        pa.Fence
-	TurnID       string
-	State        pa.PermissionState
-	ExpiresAt    time.Time
-	DetailCursor string
-	Title        string
-	ToolKind     string
+	ID               string
+	Fence            pa.Fence
+	TurnID           string
+	State            pa.PermissionState
+	ExpiresAt        time.Time
+	DetailCursor     string
+	Title            string
+	ToolKind         string
+	DecisionKind     string
+	MemoryExchangeID string
+	SelectedOptionID string
 }
 
 type ReadTraceSummary struct {

@@ -224,26 +224,54 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 	pending := ordinary
 	pending.ID, pending.NativeRequestID, pending.State, pending.SelectedOptionID = "d-pending", "d-pending", pa.PermissionPending, ""
 	pending.Decision = &pa.DecisionRequest{Question: "What happens next?"}
-	e.Permissions = []pa.PermissionOffer{memory, skipped, ordinary, pending}
+	proposal := memory
+	proposal.ID, proposal.NativeRequestID, proposal.State, proposal.SelectedOptionID = "z-proposed", "z-proposed", pa.PermissionPending, ""
+	proposal.Decision = &pa.DecisionRequest{Question: pa.MemoryProposalQuestion, Memory: "Always use the accessible template.", MemoryExchangeID: "source-exchange"}
+	proposal.ExpiresAt = time.Now().Add(time.Hour)
+	expired := proposal
+	expired.ID, expired.NativeRequestID, expired.ExpiresAt = "expired", "expired", time.Now().Add(-time.Hour)
+	e.Permissions = []pa.PermissionOffer{memory, skipped, ordinary, pending, proposal, expired}
 	_, _, views, _ := restoreViews(t, e)
 
 	q := viewQuery(e.Bot)
 	snapshot := readView(t, views, q)
 	q.Request.Mode, q.Request.SourceEpoch = pa.ReadViewPermissions, snapshot.SourceEpoch
+	priority := q
+	priority.Request.PageSize = 1
+	first := readView(t, views, priority)
+	if len(first.Items) != 1 || first.Items[0].ID != proposal.ID || !first.HasMore {
+		t.Fatalf("the first page should show the pending proposal: %+v", first.Items)
+	}
+	p := first.Items[0].PermissionSummary
+	if p.DecisionKind != pa.RosterDecisionMemorySave || p.MemoryExchangeID != "source-exchange" || p.SelectedOptionID != "" {
+		t.Fatalf("pending proposal summary = %+v", p)
+	}
+	priority.Request.Cursor = first.Items[0].AfterCursor
+	second := readView(t, views, priority)
+	if len(second.Items) != 1 || second.Items[0].ID != pending.ID || !second.HasMore {
+		t.Fatalf("the next page should show the pending question: %+v", second.Items)
+	}
+	priority.Request.Cursor = second.Items[0].AfterCursor
+	third := readView(t, views, priority)
+	priority.Request.Cursor = third.Items[0].AfterCursor
+	fourth := readView(t, views, priority)
+	if len(fourth.Items) != 1 || fourth.Items[0].ID != skipped.ID || fourth.HasMore {
+		t.Fatalf("history cursor should reach the last answered proposal: %+v", fourth.Items)
+	}
 	page := readView(t, views, q)
-	if page.Head.PendingPermissionCount != 1 {
-		t.Fatalf("pending count = %d, want 1", page.Head.PendingPermissionCount)
+	if page.Head.PendingPermissionCount != 2 {
+		t.Fatalf("pending count = %d, want the proposal and question", page.Head.PendingPermissionCount)
 	}
 	var ids []string
 	for _, item := range page.Items {
 		ids = append(ids, item.ID)
 	}
-	if !reflect.DeepEqual(ids, []string{memory.ID, skipped.ID, pending.ID}) {
+	if !reflect.DeepEqual(ids, []string{proposal.ID, pending.ID, memory.ID, skipped.ID}) {
 		t.Fatalf("permission summaries = %v, want saved and skipped memory cards alongside the pending offer", ids)
 	}
 	for i, want := range []pa.PermissionOffer{memory, skipped} {
-		summary := page.Items[i].PermissionSummary
-		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question {
+		summary := page.Items[i+2].PermissionSummary
+		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question || summary.SelectedOptionID != want.SelectedOptionID {
 			t.Fatalf("answered memory summary = %+v", summary)
 		}
 		detailQuery := q

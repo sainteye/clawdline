@@ -1,3 +1,4 @@
+import { legacyMemoryProposalTitle } from "./notice-text"
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import {quietFleetStream} from "../client"
@@ -59,13 +60,16 @@ export function decisionFailureText(f:DecisionFailure,w:Words,checking:boolean,d
 
 function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,choice:DecisionChoice|null,offer?:W.ProjectAssistantPermissionOffer,onDetail?:()=>Promise<boolean>){
   const requested=useRef("")
+  const [detailIssue,setDetailIssue]=useState("")
+  const [retryCount,setRetryCount]=useState(0)
+  const retryDetail=()=>{requested.current="";setRetryCount(n=>n+1)}
   // The immutable proposal stays visible while the collection and detail
   // catch up to one another after an answer.
   const [knownMemory,setKnownMemory]=useState("")
   const proposal=offer?.decision?.memory,memory=proposal||knownMemory
   useEffect(()=>{if(proposal)setKnownMemory(proposal)},[proposal])
   useEffect(()=>{
-    const isMemory=!!memory||summary.title===MEMORY_PROPOSAL_QUESTION
+    const isMemory=isMemoryProposal(summary,offer)
     const needsAnswer=isMemory&&summary.state==="answered"&&offer?.state!=="answered"
     if(offer&&!needsAnswer){
       // The answer event can invalidate this detail before the collection
@@ -76,14 +80,17 @@ function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,choic
     const reference=isMemory?JSON.stringify([summary.detail_cursor,summary.state]):summary.detail_cursor
     if(!onDetail||requested.current===reference)return
     requested.current=reference
-    void onDetail().catch(()=>{})
-  },[offer,onDetail,memory,summary.state,summary.detail_cursor,summary.title])
+    setDetailIssue("")
+    void onDetail().then(ok=>{if(!ok&&requested.current===reference)setDetailIssue("pa_outcome_unknown")},error=>{
+      if(requested.current===reference)setDetailIssue(errorCode(error))
+    })
+  },[offer,onDetail,summary,retryCount])
   const [confirmedAnswer,setConfirmedAnswer]=useState<MemoryAnswer>()
   const observedAnswer=memory&&offer?.state==="answered"?memoryOption(offer.selected_option_id):undefined
   // A permission event can evict the answered detail before its replacement arrives.
   if(observedAnswer&&!confirmedAnswer)setConfirmedAnswer(observedAnswer)
   const selected=memory?(confirmedAnswer??observedAnswer??(choice?.phase==="sent"?memoryOption(choice.option):undefined)):undefined
-  return {memory,selected}
+  return {memory,selected,detailIssue,retryDetail}
 }
 
 // A question a Bot asked with ask_person. The suggested replies are the
@@ -117,7 +124,7 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
   const traced=useRef<{attempt:string;at:number;option:string}|null>(null)
   useEffect(()=>()=>{const t=traced.current;if(pending.current&&t)traceDecision({attempt:t.attempt,phase:"unmounted",bot_id:botID,offer_id:summary.id,option:t.option,ms:performance.now()-t.at})},[])
   const offer=loaded&&samePermission(summary,loaded)?loaded:undefined
-  const {memory,selected}=useDecisionDetail(summary,choice,offer,onDetail)
+  const {memory,selected,detailIssue,retryDetail}=useDecisionDetail(summary,choice,offer,onDetail)
   // A pending summary can lag the latest detail or the committed answer receipt.
   const state=selected?"answered":permissionState(summary.state==="pending"&&offer?offer:summary)
   const decision=offer?.decision
@@ -153,9 +160,10 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
   })
   const draftBytes=own?utf8Bytes(draft.trim()):0,tooLong=draftBytes>DECISION_ANSWER_BYTES
   // The roster can focus the summary before the detail has arrived.
-  if(memory||!offer&&summary.title===MEMORY_PROPOSAL_QUESTION)return <MemoryCard summary={summary} offer={offer} memory={memory}
+  if(isMemoryProposal(summary,offer))return <MemoryCard summary={summary} offer={offer} memory={memory}
     state={state} selected={selected} choice={choice} enabled={enabled} busy={busy} checking={checking} error={error}
-    askerName={askerName} onSend={option=>void send(option)} highlight={highlight} w={w}/>
+    detailIssue={detailIssue} retryDetail={retryDetail}
+    askerName={askerName} requesterName={requesterName} onSend={option=>void send(option)} highlight={highlight} w={w}/>
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
   const sent=state==="pending"&&choice?.phase==="sent"
   const locked=busy||sent
@@ -206,7 +214,7 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
 // A short fact the Bot proposed to remember while answering another Bot.
 // Only Save writes it, as the person's own memory entry; the card offers no
 // typed reply.
-function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,checking,error,askerName,onSend,highlight,w}:{
+function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,checking,error,askerName,requesterName,onSend,detailIssue,retryDetail,highlight,w}:{
   summary:W.ProjectAssistantReadPermissionSummary
   offer?:W.ProjectAssistantPermissionOffer
   memory:string
@@ -218,7 +226,10 @@ function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,che
   checking:boolean
   error:DecisionFailure|null
   askerName:string
+  requesterName?:string
   onSend:(option:W.ProjectAssistantPermissionOption)=>void
+  detailIssue:string
+  retryDetail:()=>void
   highlight?:boolean
   w:Words
 }) {
@@ -226,16 +237,20 @@ function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,che
   const problem=state==="pending"&&!awaiting?error:null
   const retry=problem?.retry&&!checking?offer?.options.find(o=>o.id===choice?.option):undefined
   const locked=awaiting||state==="pending"&&(busy||checking)
-  const label=(id:string)=>id===MEMORY_SAVE?w.memoryCardSave:w.memoryCardSkip
-  const status=state==="answered"?(selected===MEMORY_SAVE?w.memoryCardSaved:selected===MEMORY_SKIP?w.memoryCardSkipped:""):
+  const label=(id:string)=>id===MEMORY_SAVE?w.memoryCardSave.replace("{name}",askerName):w.memoryCardSkip
+  const status=state==="answered"?memoryReceiptText(selected,askerName,w):
     state==="expired"?w.decisionExpired:state==="pending"?"":state==="unknown"?w.unknown:w.decisionWithdrawn
   const sending=locked&&!status&&!checking
   const message=problem&&(problem.kind==="notSent"?w.decisionSendFailed:problem.kind==="refused"?w.retryReasonRefused:decisionFailureText(problem,w,checking))
-  return <section className="pa-card pa-permission pa-decision pa-memory-card" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state}
-    aria-label={w.memoryCardTitle} aria-busy={locked||undefined} data-focused={highlight||undefined} tabIndex={highlight?-1:undefined}>
-    <h3>{w.memoryCardTitle}{state==="pending"&&<span className="pa-permission-dot" aria-hidden="true"/>}</h3>
-    <p className="pa-decision-note">{w.memoryCardFrom.replace("{name}",askerName)}</p>
+  return <section className="pa-card pa-permission pa-decision pa-memory-proposal" id={`pa-decision-${summary.id}`} data-permission-id={summary.id} data-state={state}
+    aria-label={w.memoryCardTitle} aria-busy={locked||state==="pending"&&!offer&&!detailIssue||undefined} data-focused={highlight||undefined} tabIndex={highlight?-1:undefined}>
     {memory&&<blockquote className="pa-decision-question">{memory}</blockquote>}
+    {state==="pending"&&!offer&&<p className="pa-decision-note" role="status">{detailIssue?<>{w.unavailable} ({detailIssue}) <button type="button" className="pa-pill" onClick={retryDetail}>{w.retry}</button></>:w.memoryLoading}</p>}
+    <p className="pa-decision-note">{requesterName?w.memoryCardFromBot.replace("{name}",requesterName):w.memoryCardFrom}</p>
+    {offer?.decision?.request&&<details className="pa-decision-context">
+      <summary>{w.memoryCardContext}</summary>
+      <p>{offer.decision.request}</p>
+    </details>}
     {(status||sending)&&<p className="pa-permission-state" role="status">
       {sending?<span className="pa-decision-working"><span className="pa-decision-spinner" aria-hidden="true"/>{w.decisionSending}</span>:status}
     </p>}
@@ -249,12 +264,39 @@ function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,che
   </section>
 }
 
-// Mirrors the host's memory proposal question and its two option IDs.
-const MEMORY_PROPOSAL_QUESTION="Save this to memory?"
+// These option IDs are also understood by older sources.
 const MEMORY_SAVE="reply-memory-save",MEMORY_SKIP="reply-memory-skip"
 type MemoryAnswer=typeof MEMORY_SAVE|typeof MEMORY_SKIP
 function memoryOption(option?:string|null):MemoryAnswer|undefined{
   return option===MEMORY_SAVE||option===MEMORY_SKIP?option:undefined
+}
+
+export function isMemoryProposal(summary:W.ProjectAssistantReadPermissionSummary,offer?:W.ProjectAssistantPermissionOffer) {
+  if(offer?.decision)return !!offer.decision.memory
+  if(summary.decision_kind)return summary.decision_kind==="memory_save"
+  return summary.tool_kind==="decision"&&legacyMemoryProposalTitle(summary.title)
+}
+
+function memoryReceiptText(option:MemoryAnswer|undefined,name:string,w:Words) {
+  return option===MEMORY_SAVE?w.memoryCardSaved.replace("{name}",name):option===MEMORY_SKIP?w.memoryCardSkipped:""
+}
+
+export function MemoryProposalReceipt({summary,offer,onDetail,name,w}:{
+  summary:W.ProjectAssistantReadPermissionSummary
+  offer?:W.ProjectAssistantPermissionOffer
+  onDetail?:()=>Promise<boolean>
+  name:string
+  w:Words
+}) {
+  const observed=memoryOption(summary.selected_option_id)
+  const {selected}=useDecisionDetail(summary,null,offer,observed?undefined:onDetail)
+  const text=memoryReceiptText(selected??observed,name,w)
+  return text?<p className="pa-memory-proposal-receipt">{text}</p>:null
+}
+
+/** Only the exchange started in the person's current turn gets a chat link. */
+export function memorySuggestionInChat(exchange:W.ProjectAssistantExchange,latestPersonTurn:string|undefined,exchangeIDs:ReadonlySet<string>) {
+  return !!latestPersonTurn&&exchange.source_turn_id===latestPersonTurn&&exchangeIDs.has(exchange.id)
 }
 
 // The requester's chat only points at the waiting question; it carries no
@@ -277,6 +319,6 @@ export function decisionsUnderCapsules<T extends {summary:W.ProjectAssistantRead
   const capsules=new Set(messages.flatMap(m=>m.exchange?[m.exchange.id]:[]))
   return new Map(cards.flatMap(card=>{
     const id=card.summary.tool_kind==="decision"?card.offer?.decision?.exchange_id:undefined
-    return id&&capsules.has(id)&&!inline.has(card.summary.id)?[[id,card] as const]:[]
+    return id&&!isMemoryProposal(card.summary,card.offer)&&capsules.has(id)&&!inline.has(card.summary.id)?[[id,card] as const]:[]
   }))
 }

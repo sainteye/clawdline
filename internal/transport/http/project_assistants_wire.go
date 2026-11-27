@@ -281,7 +281,7 @@ func paWirePermissionOffer(value pa.PermissionOffer) (contract.ProjectAssistantP
 	if d := value.Decision; d != nil {
 		out.Decision = &contract.ProjectAssistantDecisionRequest{
 			Question: d.Question, ExchangeID: d.ExchangeID, SourceBotID: d.SourceBotID,
-			Request: d.Request, AnswerText: d.AnswerText, Memory: d.Memory, WithdrawnReason: d.WithdrawnReason,
+			Request: d.Request, AnswerText: d.AnswerText, Memory: d.Memory, MemoryExchangeID: d.MemoryExchangeID, WithdrawnReason: d.WithdrawnReason,
 		}
 	}
 	if a := value.Action; a != nil {

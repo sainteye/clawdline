@@ -1094,6 +1094,10 @@
           "type": "string",
           "description": "The literal short fact a Bot proposed to remember while answering another Bot. Only the person's Save press writes it to memory."
         },
+        "memory_exchange_id": {
+          "type": "string",
+          "description": "Source exchange of a memory proposal. This exchange does not wait for approval."
+        },
         "withdrawn_reason": {
           "type": "string",
           "description": "The Bot's own short reason for withdrawing the question before the person answered it."
@@ -2981,6 +2985,18 @@
         "tool_kind": {
           "type": "string",
           "description": "The proposed action's ACP tool kind; empty from a daemon without it."
+        },
+        "decision_kind": {
+          "type": "string",
+          "description": "Question or memory_save for a Bot decision; omitted by older sources."
+        },
+        "memory_exchange_id": {
+          "type": "string",
+          "description": "Source exchange of the memory proposal, when known."
+        },
+        "selected_option_id": {
+          "type": "string",
+          "description": "Confirmed choice for an answered memory proposal."
         }
       },
       "required": [

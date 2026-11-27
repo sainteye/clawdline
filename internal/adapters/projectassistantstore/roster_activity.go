@@ -37,7 +37,7 @@ func projectOpenDecision(a aggregate, out *pa.BotSummary) {
 	now := time.Now()
 	var selected string
 	for id, p := range a.Permissions {
-		if p.Kind == pa.DecisionOfferKind && openPermission(p, now) && (selected == "" || p.AnchorMessageSeq > a.Permissions[selected].AnchorMessageSeq || p.AnchorMessageSeq == a.Permissions[selected].AnchorMessageSeq && id < selected) {
+		if p.Kind == pa.DecisionOfferKind && (p.Decision == nil || p.Decision.Memory == "") && openPermission(p, now) && (selected == "" || p.AnchorMessageSeq > a.Permissions[selected].AnchorMessageSeq || p.AnchorMessageSeq == a.Permissions[selected].AnchorMessageSeq && id < selected) {
 			selected = id
 		}
 	}
@@ -47,9 +47,6 @@ func projectOpenDecision(a aggregate, out *pa.BotSummary) {
 	out.Status, out.Activity, out.Failure = "needsInput", "", nil
 	if d := a.Permissions[selected].Decision; d != nil {
 		out.PendingDecisionKind = pa.RosterDecisionQuestion
-		if d.Memory != "" {
-			out.PendingDecisionKind = pa.RosterDecisionMemorySave
-		}
 		if q := strings.TrimSpace(strings.SplitN(d.Question, "\n", 2)[0]); q != "" {
 			out.Activity = "Asks: " + q
 		}

@@ -54,6 +54,11 @@ func (b *Broker) BotDecisionIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, 
 	if offer.ID == "" || conversation == "" {
 		return nil
 	}
+	// Memory proposals can wait in the Bot's memory panel. Still retract a
+	// notification that may have been sent by an earlier daemon.
+	if offer.State == pa.PermissionPending && offer.Decision != nil && offer.Decision.Memory != "" {
+		return nil
+	}
 	kind := EffectBotDecisionPush
 	if offer.State != pa.PermissionPending {
 		kind = EffectBotDecisionRetract
@@ -130,6 +135,9 @@ func runBotDecisionPush(ctx context.Context, b *Broker, e store.Effect) effectRe
 	// commit and this run; a push about a closed question is noise.
 	if b.BotPermission != nil {
 		offer, err := b.BotPermission(ctx, pa.BotKey{MachineID: p.Machine, BotID: p.Bot}, p.Permission)
+		if err == nil && offer.Decision != nil && offer.Decision.Memory != "" {
+			return effectResult{state: store.EffectDone, outcome: "memory_panel"}
+		}
 		if err == nil && (offer.State != pa.PermissionPending || !offer.ExpiresAt.IsZero() && !b.now().Before(offer.ExpiresAt)) {
 			return effectResult{state: store.EffectDone, outcome: "already_closed"}
 		}

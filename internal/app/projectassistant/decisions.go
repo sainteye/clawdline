@@ -114,7 +114,7 @@ func (r *Engine) ExpireWaitingDecisions(ctx context.Context, machine string, at 
 }
 
 // ProposeMemory turns a short fact a Bot wants to remember while answering
-// another Bot into a memory card in its visible main chat. Text from a peer
+// another Bot into a proposal in its Memory panel. Text from a peer
 // never reaches memory on the Bot's own say: only the person's press on the
 // card writes it.
 func (r *Engine) ProposeMemory(ctx context.Context, fence pa.Fence, turnID, text string) (pa.PermissionOffer, error) {

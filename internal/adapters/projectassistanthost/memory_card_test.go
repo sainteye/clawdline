@@ -79,7 +79,7 @@ func TestPeerRequestMemoryBecomesACardThePersonSaves(t *testing.T) {
 			cards[p.Decision.Memory] = p
 		}
 	}
-	if len(cards) != 2 || cards[keep].State != pa.PermissionPending || cards[keep].Decision.ExchangeID != "" || cards[keep].ExpiresAt.IsZero() {
+	if len(cards) != 2 || cards[keep].State != pa.PermissionPending || cards[keep].Decision.ExchangeID != "" || cards[keep].Decision.MemoryExchangeID != x.ID || cards[keep].Decision.SourceBotID != a.Key.BotID || cards[keep].ExpiresAt.IsZero() {
 		t.Fatalf("Lens's main chat has no pending memory cards: %+v", cards)
 	}
 	// The card does not hold the exchange: Atlas still gets Lens's reply.
@@ -99,11 +99,14 @@ func TestPeerRequestMemoryBecomesACardThePersonSaves(t *testing.T) {
 	if err = press("typed", cards[keep], ""); err == nil {
 		t.Fatal("a memory card accepted an answer that is neither Save nor Don't save")
 	}
-	if err = press("save", cards[keep], pa.MemorySaveOptionID); err != nil {
-		t.Fatal(err)
-	}
 	if err = press("skip", cards[drop], pa.MemorySkipOptionID); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = f.send(t, b, "One unrelated message."); err != nil {
+		t.Fatal(err)
+	}
+	if err = press("save", cards[keep], pa.MemorySaveOptionID); err != nil {
+		t.Fatalf("a chat message closed the independent memory proposal: %v", err)
 	}
 	got := liveMemory(t, f, b.Key)
 	saved, ok := got[keep]

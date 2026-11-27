@@ -87,7 +87,7 @@ func (s *ViewStore) position(q app.ReadViewQuery, h app.ReadViewHead) (viewPosit
 	} else if p.Collection != want {
 		return bad()
 	}
-	if p.ID == "" || p.Anchor < 0 || p.Kind < 0 || p.Kind > 2 || p.Kind == 2 && (!q.Request.TeamCards || p.Collection != "history") || p.Collection == "history" && p.Anchor == 0 {
+	if p.ID == "" || p.Anchor < 0 || p.Kind < 0 || p.Kind > 2 || p.Kind == 2 && p.Collection != "permissions" && (!q.Request.TeamCards || p.Collection != "history") || p.Collection == "history" && p.Anchor == 0 {
 		return bad()
 	}
 	return p, nil

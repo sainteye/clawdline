@@ -5493,8 +5493,11 @@ type ProjectAssistantDecisionRequest struct {
 
 	// The literal short fact a Bot proposed to remember while answering another Bot.
 	// Only the person's Save press writes it to memory.
-	Memory   string `json:"memory,omitempty"`
-	Question string `json:"question"`
+	Memory string `json:"memory,omitempty"`
+
+	// Source exchange of a memory proposal. This exchange does not wait for approval.
+	MemoryExchangeID string `json:"memory_exchange_id,omitempty"`
+	Question         string `json:"question"`
 
 	// The requesting Bot's message, shortened to the registered bound.
 	Request     string `json:"request,omitempty"`
@@ -6905,15 +6908,24 @@ const (
 var ProjectAssistantReadItemKindValues = []ProjectAssistantReadItemKind{ProjectAssistantReadItemKindMessage, ProjectAssistantReadItemKindWork, ProjectAssistantReadItemKindPermissionSummary, ProjectAssistantReadItemKindTraceSummary, ProjectAssistantReadItemKindPermission, ProjectAssistantReadItemKindTrace, ProjectAssistantReadItemKindEvent}
 
 type ProjectAssistantReadPermissionSummary struct {
+	// Question or memory_save for a Bot decision; omitted by older sources.
+	DecisionKind string `json:"decision_kind,omitempty"`
+
 	// Read reference for the complete stored offer. Summary alone never enables an
 	// answer.
 	DetailCursor string `json:"detail_cursor"`
 
 	// RFC3339 UTC
-	ExpiresAt string                          `json:"expires_at"`
-	Fence     ProjectAssistantFence           `json:"fence"`
-	ID        string                          `json:"id"`
-	State     ProjectAssistantPermissionState `json:"state"`
+	ExpiresAt string                `json:"expires_at"`
+	Fence     ProjectAssistantFence `json:"fence"`
+	ID        string                `json:"id"`
+
+	// Source exchange of the memory proposal, when known.
+	MemoryExchangeID string `json:"memory_exchange_id,omitempty"`
+
+	// Confirmed choice for an answered memory proposal.
+	SelectedOptionID string                          `json:"selected_option_id,omitempty"`
+	State            ProjectAssistantPermissionState `json:"state"`
 
 	// The proposed action's one-line description; empty from a daemon without it.
 	Title string `json:"title,omitempty"`

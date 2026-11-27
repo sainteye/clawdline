@@ -41,8 +41,11 @@ the request, bounded by `MaxPeerNotesPerRequest` (3) and `MaxPeerNoteBytes`
 (2000), registered as `bots.peer_notes_per_request` and `bots.peer_note_bytes`.
 The request prompt tells the Bot to use it when it cannot do part of the
 request or the person needs to act. Request/reply
-turns cannot write Bot memory as user facts. Broker dispatch remains a separate
-capability and is not implemented using a child as a teammate; since
+turns cannot write Bot memory as user facts. A same-machine append may propose
+a lasting preference or recurring work rule in the receiving Bot’s Memory
+panel for the person to approve. Proposals keep their source where available,
+expire if unanswered, and let the exchange finish without a push or a pause.
+Broker dispatch remains a separate capability and is not implemented using a child as a teammate; since
 2026-11-24 a request turn may dispatch into the recipient's own Project
 (`docs/project-assistants-owned-mcp.md`).
 

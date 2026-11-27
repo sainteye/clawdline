@@ -15,6 +15,11 @@ export const canWrite = (source: W.ProjectAssistantSourceStatus) => canRead(sour
 
 export type PermissionIdentity = Pick<W.ProjectAssistantReadPermissionSummary, "id" | "fence" | "turn_id">
 export type PermissionStatus = Pick<W.ProjectAssistantReadPermissionSummary, "state" | "expires_at">
+export function currentPermission(value:Pick<PermissionIdentity,"turn_id"|"fence">,head:W.ProjectAssistantReadViewHead|null) {
+  // Only a validated decision may have an empty turn ID. It belongs to the chat.
+  return !!head&&sameFence(value.fence,head.current_fence)&&(value.turn_id===""||value.turn_id===head.conversation.active_turn_id)
+}
+
 /** One offer: the same id, turn and fence. */
 export function samePermission(a: PermissionIdentity, b: PermissionIdentity) {
   return a.id === b.id && a.turn_id === b.turn_id && sameFence(a.fence, b.fence)

@@ -63,6 +63,8 @@ type DecisionRequest struct {
 	// turn answering another Bot. Only the person's MemorySaveOptionID press
 	// on the console's answer route writes it, as the person's own entry.
 	Memory string `json:"memory,omitempty"`
+	// MemoryExchangeID identifies the source without making the exchange wait.
+	MemoryExchangeID string `json:"memory_exchange_id,omitempty"`
 	// WithdrawnReason is the Bot's own short reason for withdrawing the
 	// question before the person answered it.
 	WithdrawnReason string `json:"withdrawn_reason,omitempty"`

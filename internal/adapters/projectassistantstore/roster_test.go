@@ -351,7 +351,7 @@ func TestRosterProjectionNamesTheLatestMessageKind(t *testing.T) {
 	}
 }
 
-func TestRosterKeepsCompactionAndMemoryProposalKinds(t *testing.T) {
+func TestRosterKeepsCompactionAndLetsMemoryProposalsWaitQuietly(t *testing.T) {
 	e, _, current := viewFixture(t, 2, 0, false)
 	e.Messages[1].Kind = pa.NoticeMessage
 	e.Messages[1].Text = "Earlier context was summarized to make room: 26K → 22K"
@@ -380,8 +380,8 @@ func TestRosterKeepsCompactionAndMemoryProposalKinds(t *testing.T) {
 		if err := json.Unmarshal(data, &display); err != nil {
 			t.Fatal(err)
 		}
-		if display.Notice != notice || display.Decision != "memory_save" || strings.Contains(string(data), offer.Decision.Memory) {
-			t.Errorf("%s preview should carry typed display facts: got %+v", label, display)
+		if display.Notice != notice || display.Decision != "" || row.PendingPermissions != 0 || row.Status == "needsInput" || strings.Contains(string(data), offer.Decision.Memory) {
+			t.Errorf("%s preview should preserve the compaction notice without asking for memory review: got %+v", label, display)
 		}
 	}
 }

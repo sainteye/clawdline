@@ -1269,7 +1269,7 @@ func projectListSummary(ctx context.Context, tx *sql.Tx, a aggregate, reader str
 
 	now := time.Now()
 	for _, p := range a.Permissions {
-		if openPermission(p, now) {
+		if (p.Decision == nil || p.Decision.Memory == "") && openPermission(p, now) {
 			out.PendingPermissions++
 		}
 	}
@@ -1303,7 +1303,7 @@ func summary(a aggregate, reader string) pa.BotSummary {
 	}
 	now := time.Now()
 	for _, p := range a.Permissions {
-		if openPermission(p, now) {
+		if (p.Decision == nil || p.Decision.Memory == "") && openPermission(p, now) {
 			out.PendingPermissions++
 		}
 	}
@@ -1579,7 +1579,7 @@ func closeDecisionsThePersonAnswered(a aggregate, m *app.Mutation) {
 	var open []pa.PermissionOffer
 	newest := int64(-1)
 	for _, p := range a.Permissions {
-		if !touched[p.ID] && p.Kind == pa.DecisionOfferKind && p.State == pa.PermissionPending && p.Decision != nil && p.Decision.ExchangeID == "" && p.AnchorMessageSeq < msg.Seq {
+		if !touched[p.ID] && p.Kind == pa.DecisionOfferKind && p.State == pa.PermissionPending && p.Decision != nil && p.Decision.Memory == "" && p.Decision.ExchangeID == "" && p.AnchorMessageSeq < msg.Seq {
 			open = append(open, p)
 			newest = max(newest, p.AnchorMessageSeq)
 		}

@@ -9,7 +9,7 @@ export type BotInfoTab="details"|"library"|"memory"|"settings"
 const tabs:BotInfoTab[]=["details","library","memory","settings"]
 
 /** Keep visited editors mounted so switching tabs cannot discard an unsaved form. */
-export function BotSidePanel({inactive,opener,bot,open,tab,onTab,onClose,children,editor,detailsActions,w,overlay,onOverlayBack}:{inactive:boolean;opener:RefObject<HTMLButtonElement|null>;bot:W.ProjectAssistantBot;open:boolean;tab:BotInfoTab;onTab:(tab:BotInfoTab)=>void;onClose:()=>void;children:Record<BotInfoTab,ReactNode>;editor:ReactNode;detailsActions:ReactNode;w:Words;overlay?:ReactNode;onOverlayBack?:()=>void}) {
+export function BotSidePanel({inactive,opener,bot,open,tab,onTab,onClose,children,editor,detailsActions,w,overlay,onOverlayBack,pendingMemories=0}:{inactive:boolean;opener:RefObject<HTMLButtonElement|null>;bot:W.ProjectAssistantBot;open:boolean;tab:BotInfoTab;onTab:(tab:BotInfoTab)=>void;onClose:()=>void;children:Record<BotInfoTab,ReactNode>;editor:ReactNode;detailsActions:ReactNode;w:Words;pendingMemories?:number;overlay?:ReactNode;onOverlayBack?:()=>void}) {
   const id=useId(),panel=useRef<HTMLElement>(null),wasOpen=useRef(false)
   const [visited,setVisited]=useState<BotInfoTab[]>([])
   const close=useRef(onClose);close.current=onClose
@@ -32,7 +32,7 @@ export function BotSidePanel({inactive,opener,bot,open,tab,onTab,onClose,childre
       const offset=event.key==="ArrowRight"?1:event.key==="ArrowLeft"?-1:0
       const next=event.key==="Home"?tabs[0]:event.key==="End"?tabs.at(-1):offset?tabs[(tabs.indexOf(value)+offset+tabs.length)%tabs.length]:undefined
       if(next){event.preventDefault();onTab(next);panel.current?.querySelector<HTMLElement>(`[id="${id}-${next}"]`)?.focus()}
-    }}>{label(value)}</button>)}</div>
+    }}>{label(value)}{value==="memory"&&pendingMemories>0&&<small className="pa-memory-tab-count">{w.memoryCardPending.replace("{count}",String(pendingMemories))}</small>}</button>)}</div>
     <div className="pa-info-content">
       {editor&&(visited.some(value=>value==="details"||value==="settings")||open&&(tab==="details"||tab==="settings"))&&<section role="tabpanel" id={`${id}-${tab==="settings"?"settings":"details"}-panel`} aria-labelledby={`${id}-${tab==="settings"?"settings":"details"}`} hidden={tab!=="details"&&tab!=="settings"}>
         {tab==="details"&&detailsActions}<div className="pa-info-editor" hidden={tab!=="settings"}>{editor}</div>{tab==="settings"?children.settings:children.details}
