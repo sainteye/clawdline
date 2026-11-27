@@ -50,11 +50,12 @@ try{
         a.list=async (...args)=>{
           const roster=await list(...args)
           const items=roster.items.map(item=>item.bot.key.bot_id==="bot-0"
-            ? {...item,dispatched_work:{running:0,needs_you:0,delivered:14}}
+            ? {...item,dispatched_work:{running:1,executing:1,needs_you:1,delivered:14}}
             : item)
           return {...roster,items}
         }
         a.seedHistory(101)
+        a.seedWork("completed")
         a.holdView("snapshot")
         a.holdEvents()
         open()
@@ -62,7 +63,8 @@ try{
       await page.locator(`.pa-bot-row[data-bot-key='["studio","bot-0"]']`).click()
       const chat=page.locator(".pa-main .pa-chat")
       const skeleton=chat.locator(".pa-chat-skeleton")
-      const capsule=chat.getByRole("button",{name:/14 個待整合/})
+      const caption=/1 個工作在跑.*1 個需要你/
+      const capsule=chat.getByRole("button",{name:caption})
       const waitForRead=mode=>page.waitForFunction(mode=>window.botsFixture.log.some(
         row=>row.method==="view"&&row.machine==="studio"&&row.request.key.bot_id==="bot-0"&&row.request.mode===mode
       ),mode)
@@ -70,12 +72,13 @@ try{
       await waitForRead("snapshot")
       await skeleton.waitFor()
       await shot("loading")
-      assert.equal(await capsule.isVisible(),false,"the roster's pending integration count is hidden while the chat skeleton is visible")
+      assert.equal(await capsule.isVisible(),false,"the active work capsule stays hidden while the chat skeleton is visible")
 
       const transcript=chat.locator(".pa-chat-scroll")
       const assertBelowLastMessage=async()=>{
         await capsule.waitFor()
-        assert.equal(await transcript.getByRole("button",{name:/14 個待整合/}).count(),1)
+        assert.equal(await transcript.getByRole("button",{name:caption}).count(),1)
+        assert.doesNotMatch(await capsule.innerText(),/待整合/)
         const [last,work]=await Promise.all([
           transcript.locator("[data-message-id]").last().boundingBox(),capsule.boundingBox()
         ])
@@ -114,8 +117,35 @@ try{
       await page.evaluate(()=>window.botsFixture.a.releaseHistory())
       await oldest.waitFor()
       await assertCapsuleStayed()
+      const completed=transcript.locator('.pa-work-task[data-state="completed"]')
+      await completed.waitFor({state:"attached"})
+      await completed.locator("summary").click()
+      await completed.getByText("task",{exact:true}).waitFor()
+
+      await page.reload()
+      await page.waitForFunction(()=>!!window.botsFixture)
+      await page.evaluate(()=>{
+        const {a,open}=window.botsFixture
+        const list=a.list
+        a.list=async (...args)=>{
+          const roster=await list(...args)
+          return {...roster,items:roster.items.map(item=>item.bot.key.bot_id==="bot-0"
+            ? {...item,dispatched_work:{running:0,executing:0,needs_you:0,delivered:14}}
+            : item)}
+        }
+        a.seedHistory(1)
+        a.seedWork("completed")
+        open()
+      })
+      const rosterRow=page.locator(`.pa-bot-row[data-bot-key='["studio","bot-0"]']`)
+      assert.doesNotMatch(await rosterRow.innerText(),/待整合/)
+      await rosterRow.click()
+      await transcript.getByText("History message 1",{exact:true}).waitFor()
+      await completed.waitFor({state:"attached"})
+      assert.equal(await chat.locator(".pa-dispatched-toggle").count(),0,"a pending landing alone creates no capsule")
+      await shot("delivered-only")
       assert.deepEqual(errors,[])
-      console.log(`PASS ${label}: initial loading, background update and earlier messages`)
+      console.log(`PASS ${label}: active work, chat loading, and completed work history`)
     }catch(error){
       console.error(`FAIL ${label}`,error)
       failures.push(error)

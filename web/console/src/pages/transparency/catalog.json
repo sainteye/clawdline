@@ -6045,7 +6045,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "80d5dbd08cb2a93a5c1a85f34caf3ac856882e1f4fcd28d661095f3e01c667fd",
+    "web/console/src/project-assistants/words.ts": "bfc34c3a9971c68c3e7a1aa45991978555e18bf3badbebb13ca9a7ffd9aad0ae",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
@@ -6078,7 +6078,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "6bee272da6235379e75d4e7b417f59c16d3ade1bbaad087e54f19968f46ceafa",
-    "zh-Hant": "5ab3f4f455edaca90dce08eb008633ccbfa02bab4b3bd2d831bbca2d3fd9e994"
+    "en": "abee4786182e1ba39e5cf07e556d12e53552b479e72a97a8a929ed0ecbd3bd15",
+    "zh-Hant": "7c29dbde275aa3ab65afb7cd62898e6702c4c540857226510d0ea09656cbafba"
   }
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14884,
-  "riskKeys": 6307,
-  "nonRiskCount": 8577,
+  "englishContentKeys": 14879,
+  "riskKeys": 6304,
+  "nonRiskCount": 8575,
   "groups": [
     {
       "name": "acp / other",
@@ -6376,7 +6376,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 747,
+      "count": 745,
       "sources": [
         null
       ],
@@ -6516,7 +6516,6 @@
         "projectAssistants.dispatchedOtherProject",
         "projectAssistants.dispatchedShowSetting",
         "projectAssistants.dispatchedStateQueued",
-        "projectAssistants.dispatchedStripDelivered",
         "projectAssistants.dispatchedStripLabel",
         "projectAssistants.dispatchedStripMore",
         "projectAssistants.dispatchedStripNeedsYou",
@@ -6851,7 +6850,6 @@
         "projectAssistants.rosterCopyID",
         "projectAssistants.rosterCreate",
         "projectAssistants.rosterDefaultSection",
-        "projectAssistants.rosterDispatchedDelivered",
         "projectAssistants.rosterDispatchedNeedsYou",
         "projectAssistants.rosterDropPin",
         "projectAssistants.rosterEditProfile",

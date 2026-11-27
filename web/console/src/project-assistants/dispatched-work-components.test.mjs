@@ -6,10 +6,10 @@ import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 
-const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedMark,DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
+const {outputFiles}=await build({stdin:{contents:'export {BotRow} from "./BotRow";export {DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession} from "./DispatchedWorkStrip";export {words} from "./words"',resolveDir:fileURLToPath(new URL(".",import.meta.url)),loader:"ts"},bundle:true,platform:"node",format:"cjs",packages:"external",write:false,jsx:"automatic",loader:{".css":"empty"}})
 const compiled={exports:{}}
 new Function("require","module","exports",outputFiles[0].text)(createRequire(import.meta.url),compiled,compiled.exports)
-const {BotRow,DispatchedMark,DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession,words}=compiled.exports
+const {BotRow,DispatchedWorkStrip,dispatchedOpenable,openDispatchedSession,words}=compiled.exports
 const w=words("zh-Hant"),render=(c,p)=>renderToStaticMarkup(React.createElement(c,p))
 const live={fresh:true,state:"online",readable:true,writable:true,access:"interactive"}
 const item=extra=>({bot:{key:{machine_id:"m",bot_id:"atlas"},name:"Atlas",project:{kind:"repository",machine_id:"m",project_id:"p"},appearance:{shape:"blob",color:"#5b8def"},agent:"claude"},status:"idle",activity:"",latest_message:"Last reply",activity_at:"2026-11-23T09:00:00Z",pending_permissions:0,unread_count:0,source:live,...extra})
@@ -20,10 +20,11 @@ test("a roster row shows its clone count under the time only when Sessions are r
   assert.match(busy,/class="pa-clones"[^>]*>.*?3<\/span>/)
   assert.match(busy,/data-status="needsInput"/)
   assert.match(busy,/aria-label="[^"]*3 個分身在跑/)
-  const waiting=render(BotRow,rowProps(item({dispatched_work:{running:2,needs_you:0,delivered:0}})))
+  const waiting=render(BotRow,rowProps(item({dispatched_work:{running:2,needs_you:0,delivered:5}})))
   assert.match(waiting,/data-status="waitingOnWork"/)
   assert.match(waiting,/data-mood="waitingOnWork"/)
   assert.match(waiting,/等 2 個分身完成/)
+  assert.doesNotMatch(waiting,/待整合/)
   for(const quiet of [item({}),item({dispatched_work:{running:0,needs_you:0,delivered:3}})]){
     assert.doesNotMatch(render(BotRow,rowProps(quiet)),/pa-clones/)
   }
@@ -55,7 +56,6 @@ test("a roster preview uses the reply orb only while a dispatched Session is exe
 test("the chat strip animates executing work and keeps the clone mark for other states", () => {
   const queued = {id:"q", task_id:"q", state:"accepted"}
   const running = {...queued, state:"executing"}
-  const delivered = {id:"d", task_id:"d", state:"completed", landing:"pending"}
   const needsYou = {id:"n", task_id:"n", state:"waiting_for_person"}
   const active = render(DispatchedWorkStrip, {links:[queued], work:{running:2, executing:1, needs_you:0, delivered:4}, w})
   assert.match(active, /<canvas/)
@@ -64,7 +64,6 @@ test("the chat strip animates executing work and keeps the clone mark for other 
     {links:[running], work:{running:1, executing:0, needs_you:0, delivered:0}},
     {links:[running], work:{running:1, needs_you:0, delivered:0}},
     {links:[running]},
-    {links:[delivered], work:{running:0, executing:0, needs_you:0, delivered:1}},
     {links:[needsYou]},
   ]) {
     const html = render(DispatchedWorkStrip, {...props, w})
@@ -84,21 +83,16 @@ test("the chat strip takes no space without work, keeps the background capsule, 
   // With the roster's count, the strip says what the roster row says.
   const counted=render(DispatchedWorkStrip,{links:[{id:"r",task_id:"r",state:"executing"},{id:"d",task_id:"d",state:"completed",landing:"pending"}],work:{running:1,needs_you:0,delivered:14},w})
   assert.match(counted,/1 個工作在跑/)
-  assert.match(counted,/14 個待整合/)
+  assert.doesNotMatch(counted,/待整合/)
+  const delivered = {id:"d", task_id:"d", state:"completed", landing:"pending"}
+  assert.equal(render(DispatchedWorkStrip,{links:[delivered], work:{running:0,needs_you:0,delivered:14}, w}), "")
+  assert.equal(render(DispatchedWorkStrip,{links:[delivered], w, background:capsule}), '<span class="capsule">bg</span>')
   const calls=[]
   const open=(link,view)=>calls.push([link.id,view])
   openDispatchedSession({id:"linked",worker_terminal:"trm_a&b",worker_session:"conversation-a"},open)
   openDispatchedSession({id:"unbound",worker_terminal:"trm_a&b"},open)
   openDispatchedSession({id:"unopened"},open)
   assert.deepEqual(calls,[["linked","session"],["unbound",undefined],["unopened",undefined]])
-})
-
-test("a delivered row's mark is a check, and every other state keeps its plain dot", () => {
-  const delivered=render(DispatchedMark,{kind:"delivered"})
-  assert.match(delivered,/^<span[^>]*aria-hidden="true"[^>]*><svg[^>]*>.*<\/svg><\/span>$/)
-  for(const kind of ["needsYou","running","queued","failed"]){
-    assert.doesNotMatch(render(DispatchedMark,{kind}),/<svg/)
-  }
 })
 
 test("a dispatched row with nothing to open says so instead of being a dead button", () => {

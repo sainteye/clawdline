@@ -1,7 +1,7 @@
 import {useEffect, useState, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {CloneMark} from "./BotRow"
-import {dispatchedReason, dispatchedStrip, type DispatchedKind} from "./dispatched-work"
+import {dispatchedReason, dispatchedStrip} from "./dispatched-work"
 import {ThinkingOrb} from "./ThinkingOrb"
 import {elapsed} from "./working"
 import type {Words} from "./words"
@@ -19,15 +19,8 @@ export function openDispatchedSession(link: W.ProjectAssistantWorkLink, openWork
   openWork?.(link, link.worker_terminal && link.worker_session ? "session" : undefined)
 }
 
-/** The decorative state mark beside a listed row; the row's text names the state. */
-export function DispatchedMark({kind}: {kind: DispatchedKind}) {
-  return <span className="pa-dispatched-mark" aria-hidden="true">
-    {kind === "delivered" && <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>}
-  </span>
-}
-
-/** "N 個工作在跑" above the Bot's composer, sharing the line with the
- * background capsule; it takes no space when nothing is dispatched. */
+/** Active dispatched work shares the line above the composer with the
+ * background capsule. */
 export function DispatchedWorkStrip({links, work, ownProjectID, background, onOpen, w}: {
   links: readonly W.ProjectAssistantWorkLink[]; work?: W.ProjectAssistantDispatchedWork; ownProjectID?: string; background?: ReactNode
   onOpen?: OpenWork; w: Words
@@ -45,7 +38,6 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
   const parts = [
     counts.running > 0 ? w.dispatchedStripRunning.replace("{count}", String(counts.running)) : "",
     counts.needsYou > 0 ? w.dispatchedStripNeedsYou.replace("{count}", String(counts.needsYou)) : "",
-    counts.delivered > 0 ? w.dispatchedStripDelivered.replace("{count}", String(counts.delivered)) : "",
   ].filter(Boolean)
   return <div className="pa-dispatched" data-open={open || undefined}>
     <div className="pa-dispatched-line">
@@ -64,7 +56,7 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
           {(() => {
             const openable = !!onOpen && dispatchedOpenable(row.link)
             const body = <>
-              <DispatchedMark kind={row.kind}/>
+              <span className="pa-dispatched-mark" aria-hidden="true"/>
               <span className="pa-dispatched-text"><strong>{row.link.title || row.link.task_id}</strong>
                 <small>{dispatchedReason(row, w)}{project ? ` · ${project}` : ""}{other && <span className="pa-dispatched-other">{w.dispatchedOtherProject}</span>}
                   {!openable && <span className="pa-dispatched-unopenable"> · {w.dispatchedNoSession}</span>}</small></span>

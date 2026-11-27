@@ -165,8 +165,7 @@ export function botRosterActivity(item: W.ProjectAssistantBotSummary, w: Record<
     }
   }
   if (dispatched && chat.state === "idle" && dispatched.running > 0) {
-    const caption = [w.rosterWaitingOnWork.replace("{count}", String(dispatched.running)),
-      dispatched.delivered > 0 ? w.rosterDispatchedDelivered.replace("{count}", String(dispatched.delivered)) : ""].filter(Boolean).join(" · ")
+    const caption = w.rosterWaitingOnWork.replace("{count}", String(dispatched.running))
     return {state:"waitingOnWork", caption, live:true, queuedOnly:false}
   }
   return {...chat, queuedOnly:false}
