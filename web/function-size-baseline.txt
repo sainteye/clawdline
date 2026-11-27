@@ -51,7 +51,7 @@ web/console/src/pages/documents/fullscreen.ts	bindDocumentFullscreen	106	17
 web/console/src/pages/ops.tsx	OpsPage	163	35
 web/console/src/pages/ops.tsx	OpsReader	139	24
 web/console/src/pages/playbook.tsx	PlaybookPage	400	115
-web/console/src/pages/project-assistants.tsx	useProjectAssistantsHost	237	57
+web/console/src/pages/project-assistants.tsx	useProjectAssistantsHost	169	34
 web/console/src/pages/projects.tsx	ProjectsPageView	326	64
 web/console/src/pages/projects/ProjectFiles.tsx	ProjectFiles	128	24
 web/console/src/pages/projects/ProjectFolderPicker.tsx	ProjectFolderPicker	157	40
@@ -72,7 +72,7 @@ web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
 web/console/src/project-assistants/BotSettings.tsx	BotSettingsForm	122	60
 web/console/src/project-assistants/Bots.tsx	Bots	437	136
-web/console/src/project-assistants/Chat.tsx	Chat	2031	590
+web/console/src/project-assistants/Chat.tsx	Chat	2029	589
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	85	48
 web/console/src/project-assistants/GroupRoom.tsx	GroupRoom	282	78
 web/console/src/project-assistants/ImageViewer.tsx	useImageZoom	170	45

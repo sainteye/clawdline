@@ -1,4 +1,5 @@
 import type * as W from "@clawdline/contract"
+import type {BotDirectoryState} from "./open-bot"
 import type {Words} from "./words"
 
 /**
@@ -69,12 +70,17 @@ export function handoffHistory(card: Pick<W.BotRequestView, "events" | "chain">)
     at: event.at, note: event.detail ?? ""}))
 }
 
+export function requestBotName(bot: W.ProjectAssistantBot | undefined, w: Words, state: BotDirectoryState): string {
+  if (bot?.name) return bot.name
+  if (state === "loading") return "…"
+  return state === "ready" ? w.requestUnknownBot : w.unavailable
+}
+
 /** `person`, `bot:<id>` or a bare Bot id, as a name the person can read. */
-export function actorName(actor: string | undefined, bots: readonly W.ProjectAssistantBot[], w: Words): string {
-  if (!actor) return w.requestUnknownBot
+export function actorName(actor: string | undefined, bots: readonly W.ProjectAssistantBot[], w: Words, state: BotDirectoryState = "ready"): string {
   if (actor === "person") return w.requestYou
-  const id = actor.startsWith("bot:") ? actor.slice(4) : actor
-  return botOf(id, bots)?.name || w.requestUnknownBot
+  const id = actor?.startsWith("bot:") ? actor.slice(4) : actor
+  return requestBotName(id ? botOf(id, bots) : undefined, w, state)
 }
 
 export function botOf(id: string, bots: readonly W.ProjectAssistantBot[]): W.ProjectAssistantBot | undefined {

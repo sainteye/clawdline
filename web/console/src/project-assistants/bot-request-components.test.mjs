@@ -45,6 +45,30 @@ test("a row without a checklist shows no 0/0, and an unreadable holder is not gi
   assert.match(html,/這台裝置讀不到的 Bot/)
 })
 
+test("a Board row shows a placeholder for an unresolved holder while the Bot directory loads", () => {
+  const html=render(BotRequestRow,{card:card(),bots:[],botDirectoryState:"loading",w,now,onOpen(){}})
+  assert.doesNotMatch(html,/這台裝置讀不到的 Bot/)
+  assert.match(html,/>…<\/span>/)
+})
+
+test("a detail preserves known names and waits for the directory before calling participants unreadable", () => {
+  const request={chain:["atlas","nova"],baton:{bot:"nova",role:"reviewer"},
+    events:[{id:2,kind:"baton.handed",actor:"bot:atlas",at:"2026-11-24T09:00:00Z",version:2}],
+    checklist:[entries[2]],verdicts:[{id:"v1",verdict:"pass",reviewer_bot:"nova"}]}
+  const loading=detail(request,{bots:bots.slice(0,1),botDirectoryState:"loading"})
+  assert.doesNotMatch(loading,/這台裝置讀不到的 Bot/)
+  assert.match(loading,/Atlas → …/)
+  assert.match(loading,/由 … 於/)
+  assert.match(loading,/· …/)
+  const found=detail(request,{botDirectoryState:"ready"})
+  assert.match(found,/Atlas → Nova/)
+  const missing=detail(request,{bots:bots.slice(0,1),botDirectoryState:"ready"})
+  assert.match(missing,/Atlas → 這台裝置讀不到的 Bot/)
+  const unavailable=detail(request,{bots:bots.slice(0,1),botDirectoryState:"unavailable"})
+  assert.doesNotMatch(unavailable,/這台裝置讀不到的 Bot/)
+  assert.match(unavailable,/Atlas → 目前無法使用/)
+})
+
 test("the chat line is one button with the title, the state and the ticks", () => {
   const html=render(BotRequestLine,{card:card({done:2,total:2,progress_state:"done",state:"done"}),w,onOpen(){}})
   assert.match(html,/^<button type="button"/)

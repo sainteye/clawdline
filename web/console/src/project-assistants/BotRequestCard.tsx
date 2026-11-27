@@ -3,8 +3,9 @@ import type * as W from "@clawdline/contract"
 import {BotAvatar} from "./BotAvatar"
 import {
   BotRequestRefused, actorName, botOf, checklistProgress, handoffHistory, lastUpdated, noteParts, progressLabel, progressOf,
-  readBotRequest, readBotRequests, refusalWords, writeBotRequest, type BotRequestAction,
+  readBotRequest, readBotRequests, refusalWords, requestBotName, writeBotRequest, type BotRequestAction,
 } from "./bot-request"
+import type {BotDirectoryState} from "./open-bot"
 import type {Words} from "./words"
 import "./bot-request.css"
 
@@ -48,22 +49,25 @@ export function BotRequestState({card, w}: {card: W.BotRequestView; w: Words}) {
   return <span className="pa-request-state" data-progress={progress}><span className="pa-request-dot" aria-hidden="true"/>{progressLabel(progress, w)}</span>
 }
 
-function Holder({card, bots, w, size}: {card: W.BotRequestView; bots: readonly W.ProjectAssistantBot[]; w: Words; size: number}) {
+function Holder({card, bots, botDirectoryState, w, size}: {
+  card: W.BotRequestView; bots: readonly W.ProjectAssistantBot[]; botDirectoryState: BotDirectoryState; w: Words; size: number
+}) {
   const bot = botOf(card.baton.bot, bots)
   return <span className="pa-request-holder">
     <BotAvatar appearance={bot?.appearance ?? UNKNOWN_APPEARANCE} size={size}/>
-    <span className="pa-request-holder-name">{bot?.name || w.requestUnknownBot}</span>
+    <span className="pa-request-holder-name">{requestBotName(bot, w, botDirectoryState)}</span>
   </span>
 }
 
 /** One row of the Board's Bot work section. */
-export function BotRequestRow({card, bots, w, now, onOpen}: {
-  card: W.BotRequestView; bots: readonly W.ProjectAssistantBot[]; w: Words; now: number; onOpen: (card: W.BotRequestView, opener: HTMLElement) => void
+export function BotRequestRow({card, bots, botDirectoryState = "ready", w, now, onOpen}: {
+  card: W.BotRequestView; bots: readonly W.ProjectAssistantBot[]; botDirectoryState?: BotDirectoryState
+  w: Words; now: number; onOpen: (card: W.BotRequestView, opener: HTMLElement) => void
 }) {
   const progress = checklistProgress(card, w), updated = lastUpdated(card.updated_at, now, w)
   return <button type="button" className="pa-request-row" data-request-id={card.id} data-progress={progressOf(card)}
     onClick={event => onOpen(card, event.currentTarget)}>
-    <Holder card={card} bots={bots} w={w} size={28}/>
+    <Holder card={card} bots={bots} botDirectoryState={botDirectoryState} w={w} size={28}/>
     <strong className="pa-request-title">{card.title}</strong>
     <span className="pa-request-facts">
       <BotRequestState card={card} w={w}/>
@@ -90,6 +94,27 @@ function Note({text}: {text: string}) {
     ? <a key={index} href={part.href} target="_blank" rel="noreferrer noopener">{part.text}</a> : part.text)}</span>
 }
 
+type HistoryState = "loading" | "ready" | "failed"
+
+function RequestHistory({card, state, nameActor, time, w, onRetry}: {
+  card: W.BotRequestView; state: HistoryState; nameActor: (actor: string | undefined) => string
+  time: (at: string) => string; w: Words; onRetry: () => void
+}) {
+  const handoffs = handoffHistory(card)
+  return <section aria-label={w.requestHistory}>
+    <h3>{w.requestHistory}</h3>
+    {state === "loading" ? <p className="pa-request-quiet" role="status">{w.loading}</p>
+      : state === "failed" ? <p className="pa-request-quiet" role="alert">{w.requestHistoryFailed} <button type="button" className="pa-request-text-button" onClick={onRetry}>{w.retry}</button></p>
+        : handoffs.length === 0 ? <p className="pa-request-quiet">{w.requestNoHistory}</p>
+          : <ol className="pa-request-history">{handoffs.map(row => <li key={row.id}>
+            <span>{row.to ? w.requestHandedTo.replace("{from}", nameActor(row.from)).replace("{to}", nameActor(row.to))
+              : w.requestHandedBy.replace("{from}", nameActor(row.from))}</span>
+            <time dateTime={row.at}>{time(row.at)}</time>
+            {row.note && <Note text={row.note}/>}
+          </li>)}</ol>}
+  </section>
+}
+
 type Mode = "view" | "handoff" | "complete" | "cancel"
 const ROLES = ["maker", "reviewer", "integrator"] as const
 
@@ -97,9 +122,10 @@ const ROLES = ["maker", "reviewer", "integrator"] as const
  * A card's detail: a dialog on desktop, a bottom sheet at phone width. It
  * rereads the card for its history, and after every write or version conflict.
  */
-export function BotRequestDetail({card: listed, bots, links = [], w, language, onClose, onChanged, onOpenChat, onOpenWork, boardItem, read = readBotRequest, write = writeBotRequest, initialMode = "view"}: {
+export function BotRequestDetail({card: listed, bots, botDirectoryState = "ready", links = [], w, language, onClose, onChanged, onOpenChat, onOpenWork, boardItem, read = readBotRequest, write = writeBotRequest, initialMode = "view"}: {
   card: W.BotRequestView
   bots: readonly W.ProjectAssistantBot[]
+  botDirectoryState?: BotDirectoryState
   /** The card's dispatched Sessions, where the opener knows them. */
   links?: readonly W.ProjectAssistantWorkLink[]
   w: Words
@@ -118,7 +144,7 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
 }) {
   const dialog = useRef<HTMLDialogElement>(null), titleID = useId(), formID = useId()
   const [card, setCard] = useState(listed)
-  const [history, setHistory] = useState<"loading" | "ready" | "failed">(listed.events ? "ready" : "loading")
+  const [history, setHistory] = useState<HistoryState>(listed.events ? "ready" : "loading")
   const [mode, setMode] = useState<Mode>(initialMode)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState("")
@@ -186,8 +212,8 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
   }
   const roleWord: Record<string, string> = {maker: w.requestRoleMaker, reviewer: w.requestRoleReviewer, integrator: w.requestRoleIntegrator}
   const verdictWord: Record<string, string> = {pass: w.requestVerdictPass, conditional_pass: w.requestVerdictConditional, reject: w.requestVerdictReject}
-  const handoffs = handoffHistory(card)
   const verdict = card.verdicts?.at(-1)
+  const nameActor = (actor: string | undefined) => actorName(actor, bots, w, botDirectoryState)
 
   return <dialog ref={dialog} className="pa-request-detail" aria-labelledby={titleID} data-request-id={card.id}
     onCancel={event => { event.preventDefault(); if (!busy) onClose() }}>
@@ -209,21 +235,11 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
 
       <section aria-label={w.requestHolder}>
         <h3>{w.requestHolder}</h3>
-        <Holder card={card} bots={bots} w={w} size={32}/>
+        <Holder card={card} bots={bots} botDirectoryState={botDirectoryState} w={w} size={32}/>
       </section>
 
-      <section aria-label={w.requestHistory}>
-        <h3>{w.requestHistory}</h3>
-        {history === "loading" ? <p className="pa-request-quiet" role="status">{w.loading}</p>
-          : history === "failed" ? <p className="pa-request-quiet" role="alert">{w.requestHistoryFailed} <button type="button" className="pa-request-text-button" onClick={() => { setHistory("loading"); void reread() }}>{w.retry}</button></p>
-            : handoffs.length === 0 ? <p className="pa-request-quiet">{w.requestNoHistory}</p>
-              : <ol className="pa-request-history">{handoffs.map(row => <li key={row.id}>
-                <span>{row.to ? w.requestHandedTo.replace("{from}", actorName(row.from, bots, w)).replace("{to}", actorName(row.to, bots, w))
-                  : w.requestHandedBy.replace("{from}", actorName(row.from, bots, w))}</span>
-                <time dateTime={row.at}>{time(row.at)}</time>
-                {row.note && <Note text={row.note}/>}
-              </li>)}</ol>}
-      </section>
+      <RequestHistory card={card} state={history} nameActor={nameActor} time={time} w={w}
+        onRetry={() => { setHistory("loading"); void reread() }}/>
 
       <section aria-label={w.requestChecklist}>
         <h3>{w.requestChecklist}</h3>
@@ -238,7 +254,7 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
                 {state === "not_needed" && <small className="pa-request-entry-state">{stateWord}</small>}
                 {entry.note && <Note text={entry.note}/>}
                 {state !== "open" && entry.reported_by && <small className="pa-request-reported">{w.requestReported
-                  .replace("{bot}", actorName(entry.reported_by, bots, w)).replace("{time}", time(entry.reported_at))}</small>}
+                  .replace("{bot}", nameActor(entry.reported_by)).replace("{time}", time(entry.reported_at))}</small>}
               </div>
             </li>
           })}</ul>}
@@ -246,7 +262,7 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
 
       {verdict && <p className="pa-request-verdict" data-verdict={verdict.verdict}>
         <strong>{w.requestVerdict}</strong> {verdictWord[verdict.verdict] ?? verdict.verdict}
-        {" · "}{actorName(verdict.reviewer_bot, bots, w)}{verdict.commit && <> · <code title={verdict.commit}>{verdict.commit.slice(0, 8)}</code></>}
+        {" · "}{nameActor(verdict.reviewer_bot)}{verdict.commit && <> · <code title={verdict.commit}>{verdict.commit.slice(0, 8)}</code></>}
         {verdict.text && <Note text={verdict.text}/>}
       </p>}
 
@@ -281,7 +297,7 @@ export function BotRequestDetail({card: listed, bots, links = [], w, language, o
     <footer className="pa-request-actions">
       {mode === "view" ? <>
         {waiting && <button type="button" className="pa-request-primary" disabled={!onOpenChat} onClick={() => onOpenChat?.(card)}>
-          {w.requestOpenChat.replace("{bot}", actorName(card.baton.bot, bots, w))}</button>}
+          {w.requestOpenChat.replace("{bot}", nameActor(card.baton.bot))}</button>}
         {open && <>
           <button type="button" className="pa-request-danger" disabled={busy} onClick={() => enter("cancel")}>{w.requestCancel}</button>
           <button type="button" disabled={busy || candidates.length === 0} title={candidates.length === 0 ? w.requestHandoffNone : undefined} onClick={() => enter("handoff")}>{w.requestHandoff}</button>

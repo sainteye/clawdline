@@ -4527,7 +4527,7 @@
       "sources": [
         {
           "path": "web/console/src/project-assistants/Chat.tsx",
-          "line": 1722
+          "line": 1743
         },
         {
           "path": "web/console/src/project-assistants/words.ts",
@@ -6026,7 +6026,7 @@
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
     "web/console/src/project-assistants/BotSettings.tsx": "139532f3581b1df293f90f101331b2b496d364b6fdaadb05e1f6b6e1859e668b",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "c6747c4e7dcd2ee0cc0d02e91bd71382e042e51e99f2736c0cc737aeef0c5f42",
+    "web/console/src/project-assistants/Chat.tsx": "d4e2f7566b4ef153e2d58cbb18c7082847b4ec21d37140be8f329228a3f440b3",
     "web/console/src/project-assistants/ChatRows.tsx": "3e805dd20fcfcc47d999614bd2c2cad7af818d32602b3dd224605a141165e985",
     "web/console/src/project-assistants/DecisionCard.tsx": "f98710cf6b589c1f12d59a7f8e505d912b4345eb1efb1ad69da57ebac2e6a04a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",

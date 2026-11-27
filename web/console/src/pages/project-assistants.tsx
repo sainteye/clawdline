@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from "react"
 import type * as W from "@clawdline/contract"
 import type { ConnectionLightState } from "../connection-state.js"
 import { onStatusRefresh } from "../status-refresh.js"
@@ -19,11 +19,11 @@ import { words } from "../project-assistants/words.js"
 import { errorCode, botFromFragment } from "../project-assistants/client.js"
 import {createCompletionTracker,startBotCompletionSound} from "../project-assistants/completion-sound.js"
 import { followLiveRoster } from "../project-assistants/live-roster.js"
-import { OPEN_BOT, openableBot, publishBotDirectory, type OpenBotRequest } from "../project-assistants/open-bot.js"
+import { OPEN_BOT, openableBot, publishBotDirectory, type BotDirectoryState, type OpenBotRequest } from "../project-assistants/open-bot.js"
 
 const BADGE_REFRESH_MS = 15_000
 
-type BadgeMetadata=Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[]}>
+type BadgeMetadata=Record<string,{revision:string;readable:boolean;items:W.ProjectAssistantBotSummary[];directoryState:BotDirectoryState}>
 type HostSource=ReturnType<ProjectAssistantRegistry["getSnapshot"]>[number]
 
 /** While Bots is open its roster is the one unread projection: the badge adopts each complete
@@ -41,13 +41,95 @@ function useBadgeMetadata(opened:boolean,openedRef:{current:boolean},sources:rea
       for(const source of adopted){
         const own=items.filter(item=>item.bot.key.machine_id===source.machineID&&canRead(item.source)),previous=old[source.machineID]
         // Source authority still comes from the host's status read; the roster supplies the rows.
-        next[source.machineID]={revision:source.authorizationRevision,readable:previous?.revision===source.authorizationRevision?previous.readable:own.length>0,items:own}
+        next[source.machineID]={revision:source.authorizationRevision,readable:previous?.revision===source.authorizationRevision?previous.readable:own.length>0,items:own,directoryState:"ready"}
       }
       return next
     })
   },[sources,openedRef])
   const owns=useCallback((machineID:string)=>openedRef.current&&projected.current.has(machineID),[openedRef])
   return {metadata,setMetadata,adopt,owns}
+}
+
+function useBadgeRoster(sources:readonly HostSource[],opened:boolean,
+  setMetadata:Dispatch<SetStateAction<BadgeMetadata>>,owns:(machineID:string)=>boolean,
+  observeSource:(source:HostSource,items:readonly W.ProjectAssistantBotSummary[])=>void) {
+  useEffect(() => {
+    const requests=new Map<HostSource,{control:AbortController;statusPending:boolean}>()
+    const refreshSource=async(source:HostSource)=>{
+      const prior=requests.get(source)
+      // A refresh can replace a badge read, but must let the first authority response arrive.
+      if(prior?.statusPending)return
+      prior?.control.abort()
+      const control=new AbortController(),request={control,statusPending:true}
+      requests.set(source,request)
+      try {
+        const status = await source.status(control.signal)
+        if(control.signal.aborted)return
+        request.statusPending=false
+        const readable = status.sources.some(canRead)
+        // Voice shortcuts can use source authority before the paged badge read finishes.
+        if (!control.signal.aborted) setMetadata(old => {
+          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable,
+            items:readable?previous?.items??[]:[],directoryState:readable?previous?.directoryState??"loading":"ready"}}
+        })
+        const items: W.ProjectAssistantBotSummary[] = []
+        if (readable) {
+          let cursor = ""
+          const seen = new Set<string>()
+          do {
+            const answer = await source.list({machine_id:source.machineID,cursor,query:"",page_size:100},control.signal)
+            items.push(...answer.items.filter(item => item.bot.key.machine_id === source.machineID && canRead(item.source)))
+            cursor = answer.next_cursor
+            if (cursor && seen.has(cursor)) throw new Error("Repeated source cursor")
+            seen.add(cursor)
+          } while (cursor && !control.signal.aborted)
+        }
+        if (!control.signal.aborted&&!owns(source.machineID)) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items,directoryState:"ready"}}))}
+      } catch (error) {
+        // Keep counts through a transport failure. Explicit denials clear them.
+        // Cached work stops animating after either failed read.
+        const denied=["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(errorCode(error))
+        if(!control.signal.aborted)setMetadata(old=>{
+          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable:!denied&&!!previous?.readable,
+            items:denied?[]:previous?.items.map(item=>({...item,source:{...item.source,fresh:false}}))??[],
+            directoryState:denied?"ready":"unavailable"}}
+        })
+      } finally {
+        if(requests.get(source)===request)requests.delete(source)
+      }
+    }
+    const refresh=()=>{
+      for(const source of sources)if(opened||!source.canRoster?.()||!source.subscribeRoster)void refreshSource(source)
+    }
+    refresh()
+    const unsubscribe=onStatusRefresh(refresh)
+    const timer=!opened&&sources.some(source=>!source.canRoster?.()||!source.subscribeRoster)
+      ?window.setInterval(()=>{if(document.visibilityState==="visible")refresh()},BADGE_REFRESH_MS):undefined
+    return ()=>{
+      unsubscribe();window.clearInterval(timer)
+      for(const request of requests.values())request.control.abort()
+    }
+  },[sources,opened,observeSource,owns])
+  useEffect(()=>{
+    if(opened)return
+    const control=new AbortController()
+    for(const source of sources){
+      if(!source.canRoster?.()||!source.subscribeRoster)continue
+      void followLiveRoster(source,()=>sources,control.signal,BADGE_REFRESH_MS,value=>{
+        if(control.signal.aborted)return
+        if(value.items)observeSource(source,value.items)
+        setMetadata(old=>{
+          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
+          const items=value.items??(value.error?previous?.items.map(item=>({...item,source:{...item.source,fresh:false}})):previous?.items)??[]
+          const directoryState=value.items?"ready":!value.pending?"unavailable":previous?.directoryState==="ready"?"ready":"loading"
+          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable:value.statuses?.some(canRead)??previous?.readable??false,items,directoryState}}
+        })
+      })
+    }
+    return()=>control.abort()
+  },[sources,opened,observeSource])
 }
 
 // The status bar opens the window; each source controls access to its own Bots.
@@ -102,83 +184,17 @@ export function useProjectAssistantsHost({registry: supplied, apiLevel, connecti
     }).catch(() => {})
     return () => control.abort()
   },[cloud,supplied,apiLevel,local])
-  useEffect(() => {
-    const requests=new Map<typeof sources[number],{control:AbortController;statusPending:boolean}>()
-    const refreshSource=async(source:typeof sources[number])=>{
-      const prior=requests.get(source)
-      // A refresh can replace a badge read, but must let the first authority response arrive.
-      if(prior?.statusPending)return
-      prior?.control.abort()
-      const control=new AbortController(),request={control,statusPending:true}
-      requests.set(source,request)
-      try {
-        const status = await source.status(control.signal)
-        if(control.signal.aborted)return
-        request.statusPending=false
-        const readable = status.sources.some(canRead)
-        // Voice shortcuts can use source authority before the paged badge read finishes.
-        if (!control.signal.aborted) setMetadata(old => {
-          const previous=old[source.machineID]
-          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable,
-            items:readable&&previous?.revision===source.authorizationRevision?previous.items:[]}}
-        })
-        const items: W.ProjectAssistantBotSummary[] = []
-        if (readable) {
-          let cursor = ""
-          const seen = new Set<string>()
-          do {
-            const answer = await source.list({machine_id:source.machineID,cursor,query:"",page_size:100},control.signal)
-            items.push(...answer.items.filter(item => item.bot.key.machine_id === source.machineID && canRead(item.source)))
-            cursor = answer.next_cursor
-            if (cursor && seen.has(cursor)) throw new Error("Repeated source cursor")
-            seen.add(cursor)
-          } while (cursor && !control.signal.aborted)
-        }
-        if (!control.signal.aborted&&!roster.owns(source.machineID)) {observeSource(source,items);setMetadata(old => ({...old,[source.machineID]:{revision:source.authorizationRevision,readable,items}}))}
-      } catch (error) {
-        // Keep counts through a transport failure. Explicit denials clear them.
-        // Cached work stops animating after either failed read.
-        const denied=["pa_revoked","pa_scope_denied","pa_unpaired","pa_disabled"].includes(errorCode(error))
-        if(!control.signal.aborted)setMetadata(old=>{const previous=old[source.machineID];return previous?{...old,[source.machineID]:{...previous,readable:!denied&&previous.readable,items:denied?[]:previous.items.map(item=>({...item,source:{...item.source,fresh:false}}))}}:old})
-      } finally {
-        if(requests.get(source)===request)requests.delete(source)
-      }
-    }
-    const refresh=()=>{
-      for(const source of sources)if(opened||!source.canRoster?.()||!source.subscribeRoster)void refreshSource(source)
-    }
-    refresh()
-    const unsubscribe=onStatusRefresh(refresh)
-    const timer=!opened&&sources.some(source=>!source.canRoster?.()||!source.subscribeRoster)
-      ?window.setInterval(()=>{if(document.visibilityState==="visible")refresh()},BADGE_REFRESH_MS):undefined
-    return ()=>{
-      unsubscribe();window.clearInterval(timer)
-      for(const request of requests.values())request.control.abort()
-    }
-  },[sources,opened,observeSource])
-  useEffect(()=>{
-    if(opened)return
-    const control=new AbortController()
-    for(const source of sources){
-      if(!source.canRoster?.()||!source.subscribeRoster)continue
-      void followLiveRoster(source,()=>sources,control.signal,BADGE_REFRESH_MS,value=>{
-        if(control.signal.aborted)return
-        if(value.items)observeSource(source,value.items)
-        setMetadata(old=>{
-          const previous=old[source.machineID]?.revision===source.authorizationRevision?old[source.machineID]:undefined
-          const items=value.items??(value.error?previous?.items.map(item=>({...item,source:{...item.source,fresh:false}})):previous?.items)??[]
-          return {...old,[source.machineID]:{revision:source.authorizationRevision,readable:value.statuses?.some(canRead)??previous?.readable??false,items}}
-        })
-      })
-    }
-    return()=>control.abort()
-  },[sources,opened,observeSource])
+  useBadgeRoster(sources,opened,setMetadata,roster.owns,observeSource)
   const current = Object.entries(metadata).filter(([id,data]) => sources.some(source => source.machineID === id && source.authorizationRevision === data.revision))
   const hasReadableSource = current.some(([,data]) => data.readable)
   const readableItems = current.flatMap(([,data]) => data.readable ? data.items : [])
   const readableRef = useRef(readableItems)
   readableRef.current = readableItems
-  useEffect(() => publishBotDirectory(readableItems, sources))
+  useEffect(() => {
+    const states = Object.fromEntries(sources.map(source => [source.machineID,
+      metadata[source.machineID]?.revision === source.authorizationRevision ? metadata[source.machineID].directoryState : "loading"]))
+    publishBotDirectory(readableItems, sources, states)
+  })
   const badge = assistantBadge(current.flatMap(([,data]) => data.items),sources,useDispatchedWorkShown())
   // Bots folds back into the orb before it closes; a second close (the popstate
   // that history.go below triggers) finishes at once.
