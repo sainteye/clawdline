@@ -56,6 +56,14 @@ function daemon(): Server {
   const url = new URL(req.url ?? "/", "http://fixture"), path = url.pathname
   if (path === "/fixture") { mode = url.searchParams.get("mode") || "ready"; for (const stream of streams) stream.write("event: sessions\ndata: " + JSON.stringify(snapshot()) + "\n\n"); return json(res, 200, {}) }
   if (path === "/v1/capacity") return json(res,503,{error:{code:"fixture_unavailable",message:"Synthetic capacity unavailable"}})
+  if (path === "/v1/model-catalog") {
+   // The machine's one model catalog: native models carry their own effort,
+   // and the schedule form's effort chips come from this table.
+   const entry = (agent: string) => ({agent,models:agent==="antigravity"?[{value:"native-synthetic",name:"native-synthetic"}]:[],default_name:"",
+     efforts:["low","medium","high","max"],source:"agent",observed_at:new Date().toISOString(),refreshing:false})
+   const agent = url.searchParams.get("agent")
+   return json(res,200,{agents:(agent?[agent]:["antigravity","claude","codex"]).map(entry)})
+  }
   if (path === "/v1/settings/default-models") {
    if(mode === "settings-error") return json(res,503,{error:{code:"fixture_unavailable",message:"Synthetic settings unavailable"}})
    if(req.method === "POST" && mode === "settings-write-error") return json(res,503,{error:"fixture_unavailable",detail:"Synthetic settings write unavailable"})
@@ -158,17 +166,16 @@ class Browser {
 }
 
 type Seen = any
-const PROBE = `(() => ({text:document.body.innerText,wide:document.documentElement.scrollWidth,
+const PROBE = `(() => ({text:document.body.innerText,workTab:!!document.querySelector('#settings-tab-1'),wide:document.documentElement.scrollWidth,
  settings:document.querySelector('#settings-antigravity-default-model')?.textContent,
  model:document.querySelector('#schedule-model')?.textContent,
  form:!!document.querySelector('#schedule-form:not([hidden])'),
  canSave:!!document.querySelector('#schedule-go')&&!document.querySelector('#schedule-go').disabled,
  native:document.querySelector('#schedule-model')?.dataset.kind,
  edit:!!document.querySelector('#schedule-history-edit')&&!document.querySelector('#schedule-history-edit').disabled,
- effort:document.querySelector('#settings-antigravity-default-effort')?.textContent,
  settingsSaid:document.querySelector('#settings-default-models .said')?.textContent,
- retryDisabled:document.querySelector('#settings-default-models button.chip')?.disabled,
- settingsDisabled:document.querySelector('#settings-antigravity-default-effort')?.disabled}))()`
+ retryDisabled:document.querySelector('#settings-default-models > button.chip')?.disabled,
+ settingsDisabled:document.querySelector('#settings-antigravity-default-model')?.disabled}))()`
 
 class Tab {
   private b: Browser
@@ -313,27 +320,26 @@ for (const [label,width,height,mobile] of [["desktop",1280,800,false],["phone",3
    await tab.run(`document.querySelector('#settings-tab-1').click()`)
    let seen=await tab.until("saved native model appears",s=>s.settings?.includes("native-synthetic")&&!s.settingsDisabled)
    assert.ok(seen.wide<=width)
-   await tab.click("#settings-antigravity-default-effort")
-   await tab.run(`[...document.querySelectorAll('#settings-default-models [role=option]')].find(x=>x.textContent==='low').click()`)
-   await tab.until("saved native effort readback",s=>s.effort?.includes("low")&&!s.settingsDisabled)
-   assert.deepEqual(writes.at(-1),{antigravity_default_effort:"low"})
-   await tab.run(`document.querySelector('#settings-antigravity-default-effort').focus()`)
+   // Native Antigravity models carry their own effort, so Settings offers
+   // the model only (a51cd5f70); there is no effort control to drive here.
+   assert.equal(await tab.run(`document.querySelector('#settings-antigravity-default-effort')`),null)
+   await tab.run(`document.querySelector('#settings-antigravity-default-model').focus()`)
    await tab.tabKey();assert.ok(await tab.run(`document.activeElement!==document.body`))
    await tab.shot(`native-settings-${label}-${lang}`)
    mode="settings-write-error"
-   await tab.click("#settings-antigravity-default-effort")
-   await tab.run(`[...document.querySelectorAll('#settings-default-models [role=option]')].find(x=>x.textContent==='high').click()`)
-   await tab.until("failed write retains saved effort",s=>s.effort?.includes("low")&&!s.settingsDisabled&&s.settingsSaid?.length>0)
+   await tab.click("#settings-antigravity-default-model")
+   await tab.run(`document.querySelector('#settings-default-models [role=option]').click()`)
+   await tab.until("failed write retains saved model",s=>s.settings?.includes("native-synthetic")&&!s.settingsDisabled&&s.settingsSaid?.length>0)
    mode="ready"
    await tab.click("#settings-antigravity-default-model")
    assert.equal(await tab.run(`document.querySelectorAll('#settings-default-models [role=option]').length`),2)
    await tab.run(`document.querySelector('#settings-default-models [role=option]').click()`)
    await tab.until("explicit native default is saved",s=>s.settings&&!s.settings.includes("native-synthetic")&&!s.settingsDisabled)
    assert.deepEqual(writes.at(-1),{antigravity_default_model:""})
-   await tab.go("/?saved=1#page=settings");await tab.run(`document.querySelector('#settings-tab-1').click()`)
-   await tab.until("native setting persists on reopening",s=>s.effort?.includes("low"))
+   await tab.go("/?saved=1#page=settings");await tab.until("settings tabs load",s=>s.workTab);await tab.run(`document.querySelector('#settings-tab-1').click()`)
+   await tab.until("native setting persists on reopening",s=>s.settings&&!s.settings.includes("native-synthetic")&&!s.settingsDisabled)
    for(const state of ["settings-loading","settings-error"]){
-    mode=state;await tab.go("/?state="+state+"#page=settings");await tab.run(`document.querySelector('#settings-tab-1').click()`)
+    mode=state;await tab.go("/?state="+state+"#page=settings");await tab.until("settings tabs load",s=>s.workTab);await tab.run(`document.querySelector('#settings-tab-1').click()`)
     if(state==="settings-loading") await tab.until("loading controls disabled",s=>s.settingsDisabled===true)
     else await tab.until("failed read disables settings",s=>s.settingsDisabled===true && s.retryDisabled===false && s.settingsSaid?.length>0)
    }

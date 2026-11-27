@@ -178,3 +178,25 @@ func TestARecapIsWrittenInTheConsolesLanguage(t *testing.T) {
 		t.Fatal("a Taiwan Traditional Chinese console lost its rule")
 	}
 }
+
+// A long report summary keeps both ends, as requests and replies do: the
+// outcome a summary ends with ("all tests pass") reaches the recap.
+func TestALongReportSummaryKeepsItsOutcome(t *testing.T) {
+	now := time.Unix(1_794_563_000, 0)
+	summary := "Started the migration. " + strings.Repeat("Moved one more table. ", 80) + "All tests pass."
+	page := []map[string]any{
+		{"role": "user", "text": "Migrate the store.", "at": now.Add(-time.Hour).Unix()},
+		{"role": "tool", "text": `clawdline session report --summary "` + summary + `"`, "at": now.Add(-time.Minute).Unix()},
+	}
+	lines, _, ok := copilotRecapTimeline(recapPages(page), "%2", now)
+	if !ok || len(lines) != 2 || lines[1].Kind != "report" {
+		t.Fatalf("ok=%v lines=%+v", ok, lines)
+	}
+	text := lines[1].Text
+	if !strings.HasPrefix(text, "Started the migration.") || !strings.HasSuffix(text, "All tests pass.") {
+		t.Fatalf("the report summary lost an end: …%s", text[len(text)-40:])
+	}
+	if n := len([]rune(text)); n > maxCopilotRecapReplyRunes+3 {
+		t.Fatalf("the report summary was not bounded: %d characters", n)
+	}
+}

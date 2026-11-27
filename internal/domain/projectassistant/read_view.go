@@ -21,6 +21,17 @@ const (
 	MaxExchangeExcerptRunes = 1000
 )
 
+// KnownReadViewMode reports whether the read view accepts mode. Validation
+// and the API-history counters share it, so a new mode is never counted as
+// unclassified while the route serves it.
+func KnownReadViewMode(mode ReadViewMode) bool {
+	switch mode {
+	case ReadViewSnapshot, ReadViewHistory, ReadViewEvents, ReadViewPermissions, ReadViewTraces, ReadViewProgress, ReadViewDetail:
+		return true
+	}
+	return false
+}
+
 type ReadViewRequest struct {
 	Key             BotKey
 	ConversationID  string
@@ -40,9 +51,7 @@ func CheckReadViewRequest(q ReadViewRequest) error {
 	if q.Key.MachineID == "" || q.Key.BotID == "" || q.ConversationID == "" {
 		return fail(Invalid, "read_view_key")
 	}
-	switch q.Mode {
-	case ReadViewSnapshot, ReadViewHistory, ReadViewEvents, ReadViewPermissions, ReadViewTraces, ReadViewProgress, ReadViewDetail:
-	default:
+	if !KnownReadViewMode(q.Mode) {
 		return fail(Invalid, "read_view_mode")
 	}
 	if len(q.Cursor) > MaxReadViewCursorBytes {
