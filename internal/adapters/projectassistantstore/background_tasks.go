@@ -356,6 +356,9 @@ func publishBackgroundReport(ctx context.Context, tx *sql.Tx, key pa.BotKey, tas
 		ID: "background-report-" + turn.ID, Fence: aggregateFence(a),
 		Seq: a.Conversation.LastMessageSeq, Kind: pa.AssistantMessage,
 		Text: reply.Text, QuoteMessageID: task.OriginMessageID, At: reply.At,
+		// A background helper's report is news, not something addressed to
+		// the person by itself.
+		ForPerson: pa.ForPersonFlag(false),
 	}
 	a.Messages = append(a.Messages, message)
 	if err = validateAggregate(a); err != nil {

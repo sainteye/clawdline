@@ -59,6 +59,7 @@ import { PermissionCard, permissionMachineLabel, permissionState, samePermission
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
 import { legacyMemoryProposalTitle } from "./notice-text"
 import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
+import { revealInChat, useMessageFocus } from "./message-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -204,6 +205,8 @@ export interface ChatProps {
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void;newSessionCount?:number
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
+  /** The message a push about it opened this chat at, and the call that consumes it. */
+  focusMessage?:string;onMessageFocused?:()=>void
 }
 const chatInitialPageRows = 20
 // A preflight before a write reads only the head and fence; its rows are discarded.
@@ -258,7 +261,7 @@ function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
   </div>
 }
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,focusMessage,onMessageFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -1537,14 +1540,12 @@ ${currentDraft}`:submitted)
       const card=viewport?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
       if(!viewport||!card){setFocusedDecision("");setDecisionHandled(true);return}
       followingRef.current=false;setFollowing(false)
-      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-      const block=card.offsetHeight>=viewport.clientHeight?"start":"center"
-      card.scrollIntoView({block,behavior:still?"auto":"smooth"})
-      card.focus({preventScroll:true})
+      revealInChat(viewport,card)
     })
     const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
     return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
   },[focusedDecision,focusedUnderExchange,focusedOfferLoaded])
+  useMessageFocus(focusMessage,!!data,scroll,followingRef,setFollowing,onMessageFocused)
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{

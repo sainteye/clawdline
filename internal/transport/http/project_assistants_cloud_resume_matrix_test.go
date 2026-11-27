@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"sort"
+	"strings"
 	"testing"
 
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
@@ -152,10 +153,11 @@ func TestProjectAssistantCloudResumeMatrixTwoViewersContinueOneConversation(t *t
 	if c := m.markRead(t, "owner-phone", "phone-read", 2); c.MessageSeq != 2 {
 		t.Fatalf("C4 phone frontier %+v", c)
 	}
-	// Only the Bot's finished messages past the frontier are unread.
+	// Only the final replies to the person's messages past the frontier are
+	// unread.
 	var unread int64
 	for _, item := range items {
-		if item.Seq > 2 && pa.CountsAsUnread(pa.MessageKind(item.Kind)) {
+		if item.Seq > 2 && pa.MessageKind(item.Kind) == pa.AssistantMessage && strings.HasPrefix(item.ID, "reply-") {
 			unread++
 		}
 	}

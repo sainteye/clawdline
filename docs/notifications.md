@@ -330,15 +330,24 @@ route; it is on by default, and turning it off does not stop the task itself.
 A session that has stopped to ask is under none of them, in either direction, on purpose.
 
 
-## Bot completion and browser sound
+## Bot messages for the person and browser sound
 
-A successful visible main-chat Bot turn writes its `bot.completed.push` intent
-in the same primary SQLite transaction as its terminal state and durable
-completion marker. A failed transaction publishes neither. Receipt replay and
-a later write of the same succeeded turn do not create another intent.
-Hidden Bots, internal peer requests, individual group-member turns and joined
-inputs do not generate these completion notices. Failed, cancelled and unknown
-outcomes do not claim success.
+A Bot pushes only when it writes a message addressed to the person, the same
+messages that count as unread (`pa.CountsAsUnread`, see `docs/bots.md`): the
+final reply of a turn the person started, and a `notify_person` message, which
+a routine or a request from another Bot may also send. A routine's or another
+Bot's reply, a background helper's report, a work result and a turn that wrote
+nothing do not push; before 2026-11-27 every successful turn pushed "has
+finished a task" and a tap could open a chat with nothing new. The store calls
+`PersonIntent` inside the transaction that records the message, which writes
+the `bot.completed.push` intent (the kind keeps its earlier name) tagged
+`bot-message-<machine>-<bot>-<message>`; receipt replay and a later write of the
+same turn cannot create another. The title is the Bot's name and the body the
+first line of the message, with credential- and path-shaped words removed and
+cut to the 120-character decision preview bound. An intent queued by an older
+build names no message and settles as `superseded_no_message` without a push.
+A question from `ask_person` keeps its own `bot.decision.push` ("needs your
+decision") and is not pushed twice.
 
 The existing broker outbox sends outside the transaction and applies its normal
 restart recovery: an unattempted intent can recover, while an uncertain attempted
@@ -347,7 +356,9 @@ notification preference, enabled by default and available through both full
 settings and the narrow Cloud notification settings route. Existing device
 subscriptions and permission remain necessary; this change does not subscribe
 a device or override a disabled preference. The notification's destination is
-the source machine, Bot and conversation, without a terminal Session alias.
+the source machine, Bot, conversation and message (`&message=<id>`), without a
+terminal Session alias; the chat scrolls to that message once the page holding
+it is loaded and otherwise opens where it would.
 
 The roster's optional `completed_turn_id` carries the latest committed success
 through existing snapshot/SSE transports. The mounted App observes it while the

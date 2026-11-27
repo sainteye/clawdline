@@ -30,7 +30,7 @@ internal/adapters/projectassistantacp/mcp.go	ownedMCPServer.tool	234	92
 internal/adapters/projectassistanthost/devservers.go	Host.bindServerTools	181	54
 internal/adapters/projectassistantstore/collaboration.go	Store.FinishExchange	134	46
 internal/adapters/projectassistantstore/export.go	Store.Restore	144	64
-internal/adapters/projectassistantstore/repository.go	applyMutation	116	45
+internal/adapters/projectassistantstore/repository.go	applyMutation	108	40
 internal/adapters/projectassistantstore/repository.go	validateAggregate	235	102
 internal/adapters/projectassistantstore/routines.go	applyRoutines	139	56
 internal/adapters/projectassistantstore/routines_human.go	ViewStore.ReadRoutines	109	34

@@ -736,6 +736,32 @@ changes during enumeration replay afterward, even when the changed key sorts
 before the next page. Only `snapshot-complete` establishes a complete roster.
 Upserts and hide/delete removals carry a durable roster revision. Unread is an
 absolute reader-specific count, so duplicate replay cannot add unread messages.
+`has_activity` (API 129) is absolute per reader in the same way.
+
+**What counts as unread (2026-11-27).** A Bot's unread count means it is
+telling the person something. Each message records `for_person` when it is
+written: true for the last visible Bot message of a turn the person started
+(`pa.DirectUserTurn`, not joined, not a silent completion) and for a
+`notify_person` message; false for everything else, including replies in
+routines, in requests from another Bot, background reports and work results.
+The person's own message and replies delivered to this Bot never count. The
+Go list path and the roster SQL share `pa.CountsAsUnread`. A message written
+before the field existed has none and keeps the earlier Codync rule (any Bot
+reply or work result) until it is read, so an upgrade never silently zeroes a
+badge the person has not read. Other unread news sets `has_activity`: the row
+shows a hollow grey dot named "New activity" / "有新訊息" instead of a count.
+Reading the chat, or mark-as-read, clears both. Open `ask_person` questions
+are counted by the needs-you mark and `pending_permissions`, not added to the
+unread number as well. Unread-first order, the tower badge and the icon count
+use only the counted unread.
+
+`notify_person` (summary up to `bots.notify_summary_bytes`, optional detail up
+to `bots.notify_detail_bytes`) is offered to every Bot beside `ask_person`.
+Its text tells the Bot to use it for a finished delivery, a failure or blocker
+the person must know, and what the charter says to report, and not for
+progress or anything the person cannot act on. A room turn and a hidden
+background worker outside a peer request are refused (`notify_person_scope`);
+in a request from another Bot the message lands in the Bot's own main chat.
 Read positions do not advance the Bot execution CAS version. They retain their
 own durable ReadAdvanced event and roster revision, so viewing a conversation
 cannot invalidate a prepared native turn; actual Bot edits still fence stale
@@ -842,8 +868,8 @@ every Bot drawn in the scene, including in the building overview. Busy Bots on a
 floor also show an activity line. With the switch off, hovering or focusing a
 Bot still reveals its name.
 
-**Unread replies.** A Bot with unread replies carries a New reply badge on its
-floor and in the building overview. The badge stays visible with name tags
+**Unread replies.** A Bot with unread replies (messages that count as unread,
+below) carries a New reply badge on its floor and in the building overview. The badge stays visible with name tags
 off. A crowded zone's “N more” button and list also show when a Bot inside has
 an unread reply. Reading the chat clears the badge when the roster refreshes.
 

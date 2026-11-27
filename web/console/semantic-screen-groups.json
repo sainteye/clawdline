@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14890,
-  "riskKeys": 6310,
-  "nonRiskCount": 8580,
+  "englishContentKeys": 14895,
+  "riskKeys": 6312,
+  "nonRiskCount": 8583,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 818,
+      "count": 820,
       "sources": [
         null
       ],
@@ -799,6 +799,8 @@
         "capacityRow.bots.memory_search_results.what",
         "capacityRow.bots.message_bytes.what",
         "capacityRow.bots.name_runes.what",
+        "capacityRow.bots.notify_detail_bytes.what",
+        "capacityRow.bots.notify_summary_bytes.what",
         "capacityRow.bots.output_bytes.what",
         "capacityRow.bots.output_chunk_bytes.full",
         "capacityRow.bots.output_chunk_bytes.what",
@@ -6381,7 +6383,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 745,
+      "count": 746,
       "sources": [
         null
       ],
@@ -6862,6 +6864,7 @@
         "projectAssistants.rosterLead",
         "projectAssistants.rosterMarkRead",
         "projectAssistants.rosterMoveSection",
+        "projectAssistants.rosterNewActivity",
         "projectAssistants.rosterNewSection",
         "projectAssistants.rosterNewSession",
         "projectAssistants.rosterNewSessionConfirm",

@@ -181,6 +181,18 @@ test("a Bot row names its Project with its mark and says nothing internal",async
   assert.ok(!html.includes(item.bot.key.machine_id),"the machine ID stays out of a one-machine row")
   assert.ok(!html.includes(item.bot.project.project_id),"the Project ID stays out of the row and its label")
 })
+test("a Bot row shows a count only for what needs the person and a grey dot for other news",async()=>{
+  const s=fixtureSource(),page=await s.list({machine_id:s.bots[0].key.machine_id,query:"",cursor:"",page_size:100},new AbortController().signal),item={...page.items[0],pending_permissions:0,status:"idle"}
+  const row=extra=>render(BotRow,{item:{...item,...extra},selected:false,onSelect:()=>{},w:words("zh-Hant"),language:"zh-Hant",now:Date.parse(item.activity_at)})
+  const news=row({unread_count:0,has_activity:true})
+  assert.match(news,/class="pa-activity-dot"/);assert.match(news,/data-activity="true"/);assert.match(news,/有新訊息/)
+  assert.doesNotMatch(news,/pa-unread-dot|class="pa-unread"|未讀/)
+  const counted=row({unread_count:1,has_activity:true})
+  assert.match(counted,/pa-unread-dot/);assert.match(counted,/未讀 1/);assert.doesNotMatch(counted,/pa-activity-dot|有新訊息/)
+  const read=row({unread_count:0,has_activity:false})
+  assert.doesNotMatch(read,/pa-activity-dot|pa-unread-dot|有新訊息|未讀/)
+  assert.match(render(BotRow,{item:{...item,unread_count:0,has_activity:true},selected:false,onSelect:()=>{},w:words("en"),language:"en",now:Date.parse(item.activity_at)}),/New activity/)
+})
 test("the process trace says what each step is, never its turn ID or provider category",()=>{
   const turn_id="5ba44472905d8854d481db30b022c77f"
   const details={

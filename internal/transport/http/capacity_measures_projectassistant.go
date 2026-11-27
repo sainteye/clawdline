@@ -202,6 +202,8 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 			u := pa.CollaborationReplyUsage()
 			return capacity.Reading{Known: true, Used: u.Largest, Counters: capacity.Counters{Refused: u.Truncated}, Note: "largest stored Bot reply since start; refused counts replies whose tail was cut and marked for the requester"}
 		},
+		"bots.notify_summary_bytes":         boundReading(pa.NotifySummaryBytesUsage, "longest notify_person summary a Bot sent since start; refused counts longer ones"),
+		"bots.notify_detail_bytes":          boundReading(pa.NotifyDetailBytesUsage, "longest notify_person detail a Bot sent since start; refused counts longer ones"),
 		"bots.peer_note_bytes":              boundReading(pa.PeerNoteBytesUsage, "largest note a Bot sent its own chat while handling another Bot's request since start; refused counts longer notes"),
 		"bots.peer_notes_per_request":       boundReading(pa.PeerNotesPerRequestUsage, "most notes one request from another Bot has led to since start; refused counts notes past the bound"),
 		capacity.BotsRoomPictures:           boundReading(pa.RoomPictureUsage, "most pictures on one person line in a room since start; refused counts lines with more"),

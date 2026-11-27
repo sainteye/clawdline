@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from "react"
 import type * as W from "@clawdline/contract"
 import {errorCode,type SourceClient} from "./client"
-import {canMarkConversationRead,markConversationRead} from "./conversation-read"
+import {canMarkConversationRead,hasUnreadNews,markConversationRead} from "./conversation-read"
 import type {Words} from "./words"
 
 export function BotRosterReadAction({item,source,current,readerID,onRead,w,focusRow}:{
@@ -32,7 +32,7 @@ export function BotRosterReadAction({item,source,current,readerID,onRead,w,focus
     finally{if(active.current===control){active.current=null;if(!control.signal.aborted)setPending(false)}}
   }
   return <>
-    {(item.unread_count>0||pending)&&<button type="button" className="pa-roster-read" title={w.markAllRead}
+    {(hasUnreadNews(item)||pending)&&<button type="button" className="pa-roster-read" title={w.markAllRead}
       aria-label={`${w.markAllRead} · ${bot.name}`} disabled={!allowed}
       aria-disabled={pending||undefined} aria-busy={pending||undefined} onClick={event=>void mark(event.currentTarget)}>
       <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m2 10 4 4 7-8m-2 8 7-8"/></svg>

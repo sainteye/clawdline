@@ -61,5 +61,19 @@ func ownChatEventSQL(event string) string {
 	return ownChatTurnSQL(`coalesce(json_extract(` + event + `,'$.message.turn_id'),json_extract(` + event + `,'$.turn.id'),json_extract(` + event + `,'$.trace.turn_id'),json_extract(` + event + `,'$.work.turn_id'),'')`)
 }
 
-// unreadKindsSQL is pa.CountsAsUnread for the roster projection.
-var unreadKindsSQL = "('" + string(pa.AssistantMessage) + "','" + string(pa.WorkMessage) + "')"
+// legacyUnreadKindsSQL is the kinds that counted as unread before messages
+// recorded for_person; see pa.CountsAsUnread.
+var legacyUnreadKindsSQL = "('" + string(pa.AssistantMessage) + "','" + string(pa.WorkMessage) + "')"
+
+// countsAsUnreadSQL is pa.CountsAsUnread for one stored message value v,
+// apart from the person's own messages and replies delivered to this Bot,
+// which the caller excludes for both counts.
+func countsAsUnreadSQL(v string) string {
+	return `(CASE WHEN json_type(` + v + `,'$.for_person') IS NULL THEN json_extract(` + v + `,'$.kind') IN ` + legacyUnreadKindsSQL +
+		` ELSE json_extract(` + v + `,'$.for_person')=1 END)`
+}
+
+// newActivitySQL is pa.NewActivity under the same exclusions.
+func newActivitySQL(v string) string {
+	return `(json_extract(` + v + `,'$.kind') IN ` + legacyUnreadKindsSQL + ` AND NOT ` + countsAsUnreadSQL(v) + `)`
+}

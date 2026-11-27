@@ -1028,6 +1028,10 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 	if err != nil {
 		return err
 	}
+	if e.ForPerson && (e.Message == "" || e.Output != nil || t.Room != nil || bot.Hidden && !pa.IsPeerRequest(t.Origin)) {
+		// A room or a hidden background worker has no chat the person reads.
+		return runtimeFailure(pa.ScopeDenied, "notify_person_scope")
+	}
 	if pa.IsPeerRequest(t.Origin) && (e.Message != "" || e.Output != nil) {
 		if t.Origin != pa.BotRequestOrigin || e.Output != nil || e.Permission != nil || e.Trace != nil {
 			return runtimeFailure(pa.ScopeDenied, "bot_request_tools")
@@ -1054,6 +1058,9 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 			}
 		}
 		msg := pa.Message{ID: "explicit-" + t.ID + "-" + e.ID, Fence: e.Fence, TurnID: t.ID, Kind: pa.AssistantMessage, Text: e.Message, Output: e.Output, At: r.o.Clock(), Attachments: pictures}
+		if e.ForPerson {
+			msg.ForPerson = pa.ForPersonFlag(true)
+		}
 		m.Messages = []pa.Message{msg}
 		m.Events = append(m.Events, pa.Event{Fence: e.Fence, Kind: pa.MessageCreated, Message: &msg})
 	}

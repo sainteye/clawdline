@@ -5670,6 +5670,13 @@ export interface ProjectAssistantBotSummary {
    */
   dispatched_work?: ProjectAssistantDispatchedWork
   failure?: ProjectAssistantFailure
+
+  /**
+   * True when this reader has not read a newer Bot reply or work result that does
+   * not count as unread, such as a routine's or another Bot's reply (API 129): the
+   * roster's grey dot. Absent means false, also from an older daemon.
+   */
+  has_activity?: boolean
   latest_message: string
 
   /**
@@ -5697,6 +5704,14 @@ export interface ProjectAssistantBotSummary {
    * source connection. Optional for older daemons.
    */
   status?: string
+
+  /**
+   * Messages after this reader's cursor that the Bot addressed to the person (API
+   * 129): the final reply of a turn the person started and notify_person messages.
+   * A message written before API 129 keeps the earlier rule, any Bot reply or work
+   * result, until it is read. Open ask_person questions are counted by
+   * pending_permissions, not here.
+   */
   unread_count: number
   version: number
 }

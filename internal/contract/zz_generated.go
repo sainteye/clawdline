@@ -4825,7 +4825,12 @@ type ProjectAssistantBotSummary struct {
 	// there are none or the source is older.
 	DispatchedWork *ProjectAssistantDispatchedWork `json:"dispatched_work,omitempty"`
 	Failure        *ProjectAssistantFailure        `json:"failure,omitempty"`
-	LatestMessage  string                          `json:"latest_message"`
+
+	// True when this reader has not read a newer Bot reply or work result that does
+	// not count as unread, such as a routine's or another Bot's reply (API 129): the
+	// roster's grey dot. Absent means false, also from an older daemon.
+	HasActivity   bool   `json:"has_activity,omitempty"`
+	LatestMessage string `json:"latest_message"`
 
 	// The kind of the message latest_message came from, such as work for a Session
 	// report. Empty or absent on older sources.
@@ -4843,9 +4848,15 @@ type ProjectAssistantBotSummary struct {
 
 	// The Bot’s own chat activity, independent of background work, unread count and
 	// source connection. Optional for older daemons.
-	Status      string `json:"status,omitempty"`
-	UnreadCount int64  `json:"unread_count"`
-	Version     int64  `json:"version"`
+	Status string `json:"status,omitempty"`
+
+	// Messages after this reader's cursor that the Bot addressed to the person (API
+	// 129): the final reply of a turn the person started and notify_person messages. A
+	// message written before API 129 keeps the earlier rule, any Bot reply or work
+	// result, until it is read. Open ask_person questions are counted by
+	// pending_permissions, not here.
+	UnreadCount int64 `json:"unread_count"`
+	Version     int64 `json:"version"`
 }
 
 // Unknown version/capability is unavailable. Provider probes must supply actual

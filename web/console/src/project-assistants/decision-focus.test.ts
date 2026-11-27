@@ -39,6 +39,14 @@ test("a push link names the decision to open, and nothing else does",async()=>{
   assert.equal(decisionFromFragment("#bot=beacon&conversation=c&decision=d1&decision=d2"),"","two decisions are ambiguous")
 })
 
+test("a push about a Bot's message names that message, and nothing else does",async()=>{
+  const {messageFromFragment}=await load()
+  assert.equal(messageFromFragment("#bot=beacon&conversation=beacon-chat&machine=m&message=reply-t1"),"reply-t1")
+  assert.equal(messageFromFragment("#bot=beacon&conversation=beacon-chat"),"","an ordinary Bot link focuses no message")
+  assert.equal(messageFromFragment("#message=reply-t1"),"","a message without its Bot is not a destination")
+  assert.equal(messageFromFragment("#bot=beacon&conversation=c&message=a&message=b"),"","two messages are ambiguous")
+})
+
 test("the chat waits for the card, scrolls to an open one and says a closed one is handled",async()=>{
   const {decisionFocus}=await load()
   assert.equal(decisionFocus("d1",[],false),"wait","the permissions have not been read yet")

@@ -3633,6 +3633,46 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.notify_detail_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 4000,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNotifyDetailBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.notify_summary_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxNotifySummaryBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.output_bytes",
     "Class": "buffer",
     "Unit": "bytes",

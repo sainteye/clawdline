@@ -11,25 +11,40 @@ import (
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
+// EffectBotCompletedPush tells the person about one Bot message addressed to
+// them: the reply to their own message, or a notify_person message. The kind
+// keeps its earlier name so queued effects stay in one outbox lane.
 const EffectBotCompletedPush = "bot.completed.push"
 
 type botCompletedPush struct {
 	Bot          string `json:"bot"`
 	Conversation string `json:"conversation"`
-	Turn         string `json:"turn"`
-	Name         string `json:"name"`
-	Tag          string `json:"tag"`
+	Turn         string `json:"turn,omitempty"`
+	// Message is the message the tap opens the chat at; an effect without
+	// one was queued for a plain completion before pushes followed unread.
+	Message string `json:"message,omitempty"`
+	Seq     int64  `json:"seq,omitempty"`
+	Name    string `json:"name"`
+	Preview string `json:"preview,omitempty"`
+	Tag     string `json:"tag"`
 }
 
-// BotCompletionIntent is called inside the successful Bot commit, never after it.
-// Receipt replay and an already terminal turn cannot enqueue another intent.
-func (b *Broker) BotCompletionIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, turn pa.Turn) error {
-	if !pa.NotifiableCompletion(bot, turn) {
+// BotMessageTag is the push tag of one Bot message addressed to the person.
+func BotMessageTag(machine, bot, message string) string {
+	return "bot-message-" + machine + "-" + bot + "-" + message
+}
+
+// BotPersonMessageIntent is called inside the Bot commit that first records a
+// message addressed to the person (pa.CountsAsUnread), never after it. The
+// store calls it once per such message, so a replayed receipt cannot enqueue
+// a second push. A routine, a request from another Bot, a background helper
+// or a work result reaches here only through notify_person.
+func (b *Broker) BotPersonMessageIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, msg pa.Message) error {
+	if bot.Notify == "off" || bot.Hidden || msg.ID == "" || msg.Fence.ConversationID == "" || !pa.CountsAsUnread(msg, bot.Key) {
 		return nil
 	}
-	p := botCompletedPush{Bot: bot.Key.BotID, Conversation: turn.Fence.ConversationID, Turn: turn.ID,
-		Name: bot.Name,
-		Tag:  "bot-completed-" + bot.Key.MachineID + "-" + bot.Key.BotID + "-" + turn.ID}
+	p := botCompletedPush{Bot: bot.Key.BotID, Conversation: msg.Fence.ConversationID, Turn: msg.TurnID, Message: msg.ID, Seq: msg.Seq,
+		Name: bot.Name, Preview: BotDecisionSummary(msg.Text), Tag: BotMessageTag(bot.Key.MachineID, bot.Key.BotID, msg.ID)}
 	payload, err := json.Marshal(p)
 	if err != nil {
 		return err
@@ -39,8 +54,13 @@ func (b *Broker) BotCompletionIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot
 
 func runBotCompletedPush(ctx context.Context, b *Broker, e store.Effect) effectResult {
 	var p botCompletedPush
-	if json.Unmarshal(e.Payload, &p) != nil || p.Bot == "" || p.Conversation == "" || p.Turn == "" || p.Tag == "" || p.Name == "" {
-		return effectResult{state: store.EffectFailed, outcome: "the effect carries no completed Bot task"}
+	if json.Unmarshal(e.Payload, &p) != nil || p.Bot == "" || p.Conversation == "" || p.Tag == "" || p.Name == "" {
+		return effectResult{state: store.EffectFailed, outcome: "the effect carries no Bot message"}
+	}
+	if p.Message == "" {
+		// Queued by an earlier build for a completion that named no message:
+		// the person may find nothing new where it leads.
+		return effectResult{state: store.EffectDone, outcome: "superseded_no_message"}
 	}
 	if b.PushEnabled != nil && !b.PushEnabled("push_on_bot_done") {
 		return effectResult{state: store.EffectDone, outcome: "disabled_by_user"}
@@ -49,10 +69,14 @@ func runBotCompletedPush(ctx context.Context, b *Broker, e store.Effect) effectR
 		return effectResult{state: store.EffectFailed, outcome: "this daemon cannot push"}
 	}
 	language := b.notificationLanguage()
-	title := productcopy.Format(language, "bot.completed.title", nil)
-	body := productcopy.Format(language, "bot.completed.body", map[string]string{"name": p.Name})
-	sent, failed, err := b.Push(adapterpush.WithBotDestination(ctx, p.Bot, p.Conversation), title, body, "", p.Tag)
-	result, _ := json.Marshal(map[string]any{"effect": e.ID, "bot": p.Bot, "turn": p.Turn, "sent": sent, "failed": failed})
+	title := productcopy.Format(language, "bot.message.title", map[string]string{"name": p.Name})
+	body := productcopy.Format(language, "bot.message.empty", map[string]string{"name": p.Name})
+	if p.Preview != "" {
+		body = productcopy.Format(language, "bot.message.body", map[string]string{"preview": p.Preview})
+	}
+	target := adapterpush.WithBotMessage(adapterpush.WithBotDestination(ctx, p.Bot, p.Conversation), p.Message)
+	sent, failed, err := b.Push(target, title, body, "", p.Tag)
+	result, _ := json.Marshal(map[string]any{"effect": e.ID, "bot": p.Bot, "turn": p.Turn, "message": p.Message, "sent": sent, "failed": failed})
 	events := []store.Event{{Kind: "bot.completed.pushed", Subject: e.Subject, Payload: result}}
 	switch {
 	case err != nil:

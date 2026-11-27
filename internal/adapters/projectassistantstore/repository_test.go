@@ -447,7 +447,7 @@ func commitReply(t *testing.T, s *Store, b pa.Bot, f pa.Fence, seq int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := pa.Message{ID: "reply", Fence: f, Seq: seq, TurnID: "turn", Kind: pa.AssistantMessage, Text: "Reply", At: b.CreatedAt}
+	m := pa.Message{ID: "reply", Fence: f, Seq: seq, TurnID: "turn", Kind: pa.AssistantMessage, Text: "Reply", At: b.CreatedAt, ForPerson: pa.ForPersonFlag(true)}
 	if _, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendOperation, "reply"), ExpectedVersion: current.Version, Messages: []pa.Message{m}, Receipt: pa.Receipt{ID: "reply", State: pa.EffectDelivered}, Events: []pa.Event{{Version: pa.ContractVersion, ID: "reply", Fence: f, Kind: pa.MessageCreated, Message: &m}}}); err != nil {
 		t.Fatal(err)
 	}

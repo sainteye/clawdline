@@ -71,7 +71,8 @@ import (
 // The console's "Send to Mac" diagnostic report route arrives at API 126.
 // Team charter playbooks the daemon delivers to their Bots, their routes and Cloud words arrive at API 127.
 // Team charter workflows, their proposals, the change-request target, PUT …/workflow and its Cloud word arrive at API 128.
-const APILevel = 128
+// Bot rows that tell a counted unread from other new activity (has_activity), and notify_person, arrive at API 129.
+const APILevel = 129
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux
