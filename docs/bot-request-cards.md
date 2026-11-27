@@ -201,7 +201,7 @@ Tables (`internal/adapters/store/bot_request.go`), in the same store as `work_v2
 | `chain` | the Bots the request reached: the creator and every Bot it was handed to or messaged with this card |
 | `board_item_id` | optional, only when the person's message named that item |
 | `state` | `open`, `done`, `cancelled`, `merged` |
-| `waiting` | empty, or the id of an `ask_person` question the holder is waiting on |
+| `waiting` | empty, or the id of an `ask_person` question the holder is waiting on. The commit that closes that question clears it: the person's answer (`waiting.cleared` by `person`), or the Bot's withdrawal or the question's expiry (by that Bot) — `ClearBotRequestWaitingTx`, called from `BotDecisionIntent` |
 | `split_from`, `merged_into` | set by §6 |
 | `cycle` | starts at 1 and counts reopens; part of the completion key (§5) |
 | `version` | optimistic version; every write names the version it read |

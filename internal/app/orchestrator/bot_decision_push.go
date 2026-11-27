@@ -11,6 +11,7 @@ import (
 
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	br "github.com/sainteye/clawdline/internal/domain/botrequest"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
@@ -66,7 +67,28 @@ func (b *Broker) BotDecisionIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, 
 	if err != nil {
 		return err
 	}
-	return b.Store.AppendEffectTx(ctx, tx, store.Effect{Kind: kind, Subject: p.Tag, Payload: payload})
+	if err = b.Store.AppendEffectTx(ctx, tx, store.Effect{Kind: kind, Subject: p.Tag, Payload: payload}); err != nil {
+		return err
+	}
+	return b.clearBotRequestWaiting(ctx, tx, bot, offer)
+}
+
+// clearBotRequestWaiting takes a Bot request card out of "Waiting for you"
+// when the ask_person question it waits on closes: answered by the person,
+// withdrawn by its Bot, or expired. A native permission is never waited on.
+func (b *Broker) clearBotRequestWaiting(ctx context.Context, tx *sql.Tx, bot pa.Bot, offer pa.PermissionOffer) error {
+	if offer.Kind != pa.DecisionOfferKind {
+		return nil
+	}
+	by := br.Actor{Bot: bot.Key.BotID}
+	switch offer.State {
+	case pa.PermissionResolved:
+		by = br.Actor{Person: true}
+	case pa.PermissionCancelled, pa.PermissionExpired:
+	default:
+		return nil
+	}
+	return b.Store.ClearBotRequestWaitingTx(ctx, tx, offer.ID, by, b.now())
 }
 
 var (
