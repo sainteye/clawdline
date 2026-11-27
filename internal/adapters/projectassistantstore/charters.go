@@ -2,10 +2,13 @@ package projectassistantstore
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,10 +21,62 @@ import (
 // is current. A version row also keeps the idempotency key and request digest
 // of the write that made it, so a repeated write whose reply was lost answers
 // its own effect and a reused key with another request is a conflict.
+//
+// playbooks, text_version and deliveries came later as added columns, not a
+// schema version: a row written before them reads as no playbooks whose text
+// changed at its own version. text_version 0 means the row's own version.
 const charterVersionsSchema = `CREATE TABLE IF NOT EXISTS project_assistant_charter_versions (
  machine TEXT NOT NULL, project TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>0),
  author TEXT NOT NULL, reason TEXT NOT NULL, created_at INTEGER NOT NULL, text TEXT NOT NULL,
  idem TEXT NOT NULL, request TEXT NOT NULL, PRIMARY KEY(machine,project,version))`
+
+// charterPlaybookColumns are added to a table made before them. An older
+// daemon names its columns when it inserts, so its rows take these defaults.
+var charterPlaybookColumns = []struct{ name, ddl string }{
+	{"playbooks", `ALTER TABLE project_assistant_charter_versions ADD COLUMN playbooks TEXT NOT NULL DEFAULT '[]'`},
+	{"text_version", `ALTER TABLE project_assistant_charter_versions ADD COLUMN text_version INTEGER NOT NULL DEFAULT 0`},
+	{"deliveries", `ALTER TABLE project_assistant_charter_versions ADD COLUMN deliveries TEXT NOT NULL DEFAULT '{}'`},
+}
+
+func addCharterPlaybookColumns(ctx context.Context, tx *sql.Tx) error {
+	for _, c := range charterPlaybookColumns {
+		var n int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('project_assistant_charter_versions') WHERE name=?`, c.name).Scan(&n); err != nil {
+			return err
+		}
+		if n == 0 {
+			if _, err := tx.ExecContext(ctx, c.ddl); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+const charterVersionColumns = `version,author,reason,created_at,text,playbooks,text_version,deliveries`
+
+func scanCharterVersion(scan func(...any) error, extra ...any) (pa.CharterVersion, error) {
+	var out pa.CharterVersion
+	var at int64
+	var playbooks, deliveries string
+	if err := scan(append([]any{&out.Version, &out.Author, &out.Reason, &at, &out.Text, &playbooks, &out.TextVersion, &deliveries}, extra...)...); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	out.CreatedAt = time.UnixMilli(at).UTC()
+	if out.TextVersion <= 0 {
+		out.TextVersion = out.Version
+	}
+	if err := json.Unmarshal([]byte(playbooks), &out.Playbooks); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	if len(out.Playbooks) == 0 {
+		out.Playbooks = nil
+	}
+	if err := json.Unmarshal([]byte(deliveries), &out.Deliveries); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	return out, nil
+}
 
 const charterIdemIndex = `CREATE INDEX IF NOT EXISTS project_assistant_charter_idem ON project_assistant_charter_versions(machine,project,idem)`
 
@@ -37,7 +92,9 @@ const charterReadsSchema = `CREATE TABLE IF NOT EXISTS project_assistant_charter
  turn TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(machine,bot))`
 
 // CharterWrite saves Text as the next version while the Project is still at
-// ExpectedVersion (0 when it has no charter yet).
+// ExpectedVersion (0 when it has no charter yet). The new version keeps the
+// current version's playbooks, so a writer that knows nothing of playbooks
+// never removes them.
 type CharterWrite struct {
 	MachineID       string
 	ProjectID       string
@@ -47,6 +104,9 @@ type CharterWrite struct {
 	Author          pa.CharterAuthor
 	IdempotencyKey  string
 	At              time.Time
+	// shape, when set, makes the new version's text and playbooks from the
+	// current version inside the write's transaction.
+	shape func(current pa.CharterVersion) (string, []pa.CharterPlaybook, error)
 }
 
 // CharterRead is the version one Bot's latest prompt carried.
@@ -70,14 +130,10 @@ func charterDigest(parts ...string) string {
 // latestCharter is the newest version row, a removal included; version 0
 // when the Project never had one.
 func latestCharter(ctx context.Context, r reader, machine, project string) (pa.CharterVersion, error) {
-	var out pa.CharterVersion
-	var at int64
-	err := r.QueryRowContext(ctx, `SELECT version,author,reason,created_at,text FROM project_assistant_charter_versions WHERE machine=? AND project=? ORDER BY version DESC LIMIT 1`, machine, project).
-		Scan(&out.Version, &out.Author, &out.Reason, &at, &out.Text)
+	out, err := scanCharterVersion(r.QueryRowContext(ctx, `SELECT `+charterVersionColumns+` FROM project_assistant_charter_versions WHERE machine=? AND project=? ORDER BY version DESC LIMIT 1`, machine, project).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return pa.CharterVersion{}, nil
 	}
-	out.CreatedAt = time.UnixMilli(at).UTC()
 	return out, err
 }
 
@@ -96,16 +152,12 @@ func (s *Store) Charter(ctx context.Context, machine, project string) (pa.Charte
 	return currentCharter(ctx, s.reader, machine, project)
 }
 
-// CharterAt returns one retained version with its text.
+// CharterAt returns one retained version with its text and playbooks.
 func (s *Store) CharterAt(ctx context.Context, machine, project string, version int64) (pa.CharterVersion, error) {
-	var out pa.CharterVersion
-	var at int64
-	err := s.reader.QueryRowContext(ctx, `SELECT version,author,reason,created_at,text FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).
-		Scan(&out.Version, &out.Author, &out.Reason, &at, &out.Text)
+	out, err := scanCharterVersion(s.reader.QueryRowContext(ctx, `SELECT `+charterVersionColumns+` FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return out, failure(pa.NotFound, "charter_version")
 	}
-	out.CreatedAt = time.UnixMilli(at).UTC()
 	return out, err
 }
 
@@ -186,16 +238,12 @@ func (s *Store) insertCharter(ctx context.Context, w CharterWrite, request strin
 		return pa.CharterVersion{}, err
 	}
 	defer tx.Rollback()
-	var prior pa.CharterVersion
 	var priorRequest string
-	var at int64
-	err = tx.QueryRowContext(ctx, `SELECT version,author,reason,created_at,text,request FROM project_assistant_charter_versions WHERE machine=? AND project=? AND idem=? ORDER BY version DESC LIMIT 1`, w.MachineID, w.ProjectID, w.IdempotencyKey).
-		Scan(&prior.Version, &prior.Author, &prior.Reason, &at, &prior.Text, &priorRequest)
+	prior, err := scanCharterVersion(tx.QueryRowContext(ctx, `SELECT `+charterVersionColumns+`,request FROM project_assistant_charter_versions WHERE machine=? AND project=? AND idem=? ORDER BY version DESC LIMIT 1`, w.MachineID, w.ProjectID, w.IdempotencyKey).Scan, &priorRequest)
 	if err == nil {
 		if priorRequest != request {
 			return pa.CharterVersion{}, failure(pa.IdempotencyConflict, "charter")
 		}
-		prior.CreatedAt = time.UnixMilli(at).UTC()
 		return prior, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -219,10 +267,27 @@ func (s *Store) insertCharter(ctx context.Context, w CharterWrite, request strin
 	}
 	// A charter made after a removal is numbered after it, so a Bot that
 	// heard an older charter of the same number is told again.
-	next := pa.CharterVersion{Version: latest.Version + 1, Author: w.Author, Reason: w.Reason, CreatedAt: w.At.UTC().Truncate(time.Millisecond), Text: w.Text}
+	next := pa.CharterVersion{Version: latest.Version + 1, Author: w.Author, Reason: w.Reason, CreatedAt: w.At.UTC().Truncate(time.Millisecond), Text: w.Text, Playbooks: current.Playbooks}
+	if w.shape != nil {
+		if next.Text, next.Playbooks, err = w.shape(current); err != nil {
+			return pa.CharterVersion{}, err
+		}
+	}
+	if err = pa.ValidateCharterDocument(next.Text, next.Playbooks); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	pa.NextCharterDeliveries(latest, &next)
+	playbooks, err := json.Marshal(append([]pa.CharterPlaybook{}, next.Playbooks...))
+	if err != nil {
+		return pa.CharterVersion{}, err
+	}
+	deliveries, err := json.Marshal(next.Deliveries)
+	if err != nil {
+		return pa.CharterVersion{}, err
+	}
 	// The primary key fences a concurrent writer that read the same version.
-	if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_charter_versions(machine,project,version,author,reason,created_at,text,idem,request) VALUES(?,?,?,?,?,?,?,?,?)`,
-		w.MachineID, w.ProjectID, next.Version, string(next.Author), next.Reason, next.CreatedAt.UnixMilli(), next.Text, w.IdempotencyKey, request); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_charter_versions(machine,project,version,author,reason,created_at,text,idem,request,playbooks,text_version,deliveries) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		w.MachineID, w.ProjectID, next.Version, string(next.Author), next.Reason, next.CreatedAt.UnixMilli(), next.Text, w.IdempotencyKey, request, string(playbooks), next.TextVersion, string(deliveries)); err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") || strings.Contains(err.Error(), "PRIMARY KEY") {
 			return current, failure(pa.StaleVersion, "charter_version")
 		}
@@ -247,26 +312,25 @@ func (s *Store) RestoreCharter(ctx context.Context, machine, project string, exp
 	request := charterDigest("restore", strconv.FormatInt(expected, 10), strconv.FormatInt(version, 10))
 	// A repeated restore answers its own version before the old one is read:
 	// it may have been evicted since.
-	var text, author string
-	err := s.db.QueryRowContext(ctx, `SELECT text,author FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).Scan(&text, &author)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		text = ""
-	case err != nil:
+	old, err := scanCharterVersion(s.db.QueryRowContext(ctx, `SELECT `+charterVersionColumns+` FROM project_assistant_charter_versions WHERE machine=? AND project=? AND version=?`, machine, project, version).Scan)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return pa.CharterVersion{}, err
 	}
 	var restoreErr error
 	// A removal has no text to bring back.
-	if errors.Is(err, sql.ErrNoRows) || author == string(pa.CharterByRemoval) {
+	if errors.Is(err, sql.ErrNoRows) || old.Author == pa.CharterByRemoval {
 		restoreErr = failure(pa.NotFound, "charter_version")
 	}
-	w.Text = text
+	// The restored version brings back that version's playbooks too.
+	w.Text = old.Text
+	w.shape = func(pa.CharterVersion) (string, []pa.CharterPlaybook, error) { return old.Text, old.Playbooks, nil }
 	return s.insertCharter(ctx, w, request, func(*sql.Tx) error { return restoreErr })
 }
 
 // RemoveCharter takes the Project's charter away while it is still at
-// expected, as a removal version with empty text, and drops its pending
-// proposals with it. A repeat of a removal that took effect answers it.
+// expected, as a removal version with empty text and no playbooks, and drops
+// its pending proposals with it. A repeat of a removal that took effect
+// answers it.
 func (s *Store) RemoveCharter(ctx context.Context, machine, project string, expected int64, idem string, at time.Time) (pa.CharterVersion, error) {
 	if idem == "" || expected <= 0 {
 		return pa.CharterVersion{}, failure(pa.Invalid, "expected_version")
@@ -274,12 +338,107 @@ func (s *Store) RemoveCharter(ctx context.Context, machine, project string, expe
 	if err := pa.ValidateCharterProject(project); err != nil {
 		return pa.CharterVersion{}, err
 	}
-	w := CharterWrite{MachineID: machine, ProjectID: project, ExpectedVersion: expected, Author: pa.CharterByRemoval, IdempotencyKey: idem, At: at}
+	w := CharterWrite{MachineID: machine, ProjectID: project, ExpectedVersion: expected, Author: pa.CharterByRemoval, IdempotencyKey: idem, At: at,
+		shape: func(pa.CharterVersion) (string, []pa.CharterPlaybook, error) { return "", nil, nil }}
 	request := charterDigest("remove", strconv.FormatInt(expected, 10))
 	return s.insertCharter(ctx, w, request, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_charter_proposals WHERE machine=? AND project=?`, machine, project)
 		return err
 	})
+}
+
+// CharterPlaybookWrite saves one playbook as the next version while the
+// Project is still at ExpectedVersion. An empty Playbook.ID creates one.
+type CharterPlaybookWrite struct {
+	MachineID       string
+	ProjectID       string
+	ExpectedVersion int64
+	Playbook        pa.CharterPlaybook
+	Reason          string
+	Author          pa.CharterAuthor
+	IdempotencyKey  string
+	At              time.Time
+}
+
+func newPlaybookID() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return "pb-" + hex.EncodeToString(b), nil
+}
+
+// SaveCharterPlaybook creates or replaces one playbook of the current
+// charter, keeping its text and the other playbooks. A Project without a
+// charter has nowhere to keep one.
+func (s *Store) SaveCharterPlaybook(ctx context.Context, w CharterPlaybookWrite) (pa.CharterVersion, error) {
+	if w.MachineID == "" {
+		return pa.CharterVersion{}, failure(pa.Invalid, "machine_id")
+	}
+	if err := pa.ValidateCharterProject(w.ProjectID); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	if err := pa.ValidateCharterPlaybook(w.Playbook); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	if err := pa.ValidateCharterText("", w.Reason); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	if w.IdempotencyKey == "" || w.ExpectedVersion < 0 {
+		return pa.CharterVersion{}, failure(pa.Invalid, "idempotency_key")
+	}
+	if w.Author == "" {
+		w.Author = pa.CharterByPerson
+	}
+	p := w.Playbook
+	p.BotIDs = append([]string{}, p.BotIDs...)
+	request := charterDigest("playbook", string(w.Author), strconv.FormatInt(w.ExpectedVersion, 10), p.ID, p.Title, p.Text, strings.Join(p.BotIDs, "\n"), w.Reason)
+	write := CharterWrite{MachineID: w.MachineID, ProjectID: w.ProjectID, ExpectedVersion: w.ExpectedVersion, Reason: w.Reason, Author: w.Author, IdempotencyKey: w.IdempotencyKey, At: w.At,
+		shape: func(current pa.CharterVersion) (string, []pa.CharterPlaybook, error) {
+			if current.Version <= 0 {
+				return "", nil, failure(pa.Invalid, "charter")
+			}
+			playbooks := slices.Clone(current.Playbooks)
+			if p.ID == "" {
+				id, err := newPlaybookID()
+				if err != nil {
+					return "", nil, err
+				}
+				p.ID = id
+				return current.Text, append(playbooks, p), nil
+			}
+			at := slices.IndexFunc(playbooks, func(o pa.CharterPlaybook) bool { return o.ID == p.ID })
+			if at < 0 {
+				return "", nil, failure(pa.NotFound, "charter_playbook")
+			}
+			playbooks[at] = p
+			return current.Text, playbooks, nil
+		}}
+	return s.insertCharter(ctx, write, request, nil)
+}
+
+// RemoveCharterPlaybook removes one playbook from the current charter as the
+// next version. The Bots it was assigned to hear the charter without it.
+func (s *Store) RemoveCharterPlaybook(ctx context.Context, machine, project string, expected int64, id, idem string, at time.Time) (pa.CharterVersion, error) {
+	if idem == "" || expected <= 0 {
+		return pa.CharterVersion{}, failure(pa.Invalid, "expected_version")
+	}
+	if err := pa.ValidateCharterProject(project); err != nil {
+		return pa.CharterVersion{}, err
+	}
+	if id == "" {
+		return pa.CharterVersion{}, failure(pa.Invalid, "playbook_id")
+	}
+	request := charterDigest("playbook-remove", strconv.FormatInt(expected, 10), id)
+	w := CharterWrite{MachineID: machine, ProjectID: project, ExpectedVersion: expected, Author: pa.CharterByPerson, IdempotencyKey: idem, At: at,
+		shape: func(current pa.CharterVersion) (string, []pa.CharterPlaybook, error) {
+			kept := slices.DeleteFunc(slices.Clone(current.Playbooks), func(o pa.CharterPlaybook) bool { return o.ID == id })
+			if len(kept) == len(current.Playbooks) {
+				return "", nil, failure(pa.NotFound, "charter_playbook")
+			}
+			return current.Text, kept, nil
+		}}
+	return s.insertCharter(ctx, w, request, nil)
 }
 
 // ProposeCharter records a lead proposal. The same Bot turn proposing the

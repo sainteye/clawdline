@@ -76,7 +76,9 @@ func (s *Store) ReportCharterConflict(ctx context.Context, machine string, c pa.
 	if err != nil {
 		return pa.CharterConflict{}, err
 	}
-	if current.Version != c.Version {
+	// A Bot compares the charter as it heard it: the version at which its
+	// text or its playbooks last changed.
+	if current.DeliveryVersion(c.BotID) != c.Version {
 		return pa.CharterConflict{}, failure(pa.StaleVersion, "charter_version")
 	}
 	var open int
@@ -253,6 +255,29 @@ func (s *Store) CharterChecks(ctx context.Context, machine, project string) (map
 			return nil, err
 		}
 		out[bot] = v
+	}
+	return out, rows.Err()
+}
+
+// ReportedVersions names, by Bot, the versions each Bot reported anything
+// against.
+func (s *Store) ReportedVersions(ctx context.Context, machine, project string) (map[string]map[int64]bool, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT DISTINCT bot,version FROM project_assistant_charter_conflicts WHERE machine=? AND project=?`, machine, project)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[int64]bool{}
+	for rows.Next() {
+		var bot string
+		var v int64
+		if err = rows.Scan(&bot, &v); err != nil {
+			return nil, err
+		}
+		if out[bot] == nil {
+			out[bot] = map[int64]bool{}
+		}
+		out[bot][v] = true
 	}
 	return out, rows.Err()
 }
