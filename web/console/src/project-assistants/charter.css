@@ -124,3 +124,67 @@
 .project-assistants .pa-info-panel.pa-charter-conflicts .pa-charter-history-close { width:44px;height:44px;min-width:44px;min-height:44px; }
 /* A prefilled charter change request shows whole, up to the box's maximum height. */
 .project-assistants .pa-charter-request textarea { field-sizing:content; }
+/* The charter's playbooks: a section of cards under the sections, and a side
+   panel (a full-screen page on a phone) for one playbook. A card whose Bots
+   have not read its latest change takes the conflict reminder's amber. */
+.project-assistants .pa-charter-playbooks { display:flex;flex-direction:column;gap:10px;padding-top:12px; }
+.project-assistants .pa-charter-playbooks-head { display:flex;align-items:flex-start;justify-content:space-between;gap:12px; }
+.project-assistants .pa-charter-playbooks-head h3 { margin:0;font-size:16px; }
+.project-assistants .pa-charter-playbooks-head p { margin:4px 0 0;color:var(--pa-dim);font-size:13px; }
+.project-assistants .pa-charter-playbooks-head .pa-pill { flex:none;min-height:44px; }
+.project-assistants .pa-charter-playbook-grid { list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }
+.project-assistants .pa-charter-playbook-card { display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;height:100%;min-height:44px;box-sizing:border-box;padding:12px 14px;border:1px solid var(--pa-line);border-radius:14px;background:var(--pa-card);color:inherit;text-align:left;font:inherit; }
+.project-assistants .pa-charter-playbook-card:hover,.project-assistants .pa-charter-playbook-card:focus-visible,.project-assistants .pa-charter-playbook-card[aria-current] { border-color:#5a5a60; }
+.project-assistants .pa-charter-playbook-card[data-state="unread"] { border-color:#6b5a33; }
+.project-assistants .pa-charter-playbook-name { font-size:15px;font-weight:600;overflow-wrap:anywhere; }
+.project-assistants .pa-charter-playbook-first { color:var(--pa-dim);font-size:13px;line-height:1.5;overflow-wrap:anywhere; }
+.project-assistants .pa-charter-playbook-foot { display:flex;flex-direction:column;align-items:flex-start;gap:6px;margin-top:auto;padding-top:4px; }
+.project-assistants .pa-charter-playbook-bots { display:flex;flex-wrap:wrap;gap:4px 10px;min-width:0; }
+.project-assistants .pa-charter-playbook-bot { display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--pa-dim); }
+.project-assistants .pa-charter-playbook-bot>svg { flex:none; }
+.project-assistants .pa-charter-playbook-state { font-size:12px;color:#86c997;white-space:nowrap; }
+.project-assistants .pa-charter-playbook-state[data-state="unread"] { color:#e39567; }
+.project-assistants .pa-charter-playbook-state[data-state="unassigned"] { color:var(--pa-dim); }
+.project-assistants .pa-charter-playbook-body h4 { margin:0 0 8px;font-size:13px;color:var(--pa-dim);font-weight:550; }
+.project-assistants .pa-charter-panel-notice { margin:0;padding:10px 14px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-card);font-size:13px; }
+.project-assistants .pa-charter-panel-notice[data-tone="error"] { color:#e8a39b; }
+.project-assistants .pa-charter-playbook-reminder { padding:10px 14px;border:1px solid #6b5a33;border-radius:12px;background:rgba(227,149,103,.08);font-size:13px;line-height:1.55; }
+.project-assistants .pa-charter-playbook-reminder p { margin:0; }
+.project-assistants .pa-charter-playbook-reminder p+p { margin-top:4px; }
+.project-assistants .pa-charter-playbook-readers { list-style:none;margin:0 0 10px;padding:0;display:flex;flex-direction:column;gap:6px; }
+.project-assistants .pa-charter-playbook-reader { display:flex;align-items:center;gap:10px;min-height:44px; }
+.project-assistants .pa-charter-playbook-reader>svg { flex:none; }
+.project-assistants .pa-charter-playbook-reader-name { flex:1;min-width:0;display:flex;flex-direction:column; }
+.project-assistants .pa-charter-playbook-reader-name strong { font-size:14px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.project-assistants .pa-charter-playbook-reader-name small { font-size:12px;color:#e39567; }
+.project-assistants .pa-charter-playbook-reader[data-current] .pa-charter-playbook-reader-name small { color:#86c997; }
+.project-assistants .pa-charter-playbook-activity { flex:none;font-size:12px;color:var(--pa-dim); }
+.project-assistants .pa-charter-playbook-activity[data-working] { color:#fafafa; }
+.project-assistants .pa-charter-playbook-assign-open { min-height:44px; }
+.project-assistants .pa-charter-playbook-text { padding:14px 60px 14px 16px; }
+.project-assistants .pa-charter-playbook-text .pa-markdown>:first-child { margin-top:0; }
+.project-assistants .pa-charter-playbook-text .pa-markdown>:last-child { margin-bottom:0; }
+.project-assistants .pa-charter-playbook-editor { padding:14px 16px; }
+.project-assistants .pa-charter-playbook-editor-head { margin:0 0 10px;font-size:16px; }
+.project-assistants .pa-charter-playbook-editor .pa-charter-panel-notice { margin-bottom:10px; }
+.project-assistants .pa-charter-assign { display:flex;flex-direction:column;gap:8px;margin-top:10px;padding:12px;border:1px solid var(--pa-line);border-radius:12px;background:var(--pa-card); }
+.project-assistants .pa-charter-playbook-editor .pa-charter-assign { background:transparent; }
+.project-assistants .pa-charter-assign-title { font-size:13px;font-weight:550;color:var(--pa-dim); }
+.project-assistants .pa-charter-assign-list { list-style:none;margin:0;padding:0;display:flex;flex-direction:column; }
+.project-assistants .pa-charter-assign-row { display:flex;align-items:center;gap:10px;min-height:44px;cursor:pointer;font-size:14px; }
+.project-assistants .pa-charter-assign-row input { width:20px;height:20px;margin:0 2px;accent-color:#fafafa; }
+.project-assistants .pa-charter-assign .pa-charter-after { margin-top:4px; }
+.project-assistants .pa-charter-assign .pa-charter-actions { margin-top:4px; }
+.project-assistants .pa-charter-playbook .pa-charter-remove-confirm .pa-charter-actions { margin-top:8px; }
+.project-assistants .pa-charter-diff-head { padding:4px 10px;border-bottom:1px solid var(--pa-line);font-weight:550;color:#fafafa; }
+@media(min-width:701px) {
+  .project-assistants .pa-charter-playbook.pa-info-panel { width:380px;max-width:380px; }
+}
+.project-assistants .pa-info-panel.pa-charter-playbook .pa-charter-history-close { width:44px;height:44px;min-width:44px;min-height:44px; }
+@media(max-width:700px) {
+  .project-assistants .pa-charter-playbook-grid { grid-template-columns:minmax(0,1fr); }
+  .project-assistants .pa-charter-playbooks-head { flex-wrap:wrap; }
+  /* Choosing who gets a playbook is a sheet from the bottom on a phone. */
+  .project-assistants .pa-charter-sheet-backdrop { position:fixed;inset:0;z-index:44;background:rgba(0,0,0,.55); }
+  .project-assistants .pa-charter-assign-sheet { position:fixed;left:0;right:0;bottom:0;z-index:45;margin:0;max-height:80dvh;overflow:auto;padding:16px 16px max(16px,env(safe-area-inset-bottom,0px));border-radius:18px 18px 0 0;border:0;background:var(--pa-bg);box-shadow:0 -14px 36px rgba(0,0,0,.62);animation:pa-sheet-in .22s ease-out; }
+}

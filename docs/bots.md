@@ -248,6 +248,18 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   - *Limits.* 16 KiB of text per playbook, 120 bytes per title, 64 Bots per playbook, 20 playbooks
     per charter version and 128 KiB for one version's text plus all its playbooks; the 256 KiB
     body bound covers a full playbook write even when every character is escaped.
+  - *On the charter page.* A Playbook section follows the charter's sections: one card per
+    playbook with its title, first sentence, the assigned visible Bots (their line avatars) and
+    whether each has read its latest content (filled dot), has not (hollow dot, amber border), or
+    nobody is assigned. A card opens a side panel (a full-screen page at 700 px or narrower) with a
+    reminder of who has not read it and whether they are mid-turn, the assigned Bots with the
+    version each read, the text as Markdown, edit, reassignment (a bottom sheet on a phone), and a
+    quiet delete confirmed once. Each write sends a reason the history shows ("編輯 Playbook『…』",
+    "新增…", "更改…交給誰"); `playbook-remove` takes no reason, so its history row reads as an edit
+    while its diff names the deleted playbook. The history diff adds one group per changed
+    playbook, a playbook's conflict report names it by title, and a machine without
+    `canCharterPlaybooks` shows none of this. The header status and the roster line count a Bot as
+    current at its own `delivery_version`.
 - **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
   Bot's own record, keyed by machine and Project. They were added without a schema version bump,
   like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops

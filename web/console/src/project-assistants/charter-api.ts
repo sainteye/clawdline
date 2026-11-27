@@ -164,7 +164,10 @@ export const shownReaders = (answer: W.ProjectAssistantCharterReadersResponse) =
 export const deliveryVersion = (answer: W.ProjectAssistantCharterReadersResponse, reader: W.ProjectAssistantCharterReader) => reader.delivery_version ?? answer.version
 
 /** Whether the Bot's latest prompt carried what is current for it. */
-export const readsCurrent = (answer: W.ProjectAssistantCharterReadersResponse, reader: W.ProjectAssistantCharterReader) => answer.version > 0 && reader.version >= deliveryVersion(answer, reader)
+export const readsCurrent = (answer: W.ProjectAssistantCharterReadersResponse, reader: W.ProjectAssistantCharterReader) => readsCurrentAt(answer.version, reader)
+
+/** readsCurrent against a charter version the page already holds. */
+export const readsCurrentAt = (version: number, reader: W.ProjectAssistantCharterReader) => version > 0 && reader.version >= (reader.delivery_version ?? version)
 
 /** The current playbooks; none from a machine older than API 127. */
 export const charterPlaybooks = (charter: W.ProjectAssistantCharterResponse): W.ProjectAssistantCharterPlaybook[] => charter.playbooks ?? []
@@ -195,7 +198,7 @@ export async function charterSummaries(api: CharterApi, machineID: string, signa
     try {
       const answer = await api.readers(project, signal), readers = shownReaders(answer)
       names = readers.map(reader => reader.name)
-      current = readers.filter(reader => row.version > 0 && reader.version >= (reader.delivery_version ?? row.version)).length
+      current = readers.filter(reader => readsCurrentAt(row.version, reader)).length
     } catch (error) { if ((error as { name?: unknown } | null)?.name === "AbortError") throw error }
     return { project, version: row.version, pending_proposals: row.pending_proposals, open_conflicts: row.open_conflicts ?? 0, bots: names.length, readers_current: current, names }
   }))
@@ -206,3 +209,9 @@ export function personalWorkspaceNames(items: readonly { bot: Pick<W.ProjectAssi
   return new Map(items.filter(item => item.bot.project.kind === "personal")
     .map(item => [charterProjectKey({ machine_id: item.bot.key.machine_id, project_id: item.bot.project.project_id }), item.bot.name]))
 }
+
+/** Each Bot's appearance, keyed by machine and Bot, for the charter's Bot avatars. */
+export function charterAppearances(items: readonly { bot: Pick<W.ProjectAssistantBot, "key" | "appearance"> }[]): ReadonlyMap<string, W.ProjectAssistantAppearance> {
+  return new Map(items.map(item => [charterBotKey(item.bot.key.machine_id, item.bot.key.bot_id), item.bot.appearance]))
+}
+export const charterBotKey = (machineID: string, botID: string) => JSON.stringify([machineID, botID])

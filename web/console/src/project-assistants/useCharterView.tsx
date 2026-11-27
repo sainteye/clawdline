@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type MutableRefObject } from "react"
 import type * as W from "@clawdline/contract"
 import { authorized, type SourceClient } from "./client"
-import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, type CharterProject, type CharterSummary } from "./charter-api"
-export { personalWorkspaceNames } from "./charter-api"
+import { CharterRefusal, charterApiFor, charterBotKey, charterProjectKey, charterSummaries, type CharterProject, type CharterSummary } from "./charter-api"
+export { charterAppearances, personalWorkspaceNames } from "./charter-api"
 import { CharterPage } from "./CharterPage"
 import { charterTemplate } from "./charter-text"
 import { charterFormat, charterWord } from "./charter-words"
@@ -21,6 +21,8 @@ export interface CharterViewInput {
   projectNames: ReadonlyMap<string, string>
   /** Each personal workspace's Bot name, by charter Project key, from personalWorkspaceNames. */
   personalNames?: ReadonlyMap<string, string>
+  /** Each Bot's appearance, by charterBotKey, from charterAppearances. */
+  appearances?: ReadonlyMap<string, W.ProjectAssistantAppearance>
   w: Words
   language: string
   narrow: boolean
@@ -36,7 +38,7 @@ export interface CharterViewInput {
 }
 
 export function useCharterView(input: CharterViewInput) {
-  const { sources, current, authorization, projectNames, personalNames, w, language, narrow, manageHistory, historyID, writeHistory, selected, groupOpen, clear, setSettings } = input
+  const { sources, current, authorization, projectNames, personalNames, appearances, w, language, narrow, manageHistory, historyID, writeHistory, selected, groupOpen, clear, setSettings } = input
   const closeSettings = () => setSettings(false)
   const [open, setOpen] = useState<CharterProject | null>(null)
   // Counts every opening, so opening the charter already shown rereads it.
@@ -95,7 +97,7 @@ export function useCharterView(input: CharterViewInput) {
     onCreate: create,
   } : undefined
   const page = open && api ? <CharterPage key={charterProjectKey(open)} api={api} project={open} projectName={nameOf(open)} opened={opened}
-    narrow={narrow} showBack={narrow} onBack={close} onChanged={refresh} onRemoved={close} w={w} language={language}/> : null
+    narrow={narrow} showBack={narrow} onBack={close} onChanged={refresh} onRemoved={close} appearance={botID => appearances?.get(charterBotKey(open.machine_id, botID))} w={w} language={language}/> : null
   return { charters, selectedKey: open ? charterProjectKey(open) : null, openCharter, page, settings }
 }
 
