@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "project-assistant-charters.v1",
   "title": "Bots team charters",
-  "description": "API 122; removing a charter arrives at API 123, and the Bots' conflict reports at API 124. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings.",
+  "description": "API 122; removing a charter arrives at API 123, and the Bots' conflict reports at API 124. One Markdown team charter per Project of a machine, kept as immutable versions. Every Bot of the Project follows the current version; it wins over a Bot's instructions and memory. Every write carries Idempotency-Key equal to its idempotency_key. All timestamps are RFC3339 UTC strings. Charter workflows, the team's state machine of how one piece of work flows, arrive at API 128.",
   "$defs": {
     "ProjectAssistantCharterAuthor": {
       "type": "string",
@@ -54,6 +54,26 @@
         "document_bytes": {
           "type": "integer",
           "description": "One version's charter text plus the text of all its playbooks (API 127)."
+        },
+        "workflow_states": {
+          "type": "integer",
+          "description": "States of one workflow (API 128); absent from an older daemon."
+        },
+        "workflow_transitions": {
+          "type": "integer",
+          "description": "Transitions of one workflow (API 128)."
+        },
+        "workflow_title_bytes": {
+          "type": "integer",
+          "description": "A workflow state's title or a transition's label (API 128)."
+        },
+        "workflow_note_bytes": {
+          "type": "integer",
+          "description": "A workflow state's note (API 128)."
+        },
+        "workflow_id_bytes": {
+          "type": "integer",
+          "description": "A workflow state's id (API 128)."
         }
       },
       "required": [
@@ -138,7 +158,7 @@
     "ProjectAssistantCharterVersion": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One immutable charter version. text and playbooks are present only on the version a read selected.",
+      "description": "One immutable charter version. text, playbooks and workflow are present only on the version a read selected.",
       "properties": {
         "version": {
           "type": "integer",
@@ -162,6 +182,10 @@
             "$ref": "#/$defs/ProjectAssistantCharterPlaybook"
           },
           "description": "The version's playbooks (API 127)."
+        },
+        "workflow": {
+          "$ref": "#/$defs/ProjectAssistantCharterWorkflow",
+          "description": "The selected version's workflow (API 128); absent when it has none."
         }
       },
       "required": [
@@ -226,6 +250,93 @@
         "bot_ids"
       ]
     },
+    "ProjectAssistantCharterWorkflowState": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One step of a charter workflow (API 128). bot_id is a visible Bot of the Project, or empty for any Bot. id is [a-z0-9-] and unique in the workflow.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "bot_id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "start",
+            "step",
+            "done"
+          ]
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "bot_id",
+        "kind",
+        "note"
+      ]
+    },
+    "ProjectAssistantCharterWorkflowTransition": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One way from a state to another (API 128). label names the outcome that takes it and may be empty; kind return is a way back.",
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "pass",
+            "return"
+          ]
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "label",
+        "kind"
+      ]
+    },
+    "ProjectAssistantCharterWorkflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A charter version's workflow (API 128): how one piece of work flows, as states and transitions. It replaces the free-text section of the charter that described the flow; every Bot of the Project hears it rendered as one line per state. Only the lead Bot proposes it (the person applies it) or a terminal Session writes it on the person's words; the console shows no editor. Exactly one start, at least one done, every state reachable from start, nothing leaves a done state.",
+      "properties": {
+        "states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterWorkflowState"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterWorkflowTransition"
+          }
+        }
+      },
+      "required": [
+        "states",
+        "transitions"
+      ]
+    },
     "ProjectAssistantCharterResponse": {
       "type": "object",
       "additionalProperties": false,
@@ -253,6 +364,10 @@
             "$ref": "#/$defs/ProjectAssistantCharterPlaybook"
           },
           "description": "The current version's playbooks with the Bots each is assigned to (API 127); absent from an older daemon."
+        },
+        "workflow": {
+          "$ref": "#/$defs/ProjectAssistantCharterWorkflow",
+          "description": "The current version's workflow (API 128); absent when it has none."
         },
         "history": {
           "type": "array",
@@ -437,6 +552,41 @@
         "id"
       ]
     },
+    "ProjectAssistantCharterWorkflowSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Replace the charter's workflow as the next version while the charter is still at expected_version (API 128), keeping its text and playbooks; a Project without a charter gets one holding only the workflow. It is the write a terminal Session makes on the person's words (clawdline charter workflow set), under the machine's authority, and is validated exactly as a lead proposal: a broken rule answers pa_invalid with a field naming the rule and, after a colon, the state id or from->to transition (for example workflow_unreachable:review or workflow_state_bot:deploy); a stale base answers pa_stale_version with field charter_version. The version is authored person.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "workflow": {
+          "$ref": "#/$defs/ProjectAssistantCharterWorkflow"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the workflow changed, for the charter history; may be empty but is always sent."
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version",
+        "workflow",
+        "reason"
+      ]
+    },
     "ProjectAssistantCharterReader": {
       "type": "object",
       "additionalProperties": false,
@@ -539,8 +689,20 @@
           "type": "integer",
           "minimum": 0
         },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "text",
+            "workflow"
+          ],
+          "description": "What the proposal replaces (API 128): the charter text, or the workflow (text is then empty). Absent from an older daemon, which has only text proposals."
+        },
         "text": {
           "type": "string"
+        },
+        "workflow": {
+          "$ref": "#/$defs/ProjectAssistantCharterWorkflow",
+          "description": "The proposed workflow, for a workflow proposal (API 128)."
         },
         "summary": {
           "type": "string"
@@ -673,6 +835,14 @@
         },
         "text": {
           "type": "string"
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "text",
+            "workflow"
+          ],
+          "description": "Which part the person wants changed (API 128); absent means text. For workflow the lead's turn carries the current workflow as JSON and the lead answers with propose_charter_workflow."
         }
       },
       "required": [

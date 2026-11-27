@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14880,
+  "englishKeys": 14890,
   "counts": {
     "negation": 3761,
-    "state": 2536,
+    "state": 2541,
     "permission": 879,
     "deletion": 359,
     "uncertainty": 585
   },
-  "unionCount": 6305,
+  "unionCount": 6310,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -3928,6 +3928,11 @@
       "capacityRow.bots.charter_reason_bytes.what",
       "capacityRow.bots.charter_request_bytes.full",
       "capacityRow.bots.charter_text_bytes.full",
+      "capacityRow.bots.charter_workflow_id_bytes.full",
+      "capacityRow.bots.charter_workflow_note_bytes.full",
+      "capacityRow.bots.charter_workflow_states.full",
+      "capacityRow.bots.charter_workflow_title_bytes.full",
+      "capacityRow.bots.charter_workflow_transitions.full",
       "capacityRow.bots.chat_gap_ms.full",
       "capacityRow.bots.chat_initial_page_rows.full",
       "capacityRow.bots.cleanup_ms.full",
@@ -8527,6 +8532,11 @@
     "capacityRow.bots.charter_reason_bytes.what",
     "capacityRow.bots.charter_request_bytes.full",
     "capacityRow.bots.charter_text_bytes.full",
+    "capacityRow.bots.charter_workflow_id_bytes.full",
+    "capacityRow.bots.charter_workflow_note_bytes.full",
+    "capacityRow.bots.charter_workflow_states.full",
+    "capacityRow.bots.charter_workflow_title_bytes.full",
+    "capacityRow.bots.charter_workflow_transitions.full",
     "capacityRow.bots.chat_gap_ms.full",
     "capacityRow.bots.chat_initial_page_rows.full",
     "capacityRow.bots.cleanup_ms.full",

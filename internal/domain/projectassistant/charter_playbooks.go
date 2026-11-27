@@ -81,10 +81,19 @@ func (v CharterVersion) DeliveryVersion(bot string) int64 {
 	return v.Version
 }
 
-// DeliveredText is the charter text bot hears: the charter text followed by
-// the playbooks assigned to it, after the rule that orders them.
-func (v CharterVersion) DeliveredText(bot string) string {
-	return v.Text + renderPlaybooks(v.PlaybooksFor(bot))
+// DeliveredText is the charter text bot hears: the charter text, then the
+// workflow rendered with Bot ids, then the playbooks assigned to it after
+// the rule that orders them.
+func (v CharterVersion) DeliveredText(bot string) string { return v.DeliveredTextNamed(bot, nil) }
+
+// DeliveredTextNamed is DeliveredText with the workflow's Bots shown by the
+// display names name gives at render time.
+func (v CharterVersion) DeliveredTextNamed(bot string, name func(string) string) string {
+	text := v.Text
+	if flow := RenderCharterWorkflow(v.Workflow, name); flow != "" {
+		text += "\n\n" + flow
+	}
+	return text + renderPlaybooks(v.PlaybooksFor(bot))
 }
 
 const playbookRule = "The playbooks below belong to this charter and are assigned to you. Order of precedence: the charter, then these playbooks, then your own instructions, then your memory. 以下 playbook 屬於這份章程並指派給你。優先順序：章程，其次是這些 playbook，再來是你自己的指示，最後是記憶。"
@@ -106,12 +115,13 @@ func xmlAttr(s string) string { return strings.ReplaceAll(xmlText(s), `"`, "&quo
 // NextCharterDeliveries sets next's TextVersion and Deliveries from the
 // version before it. prior is the newest version row (a removal included,
 // or the zero version when there is none). A changed text, or a charter
-// after none, moves every Bot's delivery to next. Otherwise a Bot moves only
+// after none, or a changed workflow (every Bot follows it), moves every
+// Bot's delivery to next. Otherwise a Bot moves only
 // when the playbooks it hears differ, so assigning, editing or unassigning a
 // playbook re-delivers to the Bots it concerns and to nobody else.
 func NextCharterDeliveries(prior CharterVersion, next *CharterVersion) {
 	next.Deliveries = map[string]int64{}
-	if prior.Version <= 0 || prior.Author == CharterByRemoval || next.Author == CharterByRemoval || prior.Text != next.Text {
+	if prior.Version <= 0 || prior.Author == CharterByRemoval || next.Author == CharterByRemoval || prior.Text != next.Text || !SameWorkflow(prior.Workflow, next.Workflow) {
 		next.TextVersion = next.Version
 		return
 	}

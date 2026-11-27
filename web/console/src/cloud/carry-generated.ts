@@ -221,6 +221,7 @@ export const CARRIED = {
   "project-assistants.charter-remove": "captured Bot source POST /v1/project-assistant-charters/remove",
   "project-assistants.charter-restore": "captured Bot source POST /v1/project-assistant-charters/restore",
   "project-assistants.charter-save": "captured Bot source PUT /v1/project-assistant-charters/charter",
+  "project-assistants.charter-workflow-save": "captured Bot source PUT /v1/project-assistant-charters/workflow",
   "project-assistants.charters": "captured Bot source GET /v1/project-assistant-charters",
   "project-assistants.configuration": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",
   "project-assistants.configuration-profile": "captured Bot source GET /v1/project-assistants/{bot_id}/configuration",

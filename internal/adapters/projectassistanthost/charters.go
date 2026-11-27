@@ -2,6 +2,7 @@ package projectassistanthost
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -41,7 +42,33 @@ func (c hostCharters) DeliveredCharter(ctx context.Context, bot pa.Bot) (int64, 
 			reader = owner.BotID
 		}
 	}
-	return v.DeliveryVersion(reader), v.DeliveredText(reader), nil
+	// The workflow shows each Bot by the display name it has now.
+	var names map[string]string
+	if v.Workflow != nil {
+		bots, err := c.store.CharterBots(ctx, bot.Project.MachineID)
+		if err != nil {
+			return 0, "", err
+		}
+		names = map[string]string{}
+		for _, b := range bots {
+			names[b.BotID] = b.Name
+		}
+	}
+	return v.DeliveryVersion(reader), v.DeliveredTextNamed(reader, func(id string) string { return names[id] }), nil
+}
+
+// CurrentCharterWorkflow is a Project's current workflow as JSON for a lead
+// proposing a change to it; "null" when it has none.
+func (c hostCharters) CurrentCharterWorkflow(ctx context.Context, project pa.ProjectScope) (int64, string, error) {
+	v, err := c.store.Charter(ctx, project.MachineID, project.ProjectID)
+	if err != nil {
+		return 0, "", err
+	}
+	if v.Workflow == nil {
+		return v.Version, "null", nil
+	}
+	b, err := json.Marshal(v.Workflow)
+	return v.Version, string(b), err
 }
 
 func (c hostCharters) CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error {
@@ -168,5 +195,33 @@ func (s *toolScope) bindCharterTool(tools *NativeWork) {
 		}
 		return h.store.ProposeCharter(ctx, q.Bot.Key.MachineID, pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion,
 			Text: p.NewText, Summary: p.Summary, BotID: q.Bot.Key.BotID, TurnID: turnID, CreatedAt: h.o.Clock()})
+	}
+	tools.proposeWorkflow = func(ctx context.Context, p app.CharterWorkflowProposal) (pa.CharterProposal, error) {
+		ctx, done, err := bound(ctx)
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		stop := context.AfterFunc(life.sealed, done)
+		defer func() { stop(); done() }()
+		if err = lead(ctx); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		if err = pa.ValidateCharterProject(p.Project); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		selection := pa.ProjectSelection{MachineID: q.Bot.Key.MachineID, ProjectID: p.Project}
+		resolution, err := h.o.Projects.Resolve(ctx, selection)
+		if err == nil {
+			err = pa.ValidateTarget(selection, resolution)
+		}
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		if err = journal(ctx, "proposeCharterWorkflow"); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		flow := p.Workflow
+		return h.store.ProposeCharter(ctx, q.Bot.Key.MachineID, pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion, Kind: pa.CharterProposalWorkflow,
+			Workflow: &flow, Summary: p.Summary, BotID: q.Bot.Key.BotID, TurnID: turnID, CreatedAt: h.o.Clock()})
 	}
 }

@@ -432,6 +432,12 @@ func machineScoped(p string) bool {
 	if p == "/v1/ops" || strings.HasPrefix(p, "/v1/ops/") {
 		return true
 	}
+	// A team charter's workflow: a terminal Session reads and writes it with
+	// `clawdline charter workflow` when the person asks it to; the handler
+	// takes this machine's own token on this path alone (charter_workflow.go).
+	if p == "/v1/project-assistant-charters/workflow" {
+		return true
+	}
 	switch p {
 	case "/v1/doctor", "/v1/board", "/v1/next/coordinator", "/v1/places":
 		return true

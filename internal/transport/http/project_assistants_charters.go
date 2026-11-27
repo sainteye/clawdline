@@ -24,6 +24,12 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer any
 		err    error
 	)
+	// This machine's own token opens the workflow path alone; the gate lets
+	// it through for that path, and nothing else here is a Session's.
+	if machineAuthed(r) && r.URL.Path != chartersPath+"/workflow" {
+		paWriteHTTPFailure(w, paHTTPFailure(pa.ScopeDenied, "gate_proof"))
+		return
+	}
 	switch route := r.Method + " " + r.URL.Path; route {
 	case "GET " + chartersPath:
 		answer, err = s.chartersList(r)
@@ -39,6 +45,10 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer, err = s.charterPlaybookSave(w, r)
 	case "POST " + chartersPath + "/playbook-remove":
 		answer, err = s.charterPlaybookRemove(w, r)
+	case "GET " + chartersPath + "/workflow":
+		answer, err = s.charterWorkflowRead(r)
+	case "PUT " + chartersPath + "/workflow":
+		answer, err = s.charterWorkflowSave(w, r)
 	case "GET " + chartersPath + "/readers":
 		answer, err = s.charterReaders(r)
 	case "GET " + chartersPath + "/proposals":
@@ -66,7 +76,9 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 func charterLimits() contract.ProjectAssistantCharterLimits {
 	return contract.ProjectAssistantCharterLimits{TextBytes: pa.MaxCharterTextBytes, Versions: pa.MaxCharterVersions, Proposals: pa.MaxCharterProposals,
 		ReasonBytes: pa.MaxCharterReasonBytes, RequestBytes: pa.MaxCharterRequestBytes, PlaybookTextBytes: pa.MaxCharterPlaybookTextBytes, Playbooks: pa.MaxCharterPlaybooks,
-		PlaybookTitleBytes: pa.MaxCharterPlaybookTitleBytes, PlaybookBots: pa.MaxCharterPlaybookBots, DocumentBytes: pa.MaxCharterDocumentBytes}
+		PlaybookTitleBytes: pa.MaxCharterPlaybookTitleBytes, PlaybookBots: pa.MaxCharterPlaybookBots, DocumentBytes: pa.MaxCharterDocumentBytes,
+		WorkflowStates: pa.MaxCharterWorkflowStates, WorkflowTransitions: pa.MaxCharterWorkflowTransitions, WorkflowTitleBytes: pa.MaxCharterWorkflowTitleBytes,
+		WorkflowNoteBytes: pa.MaxCharterWorkflowNoteBytes, WorkflowIDBytes: pa.MaxCharterWorkflowIDBytes}
 }
 
 func charterTime(t time.Time) string { return t.UTC().Format(time.RFC3339Nano) }
@@ -76,6 +88,7 @@ func wireCharterVersion(v pa.CharterVersion, text bool) contract.ProjectAssistan
 	if text {
 		out.Text = v.Text
 		out.Playbooks = wirePlaybooks(v.Playbooks)
+		out.Workflow = wireWorkflow(v.Workflow)
 	}
 	return out
 }
@@ -172,7 +185,7 @@ func (s *Server) charterAnswer(ctx context.Context, machine, project string, sel
 		return contract.ProjectAssistantCharterResponse{}, err
 	}
 	out := contract.ProjectAssistantCharterResponse{ContractVersion: pa.ContractVersion, MachineID: machine, ProjectID: project, Version: current.Version, Text: current.Text,
-		Playbooks: wirePlaybooks(current.Playbooks), History: make([]contract.ProjectAssistantCharterVersion, 0, len(history)), PendingProposals: int64(len(proposals)), Limits: charterLimits()}
+		Playbooks: wirePlaybooks(current.Playbooks), Workflow: wireWorkflow(current.Workflow), History: make([]contract.ProjectAssistantCharterVersion, 0, len(history)), PendingProposals: int64(len(proposals)), Limits: charterLimits()}
 	for _, v := range history {
 		out.History = append(out.History, wireCharterVersion(v, false))
 	}
@@ -329,7 +342,8 @@ func (s *Server) charterProposalsAnswer(ctx context.Context, machine, project st
 	}
 	out := contract.ProjectAssistantCharterProposalsResponse{ContractVersion: pa.ContractVersion, MachineID: machine, ProjectID: project, Version: current.Version, Proposals: make([]contract.ProjectAssistantCharterProposal, 0, len(proposals))}
 	for _, p := range proposals {
-		out.Proposals = append(out.Proposals, contract.ProjectAssistantCharterProposal{ID: p.ID, BaseVersion: p.BaseVersion, Text: p.Text, Summary: p.Summary, BotID: p.BotID, TurnID: p.TurnID, CreatedAt: charterTime(p.CreatedAt), Stale: p.BaseVersion != current.Version})
+		out.Proposals = append(out.Proposals, contract.ProjectAssistantCharterProposal{ID: p.ID, BaseVersion: p.BaseVersion, Kind: string(p.Kind), Text: p.Text, Workflow: wireWorkflow(p.Workflow),
+			Summary: p.Summary, BotID: p.BotID, TurnID: p.TurnID, CreatedAt: charterTime(p.CreatedAt), Stale: p.BaseVersion != current.Version})
 	}
 	return out, nil
 }
@@ -395,6 +409,14 @@ func (s *Server) charterChangeRequest(w http.ResponseWriter, r *http.Request) (a
 	if err = pa.ValidateCharterRequest(body.Text); err != nil {
 		return nil, err
 	}
+	target := pa.CharterEditText
+	switch body.Target {
+	case "", "text":
+	case "workflow":
+		target = pa.CharterEditWorkflow
+	default:
+		return nil, paHTTPFailure(pa.Invalid, "target")
+	}
 	if _, err = s.projectAssistantMachineAuthority(r.Context(), body.MachineID, true); err != nil {
 		return nil, err
 	}
@@ -430,7 +452,7 @@ func (s *Server) charterChangeRequest(w http.ResponseWriter, r *http.Request) (a
 	}
 	fence := pa.Fence{Key: lead, Project: bot.Project, ConversationID: c.ID, BindingID: c.BindingID, Generation: c.Generation}
 	receipt, err := service.SendCharterEdit(r.Context(), pa.Command{Key: lead, Operation: pa.SendOperation, IdempotencyKey: body.IdempotencyKey}, fence, body.Text,
-		pa.CharterEdit{ProjectID: body.ProjectID, Version: current.Version})
+		pa.CharterEdit{ProjectID: body.ProjectID, Version: current.Version, Target: target})
 	if err != nil {
 		return nil, err
 	}

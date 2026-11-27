@@ -75,5 +75,13 @@ func charterBounds() []Entry {
 		{Name: "bots.charter_playbook_bots", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterPlaybookBots, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookBots"}},
 		{Name: "bots.charter_playbook_id_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterPlaybookIDBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookIDBytes"}},
 		{Name: "bots.charter_document_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterDocumentBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterDocumentBytes"}},
+		// The workflow is part of the charter document. The lead proposes it
+		// or a Session writes it on the person's words; every bound refuses
+		// and the refusal names the state or transition to fix.
+		{Name: "bots.charter_workflow_states", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterWorkflowStates, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterWorkflowStates"}},
+		{Name: "bots.charter_workflow_transitions", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterWorkflowTransitions, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterWorkflowTransitions"}},
+		{Name: "bots.charter_workflow_title_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterWorkflowTitleBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterWorkflowTitleBytes"}},
+		{Name: "bots.charter_workflow_note_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterWorkflowNoteBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterWorkflowNoteBytes"}},
+		{Name: "bots.charter_workflow_id_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterWorkflowIDBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterWorkflowIDBytes"}},
 	}
 }

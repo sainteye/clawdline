@@ -57,6 +57,8 @@ type CharterVersion struct {
 	CreatedAt time.Time         `json:"created_at"`
 	Text      string            `json:"text,omitempty"`
 	Playbooks []CharterPlaybook `json:"playbooks,omitempty"`
+	// Workflow is the version's team workflow; nil when it has none.
+	Workflow *CharterWorkflow `json:"workflow,omitempty"`
 	// TextVersion is the version at which the text last changed, and
 	// Deliveries the Bots whose playbooks changed after it, each with the
 	// version that changed them. Both are set when the version is saved, so
@@ -74,17 +76,21 @@ type CharterSummary struct {
 	Pending   int           `json:"pending_proposals"`
 }
 
-// CharterProposal is a lead Bot's suggested replacement text. Nothing changes
-// until the person applies it; applying it saves NewText as a new version.
+// CharterProposal is a lead Bot's suggested replacement: of the text (Kind
+// text, the default), or of the workflow (Kind workflow, Text empty).
+// Nothing changes until the person applies it; applying it saves a new
+// version with the proposed part and the current version's other parts.
 type CharterProposal struct {
-	ID          string    `json:"id"`
-	ProjectID   string    `json:"project_id"`
-	BaseVersion int64     `json:"base_version"`
-	Text        string    `json:"text"`
-	Summary     string    `json:"summary"`
-	BotID       string    `json:"bot_id"`
-	TurnID      string    `json:"turn_id"`
-	CreatedAt   time.Time `json:"created_at"`
+	ID          string              `json:"id"`
+	ProjectID   string              `json:"project_id"`
+	BaseVersion int64               `json:"base_version"`
+	Kind        CharterProposalKind `json:"kind"`
+	Text        string              `json:"text"`
+	Workflow    *CharterWorkflow    `json:"workflow,omitempty"`
+	Summary     string              `json:"summary"`
+	BotID       string              `json:"bot_id"`
+	TurnID      string              `json:"turn_id"`
+	CreatedAt   time.Time           `json:"created_at"`
 }
 
 // CharterEdit marks a person turn sent from a charter page to the lead Bot.
@@ -93,6 +99,8 @@ type CharterProposal struct {
 type CharterEdit struct {
 	ProjectID string `json:"project_id"`
 	Version   int64  `json:"version"`
+	// Target is empty for the charter text, or workflow.
+	Target CharterEditTarget `json:"target,omitempty"`
 }
 
 // Delivered charter text. The opening block precedes shared memory in a

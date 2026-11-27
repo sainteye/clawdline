@@ -114,6 +114,7 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.charter-remove":           genDecodeProjectAssistantsCharterRemove,
 	"project-assistants.charter-restore":          genDecodeProjectAssistantsCharterRestore,
 	"project-assistants.charter-save":             genDecodeProjectAssistantsCharterSave,
+	"project-assistants.charter-workflow-save":    genDecodeProjectAssistantsCharterWorkflowSave,
 	"project-assistants.charters":                 genDecodeProjectAssistantsCharters,
 	"project-assistants.configuration":            genDecodeProjectAssistantsConfiguration,
 	"project-assistants.configuration-profile":    genDecodeProjectAssistantsConfigurationProfile,
@@ -2661,6 +2662,7 @@ func genDecodeProjectAssistantsCharter(b body) (plan, LocalRequest, bool) {
 func genDecodeProjectAssistantsCharterChangeRequest(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "idempotency_key", "machine_id", "project_id", "request", "session", "text"},
+		[]string{"type", "idempotency_key", "machine_id", "project_id", "request", "session", "target", "text"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2671,6 +2673,9 @@ func genDecodeProjectAssistantsCharterChangeRequest(b body) (plan, LocalRequest,
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("target", genRule{kind: "string", enum: []string{"text", "workflow"}}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("text", genRule{kind: "string", nonEmpty: true, maxBytes: 4096}) {
@@ -2686,7 +2691,7 @@ func genDecodeProjectAssistantsCharterChangeRequest(b body) (plan, LocalRequest,
 	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "text": genValue{from: "text"}})
+	req.Body = b.genFields(map[string]genValue{"idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "target": genValue{from: "target"}, "text": genValue{from: "text"}})
 	return p, req, true
 }
 
@@ -3047,6 +3052,45 @@ func genDecodeProjectAssistantsCharterSave(b body) (plan, LocalRequest, bool) {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
 	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "reason": genValue{from: "reason"}, "text": genValue{from: "text"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsCharterWorkflowSave is the `project-assistants.charter-workflow-save` row's decode.
+func genDecodeProjectAssistantsCharterWorkflowSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_version", "idempotency_key", "machine_id", "project_id", "reason", "request", "session", "workflow"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("reason", genRule{kind: "string", maxBytes: 500}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("workflow", genRule{kind: "object", maxBytes: 262144, properties: map[string]genRule{"states": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"bot_id": genRule{kind: "string", maxBytes: 200}, "id": genRule{kind: "string", nonEmpty: true, maxBytes: 40}, "kind": genRule{kind: "string", enum: []string{"start", "step", "done"}}, "note": genRule{kind: "string", maxBytes: 300}, "title": genRule{kind: "string", nonEmpty: true, maxBytes: 80}}, required: []string{"id", "title", "bot_id", "kind", "note"}, closed: true}, maxItems: genCount(40)}, "transitions": genRule{kind: "list", items: &genRule{kind: "object", properties: map[string]genRule{"from": genRule{kind: "string", nonEmpty: true, maxBytes: 40}, "kind": genRule{kind: "string", enum: []string{"normal", "pass", "return"}}, "label": genRule{kind: "string", maxBytes: 80}, "to": genRule{kind: "string", nonEmpty: true, maxBytes: 40}}, required: []string{"from", "to", "label", "kind"}, closed: true}, maxItems: genCount(80)}}, required: []string{"states", "transitions"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-charters/workflow"
+	req := LocalRequest{Method: "PUT", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "reason": genValue{from: "reason"}, "workflow": genValue{from: "workflow"}})
 	return p, req, true
 }
 

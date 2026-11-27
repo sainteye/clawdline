@@ -83,6 +83,8 @@ export const PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL = 123
 export const PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL = 124
 /** Charter playbooks: PUT /playbook, POST /playbook-remove and the readers' delivery versions (API 127). */
 export const PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL = 127
+/** Charter workflows, workflow proposals, the change-request target and PUT …/workflow (API 128). */
+export const PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL = 128
 const base = "/v1/project-assistants"
 export const PROJECT_ASSISTANTS_FIRST_RUN_API_LEVEL = 109
 const PROJECT_ASSISTANTS_TEAM_CARDS_API_LEVEL = 110
@@ -672,11 +674,13 @@ export class ProjectAssistantSourceClient implements SourceClient {
   canRemoveCharter(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL);return true}catch{return false}}
   canCharterConflicts(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL);return true}catch{return false}}
   canCharterPlaybooks(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL);return true}catch{return false}}
+  canCharterWorkflow(){try{this.check(new AbortController().signal,false,true,PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL);return true}catch{return false}}
   charterRequest<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,s:AbortSignal){
     if(!path.startsWith(chartersPath))throw failure("pa_invalid")
     const route=new URL(path,"http://source.invalid").pathname
     const level=route===chartersPath+"/remove"?PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL:route===chartersPath+"/conflicts"||route===chartersPath+"/conflict-resolve"?PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL
-      :route===chartersPath+"/playbook"||route===chartersPath+"/playbook-remove"?PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL
+      :route===chartersPath+"/playbook"||route===chartersPath+"/playbook-remove"?PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL
+      :route===chartersPath+"/workflow"||route===chartersPath+"/change-request"&&body!==undefined&&"target" in body?PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL
     return this.request<T>(path,s,body,method,true,level)
   }
   towerFloors(s:AbortSignal){return this.request<W.ProjectAssistantTowerFloorsResponse>("/v1/project-assistant-floors"+query({machine_id:this.machineID}),s,undefined,"GET",true,PROJECT_ASSISTANTS_TOWER_FLOORS_API_LEVEL)}
@@ -733,9 +737,10 @@ export class ProjectAssistantSourceClient implements SourceClient {
 }
 
 const chartersPath = "/v1/project-assistant-charters"
-// The team charter's fourteen Cloud words (docs/project-assistants-cloud-wire.md), each
-// with its exact local query or body. Over Cloud a save always names its reason.
-const charterRoutes: Record<string,{method:string;word:string;query?:string[];body?:string[]}> = {
+// The team charter's fifteen Cloud words (docs/project-assistants-cloud-wire.md), each
+// with its exact local query or body. Over Cloud a save always names its reason;
+// optional body fields ride a second shape of the same word.
+const charterRoutes: Record<string,{method:string;word:string;query?:string[];body?:string[];optional?:string[]}> = {
   "":{method:"GET",word:"project-assistants.charters",query:["machine_id"]},
   "/charter GET":{method:"GET",word:"project-assistants.charter",query:["machine_id","project_id","version"]},
   "/charter PUT":{method:"PUT",word:"project-assistants.charter-save",body:["expected_version","idempotency_key","machine_id","project_id","reason","text"]},
@@ -745,11 +750,12 @@ const charterRoutes: Record<string,{method:string;word:string;query?:string[];bo
   "/remove":{method:"POST",word:"project-assistants.charter-remove",body:["expected_version","idempotency_key","machine_id","project_id"]},
   "/proposal-apply":{method:"POST",word:"project-assistants.charter-proposal-apply",body:["expected_version","idempotency_key","machine_id","project_id","proposal_id"]},
   "/proposal-dismiss":{method:"POST",word:"project-assistants.charter-proposal-dismiss",body:["idempotency_key","machine_id","project_id","proposal_id"]},
-  "/change-request":{method:"POST",word:"project-assistants.charter-change-request",body:["idempotency_key","machine_id","project_id","text"]},
+  "/change-request":{method:"POST",word:"project-assistants.charter-change-request",body:["idempotency_key","machine_id","project_id","text"],optional:["target"]},
   "/conflicts":{method:"GET",word:"project-assistants.charter-conflicts",query:["machine_id","project_id"]},
   "/conflict-resolve":{method:"POST",word:"project-assistants.charter-conflict-resolve",body:["action","conflict_id","idempotency_key","machine_id","project_id"]},
   "/playbook":{method:"PUT",word:"project-assistants.charter-playbook-save",body:["expected_version","idempotency_key","machine_id","playbook","project_id","reason"]},
   "/playbook-remove":{method:"POST",word:"project-assistants.charter-playbook-remove",body:["expected_version","id","idempotency_key","machine_id","project_id"]},
+  "/workflow":{method:"PUT",word:"project-assistants.charter-workflow-save",body:["expected_version","idempotency_key","machine_id","project_id","reason","workflow"]},
 }
 export function charterRelayRequest(url: URL, method: string, init?: RequestInit) {
   const rest = url.pathname.slice(chartersPath.length)
@@ -770,8 +776,10 @@ export function charterRelayRequest(url: URL, method: string, init?: RequestInit
   if (url.search || typeof init?.body !== "string") throw failure("pa_invalid")
   let fields
   try { fields = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
-  const names = route.body!
-  if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length || names.some(name => !Object.hasOwn(fields, name)) ||
+  const names = route.body!, optional = (route.optional ?? []).filter(name => fields && typeof fields === "object" && Object.hasOwn(fields, name))
+  if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length + optional.length || names.some(name => !Object.hasOwn(fields, name)) ||
+    "target" in fields && fields.target !== "text" && fields.target !== "workflow" ||
+    "workflow" in fields && (!fields.workflow || typeof fields.workflow !== "object" || Array.isArray(fields.workflow) || !Array.isArray(fields.workflow.states) || !Array.isArray(fields.workflow.transitions)) ||
     typeof fields.machine_id !== "string" || !fields.machine_id || typeof fields.project_id !== "string" || !fields.project_id ||
     typeof fields.idempotency_key !== "string" || !fields.idempotency_key || new Headers(init.headers).get("Idempotency-Key") !== fields.idempotency_key ||
     "expected_version" in fields && !whole(fields.expected_version, 0) || "version" in fields && !whole(fields.version, 1) ||
