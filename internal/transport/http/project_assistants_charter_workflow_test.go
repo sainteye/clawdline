@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"encoding/json"
 	"maps"
 	"net/http/httptest"
@@ -133,5 +134,69 @@ func TestCharterWorkflowCloudWords(t *testing.T) {
 	}
 	if a := word("owner", "charter-change-request", "cloud-cr", map[string]any{"idempotency_key": "cloud-cr", "text": "Change it.", "target": "sideways"}); a.Status < 400 {
 		t.Fatalf("an unknown target is malformed on the wire: %d %s", a.Status, a.Payload)
+	}
+}
+
+func sessionCharterRequest(t *testing.T, f *paServerFixture, method, path string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	var raw []byte
+	if body != nil {
+		var err error
+		if raw, err = json.Marshal(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	r := httptest.NewRequest(method, path, bytes.NewReader(raw))
+	r.Host = "127.0.0.1"
+	r.Header.Set("X-Clawdline-Orchestrator", f.machine)
+	if body != nil {
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set("Idempotency-Key", body["idempotency_key"].(string))
+	}
+	w := httptest.NewRecorder()
+	f.h.ServeHTTP(w, r)
+	return w
+}
+
+// A terminal Session, holding this machine's own token, reads and writes the
+// workflow on the person's words; the same token opens no other charter
+// route, and names no other machine.
+func TestASessionWritesTheWorkflowWithThisMachinesToken(t *testing.T) {
+	c := newConflictFixture(t, "Synthetic fixture")
+	project := c.bot.Project.ProjectID
+	read := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, sessionCharterRequest(t, c.paServerFixture, "GET", chartersPath+"/workflow?project_id="+project, nil))
+	if read.MachineID != c.key.MachineID || read.Version != c.version || read.Workflow != nil {
+		t.Fatalf("a Session reads the charter without naming the machine: %+v", read)
+	}
+	saved := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, sessionCharterRequest(t, c.paServerFixture, "PUT", chartersPath+"/workflow",
+		map[string]any{"machine_id": read.MachineID, "project_id": project, "idempotency_key": "session-wf", "expected_version": read.Version, "workflow": httpWorkflow(c.key.BotID), "reason": "The person asked in a Session."}))
+	if saved.Version != c.version+1 || saved.Workflow == nil || saved.History[0].Author != contract.ProjectAssistantCharterAuthor(pa.CharterByPerson) {
+		t.Fatalf("a Session's workflow write is the person's version: %+v", saved)
+	}
+	again := paCharterAnswer[contract.ProjectAssistantCharterResponse](t, sessionCharterRequest(t, c.paServerFixture, "PUT", chartersPath+"/workflow",
+		map[string]any{"machine_id": read.MachineID, "project_id": project, "idempotency_key": "session-wf", "expected_version": read.Version, "workflow": httpWorkflow(c.key.BotID), "reason": "The person asked in a Session."}))
+	if again.Version != saved.Version {
+		t.Fatalf("a retried write answers its own version: %d", again.Version)
+	}
+	broken := httpWorkflow(c.key.BotID)
+	broken["transitions"] = []map[string]any{}
+	refused := paAssertHTTPFailure(t, sessionCharterRequest(t, c.paServerFixture, "PUT", chartersPath+"/workflow",
+		map[string]any{"machine_id": "", "project_id": project, "idempotency_key": "session-broken", "expected_version": saved.Version, "workflow": broken, "reason": ""}), 400, pa.Invalid)
+	if refused.Field != "workflow_unreachable:review" {
+		t.Fatalf("the Session is told which state is wrong: %+v", refused)
+	}
+	other := paAssertHTTPFailure(t, sessionCharterRequest(t, c.paServerFixture, "PUT", chartersPath+"/workflow",
+		map[string]any{"machine_id": "another-machine", "project_id": project, "idempotency_key": "session-other", "expected_version": saved.Version, "workflow": httpWorkflow(c.key.BotID), "reason": ""}), 403, pa.ScopeDenied)
+	if other.Field != "machine_id" {
+		t.Fatalf("another machine: %+v", other)
+	}
+	for _, route := range []struct{ method, path string }{{"GET", chartersPath + "/charter?machine_id=" + c.key.MachineID + "&project_id=" + project}, {"GET", chartersPath + "?machine_id=" + c.key.MachineID}} {
+		if w := sessionCharterRequest(t, c.paServerFixture, route.method, route.path, nil); w.Code < 400 {
+			t.Fatalf("this machine's token opened %s %s: %d %s", route.method, route.path, w.Code, w.Body)
+		}
+	}
+	if w := sessionCharterRequest(t, c.paServerFixture, "PUT", chartersPath+"/charter",
+		map[string]any{"machine_id": c.key.MachineID, "project_id": project, "idempotency_key": "session-text", "expected_version": saved.Version, "text": "Changed.", "reason": ""}); w.Code < 400 {
+		t.Fatalf("this machine's token saved the charter text: %d %s", w.Code, w.Body)
 	}
 }

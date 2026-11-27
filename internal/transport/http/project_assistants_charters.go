@@ -24,6 +24,12 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer any
 		err    error
 	)
+	// This machine's own token opens the workflow path alone; the gate lets
+	// it through for that path, and nothing else here is a Session's.
+	if machineAuthed(r) && r.URL.Path != chartersPath+"/workflow" {
+		paWriteHTTPFailure(w, paHTTPFailure(pa.ScopeDenied, "gate_proof"))
+		return
+	}
 	switch route := r.Method + " " + r.URL.Path; route {
 	case "GET " + chartersPath:
 		answer, err = s.chartersList(r)
@@ -39,6 +45,8 @@ func (s *Server) projectAssistantChartersRoute(w http.ResponseWriter, r *http.Re
 		answer, err = s.charterPlaybookSave(w, r)
 	case "POST " + chartersPath + "/playbook-remove":
 		answer, err = s.charterPlaybookRemove(w, r)
+	case "GET " + chartersPath + "/workflow":
+		answer, err = s.charterWorkflowRead(r)
 	case "PUT " + chartersPath + "/workflow":
 		answer, err = s.charterWorkflowSave(w, r)
 	case "GET " + chartersPath + "/readers":
