@@ -269,7 +269,7 @@ func (r *Engine) readAttemptEnvironmentLocked(ctx context.Context, a *runtimeAct
 	if r.o.Charter != nil {
 		// Read before anything is sent: a turn never runs on a charter it
 		// could not read.
-		if s.charterVersion, s.charterText, err = r.o.Charter.CurrentCharter(ctx, bot.Project); err != nil {
+		if s.charterVersion, s.charterText, err = r.o.Charter.DeliveredCharter(ctx, bot); err != nil {
 			return err
 		}
 	}

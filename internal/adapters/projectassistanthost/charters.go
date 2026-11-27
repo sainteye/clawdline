@@ -11,8 +11,9 @@ import (
 )
 
 // hostCharters delivers each Project's team charter from the Host's own
-// store: every prompt reads the current version, and every sent prompt
-// records which version it carried for the charter's readers.
+// store: every prompt reads the current version with the Bot's own
+// playbooks, and every sent prompt records which delivery version it carried
+// for the charter's readers.
 type hostCharters struct {
 	store *featurestore.Store
 	clock func() time.Time
@@ -21,6 +22,26 @@ type hostCharters struct {
 func (c hostCharters) CurrentCharter(ctx context.Context, project pa.ProjectScope) (int64, string, error) {
 	v, err := c.store.Charter(ctx, project.MachineID, project.ProjectID)
 	return v.Version, v.Text, err
+}
+
+// DeliveredCharter is the charter one Bot hears. A Bot's private background
+// helper works for its owner and hears the owner's playbooks.
+func (c hostCharters) DeliveredCharter(ctx context.Context, bot pa.Bot) (int64, string, error) {
+	v, err := c.store.Charter(ctx, bot.Project.MachineID, bot.Project.ProjectID)
+	if err != nil || v.Version <= 0 {
+		return 0, "", err
+	}
+	reader := bot.Key.BotID
+	if bot.Hidden {
+		owner, err := c.store.BackgroundOwner(ctx, bot.Key)
+		if err != nil {
+			return 0, "", err
+		}
+		if owner.BotID != "" {
+			reader = owner.BotID
+		}
+	}
+	return v.DeliveryVersion(reader), v.DeliveredText(reader), nil
 }
 
 func (c hostCharters) CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error {
