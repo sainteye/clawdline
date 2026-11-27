@@ -13,6 +13,10 @@
 // The Bots' conflict reports: the roster row and a reminder count them, the
 // side panel (a full-screen sheet on a phone) quotes both sentences, and each
 // of 以章程為準, 改章程 and 先不管 does what it says.
+// Playbooks (API 127, "?playbooks"), at 1280x800 and 390x844: the cards say who
+// each is for and whether they read it; the detail reminds who has not; edit,
+// reassign (a bottom sheet on a phone), delete, create, history and a playbook's
+// conflict report each do what they say; an older machine shows no section.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> CHARTER_ARTIFACTS=<dir> node charter.e2e.mjs
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
@@ -386,11 +390,169 @@ async function settings(page,name){
   if(name!=="390")check(`${name} roster now shows both charters`,()=>assert.equal(rows,2))
 }
 
+// The charter's playbooks on a machine at API 127 ("?playbooks"); an older machine shows no section.
+const playbookBodies=page=>fixture(page,()=>window.charterFixture.studio.log.filter(r=>r.path.endsWith("/playbook")||r.path.endsWith("/playbook-remove")).map(r=>r.body))
+async function playbooks(page,name,narrow){
+  await open(page)
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  const older=await page.locator(".pa-charter-playbooks").count()
+  check(`${name} an older machine shows no playbook section`,()=>assert.equal(older,0))
+  await page.goto(origin+"/?playbooks")
+  await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
+  await page.evaluate(()=>{window.charterFixture.studio.markRead("project","bot-3");window.botsFixture.open()})
+  await page.locator(".pa-charter-row").click()
+  const section=page.locator(".pa-charter-playbooks")
+  await section.locator(".pa-charter-playbook-card").first().waitFor()
+  const head=await section.locator(".pa-charter-playbooks-head").innerText()
+  check(`${name} section heading, hint and add button`,()=>{assert.match(head,/Playbook[\s\S]*每份只交給指派的 Bot；章程優先於 Playbook[\s\S]*＋ 新增 Playbook/)})
+  const cards=section.locator(".pa-charter-playbook-card")
+  const texts=await cards.allInnerTexts()
+  check(`${name} three cards with name, first sentence, Bots and state`,()=>{
+    assert.equal(texts.length,3)
+    assert.match(texts[0],/品質驗收[\s\S]*每次交付前，先跑完和修改相關的測試。[\s\S]*Code review[\s\S]*Interface design[\s\S]*○ 還沒讀到這次修改/)
+    assert.match(texts[1],/發版步驟[\s\S]*標記 commit。[\s\S]*Documentation[\s\S]*● 已讀到最新/)
+    assert.match(texts[2],/文件寫法[\s\S]*先寫結論，再寫原因。[\s\S]*沒有指派/)})
+  const avatars=await cards.nth(0).locator(".pa-charter-playbook-bot svg").count()
+  check(`${name} cards use the Bots' line avatars`,()=>assert.equal(avatars,2))
+  const borders=await cards.evaluateAll(list=>list.map(c=>getComputedStyle(c).borderTopColor))
+  const unreadText=await cards.nth(0).locator(".pa-charter-playbook-state").evaluate(n=>getComputedStyle(n).color)
+  check(`${name} an unread card has the amber border and text`,()=>{assert.equal(borders[0],"rgb(107, 90, 51)");assert.notEqual(borders[1],borders[0]);assert.equal(unreadText,"rgb(227, 149, 103)")})
+  const tops=await cards.evaluateAll(list=>list.map(c=>Math.round(c.getBoundingClientRect().top)))
+  if(narrow)check(`${name} one column on a phone`,()=>assert.ok(tops[1]>tops[0]&&tops[2]>tops[1],JSON.stringify(tops)))
+  else check(`${name} two columns on a desktop`,()=>assert.ok(tops[0]===tops[1]&&tops[2]>tops[0],JSON.stringify(tops)))
+  const status=await page.locator(".pa-charter-status p").innerText()
+  check(`${name} header status counts each Bot at its own delivery version`,()=>assert.equal(status,"4 位 Bot 照第 6 版；Code review、Interface design 下一則訊息才換新版"))
+  const rosterLine=await page.locator(".pa-charter-row").innerText()
+  check(`${name} roster line counts playbook readers`,()=>assert.match(rosterLine,/第 6 版 · 4\/6 位 Bot 已換新版/))
+  await section.scrollIntoViewIfNeeded()
+  await shot(page,`playbooks-list-${name}`)
+  const small=await smallTargets(page,".pa-charter-playbooks")
+  check(`${name} playbook section touch targets`,()=>assert.deepEqual(small,[]))
+  // The detail: the reminder names who has not read it and why.
+  await fixture(page,()=>window.charterFixture.studio.setRunning("project","bot-2",true))
+  await cards.nth(0).click()
+  const panel=page.locator(".pa-charter-playbook")
+  await panel.getByText("交給",{exact:true}).waitFor()
+  await panel.getByText("它正在工作").waitFor()
+  const reminder=await panel.locator(".pa-charter-playbook-reminder").innerText()
+  check(`${name} unread reminder`,()=>{assert.match(reminder,/Interface design 還沒讀到這次修改；它正在工作，下一輪開始時會讀到/);assert.match(reminder,/Code review 還沒讀到這次修改；下一則訊息開始時會讀到/)})
+  const rows=await panel.locator(".pa-charter-playbook-reader").allInnerTexts()
+  check(`${name} 交給 rows show the version read and working or idle`,()=>{assert.equal(rows.length,2);assert.match(rows[0],/Code review[\s\S]*○ 讀到第 3 版[\s\S]*閒置/);assert.match(rows[1],/Interface design[\s\S]*○ 讀到第 3 版[\s\S]*工作中/)})
+  const listed=await panel.locator(".pa-charter-playbook-text li").count()
+  check(`${name} content rendered as Markdown`,()=>assert.equal(listed,2))
+  const box=await panel.boundingBox(),viewport=page.viewportSize()
+  if(narrow)check(`${name} the playbook is a full-screen page`,()=>assert.ok(box&&Math.abs(box.width-viewport.width)<1&&box.x<1,JSON.stringify(box)))
+  else check(`${name} the playbook panel is about 380px at the right`,()=>assert.ok(box&&Math.abs(box.width-380)<=24&&Math.abs(box.x+box.width-viewport.width)<1,JSON.stringify(box)))
+  await shot(page,`playbook-detail-${name}`)
+  const panelSmall=await smallTargets(page,".pa-charter-playbook")
+  check(`${name} playbook panel touch targets`,()=>assert.deepEqual(panelSmall,[]))
+  const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}))
+  check(`${name} no sideways scroll with the playbook open`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))
+  // Reassign: Documentation gets it, Code review no longer does.
+  await panel.getByRole("button",{name:"更改交給誰"}).click()
+  const sheet=panel.locator(".pa-charter-assign")
+  await sheet.waitFor()
+  await sheet.getByRole("checkbox",{name:"Documentation"}).check()
+  await sheet.getByRole("checkbox",{name:"Code review"}).uncheck()
+  const after=await sheet.locator(".pa-charter-after").innerText()
+  check(`${name} reassign says who reads it next and who is told`,()=>{assert.match(after,/下一輪會讀到：Documentation/);assert.match(after,/下一輪會被告知不再適用：Code review/)})
+  const offered=await sheet.getByRole("checkbox").count()
+  check(`${name} every visible Bot is offered`,()=>assert.equal(offered,6))
+  const sheetBox=await sheet.boundingBox()
+  if(narrow)check(`${name} reassign is a bottom sheet`,()=>assert.ok(sheetBox&&Math.abs(sheetBox.y+sheetBox.height-viewport.height)<1&&Math.abs(sheetBox.width-viewport.width)<1,JSON.stringify(sheetBox)))
+  else check(`${name} reassign expands inside the panel`,()=>assert.ok(sheetBox&&sheetBox.x>=box.x&&sheetBox.x+sheetBox.width<=box.x+box.width,JSON.stringify(sheetBox)))
+  await shot(page,`playbook-assign-${name}`)
+  await sheet.getByRole("button",{name:"儲存為第 7 版"}).click()
+  await panel.getByText("已存成第 7 版。").waitFor()
+  const assigned=await fixture(page,()=>window.charterFixture.studio.version("project"))
+  const bodies=await playbookBodies(page)
+  check(`${name} reassignment saved with its reason`,()=>{assert.equal(assigned,7);assert.deepEqual(bodies.at(-1).playbook.bot_ids,["bot-2","bot-3"]);assert.equal(bodies.at(-1).reason,"更改 Playbook『品質驗收』交給誰")})
+  // Edit: name and text, and who reads it after saving.
+  await panel.getByRole("button",{name:"編輯 Playbook"}).click()
+  const editor=page.locator(".pa-charter-playbook-editor")
+  await editor.waitFor()
+  const title=await editor.getByRole("textbox",{name:"Playbook 名稱"}).inputValue()
+  check(`${name} editor holds the name`,()=>assert.equal(title,"品質驗收"))
+  await editor.getByRole("textbox",{name:"Playbook 內容"}).fill("每次交付前，先跑完相關測試。\n\n- 列出驗證過的項目\n- 畫面修改附上截圖\n- 寫下沒驗到的部分")
+  const editAfter=await editor.locator(".pa-charter-after").innerText()
+  check(`${name} after-save names only the assigned Bots`,()=>{assert.match(editAfter,/下一則訊息就讀新版：Documentation/);assert.match(editAfter,/正在做事：Interface design/);assert.doesNotMatch(editAfter,/Code review/)})
+  const editBox=await editor.boundingBox()
+  if(narrow){
+    check(`${name} phone edit is full screen`,()=>assert.ok(editBox&&editBox.x<=0.5&&editBox.y<=0.5&&editBox.width>=389,JSON.stringify(editBox)))
+    const bar=await editor.locator(".pa-charter-editor-bar").innerText()
+    check(`${name} phone edit top bar`,()=>assert.match(bar,/取消[\s\S]*編輯 Playbook[\s\S]*儲存/))
+  }
+  await shot(page,`playbook-edit-${name}`)
+  if(narrow)await editor.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
+  else await editor.getByRole("button",{name:"儲存為第 8 版"}).click()
+  await panel.getByText("已存成第 8 版。").waitFor()
+  const edited=await playbookBodies(page)
+  check(`${name} edit saved with its reason`,()=>{assert.equal(edited.at(-1).reason,"編輯 Playbook『品質驗收』");assert.match(edited.at(-1).playbook.text,/寫下沒驗到的部分/)})
+  // Delete: quiet at the bottom, confirmed once.
+  await panel.getByRole("button",{name:"刪除這份 Playbook"}).click()
+  const confirm=panel.getByRole("group",{name:"刪除這份 Playbook"})
+  await confirm.waitFor()
+  const words=await confirm.innerText()
+  check(`${name} delete confirm says who is told`,()=>{assert.match(words,/要刪除 Playbook「品質驗收」嗎？/);assert.match(words,/Interface design、Documentation 下一則訊息會被告知這份 Playbook 不再適用/)})
+  await confirm.scrollIntoViewIfNeeded()
+  await shot(page,`playbook-delete-${name}`)
+  await confirm.getByRole("button",{name:"刪除",exact:true}).click()
+  await page.getByText("已刪除 Playbook「品質驗收」，存成第 9 版。").waitFor()
+  const left=await cards.count(),hidden=await panel.isHidden()
+  check(`${name} deleted: two cards left and the panel closed`,()=>{assert.equal(left,2);assert.ok(hidden)})
+  // New: name, text and who gets it in one go.
+  await section.getByRole("button",{name:"＋ 新增 Playbook"}).click()
+  const fresh=page.locator(".pa-charter-playbook-editor")
+  await fresh.waitFor()
+  await fresh.getByRole("textbox",{name:"Playbook 名稱"}).fill("測試寫法")
+  await fresh.getByRole("textbox",{name:"Playbook 內容"}).fill("先寫會失敗的測試，再修。")
+  await fresh.getByRole("checkbox",{name:"Testing"}).check()
+  const freshAfter=await fresh.locator(".pa-charter-after").innerText()
+  check(`${name} new playbook after-save`,()=>assert.match(freshAfter,/下一則訊息就讀新版：Testing/))
+  await shot(page,`playbook-new-${name}`)
+  if(narrow)await fresh.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
+  else await fresh.getByRole("button",{name:"儲存為第 10 版"}).click()
+  await panel.getByRole("heading",{name:"測試寫法"}).waitFor()
+  const created=await playbookBodies(page)
+  check(`${name} new playbook saved in one write with its reason`,()=>{assert.deepEqual(created.at(-1).playbook,{title:"測試寫法",text:"先寫會失敗的測試，再修。",bot_ids:["bot-5"]});assert.equal(created.at(-1).reason,"新增 Playbook『測試寫法』")})
+  // History: the playbook writes are versions, diffed per playbook.
+  await panel.getByRole("button",{name:"關閉"}).click()
+  await page.getByRole("button",{name:"版本紀錄"}).click()
+  const history=page.locator(".pa-charter-history")
+  await history.getByText("第 10 版改了什麼").waitFor()
+  const versions=await history.locator(".pa-charter-versions button").allInnerTexts()
+  check(`${name} history lists the playbook writes with their reasons`,()=>{assert.match(versions[0],/第 10 版[\s\S]*新增 Playbook『測試寫法』/);assert.match(versions[2],/第 8 版[\s\S]*編輯 Playbook『品質驗收』/);assert.match(versions[3],/第 7 版[\s\S]*更改 Playbook『品質驗收』交給誰/)})
+  const added=await history.locator(".pa-charter-playbook-diff").allInnerTexts()
+  check(`${name} history diff of a new playbook`,()=>{assert.equal(added.length,1);assert.match(added[0],/新增 Playbook『測試寫法』[\s\S]*交給：Testing[\s\S]*先寫會失敗的測試/)})
+  await history.getByRole("button",{name:/^第 9 版/}).click()
+  await history.getByText("第 9 版改了什麼").waitFor()
+  await history.getByText("刪除 Playbook『品質驗收』").waitFor()
+  await history.getByRole("button",{name:/^第 8 版/}).click()
+  await history.getByText("第 8 版改了什麼").waitFor()
+  await history.locator(".pa-charter-playbook-diff").getByText("寫下沒驗到的部分").waitFor()
+  const restoreHint=await history.locator(".pa-charter-history-diff").innerText()
+  check(`${name} restore says playbooks come back too`,()=>assert.match(restoreHint,/還原成第 8 版[\s\S]*那一版的 Playbook 和交給誰也會一起還原/))
+  await history.locator(".pa-charter-playbook-diff").scrollIntoViewIfNeeded()
+  await shot(page,`playbook-history-${name}`)
+  await history.getByRole("button",{name:"關閉版本紀錄"}).click()
+  // A report from a playbook names the playbook.
+  // The seeded 發版步驟 is the fixture's second playbook id.
+  await page.evaluate(()=>{window.charterFixture.studio.reportConflict("project",{bot_id:"bot-3",source:"playbook",path:"pb-0000000000000002",bot_sentence:"部署不用問。",charter_sentence:"部署前先問。",section:"什麼要問你"})})
+  await page.locator(".pa-charter-conflict-banner").waitFor({timeout:15000})
+  await page.locator(".pa-charter-conflict-banner").click()
+  const report=await page.locator(".pa-charter-conflicts .pa-charter-conflict").first().innerText()
+  check(`${name} a playbook report names the playbook`,()=>assert.match(report,/章程 Playbook · 發版步驟[\s\S]*部署不用問。/))
+  await shot(page,`playbook-conflict-${name}`)
+}
+
 try{
   for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}],["1440x900",{width:1440,height:900}]]){
     const narrow=name==="390"
     // 1440x900 is the conflict panel's design size; the other screens are covered above.
-    for(const run of name==="1440x900"?[conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]){
+    // CHARTER_ONLY=<run name> runs one check, at every size it belongs to.
+    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks]
+    for(const run of runs.filter(r=>!process.env.CHARTER_ONLY||r.name===process.env.CHARTER_ONLY)){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)
       const errors=[];page.on("pageerror",e=>errors.push(e.message))
