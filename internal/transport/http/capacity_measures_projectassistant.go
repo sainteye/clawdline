@@ -246,10 +246,11 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		capacity.BotsRoutineFinishedRuns:     unobserved,
 
 		capacity.BotsInputBytes: pure, capacity.BotsInputChunkBytes: pure,
-		capacity.BotsRosterSubscribers: unobserved,
-		capacity.BotsRosterWakeups:     unobserved,
-		capacity.BotsRosterLifetime:    pure,
-		capacity.BotsRosterRecheck:     pure,
+		capacity.BotsConnectorNotifications: unobserved,
+		capacity.BotsRosterSubscribers:      unobserved,
+		capacity.BotsRosterWakeups:          unobserved,
+		capacity.BotsRosterLifetime:         pure,
+		capacity.BotsRosterRecheck:          pure,
 		capacity.BotsDispatchedStripRows: func() capacity.Reading {
 			return capacity.Unmeasured("each browser composes its dispatched-work strip; the source does not observe the rendered row count")
 		},

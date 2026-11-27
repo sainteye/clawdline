@@ -485,6 +485,11 @@
     "Note": true
   },
   {
+    "Name": "bots.connector_notifications",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.connector_processes",
     "Known": true,
     "Note": true
@@ -3277,6 +3282,11 @@
   },
   {
     "Name": "diagnostics.doctor_version_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "diagnostics.report_bytes",
     "Known": true,
     "Note": true
   },

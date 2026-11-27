@@ -41,6 +41,9 @@ func (s *Server) daemonCapacityMeasures() map[string]func() capacity.Reading {
 		"diagnostics.doctor_report_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
 		},
+		capacity.DiagnosticsReportBytes: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-request bound on a page's diagnostic report; one report and its predecessor are kept"}
+		},
 		"diagnostics.doctor_description_characters": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-machine Doctor bound; exported reports state evidence coverage"}
 		},
