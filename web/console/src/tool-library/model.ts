@@ -21,6 +21,10 @@ export function filterProjects(projects: readonly Project[], category: string, q
     [p.owner, p.repo, p.repo_url, ...Object.values(p.name), ...Object.values(p.summary), localized(p.category, locale),
       ...p.skills.flatMap(s => [s.native_name, s.path, ...Object.values(s.name), ...Object.values(s.purpose)])].join("\n").toLocaleLowerCase().includes(q)))
 }
+/** Only categories the open tab actually has; the chosen one stays so it can be left. */
+export function visibleCategories(categories: readonly Category[], projects: readonly Project[], selected: string): Category[] {
+  return categories.filter(c => c.id === selected || projects.some(p => p.category_id === c.id))
+}
 export function repositoryURL(raw: string): { owner: string; repo: string; url: string } | null {
   try {
     const u = new URL(raw.trim())

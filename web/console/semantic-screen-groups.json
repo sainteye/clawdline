@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14800,
+  "englishContentKeys": 14802,
   "riskKeys": 6263,
-  "nonRiskCount": 8537,
+  "nonRiskCount": 8539,
   "groups": [
     {
       "name": "acp / other",
@@ -3284,7 +3284,7 @@
     },
     {
       "name": "integrationSettings / other",
-      "count": 15,
+      "count": 16,
       "sources": [
         null
       ],
@@ -3293,6 +3293,7 @@
         "integrationSettings.explain",
         "integrationSettings.intro",
         "integrationSettings.loading",
+        "integrationSettings.moreAbout",
         "integrationSettings.off",
         "integrationSettings.on",
         "integrationSettings.retry",
@@ -4420,7 +4421,7 @@
     },
     {
       "name": "next / other",
-      "count": 1359,
+      "count": 1360,
       "sources": [
         "src/next-strings.ts"
       ],
@@ -5559,6 +5560,7 @@
         "next.toolLibraryScope",
         "next.toolLibrarySearch",
         "next.toolLibrarySkill",
+        "next.toolLibrarySkillCount",
         "next.toolLibrarySkills",
         "next.toolLibrarySource",
         "next.toolLibraryStart",

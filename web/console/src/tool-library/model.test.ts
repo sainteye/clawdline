@@ -1,7 +1,7 @@
 import { test } from "node:test"
 import assert from "node:assert/strict"
 // @ts-expect-error Node executes the source file directly.
-import { decodeToolDraft, encodeToolDraft, filterProjects, localized, repositoryURL, sourceLink, toolMessage, toolTarget, type Project, type ToolAttachment } from "./model.ts"
+import { decodeToolDraft, encodeToolDraft, filterProjects, localized, repositoryURL, sourceLink, toolMessage, toolTarget, visibleCategories, type Project, type ToolAttachment } from "./model.ts"
 
 test("tool attachments preserve a draft across reload and refuse another execution", () => {
   const target = toolTarget({ id: "%1", sessionId: "conversation-a", execution_generation: "generation-a" }, "machine-a")
@@ -36,4 +36,11 @@ test("source links cannot carry script schemes or credentials", () => {
  const userinfo = new URL("https://github.com/a/b"); userinfo.username = "fixture"
   for (const url of ["javascript:alert(1)","data:text/html,a",userinfo.href]) assert.equal(sourceLink(url),undefined)
   assert.equal(sourceLink("https://github.com/a/b"),"https://github.com/a/b")
+})
+
+test("the sidebar lists only categories the open tab has, keeping the chosen one", () => {
+  const cats = ["video", "docs", "security"].map(id => ({ id, name: { en: id } }))
+  const projects = [{ category_id: "docs" }, { category_id: "docs" }] as Project[]
+  assert.deepEqual(visibleCategories(cats, projects, "all").map(c => c.id), ["docs"])
+  assert.deepEqual(visibleCategories(cats, projects, "security").map(c => c.id), ["docs", "security"])
 })

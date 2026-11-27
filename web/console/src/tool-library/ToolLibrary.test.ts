@@ -24,3 +24,10 @@ test("the library opens on Recommended, which is the first tab", async () => {
   const tabs=[...html.matchAll(/role="tab" aria-selected="(true|false)"[^>]*>([^<]*)</g)].map(m=>`${m[2].trim()}:${m[1]}`)
   assert.deepEqual(tabs,["Recommended:true","My collection:false"])
 })
+
+test("the setting folds its explanation away and the repeated footer is gone", async () => {
+  const ToolLibrary=await library()
+  const html=renderToStaticMarkup(React.createElement(ToolLibrary,{row:{id:"row",sessionId:"s"} as SessionRow,onClose(){},onPrepared(){}}))
+  assert.match(html,/<details><summary>[^<]+<\/summary><p id="[^"]+-description">/)
+  assert.doesNotMatch(html,/tl-footer/)
+})

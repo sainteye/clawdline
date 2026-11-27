@@ -4,3 +4,5 @@
 .tool-suggestions-setting p { margin: 8px 0 0; color: var(--dim); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .tool-suggestions-setting button { flex-shrink: 0; }
 @media (max-width: 440px) { .tool-suggestions-row { gap: 8px; } }
+.tool-suggestions-setting.compact { padding: 10px 0; }
+.tool-suggestions-setting details summary { margin-top: 4px; color: var(--dim); font-size: 13px; cursor: pointer; }

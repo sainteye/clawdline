@@ -29,7 +29,7 @@
 .tl-dialog input:not([type="radio"]), .tl-dialog select, .tl-dialog textarea { display: block; width: 100%; min-width: 0; border: 1px solid #3b3b45; border-radius: 7px; padding: 11px 13px; background: var(--card); color: var(--ink); font-size: 16px; }
 .tl-dialog textarea { resize: vertical; min-height: 90px; line-height: 1.8; }
 .tl-search { margin-bottom: 20px; }
-.tl-caption, .tl-footer { color: var(--dim); font-size: 13px; }
+.tl-caption { color: var(--dim); font-size: 13px; }
 .tl-projects { display: grid; gap: 14px; }
 .tl-project { border: 1px solid #303038; border-radius: 9px; background: #151519; overflow: hidden; }
 .tl-project-title { display: flex; align-items: center; gap: 14px; min-width: 0; }
@@ -83,7 +83,6 @@
 .tl-empty { padding: 35px 12px; text-align: center; color: var(--dim); font-size: 14px; }
 .tl-error { padding: 15px; margin-bottom: 18px; background: #261d1b; border: 1px solid #5b3933; border-radius: 8px; font-size: 14px; }
 .tl-error > button { margin-right: 10px; }
-.tl-footer { padding: 13px 28px; border-top: 1px solid var(--line); flex-shrink: 0; font-size: 13px; }
 .tl-flow { padding: 25px 0; color: #d4aa94; font-size: 17px; line-height: 2.2 !important; }
 .tl-mobile-categories, .tl-mobile-flow { display: none; }
 .tl-attachment { padding: 12px 15px; margin-bottom: 10px; border: 1px solid #493e34; border-radius: 8px; background: #211b17; color: var(--ink); font-size: 14px; }
@@ -117,7 +116,6 @@
   .tl-detail-grid { display: block; }
   .tl-detail-grid > aside { margin-top: 20px; }
   .tl-install { grid-template-columns: 1fr; }
-  .tl-footer { padding: 12px 18px max(12px, env(safe-area-inset-bottom)); font-size: 13px; }
   .tl-detail-nav { gap: 12px; }
   .tl-detail-nav > span { font-size: 13px; }
 }

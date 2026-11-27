@@ -6,7 +6,7 @@ import { nextWord } from "../next-strings.js"
 import { mayWriteThroughCurrentTransport } from "../client.js"
 import { showModalWithoutChoice } from "../modal-focus.js"
 import { libraryConnection } from "./api.js"
-import { filterProjects, localized, repositoryURL, sourceLink, toolTarget, type Library, type Prepared, type Project, type Skill } from "./model.js"
+import { filterProjects, localized, visibleCategories, repositoryURL, sourceLink, toolTarget, type Library, type Prepared, type Project, type Skill } from "./model.js"
 import "./tool-library.css"
 import { ToolSuggestionsSetting } from "./ToolSuggestionsSetting.js"
 
@@ -117,7 +117,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
   }
   const back = () => { setProject(null); setPreparing(false); setAdding(false); setFlow(false); setError("") }
   const projects = data ? (tab === "saved" ? data.saved : [...data.catalog.projects].sort((a, b) => Number(b.recommendation_tier === "start_here") - Number(a.recommendation_tier === "start_here"))) : []
-  const shown = filterProjects(projects, category, query, currentCatalogTag())
+  const shown = filterProjects(projects, category, query, currentCatalogTag()), categories = visibleCategories(data?.catalog.categories ?? [], projects, category)
   const button = (p: Project) => <button type="button" className="tl-primary" disabled={!write || busy || !identity} onClick={() => open(p, true)}>{w("Use")}</button>
   const source = (p: Project) => <dl className="tl-facts">
     <dt>{w("Category")}</dt><dd>{name(p.category)}</dd><dt>{w("Revision")}</dt><dd><code>{p.source_commit || w("ResolveRevision")}</code></dd>
@@ -131,11 +131,11 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
     }}>+ {w("Add")}</button><button type="button" aria-label={w("Close")} onClick={onClose}>×</button></header>
     <div className="tl-layout">
       <nav className="tl-sidebar" aria-label={w("Category")}><button type="button" className={category === "all" ? "active" : ""} onClick={() => { back(); setCategory("all") }}>{w("All")} <small>{projects.length}</small></button>
-        {data?.catalog.categories.map(c => <button type="button" key={c.id} className={category === c.id ? "active" : ""} onClick={() => { back(); setCategory(c.id) }}>{name(c.name)} <small>{projects.filter(p => p.category_id === c.id).length}</small></button>)}
+        {categories.map(c => <button type="button" key={c.id} className={category === c.id ? "active" : ""} onClick={() => { back(); setCategory(c.id) }}>{name(c.name)} <small>{projects.filter(p => p.category_id === c.id).length}</small></button>)}
         <button type="button" className="tl-flow-link" onClick={() => { back(); setFlow(true) }}>{w("Flow")}</button><p>{w("Existing")}</p>
       </nav>
       <div ref={body} className="tl-main">
-        {!project && !adding && !flow && <ToolSuggestionsSetting />}
+        {!project && !adding && !flow && <ToolSuggestionsSetting compact />}
         {error && <div role="alert" className="tl-error"><p>{error}</p>{retryWrite.current && <p>{w("WriteFailed")}</p>}<button type="button" disabled={busy} onClick={() => retryWrite.current ? retryWrite.current() : load()}>{w("Retry")}</button>{retryWrite.current && <button type="button" onClick={load}>{w("Loading").replace("…", "")}</button>}</div>}
         {loading && <p role="status">{w("Loading")}</p>}
         {!write && <p className="tl-notice">{w("Readonly")}</p>}
@@ -165,14 +165,14 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
           </section> : <>
             <div className="tl-tabs" role="tablist" aria-label={w("Title")}>{(["recommended", "saved"] as const).map(id => <button type="button" key={id} role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setCategory("all"); setQuery("") }}>{w(id === "saved" ? "Saved" : "Recommended")} <small>{id === "saved" ? data?.saved.length : data?.catalog.projects.length}</small></button>)}</div>
             <input className="tl-search" type="search" aria-label={w("Search")} placeholder={w("Search")} value={query} onChange={e => setQuery(e.target.value)} />
-            <div className="tl-mobile-categories"><label>{w("Category")}<select value={category} onChange={e => setCategory(e.target.value)}><option value="all">{w("All")}</option>{data?.catalog.categories.map(c => <option key={c.id} value={c.id}>{name(c.name)}</option>)}</select></label></div>
+            <div className="tl-mobile-categories"><label>{w("Category")}<select value={category} onChange={e => setCategory(e.target.value)}><option value="all">{w("All")}</option>{categories.map(c => <option key={c.id} value={c.id}>{name(c.name)}</option>)}</select></label></div>
             {tab === "recommended" && <p className="tl-caption">{w("RecommendationNote")}</p>}
             {!loading && data && !shown.length && <p className="tl-empty">{tab === "saved" && !data.saved.length && !query && category === "all" ? w("Empty") : w("NoMatch")}</p>}
-            <div className="tl-projects">{shown.map(p => <article key={p.id} className="tl-project"><div className="tl-project-title"><ProjectIcon project={p} /><div><h3>{name(p.name)}</h3><a href={p.repo_url} target="_blank" rel="noreferrer">{p.owner}/{p.repo} ↗</a></div><span className="tl-tag">{saved(p) ? w("IsSaved") : p.recommendation_tier === "start_here" ? w("Start") : name(p.category)}</span></div><p>{name(p.summary)}</p><div className="tl-skill-tags">{p.skills.slice(0, 3).map(sk => <span key={sk.id}>{name(sk.name)}</span>)}</div><div className="tl-project-footer"><small>{name(p.category)} · {["library", "framework", "desktop_app"].includes(p.integration_kind || "") ? w(projectKind(p)) : `${p.skills.length} Skills`}</small><div><button type="button" onClick={() => open(p)}>{w("Details")}</button>{button(p)}</div></div></article>)}</div>
+            <div className="tl-projects">{shown.map(p => <article key={p.id} className="tl-project"><div className="tl-project-title"><ProjectIcon project={p} /><div><h3>{name(p.name)}</h3><a href={p.repo_url} target="_blank" rel="noreferrer">{p.owner}/{p.repo} ↗</a></div><span className="tl-tag">{tab === "recommended" && saved(p) ? w("IsSaved") : p.recommendation_tier === "start_here" ? w("Start") : name(p.category)}</span></div><p>{name(p.summary)}</p><div className="tl-skill-tags">{p.skills.slice(0, 3).map(sk => <span key={sk.id}>{name(sk.name)}</span>)}</div><div className="tl-project-footer"><small>{name(p.category)} · {["library", "framework", "desktop_app"].includes(p.integration_kind || "") ? w(projectKind(p)) : w("SkillCount").replace("{count}", String(p.skills.length))}</small><div><button type="button" onClick={() => open(p)}>{w("Details")}</button>{button(p)}</div></div></article>)}</div>
             <button type="button" className="tl-mobile-flow tl-back" onClick={() => setFlow(true)}>{w("Flow")}</button>
           </>}
       </div>
-    </div><footer className="tl-footer">{w("Scope")}</footer>
+    </div>
   </dialog>, document.body)
 }
 

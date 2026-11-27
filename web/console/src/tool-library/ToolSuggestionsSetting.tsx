@@ -9,7 +9,7 @@ const word = (key: string) => catalogWord("integrationSettings", key)
 const setting = "tool_library_suggestions_enabled"
 
 /** Both entry points write the same machine setting through a captured transport. */
-export function ToolSuggestionsSetting() {
+export function ToolSuggestionsSetting({ compact = false }: { compact?: boolean } = {}) {
   const id = useId()
   const connection = useRef(captureMachineFetch())
   const [on, setOn] = useState<boolean | null>(null)
@@ -51,15 +51,16 @@ export function ToolSuggestionsSetting() {
     } catch { if (!abort.signal.aborted) setSaid(word("saveFailed")) }
     finally { if (!abort.signal.aborted) setBusy(false) }
   }
-  return <section className="tool-suggestions-setting" aria-busy={busy}>
+  const explanation = <><p id={id + "-description"}>{word("tool_library_suggestions_enabledDescription")}</p>
+    <p>{word("tool_library_suggestions_enabledScope")}</p></>
+  return <section className={"tool-suggestions-setting" + (compact ? " compact" : "")} aria-busy={busy}>
     <div className="tool-suggestions-row">
       <strong id={id + "-title"}>{word("tool_library_suggestions_enabledTitle")}</strong>
       <Switch labelledBy={id + "-title"} describedBy={id + "-description"} on={on === true}
         disabled={busy || on === null || readOnly} stateText={word(busy ? "loading" : on === null ? "unavailable" : on ? "on" : "off")}
         onToggle={() => void toggle()} />
     </div>
-    <p id={id + "-description"}>{word("tool_library_suggestions_enabledDescription")}</p>
-    <p>{word("tool_library_suggestions_enabledScope")}</p>
+    {compact ? <details><summary>{word("moreAbout")}</summary>{explanation}</details> : explanation}
     {said && <p role="status" aria-live="polite">{said}</p>}
     {!busy && on === null && <button type="button" onClick={() => setRetry(n => n + 1)}>{word("retry")}</button>}
   </section>
