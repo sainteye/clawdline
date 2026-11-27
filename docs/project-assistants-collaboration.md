@@ -34,18 +34,29 @@ reply; its eventual normal answer is the source chat summary. Delivery does not
 assert observation or read acknowledgement.
 
 Request turns refuse chat publication, another Bot request, file/artifact
-publication and schedule mutations at the Host/Engine boundary. Request/reply
+publication and schedule mutations at the Host/Engine boundary. The one
+exception is a short note to the recipient's own person: `send_message` from a
+request turn posts into that Bot's main chat, marked as written while handling
+the request, bounded by `MaxPeerNotesPerRequest` (3) and `MaxPeerNoteBytes`
+(2000), registered as `bots.peer_notes_per_request` and `bots.peer_note_bytes`.
+The request prompt tells the Bot to use it when it cannot do part of the
+request or the person needs to act. Request/reply
 turns cannot write Bot memory as user facts. Broker dispatch remains a separate
 capability and is not implemented using a child as a teammate; since
 2026-11-24 a request turn may dispatch into the recipient's own Project
 (`docs/project-assistants-owned-mcp.md`).
 
 New turn origins are `user`, `host_notice`, `bot_request`, and `bot_reply`.
+Later features added `compact`, `lead_call` and `network_request`.
 Empty legacy origin preserves existing behavior, never deriving authority from
 text. Each structured message projection retains its own Bot's fence.
 Request/reply turns inherit hops; ordinary submissions reset them to zero.
 
 ## Format and restart boundary
+
+This section describes the original increment. The store is now at
+`SchemaVersion` 17, and the Installer accepts versions 1 through 16 plus the
+current one.
 
 Schema 3 protects origins and exchange facts from schema-2 writers. Installer
 accepts v1/v2 and upgrades the metadata and additive DDL atomically, retaining
@@ -85,7 +96,10 @@ The inspected read-only upstream HEAD was
 
 * `host/src/chat/team.rs:23-28`: global 64 outstanding requests, request 32000
   bytes and stored notice reply 4000 bytes. This increment retains the complete
-  request and therefore adds no separate request-quote truncation bound.
+  request. Follow-up requests now quote earlier rounds of the same pair,
+  newest first, bounded by `MaxCollaborationQuoteRounds` (4) and
+  `MaxCollaborationQuoteBytes` (registered as `bots.review_quote_rounds` and
+  `bots.review_quote_bytes`).
   Clawdline raised its stored reply to 32000 bytes on 2026-11-24 and marks a
   truncated reply with its original length
   ([project-assistants-owned-mcp.md](project-assistants-owned-mcp.md)).

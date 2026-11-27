@@ -102,7 +102,7 @@ The first rule of `plan.md` §1. It has two concrete consequences across platfor
 ## 3. Summary table
 
 Difficulty: **S** = half a day or less; **M** = one to three days; **L** = a week or more; **X** = a new component has to be built first.
-The "Today" column is clawdline-go on macOS (master `d40545e`).
+The "Today" column is the Go daemon on macOS on `main`. It was first filled in at `d40545e` (when the branch was `master`); rows changed since then say so, or carry their own date.
 
 ### 3.1 Terminals and sessions
 
@@ -166,9 +166,9 @@ chosen through the system share sheet.
 | Global hotkey | Carbon `RegisterEventHotKey` | ✅ `HotKey.swift` | Possible on X11; **basically impossible on Wayland** (§4.8) | `RegisterHotKey` (user32) | Wayland: the settings page switches to "set a shortcut in your desktop that points to `clawdline panel`" | M |
 | Start at login | `SMAppService` | ✅ (off by default) | `systemd --user` + `loginctl enable-linger`; or XDG autostart | `HKCU\...\Run` | No desktop and no systemd: print the manual commands | M |
 | Local desktop notifications | **The old version had none** (measured: no `UNUserNotificationCenter` in `Sources/`) | — | `org.freedesktop.Notifications` | Toast (needs an AUMID) | See §4.6: notifications have three outlets, not one switch | M |
-| Push to the phone | Web Push (RFC 8291 + VAPID) | ❌ not ported | ✅ cross-platform by nature | ✅ cross-platform by nature | — | L |
-| Notch island | The MacBook's physical notch | ❌ not ported (a separate task is in progress) | No notch | No notch | Abstracted into a `Presence` port; see §4.9 | M |
-| Drag and drop onto the native window | AppKit | ❌ not ported | — | — | The browser's HTML5 drag and drop already covers it | — |
+| Push to the phone | Web Push (RFC 8291 + VAPID) | ✅ `internal/adapters/push` (`encrypt.go` `aes128gcm`, `vapid.go`, `send.go`), served by `transport/http/push.go` | ✅ cross-platform by nature | ✅ cross-platform by nature | — | L |
+| Notch island | The MacBook's physical notch | ✅ `shell/darwin/NotchIsland.swift`, installed by `main.swift` (see the notch island section at the end) | No notch | No notch | Abstracted into a `Presence` port; see §4.9 | M |
+| Drag and drop onto the native window | AppKit | ✅ `shell/darwin/FileDrops.swift`: a native drop keeps the full paths, which the page reads once through the `clawdlineDroppedPaths` bridge (`session/file-drop.ts`) | — | — | The browser's HTML5 drag and drop already covers it | — |
 | Dock/taskbar icon | `.icns` | ✅ | `.desktop` + PNG | `.ico` | — | S |
 
 ### 3.5 Remote and interoperation
@@ -179,7 +179,7 @@ chosen through the system share sheet.
 | `clawdline open` opening a browser | `open`/`xdg-open`/`rundll32` | ✅ written for all three | ✅ no effect when headless → `--print` | ✅ | Headless: `--print` prints the URL (implemented) | — |
 | Six-digit pairing | Printed by the CLI | ✅ | ✅ | ✅ | Platforms without a shell use the CLI anyway (`remote.md` §5 says so) | — |
 | Remote access | SSH port forward, Tailscale Serve, or Cloud; the built-in cloudflared tunnel was removed on 2026-10-20 | ✅ | ✅ | ✅ | — | — |
-| Cloud bridge | PROTOCOL.md | ❌ not done | ✅ pure network | ✅ pure network | — | L |
+| Cloud bridge | PROTOCOL.md | ✅ `transport/cloud/link.go`, `app/cloudops`, the `/v1/cloud/*` routes; pairing in §4.10 | ✅ pure network | ✅ pure network | — | L |
 | Reading the old Swift app's store | `~/.config/clawdline` | ➖ no longer read (2026-10-17, `docs/cutover.md` §3) | Not read | Not read | The crown, task chips and delivery checks come from this daemon's own records on every platform | — |
 | Reading transcripts / plan quotas | `~/.claude`, `~/.codex` | ✅ | ✅ same paths | ✅ `%USERPROFILE%` | — | — |
 | Schedules | Pure Go | ✅ | ✅ | ✅ | — | — |
@@ -230,7 +230,7 @@ assistant inside it. The daemon is this pty's host, so:
 |---|---|---|
 | Send a message | `send-keys -l <text>` + `Enter` | Write UTF-8 + `\r` to the input pipe |
 | Send one raw key (for menus) | `send-keys -H <hex>` | Write that one byte to the input pipe |
-| Interrupt | `send-keys C-c` | Write `\x03` to the input pipe |
+| Interrupt | `send-keys -H 1b` (one Escape; it used to be `C-c`, which is also the first half of quitting) | Write `\x03` to the input pipe |
 | Close | `kill-pane` | Close the pty + kill the Job Object |
 | Resize | tmux handles it | `ResizePseudoConsole` |
 | Read the screen | `capture-pane -p -e -J` | **See the next section: parse the VT stream ourselves** |
@@ -381,8 +381,8 @@ the thing they already did.* **What is missing is not code but guidance.**
 | | Where the executable comes from | Search paths (already written) | Where the model comes from | Model paths (already written) |
 |---|---|---|---|---|
 | **macOS** | `brew install whisper-cpp` | `/opt/homebrew/bin`, `/usr/local/bin` | `download-ggml-model.sh`; an old app model can be selected explicitly with `whisper_model` | `~/.cache/whisper`, `~/models` |
-| **Linux** | Arch: `sudo pacman -S --needed whisper-cpp`. Ubuntu/Debian and distributions whose package lacks `whisper-cli`: build upstream with CMake; Settings prints the exact command | `/usr/local/bin`, `/usr/bin`, `/opt/whisper.cpp/build/bin`, `~/.local/bin`, `~/whisper.cpp/build/bin` | Settings downloads and verifies the pinned upstream model | `~/.cache/whisper`, `~/.local/share/whisper`, `/usr/share/whisper`, `/opt/whisper.cpp/models` |
-| **Windows** | The official release has a prebuilt zip; unzip it into `%LOCALAPPDATA%\whisper.cpp\` | `%LOCALAPPDATA%\whisper.cpp[\bin]`, `%ProgramFiles%\whisper.cpp[\bin]` | Same as above | `%LOCALAPPDATA%\whisper`, `%LOCALAPPDATA%\whisper.cpp\models` |
+| **Linux** | Arch: `sudo pacman -S --needed whisper-cpp`. Ubuntu/Debian and distributions whose package lacks `whisper-cli`: build upstream with CMake; Settings prints the exact command | `/usr/local/bin`, `/usr/bin`, `/opt/whisper.cpp/build/bin`, `~/.local/bin`, `~/whisper.cpp/build/bin` | Settings downloads and verifies the pinned upstream model | `~/.cache/whisper`, `~/.local/share/whisper`, `/usr/share/whisper`, `/usr/local/share/whisper`, `/opt/whisper.cpp/models`, `~/models` |
+| **Windows** | The official release has a prebuilt zip; unzip it into `%LOCALAPPDATA%\whisper.cpp\` | `%LOCALAPPDATA%\whisper.cpp[\bin]`, `%ProgramFiles%\whisper.cpp[\bin]`, `%ProgramFiles(x86)%\whisper.cpp[\bin]` | Same as above | `~/.cache/whisper`, `%LOCALAPPDATA%\whisper`, `%LOCALAPPDATA%\whisper.cpp\models`, `~/models` |
 
 The Settings voice tab now does all three:
 
@@ -412,7 +412,8 @@ decides `-l`; anything else leaves detection to whisper, and the script for Chin
 the same list — so Simplified is written only when something asked for it. The decision is the daemon's, made where whisper
 runs, so a recording from the hosted console and one from the page this daemon serves are read the same way.
 `GET /v1/voice/language` says what the next run will be given and who decided; `internal/adapters/whisper/locale.go` is the
-whole of it.
+whole of it, with the Windows user-locale reader in `locale_windows.go` (and its stub in `locale_other.go`) and the
+script conversion in `traditional.go`.
 
 | | What "this machine" means, in order | Note |
 |---|---|---|
@@ -743,7 +744,7 @@ If a shell is ever really needed, deal with it then, and the first thing to buil
 - One WebView2 hosts only the local console and its local token. The Cloud button opens `https://app.clawdline.com`
   in the system browser, so the shell never needs a second cookie store.
 - The native bar across the top (read-only address, back, Cloud and open-outside buttons) has to be drawn again on Windows.
-  Colours and spacing likewise come from `legacy/tokens.css`.
+  Colours and spacing likewise come from `web/console/src/legacy/tokens.css`.
 
 #### macOS
 
@@ -772,7 +773,7 @@ button first under the lede, with the copy box folded under a closed Paste it yo
 asks in a native sheet naming the machine and showing the command; on yes it posts `POST /v1/cloud/pairing/agent`
 (local token only) with the offer, the machine id and its name. The daemon checks the offer as `/offer` does, the id
 against the Cloud's `mac_…` shape, cuts the name to one line, and — for another machine — admits a detached task
-(claims `[]`, 15 minutes, the first installed assistant) whose brief is a fixed template: reach that machine with the
+(claims `[]`, 15 minutes, the first installed assistant — the route also takes an optional `assistant`, `claude` or `codex`, refused otherwise as `bad_assistant`; the shell sends none) whose brief is a fixed template: reach that machine with the
 access this Mac already has, run `clawdline cloud pair -offer '<offer>'` there, change nothing else, report the
 fingerprint lines. The task starts in `<state>/pairing-agent/` (0700, empty, used for nothing else) — until 2026-09-27
 it was the home directory, and Claude Code sat on its workspace-trust dialog until the person found the tab. The
@@ -787,8 +788,7 @@ opened copy path. Success is still the offer run turning `paired`. When the id i
 offer directly and starts nothing. The offer still travels over the person's own channel, never through Cloud;
 every other browser keeps the copy path.
 The address is a
-selectable, read-only value rather than navigation UI. It remains the only shell with Keychain,
-the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
+selectable, read-only value rather than navigation UI. It remains the only shell with the notch, Carbon hotkeys and `SMAppService`; these are exactly "the few features only a Mac has".
 
 **Summary-table correction**: none.
 
@@ -921,6 +921,10 @@ here it is written as four rules for whoever comes next:
    fields of `/v1/health` (so the CLI, monitoring and programmers can get it too).
    Recommended: add a `capabilities` block to `/v1/health` listing every platform-dependent capability on this machine and its state;
    its content is the summary table of §3 answered for **this machine**. The settings page renders it directly instead of judging again for itself.
+   **Built** in `/v1/diagnostics`, not `/v1/health` (which says only whether the daemon answers and who is asking):
+   `platform` (`contract.PlatformDiagnostics`, `transport/http/capabilities.go`) names `open_child`, `read_screen`,
+   `send_keys`, `clipboard`, `global_hotkey`, `notch`, `launch_at_login` and `terminal`, each `available`, `unavailable`
+   or `unknown`. That is a fixed subset of §3, not every row.
 
 ---
 
@@ -934,7 +938,7 @@ Linux is the closest to "usable", because tmux, pty, FIFOs and procfs are all th
 
 | # | Item | Difficulty | Why it is here |
 |---|---|---|---|
-| 1 | The `capabilities` block of `/v1/health` + the settings page rendering it | S | Every later degradation relies on it to be presented; build it first, and each later item only fills in a cell |
+| 1 | The capabilities block (built as `/v1/diagnostics.platform`, §5 rule 4) + the settings page rendering it | S | Every later degradation relies on it to be presented; build it first, and each later item only fills in a cell |
 | 2 | `clawdline autostart` + a systemd user unit + the linger explanation | M | Without it the daemon dies at logout, and everything else is wasted |
 | 3 | A procfs process inventory (replacing `/bin/ps`) | S | Slim containers have no `ps`; `/proc` is also more accurate |
 | 4 | Secret Service + a file fallback + presenting the degradation | M | Paves the way for Cloud; with no desktop, honestly use files |
@@ -981,7 +985,7 @@ keystore, notifications and autostart, and those four are where this document is
 |---|---|
 | `clawdline doctor` | Resolves the state directory correctly (Linux `~/.config/clawdline-next`, Windows `%APPDATA%\clawdline-next`) |
 | `clawdline serve` | Binds 127.0.0.1:7727, and the log has no panic |
-| `GET /v1/health` | 200, with values for the `scheduler`'s `considered`/`due`/`fired` |
+| `GET /v1/health` and `GET /v1/diagnostics` | Health 200; diagnostics has values for the `scheduler`'s `considered`/`due`/`fired` |
 | SQLite | The db can be created in the state directory; **kill the daemon and start it again, and the events are still there** |
 | Reboot | The daemon comes back by itself (once §4.7 is done) |
 | Long paths (Windows) | Run `serve` under a path close to 260 characters, and it doesn't blow up |
@@ -1195,8 +1199,8 @@ has the named error `terminal.Unsupported`; platforms with no matching implement
 
 **How it should be presented.** This is an item macOS has to fill in and the other platforms don't. The modifier keys differ too: the web half
 (`onKey` in `Bar.tsx`) is already written as `ev.metaKey || ev.ctrlKey`, so ⌘K and Ctrl+K are the same thing;
-the `⌘K` on the hint row is the only place still hard-wired to macOS — later it should show `⌘`/`Ctrl` by platform,
-and the words should be found in `Copy+*.swift`, not made up.
+every modifier key on the hint row (`HINTS` in `Bar.tsx`: `⌘K`, `⌘M`, `⌘J`, `⌘S`, `⌘F`, `⌘L`, `⌘R`, `⌘+`) is still hard-wired to macOS — later it should show `⌘`/`Ctrl` by platform,
+and the words should be found in `shell/darwin/Copy.swift`, not made up.
 
 ### 7. Where the send history is kept
 
@@ -1216,11 +1220,15 @@ Things drawn on screen that don't work yet, listed here so they are not mistaken
 |---|---|---|
 | Microphone (⌘L, `hintVoice`, "voice") | The button is drawn, `disabled`, with the old `hintVoice` as its `title` | `POST /v1/voice` already exists (wave 8, B); the recording part is in `legacy/voice-bridge.ts`, but it is tied to the composer's DOM and has to be split out |
 | ⌘J, `hintOutput` ("show output") | On the hint row; pressing it does nothing | In the old version it is the whole output panel of `Controller.refreshOutput`; needs `/v1/transcript` and a new panel |
-| ⌘M `hintMascot` ("change character"), ⌘S `hintStacks` ("servers") | Same | This app doesn't draw the mascot yet; the dev stack has no backend route |
+| ⌘M `hintMascot` ("change character") | Same | This app doesn't draw the mascot yet |
 | ⌘F `hintFullscreen` ("full screen"), ⌘R `hintOrder` ("reverse order"), ⌘+ `hintTextSize` ("text size") | Same | All three only make sense for the output panel, and will come with ⌘J |
 | Dragging files onto the card | `bar.css` has a border rule for `[data-drop="on"]`, and nothing sets it | In the old version, `DropTargetView` + `Drop.swift`; cross-platform needs each platform's drag types |
 | "N in the background" on a row | Not drawn | The wire has no such field (the old version read the Swift app's subagent files) |
 | Coordination waits on a row | Not drawn | Same; it reads the old app's orchestrator store |
+
+Wired since this table was written: ⌘S opens the servers list (`showList("stacks")`; `StackList` draws `readStacks` from
+`bar/stacks.ts`), and a box holding only `/name` (or `$name` for Codex) switches the list to the selected session's skills —
+the arrows move through the matches, and Tab or Return completes the invocation without sending it.
 
 ### 9. Two initial states deliberately different from the old version
 

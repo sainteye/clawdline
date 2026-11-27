@@ -162,7 +162,7 @@ Press the microphone (**Dictate a message**), speak, and press it again
 (**Stop and transcribe**) to turn it into text in the box. Transcription runs on the machine, not in a
 cloud service, so the machine needs whisper.cpp's `whisper-cli` and one `ggml-*.bin` model, for
 example in `~/.cache/whisper`. Browsers only allow the microphone on a secure page: `127.0.0.1`,
-the tunnel's HTTPS address, or the hosted console.
+a Tailscale Serve HTTPS address, or the hosted console.
 
 ## Start a session
 
@@ -170,7 +170,8 @@ the tunnel's HTTPS address, or the hosted console.
 2. Choose where under **Where should it start?**. The list holds folders where Claude
    Code or Codex has run, folders of live sessions, and folders you added with
    `clawdline project add` ([projects.md](projects.md)).
-3. Choose **Claude Code** or **Codex** under **Start with**, or resume a past
+3. Choose **Claude Code**, **Codex** or, where the machine offers it, **Gemini**
+   ([gemini.md](gemini.md)) under **Start with**, or resume a past
    conversation under **Pick up an earlier one**.
 
 Codex history includes interactive conversations from both the CLI and the VS Code extension.
@@ -197,19 +198,19 @@ You can also press the microphone in the header (**Say what to start**) and desc
 task; Clawdline drafts the project, assistant, model and first message, and nothing starts until you
 press **Start**.
 
-**Settings** → **Defaults for new sessions** offers the models available to Codex and Claude Code
-as separate machine-wide pickers. The Claude Code choices follow that machine's installed `/model`
+**Settings** → **Defaults for new sessions** offers the models available to Codex, Claude Code and
+Antigravity (Gemini) as separate machine-wide pickers. The Claude Code choices follow that machine's installed `/model`
 catalog and account cache, including its versioned legacy choices, instead of a Clawdline-owned list.
 Choose **Assistant default** to leave that assistant in charge. The setting applies only when Clawdline
 opens a new session without another model choice; a model chosen for one session still
 wins, a child agent may explicitly choose any admitted model for its own task, and resuming an
 existing conversation does not change its model.
-The same two fields appear in Clawdline Cloud on a phone. The phone can read them through its paired
+The same fields appear in Clawdline Cloud on a phone. The phone can read them through its paired
 machine; saving a change also requires that machine's Cloud command switch and this browser's local
 operation grant. See [Let paired devices act](remote-access.md#let-paired-devices-act).
 The same setting is available without a browser as
 `clawdline setting set codex_default_model gpt-6-sol` (or
-`claude_default_model claude-opus-5-5`); use `default` as the value to hand the choice back to the
+`claude_default_model claude-opus-5-5`, or `antigravity_default_model`); use `default` as the value to hand the choice back to the
 assistant.
 
 To change the model of an existing Codex session, open its info card and press any other model, or

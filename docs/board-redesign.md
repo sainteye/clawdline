@@ -1,6 +1,6 @@
-> **How the whole work system runs today (board items, session to-dos, the Backlog and GitHub Issues; what is built and what is only designed) is on one page in [`docs/work-system.md`](work-system.md), in Chinese.**
+> **How the whole work system runs today (Board items, session to-dos, the Backlog and GitHub Issues) is in [`docs/work-system-v2.md`](work-system-v2.md); [`docs/work-system.md`](work-system.md) is the v1 record, in Chinese.**
 
-> **The implementation follows [`docs/design-decisions.md`](design-decisions.md) (from 2026-09-18 on); this document is kept as analysis, and where the two disagree, that one wins.**
+> **The implementation follows [`docs/design-decisions.md`](design-decisions.md) (from 2026-09-18 on); this document is kept as analysis, and where the two disagree, that one wins.** Its §3.6 (Work system v2, approved 2026-09-22) supersedes D30–D39, the rows that adopted this document: only a person creates a work item (D57), assignment is the sole source of ownership (D58), broker facts create no item, proposal, placement or closure (D63), and there is one Board (D65). §§3–9 below are the 2026-09-18 design, not a description of the running daemon; the tables as built are in `internal/adapters/store/work.go` and `todos.go`, and the proposal routes in `internal/transport/http/proposals.go`.
 
 # Board redesign: three structures — the board, session to-dos and the backlog — and their lifecycles
 
@@ -31,7 +31,7 @@ What was measured: a read-only snapshot of the old app's board at **2026-09-18 0
 plus `project-board-history/*.jsonl` at the same moment (564 files, 12,900 entries), `project-board-workflow.json` (the workflow log),
 the state and landing fields of the 774 tasks in `~/.config/clawdline/orchestrator.json` (only id, state and landing were extracted; `secret_hash` was not read),
 and the 14 live sessions from `:7727/v1/sessions`. Each card's progress was computed card by card on the snapshot with the `ProgressOf`/`ListSummaryOf` this repository has already ported
-(`internal/adapters/board/progress.go`). The scripts and their output are listed in the appendix.
+(`internal/adapters/board/progress.go`, since removed). The scripts and their output are listed in the appendix.
 
 ---
 
@@ -299,7 +299,7 @@ Two more small tables: `proposals` (the proposals of §4 and their answers) and 
 `observe(...)`, with yet another set of closing conditions — between two stores, one place that fails to converge means it never converges. Inside one DB,
 "task landed" → "to-do ended" → "board item ended" can be **one transaction** (the rule of `broker-design.md` §6.1: one externally visible fact is one transaction).
 This differs from `board-design.md` C1, "port the whole-document rewrite as is": C1 was a judgement about **porting the old model**; this document changes the model, and once the model changes, the old reasons (42 ms, not worth splitting)
-are no longer decisive. The read-only reading of the old version's 787 cards (`Legacy` in `internal/adapters/board/source.go`) **does not change**.
+are no longer decisive. The read-only reading of the old version's 787 cards (`Legacy` in `internal/adapters/board/source.go`) **does not change**. (It was later removed with `source.go`: the retired app's cards are no longer read, `docs/cutover.md` §7, and `/v1/board/tracks` projects over no cards.)
 
 **Derived display states are not stored.** The "queued / in progress / in review / delivered / landed" on a card is still derived from evidence by `ProgressOf` (`board-design.md` B1, B5, ported as is),
 but **not written back to the store**, so there will be no more 4,124 reconciliation entries and 75.5% oscillation (D6, #3a). Only the four lifecycle states and a person's decisions are stored.
@@ -317,7 +317,7 @@ but **not written back to the store**, so there will be no more 4,124 reconcilia
 - **Session to-dos do not appear on the board page.** They are in a panel of the session's details, and are provided for the session itself to read (API and briefing; see §5.2).
   This is the literal realization of #5, "should not be mixed in with the items meant for people": **not collapsed, but not on the same page**.
 
-> The current board page front end is the port of the old version that another child is building, as a read-only view of the 787 old cards. This design's screens are the new app's own board, scheduled after that port lands (§9).
+> When this was written, the board page front end was the port of the old version that another child was building, as a read-only view of the 787 old cards, and this design's screens were to follow it (§9). Neither is the console now: the React board page and the old-card view are gone, and the Board is the v2 page (`web/console/src/pages/work/WorkV2.tsx`, `DesktopBoard.tsx`; `docs/work-system-v2.md`).
 
 ### 3.4 The two purposes do not fight: who writes what
 
@@ -689,7 +689,7 @@ The scripts and output are all in the measuring task's `artifacts/` (`measure.py
 | Number | How it was measured |
 |---|---|
 | 787 cards, revision 6403 | At 2026-09-18 01:02:40 UTC, `project-board.json`, `project-board-history/` and `project-board-workflow.json` were copied with `cp` into a temporary directory; after that only the copies were read |
-| Each card's progress, group, audience | `boardmeasure.go`: calls `ProgressOf`/`ListSummaryOf` (this repository's `internal/adapters/board/progress.go`) on the copies |
+| Each card's progress, group, audience | `boardmeasure.go`: calls `ProgressOf`/`ListSummaryOf` (this repository's `internal/adapters/board/progress.go`, since removed) on the copies |
 | actor distribution, creators, updates after creation | Parsed the 564 history files line by line; the actor rule is from `ProjectBoardHTTP.swift:260-268`, `:419-432` |
 | The web page has no operation that changes a card | `grep` over the old `Resources/web/app/js`: `boardCommand` is used only by `input/board-settings.js`, for `set_enabled`/`set_ai_consent` |
 | The closing gate | Read `ProjectBoardStore.swift:3440-3505` |

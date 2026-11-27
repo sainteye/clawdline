@@ -39,10 +39,17 @@ not a retryable opening failure and native authority remains unavailable.
 
 The app behavior is exercised with synthetic terminals and the real private
 context/Squad stores, including original skill paths and unknown history. This
-does not establish real vendor launch readiness. The HTTP start/resume foundation
-guards remain in place: before lifting them, the composition root must supply
-validated installation and measured permission policy, expose a pending binding
-outcome, complete initial-input admission and verify native context-loaded proof.
+does not establish real vendor launch readiness. HTTP start and resume no longer
+wait on this path: they refuse Antigravity (`refuseOwnedFoundation`) only when no
+owned ACP Session host is running. `StartAntigravitySessions` starts that host by
+default on Darwin and Linux when a compatible installation is found, and starts
+and resumes then go through `openOwnedAssistant` and `resumeOwnedAssistant`. That
+path does not use this adapter, its `PreparedAntigravity` admission or its native
+context proof; see [Existing Session preview](antigravity-acp-client.md#existing-session-preview).
+Before this terminal path can serve launches, the composition root must still
+supply validated installation and measured permission policy, expose a pending
+binding outcome, complete initial-input admission and verify native
+context-loaded proof.
 
 ## API and ownership
 
@@ -66,8 +73,15 @@ Open(Config{StateDir: providerStateDir, SquadLaunchRoot: squadLaunchRoot}) (*Sto
 (*Store).Restore(context.Context, string, string) (projects.AntigravityContext, error)
 (*Store).WorkspaceBindings(context.Context) (map[string]string, error)
 (*Store).PreInvocationResponse(context.Context, ports.AntigravityBinding) ([]byte, error)
+(*Store).PrepareFencedResponse(context.Context, ports.AntigravityBinding, transcript.AntigravityContextFence) ([]byte, error)
 (*Store).ExpectedInjection(context.Context, string) (ExpectedInjection, error)
 (*Store).Receipt(context.Context, string) (ResponseReceipt, bool, error)
+(*Store).ReserveFirstInput(context.Context, string, string, string, ports.AntigravityProcess) (FirstInputReceipt, *FirstInputAttempt, error)
+(*Store).FirstInputStatus(context.Context, string, string) (FirstInputReceipt, error)
+(*Store).FirstInputForLaunch(context.Context, string) (FirstInputReceipt, bool, error)
+(*Store).PreparedRecord(context.Context, string) (Record, error)
+(*Store).VerifyContextLoaded(context.Context, string, string, transcript.AntigravityContextCheck) error
+(*Store).CheckContextLoaded(context.Context, string, string, transcript.AntigravityContextCheck) error
 (*Store).Stats(context.Context) (Stats, error)
 ```
 
@@ -207,6 +221,7 @@ explicit reviewed cleanup policy; this change does not implement one.
 | Durable launch slots, including pending | 512 | Refuse new launch |
 | Positive historical native UUID mappings | 512 | Refuse new mapping |
 | Latest prepared receipts | 512 | Refuse new receipt |
+| First-input slots | 512 | Refuse new reservation |
 | Durable metadata index | 4 MiB | Refuse transaction |
 | Each immutable context document | 256 KiB | Refuse preparation |
 
@@ -216,12 +231,15 @@ budget is 9 KiB. On disk there are at most 512 reserved launch directories, each
 with a context and 64-byte capability, one index, a fixed replacement staging
 file and a lock. Filesystem allocation overhead is not an exact byte prediction.
 
-`Stats` returns actual admitted/pending/active/history/receipt counts, index
+`Stats` returns actual admitted/pending/active/history/receipt/first-input counts, index
 bytes, verified context-document bytes and largest document bytes, or an error. It never reports a
-read failure as zero. HTTP registers all five measures as unknown until Root
-attaches the real store owner. Root must add the owner in server composition
-and map these fields, using `LargestContextBytes` for the per-document size rather than the sum,
-before claiming runtime capacity measurement.
+read failure as zero. The daemon opens the real store owner at startup
+(`StartAntigravityLaunchStore`), and HTTP maps one shared `Stats` snapshot per
+capacity pass to the six registered rows (`antigravity.saved_launches`,
+`context_history`, `first_input_slots`, `context_receipts`, `context_index_bytes`
+and `launch_context_bytes`), using `LargestContextBytes` for the per-document size rather than the sum.
+The rows read as unknown (`antigravity_context_owner_unavailable`) only while no
+owner is attached.
 
 No schema migration of old providers or Squad SQLite occurs. The private index
 is now version 4; an unknown index version is refused. Removing this adapter leaves its

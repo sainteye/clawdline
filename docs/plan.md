@@ -87,8 +87,11 @@ tools/
   package-macos.sh        打包
 ```
 
-**兩條硬規則**（2026-11-25 起由 `TestLayersImportOnlyDownward` 強制；第二條的既有違規列在
-`internal/config/testdata/layer-baseline.txt`，只准減少，見 `docs/architecture.md` §Layers）：
+**兩條硬規則**（2026-11-25 起由 `TestLayersImportOnlyDownward` 強制，守衛比這兩條更嚴：`domain`
+不 import `app`／`adapters`／`transport`／`cmd`，`app` 不 import `adapters`／`transport`／`cmd`，
+`adapters` 不 import `transport`／`cmd`，`transport` 不 import `adapters`／`cmd`。既有違規——
+`transport` → `adapters` 與 `app` → `adapters`——列在 `internal/config/testdata/layer-baseline.txt`，
+只准減少，見 `docs/architecture.md` §Layers）：
 
 - `domain` 不 import `adapters` 或 `transport`
 - `transport` 不 import `adapters`

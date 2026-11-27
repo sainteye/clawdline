@@ -241,7 +241,7 @@ had. Two questions, one answer, and no spelling for half the combinations.
 | **Auto** | iTerm2 when integration is enabled and iTerm2 is open, otherwise tmux when available. The order every terminal operation in this app has always taken, and what a config that never said otherwise means. With tmux installed, "iTerm2" is a viewer tab on a tmux session — the section below. |
 | **iTerm2** | an iTerm2 tab, and a refusal naming iTerm2 when it is shut. Named, so a tmux server running beside it is deliberately *not* an answer — picking iTerm2 over auto asks for the tab you can see rather than a pane you cannot. With tmux installed, the tab is a viewer on a tmux session, as for auto. |
 | **iTerm2 (native tab)** | `iterm_native`: the session runs in the iTerm2 tab itself, read and typed into through iTerm2's Apple Events — what **iTerm2** meant before 2026-10-02, kept as the way back. Refused like **iTerm2** when iTerm2 is shut. |
-| **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. With no tmux on this Mac at all the start is refused, `terminal_unsupported`. That refusal has no application to name — tmux is not one — so unlike `terminal_closed` the phone does not write a sentence around a name; it draws a sentence of its own saying that Settings asks for tmux, that this Mac has none, and that the answers are to install it or to choose another terminal here. |
+| **tmux** | a tmux pane, running iTerm2 or no running iTerm2. With tmux installed and no server, Clawdline starts one detached — the section below. A release carries a tmux of its own, used when the machine has none new enough (D72). With no tmux at all — neither the machine's nor a carried one, as in a checkout's build — the start is refused, `terminal_unsupported`. That refusal has no application to name — tmux is not one — so unlike `terminal_closed` the phone does not write a sentence around a name; it draws a sentence of its own saying that Settings asks for tmux, that this Mac has none, and that the answers are to install it or to choose another terminal here. |
 
 The key is `terminal` in `config.json`, and its values are `auto`, `iterm`, `iterm_native` and
 `tmux`. It is read at the moment a session starts rather than when the app launches, so the next
@@ -259,17 +259,22 @@ tab can be neither read nor typed into until the episode passes. Reading the sam
 
 What happens, in order:
 
-1. `tmux new-session -d -s <name>` on your default tmux server, starting one if none is running,
-   with the assistant's line typed at a login shell as for any tmux start. A child's session is
-   `clawdline-task-<id8>` and a hand-over's `clawdline-<kind>-<id8>`, as they always were; anything
-   else gets `clawdline-session-<8 random hex>`. tmux refuses a name it already has, so a session is
-   never shared with somebody else's.
+1. `tmux new-session -d -s <name>` on your default tmux server — or, when the daemon runs the tmux
+   a release carries, on that tmux's own socket (`-S <CLAWDLINE_NEXT_DIR>/tmux/sessions.sock`,
+   D72), never the default server — starting one if none is running, with the assistant's line
+   typed at a login shell as for any tmux start. A child's session is `clawdline-task-<id8>` and a
+   hand-over's `clawdline-<kind>-<id8>`, as they always were; a start or a squad launch gets
+   `clawdline-session-<8 random hex>` (`tmuxview.SessionName`). tmux refuses a name it already has,
+   so a session is never shared with somebody else's.
 2. `set-option -t '=<name>:' mouse on`, on that session alone, so the mouse wheel scrolls tmux's
    history inside the tab. Nothing global and no other session is changed. If it cannot be set,
    that is logged and the session goes on without it.
-3. One iTerm2 tab, typed `exec '<absolute tmux>' attach -t '=<name>'`. `=` makes tmux match the name
-   exactly rather than as a prefix, and `exec` means that when the session ends the tab's shell
-   ends with it and the tab closes.
+3. One iTerm2 tab, typed `exec '<absolute tmux>' attach -t '=<name>'` (with `-S <socket>` after the
+   tmux when it is the carried one). `=` makes tmux match the name exactly rather than as a prefix,
+   and `exec` means that when the session ends the tab's shell ends with it and the tab closes.
+   Steps 2 and 3 run after the start has already answered with the pane, in the background, one
+   viewer at a time and for at most 20 seconds (`viewerOpenLimit`); a start that arrives while
+   another viewer is still opening gets no tab, only a log line.
 
 **The session is the tmux pane.** It is recorded with backend `tmux` and its pane id, so the list,
 the screen, a briefing, every line and key, an interrupt and a close all go through tmux. Opening
@@ -279,26 +284,23 @@ client that is attached to the session, and selects it.
 
 **When only half of it works.** If the tmux session could not be started, nothing is opened and the
 start fails as it always did. If the session started but the tab did not open — iTerm2 in one of
-its stalls, say — the work has still started and is not started again: the start answers with the
-tmux pane and the line to see it yourself, `tmux attach -t '=<name>'`, and the daemon's log says
-why there is no tab.
+its stalls, say — the work has still started and is not started again: the start has already
+answered with the tmux pane, which the console reads and types into, and the daemon's log says why
+there is no tab. To see it at the Mac yourself, `tmux attach -t '=<name>'` (`clawdline tmux attach
+…` when the daemon runs the carried tmux).
 
 Tabs you open by hand are not affected: they are still read and typed into through iTerm2. To have
 Clawdline open native tabs again, choose **iTerm2 (native tab)**. Without tmux installed, iTerm2
 and auto open native tabs as they always did.
 
-**A value this app cannot read is treated as one that was never written**, which is what the
-migration below is for — and because the next save then writes that migrated answer over what was
-typed, the discarded value is named once in `~/Library/Logs/Clawdline.log` rather than disappearing
-without a word. Hand-editing `"terminal": "ghostty"` is not an error you will be stopped on; it is
-one you can find out about afterwards.
+**A value the daemon cannot read is treated as `auto`**, and so is an absent key
+(`projects.ParseTerminalChoice`); nothing is logged. Saving a value other than `auto`, `iterm`,
+`iterm_native` or `tmux` through Settings is refused with `invalid_terminal`, so only a hand edit
+such as `"terminal": "ghostty"` can put one there.
 
-**A `config.json` written before the key existed keeps the terminal it had.** It is filled in once,
-from the hotkey's scope, because that is the only place the old file said anything about a
-terminal: a scope naming iTerm2 — or an empty one, which is a global hotkey and says nothing at all
-— reads as **auto**, and a scope naming any other terminal reads as **tmux**, which is where those
-sessions have always gone. The next save writes the answer down, and after that the scope is never
-consulted about a terminal again: move the hotkey wherever you like and the sessions stay put.
+**The hotkey's scope is not consulted.** The retired app filled a missing `terminal` in once from
+`scope_app` (a scope naming another terminal read as **tmux**); the Go daemon has no such migration,
+and a `config.json` without the key starts sessions as **auto**.
 
 ## Turning iTerm2 scanning off
 
@@ -360,6 +362,9 @@ in a session called **`clawdline`**, with nothing attached to it:
 tmux attach -t clawdline
 ```
 
+When the daemon runs the tmux a release carries, the server is on that tmux's own socket and the
+line is `clawdline tmux attach -t clawdline` instead.
+
 **Nothing is attached, and that is the trade.** The pane is real from the moment it exists —
 Clawdline lists it, reads it, types into it and closes it, exactly like any other tmux pane,
 because `list-panes -a` counts detached sessions on purpose. What it is *not* is drawn anywhere:
@@ -385,16 +390,27 @@ launch line carrying your language setting never shows on the pane as it was typ
 failed `terminal_io_failed` (measured on macOS 15 with tmux 3.6a, 2026-10-07). The `LANG` is the
 one an owned terminal's shell gets; your profile, read next, still has the last word.
 
-**Typing is not running, and Clawdline claims only the first.** tmux tells it the keystrokes were
-delivered to the pane; nothing on that path tells it your shell ran them. A startup file that
+**The line is pasted, and Enter waits until the shell shows it.** tmux telling Clawdline the
+keystrokes were delivered says nothing about whether your shell read them: a startup file that
 flushes pending input — `tcsetattr(0, TCSAFLUSH, …)`, which is what some `stty` lines and a few
-framework rc files do — throws the line away while tmux reports the same success it reports for a
-line that ran. There is deliberately no check for that here: an rc that merely sleeps for three
-seconds *keeps* the line and runs it late, so inside any wait a start can afford, a swallowed line
-and a slow shell are the same silence. What you get instead is the truth a moment later — the pane
-appears in the list as the shell it actually is, and a task briefed into it ends `spawn_failed`
-rather than reporting a session that was never there. iTerm2 has always worked this way too: the
-tab is made, the line is written, and the shell is not waited for.
+framework rc files do — throws the line away while tmux reports success. So the line is pasted,
+looked for on the pane for up to 15 seconds (`openConfirm`), and only then is Enter pressed. If it
+never shows, the pane is closed and the start fails: "tmux typed the line, but the shell in the new
+pane never showed it, so it was not run." Whether the assistant then started is still the next
+reading's to say.
+
+**Each new pane is marked and cleaned first.** It gets the pane option `@clawdline_managed`, and
+assistant identity variables (`CLAUDECODE`, `CLAUDE_CODE_*`, `CODEX_THREAD_ID` and the like) are
+removed from tmux's global environment and `unset` at the front of the typed line when the pane's
+environment still holds any. A pane that cannot be marked or
+inspected is closed and the start fails.
+
+**A new window may take a warm shell.** With the `warm_shells` setting on (the default), the daemon
+keeps a login shell already started in up to three recently used Project directories, in a tmux
+session of its own, `clawdline-warm`. A `new-window` start in such a directory takes that shell
+instead of waiting for your rc files, then the line is pasted and confirmed as above, and a
+replacement is started a few seconds later. A directory with no warm shell gets a cold pane as
+before.
 
 ## Which session wants you
 
@@ -636,8 +652,8 @@ go to the voice-input machine chosen under **Devices**.
 <kbd>⌘</kbd><kbd>L</kbd>, or the microphone at the right of the box, turns your voice into text in
 it.
 
-The phone button in the Session list's toolbar, between the list and terminal tabs and the
-microphone, opens the voice copilot: a voice call that reports on the Sessions, answers what one
+The phone button in the Session list's toolbar, between the filter field (whose menu switches
+between the Session and terminal lists) and the microphone, opens the voice copilot: a voice call that reports on the Sessions, answers what one
 of them completed, and can shrink to a draggable bubble while you read a Session. Its key, model,
 patience and extra instructions are under Settings › Voice copilot; [voice.md](voice.md#voice-copilot)
 has the whole of it.
@@ -783,7 +799,7 @@ A single-operation trace does not infer missing records from producer sequence j
 producer assigns sequences across all operations. Source-wide coverage remains the authority
 for stored sequence gaps.
 
-The hosted main Console shows an Admin dashboard link in its Manage sidebar group only after
+The hosted main Console shows an Admin dashboard link in its own **Administrator** sidebar group, after Manage, only after
 the cookie session explicitly reports `operations_access: true`. Missing/false values and session
 revocation hide it. The link opens `/admin/health` directly, including on mobile. Local-only
 Consoles do not show it; operations endpoints independently recheck the superuser binding.

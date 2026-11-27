@@ -80,7 +80,8 @@ owner was retried only by `Engine.Close`, which runs at daemon shutdown.
   only when Close returns without error, never resends the earlier turn, and
   logs whether cleanup was confirmed or remained unconfirmed.
 - The chat refusal says Clawdline re-checks for about 30 seconds before
-  suggesting a restart.
+  suggesting a restart (superseded below: it now says Clawdline will check
+  again, and carries a "Release without confirming" button).
 
 Accepted, executed and delivered stay distinct: the refused message has no
 receipt (`pa_capacity_full` / `owned_cleanup`), and the earlier turn keeps its
@@ -88,7 +89,9 @@ receipt (`pa_capacity_full` / `owned_cleanup`), and the earlier turn keeps its
 
 ## Not done
 
-There is no "force release" action yet for a cleanup that stays unconfirmed
+(Superseded by "Second review" below, which added the bounded `degraded`
+release and the "Release without confirming" action.) There is no "force
+release" action yet for a cleanup that stays unconfirmed
 after the retries. Adding one needs a route that the phone can reach through
 Cloud, an authorization decision, and copy that states the risk (a still
 running Agent may act alongside the next one). Until then, restarting

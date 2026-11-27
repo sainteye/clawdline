@@ -30,7 +30,8 @@ from `<user-data-dir>/NativeMessagingHosts/`, so registering it touches only tha
 host inherits Chrome's environment.
 
 `clawdline browser install-host --extension-id <id> --chrome-dir <user-data-dir>` writes that
-manifest and a launcher (`<CLAWDLINE_NEXT_DIR>/browser-host.sh`) that pins this daemon's directory
+manifest and a launcher (`<CLAWDLINE_NEXT_DIR>/browser-host.sh`, or `browser-host-user-chrome.sh`
+with `--mode user_chrome`) that pins this daemon's directory
 and port. `clawdline browser launch` and the console's setup guide write it for Clawdline's own
 Chromium (below). The launcher runs the stable `<CLAWDLINE_NEXT_DIR>/bin/clawdline` when it
 exists, because the daemon's own executable lives in a versioned release directory an update
@@ -38,14 +39,22 @@ replaces; otherwise it runs the binary that wrote it.
 
 ## Commands
 
-`open <url>`, `tabs`, `read`, `click <label>` or `click --x N --y N`, `type <text>`, `key <name>`,
-`scroll <down|up>`, `screenshot [--out FILE]`, `release`, `stop`, `audit`, `status`.
+`open <url>`, `tabs`, `read`, `click <label>` or `click --x N --y N`, `type <text>` or `type --stdin`,
+`key <name>`, `scroll <down|up>`, `viewport <mobile|desktop>`, `screenshot [--out FILE]`,
+`close [--tab N]`, `release`, `stop`, `audit [--limit N]` (default 50), `status`, and for setup
+`prepare`, `launch` and `install-host`. `--browser <mode>` chooses an automatically allowed browser
+for an action, and `--explicit` with it honours the person's explicit request for this Session
+(`cmd/clawdline/browser.go`, `browserUsage`).
 
 - `open` creates the Session's tab in the agent window; later commands go to the Session's
   current tab unless `--tab` names another of its own tabs.
 - `read` returns the page text (up to 200 KiB) and up to 300 visible elements with their labels;
-  `click` takes one of those labels.
+  `click` takes one of those labels. Both bounds are enforced in the extension's worker
+  (`TEXT_LIMIT`, `ELEMENT_LIMIT` in `extension/chrome/worker.js`), not in the capacity register.
 - `type` uses `Input.insertText`, so Chinese and other scripts need no input method.
+- `type --stdin` reads the text from standard input, for a Secret Handoff:
+  `clawdline secret run <note> -- clawdline browser type --stdin`. It reads at most
+  `browser.stdin_text_bytes` (16 KiB, `internal/domain/capacity/register_browser.go`).
 
 ## What the bridge enforces
 
@@ -137,7 +146,7 @@ person-only `reload` op (`chrome-tab-input` through Cloud) after taking the tab 
 extension older than 0.3.0 the button stays disabled and says the extension needs updating.
 Loaded unpacked extensions do not update themselves (see the update boundary below).
 
-Through Clawdline Cloud the panel uses the same routes as four words of
+Through Clawdline Cloud the panel uses the same routes as words of
 `internal/domain/cloudvocab/vocabulary.json`, each end-to-end encrypted like every other word and
 run on the machine as the viewer's device (`local.device`), so a phone needs read access to look
 and send access to take over and act:
@@ -152,6 +161,9 @@ and send access to take over and act:
 | `chrome-setup` | read | `GET /v1/browser/setup` |
 | `chrome-launch` | command | `POST /v1/browser/launch` |
 | `chrome-prepare` | command | `POST /v1/browser/prepare` (own extension files only) |
+| `chrome-tab-activity` | read | `GET /v1/browser/activity` (the panel's recent actions with pictures) |
+| `chrome-tab-mute` | command | `POST /v1/browser/mute` (one Session's new-site notification) |
+| `chrome-remind` | command | `POST /v1/browser/reminder` (a setup reminder in the Session) |
 
 ## A Bot's tabs in the person's view
 
@@ -245,7 +257,9 @@ besides `limit`. Through Clawdline Cloud the block uses four more words:
 | `chrome-stop` | command | `POST /v1/browser/stop` |
 | `chrome-audit` | read | `GET /v1/browser/audit` (always with `limit`) |
 
-Each browser is one row: a drag handle, its name, one line of state and its automatic switch.
+Each browser is one row (`web/console/src/pages/settings/BrowserPolicyRows.tsx`, which also
+holds the **Set up** and update calls and the `extension_version` comparison): a drag handle, its
+name, one line of state and its automatic switch.
 Dragging the handle lifts the row so it follows the pointer while the rows it passes slide out of
 its way; the order changes and saves once on release (reduced motion turns the sliding off). On the
 focused handle the up and down arrow keys move a row one place, so no arrow buttons are drawn. Only
@@ -288,7 +302,7 @@ flight. Physical phone keyboard presentation still needs actual-device acceptanc
 
 **Checking what was sent.** Until 2026-11-13 the worker never read a field back. The person's
 own route (never an agent's) now has a `field` command that returns the focused field's kind,
-text and selection, up to 16 KiB. A password input, or a field whose `autocomplete` names a
+text and selection, up to 16 KiB (`FIELD_LIMIT` in `extension/chrome/worker.js`). A password input, or a field whose `autocomplete` names a
 password, one-time code or card, answers only kind `password`; focus inside a closed shadow root
 or another frame answers no kind. The result is marked private and carries no picture, and person
 commands are not audited, so the text is never recorded; it reaches the person's device only
@@ -312,8 +326,8 @@ pictured tap reached twice its position, the field never focused, and Send text 
 Changing layout does not guarantee that a site has a mobile design. The encrypted Cloud person-input route carries the same command.
 
 `clawdline browser launch [--browser PATH]` needs nothing installed into the person's Chrome. It
-writes the extension carried in the binary (`extension/embed.go`) to
-`<CLAWDLINE_NEXT_DIR>/chrome-extension-<payload-sha256>`, registers the native messaging host inside
+writes the extension carried in the binary (`extension/embed.go`) to the stable folder
+`<CLAWDLINE_NEXT_DIR>/chrome-extension` (`StableExtensionDir`, see "Updating the extension" below), registers the native messaging host inside
 `<CLAWDLINE_NEXT_DIR>/chrome-profile`, and starts Chromium (`CLAWDLINE_CHROMIUM`, else the newest
 Playwright browser, including its newer Chrome for Testing layouts) on that profile with the extension loaded. Installed revisions are compared numerically. Sign-ins made there stay in that
 profile and are separate from the person's Chrome. It passes `--use-mock-keychain`, so its cookies
@@ -325,10 +339,10 @@ panel showed black; relaunched with these switches the page stayed visible and s
 answering. The display-sleep setting itself stays the person's. The logic is `internal/adapters/browserlaunch`, which the daemon calls too.
 
 Chrome can keep an unpacked extension's installed service worker across a full browser restart,
-even after its files and manifest version changed. Each embedded payload therefore has its own
-directory and extension identity. A restarted dedicated browser loads that identity and the
-native-host allowlist names it alone. Retain an older payload directory until no browser uses it;
-do not treat a connected old worker as proof that new browser commands are available.
+even after its files and manifest version changed. The stable folder keeps one path and one
+extension identity, so `Launch` instead clears the test profile's registered service workers once
+per release (`forgetStaleServiceWorkers`, below); do not treat a connected old worker as proof that
+new browser commands are available.
 
 ## The setup guide
 
@@ -533,27 +547,19 @@ registered from the same path; restarts and version changes did not replace it. 
 - the worker's hello reports `WORKER_VERSION`, the version of its own code (a test keeps it equal
   to the manifest), so a stale worker cannot claim the new release.
 
-### Extension update boundary and proposed automatic flow
+### Extension update boundary
 
-The application carries its current extension, but an already loaded unpacked
-extension does not switch directories when the application updates. Preparation
-publishes a complete revision directory atomically and verifies an existing one
-without rewriting files a browser may be reading. It refuses changed or incomplete
-files instead of silently replacing them. Old revision directories are retained.
-A preparation receipt establishes file readiness, not a running worker version.
+The application carries its current extension, and both Chromes load it from the one stable
+folder described above. Preparation (`PrepareUserChrome`) makes that folder hold this build:
+`WriteStableExtension` leaves a folder already holding it alone, and otherwise writes a complete
+payload beside it and swaps it in with renames, keeping only the previous release at
+`.chrome-extension-previous`, so Chrome never reads a half-written folder. A preparation receipt
+establishes file readiness, not a running worker version.
 
-The current guide describes an explicit update: hand back control, prepare the
-current files, and if the directory changed remove the old Clawdline extension,
-load the new directory, and run its matching connection command. Reloading the
-old directory alone does not update it. This delivery does not install or reload
-the person's usual Chrome.
-
-Automatic updating needs a separate lifecycle protocol before it can be enabled:
-a stable approved installation identity or a verified identity transition; a
-worker-reported embedded revision rather than a fetch of newer on-disk metadata;
-a per-profile handback and admission fence that waits for pending commands and
-uncertain close receipts; a durable update intent that survives daemon or worker
-restart; and an observed new-worker handshake before success. Refusal or lost
-acknowledgement must preserve the old installation and report the unresolved
-state without blindly retrying. Dedicated and usual Chrome require separate
-consent and receipts. This is a proposed design, not implemented automatic reload.
+The usual Chrome is never reloaded by Clawdline: a new release is applied by the person (the reload
+arrow, or **Switch to self-updating** for an older one-off folder, as above). The test Chrome is
+relaunched by the daemon when idle (`StartBrowserUpkeep`, a two-minute quiet period in
+`internal/transport/http/browser_upkeep.go`), and `Launch` clears its stale service workers once per
+release. A worker's hello reports its own `WORKER_VERSION`, so success is the new worker's
+handshake, not newer files on disk. Dedicated and usual Chrome require separate consent and
+receipts.

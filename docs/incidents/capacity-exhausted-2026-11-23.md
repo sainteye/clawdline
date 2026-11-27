@@ -41,7 +41,8 @@ active is at 1024 and pending at 128 together; active was 983).
 
 The Dream candidates are archived by the daemon's own maintenance tick, not by a route: it runs
 every five minutes, only after the Project has had no memory write for five minutes and no
-Session working in it, and only when live entries are at or above 820. There is no route to start
+Session working in it, and, between weekly passes, only when live entries are at or above 820 and
+the Project's memory has changed since the last pass (`maintainDream`). There is no route to start
 it by hand. While Sessions are working in the Project the pass waits; once it runs, live falls to
 1006 (ratio 0.873) and the row leaves `full`.
 

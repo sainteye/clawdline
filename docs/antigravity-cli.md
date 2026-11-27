@@ -515,10 +515,16 @@ adding a user transcript entry. Updated native configuration determines the
 selected values and any changed effort options. The existing operation check,
 personal-account restriction and pipe-write boundary remain in place. Unoffered
 values are refused before writing; failed or busy calls are not retried. Ordinary
-text still uses one `session/prompt` call.
+text still uses one `session/prompt` call. Ordinary text sent while a turn is
+working or waiting is queued and sent after that turn ends (`capabilities.queue`;
+see [the process client](antigravity-acp-client.md#native-interruption-and-next-message-input)).
 
 Opening full `/info` explicitly attempts at most one metadata-only `/usage`
-prompt on an idle session. Summary, listing and sending never fetch quota.
+read on an idle session. Sending exactly `/usage`, or its `/quota` alias,
+performs the same read (`Host.RefreshQuota`) instead of a model turn. Summary
+and listing never fetch quota; the global quota footer reads it separately
+through `Host.AccountQuota` on a temporary connection, with its own refresh
+cadence.
 The ACP 1.4.1 native probe and its built-in usage handler establish that this
 exact command bypasses model chat; arbitrary text cannot enter this metadata
 API. Its `agent_message_chunk` content is collected only between that write and
@@ -536,7 +542,11 @@ and a typed unknown reason, never a fabricated zero or raw provider diagnostic.
 `at`, `readAtMs` and `ageSeconds` persist across summary reads; no new timestamp
 is invented by a cache read. The source provides no freshness interval, so
 `freshForSeconds` remains null; a passed native reset marks the held reading
-stale. A busy read leaves the previously held reading alone.
+stale. A busy read leaves the previously held reading alone. With the public
+CLI 1.5 the read uses `--print /usage` instead, parsed into `5h`, `7d` and
+`Argon 7d` windows with `detail: "Gemini · CLI /usage"`
+(`internal/adapters/antigravitysession/cli_quota.go`; see
+[Public CLI 1.5 compatibility](antigravity-acp-client.md#public-cli-15-compatibility)).
 
 The Info card presents base models and reasoning effort in separate sections.
 Gemini uses the shared ordinal effort meter with only its native offered levels,
@@ -689,7 +699,10 @@ configuration helper supplies that native environment without modifying product
 code. Credentials and private receipts remain outside the repository.
 
 CLI dispatch identity tests prove the existing request contract against a local
-stand-in. They do **not** prove Gemini worker launch or completion notice delivery:
-the broker still rejects Gemini workers pending a verified native permission-mode
-mapping and owned executor wiring. The role/dispatch Board step stays open until
+stand-in. They do **not** prove Gemini worker launch or completion notice delivery.
+The broker now launches owned Gemini and Grok children through
+`Broker.spawnOwnedChild` (`internal/app/orchestrator/owned_child.go`), wired to
+the owned host in `internal/transport/http/orchestrator_wiring.go`;
+`provider_permission_unsupported` is returned only when that host is absent
+(and for Grok's unverified edits-only mode). The role/dispatch Board step stays open until
 those paths and the actual administrator mobile flow pass acceptance.

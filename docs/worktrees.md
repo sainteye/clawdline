@@ -43,7 +43,11 @@ The default is a dry run:
 ```sh
 tools/check-worktrees.sh
 tools/check-worktrees.sh --apply
+tools/check-worktrees.sh --target <branch>    # default main
 ```
+
+`--target` names the branch a Root checkout's `HEAD` must be on to count as landed; it is also the
+branch `--ephemeral` checks before removing its checkout.
 
 Audit mode follows the repository's four-answer convention:
 
@@ -55,7 +59,9 @@ Audit mode follows the repository's four-answer convention:
 | 3 | At least one linked checkout is `unknown`, or a final apply guard could no longer decide. Proven candidates may have been removed, but unknown paths were not. |
 
 An unavailable daemon is not reported as an empty inventory. The script still reports locally
-visible dirty content, classifies the rest as `unknown`, and exits 3. `--apply` never turns missing
+visible dirty content, classifies the remaining broker-owned and unowned checkouts as `unknown`,
+and exits 3. A Root checkout is proved by its owner record, not by the broker, so a clean, idle
+one on the target is still `landed_clean` and `--apply` removes it before exiting 3. `--apply` never turns missing
 broker evidence into permission. It never runs `git branch -d`, `git branch -D`, or an equivalent;
 removing a worktree leaves its branch and commits in the repository.
 
@@ -100,7 +106,7 @@ tools/check-worktrees.sh --root-checkout before-fix --rev HEAD~3
 The checkout is `$CLAWDLINE_NEXT_DIR/root-worktrees/<name>` (override the directory with
 `CLAWDLINE_ROOT_WORKTREES`), and `<name>.owner.json` beside it records the repository, real path,
 base commit, creation time and `CLAWDLINE_SESSION_ID` or `TMUX_PANE`. The name is letters, digits,
-`.`, `_` and `-`; an existing name is refused. Switch to a branch inside it if the work will be
+`.`, `_` and `-`, and may not start with `.`; an existing name is refused. Switch to a branch inside it if the work will be
 merged. The audit then reports it with owner `root:<session>` and never as `unknown`: dirty is
 `uncommitted`, a commit not on the target is `unlanded`, a working process inside is `active_task`,
 and only a clean, landed, idle checkout is `landed_clean`. `--apply` checks the record, target and
@@ -112,8 +118,8 @@ checkout this way instead. Existing directories in `/tmp` are not adopted or rem
 
 ## Web dependencies in a linked worktree
 
-`npm run check`, `npm run build`, `npm run dev`, and the console workspace's build, dev, and preview
-commands run `tools/ensure-web-deps.mjs` before their real command. There is no manual worktree setup.
+`npm test`, `npm run check`, `npm run build`, `npm run build:cloud`, `npm run dev`, and the console
+workspace's build, `build:cloud`, `build:demo`, dev, and preview commands run `tools/ensure-web-deps.mjs` before their real command. There is no manual worktree setup.
 `(cd web && npm run deps)` runs the same preparation explicitly.
 
 When the primary checkout has a valid install for the same `package-lock.json`, the preparer makes a

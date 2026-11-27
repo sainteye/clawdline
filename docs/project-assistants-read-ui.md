@@ -10,11 +10,17 @@ have independent owners and gates.
 ## Captured source port
 
 `SourceClient.view(request: ProjectAssistantReadViewRequest, signal:
-AbortSignal): Promise<ProjectAssistantReadViewResponse>` is method17. Only
-this method requires API59. The original16 methods remain API58-compatible.
+AbortSignal): Promise<ProjectAssistantReadViewResponse>` is method17. It
+requires API61 (`PROJECT_ASSISTANTS_VIEW_API_LEVEL`); the base Bot methods
+require API60 (`PROJECT_ASSISTANTS_API_LEVEL`). These routes were built at
+API58/59 on a branch and first reached main together at 61. Later view
+features raise the level for the request that uses them: `team_cards` needs
+API110, `defer_trace_count` API113, `progress` mode API118 and
+`exchange_excerpts` API125.
 The captured HTTP adapter uses `GET /v1/project-assistants/{encodedBot}/view`
-with exactly `machine_id`, `conversation_id`, `mode`, `source_epoch`,
-`cursor`, `after_seq` and `page_size`. Empty strings and zeroes survive the
+with `machine_id`, `conversation_id`, `mode`, `source_epoch`, `cursor`,
+`after_seq` and `page_size`, plus `team_cards=true`, `defer_trace_count=true`
+or `exchange_excerpts=true` only when the request sets them. Empty strings and zeroes survive the
 Cloud read envelope `project-assistants.view` unchanged. Extra/duplicate query
 fields and unsupported modes are typed refusals.
 
@@ -27,10 +33,10 @@ state through coercion. The captured new view transport applies the same checks
 before updating its observed source state; the original16 methods are unchanged.
 
 The adapter checks the same account, reader, machine and authorization revision
-before the request, after transport and after JSON decoding. API59 is also
-checked after decoding, including a downgrade with an otherwise unchanged
+before the request, after transport and after JSON decoding. The view API
+level is also checked after decoding, including a downgrade with an otherwise unchanged
 grant. Native capability metadata is never promoted into execution evidence.
-An API58-only source can still supply roster/catalog metadata, but Chat stays
+A source below the view level can still supply roster/catalog metadata, but Chat stays
 read-only with `pa_unsupported`; it never falls back to aggregate reads.
 
 ## Snapshot, refresh and history

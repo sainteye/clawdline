@@ -1,7 +1,8 @@
 # Bounded Bot read views
 
-This is the additive producer/consumer contract. The port and generated types
-do not mount a route, enable the feature or establish a live implementation.
+This is the additive producer/consumer contract. The route is mounted and live:
+`GET /v1/project-assistants/{bot}/view` and the Cloud word
+`project-assistants.view` serve it, and Chat reads through it.
 Keep the existing Repository, EventFeed and Export transfer contracts.
 
 ## Proven starting point
@@ -40,14 +41,18 @@ bounded by the output size.
 
 ## Read operation and modes
 
-The planned additive route is `GET /v1/project-assistants/{bot}/view`, with one
+The additive route is `GET /v1/project-assistants/{bot}/view`, with one
 new read Cloud word `project-assistants.view` and one additional SourceClient
-method `view`. Existing16 methods/routes remain unchanged. Only this new read
-operation needs API59; the existing metadata surface retains API58 support.
-The route/API bump is the consumer's later implementation, not this schema.
+method `view`. Existing16 methods/routes remain unchanged. The view operation
+needs API61; the base Bot metadata surface needs API60. (These were built at
+API58/59 on a branch and first reached main together at 61.)
 
 The closed generated request contains key, conversation_id, mode, source_epoch,
-cursor, after_seq and page_size. The path supplies the captured Bot ID and
+cursor, after_seq and page_size, plus three optional flags: `team_cards`
+(snapshot/history also return team create/update permission rows), `defer_trace_count`
+(the head skips the trace aggregation outside traces mode and reports zero)
+and `exchange_excerpts` (snapshot/history only; exchange text is shortened to
+`MaxExchangeExcerptRunes`). The path supplies the captured Bot ID and
 the query supplies the other fields. Modes are:
 
 | Mode | Required state | Complete returned payloads |
@@ -57,6 +62,7 @@ the query supplies the other fields. Modes are:
 | events | Epoch, empty cursor, after_seq>=0 | Durable events after that source cursor |
 | permissions | Epoch, empty or signed collection cursor | Current-fence pending-offer summaries |
 | traces | Epoch, empty or signed collection cursor | Latest current-fence turn/category summaries |
+| progress | Epoch, empty or signed collection cursor | Latest narration trace per turn step, newest first |
 | detail | Epoch, signed detail reference, page_size1 | One complete stored offer or trace |
 
 Events use existing MaxEventPageRows256; other pages use MaxPageRows100.

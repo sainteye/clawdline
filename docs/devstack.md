@@ -1,6 +1,19 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
+> **What the Go daemon does with `.devstack.json` today** (`internal/adapters/devstack`, served at
+> `GET /v1/devstacks`): it reads the file and asks each declared `port` whether anything accepts a
+> connection on `127.0.0.1`, with a 150 ms timeout. **It runs none of the commands the file names**
+> — not `status`, `up`, `down`, `restart` or `logs` — because that route is reachable by every paired
+> device. So there are no buttons, no state document is read, no placeholder is substituted, and
+> there is no trust file or fingerprint. A process is only `running` or `stopped`; a stack is
+> `running`, `partial`, `stopped` or `unknown`, and an `unknown` stack says why: `status_not_run`
+> (it names `status` but declares no ports) or `nothing_declared`. Discovery walks up from every
+> live Session's directory and every directory in the icon registry, stops at the home directory,
+> and keeps a linked Git worktree's copy only while a live Session is in it. One answer holds at most
+> 64 stacks; a file is read up to 64 KiB with 32 declared processes. The `examples/` files named at
+> the end of this page are not in this repository.
+
 # The dev stack a project describes
 
 Most projects have a handful of long-running things that make up "the app running locally" — an

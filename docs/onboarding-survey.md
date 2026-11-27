@@ -1,7 +1,9 @@
 # Onboarding survey
 
-Clawdline asks three optional questions: the main reason for using the product, current AI
-tools (multiple choice), and discovery source. English and Taiwan Traditional Chinese ship
+Clawdline asks three questions in an optional survey: the main reason for using the product,
+current AI tools (multiple choice), and discovery source. The whole survey can be skipped, but
+Submit needs an answer to all three; a partial answer shows "Please answer all three questions
+before submitting." English and Taiwan Traditional Chinese ship
 together; other interface languages use the English fallback. The form starts with no choices
 selected. A single dark card uses the console's existing background, card, text and warm orange accent
 tokens. The survey and statistics selectors share one centred chevron while retaining native

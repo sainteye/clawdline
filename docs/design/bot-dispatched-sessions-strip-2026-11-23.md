@@ -1,6 +1,29 @@
 # Bots: show the Sessions a Bot has dispatched (design direction, 2026-11-23)
 
-Status: design proposal only. Nothing here is implemented or approved.
+Status: proposed 2026-11-23; since built as direction A (the chat strip) plus a roster count.
+The proposal below is kept as written. What shipped differs from it in these ways:
+
+- Work links carry `title`, `project` (a plain folder name, not the `SessionBotDispatchProject`
+  shape, so rows show no Project mark), `worker_terminal` and `worker_session` (instead of one
+  `session`), `target_project_id`, `started_at` and `finished_at`.
+- `dispatched_work` has four counters, `{running, executing, needs_you, delivered}`. `delivered`
+  has no display window: a finished link counts while its landing is owed, and a failed link with
+  a pending landing counts too (`countDispatchedWork` in
+  `internal/adapters/projectassistantstore/active_work.go`).
+- In the strip (`web/console/src/project-assistants/dispatched-work.ts`, `DispatchedWorkStrip.tsx`),
+  `accepted` is its own queued state with a hollow green mark; `completed` and failed-with-landing
+  rows stay until the landing settles, with no 24-hour window and no dismiss; failed and delivered
+  share one rank and one "awaiting integration" count; each rank is ordered by `started_at`. The
+  "Dispatched Sessions" label is only in the aria-label. A row with nothing to open says "no
+  Session to open yet". "N more" opens the unfiltered Sessions page.
+- The strip renders in `.pa-chat-work` at the end of the conversation, not in `.pa-chat-footer`;
+  the background capsule sits beside it on the same line rather than merged into it; the list is
+  capped at `40vh` on every width.
+- The switch is "Show dispatched Sessions", a check item in the roster's options menu, stored per
+  browser (`localStorage` key `clawdline.bots.show-dispatched`, on unless turned off). It also
+  governs the waiting-on-work state of `bot-waiting-on-work-status-2026-11-23.md`.
+- Direction B was replaced by that page's design: a clone mark and count among the row's badges,
+  not a grey third line.
 
 ## The request
 

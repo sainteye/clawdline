@@ -63,9 +63,10 @@ and an Idempotency-Key, retried with the same key and body when no answer
 arrived. Every other row shows the machine's name, its state and the next
 step, and cannot be chosen. Nothing is preselected.
 
-The console refuses the whole answer for a wrong schema or status, a row
-without a machine ID or name, the same `machine_id` twice, or one hook on two
-machines. A row state it does not know, or a `ready` row without a hook, is
+The console refuses the whole answer for a wrong schema or status, a missing
+boolean `complete` (even on an `unavailable` answer), a row without a machine
+ID or name, the same `machine_id` twice, or one hook on two `ready` rows; a
+non-`ready` row's hook is set to null and not compared. A row state it does not know, or a `ready` row without a hook, is
 shown as unknown and the list is marked as possibly incomplete, as is
 `complete: false`. Two machines with the same name stay two rows. A 404 from a
 Cloud without the route says investigations cannot be started there yet; the
@@ -181,7 +182,9 @@ Cloud owns the decision; the console only reads `GET /su/v1/health/attention`
 (`web/console/src/cloud/admin/health/attention.ts`):
 
 - The read is sent only after `CloudGate` learns `cloudOperationsAccess=true`;
-  one reader serves the whole gate, so a remounted console adds no poller. It
+  one reader serves the whole gate, so a remounted console adds no poller. (The
+  "Waiting for you" panel on `/admin/health`, under `AdminGate`, runs its own
+  reader.) It
   reads when the page is visible, then at the existing connection-health live
   cadence (`console.health_ui_refresh_seconds`) under the same per-read deadline and
   body bound; a failure waits the same interval. A hidden page does not read.
@@ -189,15 +192,15 @@ Cloud owns the decision; the console only reads `GET /su/v1/health/attention`
   `/admin/health/incidents/<incident_id>` makes the whole answer a failure, never
   zero items. `status: "unavailable"`, a failed read, a pending read and an empty
   list are told apart; `complete: false` says more may be waiting.
-- The sidebar's Administrator section lists the dashboard first and the reach
-  page last. Its mark is drawn only for one or more listed items; open or
+- The sidebar's Administrator section lists the dashboard first, then the
+  support inbox (`/help/admin`), and the reach page last. Its mark is drawn only for one or more listed items; open or
   needs-you incident totals never draw it. Reading the list clears nothing.
 - `/admin/health` lists each item under "Waiting for you" with Cloud's reason and
   its one action — dispatch an Agent to investigate, review the proposed fix, or
   review the result — linked to that incident. None of them approves anything:
   Cloud has no approval mutation yet.
 
-The reach page's console entries (sidebar, Settings link, `#page=transparency`)
+The reach page's console entries (sidebar, `#page=transparency`)
 are administrator-only. Its public page on the website is still public; this
 console change does not make it private.
 

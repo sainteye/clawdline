@@ -49,7 +49,7 @@ Test files: `internal/transport/http/project_assistants_cloud_access_matrix_test
 | D2 | A turn accepted before a re-pair, whose reply is held in flight across it, completes exactly once; replays during and after the reply return the accepted receipt; one prompt, one reply. | source fixture, barrier |
 | D3 | A view packed under one grant and re-paired before publication is refused (`pa_revoked`); a fresh request succeeds. | source fixture, barrier |
 | D4 | An older-history view cursor from before a re-pair is `pa_cursor_expired`. | source fixture |
-| E1 | Every one of the 34 Bot words' executable vocabulary examples is routed exactly once as the verified sender; commands carry their idempotency key; only real commands ask for the write gate, `read`/`observed` do not, reads ask no command authority. | Bridge unit, recording ports |
+| E1 | Every one of the 86 Bot words' executable vocabulary examples is routed exactly once as the verified sender; commands carry their idempotency key; only real commands ask for the write gate, `read`/`observed` do not, reads ask no command authority. | Bridge unit, recording ports |
 | E2 | The machine write switch stops every command before routing and never stops reads or read/observed metadata. | Bridge unit |
 | E3 | A read-only viewer (marked as the relay link marks it, only when a write gate is asked) is refused every command with `viewer_read_only` before routing and keeps reads and its own metadata. | Bridge unit |
 | E4 | A sender the roster no longer holds is refused every command with `unknown_sender`; Bot reads are not refused at the Bridge and stay the source pin grant's decision (A1, B1). | Bridge unit |
@@ -85,7 +85,8 @@ prompt after it.
 - Hosted console and browser behavior, and physical phone or second-computer
   viewers; a viewport test is not a device.
 - Production Cloud deployment and the sender's browser candidate (API 74
-  `bot_id` + conversation), which the current API 73 source does not carry.
+  `bot_id` + conversation); the source carries it from API 74, but this matrix
+  does not exercise it.
 - Native Claude Code and Codex resume; the matrix uses a synthetic provider.
 - Routine progress, fallback and group behavior beyond reading existing
   baseline fields.

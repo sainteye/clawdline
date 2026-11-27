@@ -35,8 +35,10 @@ evidence; it no longer describes the current notification mechanism.
 2. **The attempted fallback had defects of its own.** Its build mark, cache retention, one-shot
    retry and `postMessage` path each produced useful evidence about testing, but none could repair
    an event that never existed. Once declarative navigation worked, its persistent wanted record
-   became harmful: it could replay after the reader returned to the list. The whole second road was
-   retired rather than maintained beside the mechanism that solved the platform fault.
+   became harmful: it could replay after the reader returned to the list. The second road's record,
+   caches and counters were retired rather than maintained beside the mechanism that solved the
+   platform fault; `sw.js` keeps only a small `notificationclick` compatibility handler (post
+   `navigate`, then `focus()`) for browsers that deliver the payload through the legacy Push API.
 
 ### Why it took eleven rounds
 
@@ -103,10 +105,10 @@ this: without an instrument fine enough to separate them, all four would now be 
 counters read four posts to one arrival, with one window, focused and visible; under the current one
 the same shape delivers every time. The only variable is which build the worker is, and what WebKit
 does differently there is not reachable from this side. Three successes are not proof it will not
-return. If it returns, the console lines on both
-sides of the gap — `[clawdline/sw]` and `[clawdline/page]` — now say which road took the tap and
-where it stopped, and [`diagnostics.md`](diagnostics.md) describes the counters that survive a
-flood. **That is the difference between this line and where it started: a failure now names itself.**
+return. At the time, the console lines on both
+sides of the gap — `[clawdline/sw]` and `[clawdline/page]` — said which road took the tap and
+where it stopped, and counters survived a flood. Those lines and counters were removed with the
+fallback, so a recurrence would have to be instrumented again.
 
 ---
 
@@ -115,7 +117,7 @@ flood. **That is the difference between this line and where it started: a failur
 Keep the four headings above: what was actually wrong, why it took as long as it did, what would
 have shown it sooner, and what is still not known. The third is the only one that pays for the
 file's existence — an entry that stops at "here is what was wrong" is a changelog entry and belongs
-in `CHANGELOG.md`.
+where the defect was fixed.
 
 **Write it when the line ends, not while it is going.** A conclusion written mid-hunt is one more
 reading with no power to disagree, which is the thing this file is about.

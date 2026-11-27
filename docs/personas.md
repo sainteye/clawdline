@@ -162,9 +162,8 @@ work items. Its source is `original` (`persona.Original`), so its text ends with
 link. It carries the original `zero-based-review` skill
 (`internal/domain/squad/builtin_skills/zero-based-review.md`), which applies whatever a task
 writes, because a review child writes nothing. It suggests itself for no Board kind: `architect`
-is the only persona that names `epic`, and the console offers a kind's default only when exactly
-one persona names it (`suggestedPersonaForKind`), so a second would take the default away from
-every Epic.
+is the only persona that names `epic`. The Board no longer preselects a role from an item's kind,
+so a role's suggested kinds are shown in its detail and choose nothing.
 
 | id | Name | Traditional Chinese name | Teams | Source |
 | --- | --- | --- | --- | --- |
@@ -284,9 +283,15 @@ splits each line the way a POSIX shell does and checks this.
   daemon started `claude` as `code-reviewer` and `codex` as `architect` in tmux; `ps` showed each
   value as one argument, both rows carried `persona`, the Codex row bound its conversation, and
   asked for their role both answered from their persona file).
+- **Antigravity:** no launch argument (`PersonaArgs` returns none). A role reaches it only inside
+  the Squad launch prompt carried by its prepared context (`AntigravityContext`); a persona or
+  Board language without that context is refused (`ErrProviderOptionsUnsupported`), and a persona
+  with a context but no Squad prompt is refused as `ErrSquadContextUnavailable`.
 
-Three launch paths take a persona. Every one of them goes through `Admit`, so all three refuse a
-name the catalog does not have. A Board assignment to a new Session reaches the third:
+Three launch paths take a persona. Every one of them goes through `Admit`. Each admits a built-in
+persona ID or a well-formed private role ID (`squad.ValidCustomID`: dot-namespaced and not under
+`clawdline.`), which is resolved against the Squad catalog when the Session launches, and refuses
+anything else before anything opens. A Board assignment to a new Session reaches the third:
 
 | Path | How it names one |
 | --- | --- |
@@ -318,6 +323,9 @@ default: a Board item's kind and a dispatch's kind (`plan_review` included) only
 }
 ```
 
+After the built-in personas the route appends every private Squad role definition, with its
+`clawdline.team.*` teams (`custom` when it names none) and empty `suggested_kinds`.
+
 The injected texts stay on the machine and never travel on this route. Any method other than GET
 gets `405 method_not_allowed`.
 
@@ -327,17 +335,20 @@ segment of a route that already names its assistant:
 
 - `/start/claude/as` is still a model called `as`, and gets 404.
 - `/resume/{conversation}/as/{id}` with no assistant gets 404.
-- A name the catalog does not have gets `400 unknown_persona` before anything opens.
+- A name that is neither a built-in persona nor a well-formed private role ID gets
+  `400 unknown_persona` before anything opens. A private role ID no installed role has is refused
+  with the same code when the start resolves it.
 - A success answer (`PlaceStarted`, `PlaceResumed`) carries `persona`.
 
 **Dispatch.** The `persona` string in `task.json` is optional. A non-string is refused as
-`bad_task` with "persona must be a string". An unknown name is refused as `bad_task` with "persona
-must be one of: architect, backend, …". `clawdline dispatch --persona` refuses an unknown name
+`bad_task` with "persona must be a string". A name that is neither a built-in persona nor a well-formed
+private role ID is refused as `bad_task` with "persona must be one of: architect, backend, …"
+(the message lists only the built-in IDs). `clawdline dispatch --persona` refuses such a name
 locally, before anything is written or sent. The task record keeps it, and `TaskRow.persona` and
 `BrokerTask.persona` report it.
 
-**Root Assignment.** `RootAssignmentRequest.persona` is optional, and an unknown name is
-`bad_root_assignment`. The Feature Root is launched as that persona. Its `ASSIGNMENT.md` gains a
+**Root Assignment.** `RootAssignmentRequest.persona` is optional, and a name that is neither
+a built-in persona nor a well-formed private role ID is `bad_root_assignment`. The Feature Root is launched as that persona. Its `ASSIGNMENT.md` gains a
 `PERSONA` section naming the persona and its file. The persona is part of the request the receipt
 compares, so the same `request_id` with another persona gets `request_conflict`. A request without
 one digests exactly as it did before the field existed. `BrokerRootAssignment.persona` reports it.
@@ -350,8 +361,8 @@ one digests exactly as it did before the field existed. `BrokerRootAssignment.pe
 - the Epic owner's `POST /v1/work/v2/agent/items/<epic id>/children`, in its `assign` object;
 - the Epic owner's `POST /v1/work/v2/agent/items/<child id>/assign`, beside `mode`.
 
-An empty or absent `persona` is none. With `"mode": "new_session"`, a name the catalog does not
-have is `400 unknown_persona`. With `"mode": "existing_session"`, any persona is
+An empty or absent `persona` is none. With `"mode": "new_session"`, a name that is neither a
+built-in persona nor a well-formed private role ID is `400 unknown_persona`. With `"mode": "existing_session"`, any persona is
 `422 persona_not_applicable`: that Session's system prompt was fixed when it opened. Both are
 refused before anything is written; on the children route that means before the child is created.
 The persona goes into the `RootAssignmentRequest` that opens the Session, so its `ASSIGNMENT.md`
@@ -364,7 +375,8 @@ assignment opened one, and leaves it out otherwise.
 
 `clawdline item child … --assign-new --persona <id>` and `clawdline item assign <id> --new
 --persona <id>` send it. `--persona` with `--assign-terminal` or `--terminal`, or without a new
-Session, is a usage error (exit 2), and so is an id this build lacks; nothing is asked of the
+Session, is a usage error (exit 2), and so is an id that is neither built in nor a well-formed
+private role ID; nothing is asked of the
 daemon.
 
 ## Reading it back
@@ -405,12 +417,11 @@ paired machine without sending role names.
 - **The team switcher.** The start sheet, its resume step and the Board's new-Session assignment
   draw one role row (`session/RoleRow.tsx`). When the catalog has personas in more than one team,
   its "Role" label is a native select naming the teams that have at least one persona, in the
-  order above (Engineering, Marketing, Quality, …), styled like
+  order above (Engineering, Marketing, Product, …), styled like
   the label with a caret so a phone opens its own picker; the chips to its right are "No role"
   and that team's personas only. With a persona chosen, the team shown is the team last picked
   in this browser (localStorage, `clawdline.persona.team`) when it holds the persona, otherwise
-  the persona's first team in that order; so the Board's kind default (epic → architect, issue
-  → minimal-change) shows the engineering team. With none chosen it is the remembered team,
+  the persona's first team in that order. With none chosen it is the remembered team,
   otherwise engineering. Switching team keeps the chosen persona when the new team holds it too
   (a code reviewer stays chosen from engineering to quality) and otherwise resets the choice to
   "No role": a start never sends a persona the person cannot see. A catalog from an older daemon
@@ -465,24 +476,17 @@ paired machine without sending role names.
 - **Restoring after a reboot.** Each row on the restore sheet shows the role it was launched with
   (`RestorableSession.persona`). Restoring relaunches it with that role; the restore request has
   no field to change it, so the sheet shows it rather than offering chips.
-- **Board.** A new-Session assignment shows the role chips beside the assistant chips. The console
-  matches distinctive English and Traditional Chinese words in the item's title and description
-  against the closed role catalog (`PERSONA_SIGNALS` in `web/console/src/personas.ts`). This is an
-  immediate local calculation: it sends no item content to another service. A unique highest
-  content match is preselected and a line above the chips names both the suggested role and up to
-  three matching words. An exact tie is not broken by catalog order. When content has no unique
-  answer, the item's kind remains the fallback only when exactly one persona suggests it (epic →
-  architect, issue → minimal-change); feature, which two suggest, starts with none. The person may
-  choose another role or **No role**; the explanation remains visible and says the choice was
-  changed. The role radiogroup points to the explanation with `aria-describedby`, and both the
-  explanation and the horizontal chip row wrap or scroll within the card at phone width. The
-  button names the effective choice, and `persona` goes into the assign body only when one is
+- **Board.** A new-Session assignment keeps its roles behind a collapsed role toggle after the
+  model choice; the toggle names the chosen role, or No role. A new Session starts with no role:
+  the Board does not preselect one from the item's words or its kind (since 2026-10-04, after a
+  kind default sent a persona the person had not chosen). Opening the toggle shows the AI
+  suggestion button and the role row; picking a role or **No role** closes it. The button names
+  the effective choice, and `persona` goes into the assign body only when one is
   chosen. An unreadable or older catalog still draws no role UI. The existing-Session picker and
   an Epic's children list show the owner's bot when its session row has a persona.
 
-  A separate compact **AI suggestion** button is additive to that local behavior. Opening,
-  rendering or scrolling an item sends nothing and keeps the existing keyword/kind result. The
-  explicit press requests one turn with only the item's kind, title and description through the
+  The **AI suggestion** button is the only way a role is preselected. Opening, rendering or
+  scrolling an item sends nothing. The explicit press requests one turn with only the item's kind, title and description through the
   configured provider (currently Codex); it needs no separate Settings consent. Its POST carries
   the item version and an Idempotency-Key; a dropped response is replayed rather than classified
   twice. The daemon gives
@@ -490,14 +494,16 @@ paired machine without sending role names.
   prompt bodies, conversations, attachments, Project files or credentials. A returned id is
   accepted only when it is in that catalog. `ambiguous`, malformed, unknown-id, timeout, quota and
   provider failures leave the current selection unchanged. A valid result is preselected, but the
-  person can still pick another role or No role afterward. Editing the item invalidates the shown
+  person can still pick another role or No role afterward; the result line then says the choice
+  was changed, and the role row points to it with `aria-describedby`. Editing the item invalidates the shown
   AI result instead of silently applying it to newer words.
 
 On Clawdline Cloud the same bundle reaches the machine through the encrypted relay
 (`internal/app/cloudops`, `web/console/src/cloud`):
 
 - **`personas`** is a read the machine answers as `GET /v1/personas`. It is in `Implemented()`, so
-  it appears in the machine descriptor's `machine.commands`, and in `carry.ts`. The copied client
+  it appears in the machine descriptor's `machine.commands`, and in the generated
+  `carry-generated.ts` that `carry.ts` reads. The copied client
   refuses a read the descriptor does not list before anything is sealed
   (`cloud_machine_unsupported`), which is what hides the chips in front of an older daemon.
 - **`start` and `resume`** take an optional `persona` and build the `/as/{persona}` route, naming
@@ -523,16 +529,18 @@ persona, the conversation is restored with none rather than not at all.
 
 ## Bounds
 
-The catalog holds at most **64** personas (`persona.MaxPersonas`). Each injected text is at most
+The built-in catalog holds at most **64** personas (`persona.MaxPersonas`); private Squad roles
+that `GET /v1/personas` appends are bounded by Squad's own limits, not this one. Each injected text is at most
 **8 KiB** (`persona.MaxPersonaBytes`), counting the preamble, the body and the source line. Both
 are registered as `personas.catalog` and `personas.text_bytes`, and `/v1/diagnostics.capacity`
-reports them. See docs/limits.md N52. The first 43 shipped texts were 3,782 to 5,149 bytes each
+reports them; they are registered in `internal/domain/capacity/register_squad.go`. The first 43 shipped texts were 3,782 to 5,149 bytes each
 (measured 2026-10-02); `zh-editor` was added later.
 
 One explicit AI role-classification turn is at most **16 KiB** of encoded input
 (`personas.suggestion_context_bytes`). The closed catalog and item kind/title stay; the end of an
 overlong description is omitted until the request fits. It shares the two admitted small-turn
-slots and 30-second deadline with intent planning and smart naming. See docs/limits.md N55.
+slots and 30-second deadline with intent planning and smart naming. It is registered in
+`internal/domain/capacity/register_squad.go`.
 
 ## Does a persona help?
 

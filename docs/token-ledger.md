@@ -33,12 +33,18 @@ Subagent transcripts live beside the session in `<session>/subagents/*.jsonl`.
 Codex rollouts carry `event_msg` rows of type `token_count` whose `info.last_token_usage` is one
 turn (`input_tokens`, `cached_input_tokens`, `output_tokens`, `reasoning_output_tokens`).
 
+Antigravity (Gemini) transcripts are read by `feedAntigravity`: each `MODEL` row of type
+`PLANNER_RESPONSE` is one call. The whole bounded snapshot is projected again on each read rather
+than read on from an offset. The native log names neither a model price nor a prompt snapshot, so
+its input stays in `other` and its cost is unknown.
+
 ## Price
 
 Per model, from `transcript.Price`: cache reads at 0.1× the input price, **1-hour cache writes at
 2×** and 5-minute writes at 1.25×, output at the output price. Every Claude Code cache write seen on
-this machine (45.3 M tokens over the last forty sessions) was 1-hour; the session card's existing
-`transcript.Cost` counts all writes at 1.25× and so under-reports. A model with no price has no cost:
+this machine (45.3 M tokens over the last forty sessions) was 1-hour. `transcript.Cost` prices them
+the same way and prices any write a summary does not split as 1-hour; the retired Swift app counted
+all writes at 1.25× and so under-reported. A model with no price has no cost:
 the ledger keeps tokens and says the cost is unknown, never zero.
 
 ## Attribution: what each token was spent on
@@ -179,8 +185,10 @@ the rules above left open:
 - **The reading loop** (`internal/app/usage.go`, `UsageLedger.Pass`, started with the daemon's other
   background work by `StartUsage`) runs once a minute. Each pass looks for transcripts written
   within the look-back window: `~/.claude/projects/*/*.jsonl`, each session's
-  `<session>/subagents/*.jsonl`, and `~/.codex/sessions/YYYY/MM/DD/*.jsonl` for the local dates the
-  window covers. A row read within the window whose file the globs no longer find is stat'ed by its
+  `<session>/subagents/*.jsonl`, Antigravity's
+  `~/.gemini/antigravity-cli/brain/*/.system_generated/logs/transcript_full.jsonl`,
+  `~/.codex/sessions/YYYY/MM/DD/*.jsonl` for the local dates the window covers, and archived Codex
+  rollouts in `~/.codex/archived_sessions/rollout-*.jsonl` whose start date falls in the window. A row read within the window whose file the globs no longer find is stat'ed by its
   stored path, which is how a Codex rollout still written under an older date keeps being read. A
   transcript is **due** when it is new, its size, modification time or path changed, its last read
   stopped short, or it could not be read last time. Each due transcript gets one `Feed` from its
@@ -238,8 +246,9 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
 ## What a person and a session see
 
 - `clawdline usage [--session <conversation> | --task <id> | --item <id>] [--json]`
-  (`cmd/clawdline/usage.go`): with no flag, the calling session, named by `CLAUDE_CODE_SESSION_ID` or
-  `CODEX_THREAD_ID` as `session report` names it. One header line — calls, peak context, cost, and for
+  (`cmd/clawdline/usage.go`): with no flag, the calling session, named by `CLAUDE_CODE_SESSION_ID`,
+  `CODEX_THREAD_ID`, `CODEX_SESSION_ID` or `CLAWDLINE_PROTOCOL_SESSION_FILE` as `session report`
+  names it. One header line — calls, peak context, cost, and for
   a session its wait calls, calls above 200k and compactions — then one line per category that spent
   anything, by cost (by tokens when the cost is not whole): name, share, tokens, cost, with `rules`
   marked `(upper bound)`; then one line per gap. `--json` prints the daemon's answer. A refusal prints
@@ -266,7 +275,7 @@ What the implementation settled (`UsageLedger.ForSession`, `ForTask`, `ForItem`)
   is not on the Board is a 404 `unknown_item`. An id is letters, digits, `-`, `_` and `.`: anything
   else is a 400 before it reaches a query or a file name.
 - **On a phone.** The hosted console asks the same three routes through Clawdline Cloud, as the words
-  `usage.session`, `usage.task` and `usage.item` (`internal/app/cloudops/ops.go`,
+  `usage.session`, `usage.task` and `usage.item` (`internal/app/cloudops/ops_unavailable_reads.go`,
   `web/console/src/cloud/carry.ts`), so Session detail's “Token bill” and a Board item's bill read
   the same answer on a phone as on this machine's own network, reasons and refusals included. The
   bill's component does not know which: the seam turns `/v1/usage/…` into the word. `carry.test.ts`

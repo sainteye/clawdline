@@ -100,10 +100,10 @@ as an explicit localized expired tile rather than a broken image or an omission.
 store may back the same opaque relative route; callers and transcripts do not learn or persist its
 storage URL.
 
-The store defaults to 24-hour TTL, 64 live artifacts and 64 MiB total, with a 12 MiB source and
+The store defaults to 24-hour TTL, 256 live artifacts and 64 MiB total, with a 12 MiB source and
 normalized-image cap, 12,000-pixel edge cap and 40-megapixel decoded cap. Tombstones are bounded
-and retained long enough to distinguish deletion from an unknown id. Pruning removes only files
-whose opaque ids and metadata belong to this store; its directory is mode `0700` and its files are
+(at most 512 metadata records) and retained long enough to distinguish deletion from an unknown
+id. Pruning removes only files whose opaque ids and metadata belong to this store; its directory is mode `0700` and its files are
 `0600`. The store lives in `CLAWDLINE_NEXT_DIR/session-images`. Until 2026-10-18 an id this store
 did not know was also looked up, read-only, in the retired Swift app's picture cache (moved by
 `CLAWDLINE_SESSION_IMAGE_DIR`); that reader and the variable are gone, so such an id is unknown.
@@ -202,7 +202,7 @@ window that matters, since a genuinely stored image reads `expired` from its 24-
 7-day tombstone is reaped.
 
 The store's byte budget is global and shared with the pictures sessions send each other
-(`maxCount: 64`, `maxTotalBytes: 64 MiB`, oldest evicted first), so a busy machine can evict an
+(`MaxCount: 256`, `MaxTotalBytes: 64 MiB`, oldest evicted first), so a busy machine can evict an
 image that is still on somebody's screen; it becomes an `expired` tile there. That is a known
 limitation rather than a guarantee of how long a picture lives.
 
@@ -214,7 +214,7 @@ notice is written at version 3 and every other kind at version 2; versions 1 and
 
 | `kind` | Audience | Meaning | Important typed fields |
 |---|---|---|---|
-| `task_finished` | `root` or `parent` | One dispatched task reached a terminal state | `task`, `state`, `result_path`, `outstanding`, `claims_released`, `child_may_still_write` |
+| `task_finished` | `root` or `parent` | One dispatched task reached a terminal state | `task`, `state`, `result_path`, `outstanding`, `claims_released`, `child_may_still_write`; newer rows also carry `notice_id` (a UUID), an absolute `ack_path` and optionally `leftovers` |
 | `workspace_overlap` | `root` or `parent` | A new task's claims overlap another task | `task`, non-empty `overlaps` |
 | `file_wait_request` | `owner` | A session is waiting for exact repository paths | `wait_id`, `repository`, `paths`, `waiter_session_id`, `reason`, `release_condition` |
 | `file_wait_release` | `waiter` | The owner released those paths | `wait_id`, `repository`, `paths`, optional `commit`, optional `note` |
@@ -271,8 +271,8 @@ A message-type change is complete only when all of these move together:
 3. App and Web presentation, including visible fallback for failed recognition.
 4. `/v1/sessions/:id/transcript` serialization.
 5. Red-before-green tests for wire safety, strict fallback, both transcript readers and rendering.
-6. This inventory, the route reference in `api.md`, and the protocol overview in
-   `clawdline-protocol.html`.
+6. This inventory and the route reference in `skills/clawdline/routes.md` and its
+   `routes.zh-TW.md`.
 
 Do not add a prose prefix and teach a renderer to guess it. If identity or state matters to the
 display, it belongs in a closed envelope.

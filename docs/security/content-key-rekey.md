@@ -1,10 +1,14 @@
-# Content-key rekey control contract v1 (inactive)
+# Content-key rekey control contract v1 (enabled in source)
 
-This document defines pure Go and browser cryptography only. No producer, relay
-frame handler, or hosted viewer is enabled by this change. Existing services are
-not asserted to accept `content_key_offer` or `content_key_answer`. Future-content
-revocation is not complete until runtime rotation, publication barriers and
-revocation authority have been integrated and accepted.
+This document defines pure Go and browser cryptography only. When it was added, no
+producer, relay frame handler or hosted viewer was enabled. In source today the
+daemon wires a `content_key_offer` handler into the Cloud link (`rawRekeyCallback`,
+`internal/transport/cloud/rekey_runtime.go`) and the hosted viewer enables
+`ViewerRekey` (`web/console/src/cloud/viewer-rekey.ts`); see
+[content-key-runtime.md](content-key-runtime.md) and [viewer-rekey.md](viewer-rekey.md).
+This is not evidence of deployed rotation. Future-content revocation is not complete
+until runtime rotation, publication barriers and revocation authority have been
+accepted.
 
 ## Actors, assets and authority
 
@@ -128,4 +132,7 @@ opens the Go-equivalent answer. Both exercise exact-key recovery, tampering,
 wrong recipients, missing active keys and rollback. The fixture contains only
 fixed synthetic seeds and keys; it must never contain a production credential.
 No test here proves production pin freshness, relay acceptance, durable replay
-handling or future-content revocation. Those belong to runtime integration.
+handling or future-content revocation. Those belong to runtime integration, whose
+tests are `internal/transport/cloud/rekey_runtime_test.go`,
+`internal/adapters/cloud/rekey_runtime_test.go` and
+`web/console/src/cloud/viewer-rekey.test.ts`.

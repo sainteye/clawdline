@@ -161,8 +161,8 @@ Session finished, and what do I need to decide?" or "report this Session's summa
 answers from it. **Session info** shows the short recap under **Status**. The conversation itself is
 never changed, and the copy is not kept.
 
-- **Written ahead**: about three minutes after a Session stops, and every ten minutes while it
-  works. The copilot answers at once.
+- **Written ahead**: about three minutes after a Session stops; for a working Session, first after
+  two minutes, then at most every ten minutes while its conversation keeps growing. The copilot answers at once.
 - **When the copilot asks**: nothing is spent until you ask; then each Session takes about eight
   seconds, three at a time. A Session that has said nothing since its last recap reuses it.
 

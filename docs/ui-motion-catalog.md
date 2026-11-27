@@ -6,13 +6,15 @@ For maintainers and reviewers selecting motion changes, this register gives each
 
 The source audit is pinned to `85d42421ec8e0968290b15515b1d9c11cf60927e` (2026-10-20). Two read-only audits covered Session interactions and global pages. The root checked the navigation drawer's final stylesheet order: `main.tsx` imports `sidebar-scroll.css` after `legacy/pages.css`; historical comments in the latter do not describe the current cascade.
 
+Line numbers in the source column refer to that commit and have since moved. The implemented first-batch elements carry a matching `data-motion-id` attribute (for example `data-motion-id="AN-001"`), which locates them in current source.
+
 Do not renumber or reuse IDs. The next unused ID is AN-032. Keep an old localized name as an alias when renaming; use child IDs when splitting a scope. The Taiwan Traditional Chinese names below are the exact feedback labels issued to the person.
 
 AN-001 through AN-023 were cataloged as proposals or improvements. The first approved batch is recorded below; the remaining proposals still require selection. AN-024 through AN-031 describe existing behavior and are retained for feedback. Screenshots in the companion review artifact use production React components and CSS with synthetic data; they locate targets and do not prove animation quality, authenticated Cloud flows, or full acceptance.
 
 ## First approved batch
 
-AN-001, AN-002, AN-003, AN-004, AN-009 and AN-014 are implemented for review. Production deployment requires separate approval; the earlier HTML atlas remains a pre-implementation target map.
+AN-001, AN-002, AN-003, AN-004, AN-009 and AN-014 are implemented for review. The shared transitions are in `ui/disclosure-motion.css`, imported by `main.tsx` after `sidebar-scroll.css`; the to-do disclosure's height animation is in `ui/use-details-motion.ts`. Production deployment requires separate approval; the earlier HTML atlas remains a pre-implementation target map.
 
 The Session action menu, composer suggestions and Project picker retain only a non-interactive closing picture through discrete display transitions. Hidden content is inert immediately. Unsupported engines keep immediate controls. More commands keeps its existing level slide and observes reduced motion.
 

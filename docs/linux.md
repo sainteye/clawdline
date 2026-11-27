@@ -23,7 +23,7 @@ infrastructure. On the box:
 ```sh
 export CLAWDLINE_NEXT_DIR=/var/lib/<user>/state       # optional; default below
 export CLAWDLINE_NEXT_PORT=7727                       # optional
-export CLAWDLINE_NEXT_WEB=/path/to/dist               # required, or the console 501s
+export CLAWDLINE_NEXT_WEB=/path/to/dist               # optional when dist/ sits beside the binary; with neither, the console 501s
 ./clawdline doctor      # prints version, port, state dir, store counts
 ./clawdline serve
 ```
@@ -241,7 +241,8 @@ All of these were called on the box and answered without a stack trace:
   instead"; `global_hotkey` unavailable — "this session has no desktop (neither WAYLAND_DISPLAY nor
   DISPLAY is set)"; `notch` unavailable — "there is no notch on linux; what the island shows … is on
   the console's session list"; `launch_at_login` unavailable — "nothing on linux installs a login
-  item yet".
+  item yet". (It now names `tools/bootstrap-linux-user-service.sh`, its `systemd --user` unit and
+  `loginctl enable-linger`, as §1 describes.)
 - **`open_child`** is the model example: with no tmux server it said "linux has no iTerm2, and no
   tmux server is running, and the auto terminal setting opens a child only into a running one (start
   one, or set the terminal to tmux)", and turned `available` — "a new detached tmux session for each
@@ -309,6 +310,10 @@ hand submitted it immediately and the child then ran to `success`.
 Neither defect is about Linux. They are what a Linux box hits first because codex may be the only
 assistant signed in on it.
 
+Since then the first is fixed: `composer.go` checks for a frame only on non-Codex screens and
+recognizes Codex's composer by the status bar under it (`statusUnder`) and its placeholder. The
+second still holds: the nudge in `submit()` still requires a framed composer.
+
 ### 4.2a A picker taller than an 80×24 pane lost its frame, and the phone could not answer it
 
 A session this daemon starts in tmux on a machine nobody is attached to gets tmux's `default-size`,
@@ -361,6 +366,10 @@ only while they are.
 
 ### 4.3 Schedules have no route in standalone mode
 
+Since fixed: the daemon now serves schedules itself at `/v1/orchestrator/schedules` (list and
+create) and `/v1/orchestrator/schedules/<id>` (read, change, delete, and `/run`), so a headless
+machine can create them. The measurement as it was:
+
 The scheduler clock runs — `/v1/diagnostics` reports `scheduler.considered/due/fired` and a
 60-second tick — but `GET`/`POST /v1/schedules` answers `501 not_implemented`, "this daemon does not
 own that route yet". On macOS the proxy hides this; on Linux there is nothing behind it, so a
@@ -376,7 +385,7 @@ section with a `+` that leads nowhere.
   `LANG`; install a locale and set it in the unit to give shells another one.
 - **An owned terminal on the service account runs `/bin/bash`, not the account's `nologin`.** The
   account `tools/bootstrap-linux-user-service.sh` sets up has `/usr/sbin/nologin` as its login
-  shell, in `getent passwd` and in the unit's `SHELL`, and a terminal running it closed the moment
+  shell in `getent passwd` (the tracked unit now sets `SHELL=/bin/bash`), and a terminal running it closed the moment
   it opened (`terminal_closed`, `tmux list-sessions: server exited unexpectedly`). A terminal runs
   `SHELL`, else the account's shell, only when that is an interactive shell: an absolute path the
   account can run, not named `nologin` or `false`, and listed in `/etc/shells` where that file
@@ -398,11 +407,12 @@ section with a `+` that leads nowhere.
 - **`/v1/health` has no `capabilities` block and no scheduler numbers.** Both live at
   `/v1/diagnostics`, behind the local token. `docs/cross-platform.md` §5 rule 4 asks for health;
   what exists is diagnostics.
-- **The settings page does not render the degradations.** It still offers the ⌥Space hotkey and an
-  iTerm2 bundle-id list on a machine that has neither. The data is in `/v1/diagnostics`; the page
-  does not read it. Rule 4's second half is unbuilt.
-- **`/v1/work` refuses the orchestrator token** (`401`) although the agent guide lists `/v1/work/`
-  under it. `/v1/board` accepts it.
+- **The settings page does not render the degradations.** The ⌥Space hotkey and its iTerm2
+  bundle-id list are now drawn only inside the macOS shell, never in a browser, but the page still
+  does not read the `capabilities` in `/v1/diagnostics`. Rule 4's second half is unbuilt.
+- **`/v1/work` refused the orchestrator token** (`401`) although the agent guide lists `/v1/work/`
+  under it. Since fixed: `/v1/work/` is now machine-scoped like `/v1/orchestrator/`, and its write
+  rule matches `/v1/board`'s.
 - **Non-interactive Codex tasks need network access inside their filesystem sandbox.**
   Dispatch with `permission_mode: full` keeps `workspace-write` and now explicitly sets
   `sandbox_workspace_write.network_access=true`. Previously, pairing that sandbox's default
@@ -418,7 +428,9 @@ section with a `+` that leads nowhere.
   its gitdir and common directory, so `git add` failed on `.git/index.lock: Operation not permitted`
   with the legacy `--sandbox workspace-write`. `edits` and `full` now launch a profile that extends
   `:workspace` and names only the repository's `.git` and, for a worktree child, its
-  `.git/worktrees/<name>`. Measured with codex-cli 0.162.1 on macOS and, on 2026-10-26, with
+  `.git/worktrees/<name>`. (On macOS a worktree child is now granted narrower paths instead: the
+  object store, its branch's ref and reflog, and the gitdir — `macOSWorktreeGitPaths` in
+  `orchestrator/dispatch.go`. Linux keeps the two directories.) Measured with codex-cli 0.162.1 on macOS and, on 2026-10-26, with
   0.161.0 under bubblewrap 0.9.0 on the Ubuntu host from an ordinary shell (inside an already
   sandboxed Session nested bubblewrap refuses the probe): with nothing named, or only `.git`, the
   worktree's `index.lock` was `Read-only file system`; with only the gitdir the object write

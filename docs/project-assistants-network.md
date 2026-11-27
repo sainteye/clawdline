@@ -97,9 +97,13 @@ claim assistant observation or acknowledgement. Actual SQLite occupancy includes
 terminal, revoked and unknown records; errors remain unknown readings.
 
 These handlers are source composition adapters. Normal daemon bootstrap does
-not install a gateway, mount these raw rails or fill `Network`,
-`NetworkTransport` and `Assistants` automatically. Default source capabilities
-remain unavailable/setup and nil services refuse typed unavailable. The private
+not install a gateway or mount these raw rails. When a valid Cloud identity and
+stored device key are readable, the normal Host construction fills `Network`,
+`NetworkTransport` and `Assistants` (`prepareBotNetwork`, `prepareAssistant`;
+see [Cloud source composition](project-assistants-network-cloud.md)); the
+assistant lane also needs gateway trust in `assistant-source.json` in the state
+directory. Source capabilities report unavailable until the rail is ready or the
+assistant lane is configured, and nil services refuse typed unavailable. The private
 service still requires closed Bot frame parsers, fresh dedicated Bot account/pair
 authorization endpoints, authenticated opaque Relay routing and a genuine
 external-assistant OAuth/MCP gateway with independent consent. Existing human
@@ -243,9 +247,9 @@ principal.
 
 The HTTP handlers are composition adapters, not an instruction to mount a new
 rail on an existing daemon. Source `Host.Options.Network`, `NetworkTransport`
-and `Assistants` require independently configured composition. They remain nil
-in the existing normal daemon bootstrap; this task does not enable or install
-that infrastructure. Per-Bot settings therefore truthfully report unavailable
+and `Assistants` are filled by the normal Host construction only when its
+Cloud identity, device key and, for assistants, `assistant-source.json` trust are
+readable; otherwise they remain nil. Per-Bot settings therefore truthfully report unavailable
 or setup state until real composition and authenticated service support exist.
 A nil handler/service returns typed unavailable. The local test explicitly
 composes its own isolated source instances and authority.
@@ -571,14 +575,15 @@ the peer and assistant services with that pointer, construct the Host with those
 services in Options, assign its Host pointer, and only then enable the Host.
 For assistant-only composition, supply NetworkAccount explicitly. Supply the
 independent current NetworkCapabilities callback only after infrastructure trust
-and readiness have actually been established. No normal daemon startup performs
-this configuration in this source-only construction.
+and readiness have actually been established. The normal Host construction now
+performs this composition as described in
+[Cloud source composition](project-assistants-network-cloud.md).
 
 Source capability management, global assistant policy and dedicated grant writes
 remain separate local management ports. Their callers must authenticate the
 human manager. Neither raw principal transport nor native tools exposes these
-management writes. The normal source remains unavailable until Root wires its
-real configured/private service composition.
+management writes. The normal source reports unavailable until that
+composition's Cloud rail is ready or its assistant lane is configured.
 
 ## Required live authorization port and ordered receipts
 

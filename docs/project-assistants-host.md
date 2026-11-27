@@ -4,11 +4,11 @@ This host connects the approved removable [Bots module](../web/console/src/proje
 
 ## Ownership and entry
 
-`SessionsPage.assistantEntry` is one slot outside the local/fleet list branch. `App` supplies the fixed orange blob `BotOrb` only after an authorized source has reported readable Bots access. A never-enabled source reporting `hidden` produces no entry and no list request. A source reporting `history_only` retains history/export access while content mutations remain disabled.
+`useProjectAssistantsHost` (`pages/project-assistants.tsx`) builds the fixed orange blob `BotOrb` as its `dock`, and `App` places it in the `QuotaBar` accessory beside the plugin and Board docks, only after an authorized source has reported readable Bots access. A never-enabled source reporting `hidden` produces no entry and no list request. A source reporting `history_only` retains history/export access while content mutations remain disabled.
 
 `pages/project-assistants.tsx` registers `drawer: false`. Direct page admission returns Sessions; typing a fragment cannot enable the feature. The normal entry is the Bots shortcut in the status bar, and the origin fragment remains unchanged throughout the nested Bots journey.
 
-`useProjectAssistantsHost` saves the actual `BotOrb.onOpen(opener)` element, the origin hash, window scroll and Session scroll elements before hiding the origin. The existing `SessionsPage`, Session composer, recorder owner and `CopilotDockView` remain mounted. The host renders a fresh `Bots` instance for each orb entry, so selection always starts empty. Desktop retains roster/chat columns; phones show roster then chat.
+`useProjectAssistantsHost` saves the actual `BotOrb.onOpen(opener)` element, the origin hash, window scroll and Session scroll elements before hiding the origin. The existing `SessionsPage`, Session composer, recorder owner and `CopilotDockView` remain mounted. The host renders a fresh `Bots` instance for each orb entry, so selection always starts empty. Another surface can open one specific Bot by key through the `OPEN_BOT` window event (`project-assistants/open-bot.ts`); a Bot that is no longer readable shows a toast instead of opening another. Desktop retains roster/chat columns; phones show roster then chat.
 
 Only `Bots.manageHistory=true` owns history: one roster entry and one chat entry. Selecting another Bot replaces a chat entry only when it belongs to the same view instance. Initial effect replay under React StrictMode does not push another roster entry. The native Back handler updates selection and its callback; Back from the roster closes the host. The host's explicit return consumes only those owned entries. App's Session keyboard and phone pop handlers yield while Bots owns the surface. Returning restores the original opener with `preventScroll` and the saved scroll positions.
 
@@ -16,7 +16,7 @@ Only `Bots.manageHistory=true` owns history: one roster entry and one chat entry
 
 `new ProjectAssistantRegistry(accountKey, readerID)` owns one `createViewState()` instance and the source registry. CloudGate constructs it above the active-machine-keyed App and retains it across same-account token renewal and App remounts. Drafts, quotes and reading positions remain keyed by account, machine and Bot; active-machine selection is not their namespace.
 
-`new ProjectAssistantSourceClient(grant, transport, currentGrant)` implements the sixteen frozen `SourceClient` methods with generated request/response types and caller `AbortSignal`. `AssistantGrant` contains the authenticated account namespace, host reader identity, immutable machine, authorization revision, observed API level, pairing, presence and operation permission. Registry entries also receive a fresh opaque instance revision on reauthorization, so cached metadata from a revoked source cannot reappear under a reused grant string.
+`new ProjectAssistantSourceClient(grant, transport, currentGrant)` implements the seventeen required `SourceClient` methods (the original sixteen plus `view`, API 61) with generated request/response types and caller `AbortSignal`. `AssistantGrant` contains the authenticated account namespace, host reader identity, immutable machine, authorization revision, observed API level, pairing, presence and operation permission. The interface also has optional, API-level-gated methods (groups, routines, fallbacks, login profiles, dev servers, reactions and others); an absent or refusing capability means unavailable. Registry entries also receive a fresh opaque instance revision on reauthorization, so cached metadata from a revoked source cannot reappear under a reused grant string.
 
 Every operation checks its captured grant before transport, after the response, and after JSON decoding. Revocation aborts its lifetime signal immediately; late responses cannot cross into a new source/account. Logout, device revocation, machine access failures and machine forgetting invalidate the owning registry/source. Removing one source drops its badge and permission authority while the other clients and account view state survive. An unchanged roster does not manufacture another registry snapshot or metadata refresh.
 
@@ -30,7 +30,7 @@ failure reaches the existing source footer and ends the initial loading state.
 
 Pairing/read access is never treated as permission to send. Content mutations require current machine operation permission plus fresh source `interactive` access and an explicit writable status. A failed status read removes content-write authority until a fresh source answer supplies it. Read cursors are replaced with the host's reader hint, but **the server must derive and validate the principal from authenticated context**; client account strings and `reader_id` are not authorization. Local uses `local`. A trustworthy same-principal mapping across Cloud devices remains a backend integration acceptance requirement.
 
-The local host discovers source IDs from the source status response only after the existing health feed reports API level 56. CloudGate supplies all authorized account machine descriptors, including unavailable machines as typed source states. Each Cloud transport captures its machine; it does not use `install.ts`'s active reader or `captureMachineFetch()`.
+The local host discovers source IDs from the source status response only after the existing health feed reports API level 60 (`PROJECT_ASSISTANTS_API_LEVEL`). CloudGate supplies all authorized account machine descriptors, including unavailable machines as typed source states. Each Cloud transport captures its machine; it does not use `install.ts`'s active reader or `captureMachineFetch()`.
 
 ## HTTP and encrypted envelopes
 
@@ -39,12 +39,13 @@ All paths below are under `/v1/project-assistants`. Bot path segments are encode
 | Source method | HTTP route | Cloud word suffix | Envelope fields |
 | --- | --- | --- | --- |
 | status | GET `/status` | status | empty |
-| projects | GET `/v1/projects` | `projects` (existing word) | empty |
+| projects | GET `/v1/project-assistant-targets` | projects | machine_id, cursor, page_size; `include_gemini` from API 102 |
 | list | GET base | list | complete `ProjectAssistantListRequest` |
 | create | POST base | create | complete `ProjectAssistantCreateRequest` |
 | get | GET `/{bot}` | get | complete Bot key |
 | edit | PATCH `/{bot}` | edit | complete `ProjectAssistantEditRequest` |
 | history | GET `/{bot}/messages` | history | key, conversation_id, before_seq, page_size |
+| view | GET `/{bot}/view` | view | complete `ProjectAssistantReadViewRequest` (API 61) |
 | send | POST `/{bot}/messages` | send | complete `ProjectAssistantSendRequest` |
 | stop | POST `/{bot}/stop` | stop | complete `ProjectAssistantStopRequest` |
 | answer | POST `/{bot}/permissions/{offer}/answer` | answer | complete permission answer request |
@@ -55,9 +56,9 @@ All paths below are under `/v1/project-assistants`. Bot path segments are encode
 | saveMemory | POST `/{bot}/memory` | memory | complete memory write request |
 | export | GET `/{bot}/export` | export | complete Bot key |
 
-Except the existing `projects` word, suffixes are prefixed `project-assistants.`. Writes use `Idempotency-Key=command.idempotency_key`, and the encrypted action envelope ref uses that same key. The client leaves `content_hash` for the source to recompute. Reads call the captured connection's `_machineRequest`; actions use its `_machineRequestAs`. Existing transport deadlines remain owned by those APIs; the host adds no timeout, polling loop or automatic retry.
+Suffixes are prefixed `project-assistants.`. Writes use `Idempotency-Key=command.idempotency_key`, and the encrypted action envelope ref uses that same key. The client leaves `content_hash` for the source to recompute. Reads call the captured connection's `_machineRequest`; actions use its `_machineRequestAs`. Existing transport deadlines remain owned by those APIs; the host adds no timeout, polling loop or automatic retry.
 
-The runtime carried-word table and the source descriptor must both advertise the word. This change does not hand-edit the generated vocabulary. A stale console table returns `cloud_not_carried`, retained as transport evidence and mapped to typed unsupported presentation. API levels below 56, or an unknown API level, do not call nonexistent feature routes. Previously observed unavailable sources retain stale history/badge observations instead of becoming authoritative empty lists.
+The runtime carried-word table and the source descriptor must both advertise the word. This change does not hand-edit the generated vocabulary. A stale console table returns `cloud_not_carried`, retained as transport evidence and mapped to typed unsupported presentation. API levels below 60, or an unknown API level, do not call nonexistent feature routes. Previously observed unavailable sources retain stale history/badge observations instead of becoming authoritative empty lists.
 
 Generated `ProjectAssistantErrorResponse` bodies cross unchanged. Other transport errors retain their raw response in `AssistantTransportFailure.response`. A send whose transport result is unknown reports `pa_outcome_unknown`; no automatic replay is scheduled. Signal cancellation invalidates browser observation and does not claim to undo an already accepted remote action.
 

@@ -79,7 +79,7 @@ admission; typed capacity refusals must remain visible.
 
 ## Retention is a separate limit
 
-The conversation artifact store currently keeps at most 64 live pictures and 64 MiB across the
+The conversation artifact store currently keeps at most 256 live pictures (`artifacts.images`) and 64 MiB across the
 machine, with a 24-hour expiry. This is independent of the three/eight concurrent reads.
 Large image batches can displace pictures still referenced by older conversations. Thumbnail
 support does not change retention, reconstruct evicted originals, or make the hosted console an

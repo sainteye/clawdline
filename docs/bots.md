@@ -13,7 +13,7 @@ sign-in step beside the composer. Drafts stay in the conversation.
 
 ## What you need
 
-- macOS.
+- macOS or Linux.
 - For a Claude Code Bot: Claude Code 2.1.323 or newer, signed in as you
   normally use it. For a Codex Bot: Codex 0.166.0 or newer, signed in, with
   its memories feature off (the default; `codex features list`).
@@ -21,6 +21,8 @@ sign-in step beside the composer. Drafts stay in the conversation.
   a personal Google account. The Bot uses an isolated native profile with
   AI Credits off and retains that profile for the Bot's current conversation
   and memory epoch. Choose **Gemini** in the Bot's agent picker.
+- For a Grok Bot: Grok Build on macOS or Linux, on the computer that runs
+  the Bot.
 - Node 22 or newer with npm for Claude Code and Codex.
 
 Clawdline finds both programs itself, including installs from nvm, mise,
@@ -48,15 +50,24 @@ clawdline project-assistants enable
 `clawdline project-assistants disable` turns Bots off and keeps saved Bots
 and conversations. `clawdline project-assistants setup-claude` runs the
 first-use setup ahead of time and prints which Claude Code version it found;
-`setup-codex` does the same for Codex.
+`setup-codex` does the same for Codex. `clawdline project-assistants archive
+restore|export --database FILE …` is an offline recovery command: it exports one
+Bot's archive or restores one into an explicitly named new database file, never
+the daemon's own.
 
 ## Bots settings: dispatch rules and memory for every Bot
 
 The gear above the Bots list opens **Bots settings** as a modal (full screen at phone width) with a
-side navigation: **Dispatch** and **Shared memory** (two tabs above the pane at phone width). Its
-document is stored in `project-assistants/shared-settings.json` and served at
-`/v1/project-assistants/shared-settings` (GET; PUT with `expected_version`, whole document). An empty
-document keeps the earlier behavior.
+side navigation: **Dispatch**, **Shared memory** and **團隊章程** (team charter) (tabs above the pane
+at phone width). Its document is stored in `project-assistants/shared-settings.json`. The console
+reads and saves it at `/v1/project-assistant-shared-settings` (API 116): GET with `machine_id`; PUT
+with `machine_id`, `idempotency_key` (also sent as `Idempotency-Key`), `expected_version` and the
+whole `settings` document. The route checks that machine's Bots authority. The older local route
+`/v1/project-assistants/shared-settings` is still served. An empty document keeps the earlier
+behavior.
+
+- **Show requesters on work cards** (`peer_dispatch_cards`, off when absent). Puts the requesting
+  Bot on the work card in the conversation.
 
 - **Default agent.** Four tiles, one per agent (Claude Code, Codex, Gemini, Grok Build), each with
   the agent's own logo. An agent this computer cannot dispatch is shown as "not on this computer"
@@ -96,12 +107,15 @@ document keeps the earlier behavior.
   instructions and own memory take precedence. Each Bot's settings page has **Use memory shared by
   every Bot** (on by default), stored in the same document (`memory_opt_out`).
 - **Limits** (`internal/domain/capacity`): 20 shared rows, 1 KiB each, 4 KiB total; 12 rules,
-  4 agents per rule; 64 Projects per scope.
+  4 agents per rule; 64 Projects per scope; 256 Bots in `memory_opt_out`.
 - **Project overrides** are reserved in the stored shape (`project_overrides`) and already win in
-  rule resolution, but the console edits only the machine-wide lists in this version.
+  rule resolution, but the console edits only the machine-wide lists in this version. Resolution
+  (`RulesFor`) lists a Project's override rules first, then rules scoped to that Project, then rules
+  for All Projects.
 - **Known limits of this version.** A Bot whose native session is resumed reads changed shared
   memory at its next fresh session, compaction or own memory change, not immediately. Cloud and the
-  phone do not carry this route yet; the modal reports that settings cannot be read there.
+  phone carry the route as `project-assistants.shared-settings` and
+  `project-assistants.shared-settings-save`.
 
 ## Team charter: how the Bots of one Project work together
 
@@ -120,7 +134,8 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   sentences it removed and added. **Nothing changes until you press Apply.** A proposal written
   against an older version is marked stale and Apply refuses it (`pa_stale_version`, field
   `charter_proposal_base`); dismiss it or ask again. The lead's `propose_charter_edit` tool is
-  offered only in its turns that come directly from you.
+  offered only in its own turns that come directly from you, never to a helper working for it. Its
+  `project` argument may name any Project registered on this machine.
 - **Removing it.** 移除章程 on the charter page (API 123, `POST …/remove` with the
   `expected_version` you read) takes the charter away. It saves a `removed` version with empty
   text: the Project then reads as having no charter (version 0), its pending proposals go, a Bot
@@ -137,7 +152,9 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   working now, so you can tell who has not seen a change yet.
 - **Limits** (`internal/domain/capacity`): 32 KiB of text per charter; 200 versions kept per
   Project (saving past that removes the oldest, never the current one); 20 pending proposals per
-  Project (a new one is refused until you apply or dismiss one); 4 KiB for a request to the lead.
+  Project (a new one is refused until you apply or dismiss one); 4 KiB for a request to the lead;
+  500 bytes for a version's reason or a proposal's summary; a 256 KiB body for one charter write;
+  512 charters listed per machine.
 - **Routes** (API 122, paired devices with this machine's Bots authority; every write carries
   `Idempotency-Key`): `GET /v1/project-assistant-charters?machine_id=` lists Projects with a
   charter and those with Bots but none; `GET …/charter?machine_id=&project_id=&version=` reads the
@@ -167,8 +184,8 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   `report_charter_conflict` for each disagreement, change nothing, then continue the request. A
   resumed session gets only the check, never the text again; the native session is not replaced.
   Isolated routines and a Bot's hidden helpers are not asked. The tool is offered in every turn of
-  a Bot whose Project has a charter, Bot-to-Bot request turns included (a helper reports for the
-  Bot it works for). A report names the charter version, the source (`memory`, `instructions` or
+  a Bot whose Project has a charter except a compaction turn, Bot-to-Bot request turns included (a
+  helper reports for the Bot it works for). A report names the charter version, the source (`memory`, `instructions` or
   `workspace_file` with its workspace-relative path; a memory entry id when known), both exact
   sentences, the section heading and an optional replacement. Reports are deduplicated by Bot,
   version and Bot sentence (a dismissed one stays dismissed); a report on another version than
@@ -206,8 +223,9 @@ To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user
    and counts new replies.
 2. Give it a name, choose the Project and write its standing instructions.
    Creating a Bot does not call a model.
-3. Send a message. Up to four pictures can go with it: press **+**, paste
-   them or drop them on the message box. The Bot sees them as images. Pictures
+3. Send a message. Pictures can go with it: press **+**, paste
+   them or drop them on the message box (a group room carries at most four per
+   message). The Bot sees them as images. Pictures
    also work from a paired Clawdline Cloud browser when its source runs API 68
    or newer. A picture-only message is allowed. Cloud keeps the existing
    transport limits: a send that cannot fit is refused before sending, and a
@@ -223,7 +241,7 @@ To trigger a Bot routine from GitHub or another service, see [Bot Webhooks](user
    after the person answers its question, carries all the text after the turn's
    last tool call instead: an agent can stream one answer under several message
    ids, and the last segment alone once delivered only its closing status lines. Longer reports can be published as an HTML artifact.
-   **Show what it did** keeps separate native narration, thoughts when the agent
+   **View processing steps** keeps separate native narration, thoughts when the agent
    supplies them, and individual tool calls with their status, text output and
    diffs. The supplied Codex adapter's terminal-output metadata is joined in
    order within its own tool, alongside ordinary ACP text output. Text chunks join within their own step; later steps do not overwrite
@@ -283,20 +301,24 @@ agent's modes, its Auto mode first, then **Approve automatically**:
 
 | Setting | What happens |
 | --- | --- |
-| **Auto** (Claude Code), **Auto review** (Codex) | The agent decides what's safe and does it, and asks you about the rest. New Bots start here. |
-| The agent's other modes: **Manual**, **Accept edits**, **Plan** (Claude Code); **Read-only**, **Workspace access**, **Full access** (Codex) | The agent works in that mode; anything it asks about appears as a permission card. |
+| **Auto** (Claude Code, Gemini, Grok), **Auto review** (Codex) | The agent decides what's safe and does it, and asks you about the rest. New Bots start here. |
+| The agent's other modes: **Manual**, **Accept edits**, **Plan** (Claude Code, Gemini); **Manual** (Grok); **Read-only**, **Workspace access**, **Full access** (Codex) | The agent works in that mode; anything it asks about appears as a permission card. |
 | **Approve automatically** | Each request is allowed for you with the agent's allow-once option. |
 
 With any setting your agent's own settings still apply. On a model without
-Claude Code's Auto mode, Claude Code works in Accept edits instead. A mode
+Claude Code's Auto mode, Claude Code works in Accept edits instead; where
+Gemini does not offer Auto, it works in Manual. Any other mode
 the agent does not offer stops the turn with a reason rather than run it in
 another. When the agent asks, a permission card appears in the chat: **Allow
-once**, **Always allow**, **Reject** or **Never**, as in Codync. "Always" is
+once**, **Always allow**, **Reject once** or **Never**, and **Allow for this
+session** when the agent offers it, as in Codync. "Always" is
 as the agent defines it. Claude Code keeps the rule in the Project's
 `.claude/settings.local.json`; **Standing rules** in the Bot's settings lists
-those rules and revokes one, after which Claude Code asks again. (Standing
-rules are shown in this machine's own console; Codex keeps its own and
-Clawdline does not list them yet.) If a worker's terminal shows a question, such as whether to trust a
+those rules and revokes one, after which Claude Code asks again. From API 92
+the list also holds Clawdline's own exact command rules for the Bot's dev
+servers and dispatch, for any agent. A paired Cloud browser lists and revokes
+them too (API 66, the `rules` and `rule-remove` words). (Codex keeps its own
+rules and Clawdline does not list them yet.) If a worker's terminal shows a question, such as whether to trust a
 folder, the work card tells you to answer it in that Session.
 
 ### Edit a queued message
@@ -307,7 +329,9 @@ pauses it at its queue position. Save replaces the text and resumes the queue;
 pictures and the quoted message stay attached. A paused message remains
 visible to paired devices and survives a daemon restart. A paired device can
 reopen the editor or withdraw the message. Once the Bot has reserved the
-message for execution, the source refuses an edit.
+message for execution, or while it is being sent now, the source refuses an
+edit. A group room's messages and a hidden worker's messages cannot be edited.
+A paired device needs a source at API 104.
 
 ### See the model, context usage and group work
 
@@ -345,8 +369,9 @@ absolute paths inside that directory also work. Symlinks, directory traversal,
 directories and special files are refused.
 
 `send_file {idempotency_key, path, name?}` accepts binary, extensionless and empty
-files up to 100 MiB. `publish_artifact {idempotency_key, path, title?, artifact?}`
-accepts UTF-8 HTML up to 5 MiB. A new artifact needs a title; titles are trimmed,
+files up to 100 MiB. `publish_artifact {idempotency_key, path, title?, artifact?, notify?}`
+accepts UTF-8 HTML up to 5 MiB; `notify: false` refreshes the artifact's existing chat card
+without posting another (`send_file` refuses `notify`). A new artifact needs a title; titles are trimmed,
 up to 200 UTF-8 bytes, with no control characters. For an update, pass the previous
 `artifact_id` as `artifact` and publish the complete replacement HTML. Omitting
 the title on an update keeps its current title. `list_artifacts {}` returns the
@@ -402,8 +427,9 @@ overlay; omitting its title retains the effective current title. A replay with
 the same key and canonical payload returns the original receipt; a changed
 payload conflicts. An uncertain command remains stored under its account,
 source, conversation and artifact identity. Only an explicit retry sends that
-same command; it never generates a fresh key while unresolved. The feature
-schema is 5 so older stores refuse to rewrite title metadata they cannot retain.
+same command; it never generates a fresh key while unresolved. Title overlays
+arrived at store schema 5, so older stores refuse to rewrite title metadata they
+cannot retain.
 Archives preserve original publications and the display overlay separately.
 
 Copying runs outside the Bot actor and SQL transactions. Current execution
@@ -418,7 +444,7 @@ Input pictures retain their separate attachment protocol. General input files us
 the separate upload protocol described below. The local regression fixture uses an owned
 ACP subprocess and real MCP, SQLite and HTTP, with zero provider/model calls.
 For its optional real-browser run, supply `PLAYWRIGHT_MODULE`,
-`PLAYWRIGHT_BROWSERS_PATH` and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
+`PLAYWRIGHT_BROWSERS_PATH` (or `CHROME`) and a task-owned `CLAWDLINE_OUTPUT_E2E_DIR`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantOutputOwnedMCPHTTP$' -count=1`.
 
 Library coverage has a separate stored-snapshot fixture, without an ACP process:
@@ -435,7 +461,7 @@ Agent publication receipt.
 ## Roster activity
 
 The roster follows Codync's four presentation states: `idle`, `working`,
-`needsInput` and `error`. Working rows show the current tool title, writing or
+`needsInput` and `error`, plus Clawdline's `waitingOnWork` (below). Working rows show the current tool title, writing or
 thinking activity. A permission request uses its actual action title. Idle rows
 return to the latest message; errors have a separate red caption. Unread counts
 and the machine connection remain independent of these states. A needs-input
@@ -468,7 +494,8 @@ chat footer look exactly as they did before.
   (awaiting integration), failed, landed and background threads are not
   counted. With nothing running the mark takes no space.
 - **`waitingOnWork` state.** A Bot whose own chat is idle while its dispatched
-  Sessions run shows "Waiting for N Sessions" / 「等 N 個分身完成」. Precedence is
+  Sessions run shows "Waiting for N Sessions" / 「等 N 個分身完成」, followed by
+  "· K awaiting integration" when delivered Sessions wait to be landed. Precedence is
   `needsInput` (own permission, a background thread or a dispatched Session
   waiting for the person) > `error` > `working` (own turn or background
   threads) > `waitingOnWork` > `idle`. The avatar draws a thinner second
@@ -492,7 +519,8 @@ chat footer look exactly as they did before.
   tooltip. A finished Session stays listed, with no time limit, until its
   landing becomes `landed`, `incorporated`, `abandoned` or
   `nothing_to_land`, and leaves the moment it does; past
-  `bots.dispatched_strip_rows` the rest are counted as "N more". The former
+  `bots.dispatched_strip_rows` the rest are counted as "N more in Sessions" /
+  「還有 N 個，到 Sessions 查看」. The former
   one-day window `bots.dispatched_delivered_seconds` is retired: it hid
   unfinished work. Its constant survives only as the completion wake retry
   deadline, registered as `bots.completion_wake_retry_seconds`. A delivery
@@ -501,12 +529,14 @@ chat footer look exactly as they did before.
 
 The facts come only from broker task records projected into the Bot's work
 links (`AssistantWorkSnapshotOf`), never from what the model says. The roster
-summary carries them as the optional `dispatched_work {running, needs_you,
-delivered}`, where `delivered` counts every finished link whose landing is
+summary carries them as the optional `dispatched_work {running, executing,
+needs_you, delivered}`, where `executing` counts the running Sessions actually
+executing and `delivered` counts every finished link whose landing is
 still owed; `status` keeps its four values because the console rejects a
 whole roster frame with an unknown status. Work links carry `title`,
-`project`, `terminal`, `started_at`, `finished_at`, `landing` and
-`landing_note`. Older sources omit
+`project`, `target_project_id`, `worker_terminal`, `worker_session`,
+`started_at`, `finished_at`, `delivery_commit`, `landing`, `landing_target`,
+`landing_note` and, for a Session that never started, `failure_reason`. Older sources omit
 these fields and the console shows what it showed before. The chat strip reads
 the work links in the loaded timeline, so a link older than the loaded pages
 is counted on the roster but not listed until earlier messages load.
@@ -516,10 +546,14 @@ boundary with a synthetic event producer, without a provider/model call.
 Set task-owned `CLAWDLINE_ROSTER_E2E_DIR`, `PLAYWRIGHT_MODULE` and
 `PLAYWRIGHT_BROWSERS_PATH`, then run
 `go test ./internal/transport/http -run '^TestProjectAssistantRosterStatusHTTP$' -count=1`.
-Its current browser evidence explicitly records `eventUpdates: false`:
-the console still consumes snapshots. Automatic console updates and encrypted
-Cloud subscriptions remain pending; the local feed below does not establish
-either destination's acceptance.
+That fixture's browser evidence records `eventUpdates: false`. Live updates
+have their own fixture: with the same Playwright variables and a task-owned
+`CLAWDLINE_ROSTER_LIVE_E2E_DIR`, run
+`go test ./internal/transport/http -run '^TestProjectAssistantRosterLiveHTTP$' -count=1`;
+its `roster-live.e2e.mjs` evidence records `eventUpdates: true`, because the
+local console consumes the roster event feed below. Encrypted Cloud
+subscriptions remain pending: a request through Cloud is refused
+(`roster_cloud_pending`).
 
 
 #### When the agent compacts its own context
@@ -530,11 +564,12 @@ one, a usage reading below half of a previous reading of at least 20K tokens (th
 compaction counts once even when both signals arrive. Nothing is guessed from time or message counts.
 
 - The turn in which it happened gets one persistent chat notice, `compacted-<turn id>`: "Earlier context
-  was summarized to make room / 已摘要較早的內容，騰出空間：345K → 41K" (the numbers appear only when the
-  agent reported readings on both sides). Only a successful turn writes it.
+  was summarized to make room: 345K → 41K", shown in the reader's language (已摘要較早的內容，騰出空間)
+  from a notice key, with the English text as fallback (the numbers appear only when the agent
+  reported readings on both sides). Only a successful turn writes it, and a group room turn writes none.
 - The next turn on the same native binding repeats the Bot's memory once, through the same
   `<memory_update>` renderer and filtered snapshot a resumed session uses when memory changed, so there
-  is one source. Instructions are not repeated: Claude Code and Codex keep them in the system prompt,
+  is one source, after a short `<context_restored>` preamble saying why. Instructions are not repeated: Claude Code and Codex keep them in the system prompt,
   which survives compaction, and Gemini hears them on every open. The guard is the persisted notice
   itself: only the most recently started earlier turn of the resumed session counts (each turn mints
   a new binding ID, so it is the binding being replaced), a later turn disarms it, and it survives
@@ -591,7 +626,8 @@ reports no compaction is a definite failure. See `docs/research/codync-context-r
 
 API 71 adds local `GET /v1/project-assistants/roster-events?machine_id=…`.
 Optional `project_id` narrows the Project; `cursor` or `Last-Event-ID` resumes
-the last fully applied frame. The normal human read gate, current source,
+the last fully applied frame (both given and different is refused
+`pa_cursor_expired`, field `roster_cursor_conflict`). The normal human read gate, current source,
 reader, grant and registered Project are required. Read-only viewers can
 subscribe. Ordinary Cloud request recorders explicitly refuse this route.
 
@@ -632,7 +668,8 @@ cursors 4 KiB, frames the 8 MiB plaintext budget, and writes the existing
 2,000 ms Bot write deadline. A full wake-up slot latches lag and requires
 resync. A blocked writer is interrupted on cancellation/revocation without
 holding storage or actor locks. When possible, the response ends with a typed
-SSE control or `X-Clawdline-Roster-Error: pa_cursor_expired` trailer. A broken
+SSE control; every stream that ends, including at its lifetime limit, also
+carries the `X-Clawdline-Roster-Error: pa_cursor_expired` trailer. A broken
 socket can lose both: EOF never advances a cursor. Reconnect from the last
 applied cursor; start a fresh snapshot if refused.
 
@@ -645,16 +682,16 @@ permission/idle/error/read/hide/removal replay, cursor and generation fences,
 large histories that cannot aggregate-decode, read-only viewing, overflow,
 blocked-write revocation, independent reads and production Store composition.
 These checks make zero provider/model requests. They verify the local feed;
-browser UI consumption, recipient-isolated Cloud delivery and public release
-enablement remain separate work owned by integration.
+browser consumption has its own fixture (above), and recipient-isolated Cloud
+delivery and public release enablement remain separate work owned by integration.
 
 ## Files attached to a message
 
 From API level 70, explicitly picked, dropped or pasted regular files can be sent
 with text or in a files-only message. The Bot composer keeps removable draft chips.
 Each general file may be empty, binary or extensionless, up to 100 MiB; filenames
-are plain names of at most 128 UTF-8 bytes. A message carries at most four general
-files, independently of the existing four picture blocks. Unsupported image formats
+are plain names of at most 128 UTF-8 bytes. A message has no count limit on general
+files, which are separate from its picture blocks. Unsupported image formats
 are not converted into general files. Session file drops still insert paths.
 
 Uploads use UUID IDs and at most 384 KiB per authenticated request. The source
@@ -669,22 +706,22 @@ synthetic ACP subprocess, not a real model or a provider readiness claim.
 
 Other authorized paired devices can download sent inputs from the same Bot and
 conversation in bounded chunks. The client checks size and SHA-256 before offering
-a download. Queue takeback deletes those private files and reclaims their upload slots after
+a download. Queue takeback deletes those private files and their uploads after
 the never-started cancellation is durable. Cleanup runs outside execution locks;
 a failed filesystem cleanup can be retried with the same takeback command.
 Stop-dropped messages keep their Not sent evidence. Sent metadata survives restart. Source revocation, changed
 authority and deletion are checked again before publishing each read response.
 General files, native picture blocks and explicit output snapshots remain separate.
-Send now remains unavailable for queued messages carrying attachments.
+Send now steers a queued message with its files when the source can reply with
+inputs; a message with pictures stays queued when the agent cannot steer images.
 
 Files never enter an offline relay mailbox. A failed send retains the complete
 selection for explicit retry. Reloading or leaving a draft loses its File objects;
 a durable marker refuses a partial text-only send until the missing selection is
 explicitly discarded or selected again. Cancel stops further upload chunks and
-ignores late replies. Transfers do not resume in the background. To bound abandoned
-partial data without evicting durable evidence, a Bot retains at most 128 upload
-slots (finished or unfinished, at most 100 MiB each); new uploads then fail with a
-capacity refusal. Taking back a queued message reclaims its inputs; deleting that
+ignores late replies. Transfers do not resume in the background. Earlier uploads,
+finished or unfinished (at most 100 MiB each), are kept and never refuse a new
+upload. Taking back a queued message reclaims its inputs; deleting that
 Bot reclaims the entire private input namespace.
 
 Run the real HTTP/SQLite/owned-ACP input fixture with
@@ -698,15 +735,16 @@ Cloud acceptance or a real-phone test. No provider/model requests are made.
 
 The building button in the Bots toolbar switches the roster between the list
 and the tower: a pixel-art building where each Bot stands according to its
-roster state. A wide screen opens on the tower until the person chooses; a phone
-opens on the list. The choice, the layout, the last floor, the Bot look and the
+roster state. Until the person chooses, a wide screen with at least one Bot to
+show opens on the tower; a phone opens on the list. The choice, the layout, the last floor, the Bot look and the
 name-tag switch are this browser's (`localStorage`, read and written inside
-`try`/`catch`); the code is in `web/console/src/project-assistants/tower/`.
+`try`/`catch`); the code is in `web/console/src/project-assistants/tower/`, with placement in
+`tower/tower-state.ts`.
 
 **Where a Bot stands.** Working Bots sit at desks, waiting ones queue, failing
 ones go to the repair corner, recently active ones and idle ones stroll the
 lounge, and those quiet for a day sleep. Placement follows the roster status
-(`working.ts`), never the raw activity text. Each zone draws at most three Bots
+(`web/console/src/project-assistants/working.ts`), never the raw activity text. Each zone draws at most three Bots
 (`bots.tower_zone_shown`); the rest are counted as "N more", which opens a list
 whose names open that Bot's chat. Waiting and failing Bots keep a drawn place
 first, then the most recently active. The Name tags switch pins a name for
@@ -721,7 +759,7 @@ an unread reply. Reading the chat clears the badge when the roster refreshes.
 
 **Floors.** Four floors (4F, 3F, 2F, B1) each have a picture and coordinates in
 `tower-scene.ts`. The building layout is offered from seven Bots across two
-Projects. Each machine keeps a versioned document of floor placements in its
+Projects (`TowerBuildingMinBots`, a console constant). Each machine keeps a versioned document of floor placements in its
 Bots database, served at `/v1/project-assistant-floors` (API 97) and carried
 over Cloud as `project-assistants.tower-floors` and
 `project-assistants.tower-floor-save`. A write names the version it read:
@@ -787,8 +825,9 @@ hosted console.
 
 ## If something is missing
 
-- *This Bot needs Claude Code 2.1.323 or newer and Node 22 or newer*:
-  install or update them, sign in to Claude Code, then send again.
+- *This Bot needs its CLI on this machine (Claude Code 2.1.323 or newer, or
+  Codex 0.166.0 or newer) and Node 22 or newer*: install or update them, sign
+  in to the CLI, then send again.
 - A reply whose result is unknown is never sent again on its own. Your next
   message marks it as failed and continues.
 
@@ -798,5 +837,6 @@ and [project-assistants-server.md](project-assistants-server.md).
 An existing, disabled Bot installation receives repeatable additive schema
 migrations during Host composition before its history read service is exposed.
 This seeds the roster journal from existing Bot identities without enabling
-execution or constructing a provider. Fresh default-off installs keep no Bot
-schema until opt-in; the borrowed read pool remains query-only.
+execution or constructing a provider. Bots are on unless the setting says
+otherwise; a fresh installation whose setting is off keeps no Bot schema until
+Bots are turned on. The borrowed read pool remains query-only.

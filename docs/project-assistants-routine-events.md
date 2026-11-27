@@ -204,7 +204,7 @@ when Bots are disabled. Current account, machine and Project are checked before
 publication and again after network IO.
 
 Bridge metadata has an independent schema version 1, alongside feature schema
-5. Installation is additive and transactional; future bridge versions refuse
+17 (`projectassistant.SchemaVersion`). Installation is additive and transactional; future bridge versions refuse
 before feature DDL. It never rewrites aggregate/message/event/receipt bytes.
 Enrollment fingerprints, one pending forwarding/ack barrier per namespace and
 leases stay outside public views and archives; existing capabilities remain in

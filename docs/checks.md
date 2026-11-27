@@ -83,7 +83,8 @@ under a load average above 20 on 2026-11-16, and three minutes for the
 planning/profiling tests. Node test cancellation alone does not guarantee exit when
 a test retains active handles or blocks synchronously. The outer deadline prints
 the command and selected test paths and returns a failure. The full web
-`npm run check` and `npm test` steps each have a ten-minute
+`npm run check` step (which runs `npm run deps` first, inside the same bound) and the `npm test`
+step each have a ten-minute
 wall-clock bound for their entire process group, since these scripts launch
 nested runners and Node does not allow `--test-timeout` in `NODE_OPTIONS`. On
 expiry the gate prints the active process commands (including test paths, when
@@ -177,6 +178,11 @@ cache needs the owner/idle-process review in `docs/disk-lifecycle.md`. Persisten
 wrapper caches and the per-worktree TypeScript build information follow their
 stated lifecycle instead of per-command Session cleanup.
 
+One exception: when `tools/check.sh` runs as a Root callback (`CLAWDLINE_CALLBACK_TASK_ID`) with
+the callback's default private `GOCACHE`, it replaces that cache with the Project cache returned by
+`clawdline resources use-go`, when the installed CLI offers it. `CLAWDLINE_GO_CACHE_ISOLATED=1`
+keeps the private cache.
+
 ## Seeing a background check
 
 Daemon callbacks appear in their owning Session's existing background-work strip,
@@ -205,3 +211,11 @@ the command when the installed binary supports it. The trim and its failure
 injection tests are in `internal/adapters/gocache`; its bounds are
 `build.shared_go_cache_*` in `internal/domain/capacity/heavy_cache.go`. See
 [disk lifecycle](disk-lifecycle.md).
+
+Direct `go test` and `go vet` runs never pass through `tools/heavy.sh`, so every
+non-`--plan` run of `tools/check.sh`, on every platform, also starts one detached
+`clawdline go-cache trim` on exit (`trim_go_cache_on_exit`), without waiting for it
+or changing the script's status. It is skipped with `CLAWDLINE_CHECK_GO_CACHE_TRIM=0`,
+for an explicit `GOCACHE`, inside the compile slot (`CLAWDLINE_HEAVY`), while another
+trim runs, or when the installed `clawdline` has no `go-cache`. Its output goes to
+`$TMPDIR/clawdline-go-cache-trim.log`; `tools/test-check-go-cache-trim.sh` covers it.

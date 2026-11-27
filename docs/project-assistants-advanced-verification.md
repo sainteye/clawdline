@@ -53,7 +53,7 @@ observation ticker are test inputs, not new product capacity limits.
 
 The distinction in the last two rows matters. In the current product, when
 **only unknown turns remain**, a genuinely new message explicitly acknowledges
-them and can start a new turn (`Engine.Submit` in `runtime.go`). It does not
+them and can start a new turn (`Engine.Submit` in `submit.go`). It does not
 replay the old prompt. This soak does not assert that every new message must
 be refused after orderly cleanup, and does not change that product behavior.
 It verifies exact original-command replay after cleanup/reopen without any
@@ -78,9 +78,10 @@ test event rounds elapsed time to 600.15 seconds). Observed counts were:
 | Extra Send after unknown | 0 |
 | Native vendor prompts / paid API requests | 0 / 0 |
 
-`submitted` counts unique accepted messages; it excludes the intentionally
-refused fresh send and repeated queries of existing admissions. It is not a
-count of every HTTP request. The two-turn short control passed in 0.243
+`submitted` counts unique accepted messages; in this run it excluded the
+then-refused fresh send and repeated queries of existing admissions. The
+current soak admits that fresh send and records `submitted` as 60 + 3, so a
+rerun reports 63. It is not a count of every HTTP request. The two-turn short control passed in 0.243
 seconds on the same test source before the single final long run.
 
 The task artifacts retain full final control/soak logs, extracted JSON

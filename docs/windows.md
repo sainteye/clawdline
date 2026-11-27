@@ -20,6 +20,17 @@ Four changes, built and measured on the same box (`artifacts/windows-fixes.patch
 both into working, and then the dispatch loop stops exactly once, in the right place, saying
 exactly why.
 
+> **Since this record:** several §4 gaps are now fixed in the tree, so the code quoted there is
+> the code as measured on 2026-09-20, not the current code. The page handler cleans the URL with
+> `path.Clean` and joins it with `filepath.FromSlash` (§4.1, `internal/transport/http/page.go`);
+> `usableDir` tests `filepath.IsAbs` (§4.2, `internal/app/orchestrator/draft.go`); `readBounded`
+> strips a UTF-8 BOM (§4.4, `internal/adapters/taskdir/broker.go`); a Windows `init()` calls
+> `SetConsoleOutputCP(65001)` (§4.5, `cmd/clawdline/console_windows.go`); and `contract.Scan`
+> carries `notes`, filled from `inv.Notes` by the sessions transport (§4.8). §4.2's other
+> slash-spelling and containment sites were not re-counted here; its site list, including
+> `transport/http/timeline.go`, which no longer exists, is the tree of that date. `doctor` now
+> prints only `version`, `port`, `dir` and `store`; the `upstream` line quoted in §1 is gone.
+
 ## 1. Get it running
 
 The daemon is one static binary and needs no Windows toolchain to make. Cross-compile it

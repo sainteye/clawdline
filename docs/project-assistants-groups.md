@@ -15,8 +15,9 @@ revision recorded in the integration notes.
 ## A group is a room, not a Bot
 
 `pa.Group` (`internal/domain/projectassistant/groups.go`) has a
-source-qualified key, the full `ProjectScope`, its own conversation, an
-ordered member list, a version and a tombstone. It has no Agent, backend,
+source-qualified key, the full `ProjectScope`, its own conversation, a name,
+an optional `Description` the person writes (at most
+`MaxGroupDescriptionRunes`, 500), an ordered member list, a version and a tombstone. It has no Agent, backend,
 folder or native session. A member answers in its own conversation under its
 own execution fence; the room only decides who is asked and whether an answer
 is still wanted. A group's key never equals a Bot's.
@@ -48,7 +49,7 @@ then refuses to start a room turn.
 
 The group tables (`project_assistant_group_*`, including the room's lines)
 are versioned on their own (`GroupSchemaVersion`, now 1), not by
-`pa.SchemaVersion` (currently 11): the optional API 88 JSON fields need no
+`pa.SchemaVersion` (currently 17): the optional API 88 JSON fields need no
 physical database migration. `app.InstallSchemas`
 installs the feature schema and then the group tables; the group installer
 refuses to run before the feature schema exists.
@@ -111,7 +112,8 @@ counts as a pass and is never resent, re-asked under another agent, or sent
 again under a new key. The group's Stop drops members' queued turns in that
 room and stops an active one there; their turns elsewhere are untouched.
 
-The member's prompt follows Codync's `member_prompt`: who is in the room, how
+The member's prompt follows Codync's `member_prompt`: who is in the room
+(named with the group's description, when it has one), how
 to answer and pass, and the room's newest lines since the member last spoke,
 each clipped. Deliberate differences: it shows the newest 24 lines within that
 window (Codync shows the oldest 24 after the member's last line), and it is
@@ -142,6 +144,7 @@ conversation. The trusted host `CreateGroup` port remains unchanged.
 | GET / POST | `/rooms/groups` | `groups` / `group-create` |
 | GET / PATCH / DELETE | `/rooms/groups/{group}` | `group-history` / `group-edit` / `group-delete` |
 | POST | `/rooms/groups/{group}/messages` | `group-send` |
+| POST | `/rooms/groups/{group}/reactions` | `group-react` |
 | POST | `/rooms/groups/{group}/stop` | `group-stop` |
 | GET | `/{bot}/team-plans` | `team-plans` |
 | POST | `/{bot}/team-answer` | `team-answer` |

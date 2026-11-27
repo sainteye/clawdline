@@ -1,7 +1,9 @@
 # Persistent assistant runtime and ACP transport
 
-This is an additive module, default off and not wired to the daemon by this
-change. Module tests are not final five-card acceptance. No native provider,
+This is an additive module. The daemon composes it through the Bot runtime host
+([Lazy Bot runtime host](project-assistants-runtime-host.md)), which builds
+`RuntimeLimits` in `internal/transport/http/project_assistants_host.go` and calls
+`NewRuntime` on first use. Module tests are not final five-card acceptance. No native provider,
 paid model, installation, deployment or release is authorized by this module.
 
 ## Constructors and ownership
@@ -43,7 +45,11 @@ The broker's own claims/arbitration rules remain authoritative.
 explicit ACP limits and accepts trusted `Configurations map[pa.Agent]Configuration`.
 Configuration contains an absolute executable, argument vector and exact
 environment. There is no inherited environment by default, shell command,
-registry resolver, npx, download, provider fallback or login change.
+registry resolver, npx, download, provider fallback or login change. The
+production installed provider is separate: on first use it installs the
+supplied adapter package with the person's `npm ci` against its lockfile
+(`setupAdapter`, under `MaximumBotAdapterInstallSeconds`), which is its only
+network use.
 `Verify(ctx, bot, config)` is a trusted local evidence check: it must return the
 exact CLI/adapter versions and native memory isolation for this Bot/Project.
 Read-only enforcement is reported, not required: since 2026-11-14 native tools
@@ -102,9 +108,11 @@ session/prompt and session/cancel using newline-delimited JSON-RPC 2.0. Protocol
 version 1 is required. A bounded reader and a separate ordered incoming consumer
 remain active while a prompt caller waits. Permission RPCs are persisted without
 waiting for the prompt; answers write directly through their own pending native
-request ID. No persistent allow/reject policy is accepted. Allow-once also needs
-the trusted `ReadOnlyPermission` classifier for the actual tool payload; labels
-and native option names alone confer no authority. AutoRead selects only a
+request ID. Allow-once, reject-once, allow-always and reject-always options are
+accepted; as in Codync, an always option hands the agent the rule it defines,
+and the Bot's settings list the Project's standing rules so one can be revoked.
+The option kind must match its allow flag; labels and native option names alone
+confer no authority. AutoRead selects only a
 verified read-only allow-once option through the same durable Answer path.
 
 ACP `session/update` agent message chunks become trace and bounded partial text.
@@ -135,7 +143,9 @@ not an additional native answer, and removes stale pending counts after stop.
 
 ## Bounds and overload behavior
 
-There are no operational silent defaults. PA-05 owns the capacity register,
+There are no operational silent defaults, except that `RuntimeLimits.ControlWindow()`
+falls back to `MaximumBotControlWindowMilliseconds` (10 minutes) when
+`PromptTimeout` is zero, as in production. PA-05 owns the capacity register,
 measurement wiring, translated notices and its selected integration values.
 
 | Required field | Integration candidate | At the bound |
@@ -143,6 +153,8 @@ measurement wiring, translated notices and its selected integration values.
 | RuntimeLimits.MaxBots | 64 | Refuse a new active actor before durable acceptance; idle actors are reclaimed. This is not the saved Bot count. |
 | Ordinary chat, follow-ups in the main conversation, and background prompts | No fixed total deadline | Stop, revocation and shutdown cancel the live turn. Isolated routines use their configured timeout when their worker starts the turn. |
 | RuntimeLimits.CleanupTimeout | 5 seconds | Bound cleanup; surface unknown if ownership/termination cannot be established. |
+| RuntimeLimits.CleanupRetries / CleanupRetryDelay | 5 / 1 second | A retained owner re-attempts unconfirmed Agent cleanup, doubling the delay (1+2+4+8+16 s). Zero leaves retries to an explicit Close. |
+| RuntimeLimits.CleanupSlowRetryDelay / CleanupSlowRetries | 300 seconds / 8 | Further re-checks double up to the cap; after the slow re-checks a retained Bot is released without confirmation. |
 | Limits.RPCPending | 32 | Bound concurrent owned HTTP tool requests. Native protocol RPCs do not use this pool. |
 | Native permission requests | No fixed local count ceiling | Each offer is scoped to its live turn and must be resolved under its permission policy. |
 | Native ACP notifications | No fixed local count ceiling | Ordered delivery follows Codync; load replay and prompt completion retain ordering barriers. |
@@ -151,9 +163,11 @@ measurement wiring, translated notices and its selected integration values.
 | Limits.StderrBytes | 64 KiB | Retain the first bounded bytes; continue draining without unbounded memory. |
 | Limits.OwnedDescendants | 256 | Stop and surface typed capacity/unknown if the owned process census exceeds its budget. |
 | Native pipe writes | Caller cancellation | Wait cancellably. A write that might have transmitted a partial frame closes the transport and is never replayed. Owned HTTP writes and native control or cleanup calls have their own budgets. |
+| Limits.WriteTimeout | 2 seconds | Owned MCP header, idle and write deadlines. |
 | Limits.CleanupTimeout | 5 seconds | Bound native child cleanup and inventory commands. |
 | Limits.RPCTimeout | 120 seconds | Control RPC waits stay bounded. Native permissions follow the prompt lifetime, including for background work. A prompt response waits on its turn context. Stop, shutdown and revocation still cancel that context, and native termination and bounded cleanup still apply. |
 | Limits.DescendantPoll | 50 milliseconds | Periodically capture descendant ownership; it is not a guarantee against unobserved fast reparenting. |
+| Limits.UnscannedCensusGap | 10 seconds | A shorter census gap is treated as an ordinary poll interval and released without scanning for strangers; longer gaps are scanned. |
 
 Person-initiated sends queue durably without a row ceiling. The chat snapshot
 shows the prefix of the queue that fits its transport budget. Automated producers
@@ -218,7 +232,7 @@ Preserve `third_party/codync/LICENSE`, `NOTICE` and `DERIVATION.md`.
 
 Behavior tests cover lazy start, durable failure before acceptance, serial queue,
 queue/actor capacity, instruction/memory snapshots, permission interleaving,
-persistent-allow denial, explicit/fallback deduplication, cancellation, stale
+an always-allow answer reaching the agent, explicit/fallback deduplication, cancellation, stale
 generation and source revocation, restart without replay, stalled/partial stdin,
 RPC timeout/exit/oversized output, stderr cap, and observed setsid descendants.
 The test executable is the free scripted peer. `testdata/peer.go` is an additional
@@ -345,13 +359,20 @@ go test ./internal/transport/http -run '^TestHandoffCardBrowser$' -count=1
 
 Since 2026-11-14, as in Codync (host/src/agent/bot/mod.rs RESUME_PROMPT,
 STALE_RESUME_MS), a turn that a daemon restart cut off is still recorded as
-unknown, and when its message is less than an hour old and nothing else is
-queued, the runtime sends the agent Codync's resume prompt as a notice
-message. The notice acknowledges the unknown turn (its receipt stays
-unknown) and runs in the same native session when it can be loaded; the
-prompt tells the agent to finish without repeating a completed action. An
-older interrupted turn, or one with queued messages behind it, waits for the
-person's next message as before.
+unknown. `ResumeInterrupted` admits one continuation ahead of any queue when
+no turn is running or waiting for permission, the turn's native cleanup was
+confirmed (`RestartConfirmedField`), it came from the person or a work
+completion (not a room, Network, decision exchange or routine), the Bot's agent
+has a supported restart mode, the turn holds no open permission or tool, its
+binding still matches and its message is less than an hour old. The
+continuation sends the agent Codync's resume prompt as a notice message. The
+notice acknowledges the unknown turn (its receipt stays unknown) and runs in
+the same native session when it can be loaded; the prompt tells the agent to
+finish without repeating a completed action. When the continuation is
+declined and messages wait behind confirmed interrupted turns,
+`releaseDeclinedRestart` settles those turns without repeating them: their
+receipts stay unknown, a notice says the turn was not repeated, and the queue
+drains without waiting for the person's next message.
 
 ## Darwin lifecycle preservation acceptance
 

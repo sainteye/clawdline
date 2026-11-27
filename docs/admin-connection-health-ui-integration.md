@@ -32,11 +32,15 @@ overview does not hide this page; a refused health read does not break the busin
 | `/admin/health?trend=<range>` | M01 trends | `aggregates`, `overview`, `incidents` (7 days ending where the trend ends) |
 | `/admin/health/services?trend=<range>[&source=…&source_id=hs_…]` | M03 trends | `aggregates?source&source_id`, `overview`, `sources` |
 | `/admin/health/monitoring?trend=<range>` | M06 trends | `aggregates`, `overview`, `sources` |
+| `/admin/health/services?view=performance[&hours=1\|6\|24\|168]` | M03 service performance (`PerformanceScreen`) | `performance?…`; `performance/notifications` read, and switched with a `PUT` |
+| `/admin/health/monitoring?view=probes` | M06 independent probes | `probes` (no parameters: window, trend and account are dropped; only the pause is kept) |
 
 Query: `window` (900, 3600, 21600 or 86400 s; default 3600), `until` (a past instant: paused),
 `account` (an operator filter, never authority), and on M01/M03/M06 `trend` (`6h`, `24h`, `7d`,
 `30d`) with an optional `machine_id` that narrows the trend read. A malformed value falls back to live/default; ids
-must match the Cloud's opaque-id rule. Refresh, a shared link, Back and Forward land on the same
+are checked by shape (`health/route.ts`): machine ids, `machine_id` and `account` up to 128
+characters, trace and evidence correlations up to 64, incident ids `hi_` and source ids `hs_`
+followed by 32 hex digits. Refresh, a shared link, Back and Forward land on the same
 screen and scope (`health/route.ts`). A screen change moves focus to the page heading; a refresh
 or a scope change does not.
 
@@ -58,7 +62,13 @@ or a scope change does not.
 | `health/aggregates.ts` | The trend adapter and chart model (below). |
 | `health/trend-view.tsx` | The trend view: lanes, buckets to investigate, stage times, viewer errors, coverage. |
 | `health/fixture.ts` | Development-only example answers (see below). |
-| `health/stored.test.ts` | Module tests (mocked fetch; run by `npm test`). |
+| `health/attention.ts`, `health/attention-view.tsx` | "Waiting for you" on M01: `GET …/attention`, read through the same admission. |
+| `health/investigations.ts`, `health/investigation-view.tsx`, `health/investigation-actions.ts` | Agent investigations of one incident (M05): the `investigations` field of the incident detail, `GET …/investigation-destinations`, and the explicit start (`POST …/incidents/<id>/investigations` with an Idempotency-Key). This is the page's only mutation besides the acknowledgement. |
+| `health/incident-summary.ts` | The plain reading of one incident revision, derived only from its stored fields. |
+| `health/performance.ts`, `health/performance-view.tsx`, `health/performance-notifications.tsx`, `health/performance-fixture.ts`, `health/performance.css` | M03's service performance view (`GET …/performance`, its own `PERFORMANCE_LIMITS`), the notification switch (`…/performance/notifications`) and its development fixture. |
+| `health/probes.ts`, `health/probe-view.tsx` | M06's independent-probe subview (`GET …/probes`). |
+| `health/health.css` | The page's styles, scoped to `.adh`. |
+| `health/*.test.ts` | Module tests (mocked fetch; run by `npm test`): `stored`, `timeline`, `aggregates`, `attention`, `health`, `incident-paging`, `incident-summary`, `incidents`, `investigations`, `performance`, `probes` and `read-admission`. |
 | `health/{types,parse,model,source,useHealth,screens,parts}.ts(x)` | The earlier draft snapshot design (`v0-draft`). `parts.tsx` is shared; the rest is the full-product rendering target and is not reachable from a route until producers and the Cloud can fill it. |
 
 Copy is in `health/words.ts` (English and Taiwan Traditional Chinese); the page reads it from the
@@ -215,14 +225,18 @@ What the view draws, from `trendLanes`, `viewerErrors` and `stageElapsed`:
 
 ## Bounds (`HEALTH_UI_LIMITS`, registered)
 
-Per read 6 s; per load 12 s; 2 reads in flight (the Cloud's per-principal admission); 3 reads per
-load; 1.5 MiB per body (refused unread above); 200 rows per page; 5 pages held (older paging only
+Per read 6 s; per load 12 s; 2 reads in flight per Cloud origin (kept compatible with the earlier
+two-slot API; see the admission paragraph above); 8 queued reads; a `Retry-After` honoured up to
+60 s; 3 reads per load; 1.5 MiB per body (refused unread above); 200 rows per page; 5 pages held (older paging only
 while paused, because the Cloud's cursor hashes the window); 512 KiB evidence record; 64-character
-ids; 50 incidents per list page over 7 days, 5 list pages held (250 incidents, paused only); 1 MiB
+trace and evidence ids; 50 incidents per list page over 7 days, 5 list pages held (250 incidents, paused only); 1 MiB
 incident export; 12 trend lanes drawn; 20 trend buckets listed to investigate. A parity test
 (`internal/domain/capacity/connection_health_ui_test.go`) fails when a `HEALTH_UI_LIMITS` key has
 no row or a row disagrees. Revisions (16), facts (200) and
-context (20) per revision are the Cloud's bounds, refused past them as `contract_bound`. These are this page's choices against the Cloud's documented bounds, not measurements of
+context (20) per revision are the Cloud's bounds, refused past them as `contract_bound`. The page
+also holds at most 5 investigations per incident and 8 evidence references per investigation
+report, and its probe decoder is bounded at 64 targets, 204 hosts and 8 claims; those bounds are
+registered too. These are this page's choices against the Cloud's documented bounds, not measurements of
 production.
 
 ## Development harness
@@ -241,7 +255,10 @@ Scenarios: `normal`, `partial`, `errors` (outcomes 503, events 429, aggregates 5
 times out), `signed_out`, `forbidden`, `service`, `incidents_disabled`, `audit_fail` (every export
 503 `audit_unavailable`), `tampered` (an export whose bundle no longer matches its hash),
 `rollups_off` (aggregates `minute: unsupported`), `many_incidents` (124 extra closed list rows, so
-the list pages by cursor; opening one of them answers 404). The aggregates answer is in the shape
+the list pages by cursor; opening one of them answers 404), `probes_silent` (a registered probe
+host that has sent nothing), `investigations_old` (an incident detail with no `investigations`
+field, as an older Cloud answers) and `investigations_unavailable` (`investigations` unavailable,
+and a start refused `503 health_store_unavailable`). The aggregates answer is in the shape
 Cloud `13e7387` serves (§15.2) and applies its own quantization and `window_too_wide`; `normal`
 holds a daemon with absent buckets, a restart, a stall/slow bucket, loss and a clock-skew count, a
 relay with stage times and a failed stage, and a viewer with `sse_gap` and `auth_refused`;

@@ -118,8 +118,9 @@ browser resolver and any Go resolver that names the same product catalog:
 
 The local HTML document starts with `lang=en` and stays hidden by its boot
 class until the browser has selected and applied a validated catalog. The
-embedded English catalog may avoid a request for English. Other selections
-must be fetched before the first visible render. Cloud uses the same resolver
+English catalog bundled into the console's script avoids a request for English.
+Other selections are fetched from `/v1/strings?lang=…` before the first visible
+render (`bootLocalCatalog`). Cloud uses the same resolver
 and bundle catalog as the local console. Both set `lang` and `dir` to the
 catalog actually displayed; neither guesses the document language from an
 unfulfilled preference.
@@ -149,12 +150,17 @@ in another language is a valid untranslated gap: the client fills just that
 key from English and reports the gap count. The document keeps the selected
 language tag when a secondary catalog has valid translated values; English
 fallback fragments should carry `lang=en` where the rendering surface allows.
-Fetch and parse failures on Cloud, and embedded catalog failure on the local
-page, lead to whole-catalog English fallback with `lang=en`. The console must
+Fetch, parse and validation failures, on Cloud and on the local page alike,
+lead to whole-catalog English fallback with `lang=en`. The console must
 remain usable. If the optional English file is unavailable, the built-in
 English copy remains the browser's final fallback. The server should report
 its own English catalog failure as a typed error rather than claim to have
 served a translation.
+
+The two sides judge markup differently. The daemon's `/v1/strings` accepts a
+translated value whose tags are byte-identical to the English source's; the
+browser's validator (`catalog.ts`, `validate-catalog.mjs`) rejects any HTML tag
+in a translated value.
 
 ## Actionable refusals
 
@@ -178,7 +184,9 @@ machine-readable code, status, outcome, or acknowledgement reference.
 
 A typed source table is not what a person reads. `catalogWord` reads
 `public/catalogs/`, and its last fallback is the key's own id, so a key added
-to `next-strings.ts` (or the work, verify, settings and bar tables) but not to
+to `next-strings.ts` (or any other source table the check lists in its
+`domains`: work, verify, settings, bar, admin, playbook, ops, the Bot tables and
+more) but not to
 the catalogs reaches the screen as `next.cloudAllContentOldVersion` — in every
 language, with nothing failing to announce it. The hosted catalog check cannot
 see it either: that one validates the other languages against `en.json`, so a
@@ -189,8 +197,11 @@ revisions behind its source.
 `web/console/tools/check-source-catalog.mjs` closes it. Every source key must
 exist in `en.json` and `zh-Hant.json`, and every English source value must be
 the one `en.json` serves; `--write` adds what is missing and resynchronises
-English. It runs inside `npm run check`. The other seven languages keep falling
-back to English by design and are not checked by it.
+English. It runs inside `npm run check`. The other seven languages may lack a
+key by design, but a translation they do carry must keep the English source's
+placeholders: a mismatch fails the check, and `--write` deletes that
+translation so the key falls back to English. A `zh-Hant` placeholder mismatch
+also fails, and `--write` leaves it to be fixed by hand.
 
 ## Bundled role and Skill display metadata
 

@@ -109,12 +109,18 @@ sequence 與重送視窗。`internal/adapters/cloudkeys` 因此拒絕 `~/.config
 | `orch/<machine>` | 1 | `stream` | orchestrator 快照：tasks、schedules、waits |
 | `ctl/<machine>` | 1 | `ctl`, `dispatch` | viewer → Mac 的指令 |
 | `r/<machine>` | 1 | `ctl` | viewer → machine 的加密唯讀內容請求；固定目標的對話、技能、Git、畫面、Agent、Shell、文件與圖片讀取。打得通時這一條與它的回應可以不經 relay，走 viewer 的直連（§2.4） |
-| `ctlr/<machine>/<viewer_device>` | 2 | `ctl` | Mac → 指定 viewer 的指令回應 |
+| `ctlr/<machine>/<viewer_device>` | 2 | `ctl` | Mac → 指定 viewer 的指令回應；Go 機器目前只讀不發，回答走 `t/`（§4.4） |
 | `ho/<account>/<handoff_id>` | 2 | `ho` | 交接包與交接收據 |
+| `termi/<machine>/<viewer>` | 2 | `ctl` | viewer → machine 的終端訊息 |
+| `term/<machine>/<viewer>/<connection>` | 3 | `stream` | machine → viewer 的終端 frame；relay 只留這條連線最新一份 |
+| `termd/<machine>/<viewer>/<connection>` | 3 | `stream` | machine → viewer 的終端 frame；relay 不快取 |
+| `termr/<machine>/<viewer>/<connection>` | 3 | `ctl` | machine → viewer 的終端控制訊息 |
 | `wh/` | — | **保留，一律拒絕** | §10 留給 v1 的 webhook-out |
 
 來源：`PROTOCOL.md:48-66`、`contracts/cloud/v1/vocabularies.json`、
 `relay/src/lib/channels.ts:1-53`、`Sources/CloudEnvelope.swift:274-296`。
+Go 端的完整清單是 `internal/domain/cloud/envelope.go` 的 `channelKinds`；四個 `term*` 前綴的
+寄件者、收件者與快取規則見 [Cloud terminal wire](cloud-terminal-wire.md)。
 
 規則是「class 必須是該 prefix 的允許集合的**成員**」，不是相等
 （`relay/src/lib/channels.ts:12-15`）。`dispatch` 走的是指令通道，只是為了計費而可分辨
@@ -259,10 +265,10 @@ v|ch|seq|ts|class|key_id|nonce|ct
 | 參數 | 值 | 來源 |
 |---|---|---|
 | 演算法 | AES-256-GCM（D16，CryptoKit 與 WebCrypto 原生共有的那個 AEAD） | PROTOCOL.md:34-37 |
-| 金鑰 | 32 bytes：目標機器的 content key（wire 上仍稱 `master_secret`），或 `ctlr` 回應的 request-scoped reply key | `internal/transport/cloud/link.go:600-669`；`internal/transport/cloud/pairing.go:335-352`；vectors `control_response` |
+| 金鑰 | 32 bytes：目標機器的 content key（wire 上仍稱 `master_secret`），或 `ctlr` 回應的 request-scoped reply key | `internal/transport/cloud/link.go`（`Link.wire`、`Link.pairingKeys`）；`internal/transport/cloud/pairing.go`（`Pairing.deliver`）；vectors `control_response` |
 | nonce | **12 bytes**，隨機 | CloudEnvelope.swift:53；relay/src/lib/envelope.ts:43 |
 | tag | 16 bytes，**接在 ciphertext 後面**，兩者一起 base64 成 `ct` | CloudEnvelope.swift:192, 231-238 |
-| AAD | **沒有**（envelope 不帶 AAD；pairing wrapper 才有，見 §8.3） | CloudEnvelope.swift:191 |
+| AAD | **沒有**（envelope 不帶 AAD；pairing wrapper 才有，見 §8.4） | CloudEnvelope.swift:191 |
 
 > **PROTOCOL.md §1 的範例寫「nonce: base64, 24 bytes」是錯的。** D16 的正文、Swift、PWA 與 relay
 > 都是 12。契約包把這一項記成 `GAP-NONCE`（`contracts/cloud/v1/README.md:188`）。**照 12。**
@@ -284,21 +290,37 @@ v|ch|seq|ts|class|key_id|nonce|ct
 Go 版在本機 store 缺少 content key 時自行產生，沒有從帳號載入共用 key；配對 handover 把**這台機器**的
 key 交給 viewer，瀏覽器按 account ID ＋ machine ID 分開儲存、查找。舊瀏覽器的帳號層 key 仍有
 相容讀取路徑，但新配對走機器層路徑；`master_secret` 與 `ms-1` 是沿用的 wire 名稱，不能用來推定
-金鑰在整個帳號共用（`internal/domain/cloud/keys.go:302-324`；
-`internal/transport/cloud/link.go:600-669,1074-1087`；`internal/transport/cloud/pairing.go:335-352`；
-`web/console/src/legacy/js/net/cloud-boot.js:418-469,607-623`）。
+金鑰在整個帳號共用（`internal/domain/cloud/keys.go` 的 `LoadOrCreateMasterSecret`、`ContentKeyState`；
+`internal/transport/cloud/link.go` 的 `Link.wire`、`Link.pairingKeys`；`internal/transport/cloud/pairing.go` 的 `Pairing.deliver`；
+`web/console/src/legacy/js/net/cloud-boot.js`）。
+
+content key 有 epoch。`ContentKeyState` 把 epoch、key ID 與金鑰綁在一起：epoch 1 就是沿用的
+`ms-1`，之後每個 epoch 的 key ID 是 `mk-<epoch>-<金鑰 SHA-256 的 hex>`，瀏覽器照這個格式解析。
+`LinkOptions.ContentKeyRuntime` 開啟時（daemon 會開，函式庫呼叫者預設關閉，關閉時只走
+`LoadOrCreateMasterSecret` 與 `ms-1`），`Link.wire` 經由 `ContentKeyStore.LoadOrCreateContentKey` 載入目前的 epoch；撤銷本機 pin 時
+（`internal/transport/cloud/rekey_runtime.go` 的 `revokeContentViewer`）機器呼叫 `RotateContentKey`
+換到下一個 epoch，再經 `retireContent`（`Spool.RetireForCutover`）丟掉舊 epoch 封好但還沒送出的東西；
+`internal/domain/cloud/key_epoch.go` 的 `KeyEpoch` 管 cutover、復原與「不能倒退」。新 key 交給仍配對的
+viewer 走 `rekey` offer/answer（`internal/domain/cloud/rekey.go`；`internal/adapters/cloud/transport.go` 的
+`RawRekeyOffer`）。執行期的狀態與開關見 [content-key runtime](security/content-key-runtime.md)、
+[rekey 控制契約](security/content-key-rekey.md) 與 [瀏覽器端更新](security/viewer-rekey.md)。
 
 ### 4.4 `ctlr` 回應用的是請求帶來的金鑰
 
 請求（viewer → Mac，走 `ctl/<machine>`，用該機器的 content key 封）的 plaintext 裡帶著一把 32 bytes 的
 reply key 與它的 `key_id`；回應（Mac → viewer，走 `ctlr/<machine>/<viewer_device>`）用那把 key 封，
 **不用該機器的 content key**。`key_id` 必須是 `rk-` 加 22 個 base64url 字元
-（`internal/transport/cloud/link.go:642-669`；`internal/transport/cloud/relay.go:242-247`；
+（`internal/domain/cloud/envelope.go` 的 `IsReplyKeyID`；
 `contracts/cloud/v1/README.md:93-97`；`contracts/cloud/v1/schemas/envelope.schema.json` 的
 第五個 `oneOf` 分支）。
 
 向量 `control_response.response_open_results` 直接把這件事寫成兩個斷言：用 `ms-1` 開**失敗**、
 用 `rk-…` 開**成功**。Go 端的 `TestControlResponseUsesTheRequestReplyKey` 照著跑。
+
+**Go 機器目前不發 `ctlr`。** 上面是契約；Go 端只在讀取側驗證 `ctlr` envelope（`rk-` key id），
+`ProducibleChannel`（`internal/domain/cloud/envelope.go`）拒絕發布任何 `ctlr`，直到它的讀取者都部署好
+（GAP-CTLR）。`internal/transport/cloud` 的每一個回答都發在 `AnswerChannel` =
+`t/<machine>/<session>`（`internal/transport/cloud/cloud.go`），payload 說明是哪一個讀取的回答。
 
 > 這條的意義：拿得到該機器 content key 的其他 viewer 也讀不到別人問出來的答案。
 
@@ -311,7 +333,7 @@ reply key 與它的 `key_id`；回應（Mac → viewer，走 `ctlr/<machine>/<vi
 | | 規則 | 來源 |
 |---|---|---|
 | device key | 32 bytes 的 Ed25519 seed。CryptoKit 的 `Curve25519.Signing.PrivateKey.rawRepresentation` 就是這 32 bytes，Go 的 `ed25519.NewKeyFromSeed` 吃同樣的 32 bytes | CloudKeys.swift:358-372；**已由向量實測**（`TestDeviceKeyMatchesThePublishedSeed`） |
-| 這台機器的 content key（舊稱 master secret） | 32 bytes 亂數；本機 store 缺少時產生 | `internal/domain/cloud/keys.go:51-61,302-324` |
+| 這台機器的 content key（舊稱 master secret） | 32 bytes 亂數；本機 store 缺少時產生；換 epoch 時重新產生（§4.3） | `internal/domain/cloud/keys.go` 的 `NewContentKey`、`LoadOrCreateMasterSecret`；`ContentKeyStore.RotateContentKey` |
 
 ### 5.2 指紋（pairing fingerprint）
 
@@ -348,13 +370,17 @@ checksum = SHA-256("clawdline-recovery-v1" || secret)[:4]
 | 檔名 | 內容 |
 |---|---|
 | `device-ed25519-v1` | 32 bytes seed 的 base64，一行 |
-| `account-master-secret-v1` | 這個 daemon 本機的 32 bytes content key 的 base64，一行 |
+| `account-master-secret-v1` | 這個 daemon 本機的 32 bytes content key 的 base64，一行；epoch 1（`ms-1`）的沿用金鑰 |
+| `viewer-ed25519-v1` | 另一個獨立的 Ed25519 seed，給這台機器以 viewer 身分用；機器的 device key 永遠不當 viewer |
+| `content-key-state-v1` | 遷移後唯一的 content key 權威：epoch、key ID、金鑰與進行中的 rotation intent（JSON） |
+| `content-key-floor-v1` | 不含金鑰的 epoch／key ID 下限，用來發現遺失或被倒回的 state（JSON） |
+| `content-key-revocation-v1` | 撤銷 viewer 時的單筆 rotation journal，讓中斷的撤銷能接著做完（JSON） |
 
-檔名沿用舊 app 的 Keychain account 名稱（`CloudKeys.swift:655-656`；
-`internal/adapters/cloudkeys/files.go:48-53`），是既有儲存格式
+前兩個檔名沿用舊 app 的 Keychain account 名稱（`CloudKeys.swift:655-656`；
+`internal/adapters/cloudkeys/files.go` 的常數，`revocation.go` 的 `revocationFile`），是既有儲存格式
 的名稱，**不是帳號共用範圍的宣告**。`LoadOrCreateMasterSecret` 只讀寫本機 store 的這一份；配對交出
-這台機器的 key，瀏覽器則按 machine ID 儲存（`internal/domain/cloud/keys.go:302-324`；
-`internal/transport/cloud/pairing.go:335-352`；`web/console/src/legacy/js/net/cloud-boot.js:607-623`）。
+這台機器的 key，瀏覽器則按 machine ID 儲存（`internal/domain/cloud/keys.go` 的 `LoadOrCreateMasterSecret`；
+`internal/transport/cloud/pairing.go` 的 `Pairing.deliver`；`web/console/src/legacy/js/net/cloud-boot.js`）。
 
 規矩照 `internal/adapters/devices`：目錄 0700、檔案 0600（每次寫都重設而不是相信建立時的值）、
 寫入走同目錄的暫存檔＋fsync＋rename、開檔一律 `O_NOFOLLOW` 並在前後檢查是不是同一個 inode、
@@ -364,7 +390,8 @@ checksum = SHA-256("clawdline-recovery-v1" || secret)[:4]
 `LoadOrCreateDeviceKey` 只有在確定「不存在」時才鑄新的；把讀取失敗當成不存在，會在一次
 權限錯誤之後默默換掉身分，使用者看到的第一個症狀是「所有東西都解不開了」。
 
-接縫是 `cloud.KeyStore`（5 個方法）。之後 macOS Keychain、Windows Credential Manager、
+接縫是 `cloud.KeyStore`（5 個方法）與管 epoch 的 `cloud.ContentKeyStore`（`LoadOrCreateContentKey`、
+`RotateContentKey`、`RecoverContentKey`），`cloudkeys.Files` 兩個都實作。之後 macOS Keychain、Windows Credential Manager、
 Linux Secret Service 各實作一份；沒有桌面環境的 Linux 仍然退回這個檔案版，並且要在設定頁寫明。
 
 ---
@@ -400,6 +427,10 @@ Linux Secret Service 各實作一份；沒有桌面環境的 Linux 仍然退回�
   renewal 之後關閉 admission 整整一分鐘。**2026-09-13 實際發生過：每 240 秒有 60 秒的 Cloud 指令
   被拒絕**（:10-15）。
 
+Go 端已移植成 `internal/domain/cloud/clock.go` 的 `EpochGuard`（入口是 `AcceptServerTime` 與
+`OfferServerTime`），但還沒有接上：`internal/transport/cloud/link.go` 給 `cloudops.Authority` 的
+`ClockReady` 一律是 true。
+
 ### 6.3 重送（replay）
 
 每個 sender 一個滑動視窗，**同一組 `(sender, seq)` 最多被認領一次**
@@ -425,7 +456,12 @@ Linux Secret Service 各實作一份；沒有桌面環境的 Linux 仍然退回�
 （`CloudTransport.swift:618-620`）。capacity 拒絕對那個 sequence 是終局的，之後的請求會拿到新的
 sequence，也就是新的身分。
 
-**這一波沒有實作 replay 視窗與 ledger**（不在任務範圍）。下一波實作時照上表。
+Go 端的 replay 視窗已實作並接上：`internal/domain/cloud/replay.go`（`ReplayWindowSize` = 1024、
+`MaxTrackedSenders` = 4096、`SequenceTracker`／`ReplayWindow`），由 `internal/adapters/cloud/transport.go`
+的 `Replay` 在入站時認領，追蹤滿了就以 `replay_window_full`（`DropReplayWindowFull`）丟棄；
+`Link` 與 viewer client 各持一份。command ledger 與 `TransportIdempotencyKey`（`cloud:<sender>:<seq>`）
+已寫在 `internal/domain/cloud/ledger.go`，**但還沒有接到指令路徑上**；capacity register 也把它記為
+not wired。
 
 ---
 
@@ -533,9 +569,10 @@ capability，**不記 channel 名字**）。
 
 **Machine 不受 capability 管**：它發自己的狀態、收寄給它的 `ctl/` 與依角色收 `ho/`。
 
-**Machine 實際查什麼（2026-10-19）。** 每台裝置都有完整權限，沒有唯讀裝置：每個 Cloud viewer 都持有
-上表四個 capability，所以 machine 不在 `ctl/` 上區分 viewer 的 capability，以上表格只描述 relay 的
-閘門。`ctl/` 上的請求，machine 依序只查：channel 是不是自己的、字在不在詞彙表裡、寄件者在不在帳號
+**Machine 實際查什麼（2026-10-19）。** 每個 Cloud viewer 都持有上表四個 capability，所以 machine
+不在 `ctl/` 上區分 viewer 的 capability，以上表格只描述 relay 的閘門。唯讀裝置由這台機器自己的 pin
+決定：pin 的 `scope` 是 `readonly` 時，效果性請求以 `viewer_read_only` 拒絕（見文末 Machine-local
+viewer scopes）。`ctl/` 上的請求，machine 依序只查：channel 是不是自己的、字在不在詞彙表裡、寄件者在不在帳號
 roster 上且沒被撤銷、簽章金鑰與 roster（及本機 pin）一致、主機的 Cloud 連線設定與裝置操作權限（讀取及 read-level 指令有各自的授權），以及 Session 動作的 execution 收據與各字自己的 guard
 （`internal/transport/cloud/link.go` 的 `authority`、`internal/app/cloudops/cloudops.go`）。
 `start_session` 在 machine 上沒有任何檢查：`start`、`resume`、`restore-*`、`pair-agent-start` 只需要
@@ -547,11 +584,12 @@ roster 上且沒被撤銷、簽章金鑰與 roster（及本機 pin）一致、�
 board（開關 board、給或撤回 AI 閱讀同意），在本機網路配對的裝置沒有 Admin 則不行——這是刻意的
 （`internal/transport/http/board.go` 的 `boardViewer`）。不帶這個 header 的字就是這台 machine；
 The machine-only routes (`requireLocal`) are reached by `pair-agent-start`,
-`pair-agent-status`, and the enable-only `direct-local-network-enable` operation.
+`pair-agent-status`, the enable-only `direct-local-network-enable` operation,
+`direct-devices`, `direct-device-revoke`, and the six `browser-invite-*` words (§10.3).
 The vocabulary marks them `local_exemption`; `TestEveryLocalWordThatNeedsThisMachineSaysSo`
 refuses a new word that reaches such a route without stating that authority.
 
-`orch/<machine>` advertises `machine.read_content_v1: true` only when the read-only `r/` bridge is connected. An absent value means an older machine; the presence of `ss/` does not imply this capability. The `r/` body accepts pinned `info` with `parts: "full"`, `transcript` with `limit` from 1 to 1000 and optional positive `before`, `skills`, `image`, `git`, `git-diff`, `screen`, `agent`, `shell`, `documents`, and `document`. Every Session-scoped read requires `machine_id`, `session`, and a 32-character lowercase hexadecimal `expected_generation`; `machine_id` must match the channel target. The bridge gets `sender`, `seq`, and `ch` from the verified, decrypted envelope. It checks the current roster, signing key, local revocation, and `read_transcript` capability before the pinned local HTTP read and again before sealing the answer. The bridge repeats fresh execution admission after reading, so a reused Session ID cannot release old content. Other operations refuse with `read_only_channel`; a missing generation refuses with `execution_target_required`, and missing capability with `read_transcript_required`.
+`orch/<machine>` advertises `machine.read_content_v1: true` only when the read-only `r/` bridge is connected. An absent value means an older machine; the presence of `ss/` does not imply this capability. The `r/` body accepts pinned `info` with `parts` of `full`, `summary` or `remote-permission`, `transcript` with `limit` from 1 to 1000 and optional positive `before`, `skills`, `image`, `git`, `git-diff`, `screen`, `native-terminal-screen`, `agent`, `shell`, `outputs`, `output-file`, `documents`, `document`, `video`, `session-codegraph`, `peer-inbox`, and `sessions.list` (`contentReadWord` in `internal/app/cloudops/cloudops.go`). `peer-inbox` and `sessions.list` are accepted only on `r/`; on any other channel they refuse with `read_only_channel`. Every Session-scoped read requires `machine_id`, `session`, and a 32-character lowercase hexadecimal `expected_generation`; `machine_id` must match the channel target. The bridge gets `sender`, `seq`, and `ch` from the verified, decrypted envelope. It checks the current roster, signing key, local revocation, and `read_transcript` capability before the pinned local HTTP read and again before sealing the answer. The bridge repeats fresh execution admission after reading, so a reused Session ID cannot release old content. Other operations refuse with `read_only_channel`; a missing generation refuses with `execution_target_required`, and missing capability with `read_transcript_required`.
 
 The fleet list uses the machine-scoped exception `sessions.list`: `{type:"sessions.list",machine_id,session:"__clawdline_machine__",request}` on `r/<machine>`, answered on `t/<machine>/__clawdline_machine__` with `read:"read:<request>"`. It routes once to the existing `GET /v1/sessions?parts=list` snapshot and returns only `at`, `complete`, and `sessions:[{id,title,assistant?,cwd?,project_key?,icon?,execution_generation?}]`; `project_key` is the Project the machine would accept that Session into (the claim's own `CanonicalProjectKey`), which the Board's assignment dialog compares with an item's Project. The machine checks `read_transcript` before and after the read; the signed reply echoes `machine_id`, `session_id`, and request `seq`. This machine-level read has no selected Session generation. The viewer joins each display row only to an `ss/` row with the same machine, Session ID, and execution generation; it never treats the batch as action authority. The optional `assistant` is `codex` or `claude`; the direct status fallback and the same-execution presentation cache retain it so the provider mark survives a missing status replay. Older machines may omit it; an unknown execution remains unmarked rather than inheriting another execution's assistant. This adds no list request or polling.
 
@@ -618,7 +656,7 @@ daemon，行為與今天完全相同（沒有描述是「未知」，不拒絕�
 
 ### 8.3 Session 狀態頻道的分階段契約
 
-Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id`、`session_id`、可驗證時的 `execution_generation`、同批的 `snapshot_generation`、`assistant`、`backend`、`state`、`source`（`provenance`、`observed_at`、`freshness`）、`inventory_complete`、`projected_at`、`last_movement_at`、可得時的 `last_reply_at`、`no_progress_after_ms`、可判定時的 `no_movement`，以及有來源證據時的 `completed_unconfirmed`、`attention_required`、`close_blocked`、`failed_agent_count`。`completed_unconfirmed` 只在未讀 Board 交付已到 `done` 時為真；`deploying` 不算完成。`close_blocked` 在新鮮且狀態已知的關閉可行性讀值時帶 true/false；`failed_agent_count` 在完整且未截斷的 provider-native 子代理讀值時帶整數，包含 0。缺欄即未知，兩者都不宣稱整個 Session 工作失敗。`last_movement_at` 只表示助理自己的紀錄新增位元組，並非推論工作已進展；`last_reply_at` 是紀錄中最新一則人的訊息或助理回答的時間（不含工具列、不含任何文字），不與 `last_movement_at` 一起合併，讓開著的對話在列仍是 working 時也能在回答落地的那一輪更新；門檻由 `internal/domain/capacity` 登錄。不傳標題、對話、畫面、選單、Shell、Git、工作目錄或內容衍生摘要。來源不是 `current` 時省略執行世代與這些狀態事實；`scan.generation` 仍只是清單讀取序號，不能作為執行世代。
+Go daemon 另外發布 `ss/<machine>/<session>`。每個 JSON 僅有 `machine_id`、`session_id`、可驗證時的 `execution_generation`、同批的 `snapshot_generation`、`assistant`、`backend`、可得時的 `parent_session_id`、`machine_scope` 與 `coordinator_bound`（是否綁著 coordinator 的布林）、`state`、`source`（`provenance`、`observed_at`、`freshness`）、`inventory_complete`、`projected_at`、`last_movement_at`、可得時的 `last_reply_at`、`no_progress_after_ms`、可判定時的 `no_movement`，以及有來源證據時的 `waiting_for_reply`、`completed_unconfirmed`、`attention_required`、`provider_block`（目前只有 model capacity 一種值，同時設 `attention_required`）、`close_blocked`、`failed_agent_count`、`running_agent_count`、`agent_count_unknown`、`context_percent`（0–100 的整數）與 `shell_count`（列出的 Shell 與 daemon callback 個數）。完整的 allowlist 是 `internal/transport/cloud/session_status.go` 的 `SessionStatus`。`completed_unconfirmed` 只在未讀 Board 交付已到 `done` 時為真；`deploying` 不算完成。`close_blocked` 在新鮮且狀態已知的關閉可行性讀值時帶 true/false；`failed_agent_count` 在完整且未截斷的 provider-native 子代理讀值時帶整數，包含 0。缺欄即未知，兩者都不宣稱整個 Session 工作失敗。`last_movement_at` 只表示助理自己的紀錄新增位元組，並非推論工作已進展；`last_reply_at` 是紀錄中最新一則人的訊息或助理回答的時間（不含工具列、不含任何文字），不與 `last_movement_at` 一起合併，讓開著的對話在列仍是 working 時也能在回答落地的那一輪更新；門檻由 `internal/domain/capacity` 登錄。不傳標題、對話、畫面、選單、Shell 內容、Git、工作目錄或內容衍生摘要；`shell_count` 只是個數。來源不是 `current` 時省略執行世代與這些狀態事實；`scan.generation` 仍只是清單讀取序號，不能作為執行世代。
 
 `waiting_for_reply` 是額外的正面布林訊號：只有當前 `waiting` 列真的帶選項，且 `screen_reading=read` 證實畫面選單，或 `screen_reading=unavailable`、`menu.source=transcript` 證實仍開啟的單題問句時才為 true。投影只帶布林，不帶問句與選項文字。只有 `state=waiting` 或 `work_person_needed` 不足以推論問句；缺欄表示無法分類。
 
@@ -640,7 +678,7 @@ A viewer that asks a machine to restate its Session rows (a manual refresh) gets
 
 機器收到效果性請求時，傳輸層先用裝置簽章驗證身分，並以該機器的內容金鑰解密；執行前再核對同一把驗章公鑰仍在帳號名冊中。本機若有配對釘選，名冊公鑰也必須與釘選相同；本機撤銷優先於名冊。這讓在釘選檔建立前已完成配對、仍持有該機器內容金鑰的舊瀏覽器可以傳送，但只有帳號登入而沒有該機器金鑰的裝置仍無法送出可解密的請求。逐機 Cloud 命令開關另外在執行前檢查。
 
-### 8.3 配對（這一波不做，規格先寫下來）
+### 8.4 配對
 
 嚴格身分配對是四階段 `offer → grant → activate → confirm`（`PROTOCOL.md:160-171`）。金鑰推導
 （`Sources/CloudPairing.swift:481-558`）：
@@ -663,12 +701,17 @@ canonical JSON（`contracts/cloud/v1/README.md:125-128`）。`pairing_handover` 
 **只有在配對的兩端才是明文**。claim nonce 與 QR pairing nonce 只以 SHA-256 摘要存放
 （PROTOCOL.md:164-167）。
 
-向量 `pairing_handover` 把 offer、handover、AAD、wrapper、phase_key 全部給了，所以下一波可以做
-byte 對照。**低階（low-order）對方公鑰的負向向量**在
+向量 `pairing_handover` 把 offer、handover、AAD、wrapper、phase_key 全部給了，Go 端的
+`internal/domain/cloud/pairing_test.go` 逐 byte 對照。**低階（low-order）對方公鑰的負向向量**在
 `contracts/cloud/v1/crypto-negative-vectors.json`：little-endian u=0 與 u=1，外加注入的全零／過短
 結果，全部 `reject_before_hkdf`。
 
-### 8.4 配對的承諾（照搬本機版）
+Go 端已實作：`internal/domain/cloud/pairing.go` 有 offer、handover、wrapper 與配對邀請
+（`DecodePairingOffer`、`DerivePairingPhaseKey`、`SealPairingHandover`／`OpenPairingHandover`、
+`PairingInvitation`），`internal/transport/cloud/pairing.go` 的 `Pairing` 用它們把這台機器的 content key
+交給 viewer。
+
+### 8.5 配對的承諾（照搬本機版）
 
 碼只顯示在本機、不出現在回應／log／audit；最多猜 5 次、2 分鐘失效、一次一個、10 分鐘 3 次；
 token 用 constant-time 比對、只存雜湊；寫入是另一個權限、預設關閉；本機也沒有例外。
@@ -740,6 +783,13 @@ JSON 壞掉、不是物件、channel 或 sequence 壞掉，只會得到
 | 已關閉 | `cloud_ingress_closed` | 503 |
 
 單筆超過上限永遠不會塞得下，所以是終局的 `command_too_large`，而不是一個邀請對方重試的「忙碌」。
+
+上表是舊 Swift app 的行為。**Go 機器只回 `cloud_ingress_busy`**（429，`detail` 帶 `lane`、`limit` 與
+`retry_after`；`internal/app/cloudops/answer.go` 的 `Bridge.Busy`），沒有程式碼產生 `command_too_large`
+或 `cloud_ingress_closed`。容量由 `internal/domain/capacity` 登錄：解密後等 bridge 的請求是
+`cloud.relay_queue`；讀取另走 `CloudReadConcurrencyLimit` 個 worker 與 `cloud.read_queue` 等待佇列，
+指令不等讀取；忙碌回覆由 `cloud.lane_refusals` 這條佇列的單一 worker 送出，送不出去的只計數並寫 log
+（`internal/transport/cloud/link.go`、`internal/domain/capacity/register_cloud.go`）。
 
 ### 9.5.1 Mac 端的出站容量拒絕（2026-09-21）
 
@@ -835,7 +885,7 @@ identifiers, message content, cursor values, and credentials.
 
 **這是 greenfield 的 v2 儲存契約，不是現在 relay 在跑的 v1 wire。**（推論：`CloudV2Protocol.swift`
 的檔頭說它是「greenfield Cloud v2 storage contract」的 policy-independent primitives，而 §2 的
-envelope 走的是 `CloudEnvelope.swift`。下一波要確認它有沒有被 `CloudTransport` 用到。）
+envelope 走的是 `CloudEnvelope.swift`。）Go 機器與 console 都沒有產生或判讀這組碼的程式碼。
 
 ---
 
@@ -883,8 +933,9 @@ table's `wrappers` state what the bridge does around a decoder — the
 it strips from a content read — and `idempotency` the key every local request
 that is not a GET carries. `go run ./tools/contract-gen` generates a Go decoder
 for every row not marked `hand` (`internal/app/cloudops/zz_decode_generated.go`),
-and production serves those words with them; eight words keep a hand-written
-decoder, each with its reason in the row. A value the answer side reads after
+and production serves those words with them; nine words keep a hand-written
+decoder (`dispatch`, `document`, `peer-inbox`, `peer-send`, `push-subscribe`, `resume`,
+`schedule-webhook-bind-v1`, `start` and `video`), each with its reason in the row. A value the answer side reads after
 the local request is built (a picture's id, an info read's parts, a menu
 answer's key and question) is carried `into` the plan by the row. What the
 hand-written decoders answered, before they were removed, is a golden of
@@ -900,8 +951,10 @@ A row's `local` says who the local request runs as. `device: true` sends
 `X-Clawdline-Actor: device`, which takes away `Local` and the machine door and
 keeps the capabilities (§8.2). Without it the word runs as this machine, and
 `local_exemption: true` says so on purpose for a word whose route answers only
-this machine (`requireLocal`): `pair-agent-start`, `pair-agent-status`, and
-`direct-local-network-enable`. The last is enable-only, requires operation permission,
+this machine (`requireLocal`): `pair-agent-start`, `pair-agent-status`,
+`direct-local-network-enable`, `direct-devices`, `direct-device-revoke`, and the six
+`browser-invite-*` words (`start`, `status`, `list`, `decide`, `cancel`, `revoke`).
+`direct-local-network-enable` is enable-only, requires operation permission,
 and preserves the relay for its setting receipt before the browser retries ICE. `TestEveryLocalWordThatNeedsThisMachineSaysSo`
 (`internal/transport/http`) asks every Local word's route as a device paired on
 this machine's own network would, and fails for an unflagged word that is
@@ -1005,7 +1058,8 @@ existing row's refusal, key and pairing time (`PinnedStore.ReserveReadOnly`), so
 a revoked browser stays revoked until the post-handover pin. Grant writes
 are atomic and failed writes restore the prior live state. A successful local
 downgrade persists before lease revalidation; read streams remain open. Account
-revocation freshness and future content-key rotation remain separate contracts.
+revocation freshness and content-key rotation remain separate contracts; revoking a local
+pin rotates the content key (§4.3, [content-key runtime](security/content-key-runtime.md)).
 
 For negotiated compact tool output, lazy stored results, authenticated gzip
 framing and exact-page conditional reuse, see [Reading stored tool output](transcript-tool-results.md).

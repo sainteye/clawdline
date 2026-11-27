@@ -5,7 +5,7 @@
 > 文中寫成現在式的「舊 app 還在跑」「7717」都是**量測當下**的事實，刻意保留，
 > 用來對照還有哪些功能要 migrate、當初怎麼實作——**不要照著它設定今天的 daemon**。
 
-> **整套工作系統（看板項目、Session 待辦、Backlog、GitHub Issue）怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)。**
+> **整套工作系統（看板項目、Session 待辦、Backlog、GitHub Issue）現在怎麼運作，一份講完在 [`docs/work-system-v2.md`](work-system-v2.md)；[`docs/work-system.md`](work-system.md) 是 v1 的紀錄。** 本文 §5、§6 的計畫（唯讀 776 張舊卡、照搬舊版前端看板）後來沒有沿用：daemon 不再讀舊 app 的看板（`docs/cutover.md` §7，`internal/transport/http/board.go`），React 看板頁已移除，現行看板是 v2 Board（`web/console/src/pages/work/WorkV2.tsx`）。
 
 > **實作依據是 [`docs/design-decisions.md`](design-decisions.md)（2026-09-18 起）；本文保留為分析材料，與它衝突之處以它為準。**
 
@@ -354,7 +354,7 @@ private static let entitlement: [String: Any] = [
 | D1 | 物化讀取模型（寫時備好、讀時便宜） | **照搬** | §2.5，21–42 ms 是它換來的；`architecture.md:277-285` 把它和 `SessionWatch` 並列為「要抄的兩個例子」 | 無 |
 | D2 | 物化時**連 detail 一起全量算** | **小改** | §2.4。他們沒修的理由是 Swift actor 的死鎖風險——**Go 版讀的是不可變快照，沒有那個風險** | 低。這是 Go 版少數「同樣的修法在這裡更便宜」的地方 |
 | D3 | 指令回應前同步重建（不可以把新 revision 配上舊 bytes） | **照搬**（承諾），**小改**（做法） | `b6f4f555`：「is right to — but rebuilding everything is the wrong way to keep that promise」 | 低。只重建被改的那一項＋它的專案 |
-| D4 | `expectedRevision` CAS ＋ `(actor, requestId)` 收據 | **照搬** | 新版 `internal/domain/board.Decide` 已是這個形狀 | 無 |
+| D4 | `expectedRevision` CAS ＋ `(actor, requestId)` 收據 | **照搬** | 當時 `internal/domain/board.Decide` 是這個形狀；它和 `Command` 因為沒有呼叫者已刪除（design-decisions D38），看板設定與收據改存 SQLite（`internal/adapters/store/board_settings.go`），收據併入按時間過期的單一收據表（D03、D37） | 無 |
 | D5 | 兩條獨立有界佇列（讀 4／寫 8），不佔 SSE admission | **照搬** | `architecture.md:252-256` 明說 sound and should be kept | 無 |
 | D6 | Cloud 看板讀取排隊 229 秒 | **重新設計**（＝A8 的後果） | §2.6 | 中。分頁化之後這條自然縮短；**不要只加 timeout** |
 | D7 | 跨 owner 規則：持有看板鎖時不得回呼 broker | **照搬** | `ProjectBoardIntegration.swift:228-229` | 無 |

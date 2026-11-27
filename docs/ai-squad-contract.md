@@ -2,21 +2,25 @@
 # AI squad v1 contract
 
 This document is the implementation contract for the AI squad Epic. The
-existing built-in persona catalog remains the compatibility source for its 42
+existing built-in persona catalog remains the compatibility source for its 44
 short IDs. The squad adds shareable definitions, private settings, immutable
 launch snapshots, and a truthful record of skill use. It does not install a
 provider skill, fetch a marketplace, or run content from an imported package.
 
 The Console lists skills discovered on the selected machine under the
 registered Project's `.claude/skills`, `.agents/skills`, and `.codex/skills`,
-or the provider's personal and plugin skill directories. A Project source
+or the provider's personal and plugin skill directories (for Codex,
+`~/.agents/skills` as well as `~/.codex/skills`). A Project source
 requires a registered Project; provider sources also show skills in that
 Project when one is selected. The list carries names, descriptions, and
 locations, with opaque IDs rather than arbitrary file paths. A separate read
 of a selected ID previews its `SKILL.md` and, if requested, its folder files.
 The user can import that text alone or capture the whole folder. Folder imports store file bytes
 and safe relative paths in the versioned skill, then publish those exact files
-beside `SKILL.md` in a fixed launch snapshot. Importing does not install the
+beside `SKILL.md` in a fixed launch snapshot. `SKILL.md` and the folder's files share one
+`squad.body_bytes` budget (64 KiB); a folder that cannot be copied whole still
+answers the read, with no files and a folder error that offers the text-only
+import. Importing does not install the
 folder into a provider's global skill directory or execute its scripts.
 Cloud carries these reads through the paired machine; reading selected skill
 content and attachments requires a write-capable paired device. The source
@@ -32,7 +36,9 @@ scan does not follow symlinks or accept a client-supplied filesystem path.
 - Teams and skills have their own namespaced IDs and versions. Team-to-persona
   and persona-to-skill references are ordered; a persona can occur in multiple
   teams and can reference zero or more skills. A skill can be referenced by
-  multiple personas. Name and display order are not identity.
+  multiple personas. Name and display order are not identity, although a
+package refuses two definitions of the same kind whose names differ only in
+case (`name_conflict`).
 - The launch resolver maps an input short alias or definition ID to one exact
   definition version. All new-session entry points use it: the person's start
   action, Board assignment to a new session, agent dispatch, and restore.
@@ -59,7 +65,11 @@ expected settings version; stale writes return `version_conflict` and current
 version without dropping the submitted draft.
 
 Every built-in persona is initially eligible for management-agent auto
-assignment. Only sessions whose authenticated persona is `product-manager` or
+assignment; an imported persona starts ineligible until a setting enables it.
+A machine-wide `auto_dispatch` setting (definition default on, global override
+only, no Project level) switches automatic role selection off: then both
+`GET /v1/squad/auto-candidates` and a root's dispatch with a role refuse with
+`squad_auto_dispatch_disabled`. Only sessions whose authenticated persona is `product-manager` or
 `architect` use the enabled list as their automatic candidate set. Explicit
 human selection in the new-session and Board flows may still choose a disabled
 persona. The human-invoked AI suggestion returns a suggestion, never dispatches
@@ -72,9 +82,15 @@ its conversation ID at first observation. The CLI sends that capability for
 agent dispatch, child creation, and assignment. The server derives the actor
 persona and launch Project from the binding; a supplied conversation ID is only an
 equality check. A bound Session may dispatch another role into a different
-Project. The launch Project does not restrict dispatch destinations; automatic
-assignment still honors the target Project's role settings. Missing, invalid, unbound, revoked, or cross-session actor
-capabilities fail with a typed refusal for a snapshotted Session. A pre-feature
+Project. The launch Project does not restrict dispatch destinations; a management
+role's dispatch still honors the target Project's role settings
+(`persona_disabled_for_auto_assignment`). The candidate list, however, is the
+launch Project's own: `GET /v1/squad/auto-candidates` resolves the actor's
+launch scope and cannot list another Project's candidates. Missing, invalid,
+unbound (pending or failed), or cross-session actor
+capabilities fail with a typed refusal for a snapshotted Session. There is no
+revocation: a resume mints a new capability on a new launch row and leaves the
+earlier bound capability valid. A pre-feature
 Session, or a Session opened without a role, retains the legacy dispatch route;
 it has no snapshot identity and cannot claim the new management-role candidate
 list. Tests cover spoofing in both directions and direct HTTP requests.
@@ -92,7 +108,9 @@ effective skill order, each skill's full text/version/source/digest, and
 Project scope. Write complete temporary files, verify their digests, and
 atomically publish them before launch. Provider prompt files reference the
 snapshot, not mutable catalog files. Claude reads its fixed system prompt
-file; Codex reads the fixed file named by its developer instruction. The
+file (`--append-system-prompt-file`); Codex reads the fixed file named by its
+developer instruction; Antigravity receives the same fixed prompt path in its
+daemon-prepared launch context. The
 provider is instructed to read a skill when the task calls for it, not on
 every turn. User instructions, safety boundaries, repository instructions,
 and the task brief retain precedence over imported content.
@@ -107,9 +125,12 @@ catalog edit, Project move, or daemon restart. Pre-feature conversations are
 reported as `legacy_unsnapshotted`, with no claim of historical immutability.
 
 A bound session gets a capability for reporting only skills present and enabled
-in its snapshot. An event has snapshot, conversation, definition, Project
+in its snapshot; the Agent reports with `clawdline squad skill-event --skill ID
+--version VERSION --status read|applied|failed [--event-id ID] [--failure-code
+CODE]`, which the launch prompt names. An event has snapshot, conversation, definition, Project
 scope ID, skill ID/version, client event ID, status `read|applied|failed`, timestamp, and an
-optional failure code. Validation and a durable receipt are one transaction.
+optional failure code, accepted only with `failed`. The receipt carries the
+sequence, receipt ID and event fields but does not echo the client event ID. Validation and a durable receipt are one transaction.
 The same event ID and payload returns the original receipt; a different
 payload with that ID returns `event_conflict`. A monotonic sequence and `after`
 cursor let clients catch up after reconnect. `applied` means "Session reported
@@ -133,7 +154,11 @@ summary of used and unused Skills; and a list row shows the Skill beside its
 bot. All of them share one reader of `/v1/squad/events`, never one per row
 (`web/console/src/session/skill-feed-core.ts`). The still state is read only
 for the conversations on screen — the open Session and the list rows with a
-role — with `GET /v1/squad/events?conversation=<id>&after=0`: the parameter
+role — with `GET /v1/squad/events?conversation=<id>&after=<cursor>&limit=<n>`,
+starting at `after=0` and paging until the live cursor. A page is `events`,
+`next_after` and `has_more`; `limit` defaults to 50 and may be at most 100, and a
+bad cursor or size is refused as `invalid_cursor` or `invalid_page_size`. The
+`conversation` parameter
 repeats or takes a comma-separated list, at most 50 IDs
 (`squad.event_conversations`), and the daemon reads each along the
 `(conversation_id, seq)` index; too many, empty or unprintable IDs are a
@@ -142,8 +167,9 @@ before. The live poll then reads the whole feed after the head, so a receipt
 plays only when it arrived live and a reload replays nothing. A conversation
 shown later is read the same way, up to the live cursor. The rows' launch
 snapshots are read together too: `GET /v1/squad/session-snapshots?conversation=`
-names up to 50 conversations (`squad.snapshot_conversations`) and answers
-each bound one with only what a row draws (snapshot, definition and scope IDs,
+names 1 to 50 conversations (`squad.snapshot_conversations`; none is a
+`bad_request`) and answers each bound one, leaving out a conversation that has
+no snapshot, with only what a row draws (snapshot, definition and scope IDs,
 enabled Skills' IDs, versions, names, purposes and icons); the open Session
 still reads its own full snapshot, whose Skill content says when each applies.
 On a log of 1,000 receipts with 10 role rows a page load reads 5 times (one
@@ -173,12 +199,15 @@ leaves no gap in the live cursor, so the next live receipts still play.
 
 ## Offline package and privacy boundary
 
-The v1 package is an offline ZIP with a versioned manifest, namespace, source,
-license, file paths and SHA-256 digests, plus zero or more teams, personas, and
-skills with ordered references. Preview validates the whole archive before any
+The v1 package is an offline ZIP with a versioned manifest (namespace, source,
+license), zero or more teams, personas, and skills with ordered references,
+each definition naming its own body path and SHA-256 digest, and any selected
+private settings, each with its own path and digest. Preview validates the whole archive before any
 write: format and text encoding, path traversal, absolute paths, symlinks,
-case-insensitive duplicates, duplicate IDs, size and expansion limits,
-digests, missing references, and built-in ID conflicts. All limits belong in
+case-insensitive duplicates, duplicate IDs, same-kind names that differ only
+in case, encryption, compression method, header mismatch, extra or missing
+files, size and expansion limits, digests, missing references, and built-in
+ID conflicts. All limits belong in
 `internal/domain/capacity`; drive its registry guard red before adding them.
 Preview names additions, updates, conflicts, dependencies, archive digest, and
 catalog version. Adoption supplies the same digest, expected catalog version,
@@ -212,8 +241,11 @@ versions, with the shorter lists, still resolve for older snapshots and
 pinned settings. A global or Project override can
 reorder, disable, or remove a role's effective skills. A launch prompt lists
 each enabled skill with its name, purpose, and the skill's own quoted
-"Use this skill ..." sentence, and asks the role to compare the task with
-them before starting. No skill is shown as used merely because it is
+"Use this skill ..." sentence (or, without one, its frontmatter `description`;
+either is cut to 240 runes, `squad.launch_skill_when_runes`), and asks the role
+to compare the task with them before starting. For a task with declared
+writes, a skill that cannot apply to them is left out of the list, with one
+line saying how many more role skills do not apply. No skill is shown as used merely because it is
 available; only a matching Session receipt can report a read, application,
 or failure. Older Session snapshots retain their original skills after a
 catalog change.
@@ -240,7 +272,7 @@ relying on icon color. The mobile detail view has a visible return to the
 original card and restores keyboard focus; team and skill changes keep focus
 in the updated UI. Dialogs have accessible names and return focus to their
 opener. Loading, empty, offline, permission, validation, conflict, and retry
-states are separate. Failed saves retain the draft. Verify all 42 built-in
+states are separate. Failed saves retain the draft. Verify all 44 built-in
 personas, long text, zero skills, imported teams, 1440px desktop, 390px mobile,
 larger text, keyboard, and screen reader semantics against real API data.
 

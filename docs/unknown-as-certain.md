@@ -4,6 +4,15 @@ Measured 2026-09-21 against `web/console/src` (excluding `legacy/js/**` and
 `public/strings/**`, which are byte-locked copies) and `internal/`. It
 continues `first-run-audit.md` §U4, which named the family and gave it a
 whole-class acceptance; four of those are fixed and are not repeated here.
+That audit is now `docs/records/first-run-audit.md`.
+
+**Current status.** This page is the 2026-09-21 measurement. The guard now
+expects 26 rules with no open and no locked findings (`EXPECTED_RULES`,
+`EXPECTED_OPEN` and `EXPECTED_LOCKED` in `web/console/src/refusals/audit.ts`).
+Only the legacy CSS is still a byte-for-byte copy; `legacy/js/**` and the
+strings catalog are the console's own code (`tools/check-legacy-css.sh`), and
+`legacy/js/view/ledger.js` no longer exists. The line citations below are from
+that date.
 
 **Before the cross-language pass, the guard for this family reported zero.**
 The AST pass in `web/console/src/refusals/scan.ts` now also recognizes a handler

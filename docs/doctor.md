@@ -23,7 +23,8 @@ credentials nor initiates a metadata refresh.
 
 Doctor groups Claude's direct CLI and status-line observations under the historical
 `claude_statusline` label. The quota detail shows which source supplied the current
-reading. Codex's source is rollout quota keys. The report cannot establish whether Claude's upstream usage request
+reading. Codex's source is rollout quota keys (`codex_rollout`). Gemini and Grok readings
+are exported too, under the source `provider_api`. The report cannot establish whether Claude's upstream usage request
 returned 401, whether a credential changed after login, or whether the browser
 actually rendered a footer. These are explicit evidence gaps, never inferred
 authentication failures. A CLI version is the executable found on the daemon's
@@ -38,12 +39,14 @@ discarded. Concurrent Doctor checks on one server are refused with `doctor_busy`
 The daemon retains at most 24 quota transitions for three days in
 `<state>/doctor/history.json`, with a 32-KiB file cap, private directory/file
 permissions and atomic replacement. Coverage names retained history, the latest
-recorded transition, expiration/eviction counts, unknown loss and read/write
+recorded transition, one `dropped` count that adds expired and evicted transitions
+together (the export cannot tell them apart), unknown loss and read/write
 failures. History is not continuous monitoring and cannot reconstruct incidents
 before installation. A failed history write does not replace the quota answer.
 An unreadable history file is never exported as arbitrary text.
 
-The exported report is at most eight KiB. The browser records the hosted build
+The exported report is at most eight KiB; a larger one is refused with
+`doctor_report_too_large` (500) rather than trimmed. The browser records the hosted build
 when known and validates the same field whitelist before preview, import and
 submission. Credential values, account identifiers, terminal/transcript text,
 provider response bodies, model names and private filesystem paths have no fields

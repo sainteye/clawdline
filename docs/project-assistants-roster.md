@@ -15,12 +15,19 @@ Reduced-motion preferences disable neighbour animation.
 
 The top-level List options menu still opens explicit reorder mode, which exposes
 pin buttons and keyboard handles. Done returns to reading. Right-click or
-Shift+F10 on a row opens that mode at the row. Alt+Up/Down (and Alt+Home/End) moves
+Shift+F10 on a Bot row opens that Bot's context menu; on a group row it opens
+reorder mode at the row. Alt+Up/Down (and Alt+Home/End) moves
 the focused row without a mouse; focused handles retain plain Up/Down and Home/End.
 Direct dragging stays inside the same Project and pin band. Explicit controls can
 pin/unpin a row without changing its Project or granting source access. Preferences
 are written only on completed drops or explicit keyboard/pin actions. A storage
 update from another tab cancels an in-flight drag instead of overwriting it.
+
+The List options menu also chooses an order, saved with these preferences.
+`default` keeps the Project sections. `unread` lifts Bots that need the
+person's answer, then unread Bots, then working Bots into sections above them.
+`machine` replaces the Project sections with one section per machine and turns
+off Alt-key reordering outside reorder mode.
 
 Group rows compose actual members' avatars, count members beyond the registered
 preview bound, and show the returned last speaker and message. Missing member
@@ -48,7 +55,9 @@ Preferences are stored in this browser's local storage under the authenticated
 account namespace, with machine/Bot, typed machine/group and machine/Project identities as keys. They
 survive closing Bots, switching Sessions and reloading this browser. Other tabs
 observe storage changes. They do not synchronize across devices or browser
-profiles. Source filtering and pagination retain unseen preferences; later Bots
+profiles, with one exception: when a Bot's source supports roster actions, its
+pin is saved to the source and the source-owned `sidebar_pinned` value overrides
+the local pin set. Source filtering and pagination retain unseen preferences; later Bots
 remain visible. Without customization, Project and Bot order follow the roster's
 existing activity order. A real Project named `pinned` has its own identity.
 

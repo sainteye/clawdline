@@ -36,9 +36,13 @@ something to decide.
 Dreaming's review list has always been advice for a person: `same_description` and
 `successor_chain` (`docs/project-memory.md`) and `related_delivery` (same delivery name with an
 earlier stage suffix). It now also has `near_duplicate`. Two live entries of the same type
-(`project` or `reference` only) qualify when their bodies share at least 80% of their distinct
-lines. Lines shorter than 16 bytes and `Superseded-by:` lines do not count. Neither does a line that
-more than eight entries share, because that is boilerplate. When one body names the other entry,
+(`project` or `reference` only) qualify when the distinct lines they share are at least 80% of the
+distinct lines in both bodies together (shared ÷ union, which is stricter than 80% of either
+entry's lines). Lines are whitespace-normalised first; lines shorter than 16 bytes and
+`Superseded-by:` lines do not count. Neither does a line that more than eight entries share,
+because that is boilerplate. An entry with fewer than three counted lines is never a candidate,
+and neither is a retained entry or one another archive or review row in the same plan already
+names. When one body names the other entry,
 the named entry is offered as the one to keep. Otherwise, the longer body is offered.
 
 A `near_duplicate` row is never archived by maintenance. To act on one, the person or Bot compares

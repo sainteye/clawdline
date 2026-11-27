@@ -123,6 +123,10 @@ is the failure this field exists to prevent.
 
 ## Declaring: `POST /v1/orchestrator/sessions/:id/state`
 
+> **Go daemon:** this route was not carried over. The Go orchestrator's per-Session actions are
+> `todos`, `run`, `workflow`, `smart-title` and `complete`, and neither refusal below exists there,
+> so a Session cannot self-declare `ready`, `holding` or `waiting_session` on the Go daemon.
+
 The `self` half of provenance. Machine token, identity resolved from the live watched process
 (exactly like `/complete`), and only while the declaring turn is observably working:
 
@@ -183,6 +187,11 @@ the session itself is the one witness who knows its assignment ended, and its au
 self-marked declaration is how that knowledge enters the projection without weakening the
 evidence-only checks.
 
+The Go daemon's projection (`projectWorkState` in `internal/adapters/ownrecords/project.go`)
+has no self-claim step: after the task receipt it checks a verified Session landing
+(`work_complete`), then a Session delivery (`milestone_complete`), then returns `ready` for a row
+with no assistant and `unknown` otherwise. Every Work it projects carries `broker` provenance.
+
 ## The fourth projection: `closeability`
 
 `ready` means **able to accept work**. `safe` means **able to end**. They are independent, and the
@@ -190,7 +199,8 @@ night this page was written they were being read off each other: a quiet row inv
 still own a pending landing, a dirty isolated checkout, a waiter parked on its files, or a debt
 nobody has paid. So closeability rides beside `work_state` and `owed` as a projection of its own,
 with three current values and one action each. `needs_attestation` is a retired Swift value; the
-Go daemon does not require a second declaration after recorded work is complete:
+Go daemon never produces it and does not require a second declaration after recorded work is
+complete. The generated contract still lists it, and the console still renders it if it arrives:
 
 | state | icon | you should | English row example |
 | --- | --- | --- | --- |
@@ -227,6 +237,11 @@ and never will. So `POST /v1/sessions/:id/end` computes the list at its end of t
 refuses (`409 would_lose_work`, with the list) unless the request carries `accept_loss: true` —
 which the web page sends only after showing that list in the close confirmation. A close with
 nothing at stake stays one press.
+
+On the Go daemon the close is `POST /v1/sessions/<id>/close` with `force` and
+`expected_closeability_version`; its refusals are `close_blocked` (with the reasons),
+`close_not_proven`, `closeability_unknown` and `close_inventory_unavailable`. Only the Cloud relay
+still accepts `accept_loss`, which it translates to `force`.
 
 Queue changes do not change the terminal or closeability state. Lists show the broker's
 outstanding work beside that state, including beside an unreadable terminal, and exclude

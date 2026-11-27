@@ -83,8 +83,9 @@ address to the whole internet; it is not recommended, and nothing in Clawdline n
 
 **Check:** the phone shows **Paired — this browser is in** and then the session list.
 
-**Limits.** Asking to pair is limited to three requests every ten minutes, and five wrong codes end
-the attempt.
+**Limits.** Asking to pair is limited to three requests every ten minutes, and wrong codes are
+counted across every pairing for a day: the fifth wrong code in 24 hours ends the open attempt and
+keeps pairing closed until the oldest miss is a day old. Asking again does not reset the count.
 
 **Undo:** `tailscale serve --https=443 off` (or `tailscale serve reset`) stops Serve; clear
 **Tailscale address**; revoke the phone (see
@@ -232,7 +233,7 @@ and needs no account.
 - **The Cloud line stays off**: `./bin/clawdline cloud status` says why. A broken Cloud setting
   never stops the daemon.
 - **A phone can read but not act**: check that it is paired with the selected machine and that
-  `clawdline cloud commands` is on there and its local grant is `operate`. Over Tailscale Serve, check that its sign-in is still valid.
+  Cloud is on there (`clawdline cloud on`; that switch is also what lets a phone act) and its local grant is `operate`. Over Tailscale Serve, check that its sign-in is still valid.
 - **Notifications on the phone**: [notifications.md](notifications.md).
 
 ## Deeper

@@ -1,4 +1,4 @@
-> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
+> **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links. The Go daemon does not implement this attribution at all: it has no feature-classifier setting, no usage analytics route and no per-role usage; its token ledger leaves Project and Feature attribution to a later migration (`docs/token-ledger.md`). Present-tense sentences below describe the retired app.
 <!-- clawdline-doc: kind=record audience=both -->
 
 # Usage attribution: Project and Feature

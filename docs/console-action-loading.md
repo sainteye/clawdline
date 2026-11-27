@@ -23,7 +23,7 @@ The person approved AL-01–AL-16, AL-25 and AL-27 on 2026-10-25. These 18 entri
 | AL-25 | Ordinary schedule create/save/delete expose progress; cross-machine move wording remains owned by its existing staged flow. |
 | AL-27 | Project removal gains a spinner beside its existing removing label. |
 
-The shared 14 px indicator uses the existing English and Taiwan Traditional Chinese catalogs. Busy controls expose `aria-busy`, keep request and delivery receipts separate and stop rotating under reduced motion. Icon-only actions retain accessible labels. No server request types or completion criteria are changed.
+The shared 14 px indicator (`ActionSpinner` and `ActionProgress` in `web/console/src/ui/ActionProgress.tsx`, styled by `ui/action-progress.css`; the schedule form of AL-25 paints it imperatively with `paintActionProgress`) uses the existing English and Taiwan Traditional Chinese catalogs. Later surfaces outside this inventory reuse it without AL IDs: `pages/ops.tsx`, `pages/projects/ProjectFolderPicker.tsx`, `session/LazyEntryBody.tsx`, `session/RotationNotice.tsx` and `session/ToolResult.tsx`. Busy controls expose `aria-busy`, keep request and delivery receipts separate and stop rotating under reduced motion. Icon-only actions retain accessible labels. No server request types or completion criteria are changed.
 
 The 18 approved representative states were rendered from the actual components with labeled synthetic data at 430 px, and checked at 390 px and 1024 px for action-control overflow. All had visible indicators and no recorded browser exceptions; reduced-motion checks passed. A separate full-console fixture delayed a real Playbook save, refused it, retried successfully and then deleted the Playbook. It verified the busy control, prevented duplicate requests, removed the indicator on failure, retained the error and completed the successful retry. Screenshot state fixtures do not establish production latency or every grouped action variant.
 
@@ -60,6 +60,8 @@ The 18 approved representative states were rendered from the actual components w
 | AL-27 | Project removal | 專案移除 | Confirm project removal | Removing text is present; no activity ring. | Conditional: Optional consistency improvement; existing text already communicates progress. | P2 | `web/console/src/pages/projects.tsx:119`; `web/console/src/pages/projects.tsx:441` |
 
 ## Existing adequate indicators: compact supporting review
+
+The file:line citations in this page are anchored to the review base `11cfbfe32`; on current `main` some lines have moved or now lie past the end of the file. Read them at that commit, or find the code by the named component.
 
 These source-reviewed families support the decisions above. Only the numbered entries have per-entry screenshot evidence.
 

@@ -35,6 +35,12 @@ does not hold it.
 `stall_detected`, `released_stalled`, and `state_after_loss` in `slow` or `blocked` — become one
 attachment per phase (`subject_kind: incident`, `subject_id: phase-<id>`): location, age, deadline,
 build, stage, correlation, observed time, and the watchdog's dropped-transition count as coverage.
+`sealedFeed` also subscribes to the stall capture worker (`rt.Capture.OnPublish`): a published
+capture, and later the stall's recovery (`recovered` or `released_outcome_unknown`), each become a
+`/2` revision of the same attachment (`SnapshotSchemaV2`, carrying `Capture` — a bounded excerpt,
+never the raw dump — and `Recovery`). The feed remembers at most 32 stalled phases
+(`maxOwnerIncidents`, `cloud.health_owner_incidents`); a /2 snapshot holds at most 24 frames and 8
+sources (`cloud.health_sealed_snapshot_frames`, `cloud.health_sealed_snapshot_sources`).
 Nothing else is in the whitelist.
 
 **Lifecycle and failures.** The exact request body is written before the first send. A revision in
@@ -47,7 +53,8 @@ connection-health stop deadline and names it if it is late.
 | --- | --- |
 | opt-in off | `owner_diagnostics.coverage: off` |
 | no recorded epoch / wrong key | `failed`, `key_handover_required`, no request |
-| no identity or secret | `failed`, `key_unavailable` |
+| no identity or secret; machine revoked or without an `identity_epoch` | `failed`, `key_unavailable` |
+| `GET /v1/machines` unauthorized | `failed`, `auth_refused` |
 | Cloud unreachable, 5xx | `failed`, `upstream_unavailable`; the body stays pending |
 | jobs dropped at the queue bound or refused | `partial` with the counts |
 | receipted | `active` |
@@ -84,7 +91,7 @@ unsendable rather than a block that would read the missing key as 0.
 
 How a browser gets the key that opens a machine's owner-sealed diagnostics, and when the hosted
 page records its own connection health. The cryptography is in
-`internal/domain/cloud/health_pairing.go` and `legacy/js/net/cloud-pairing.js`; the Cloud contract
+`internal/domain/cloud/health_pairing.go` and `web/console/src/legacy/js/net/cloud-pairing.js`; the Cloud contract
 is Cloud's connection-health contract §13.9 (summarized in
 `docs/admin-connection-health-contract.md` §9b). This page is the product path around them.
 
@@ -113,8 +120,9 @@ relay.
    the epoch only from Cloud's grant receipt (`ContentEpochStore`, `content-key-epoch-v1.json`
    beside the key files).
 5. The browser keeps the result only after verifying the confirm: one IndexedDB put of
-   `{v, accountID, machineID, machineFingerprint, contentKeyEpoch, identityEpoch, pairedAtMs,
-   hkdfKey, masterKey}` under `clawdline.health-handover:<account>:<machine>`, both keys
+   `{v, accountID, machineID, machineFingerprint, contentKeyEpoch, identityEpoch, contentKeyID,
+   machineSigningKey, pairedAtMs, hkdfKey, masterKey}` under
+   `clawdline.health-handover:<account>:<encodeURIComponent(machine)>`, both keys
    non-extractable (`storeHealthHandover`, `saveHandover`).
 
 ## 3. Local routes (this machine's own token only)
@@ -139,7 +147,8 @@ gets 400. Bounds: `cloud.identity_pairing_decision_bytes` (1 KiB),
 
 `CloudGate.tsx` installs the owner-diagnostics source from the session at each call: account,
 device, the device's Ed25519 private key, and `tokenIdentity` — the `key_epoch` and
-`identity_epoch` the last `/v1/tokens/device` mint answered (`tokenIdentityOf`; null until a
+`identity_epoch` the last `/v1/tokens/device` mint answered, held as `deviceKeyEpoch` and
+`identityEpoch` (`tokenIdentityOf`; null until a
 token was minted, never 0). `heldMasterKey(machine)` reads only the handover record
 (`heldMasterKeyFor`); no record is `{ key: null, contentKeyEpoch: null }`.
 

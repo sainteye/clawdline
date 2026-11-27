@@ -1,7 +1,30 @@
 # A decision a Bot needs from the person during a Bot-to-Bot request (2026-11-23)
 
-Status: investigation and design direction only. No product code changed. The
-numbered items in §6 await the person's confirmation before implementation.
+Status: investigated and proposed 2026-11-23; direction D has since been built.
+§2 describes the code on that date, and its file and line citations are not
+kept current. The rest of the page is kept as written. What shipped:
+
+- Bot tools `ask_person`, `list_questions` and `withdraw_question`
+  (`internal/adapters/projectassistantacp/mcp.go`). A decision offer
+  (`internal/domain/projectassistant/decision.go`) is shown as a card in the
+  owner Bot's main chat (`web/console/src/project-assistants/DecisionCard.tsx`);
+  the exchange records `needs_person`, and `ExchangePanel` shows that state.
+  A withdrawn question returns its reason to the requesting Bot as the reply.
+- A `send_message` from a `bot_request` turn is no longer refused: it is posted
+  as a peer note in the owner's chat (`postPeerNote` in
+  `internal/app/projectassistant/runtime.go`).
+- The person's answer quotes the request and the Bot's question, not the
+  exchange's reply (`DecisionPrompt`).
+- An offer has a fixed 24-hour lifetime (`MaxDecisionOfferSeconds`), and a
+  waiting exchange is completed when its offer passes it: the exchange expires
+  with the offer, not the other way round. A revoked native binding does not
+  withdraw the offer; a hidden Bot refuses the answer (`CheckDecision`).
+- In Bot A's chat the pointer is a waiting line plus a separate go button. In
+  Bot B's chat, a card whose exchange capsule is not in the loaded timeline
+  stays in the permission area instead of under the capsule.
+- An answered decision can back a Board item when the `bot_decision_items`
+  setting is on (`internal/transport/http/work_v2_bot_decision.go`), although
+  §5 recommends no switch for the card itself.
 
 ## 1. What the person saw
 

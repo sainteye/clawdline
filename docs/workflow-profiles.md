@@ -1,6 +1,6 @@
 # Machine workflow profiles
 
-Settings → Session and access → Integrations selects one managed main workflow for new Claude/Codex Sessions on this machine. CodeGraph remains an independent lookup option. This is a launch integration, not an interceptor of every model action or an installation manager.
+Settings → Sessions and access → Integrations selects one managed main workflow for new Claude/Codex Sessions on this machine. CodeGraph remains an independent lookup option. This is a launch integration, not an interceptor of every model action or an installation manager.
 
 ## Compatibility and selection
 

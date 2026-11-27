@@ -173,9 +173,10 @@ resulting entry count instead of assuming the request limit is that count.
 ## Other structured Cloud reads
 
 Machines advertising `read_compression_v1` accept `accept_encoding: "gzip-v1"`
-for a fixed set of JSON reads: Board cards and details, to-dos and interventions,
-roles, projects, schedules, snippets, quotas, capacity, skills, Session info and
-the pinned Session list. The representation field is removed before the existing
+for a fixed set of JSON reads: Board cards and details, Board search and
+proposals, to-dos and interventions, roles, projects, project folders, schedules,
+snippets, quotas, capacity, skills, Session info and the pinned Session list
+(`compressedReadWord`). The representation field is removed before the existing
 operation decoder runs. Unknown fields, unsupported representations, permissions,
 execution admission, request receipts and read-only operation checks retain their
 normal behavior. Mutations, pictures, videos and document bytes are excluded.

@@ -29,8 +29,7 @@ Labels below follow the English interface; the console also supports other langu
 ## Turn them on
 
 1. In the sidebar, open **Notifications**.
-2. Press **Turn on notifications on this device** and allow
-   notifications when the browser asks.
+2. Under **This device**, turn the switch **On** and allow notifications when the browser asks.
 3. Press **Send a test**.
 
 **Check:** the page says **Sent — it should arrive on this device in a moment.** The test
@@ -45,8 +44,10 @@ notification arrives on this device.
 | An agent calls `clawdline notify --title … --body …` or a task's notification route | Subject to `orchestrator_agent_notify` and the agent notification limit; `--session` opens the named Session. |
 | An agent creates an unsolicited human intervention Note | Subject to `orchestrator_agent_notify`; it opens the owning Session. |
 | A blocking Board decision needs an answer | `push_on_board_decision`: once per pending decision, at most 30 per hour per machine; it opens the list. |
+| A Bot needs a permission decision | `push_on_waiting`: sent while the request is still pending, held briefly while a console shows that chat; it opens that Bot's conversation. |
+| A Bot finishes a task | `push_on_bot_done`: once per successful main-chat task; it opens that Bot's conversation. |
 | A Board item enters `done` | `push_on_board_done`: one outbox notification for that completion; it opens the assigned Session while that Session is still present. |
-| A schedule misses its run, dispatch is refused, or its file cannot be read | `push_on_schedule_failure`: missed and refused runs also require **Notify on failure** on the schedule. An invalid file is reported when its fingerprint changes. These open the list. |
+| A schedule misses its run, dispatch is refused, or its file cannot be read | `push_on_schedule_failure`: missed and refused runs also require the schedule's own **Tell me if it fails** switch. An invalid file is reported when its fingerprint changes. These open the list. |
 | A capacity row crosses a notification threshold | `push_on_capacity`: the capacity monitor sends the recorded notice; it opens the list. |
 | A task completion notice becomes a dead letter | `push_on_dead_letter`: once for that dead letter; it opens the root Session while present. |
 | A Session records its delivery report | `push_on_delivery`: one push after the reporting Session finishes its final answer; it opens that Session while present. |
@@ -62,12 +63,15 @@ replaces the older one.
 The `orchestrator_agent_notify` switch is on by default. When it is off,
 `clawdline notify` is refused with `agent_notify_disabled`.
 
+The same page has a **Bots completion sound** checkbox: a soft chime for new Bot completions
+while that browser is open. It applies to that browser only.
+
 The former custom waiting rules are no longer evaluated. Their saved data is
 retained for compatibility but has no effect on notifications.
 
 ## Turn them off
 
-Press **Turn off notifications on this device** under **Notifications** on the same device. To stop a browser from asking at all,
+Under **Notifications** → **This device**, turn the switch **Off** on the same device. To stop a browser from asking at all,
 change the site's notification permission in the browser's own settings.
 
 ## Troubleshooting
@@ -113,4 +117,5 @@ send it twice.
 ## Admin new-question notifications
 
 The Cloud help center has a separate per-device notification for Admins when a member submits a
-new question. It does not use a machine Session notification rule. See [Questions and replies](help-center.md#admin-inbox-and-new-question-notifications) for setup and the authenticated question destination.
+new question. It does not use a machine Session notification rule. Turn on **New question notifications** on that
+Admin device; tapping one opens the Admin question page.

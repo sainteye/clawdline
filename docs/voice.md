@@ -94,9 +94,10 @@ commands or saved sessions, so a sentence such as "commit and push to main" is o
 
 ## From a phone
 
-The two cards read and write their own narrow route, `/v1/settings/voice`: the five keys above,
-plus `polish_assistants`, `vocabulary_builtin` and `vocabulary_projects`, and refusing every other
-setting. A paired Cloud console carries it as `voice-settings` and `voice-settings-update`, so
+The two cards read and write their own narrow route, `/v1/settings/voice`: the five keys above
+and `voice_transcription` (the engine picker at the top of this page), plus `polish_assistants`,
+`vocabulary_builtin`, `vocabulary_projects` and `openai_key_set` (whether the machine holds a voice
+assistant API key) as read-only answers, and refusing every other setting. A paired Cloud console carries it as `voice-settings` and `voice-settings-update`, so
 app.clawdline.com shows the same cards under Settings › Voice input for the machine selected in
 its header, and names that machine (`machine` in the answer), because a phone can switch between
 several. Switching machines reads the cards again. A recording made in a Session is transcribed
@@ -172,7 +173,7 @@ delivery.
 `POST /v1/voice/copilot-recap` (Cloud word `copilot-recap`, API level 59). That machine reads the
 Session's whole record (at most 40 transcript pages): every request, every reply and every
 `clawdline session report` summary, each with when it happened (each line at most 1,200
-characters, both ends kept; at most 60,000 characters in all, the oldest lines after the first
+characters: requests and replies keep both ends, report summaries keep only their start; at most 60,000 characters in all, the oldest lines after the first
 request left out first). It also counts the Session's Board steps as the Board does (cancelled
 steps are not steps) and its direct to-dos, and asks `gpt-4.1-mini` on the voice copilot key for
 one spoken recap whose counts come only from that `progress`. The call says the recap as written.
@@ -484,7 +485,7 @@ and [Prompting GPT-Live](https://developers.openai.com/api/docs/guides/live-prom
 
 **Switching per call.** A call button dials at once on the settings' engine, as before. While the call rings or runs, the sheet's header shows a `GPT-Live | Realtime API` toggle; pressing the other side calls `switchEngine(engine)`, which hangs up and places the call again on that system from the same Session, inside the tap iOS needs for the microphone. (A pick-before-dialing sheet shipped briefly on 2026-11-15 and was replaced at the person's request.)
 
-**Origin and cue.** At `session.started` a Live call resolves the Session it was placed from to the row the tools list (`fleet:<machine>:…` on every machine's list) and uses it as the focus, as a Realtime call's opening handover does; unresolved, every send was refused as "not the Session under discussion". Each backend tool call joins `pendingTools` while it runs, so the progress cue plays when it starts and every `PROGRESS_CUE_REPEAT_MS` until it answers.
+**Origin and cue.** At `session.started` a Live call resolves the Session it was placed from to the row the tools list (`fleet:<machine>:…` on every machine's list) and uses it as the focus, as a Realtime call's opening handover does; unresolved, every send was refused as "not the Session under discussion". Each backend tool call joins `pendingTools` while it runs, and the progress cue plays once when it starts (`CopilotMeter.pending`); it does not repeat while the call waits.
 
 **Recaps.** With background recaps on, a tool reads a recap the list already carries when it is at most `KEPT_RECAP_SECONDS` (1800) old, with its age; `fresh: true`, set only when the person asks for the latest, lowers that to `FRESH_RECAP_SECONDS` (300) and has an older one written now. Before this a report of four working Sessions waited 20-22 s for four forks written one after another.
 
@@ -542,8 +543,8 @@ and the note's delegation id; the call journals are the evidence.
 The call does not rely on generated speech to prove connection. The service must
 acknowledge the expected tool configuration; then the browser gives one local
 connection tone and the sheet says it is ready for speech. The Session handover
-still waits for its actual evidence. A separate soft processing note (at the start of work and of each lookup, then
-every four seconds of silent waiting; switched in Voice assistant → Settings) and a visible phase distinguish tool waiting from confirmation or
+still waits for its actual evidence. A separate soft processing note (once at the start of each lookup and of each
+background task, without repeating; switched in Voice assistant → Settings) and a visible phase distinguish tool waiting from confirmation or
 failure. No tone implies a message was delivered. The message proposal, explicit
 spoken confirmation and typed-input receipt are described in
 [the persistent workspace](voice-assistant-workspace.md#confirmed-messages-connection-cues-and-visible-waiting).

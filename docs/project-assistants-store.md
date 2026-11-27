@@ -22,7 +22,11 @@ store or delete existing data. Repeated installation preserves the feature's
 facts; unknown schema versions are rejected. The caller owns and closes `db`.
 The SQLite driver is supplied by the host, rather than registered by this module.
 
-The feature schema is now **17**; this paragraph records the 1 to 2 upgrade. The HTTP contract remains
+The feature schema is now **17**. Install accepts any installed version from 1
+to 16 and migrates it in the same transaction; version-specific steps, such as
+the version 8 login-kind backfill and the version 17 split of Bot members into
+rows, run only for older markers. The rest of this paragraph records the 1 to 2
+upgrade. The HTTP contract remains
 `project-assistants.v1`, with the existing integer `schema_version` field. An
 installed schema 1 upgrades to 2 in the same transaction as additive feature
 DDL and roster backfill. The migration changes the feature version marker;
@@ -39,7 +43,10 @@ default-off source creates no feature tables. After construction, status and
 authorized reads still require the current schema; legacy or future metadata
 cannot silently bypass that check.
 
-`New(db *sql.DB) *Store` has no options or implicit migrations. Share one Store
+`New(db *sql.DB) *Store` performs no implicit migrations. `WithReader(reader)`
+borrows a separate reader pool for independent projections and must be set
+before the Store is shared. The exported `CompletionIntent` and `DecisionIntent`
+hooks add database writes only to the same Bot transaction. Share one Store
 per database. Its Bot mutex serializes Commit, Save, Forget, MarkRead and Restore
 against `WithCurrent`. Separate Store instances or processes do not share this
 mutex. SQLite still provides transaction/CAS integrity, but the caller must not
@@ -69,8 +76,11 @@ hash of its canonical validated command. The store validates the hash format and
 compares it with the immutable stored receipt; it cannot reconstruct a transport
 command from a generic Mutation. Same identity/hash returns the exact previous
 receipt before CAS. A different hash conflicts. Accepted, executing, unknown,
-delivered, observed and read are distinct. There is no receipt/event eviction;
-unknown effects never become permission to replay. Observe records a separate
+delivered, observed and read are distinct. Receipts and events are not evicted
+while their Bot exists; `DeleteBot` removes the Bot's member rows, events,
+receipts, handoff cards and receipts, reactions and routine records in one
+transaction and keeps a minimal roster tombstone. Unknown effects never become
+permission to replay. Observe records a separate
 observation receipt; it refuses unknown/executing targets and does not rewrite
 the original receipt. Resolving unknown effects requires a future explicit
 reconciliation operation, not retrying the original command.
@@ -85,8 +95,9 @@ unchanged unknown receipt, and repeating a projection creates no duplicate event
 The SQLite behavior tests cover these boundaries without claiming that the
 complete broker-to-store host has already been installed or exercised.
 
-Existing Bot source, Project, conversation, Agent and permission policy cannot
-change. Instruction revisions never move backwards. Queued turns can have zero
+An existing Bot's Project and conversation cannot change. An Agent change is
+accepted only with a newer instruction revision, and it marks the old Agent's
+primary bindings as superseded. Instruction revisions never move backwards. Queued turns can have zero
 instruction/memory snapshots. Exactly at queued-to-running they capture the
 latest Bot instructions and memory revision and may bind the current generation.
 Their admission user message retains its original fence. Other messages,
@@ -190,13 +201,17 @@ types, installer and exporter at `7f4f1db83` verifies the original canonical
 archive hash; recreating a v1 fixture with current types would miss this
 compatibility boundary. The fixture contains synthetic facts only.
 
-New exports and integrity manifests both declare schema 2. Restore accepts
-schema 1 and 2 through the same relationship, complete-context, command-hash and
-receipt validations. An archive's manifest and data schema versions must agree;
+New exports and integrity manifests declare the current schema
+(`pa.SchemaVersion`). Restore accepts every schema from 1 to the current one
+through the same relationship, complete-context, command-hash and receipt
+validations. An export older than schema 12 is refused if any memory entry
+carries topic-note fields, and an export carrying group membership must declare
+the current `GroupSchemaVersion`. An archive's manifest and data schema versions must agree;
 its contract and integrity hash must also pass. Unknown versions, damaged
 hashes, overwritten Bots and sequence collisions refuse the entire restore.
 Restoring a valid v1 export preserves fact and receipt identities, including
-unknown effects and principal read state; the next export declares v2. It does
+unknown effects and principal read state; the next export declares the
+current schema. It does
 not infer command identities from old plain drafts or grant replay permission.
 
 Schema 2 is a forward-data boundary for additive Bot fallback configuration,

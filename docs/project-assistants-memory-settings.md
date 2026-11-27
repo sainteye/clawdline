@@ -112,8 +112,8 @@ This is a completion choice, not a claim that every activity alert is filtered.
 The following account-profile and application-extension construction adds real
 source-owned ports; see [Bot login profiles and selected application extensions](project-assistants-login-capabilities.md).
 It preserves this memory/model path and distinguishes supported account/text-skill/
-HTTP-connector behavior from the still-open API-key, selected-fallback and network
-work. These selectors do not disable independently configured native tools.
+HTTP-connector behavior, API-key profiles and selected fallbacks from the network
+work described in [Bot network source boundary](project-assistants-network.md). These selectors do not disable independently configured native tools.
 
 ## CodyNC comparison
 
@@ -126,19 +126,21 @@ Read-only reference: CodyNC `9f67eb09084db61b3cca9c84a11bc03df9de29b7`.
 | Model protocol | `host/src/agent/bot/launch.rs::select_model`; `agent/auth/models.rs` | Model first, then returned model-specific config; verified selections on discovery and execution |
 | Fast mode | `host/src/agent/config.rs`, `bot/fast_mode.rs` | Only a current native select/boolean offer; no guessed flag or invented support |
 | Editor | `BotEditorView.tsx`, `AgentModelPicker.tsx` | Primary Agent, model/options, completion notification, existing team switch; fixed Project and existing approvals |
-| Login profile | `LoginProfileRow.tsx`; `host/src/hub/bots.rs` and `agent/login_profiles` | Default login remains in place; managed account slots now have guarded source selection and native lifecycle ports; API keys remain open |
+| Login profile | `LoginProfileRow.tsx`; `host/src/hub/bots.rs` and `agent/login_profiles` | Default login remains in place; managed account slots now have guarded source selection and native lifecycle ports; encrypted API-key profiles use the dedicated login-secret route (API 82) |
 | Plugins/network | CodyNC editor's plugin lists and `NetworkSwitches` | Selected application text skills and configured HTTP connectors are enforced separately; independent native tools remain inherited and true remote reachability remains open |
 | Dreams/native memory | CodyNC memory opening and optional native-memory reader | Explicitly different policy: dreaming deferred; global native-memory reading not authorized |
 
 ## Compatibility, capacity and verification
 
-Feature schema 13 protects terminal quota-attempt facts against older writers;
-schema 12 added named topic-note protection and schema 6 introduced runtime
-settings protection. The repeatable migration accepts schemas 1–12 and changes
+The current feature schema is 17 (`SchemaVersion`). Schema 13 added terminal
+quota-attempt facts against older writers; schema 12 added named topic-note
+protection and schema 6 introduced runtime settings protection. The repeatable
+migration accepts schemas 1–16 and the current one, and changes
 feature metadata transactionally; old Bot JSON is not rewritten. New optional
 zero fields are omitted, preserving
-old archive hashes. Exports identify schema 13; restore still accepts supported
-older archives. Pre-13 binaries refuse schema 13 before rewriting it. Rollback
+old archive hashes. Exports identify the current schema; restore still accepts
+supported older archives. A binary older than a store's schema refuses it before
+rewriting it. Rollback
 therefore requires a compatible binary or an intentional backup procedure;
 deleting data or lowering metadata is not a rollback step.
 
@@ -207,16 +209,19 @@ active turn, native ID, binding and memory/instruction revisions are checked;
 authority and binding are rechecked after the native cached read. An absent,
 opening, busy, stopping, closing or cleanup-unknown owner remains unknown.
 The owned wrapper also seals readings before native cleanup. Ordinary turns
-still close their session when they finish, so this is not a persisted last
-reading or an idle maintenance session. The internal Host/SQLite tests exercise
+still close their session when they finish, so this live reading is not an idle
+maintenance session. Separately, the conversation saves the last provider-reported
+usage after a successful turn as `context_usage` (`ContextSample`). The internal Host/SQLite tests exercise
 this composition, including a real Forget during the read; they do not establish
-a production HTTP/UI feature or installed-binary recovery.
+installed-binary recovery. The Bot view route publishes the live reading as
+`context_usage` (and the active model as `active_model`) for an active turn.
 
-This live, in-process reading adds no HTTP operation, saved Bot field, API or
-archive generation, model prompt or maintenance command. It neither infers a
-model's window nor claims compaction support from a provider name. A dedicated
-idle-only, fenced Host operation with durable intent, terminal and
-unknown outcomes is still missing. No compression policy control is shown.
+This live reading adds no model prompt or maintenance command. It neither infers a
+model's window nor claims compaction support from a provider name. No compression policy control is shown. The console's "Compact now"
+(`Service.CompactNow`, admitted through the send route with `compact: true`) is
+an ordinary journaled turn whose only prompt is the agent's own `/compact`; it
+is refused while the Bot is busy (`compact_busy`) and does not use the
+maintenance port below.
 Scripted ACP pipe tests establish transport behavior, not installed-engine
 compaction or production UI acceptance.
 
@@ -342,9 +347,9 @@ version-history browser remain deferred.
 The migration from core schema 11 to 12 keeps existing Bot JSON/history bytes
 unchanged. Store-level `Restore` and `RestoreArchive` tests cover supported
 older short-fact archives; note-bearing archives cannot pretend to be schema
-11. These source interfaces are not a shipped archive-import command. The Bot
-CLI, HTTP routes and Cloud vocabulary expose export, but no Bot archive import
-or restore entry point. Project import and archived Session restore operate on
+11. The HTTP routes and Cloud vocabulary expose export but no Bot archive import;
+the offline `clawdline project-assistants archive restore|export` command is
+described under [Offline archive recovery entry point](#offline-archive-recovery-entry-point). Project import and archived Session restore operate on
 different data. Newer metadata must never be lowered for rollback.
 Focused SQLite, owned MCP and scripted Host tests cover these source rules.
 Editor behavior has its own isolated browser entry point below, separate from
@@ -504,7 +509,7 @@ as live state. A recovered database contains only the feature's schema and is
 for isolated recovery inspection; replacing a live database with it is not a
 supported installation procedure.
 
-The reader admits archive generations 1 through 13 independently of the Store's
+The reader admits archive generations 1 through 16 and the current one (`SupportsArchiveSchema`) independently of the Store's
 default export generation. The input is capped at 32 MiB (`bots.archive_bytes`);
 larger files, trailing JSON, unknown fields, unsupported versions, manifest
 mismatch, integrity damage and foreign identity are refused. Existing Store

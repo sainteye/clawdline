@@ -338,17 +338,34 @@ room to tell a Bot which agent to use and how strong a model.
 
 - `dispatch_work` takes `kind`, and also `agent`, `model` and `effort` for an explicit request.
   This replaces §3.3 item 4: the Bot may name an agent, but only when the person asks, and only
-  from the agents this machine can dispatch. Precedence is explicit > rule > Claude Code.
+  from the agents this machine can dispatch. Precedence is explicit > matching rule > the saved
+  `default` agent, when that agent is available here > Claude Code; a `kind` no rule names takes
+  the default. `dispatch_work` also takes `mode` (`child` or `root`).
+- The entry point is the "Bots settings" item in the existing ⋯ roster options menu (direction B's
+  entry), not a gear beside "+".
 - Storage is one versioned JSON document beside the Bot store, not SQLite tables: the whole list is
   written at once with `expected_version`, so a table per list would add no concurrency benefit.
+  The document (`SharedSettings` in `internal/domain/projectassistant/shared_settings.go`) carries
+  one document-level `version`; rows have no version, time or author. There is no per-rule
+  `is_default`: a top-level `default` names the fallback agent. A rule's `agents` are
+  `{agent, model, effort}` entries, a scope is `{all, projects}`, and a `peer_dispatch_cards`
+  switch sits in the same document.
 - The per-Bot switch lives in the same document (`memory_opt_out`) instead of a `Bot` field, so the
   Bot PATCH contract and its Cloud decoder did not change.
+- Grok is offered to rules whenever its owned session host runs, so a rule can resolve to Grok; the
+  explicit `agent` argument still accepts only claude, codex and antigravity.
+- The rule bound is registered as `bots.dispatch_kind_rules` (`bots.dispatch_rules` is an older,
+  unrelated bound on per-Bot project-folder rules). Also registered: `bots.shared_scope_projects`,
+  `bots.dispatch_kind_bytes` (64), `bots.dispatch_hint_bytes` (300), `bots.dispatch_model_bytes`
+  (64), `bots.shared_memory_opt_outs` and `bots.shared_settings_body_bytes`.
+- The Cloud words are `project-assistants.shared-settings` and
+  `project-assistants.shared-settings-save`, served at `/v1/project-assistant-shared-settings`.
 - List, notifications and "this machine" groups from §3 were left out of this version.
 
 **Project overrides (next version).** The stored shape already has
 `project_overrides[<project id>].rules`, and resolution checks them first. Recommended UI: a
 "This Project" segment at the top of the modal, shown when the modal is opened from a Bot's chat.
 It lists the machine rules read-only, each with **Override for this Project**; an overridden rule
-shows a small "Project" badge and a **Use default** action. The roster gear keeps opening the
+shows a small "Project" badge and a **Use default** action. The roster menu's entry keeps opening the
 machine-wide view. This keeps "one default set, each Project may override" visible without
 duplicating every rule per Project.

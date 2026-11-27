@@ -155,7 +155,8 @@ The CLI asks its own daemon (`POST /v1/update/apply`, body `{"version", "force"}
 `failed`, 3 when it has not settled within 25 minutes (the download window plus the pending deadline). The route takes this machine's own
 token or a device that may send; anything else is refused 403. It answers 202 once the
 update has started, 409 with a code when it is refused, 502 when the release host could not be
-read.
+read or its manifest was refused (unsigned, or a signature that does not verify), and 500
+`update_failed` for any other error.
 
 The update runs in these steps; `apply.state` names the one it is in:
 
@@ -437,9 +438,11 @@ which release this machine should run.
   there is none, it is the binary's own full `vcs.revision`, with no commit time.
 
 Every `BUILD.json` writer records the commit as `stamp` and its committer time (RFC3339 UTC) as
-`committed_at`: `tools/build-linux-user-release.sh`, `tools/package-macos.sh` (into the bundle's
+`committed_at`: `tools/build-linux-user-release.sh`, `tools/release/build.sh` (the signed releases
+and `clawdline dev install` builds), `tools/package-macos.sh` (into the bundle's
 `Contents/Resources/web`), and the hosted console's build steps in
-[hosted-console.md](hosted-console.md). A `BUILD.json` written before 2026-10-04 has only `stamp`;
+[hosted-console.md](hosted-console.md). `tools/release/build.sh`, and `tools/package-macos.sh` when
+`RELEASE_VERSION` is set, also record the release `version`. A `BUILD.json` written before 2026-10-04 has only `stamp`;
 readers accept it.
 
 ### The states
@@ -458,7 +461,7 @@ The daemon reads latest when it starts and again every 1800 s, each read within 
 4096 bytes. A request never waits on the network: it is answered from the last read. A failed read
 keeps the last good latest and says what failed in `error`. The bounds are the capacity rows
 `update.refresh_seconds`, `update.fetch_timeout_seconds` and `update.build_body_bytes`
-([limits.md](limits.md)).
+(`internal/domain/capacity/register_update.go`).
 
 `GET /v1/update`, with the same local authentication as its sibling read routes, answers
 `UpdateStatus` (`api/v1/system.schema.json`):

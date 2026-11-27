@@ -18,7 +18,8 @@ An unavailable page becomes a typed local `transcript_record_unavailable` failur
 can replace held data. Delayed pinned replies are discarded before snapshot projection and
 leave the exact pending request under its original timeout. The existing poller remains
 single-flight, pauses while hidden and retains its two-second exponential failure backoff,
-capped at thirty seconds. No new retry loop, queue capacity or transport deadline is added.
+capped at thirty seconds, for a Session's main transcript; an agent (subagent) transcript view
+polls without backoff and waits its ordinary interval after a failure. No new retry loop, queue capacity or transport deadline is added.
 The Cloud read lane remains separately bounded at eight workers and sixty-four waiting reads;
 queue saturation is a typed refusal, not evidence of an empty conversation.
 

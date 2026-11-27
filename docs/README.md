@@ -1,6 +1,8 @@
 # Documents
 
-Every document in this directory, and what kind it is.
+The main documents in this directory, and what kind each is. It is not a complete listing: many
+feature pages are reached from the pages below, and the subdirectories are summarized under
+[Other directories](#other-directories).
 
 - **Public design note**: how this codebase works, or why it is built the way it is. It stays true
   after the Swift app is retired, and a contributor should read it.
@@ -43,9 +45,14 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 | [user/new-machine.md](user/new-machine.md) | User page | English with a Traditional Chinese prompt | One prompt, in English and Traditional Chinese, that has an Agent set up a second machine: git, credentials, clones and project settings |
 | [user/usage.md](user/usage.md) | User page | English | Token bills by category, assistant quotas, the compaction window and capacity |
 | [doctor.md](doctor.md) | Specification | English | Safe Doctor evidence, bounded retention and explicit private support submission |
-| [user/doctor.md](user/doctor.md) | User page | English and Traditional Chinese | Check versions and quota failures, download or privately submit a report |
+| [user/doctor.md](user/doctor.md), [user/doctor.zh-TW.md](user/doctor.zh-TW.md) | User page | English and Traditional Chinese | Check versions and quota failures, download or privately submit a report |
 | [provider-quotas.md](provider-quotas.md) | Specification | English | Global quota footer, provider sources, browser preference and refresh behavior |
 | [user/troubleshooting.md](user/troubleshooting.md) | User page | English | From a symptom to its cause and fix |
+| [user/bot-webhooks.md](user/bot-webhooks.md), [user/bot-webhooks.zh-TW.md](user/bot-webhooks.zh-TW.md) | User page | English and Traditional Chinese | Run a saved Bot routine when GitHub, CI or another service sends an event |
+| [user/gemini.md](user/gemini.md), [user/gemini.zh-TW.md](user/gemini.zh-TW.md) | User page | English and Traditional Chinese | The Gemini personal preview, which runs the Antigravity ACP CLI |
+| [user/help-center.md](user/help-center.md), [user/help-center.zh-TW.md](user/help-center.zh-TW.md) | User page | English and Traditional Chinese | Community discussions: asking, reporting a problem, proposing a feature |
+| [user/voice-copilot.md](user/voice-copilot.md) | User page | English | A voice call that reports on Sessions and acts on them, with your own OpenAI API key |
+| [user/model-assignment.zh-TW.md](user/model-assignment.zh-TW.md) | User page | Traditional Chinese | Choosing the model when dispatching a Board ticket |
 | [linux-headless-browser.md](linux-headless-browser.md) | User page | English | An agent on Linux cannot screenshot a page: install the browser's libraries and fonts, with or without `sudo` |
 
 ## Start here
@@ -92,6 +99,20 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 | [localization.md](localization.md) | Public design note | English | Shipped languages, separate language preferences, catalog fallback and delivery checks |
 | [console-loading.md](console-loading.md) | Internal UI inventory | English | Stable screen IDs, existing skeletons and proposed first-read improvements |
 
+## Working on this repository
+
+| Document | Kind | Language | What it is |
+| --- | --- | --- | --- |
+| [working-rules.md](working-rules.md) | Public design note | English | The incidents and procedures behind the rules in `AGENTS.md` |
+| [checks.md](checks.md) | Public design note | English | Check scope, timing, fallback and cache ownership for `tools/check.sh` |
+| [worktrees.md](worktrees.md) | Public design note | English | Worktree lifecycle and `tools/check-worktrees.sh` |
+| [disk-lifecycle.md](disk-lifecycle.md) | Public design note | English | Disk cleanup by owner and recorded disposition: task scratch, Root Assignment data, Go build caches |
+| [hosted-console.md](hosted-console.md) | Public operations guide | English | Deploying and verifying `app.clawdline.com` |
+| [releasing.md](releasing.md) | Public operations guide | English | Cutting, checking and publishing a signed release |
+| [linux.md](linux.md) | Internal migration record | English | Running the daemon on a headless Linux server, as measured on 2026-09-20 |
+| [bots.md](bots.md) | Public design note | English | Persistent Bots: one long-lived assistant bound to a Project |
+| [performance/local-api-review-2026-11-08.md](performance/local-api-review-2026-11-08.md) | Dated review | English | Choosing local API performance work by user impact: baseline and rejected attempts |
+
 ## How it got here
 
 | Document | Kind | Language | What it is |
@@ -104,14 +125,15 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 | [broker-design.md](broker-design.md) | Internal migration record | Chinese | The analysis of which parts of the old broker to port and which to redesign |
 | [broker-design-challenge.md](broker-design-challenge.md) | Internal migration record | Chinese | A deliberate challenge to that analysis: which ports were only history |
 | [board-design.md](board-design.md) | Internal migration record | Chinese | The analysis of the old board. Still the reference for the read-only view of its cards |
+| [acceptance.md](acceptance.md) | Retired Swift-generation record | English | The 2026-09-16 size, latency and load budgets for the read/write-path refactor; its harness is not in this repository |
 | [timeline-design.md](timeline-design.md) | Internal migration record | Chinese | Historical analysis of the retired project timeline |
 | [records/unused-code-audit-2026-10-16.md](records/unused-code-audit-2026-10-16.md) | Internal audit | English | Reachability audit and removal of the Project Timeline |
 
-## What is still owed
+## Historical work list
 
 | Document | Kind | Language | What it is |
 | --- | --- | --- | --- |
-| [first-run-audit.md](records/first-run-audit.md) | Historical work list | Chinese | What somebody who is not the author hits the first time, from `git clone` to a phone: 91 findings with file and line, grouped into ten causes to dispatch as ten pieces of work (2026-09-21) |
+| [records/first-run-audit.md](records/first-run-audit.md) | Historical work list | Chinese | What somebody who is not the author hits the first time, from `git clone` to a phone: 91 findings with file and line, grouped into ten causes to dispatch as ten pieces of work (2026-09-21) |
 
 ## Dated records
 
@@ -126,3 +148,16 @@ Start with the [task-based user index](user/README.md). It leads to a first Sess
 - [Historical Graphify local pilot (2026-10-30)](experiments/graphify-local-pilot-2026-10-30.md): fixed-source retrieval, call relationships, index maintenance and the boundary on adoption.
 
 [Optional CodeGraph guidance and project graph viewer](codegraph-integration.md) describes the machine opt-in, managed local queries, automatic source reconciliation, the Session/Project graph view and explicit first-build ownership.
+
+## Other directories
+
+- [records/](records/README.md): retired documents and dated measurements.
+- [security/](security/README.md): data flows, content keys and install acceptance.
+- `adr/`: numbered architecture decision records.
+- `performance/`: dated performance reviews and acceptance measurements.
+- `release-notes/`: notes for each published version.
+- `design/`, `design-studies/`, `research/`: dated design proposals, studies and research notes.
+- `audits/`, `incidents/`, `experiments/`, `verification/`, `reports/`: dated audits, incident
+  write-ups, experiments, verification evidence and HTML reports.
+- `plugins/`: the view-plugin format and source-port notes.
+- `formal-verification/`: a TLA+ model of Bot work completion.

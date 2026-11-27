@@ -670,8 +670,10 @@ Saying which one it is, out loud, is the sender's job and nobody else's.
 A Root that keeps one conversation for a whole feature re-reads everything before its latest
 milestone on every call. A milestone handoff is the other way: at a milestone the Root writes a
 short summary and a fresh Session continues from it. It is the plain handoff above with three
-differences, opened by `clawdline handoff --summary <file>` (which writes the package and calls the
-route with `milestone: true`).
+differences, opened by `clawdline handoff --summary <file>` (which sends the summary text in the
+body's `summary` field with `milestone: true`; the daemon writes `handoff.md` itself). The line
+typed into the receiver is `MilestoneHandoffLine`, not the canonical line above: it names
+`handoff.md` and `obligations.md` and tells the receiver which obligations are now its own.
 
 **The summary is bounded.** It has exactly five `## ` sections — Goal, Verified decisions, Blockers,
 Evidence, Next step — and is at most 6 KiB (limits N76). Evidence holds links — paths, commits, ids,
@@ -705,8 +707,8 @@ Whether a milestone handoff is worth it is measured, not assumed:
 A session does not build this by hand. [`skills/clawdline/`](../skills/clawdline/) — the same skill
 that dispatches — routes to a **Handoff** section that turns *"use Clawdline Handoff"* into a package
 and a call: write the document to the eight headings, durably archive anything volatile it cites,
-`uuidgen` and `umask 077` and a directory, then the route. What installs is a discovery stub, in an
-English `SKILL.md` or a Traditional Chinese `SKILL.zh-TW.md`; install one, not both. The section
+`uuidgen` and `umask 077` and a directory, then the route. What installs is a discovery stub,
+`SKILL.md`, beside localized guides (`guide.<language>.md`). The section
 itself ships with the app rather than with the stub, because a file copied into a skills directory
 never updates while these routes and fields do — the stub says how to read it from the build that
 will actually broker the handoff.

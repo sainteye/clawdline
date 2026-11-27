@@ -44,7 +44,7 @@ the saved browser preference.
 | Codex | Existing `limits.Reader`: quota keys in recent rollouts | No credential access or login change |
 | Gemini | Public CLI: fixed `--settings '{"useG1Credits":false}' --print /usage`; legacy ACP 1.4.1: fixed `/usage` command | Native CLI owns the default personal sign-in; Clawdline checks its explicit personal/no-Credits policy and does not borrow user conversations |
 | Legacy Gemini CLI (without native configuration) | Existing `~/.gemini/oauth_creds.json`; `loadCodeAssist`, then `retrieveUserQuota` | Reads the saved access token; login remains owned by that CLI |
-| Grok CLI | Existing `$GROK_HOME/auth.json` or `~/.grok/auth.json`; CLI billing credits, optionally its monthly view | Uses the xAI issuer entry; an expired token requires running Grok CLI |
+| Grok CLI | Existing `$GROK_HOME/auth.json` or `~/.grok/auth.json`; CLI billing credits, optionally its monthly view | Uses the xAI issuer entry. When the saved access token is expired and renewable, the daemon runs the Grok CLI's own refresh once (at most 30 seconds, `RenewSecondsLimit`) and rereads the credential the CLI wrote; `reauth_required` is shown only if the token is still expired afterwards |
 
 These are quota metadata reads, never model generations or chat prompts. The implementation does
 not copy CLI credentials, generate model output, redeem credits or switch accounts.
@@ -69,8 +69,10 @@ identifiers, provider response bodies and filesystem paths do not.
 It is separate from `/v1/orchestrator/assistants`: adding quota-only providers does not imply they
 can be dispatched. The browser polls while visible, normally every 30 seconds. Gemini and Grok
 refresh asynchronously, one in flight per provider, with a 15-minute minimum interval shared by
-all browsers on that daemon. A complete refresh has a ten-second deadline, no automatic retries,
-and respects a longer `Retry-After`. The native reader replaces the legacy credential/API path when configured.
+all browsers on that daemon. Each fetch has a ten-second deadline, with no automatic retries,
+and respects a longer `Retry-After`. The one exception is Grok: when its server rejects a token
+before the stated expiry, the refresh runs one renewal and one retried fetch, so a complete Grok
+refresh can take longer than ten seconds. The native reader replaces the legacy credential/API path when configured.
 Both refresh buttons use `GET /v1/provider-quotas/refresh` (`provider-quotas-refresh` over Cloud,
 API level 115). It rereads local records immediately and lets each provider check run when its
 cooldown permits. Codex updates when its CLI writes

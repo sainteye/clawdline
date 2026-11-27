@@ -25,3 +25,11 @@ Read current behavior in the linked specifications and code.
 - [cloud-wire-implementation-2026-09.md](cloud-wire-implementation-2026-09.md) — source for [cloud-wire.md](../cloud-wire.md)
 - [machine-resource-scheduling-2026-09.md](machine-resource-scheduling-2026-09.md) — source for [machine-resource-scheduling.md](../machine-resource-scheduling.md)
 - [cloud-operations-2026-09.md](cloud-operations-2026-09.md) — operation mapping from [cloud-wire.md](../cloud-wire.md)
+- [app-update-acceptance-2026-10-12.md](app-update-acceptance-2026-10-12.md)
+- [unused-code-audit-2026-10-16.md](unused-code-audit-2026-10-16.md)
+- [daemon-launchagent-recovery-20261101.md](daemon-launchagent-recovery-20261101.md)
+- [review-checker-pilot-20261105.md](review-checker-pilot-20261105.md) — with its evidence in [review-checker-pilot-20261105/](review-checker-pilot-20261105/)
+- [bots-ci-recovery-20261116.md](bots-ci-recovery-20261116.md)
+- `release-v<version>-acceptance.md` — one acceptance record per public release, from
+  [release-v2.1.3-acceptance.md](release-v2.1.3-acceptance.md) to
+  [release-v3.2.0-acceptance.md](release-v3.2.0-acceptance.md)

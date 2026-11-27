@@ -4,7 +4,11 @@ The person selected **C** on 2026-10-21, with one amendment: the header keeps it
 counts and colors while showing all Sessions; only an applied filter names its state in orange.
 The implementation uses All / Attention / Working / Idle, applies a single choice immediately,
 and keeps Refresh in the dialog footer. Local and all-machine views share this control. A reload
-starts at All. The original three-direction comparison is retained below as design history.
+starts at All. In the all-machine view the header renders an empty `#session-state-filter-slot`
+(`App.tsx`) that `FleetSessionList` fills with the control, so the filter state stays in the list.
+Working and Idle match only current rows whose state is exactly `working` or `idle`
+(`matchesCurrentSessionState` in `web/console/src/session/state-filter.ts`); running shells are
+not considered. The original three-direction comparison is retained below as design history.
 
 The interactive comparison is `docs/design/session-state-filter.html`. The script-free historical
 Cloud reading copy is `docs/design/session-state-filter-preview.html`.

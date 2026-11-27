@@ -43,9 +43,12 @@ version.
 CLAWDLINE_NEXT_WEB="$PWD/web/console/dist" ./bin/clawdline serve
 ```
 
-One variable: where the console's built files are. Without it the daemon still starts — the API,
-the broker and the Cloud line do not need it — but `/` answers `501 no_web_root`, and the line under
-`listening` in its log says `console: NONE`.
+One variable: where the console's built files are. Without it the daemon looks for a console
+installed beside its binary — `dist/` next to the executable in a release archive, or
+`Contents/Resources/web` in the app bundle — so an installed daemon needs no variable. A binary
+built in a checkout has neither: it still starts — the API, the broker and the Cloud line do not
+need the console — but `/` answers `501 no_web_root`, and the line under `listening` in its log
+says `console: NONE`.
 
 Two more you may want:
 
@@ -93,8 +96,7 @@ console is app.clawdline.com's, and a missing page on this address stops nothing
 This creates a device for your browser, opens the console, and signs it in. The key travels in
 the address's fragment, which a browser never sends to a server and never logs.
 
-That browser can read every session and type into it. (`--send` is still accepted and changes
-nothing.)
+That browser can read every session and type into it.
 
 `--print` prints the address instead of opening it. Treat that address like a password until it
 has been used.
@@ -130,8 +132,15 @@ place and opens it again, because replacing a running app's files makes macOS re
 of iTerm2 until it restarts. Pass `--no-restart` to have it stop instead and leave the new build
 in `dist/.staging.<pid>/`.
 
-Apple silicon and macOS 13 or newer. The app is signed ad hoc, not notarized. It carries its own
-copy of the daemon and the console, starts that daemon with the three variables above, and signs
+`--install-to <absolute path>/Clawdline Next.app` installs the build at that path instead, and
+`--build-only <absolute dir>` builds and signs the bundle there without installing, quitting or
+opening anything.
+
+Apple silicon and macOS 13 or newer. The app is signed ad hoc by default, not notarized; with
+`CLAWDLINE_CODESIGN_P12` set it is signed with that certificate instead, and an official release
+requires a Developer ID identity. It carries its own copy of the daemon, the console and a tmux
+(`Contents/Helpers/tmux`, used only when the Mac has no tmux 3.0 or newer), starts that daemon
+with its own environment and `CLAWDLINE_NEXT_WEB` pointing at the bundled console, and signs
 its window in with the daemon's local token. You do not run `serve` yourself. If a daemon you
 started by hand already holds port 7727, the app's daemon exits and the window shows the one
 already there.
@@ -233,7 +242,7 @@ personal `~/.claude/skills`.
 | You see | It means |
 | --- | --- |
 | `501 not_implemented` on a `/v1/` route | This daemon has not taken that route over yet. The body names the route; nothing is wrong with your setup |
-| `501 no_web_root` on `/` | `CLAWDLINE_NEXT_WEB` is not set. The daemon's log says `console: NONE` under `listening` |
+| `501 no_web_root` on `/` | `CLAWDLINE_NEXT_WEB` is not set and no console was installed beside the binary. The daemon's log says `console: NONE` under `listening` |
 | `500 no_document` on `/` | `CLAWDLINE_NEXT_WEB` is set and has no `index.html`: the console was not built, or its bundle is being rebuilt. The log says `console: BROKEN` |
 | The daemon exits with status 3 | Another process holds the port. `logs/daemon.log` names it — pid, command, since when, and what its `/v1/health` and `/` answer. Stop that process by its pid, or start this one with another `CLAWDLINE_NEXT_PORT` |
 | `the daemon did not answer` from the CLI | Nothing is listening on that port, or the CLI and the daemon have different `CLAWDLINE_NEXT_PORT` values |
@@ -246,7 +255,7 @@ Everything the daemon does is in `logs/daemon.log` in the state directory.
 
 ## Next
 
-- [The user pages](../README.md#documentation): one page per job — sessions, notifications, remote access, schedules,
+- [The user pages](../README.md#guides): one page per job — sessions, notifications, remote access, schedules,
   the Board, dispatch, projects, usage
 - [architecture.md](architecture.md): how the pieces fit
 - [project-sync.md](project-sync.md): how project settings move between machines, and what never does

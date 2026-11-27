@@ -51,8 +51,8 @@ reboot) or split one (sessions that are still open offered again).
 Two tables in the daemon's store:
 
 - `restore_boots` — one row per boot id, with when it was first and last seen.
-- `restore_sessions` — one row per boot and conversation: assistant (`claude` or `codex`),
-  working directory, place id, title, terminal backend, first and last seen, when it went
+- `restore_sessions` — one row per boot and conversation: assistant (`claude`, `codex` or
+  `antigravity`), working directory, place id, title, terminal backend, persona, first and last seen, when it went
   (`gone_at`), when the person closed it through Clawdline (`closed_at`), and the person's answer
   (`restored`, `dismissed`, or none yet).
 
@@ -64,7 +64,7 @@ own. For each reading:
 - An **incomplete** reading changes nothing. A source that did not answer is not evidence that
   its sessions closed.
 - A **complete** reading writes every session it shows that has a conversation id, a working
-  directory and an assistant of `claude` or `codex`, and marks each of the boot's rows it does
+  directory and an assistant of `claude`, `codex` or `antigravity` (`restorable`), and marks each of the boot's rows it does
   **not** show as gone at that reading's time. The row itself stays, with everything it held. A
   gone row seen again in the same boot is open again (`gone_at` cleared).
 - The broker's own children are left out (a task names the terminal as its child's and the
@@ -77,7 +77,9 @@ own. For each reading:
 - A close through Clawdline (`Actions.Close`, the one that records `session.closed`) marks the
   row `closed_at` and gone. A scan that began before the close and still shows the terminal does
   not undo it; one that began after it (the person resumed that conversation) does.
-- Past 200 rows in a boot, the rows that went longest ago are dropped first.
+- Past 200 rows in a boot, open rows are kept before gone ones and the rows that went longest ago
+  are dropped first. A reading that shows more than 200 open conversations keeps the 200 with the
+  latest activity.
 - Only the current boot and the most recent previous boot are kept.
 
 The title is the manual title the session list would show when there is one, else the session's
@@ -129,12 +131,14 @@ Contract: `api/v1/restore.schema.json`.
 
 | Route | Who | What |
 | --- | --- | --- |
-| `GET /v1/sessions/restorable` | any paired device | `{available, reason?, previous_boot_last_seen?, sessions: [{conversation_id, assistant, place, place_label, cwd, title, last_seen}], at}`, most recently seen first |
+| `GET /v1/sessions/restorable` | any paired device | `{available, reason?, previous_boot_last_seen?, sessions: [{conversation_id, assistant, place, place_label, cwd, title, persona?, last_seen}], at}`, most recently seen first |
 | `POST /v1/sessions/restorable/restore` | a device that may send, with an `Idempotency-Key` | body `{conversations: [id…]}`; one result per distinct id: `{conversation_id, ok, code?, message?, id?, backend?, attach?}` |
 | `POST /v1/sessions/restorable/dismiss` | the same | body `{conversations?: [id…]}` (absent means every row on offer); answers `{ok, dismissed, at}` |
 
 A restore opens each conversation through the same opening queue and the same `Starter.Resume` a
-person's resume uses; there is no second launcher. A row that opened is marked `restored`. The
+person's resume uses, with the persona the row recorded when it is still a known one; there is no
+second launcher. An Antigravity conversation is reopened instead through its owned-protocol host's
+`Import` (`resumeConversation`, `projects.OwnedAssistant`). A row that opened is marked `restored`. The
 per-row codes are `not_restorable`, `place_unavailable`, `conversation_not_found`, `open_failed`
 and `over_capacity`. A retry with the same key is answered with the first answer; the same key
 with a different body is refused `idempotency_key_reused`.
@@ -164,7 +168,9 @@ the boot's heartbeat and the grace window — are registered and listed in [limi
 - **The model is not recorded.** A restored session starts with the assistant's default model.
 - **A reading that is never complete records nothing.** Completeness is the AND of every source;
   a machine whose iTerm2 cannot be asked never produces a complete reading, and nothing is
-  recorded there until it can be.
+  recorded there until it can be. A source the person turned off (iTerm2's `iterm_scan`) does not
+  count against completeness (`CompleteApartFromDisabled`): the other sources go on being
+  recorded, and that backend's rows are left as they were rather than marked gone.
 - **A conversation the assistant no longer lists for its directory cannot be restored**
   (`conversation_not_found`); the resume path only opens conversations it can list.
 - **A manual title is not copied onto the new terminal.** The title store matches a manual title

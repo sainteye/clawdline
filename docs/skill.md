@@ -19,11 +19,11 @@ Three things replace it, and all three are this binary:
 | --- | --- | --- |
 | `clawdline guide [lang] [part\|all]` | The guide, compiled into the binary with `go:embed`, printed as a core plus parts | `skills/skills.go`, `skills/sections.go`, `skills/clawdline/guide*.md` |
 | `<state dir>/bin/clawdline` | A copy of the running binary at a path that does not move | `internal/adapters/skillfile/binary.go` |
-| `clawdline skill install` / `uninstall` | Writes the stub to `~/.claude/skills/clawdline/SKILL.md`, and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
+| `clawdline skill install` / `uninstall` | Writes one stub per target, `~/.claude/skills/clawdline/SKILL.md` for Claude Code and `~/.agents/skills/clawdline/SKILL.md` for Codex (its record under `RecordDir/agents`), and puts back what was there | `internal/adapters/skillfile/skillfile.go` |
 
 And a handful of **thin commands** a session runs instead of hand-built curl: `session report`,
 `dispatch`, `task show`, `task wait`, `task ack`, `send`, `notify`, `landings`, `assistants`, `usage`
-(`cmd/clawdline/session.go`, `dispatch.go`, `task.go`, `relay.go`, `broker.go`, `usage.go`).
+(`cmd/clawdline/session.go`, `dispatch.go`, `task.go`, `task_wait.go`, `relay.go`, `broker.go`, `usage.go`).
 
 ## The guide is compiled in
 
@@ -31,14 +31,16 @@ The old app kept its guide beside its reader in the bundle so the two could not 
 in keeps that property and drops the file lookup: `clawdline guide` prints the guide written for the
 exact build it is, on macOS, Linux and Windows, without a running daemon or a network.
 
-- Sources: `skills/clawdline/guide.md` (English, the reference) and `skills/clawdline/guide.zh-TW.md`
-  (Traditional Chinese, for the person reading along). `clawdline guide -list` names what a build
+- Sources: `skills/clawdline/guide.md` (English, the reference) and one translation per shipped
+  language: `guide.zh-TW.md`, `guide.zh-Hans.md`, `guide.ja.md`, `guide.ko.md`, `guide.es.md`,
+  `guide.pt-BR.md`, `guide.fr.md` and `guide.de.md`. `clawdline guide -list` names what a build
   carries.
 - **Only routes this daemon serves are in it.** `TestTheGuideNamesOnlyRoutesThisDaemonServes`
-  (`skills/skills_test.go`) reads every `/v1/…` path in both guides and fails on one that no
-  `mux.Handle`/`mux.HandleFunc` in `internal/transport/http` registers. A route renamed or removed
-  there turns it red until the guide follows. `TestBothGuidesNameTheSameRoutes` keeps the
-  translation naming the same routes as the English.
+  (`skills/skills_test.go`) reads every `/v1/…` path in every guide and fails on one that neither a
+  `Route{"<method>", "<path>"}` row of the server's route table nor a `mux.Handle`/`mux.HandleFunc`
+  in `internal/transport/http` registers. A route renamed or removed there turns it red until the
+  guide follows. `TestBothGuidesNameTheSameRoutes` keeps every translation naming the same routes as
+  the English.
 
 ## Printed in parts
 
@@ -51,9 +53,9 @@ without: the whole guide is 15,708 tokens in English and 18,619 in Traditional C
 and a week's transcripts showed twenty roots reading the guide 136 times, most of them a section at
 a time with `sed` because that was all they needed.
 
-- `skills/sections.go` names the fifteen parts — every `##` and `###` heading, matched by order.
+- `skills/sections.go` names the twenty-one parts — every `##` and `###` heading, matched by order.
 - `TestThePartsAreTheWholeGuide` puts the parts back together and compares them with the guide byte
-  for byte, in both languages; `TestBothGuidesHaveTheSameSections` checks each part opens with its
+  for byte, in every language; `TestBothGuidesHaveTheSameSections` checks each part opens with its
   own heading. A heading added to one guide only turns both red.
 
 ## The stable path
@@ -120,7 +122,7 @@ stdout when it said yes, `refused, <status> <code>: <message>` on stderr and exi
 | `clawdline send --to <terminal> [text…]` | `POST /v1/orchestrator/messages` | Prints the `Idempotency-Key` before sending; `--key` retries the same message instead of typing it twice |
 | `clawdline dispatch --title … --claims … < brief` | `GET /v1/orchestrator/inventory`, then `POST /v1/orchestrator/tasks` | Writes `<task_root>/<id>/task.json` (guide §4) with a fresh id and a secret that is never printed or written there; one `stale_inventory` re-reads the inventory and resends once. Prints `dispatched <id> <state> [worktree <path>]` and one line per warning; `--json` prints the answer |
 | `clawdline task show <id>` | `GET /v1/orchestrator/tasks/<id>`, then for a finished task with an open notice `POST …/completion/ack` | The compact view; reading it closes the notice. A refused ACK is one stderr line and exit 0 |
-| `clawdline task wait <id>… [--timeout 9m] [--any]` | `GET /v1/orchestrator/tasks/<id>` each poll (1 s backing off to 10 s), then the ACK as `task show` | Prints each finished task as `task show` and lists the ones still running. Exit 0 all succeeded, 1 one did not, 3 timed out, 4 a task could not be read |
+| `clawdline task wait <id>… [--timeout 9m] [--any]` | `GET /v1/orchestrator/tasks/<id>` each poll (1 s backing off to 10 s), then the ACK as `task show` | Prints each finished task as `task show` and lists the ones still running. Exit 0 all succeeded, 1 one failed, 5 one was cancelled and none failed otherwise, 3 timed out, 4 a task could not be read; 4 over 3 over 1 over 5 |
 | `clawdline task ack <id> <notice id>` | `POST /v1/orchestrator/tasks/<id>/completion/ack` | Prints one line; rarely needed now |
 | `clawdline notify --title … --body …` | `POST /v1/orchestrator/notify` | |
 | `clawdline landings`, `clawdline assistants` | `GET /v1/orchestrator/landings`, `…/assistants` | |

@@ -19,6 +19,9 @@ if (declared) { /* CloudGate: reads a machine across the relay */ }
 else          { /* DoorGate: this daemon's own console          */ }
 ```
 
+In a declared build, `/help` and `/community` load `HelpCenter`, `/join` loads `JoinPage` and
+`/admin` loads `AdminGate`; every other path reaches `CloudGate`.
+
 **Without the variable the build succeeds and ships the daemon's console.** Vite does not warn:
 nothing is missing, a different branch is taken. Deployed to `app.clawdline.com`, that console
 asks its own origin for `/v1/…`, receives nothing, and shows "Waiting for the app" with an
@@ -46,7 +49,7 @@ that exact commit only after success. Keep the `hosted` path for the deploy call
 Do not hand-assemble the JSON or substitute a boolean such as `VITE_HOSTED_CONSOLE=1`.
 
 The declaration remains necessary because the same console source serves both a local daemon
-and Cloud. It specifies the app origin, API origin, relay address and protocol version; the browser
+and Cloud. It specifies the app origin, API origin, relay address, protocol version and the build stamp, which the served-bundle check requires to match the served build; the browser
 checks the app origin before connecting. This is deployment configuration, not a user preference.
 The production command fixes the endpoints in `web/console/tools/hosted-declaration.mjs`. The runtime parser
 is also used by Vite: a present malformed or incomplete declaration fails the build instead of
@@ -161,7 +164,8 @@ exact target. A failed ancestry check stops the callback before deployment.
 `tools/wait-hosted-console.sh <sha> [--deadline 15m] [--strict-catalogs]` polls `BUILD.json` until its stamp is
 `<sha>` or descends from it. Then it runs the three steps below and exits 0 only when the served
 bundle has `CloudGate` and its compiled declaration names the served build and the exact production app, API and
-relay endpoints. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language
+relay endpoints. A failing check (exit 1) runs `tools/notify-release-failure.sh cloud <sha>`; success runs
+`tools/notify-release-success.sh cloud <stamp>`. It parses JavaScript syntax without executing downloaded code. Builds that ship product catalogs also read every advertised language
 through `/app/<build>/catalogs/<language>.json`, the same URL the browser uses at startup. The Cloud build copies the catalogs to that
 versioned path, and `tools/check-hosted-catalogs.py` runs the same catalog
 validator used during Console development. The first multilingual release
@@ -194,8 +198,8 @@ verify the actual rendered Session page before accepting a deployment.
 The same stylesheet URL later still returned the SPA document in the real browser
 while command-line retrieval returned the expected CSS. Captured HTML responses
 allowed four hours of caching. Re-uploading identical content did not establish
-recovery for that browser. Hosted asset filenames now include the source commit,
-so a new deployment does not reuse an earlier deployment's cached response even
+recovery for that browser. Hosted non-script asset filenames, such as stylesheets, now include the source commit
+(`hostedAssetPattern`); the main bundle and lazy chunks keep content-hash names. So a new deployment does not reuse an earlier deployment's cached response even
 when its stylesheet bytes have not changed. Local daemon build naming is unchanged.
 This separates deployment identities; it does not establish the original cause of
 the HTML response or prove every browser cache has been cleared.
@@ -342,7 +346,9 @@ takes the lock.
 
 ## Community sharing metadata
 
-The Cloud build emits `_worker.js` and a restricted `_routes.json` for `/community` and `/help`.
+The Cloud build emits `_worker.js` and a restricted `_routes.json` for `/community`, `/help` and the
+retired view-plugin download paths (`RETIRED_DOWNLOADS`), which the worker answers itself with a
+localized `410`.
 Assets, the workspace, API and relay traffic remain outside that worker. The worker obtains the
 SPA asset through `ASSETS.fetch` and rewrites its head with the same metadata model used by the
 client. Its only upstream is the fixed anonymous public API, with no credentials, redirect

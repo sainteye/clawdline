@@ -58,7 +58,8 @@ The parser rejects every unlisted archive entry, paths that escape the ZIP, link
 names under case folding, unsupported compression or encryption, mismatched ZIP headers,
 invalid UTF-8, stale format versions, duplicate IDs, unresolved references, built-in IDs and
 digest mismatches. Its refusal is a stable code with no local path or private content in the
-message. The size register is [N58 in limits.md](limits.md#n58-offline-squad-package-input).
+message. The size bounds are the `squadpackage.*` rows of the capacity register
+(`internal/domain/capacity/register_squadpackage.go`).
 
 ## Privacy and adoption
 

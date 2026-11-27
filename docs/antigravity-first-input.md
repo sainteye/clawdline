@@ -19,28 +19,28 @@ Existing contracts:
 - Durable launch/terminal/full process/positive history, bounded refusal: internal/adapters/antigravitylaunch/store.go:24-79,328-405,491-584,690-740. Reopen needs fresh pin; uncertain publication blocks: store.go:235-266,522-524.
 - Trusted commitment/no-UUID process verification: internal/adapters/antigravity/observe.go:63-69,355-382. Capability before pin, ancestry/CWD checks, binding before response: internal/transport/http/antigravity_managed_hooks.go:29-109. Resume UUID provisional.
 - PREPARED is not loaded; immutable text/digest: internal/adapters/antigravitylaunch/response.go:12-28,52-68,99-122. System text excluded publicly: internal/adapters/transcript/antigravity.go:62-85.
-- First input creates UUID; resume may lack SessionStart: docs/antigravity-cli.md:346-349. Preserve HTTP/UI gates until bootstrap/permission/proof/acceptance: internal/transport/http/start.go:594-598; web/console/src/session/antigravity-ui.ts:16-32,45-63.
+- First input creates UUID; resume may lack SessionStart: docs/antigravity-cli.md, "Measured native contracts after the design review". Preserve HTTP/UI gates until bootstrap/permission/proof/acceptance: internal/transport/http/start.go:594-598; web/console/src/session/antigravity-ui.ts:16-32,45-63.
 
 ## Decision and owners
 Add one process-bound bootstrap action and one durable input slot per existing launch Record; retain ordinary guards. Capture transcript baseline synchronously inside authenticated PreInvocation, after native UUID discovery but before exposing injection response. Only later native system evidence establishes loaded.
 
 Proposed private APIs:
     // app, authenticated request, existing lane
-    SendAntigravityFirst(ctx, launchID, requestID, text) (Outcome, error)
+    SendAntigravityFirst(ctx, launchID, requestID, text) (session.Session, error)
     // app/ports, implemented by launch Store
-    ReserveFirstInput(ctx, launchID, requestID, textDigest, process) (Receipt, *FirstInputAttempt, error)
+    ReserveFirstInput(ctx, launchID, requestID, textDigest, process) (FirstInputReceipt, *FirstInputAttempt, error)
     (*FirstInputAttempt).BeforePaste(ctx) error
     (*FirstInputAttempt).BeforeEnter(ctx) error
-    FirstInputStatus(ctx, launchID, requestID) (Receipt, error)
+    FirstInputStatus(ctx, launchID, requestID) (FirstInputReceipt, error)
     // private transcript adapter
     // Implemented privately, including managed hook composition:
-    CaptureBaseline(ctx, verifiedBinding) (Fence, error)
-    VerifyLoaded(ctx, preparedProofRequest) (Evidence, error)
+    transcript.CaptureAntigravityContextFence(ctx, home, binding, check) (AntigravityContextFence, error)
     // launch Store: atomic fence/receipt preparation, then CAS evidence
-    PrepareResponse(ctx, verifiedBinding, fence) ([]byte, error)
-    RecordLoaded(ctx, evidence) error
+    (*Store).PrepareFencedResponse(ctx, binding, fence) ([]byte, error)
+    (*Store).VerifyContextLoaded(ctx, launchID, home, check) error // reads and records evidence
+    (*Store).CheckContextLoaded(ctx, launchID, home, check) error  // revalidates it
 
-Only the durable creator gets an unforgeable-by-construction volatile Go attempt with an unexported Store owner; existing/recovered receipts return a nil attempt. Closing that owner invalidates its attempts. The index now moves from known legacy versions to version 3 on the next atomic write; older readers refuse version 3 instead of dropping consumed slots or context proof. Unknown index fields are refused. Slot: request ID/text SHA256/full process/terminal/backend/context digest/phase. Proof: launch/process/UUID/path/binding sequence+digest/injection+response digests/fence. RecordLoaded CAS matches latest receipt. No private text/capabilities in public outcomes/logs.
+Only the durable creator gets an unforgeable-by-construction volatile Go attempt with an unexported Store owner; existing/recovered receipts return a nil attempt. Closing that owner invalidates its attempts. The index now moves from known legacy versions to version 4 on the next atomic write; older readers refuse version 4 instead of dropping consumed slots or context proof. Unknown index fields are refused. Slot: request ID/text SHA256/full process/terminal/backend/context digest/phase. Proof: launch/process/UUID/path/binding sequence+digest/injection+response digests/fence. VerifyContextLoaded CAS matches latest receipt. No private text/capabilities in public outcomes/logs.
 
 Reuse PinProcess/LookupProcess/Commitment, Bridge, parser/helper/lane. Core imports ports; HTTP authenticates; adapters own IO/storage. Todo-ID reservation cannot guard arbitrary input (internal/app/work_v2_todos.go:470-523; internal/adapters/store/work_v2.go:2547-2564); launch slot grants effects. Seconds-only pending owner is insufficient (internal/app/actions.go:979-989).
 
@@ -76,11 +76,11 @@ Before first input, no UUID cursor; never fabricate UUID or select newest histor
 
 Reuse confined open, ReadBudget, complete JSONL parsing, generation/full-prefix revision (internal/adapters/transcript/antigravity.go:295-373,376-467,488-533). Fence: UUID/path, device/inode generation, complete-line length N, SHA256 of ALL [0,N), last step index. Bracket capture with fresh process/CWD/binding checks. Atomically persist fence+PREPARED before response exposure. No terminal IO under store lock. Allow one outstanding first-response fence per launch; refuse newer preparation while unresolved. Receipt replay is not delivery; never retrofit old unfenced receipts.
 
-Private raw-row VerifyLoaded requires same live complete process/launch, positive UUID/confined path, same generation, unchanged entire N-byte prefix, complete row beginning >=N and increasing step index. Require source=SYSTEM_SDK, type=SYSTEM_MESSAGE, status=DONE, no error, native wrapper identifying PreInvocation injection. Decode once; extracted text equals ExpectedInjection.Text byte-for-byte and SHA256 equals InjectionDigest. Reject trimming/substrings, MODEL/USER echoes, generic SYSTEM, arbitrary hook JSON. Persist row start/end plus prefix digest through end. Current badge revalidates bytes/process/latest receipt; public pages never expose system text.
+Private raw-row verification (`transcript.VerifyAntigravityContextLoaded`, called by `VerifyContextLoaded`) requires same live complete process/launch, positive UUID/confined path, same generation, unchanged entire N-byte prefix, complete row beginning >=N and increasing step index. Require source=SYSTEM_SDK, type=SYSTEM_MESSAGE, status=DONE, no error, native wrapper identifying PreInvocation injection. Decode once; extracted text equals ExpectedInjection.Text byte-for-byte and SHA256 equals InjectionDigest. Reject trimming/substrings, MODEL/USER echoes, generic SYSTEM, arbitrary hook JSON. Persist row start/end plus prefix digest through end. Current badge revalidates bytes/process/latest receipt; public pages never expose system text.
 
 Missing/partial/oversized file, unknown generation or wrapper grammar: antigravity_context_proof_unavailable. Changed prefix/generation: antigravity_context_proof_stale. Missing file at PreInvocation REFUSES fenced response preparation: absence is not generation+offset zero. Preserve input uncertainty; Root must prove boundary availability or design native creation fence/private supported transport, not poller.
 
-Evidence: docs/antigravity-launch-context.md:160-168; persisted docs/antigravity-cli.md:359-362. The sanitized native fixture now pins the exact wrapper grammar. Native file timing/first-response ordering still needs evidence. Without native request correlation, proof establishes context in this execution, not particular invocation. One outstanding first response excludes another from this launch; same-UID forgery is outside native-log trust.
+Evidence: docs/antigravity-launch-context.md:160-168; persisted docs/antigravity-cli.md, "Measured native contracts after the design review". The sanitized native fixture now pins the exact wrapper grammar. Native file timing/first-response ordering still needs evidence. Without native request correlation, proof establishes context in this execution, not particular invocation. One outstanding first response excludes another from this launch; same-UID forgery is outside native-log trust.
 
 ## Options, compatibility and bounds
 | Option | Gain | Cost/decision | Reversibility |
@@ -90,7 +90,7 @@ Evidence: docs/antigravity-launch-context.md:160-168; persisted docs/antigravity
 | --prompt-interactive | Avoid composer | Reject private argv/history exposure and pre-attachment effects; persisted help only (docs/antigravity-cli.md:51-54) | File/stdin needs evidence |
 | Pre-input inventory/fabricated UUID | Apparent early cursor | Broad reads/races or false authority; reject | No safe advantage |
 
-Bound slot/fence by existing launch retention/MaxLaunches/MaxReceipts/MaxIndexBytes; full refuses. Register ownership in internal/domain/capacity; measure maximum synthetic record/index size and read/confirmation time; retain red-then-green guard evidence. No new registry/service/poller.
+Bound slot/fence by existing launch retention/MaxLaunches/MaxReceipts/MaxIndexBytes; full refuses. Register ownership in internal/domain/capacity (registered as `antigravity.first_input_slots`, 512 rows from `antigravitylaunch.MaxFirstInputs`); measure maximum synthetic record/index size and read/confirmation time; retain red-then-green guard evidence. No new registry/service/poller.
 
 Irreversible: stored phases/fence/loaded receipt/index migration. Version migration/downgrade refusal must prevent old readers dropping slots/resending. Public request-id/status/refusal fields are wire commitments; prefer private/reused outcomes. Errors need EN/zh-Hant-TW. Preserve UUID meaning/grants/original paths.
 

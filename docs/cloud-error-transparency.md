@@ -354,6 +354,14 @@ Mac 的 `CloudSequenceTracker` 則要求**同一個 sender 的 seq 嚴格遞增*
 前端、Mac、relay 分別由不同的人實作。兩端碰到彼此的地方**只以這一節為準**；與前面各節有出入時，這一節對。
 改這一節要同時通知三端的實作者。
 
+> **The machine end is now the Go daemon, and it does not implement this section as written.** The current wire is [`cloud-wire.md`](cloud-wire.md) and the Go source; the `detail` whitelist the daemon applies is `detailWhitelist` in `internal/app/cloudops/answer.go`, which also carries codes this table lacks. Where the daemon differs from §11:
+> - §11.2: it adds no `cloud_status` key to `orch/<machine>`. Its own status is served locally at `/v1/cloud/status`, not written to `~/Library/Logs/Clawdline/diagnostics/cloud-status.json`.
+> - §11.3: it has no `cloud.status` read.
+> - §11.4, §11.9: because no machine sends `cloud_status`, the browser decides whether a machine implements a command from the `commands` list in that machine's descriptor (`_machineImplements`).
+> - §11.5: it refuses `diagnostics.report` over Cloud.
+> - §11.8: besides `replay`, it drops an envelope as `replay_window_full` when it already tracks `MaxTrackedSenders` (4,096) senders (`internal/domain/cloud/replay.go`).
+> - §11.9: `diagnostics.events` writes each row as a line in the daemon's own log, at most 128 rows per batch and 1 KiB per line, and writes no `cloud-viewer-events.jsonl` or `.batches` file. It remembers the last 256 delivered batch ids in memory only, ignores unknown fields instead of requiring an exact key set, and answers `{ok, batch_id, rows, logged, duplicate}` (`internal/app/cloudops/viewer_events.go`).
+
 ### 11.1 Mac 回覆裡的 `error`
 
 沿用今天 `t/<machine>/<session>` 上的 `{"read":<name>,"status":<int>,"error":{…}}`，`error` 物件：

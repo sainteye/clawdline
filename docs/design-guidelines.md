@@ -151,7 +151,7 @@ A rule that finds no place on this picture has no structure in common with the o
   so four tasks were orphaned (old repository `8dffbe49`); the landing slot's holder was named by conversation id and looked up by terminal id, so `advance` was never once delivered (`broker-design.md` §5 O2).
 - One name for two things: `pending` meant both "someone is working on it" and "the executor is dead", and a line waited behind it for 14 hours (`broker-design.md` §5 O1);
   the phone's `data-view` and the desktop's `data-pane` were merged into one attribute, and at 760 wide clicking a row showed no conversation (`replica.md`, reviewer round two, N1).
-- **Criterion**: the concept register in `plan.md` §10: every concept has one owner and one spelling, and a guard goes red when it sees a second. In review ask:
+- **Criterion**: the concept register that `plan.md` §10 calls for (not built yet: no register file or guard exists): every concept has one owner and one spelling, and a guard goes red when it sees a second. In review ask:
   does this change give a concept that already exists a second name, envelope or id? If so, where is the date for removing the old spelling written down?
 
 ### DG-6 The same copy (what the check reads ≠ what execution uses)
@@ -211,7 +211,7 @@ A rule that finds no place on this picture has no structure in common with the o
 - A person standing in the machine's place: `landed` had one entry point and had to be recorded by hand, 22 were written by hand in one night, and 14 of them had been in `main` for days
   (old repository `docs/landing.md`); 17 "are you stuck?" messages got 17 "I have not stopped" replies, when the answer was in the same row's `mover` (`coordination.md` §4.2).
 - **Criterion**: the design document lists every point that needs a person: who, through which channel they see it, the safe default when nobody answers, and whether the machine could trigger it by mistake. Any program that types into a tty
-  proves before typing that the other side is a composer and not a dialog (`TestADialogIsNeverTypedInto`). A question the machine can answer is not sent to a person.
+  proves before typing that the other side is a composer and not a dialog (`TestACodexChildHoldingTheTrustDialogIsNeverTypedInto`). A question the machine can answer is not sent to a person.
 
 ---
 
@@ -253,7 +253,7 @@ once two independent ones accumulate, that is a proposal for a new rule, and it 
 | Question | Answer |
 |---|---|
 | Is it observed? (DG-1) | **No observation that actually runs.** §4 asks reviews to tag `[DG-n]`, but nothing collects the tags; when a rule goes stale, nothing speaks up. **Broken.** |
-| What is its limit? (DG-2) | 12 rules, 280 lines, three failure shapes per rule. Now 10 rules, 273 lines. **Kept.** |
+| What is its limit? (DG-2) | 12 rules, 280 lines, three failure shapes per rule. Now 10 rules, 277 lines. **Kept.** |
 | When full, who decides what goes? (DG-2, DG-10) | The user; while they are away, the default is not to add. **Kept**, but the content of this version has not been through them yet (see point 6 below). |
 | Can it be drawn? | Yes, §2. Each of the ten has a place; a rule that finds no place is a rule that should be reorganized. |
 

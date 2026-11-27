@@ -33,24 +33,17 @@ isolated native turn also recorded a nonzero model context window. That proves
 native window reporting for that turn, not a universal window size or a
 successful compaction operation.
 
-Clawdline currently has neither a source-qualified compaction capability nor a
-persisted compaction policy or fenced compaction command. Its ACP notification
-decoder does not retain usage sizes or available commands. Ordinary Bot input
-may contain a source-owned handoff, quoted message or image before the current
-text; sending the string `/compact` through normal chat therefore is not a
-qualified substitute for a native command. No new compaction command was sent
-for this settings increment. Claude command/window behavior has not been
-qualified here. The native Agent's own automatic compaction policy remains
-inherited; an absent Clawdline control does not mean native compaction is off.
-
-The smallest useful follow-up needs a source capability reporting a known
-window and supported trigger, typed decoding of native usage/command events,
-and an explicit idle-only command bound to the Bot, conversation and execution
-generation. Acceptance must observe actual native start/completion, retained
-conversation continuity and refusal while busy or stale. Unknown outcomes must
-not replay compaction. Only after those boundaries work should a policy control
-be shown. Bot memory organization is a different operation and does not satisfy
-conversation-compaction acceptance.
+Clawdline now decodes those events: the ACP client keeps `available_commands_update`
+as `CommandsKnown`/`CompactAdvertised` and `usage_update` as `UsedTokens`/`WindowTokens`
+(`client_context.go`). Compaction is not a Bot settings control. A person asks for it
+through **Compact now** on the context meter, which admits one journaled, idle-only
+turn whose only prompt is the agent's own `/compact` command, limited to Claude Code
+and Codex, with typed refusals while busy, without a native session or for other
+input (`compact_now.go`; described in `docs/bots.md`). The lower-level native RPC is
+`Client.BeginCompaction`. Clawdline has no persisted Bot compaction policy. The native
+Agent's own automatic compaction policy remains inherited; an absent Clawdline
+control does not mean native compaction is off. Bot memory organization is a
+different operation and does not satisfy conversation-compaction acceptance.
 
 ## Verification boundary
 

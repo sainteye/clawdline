@@ -22,10 +22,10 @@
 
 | # | 誰 | 做什麼 | 做了會發生什麼 | 怎麼回退 |
 |---|---|---|---|---|
-| 0 | root | `~/code/clawdline-go/bin/clawdline cloud preflight` | **不送任何網路請求**。每列 ok／warn／block；全部沒有 block 時最後一行 `next` 會說「the person's step」。有 block（例如還留著本機測試的 `cloud_api_base`）就先清掉 | 不必回退：唯一的寫入是建立空的 0700 金鑰目錄 |
+| 0 | root | `clawdline cloud preflight` | **不送任何網路請求**。每列 ok／warn／block。block 包括：`cloud_api_base`／`cloud_relay_url`／`cloud_app_origin` 任一不是正式值（例如還留著本機測試設定，或混用兩個環境）、身分或裝置金鑰存在但讀不出來、金鑰目錄是 Swift app 的；`cloud_enabled` 已經是 true 會是 warn。有 block 就先清掉。全部沒有 block 時最後一行 `next` 依狀態而定：還沒登入是「the person's step」（步驟 2）；已登入但開關沒開是 `` `clawdline cloud on`, then restart the daemon ``（步驟 3）；已登入也開了是「restart the daemon if it has not been since sign-in…」 | 不必回退：唯一的寫入是建立空的 0700 金鑰目錄 |
 | 1 | 使用者 | 瀏覽器開 `https://app.clawdline.com` →「方案」頁 → 看「Mac 數量」 | 什麼都不改。**1** 且舊 app 已登記 → 三選一：升級 Pro（5 台）、等舊 app 退役、撤掉舊 Mac（舊 app 會失去 Cloud）。這是你的決定，機器不替你選 | — |
-| 2 | 使用者 | 在這台 Mac 的終端機打 `~/code/clawdline-go/bin/clawdline cloud login`。它印出 `code` 與 `approve at <網址>` → 在瀏覽器開那個網址 → 頁面問「Is this the same code?」，核對跟終端機一樣 → 按 **Continue with GitHub** → 看到「**<名稱> is linked.**」 | 帳號多一台 Mac。終端機接著印 `account`、`machine`、`saved`，最後一行 `verified the control plane issued a device token` 表示核准真的生效（只拿 token，不連 relay） | `clawdline cloud off`，刪 `~/.config/clawdline-next/cloud/machine-identity-v1.json`。**帳號那一列目前沒有按鈕可刪**（hosted console 沒有 machine 撤銷介面），它會留著占一格；**不要刪 `device-ed25519-v1`**——同一把金鑰重新 login 會沿用同一列，不再多占一格 |
-| 3 | root | `clawdline cloud on`，然後重啟 7727 的 daemon（現在是 `~/code/clawdline-go` 下的 `./bin/clawdline serve`；開關只在 daemon 啟動時讀） | daemon 自己連上 relay。7727 設定頁「遠端」→「Cloud 狀態」顯示「連線：connected」；`bin/serve.log` 有 `cloud ready account=… machine=…` | `clawdline cloud off`，重啟 daemon。帳號與舊 app 都不受影響 |
+| 2 | 使用者 | 在這台 Mac 的終端機打 `clawdline cloud login`。它印出 `code` 與 `approve at <網址>` → 在瀏覽器開那個網址 → 頁面問「Is this the same code?」，核對跟終端機一樣 → 按 **Continue with GitHub** → 看到「**<名稱> is linked.**」 | 帳號多一台 Mac。終端機接著印 `account`、`machine`、`saved`，最後一行 `verified the control plane issued a device token` 表示核准真的生效（只拿 token，不連 relay） | `clawdline cloud off`，刪 `~/.config/clawdline-next/cloud/machine-identity-v1.json`。**帳號那一列目前沒有按鈕可刪**（hosted console 沒有 machine 撤銷介面），它會留著占一格；**不要刪 `device-ed25519-v1`**——同一把金鑰重新 login 會沿用同一列，不再多占一格 |
+| 3 | root | `clawdline cloud on`，然後重啟 7727 的 daemon（安裝版的 binary 是 `${XDG_DATA_HOME:-$HOME/.local/share}/clawdline-next/current/clawdline`；開關只在 daemon 啟動時讀） | daemon 自己連上 relay。7727 設定頁「遠端」→「Cloud 狀態」顯示「連線：connected」；daemon 的 log 有 `cloud ready account=… machine=…` | `clawdline cloud off`，重啟 daemon。帳號與舊 app 都不受影響 |
 | 4 | 使用者 | 7727 設定頁「遠端」→「配對瀏覽器」→ **產生配對連結** → 在**已登入同一帳號**的瀏覽器開那個連結 → 核對兩邊顯示的金鑰指紋一樣 | 那個瀏覽器拿到這台 Mac 的內容金鑰，看得到新 Mac 的 session；「配對瀏覽器」列出它，標「由這台 Mac 配對」。從此同一個瀏覽器看得到兩台 Mac（見上面第 3 點） | 設定頁那一列按「撤銷」，或 `clawdline cloud revoke <device-id>`：本機撤銷優先於帳號清單 |
 | 5 | 使用者 | 在已配對的瀏覽器啟動 Session | 主機連上 Cloud 後，具有操作權限的瀏覽器可以開啟 Session 並傳送訊息 | 在裝置清單撤銷該裝置，或依步驟 3 中斷 Cloud 連線 |
 
@@ -39,12 +39,13 @@
 
 | 類別 | 常見代碼 | 意思 | 怎麼辦 | 線會自己重試？ |
 |---|---|---|---|---|
-| `not_signed_in` 帳號沒登入 | `no_identity`、`identity_other_environment`、`api_no_session` | 這台 Mac 沒有身分、身分屬於別的環境（例如本機測試）、或控制面不認得它的憑證 | 重做步驟 2 | 否，停下 |
-| `device_not_approved` 裝置未核准 | `login_denied`、`login_expired`、`login_timeout`、`relay_forbidden` | 核准被拒、code 過期、沒人按、或帳號撤銷了這台 Mac | 重做步驟 2；核准頁若寫 `allows 1 machine(s)` 就是下一列 | 否 |
-| `entitlement` 方案不足 | 核准頁的 `machine_limit_reached`；連線的 `relay_over_capacity` | 方案的 Mac 數滿了，或同時連線數滿了 | 回步驟 1。舊 Mac 不受影響 | 是，每 ≤30 秒 |
+| `not_signed_in` 帳號沒登入 | `no_identity`、`identity_other_environment`、`unauthorized`、`api_no_session`、`api_no_machine_credential`；控制面的 `api_http_401`／`api_http_403` | 這台 Mac 沒有身分、身分屬於別的環境（例如本機測試）、或控制面不認得它的憑證 | 重做步驟 2 | 否，停下 |
+| `device_not_approved` 裝置未核准 | `login_denied`、`login_expired`、`login_timeout`、`relay_forbidden`、`relay_revoked`、`relay_device_revoked`、`relay_account_revoked`、`closed_4403` | 核准被拒、code 過期、沒人按、或帳號撤銷了這台 Mac | 重做步驟 2；核准頁若寫 `allows 1 machine(s)` 就是下一列 | 否 |
+| `entitlement` 方案不足 | 核准頁的 `machine_limit_reached`（終端機是 `api_machine_limit_reached`）、`api_device_limit_reached`；連線的 `relay_over_capacity`、`relay_rate_limited`、`closed_4429` | 方案的 Mac 數滿了，或同時連線數滿了 | 回步驟 1。舊 Mac 不受影響 | 是，每 ≤30 秒 |
 | `version_mismatch` 版本不合 | `api_not_found`、`incompatible`、`upgrade_refused_426`、`relay_bad_request` | 對面不是這一版協定，或根本不是 Clawdline 端點 | 確認設定檔沒有殘留 `cloud_api_base`／`cloud_relay_url`（步驟 0 會擋），再更新 build | 是 |
-| `relay_refused` relay 拒絕 | `relay_unauthorized`、`identity_binding`、`relay_handshake_timeout` | relay 不收這張 token：api 與 relay 是不同環境，或系統時鐘差太多 | 同上檢查設定；確認時鐘 | 是（`relay_unauthorized` 每次重拿一張 token） |
-| `unavailable` 連不上 | `unreachable`、`tls_untrusted`、`connection_failed`、`relay_bad_gateway` | 沒人說不，是沒人回答 | 等；看網路、代理、時鐘 | 是 |
+| `relay_refused` relay 拒絕 | `relay_unauthorized`、`relay_token_expired`、`relay_token_superseded`、`relay_clock_skew`、`identity_binding`、`relay_handshake_timeout`；沒有列名的 `relay_*` 與 `closed_4xxx` | relay 不收這張 token：api 與 relay 是不同環境，或系統時鐘差太多 | 同上檢查設定；確認時鐘 | 是（`relay_unauthorized` 每次重拿一張 token） |
+| `unavailable` 連不上 | `unreachable`、`tls_untrusted`、`connection_failed`、`relay_bad_gateway`；其他 `closed_*`、`api_http_5xx`／`408`／`429` | 沒人說不，是沒人回答 | 等；看網路、代理、時鐘 | 是 |
+| `unknown` 不認得 | `api_unrecognized`，以及這一版沒有列的任何代碼 | 對面說了這個 build 不認得的字 | 記下完整代碼與細節，更新 build；仍然出現就回報 | 連線中是 |
 
 ## 在本機重現每一種錯誤（不碰正式環境、不碰任何帳號）
 

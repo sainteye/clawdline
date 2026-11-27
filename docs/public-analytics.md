@@ -19,17 +19,22 @@ about a member's residence.
 The four summary number cards are replaced by hourly UTC line charts for browser page
 views, distinct signed-in accounts, average active time, and HTML requests. Hourly account
 counts deduplicate within each hour and must not be summed into a period-wide account count.
+For any window other than today, the signed-in accounts chart is daily instead: it prefers
+accounts deduplicated per Asia/Taipei day from `member_days`, falls back to per-UTC-day
+`daily[].member_accounts`, and uses the hourly rows only when neither is present.
 Average active time divides that hour's active milliseconds by its browser page views; an
 hour without page views has no average and breaks the line. Pointer inspection, arrow-key
 inspection, and a table expose exact timestamps and values. The first/current hours are partial.
 
 The report adds `hourly` rows (`hour`, `views`, `requests`, `member_accounts`, `active_ms`)
-without changing its existing daily/totals contract. Only hours from collection start through
+without changing its existing daily/totals contract. It may also carry optional
+`member_days` (`timezone: "Asia/Taipei"`, rows of `day` and `member_accounts`) and an optional
+`member_accounts` on each `daily` row (distinct within that UTC day); an earlier API omits both. Only hours from collection start through
 the current hour are zero-filled; future hours and history before collection remain absent.
 The reader accepts at most 2,160 hourly rows (90 days), validates chronological consecutive
 hours, counts and totals, and shows an unavailable message if an older API omits the series.
 
-The default is today, with 7-, 30- and 90-day options. All windows use UTC and include today's partial day. A previous comparison
+The default is today, with 7-, 30- and 90-day options. All windows use UTC, except the Taipei-day account chart above, and include today's partial day. A previous comparison
 is absent unless it is fully covered and retained. Data is retained for 90 days. Days before
 collection began are absent, not zero. Empty, loading, unavailable, malformed, timed-out and
 permission-denied responses remain distinct from a verified zero.

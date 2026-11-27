@@ -114,7 +114,8 @@ stamps nothing) and plants the record only on a match. On any other machine it d
 
 - Compaction-threshold experiment (300000), started 2026-09-26, due 2026-10-03 09:00 (the machine's zone)
 - data: `compaction_compare` since `14d`; linked to that schedule
-- criteria: the 300000 group has clearly lower per-task cost than before-setting; success rate has not declined; stalled and redispatched tasks have not increased;
+- criteria (three, indexes 0–2): the 300000 group has clearly lower per-task cost than before-setting;
+  success rate has not declined and stalled and redispatched tasks have not increased;
   inspect 3–5 compacted tasks for lost instructions or repeated work
 
 The seed's key is written in `verification_seeds` in the same transaction as the record, and it is

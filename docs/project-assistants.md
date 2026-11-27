@@ -16,7 +16,7 @@ readiness checks are separate from real model and release acceptance.
 ## One data contract
 
 Contract version: `project-assistants.v1`. Fixture version: `1`. Feature schema
-version: `1`, independent of the host SQLite schema/user_version. The source is
+version: `17` (`projectassistant.SchemaVersion`), independent of the host SQLite schema/user_version. The source is
 `api/v1/project-assistants.schema.json`; the existing generator emits
 `internal/contract/zz_generated.go` and `web/contract/src/generated.ts` together.
 All wire names start with `ProjectAssistant`. Domain structs intentionally have
@@ -51,10 +51,10 @@ admission. API58 is required; the retired catalog is not a fallback. Production
 Cloud/device and native execution acceptance remain separate.
 
 The [bounded read-view contract](project-assistants-read-views.md) adds an
-optional read port and generated projections. Its proposed API59 route and
-17th SourceClient method are not mounted by the schema/foundation. The existing
-16-operation surface remains intact. This work replaces chat recovery through
-a whole Export only after the producer and consumer are implemented together.
+optional read port and generated projections. Its API59 route is mounted, and
+the console's `SourceClient.view` method consumes it in the chat; the original
+operations remain intact. Chat recovery reads this bounded view rather than a
+whole Export.
 
 The [optional SQL read adapter](project-assistants-read-store.md) implements
 that port over a borrowed query-only pool. It returns a transaction-consistent
@@ -84,9 +84,12 @@ closing, selecting and restoring focus never start or stop recording or work.
 Create, list, search, get, history, mark-read and export are database/projection
 operations: no process initialization, model turn or capability auto-install.
 Native adapter unavailability does not prevent these operations. The first
-send alone may create a native binding. Editing replaces only name, appearance
-and instructions with `expected_version`; Agent/model/Project/policy switching,
-archive and deletion are absent from v1. Instructions and role snapshots are
+send alone may create a native binding. Editing (`EditBot`, with
+`expected_version`) changes name, appearance and instructions, and also Agent,
+runtime settings such as the model, login profile, fallback Agents and steps,
+permission policy, mode, notification, background threads, team management and
+roster placement; the Project cannot change. Deleting a Bot is `DeleteBot`.
+There is no archive. Instructions and role snapshots are
 captured at the next idle turn. A running Turn's captured snapshot is immutable.
 
 ## Admission, delivery and retry
@@ -140,7 +143,9 @@ cancelled/unknown are separate states. A repeated command returns its receipt
 before revalidating an already answered offer. A new answer to an old offer
 is refused. Since 2026-11-14 there is no read-only sandbox: as in Codync, the
 native CLI acts in the Bot's Project, and an allow-once answer lets that one
-action run; standing allow or reject rules are still refused.
+action run. As in Codync, `allow_always` and `reject_always` options are also
+accepted; the agent keeps that rule, and the Bot's settings show the Project's
+rules so one can be revoked.
 
 Within a turn, each `send_message` tool call is durably deduplicated by
 binding/turn/call ID; identical text under different calls remains two
@@ -225,9 +230,12 @@ proposal/link through the new narrow adapter; it cannot rewrite others' cards.
 
 Go ports are `Runtime`, `Repository`, `Memory`, `WorkBridge`, `EventFeed`, plus
 the source `ProjectResolver` and opt-in `SchemaInstaller` seam in
-`internal/app/projectassistant/ports.go`. This package imports only the domain,
-context and database/sql. It does not import app/ports or projects, avoiding
-the prior ports → projects → transcript → process → ports cycle.
+`internal/app/projectassistant/ports.go`. `ports.go` itself imports only the
+domain and the standard library. The package as a whole also imports
+`internal/app/orchestrator`, `internal/app/botnetwork`, the `capacity`, `squad`,
+`agenthandoff` and `botreadtrace` domain packages and `internal/productcopy`.
+It does not import app/ports or projects, avoiding the prior ports → projects →
+transcript → process → ports cycle.
 
 PA-03 supplies `SchemaInstaller.Version/Install`. The test helper
 `projectassistanttest.Bootstrap(ctx, installer)` opens a new caller-owned
@@ -393,8 +401,8 @@ optional application read port to the existing borrowed query-only Store reader,
 HTTP publication fence and generated Cloud read word. Complete source replies
 keep the existing byte ceiling and typed failures. The backend retains explicit
 API58 compatibility checks for the original sixteen methods; only the new view
-operation requires API59. Actual TypeScript method17/helper joint acceptance,
-consumer integration and production Cloud/phone acceptance remain separate.
+operation requires API59. The console's `SourceClient.view` method is the
+consumer; production Cloud/phone acceptance remains separate.
 
 ## Explicit conversation read observation
 

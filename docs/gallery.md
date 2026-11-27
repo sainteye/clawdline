@@ -1,6 +1,15 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
+> **What the current product does:** the macOS app ships `clawd` and `mochi` in
+> `shell/darwin/Resources/mascots/`, copies them once into the `mascots` directory beside its config
+> (`~/.config/clawdline-next/mascots/` by default; `MascotPacks` in `shell/darwin/MenuReadings.swift`),
+> and lists that directory in the menu bar's **Mascot** submenu. The choice is the `mascot` name
+> setting (`internal/adapters/nextconfig/nextconfig.go`). There is no ⌘M picker (⌘M minimizes the
+> window), `tools/validate-pack.py`, `Resources/mascots/` and the CI pack check do not exist, and
+> nothing handles a `clawdline://filmstrip` URL. The paths and commands below describe the Swift
+> generation.
+
 # Mascot gallery
 
 Every pack here installs into `~/.config/clawdline/mascots/` and shows up in the picker

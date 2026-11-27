@@ -104,3 +104,11 @@ Other Bot reads that still use the writer and may hold a slot under write load:
 the handoff-card and dev-server handlers' own store reads and
 `configuration-profile` (7 s median, which looks like a separate external
 probe). They were not changed here.
+
+Later changes moved more of these reads to the reader. `Store.WithReader` now
+lends the query-only pool to independent Bot projections, including the
+handoff-card read, the Bot list and the send receipt
+(`TestBotHandoffReadAnswersWhileTheWriterIsHeld`,
+`TestBotListAndSendReceiptAnswerWhileTheWriterIsHeld`), and
+`GroupStore.WithReader` also routes the group list and room `History`. The
+dev-server catalog still opens on the writer.

@@ -33,7 +33,7 @@ execution is introduced. All titles and labels remain text.
 
 Codecraft's MIT license explicitly includes code and art; its bundled Cinzel
 Decorative font retains its separate OFL notice. Kaiju retains its original MIT
-notice and does not bundle its font. Both notices are embedded in the HTML as
+notice; its bundled Fusion Pixel font retains its separate OFL notice. These notices are embedded in the HTML as
 well as preserved with source. Static source inspection and automated browser
 checks do not establish the person's artistic approval or physical-phone use.
 
@@ -61,7 +61,7 @@ movement. Orrery has no continuous orbit rotation: state changes retain the
 than a 760px minimum, preserving the original center/radius formulas and 1.1:1
 composition while the eyepiece scrolls inside its frame. The almanac restores four compact
 summary rows; readable-list mode retains all eight state counts. Work-age growth remains
-unavailable because the projection supplies no trusted work-start time.
+absent: the host now projects a trusted `stateTime`, but Orrery does not read it.
 
 Night City alternates the original `_` / `▏` cursor glyphs at 600ms, retains the
 1800ms attention lamp and 3200ms beam, and restores the 300ms neon-sign height

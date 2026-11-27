@@ -19,18 +19,20 @@ strip above the session list on this machine, or you can run
 ./bin/clawdline skill install
 ```
 
-This writes a short stub to `~/.claude/skills/clawdline/SKILL.md`. The stub holds no routes of its
+This writes a short stub to `~/.claude/skills/clawdline/SKILL.md` for Claude Code and to
+`~/.agents/skills/clawdline/SKILL.md` for Codex. The stub holds no routes of its
 own; it tells the session to read the guide compiled into the `clawdline` binary, so the guide
 always matches the daemon that answers. `clawdline serve` keeps a copy of itself at
 `~/.config/clawdline-next/bin/clawdline` for the stub to find.
 
-If a `SKILL.md` was already there, install records it first, and
+If a `SKILL.md` was already at either place, install records it first (each place has its own
+record), and
 
 ```sh
 ./bin/clawdline skill uninstall
 ```
 
-puts it back exactly. You can read the guide yourself, without a daemon:
+puts back exactly what was at both. You can read the guide yourself, without a daemon:
 
 ```sh
 ./bin/clawdline guide              # the core, and a list of the other parts
@@ -53,8 +55,10 @@ clawdline dispatch --title "Add a test for the parser" --claims internal/parser 
 - `--claims` names the paths the child will change, so two children do not collide.
 - `--isolation worktree` gives the child a git worktree of its own; without it the child works in
   the project directory.
-- Also: `--assistant claude|codex`, `--model`, `--permission-mode ask|edits|full` (default
-  the machine setting; initially `full`), `--timeout` in minutes (default 30, up to 240).
+- Also: `--assistant claude|codex|antigravity`, `--model`, `--permission-mode ask|edits|full` (default
+  the machine setting; initially `full`), `--timeout` in minutes (default 30, up to 240), `--project-dir`, `--deliverable`, `--persona`,
+  `--work-id`, `--task-id`, `--kind`, `--label`, `--instructions-file` (instead of standard input)
+  and `--json`; `clawdline dispatch --help` prints them all.
 - It prints `dispatched <id> <state> [worktree <path>]`.
 
 A root session may have **5** children at once by default (20 for the whole machine). The child

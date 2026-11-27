@@ -84,7 +84,13 @@ told within 5 s, the same bound as on the relay.
 **It falls back by itself.** If the channel does not open within 5 s, closes, or misses an ack for
 3 s, the machine retires the direct connections and the browser rekeys back onto the relay (or
 reopens with its lease proof if the old connection is gone). Input sent before the drop is settled
-by its relay receipt, so nothing is replayed. The browser waits 30 s before trying again.
+by its relay receipt, so nothing is replayed. The browser waits 30 s before trying again, or 5 s
+when the refusal only meant "not now" (`terminal_busy` from the machine, or the relay's
+`rate_limited` or `over_capacity`). After two direct paths of one terminal fail in a row, that
+terminal stays on the relay for 5 minutes (`DIRECT_PAUSE_AFTER_FAILURES`, `DIRECT_PAUSE_MS` in
+`terminal-direct.ts`). While no frame is pending, a path that loses its network is retired on
+ICE state instead: the machine gives a disconnected pair 4 s and retires the peer only when ICE
+reports failed, up to 25 s later (`CloudTerminalDirectICERecoverySecondsLimit`).
 
 The page shows "direct" next to a terminal on the direct carrier, and the wire contract with every
 number is in `docs/cloud-terminal-wire.md`, Direct carrier.
@@ -95,10 +101,13 @@ a machine and never about a Session: two Sessions on one machine cannot take dif
 two machines routinely do. It is therefore drawn on the machine's own row — the fleet list's
 machine heading and the switcher's machine rows — as one dot and no word: filled when this page's
 reads of that machine take the channel, hollow when they take the relay, faint when this browser
-has not read that machine's descriptor yet, which is not the same as relay. The tip says which
-and why (the machine opens no direct path, or there is none right now), and says that sends and
-dispatches take the relay whatever the dot shows (`carrier-state.ts`, `CarrierDot.tsx`). Nothing
-is opened to draw it: the dot reads the carrier this page already holds.
+has not read that machine's descriptor yet, which is not the same as relay. Before the road, the
+dot reads whether the machine still reports in: a machine whose roster entry has gone stale is
+drawn offline whichever road it used to take, and one with no report yet is drawn as unknown
+(`machineLight`). The tip says which and why (the machine opens no direct path, there is none
+right now, or the machine is not reporting), and says that sends and dispatches take the relay
+whatever the dot shows (`carrier-state.ts`, `CarrierDot.tsx`). Nothing is opened to draw it: the
+dot reads the roster and the carrier this page already holds.
 
 A hollow dot on a machine is usually its build or its switch, not its kind. `session_carrier_v1`
 is `cloud_terminal_direct`, which is on unless the settings file says otherwise, and this path has
@@ -151,7 +160,7 @@ removed on 2026-10-06: a hidden page now keeps its Cloud connection exactly as a
 
 ## Decisions
 
-- **pion/webrtc** is the daemon's second third-party dependency after `modernc.org/sqlite`. It is
+- **pion/webrtc** was the daemon's second third-party dependency after `modernc.org/sqlite`. It is
   pure Go (MIT), so `CGO_ENABLED=0` still builds macOS, Linux and Windows from one machine. Measured
   before adopting it: a pion↔pion channel opened in 12 ms with a 0.2 ms round trip for 4 KiB, and a
   Chrome↔pion channel on the same machine opened in 198 ms (through an mDNS host candidate, no

@@ -4,8 +4,12 @@ Status: private storage, native execution-plan observation, shared preparation
 and live policy checks are implemented. Authenticated Project consent now has
 website and Cloud entrypoints. Runtime composition now publishes actual
 Project/launch-store/bridge inputs and withdraws them before shutdown.
-Session HTTP/broker entrypoints and native enforcement activation remain
-pending. This supplements decision A07 in
+Connecting this policy to the Session HTTP/broker entrypoints and native
+enforcement activation remain pending. Those entrypoints start and resume
+Antigravity today through the separate owned ACP Session host
+([Existing Session preview](antigravity-acp-client.md#existing-session-preview)),
+which does not pass through `NativePolicy` or the Project consent `Check`
+described here. This supplements decision A07 in
 [the integration design](antigravity-cli.md#decisions-and-alternatives), without
 replacing the existing work, receipt, claims or final acceptance policies.
 No compatibility row is enabled by this storage change.
@@ -22,7 +26,9 @@ an active historical command answer is never current authority.
 ## Decision and alternatives
 
 Use one server-owned native policy for HTTP Starter, broker children, handoff
-and root launches. Reuse their durable opening receipts, immutable Squad
+and root launches. This is the design target for the managed terminal path; the
+owned ACP Session host that serves those launches today is not yet subject to it.
+Reuse their durable opening receipts, immutable Squad
 snapshots, terminal lanes and the private Antigravity launch store. A browser
 boolean, generic mode name or historical loaded receipt cannot authorize a
 native operation. A new policy service or mutable registry would duplicate
@@ -131,8 +137,8 @@ a native matrix item.
 
 ## Implemented server composition
 
-`prepareProductionAntigravity` takes the HTTP receipt or broker owner's durable
-intent and returns the shared private launch result. It selects the exact
+`prepareProductionAntigravity` is written to take the HTTP receipt or broker
+owner's durable intent and returns the shared private launch result. It selects the exact
 pinned image and server-selected behavior, binds the current project plan and
 consent revision, prepares immutable context, and checks real `projects.Admit`
 before returning. It allocates no ID, installs no project hooks, opens no
@@ -141,6 +147,8 @@ admission failure can revoke only a positively unopened launch.
 `RevokeUnopenedLaunch` atomically refuses a recorded terminal/process; absence
 of a receipt alone is still not proof that an opener did nothing. A caller
 must retain pending/unknown opening outcomes for their original owner.
+No production caller passes it an intent yet: only tests call it, and item 3 of
+the remaining production contract owes that connection.
 
 The live Check reruns private context/capability, image, behavior tuple,
 project consent/helper/hook revision, exact native process/terminal/workspace,
@@ -282,6 +290,14 @@ and permission-offer decoding, with no provider calls, process registry or
 public capability enabled. Production transport, authentication, billing
 state, exact resume, and actual mandatory native approval evidence remain
 prerequisites to replacing the falsified candidate.
+
+Since that batch, the codec, process client and an owned ACP Session host
+(`antigravitysession.New`, `acp --app-data-dir antigravity-acp`) have shipped.
+The daemon starts the host at boot on macOS and Linux when a compatible
+installation is found, and HTTP and broker Antigravity starts and resumes use
+it ([Existing Session preview](antigravity-acp-client.md#existing-session-preview)).
+That host does not consult the `NativePolicy` or Project consent `Check` on this
+page; the falsified candidate above is not replaced by it.
 
 ## Remaining production contract
 

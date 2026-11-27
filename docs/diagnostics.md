@@ -1,6 +1,21 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
+> **What the Go daemon does today:** it has no report inbox. It registers no
+> `POST /v1/diagnostics/report` route (`/v1/diagnostics` is the daemon's own self-description), it
+> refuses the Cloud command `diagnostics.report` (`internal/app/cloudops/ops_unavailable_commands.go`),
+> and it writes none of `report.json`, `previous.json`, `cloud-status.json` or
+> `cloud-viewer-events.jsonl`; there is no Cloud read `cloud.status`. The console's copied panel
+> (`web/console/src/legacy/js/core/layout-diagnostics.js`) still posts **Send to Mac** to the
+> retired route. The part that survives is `diagnostics.events`: `ViewerEventLog.Write` in
+> `internal/app/cloudops/viewer_events.go` refuses a batch over 256 KiB or without `v == 1`, writes
+> one daemon-log line per row (at most 128 rows, each line at most 1 KiB, with a second deny-list of
+> fields that are never logged) and one `cloud: viewer events delivered: …` summary line, and
+> answers `{ok, batch_id, rows, logged, duplicate}`. It remembers the last 256 batch ids in memory,
+> per process, so duplicate detection does not survive a restart, and it does not compute
+> `completeness_consistent`. The page side is `web/console/src/legacy/js/net/cloud-viewer-events.js`.
+> The sections below describe the Swift generation.
+
 # Reading a browser-side defect from a file
 
 Some faults only exist on the phone. A home-screen web app has no address bar, no console and no

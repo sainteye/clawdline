@@ -2,8 +2,20 @@
 
 `internal/adapters/antigravityprocess` owns one explicitly selected executable,
 one personal profile and one ACP session. It uses ordinary stdin/stdout pipes;
-it neither discovers a global install nor copies credentials. This package does
-not enable a public provider or change HTTP, Cloud, entitlement or UI policy.
+it neither discovers a global install nor copies credentials. The package itself
+does not change HTTP, Cloud, entitlement or UI policy; the HTTP composition that
+enables it is described under [Existing Session preview](#existing-session-preview).
+
+`Options.Assistant` selects the native dialect. Empty or
+`session.AssistantAntigravity` keeps the personal Gemini contract described
+below. `session.AssistantGrok` backs the owned Grok host: the profile is
+supplied as `GROK_HOME`, `initialize` carries `_meta.clientType` and must pass
+`grok.ACPIdentity`, `AuthenticatePersonal` uses the native `cached_token` method
+with `_meta.headless` and checks the result with `grok.PersonalAccountProblem`,
+the settings-file checks under [Personal quota checks](#personal-quota-checks)
+are skipped, `session/cancel` carries `_meta.cancelTrigger`, `Usage` returns
+`usage_unsupported`, and replies are routed by `grok_routing.go` against the
+registered client RPC rather than the model turn.
 
 ## Concrete owner flow
 
@@ -31,9 +43,27 @@ result, err := client.Prompt(ctx, text)
 // client.Cancel() is destructive local process cancellation, not an ACP ack.
 ```
 
-Both resource settings are required positive owner inputs; there are no default
-numeric production policies here. The composition must register its selected
-bounds in the product capacity registry. MaxFrameBytes bounds incoming and
+The other `Options` fields are optional. `SquadCapabilityPath` and
+`SessionIdentityPath` are absolute paths exported to the native process as
+`CLAWDLINE_SQUAD_CAPABILITY_FILE` and `CLAWDLINE_PROTOCOL_SESSION_FILE`; only the
+paths are inherited, never the capability value. `OnPermission` publishes live
+permission requests (see below), `OnWire` observes private protocol evidence
+for the raw trace, and `StopGraceTimeout` bounds the wait between an explicit
+interruption and forced teardown.
+
+Beyond the flow above, the client exposes `CanResume`, `ResumeSession`,
+`LoadSession` and `ListSessions` (`session/list` for the exact working
+directory) for restore; `PromptAccepted`, `PromptChecked`,
+`PromptContextChecked` and `PromptImagesChecked` (with `AcceptsImages`) for
+guarded sends; `SetModelChecked`, `SetConfigOptionChecked` and `ConfigOptions`
+for metadata; `Usage` and the standalone `ReadCLIUsage`/`PublicCLI` for quota;
+`Interrupt` for turn cancellation; and `Lifecycle`, `AlwaysProceedConfigured`,
+`PID` and `Err` for observation.
+
+MaxFrameBytes and CallTimeout are required positive owner inputs. The one
+numeric default is `StopGraceTimeout`, which falls back to 4 seconds when unset.
+The composition must register its selected bounds in the product capacity
+registry. MaxFrameBytes bounds incoming and
 outgoing JSON frame bytes (excluding newline) and the local settings read.
 CallTimeout applies to setup/configuration/usage RPCs, each actual pipe write,
 and update callback contexts. A normal model prompt has no client-imposed total
@@ -80,7 +110,8 @@ which asks the model to end its final message with the line
 `[[clawdline:turn-end]]` (transparency card `gemini-turn-end`). The host removes
 the marker from the reply in memory and in saved history. When the latest live
 assistant text ends with it and, with no tool or permission offer active,
-nothing has arrived for `DefaultTurnEndGrace` (15 seconds), the watchdog
+nothing has arrived for `DefaultTurnEndGrace` (15 seconds; a positive
+`Options.TurnEndGrace` overrides it), the watchdog
 cancels the prompt as a normal ending: no error entry, the turn-complete
 notification fires and queued messages are sent. Any later tool update,
 thought or non-blank text clears the mark, so a model that wrote it and went on
@@ -124,10 +155,12 @@ capacity. No provider prompt or paid API call is needed for those tests.
 ## Personal quota checks
 
 Before authentication and session creation, and again immediately before each
-prompt, the client reads only the explicitly supplied profile's
+prompt, restore, listing, model, configuration and usage call, the Gemini client
+reads only the explicitly supplied profile's
 `antigravity-acp/settings.json`. The exact known settings require
 `useG1Credits: false` and `auth.type: "oauth-personal"`. Missing, malformed,
-duplicate security keys, null, or other values refuse before writing. The client
+duplicate security keys, null, or other values refuse before writing. A Grok
+client skips these settings checks. The client
 does not read account credential files. An initialization response or advertised
 auth method cannot mark a client authenticated: a successful `authenticate`
 response is required.
@@ -137,8 +170,9 @@ marketing names are informational and never determine whether creation, resume,
 load, configuration or prompting is allowed. Provider authentication and errors
 own plan eligibility; Clawdline does not maintain a plan-name allowlist.
 Environment filtering removes inherited API-key, Google/ADC/Vertex,
-enterprise, AI-credit and supported provider selectors; GEMINI_HOME, LC_ALL=C
-and a disabled browser are supplied explicitly. Stderr goes to a null FD, so
+enterprise, AI-credit and supported provider selectors; GEMINI_HOME (or
+GROK_HOME for Grok), LC_ALL=C, a disabled browser and, when set, the two
+`CLAWDLINE_*` path variables above are supplied explicitly. Stderr goes to a null FD, so
 this client does not retain or surface provider auth links. Interactive profile
 preparation remains the owner's responsibility.
 
@@ -206,11 +240,19 @@ and `Error.Delivery` distinguishes:
 Neither an update nor a successful pipe write proves prompt completion. Never
 blindly resend an uncertain request. Typed error codes include `invalid_options`,
 `unsupported_platform`, `pipe_failed`, `start_failed`, `busy`, `invalid_state`,
-`not_ready`, `personal_settings_required`,
-`unsupported_protocol`, `invalid_session`, `invalid_stop_reason`, `unexpected_id`,
-`invalid_response`, `invalid_frame`, `invalid_id`, `frame_too_large`, `rpc_error`,
-`write_failed`, `read_failed`, `eof`, `cancelled`, `closed`, `update_rejected` and
-`cleanup_failed` (plus `invalid_context` for a nil call context).
+`not_ready`, `personal_settings_required`, `permission_settings_required`,
+`permission_settings_changed`, `provider_cli_incompatible`, `auth_required`,
+`unsupported_protocol`, `invalid_session`, `session_identity_changed`,
+`load_unsupported`, `resume_unsupported`, `list_unsupported`,
+`invalid_stop_reason`, `unexpected_id`, `invalid_response`, `invalid_frame`,
+`invalid_id`, `frame_too_large`, `rpc_error`, `invalid_model`,
+`invalid_model_result`, `invalid_config`, `invalid_config_result`,
+`usage_unsupported`, `invalid_usage_result`, `usage_too_large`, `usage_failed`,
+`images_unsupported`, `invalid_image`, `embedded_context_unsupported`,
+`invalid_context_uri`, `stale_offer`, `write_failed`, `read_failed`, `eof`,
+`cancelled`, `closed`, `update_rejected` and `cleanup_failed` (plus
+`invalid_context` for a nil call context). A Grok authentication result can also
+refuse as `auth_mode_unsupported` or `account_restricted`.
 
 The reader forwards complete raw `session/update` notifications in wire order,
 including late tool/status/usage notifications and updates after the prompt
@@ -613,12 +655,16 @@ phone's earlier empty reply or attached-image pending card is fixed.
 
 ### Native interruption and next-message input
 
-Owned Gemini interruptions use ACP `session/cancel`, not terminal Escape bytes
-or destructive process cancellation. The client answers an outstanding permission
-request with `cancelled`, writes one cancellation notification for the active
-prompt, and leaves completion to the native prompt result. Repeated stops do not
-cancel the next prompt. Machine write authorization is checked at the pipe write;
-the owned process and saved conversation stay available after a cancelled turn.
+Owned Gemini interruptions use ACP `session/cancel`, not terminal Escape bytes.
+The client answers an outstanding permission request with `cancelled`, writes
+one cancellation notification for the active prompt, and leaves completion to
+the native prompt result for up to `StopGraceTimeout` (4 seconds by default).
+If that prompt is still pending after the grace, or a second interrupt arrives
+while the cancellation is pending, `Client.Interrupt` tears down the process
+with an uncertain `cancelled` failure. Repeated stops do not cancel the next
+prompt. Machine write authorization is checked at the pipe write; the saved
+conversation stays available after a cancelled turn, and a turn that converges
+within the grace keeps its process.
 
 While an owned turn runs, the composer accepts explicit next-message inputs into
 this browser's existing persisted pending cards. A queued card says it is held in
@@ -821,7 +867,10 @@ ordinal is anchored once; page reads match its complete generation-bound entry
 ID. Restart retains the address, while replaced history cannot borrow the old
 ordinal. Marker text is projected only at read time, so original native history
 is not rewritten. This adds image delivery from the assistant; native image
-input is a separate capability and is not inferred from artifact display.
+input is a separate capability and is not inferred from artifact display. It is
+negotiated as `promptCapabilities.image`: the Host checks `AcceptsImages` and
+sends PNG or JPEG pictures as ACP image blocks through `PromptImagesChecked`,
+which refuses with `images_unsupported` or `invalid_image` before any write.
 
 ### Official lifecycle evidence and private wire capture
 
@@ -853,7 +902,10 @@ remain errors. Unknown update variants no longer terminate a healthy worker.
 
 Raw capture is **off by default**. The machine owner may set `"rawTrace": true`
 in the existing private `antigravity-acp-pilot.json` configuration before starting
-the owned host. This affects the next daemon start; editing it does not reconfigure
+the owned host. Only that explicit configuration reads it: the auto-enabled
+path has no pilot file and never turns on capture, and creating the file
+switches the daemon to the strict explicit configuration, which then requires
+absolute `executable` and `accountDir` paths. This affects the next daemon start; editing it does not reconfigure
 an already running host. It applies to opened/resumed conversations and temporary
 native history/quota connections. Do not restart the user's application without
 their explicit approval.
@@ -893,4 +945,6 @@ protocol delivery continues; it does not turn a successful send into a retry.
 This stage adds observation and official state boundaries. It adds neither a
 model/human deadline nor automatic restart, cancellation escalation, message
 replay or a heuristic that marks final-looking text idle. The next recovery
-policy must use recorded evidence from an affected runtime.
+policy must use recorded evidence from an affected runtime. Interruption later
+gained a bounded teardown; see
+[Native interruption and next-message input](#native-interruption-and-next-message-input).

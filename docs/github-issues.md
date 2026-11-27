@@ -1,6 +1,6 @@
-> **2026-10-31：§6.5 第二步與 G4、G6 已由 D73 取代，現行設計見 [`issue-sync.md`](issue-sync.md)。**
+> **2026-10-31：§6.5 第二步與 G4、G6 已由 D73 取代，現行設計見 [`issue-sync.md`](issue-sync.md)。** 現行做法是看板項目單向開關一個 GitHub 或 Jira issue，由 outbox 呼叫 tracker 的 API（`internal/domain/work/issuesync.go`）。§6.2「連結，不同步」與 G3 沒有實作：沒有 `link`／`unlink` 指令、沒有 `link_repo_mismatch`／`no_github_remote` 拒絕、落地時也不檢查 `Fixes owner/repo#N`；§6.3 依賴它的答案同樣不適用。G5 的 `duplicate` 關閉原因（§5.7）與每專案短編號（§5.8）也沒有實作。
 
-> **整套工作系統（看板項目、Session 待辦、Backlog、GitHub Issue）怎麼運作、哪些已經做到，一份講完在 [`docs/work-system.md`](work-system.md)。**
+> **現行看板怎麼運作見 [`docs/work-system-v2.md`](work-system-v2.md)。** [`docs/work-system.md`](work-system.md) 是 v1 紀錄：2026-10-06 起 v1 的 `/v1/work/items/*` 等 HTTP 路由已退役，所以 §1.4、§5.5 等處的「我們現在」（`POST /v1/work/items`、v1 的 `backlog` 表與規則）描述的是 `c0c545a` 當時的 v1，不是現在主控台使用的 v2 看板。
 
 > **實作依據仍是 [`docs/design-decisions.md`](design-decisions.md)。** 本文是分析與建議；要採納其中任何一條，由 root 在那份文件加一列裁決（它 §1 的用法）。
 

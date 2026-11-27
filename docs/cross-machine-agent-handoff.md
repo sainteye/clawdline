@@ -61,8 +61,11 @@ body digest; resends cannot silently change the target or operation.
 `peer-control` `status` returns each machine's local fingerprint and bounded
 `pairs` and `grants` arrays. The current Console uses pairs for the switches;
 old grants are returned for compatibility. `start`, `accept`, `sync`, and
-`revoke_pair` remain machine-authenticated control actions. The Console
-orchestrates them automatically for both directions after reading each
+`revoke_pair` remain machine-authenticated control actions. The daemon also
+still answers the legacy `grant`, `grant_sync` and `revoke_grant` actions, which
+mint, pin and revoke a one-hour per-Session grant on an active pair; the current
+Console never sends them. The Console
+orchestrates the pair actions automatically for both directions after reading each
 machine through its verified viewer channel. No signing key, private key,
 message body or inbox content is present in the status reply. Pair IDs are
 implementation details and are never required in the normal page.
@@ -83,8 +86,8 @@ The receiver claims a durable request receipt before the inbox effect, then
 rechecks authority at the effect boundary. Exact repeats replay a completed
 receipt; conflicting repeats are refused; orphaned claims remain unknown.
 The source outbox distinguishes socket submission and relay delivery from
-target execution. `peer_ack` can report `delivered`, `machine_offline`, or
-`unknown` about relay delivery; none proves that a target Agent observed or
+target execution. Relay delivery is recorded from `peer_ack` as `delivered` or
+`machine_offline`, and stays `unknown` when no ack arrived or two acks disagree; none proves that a target Agent observed or
 acknowledged the work. The target inbox and durable receipt provide local
 execution and Session delivery evidence.
 

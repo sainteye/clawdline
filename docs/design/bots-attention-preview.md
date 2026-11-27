@@ -4,6 +4,20 @@ Status: **design preview for review, not an implementation.** Nothing in the pro
 with this page. `bots-attention-preview.html` beside it is a self-contained, simulated
 interaction; it contacts no Bot and delivers no notification.
 
+**Since this preview** (the problem statement and "Evidence from source" describe `f74ef215c`):
+
+- The console plays a Bot completion sound (`web/console/src/project-assistants/completion-sound.ts`,
+  started from `pages/project-assistants.tsx`, switched on the Notifications page). It differs from
+  the preview: it is on unless turned off, it chimes only for a completed turn (a change to a Bot's
+  `completed_turn_id`, skipped for a Bot whose `notify` is off), never for needs-input or failure,
+  has no per-Bot or per-kind throttle and shows no tip. It does not borrow `navigator.audioSession`.
+- There is no floating orb: `BotOrb` renders only the docked entry, and its ringing is an inline
+  effect, not `useRinging`.
+- `assistantBadge` no longer reads `pending_permissions`: it adds one for each online Bot whose
+  shown state is needs-input, and leaves offline Bots' activity out.
+- The badge follows a live roster stream (`followLiveRoster`) where the source offers one; the
+  15 s interval refreshes only sources without it.
+
 ## The problem
 
 While a person works in a Session, the Bots entry (the floating orb or its docked icon) shows

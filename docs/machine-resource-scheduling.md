@@ -9,20 +9,30 @@ and `tools/heavy.sh` for the current heavy-command behavior.
 
 ## The current boundary
 
-Clawdline already has three related protections, but none of them is a resource scheduler:
+Clawdline already has several related protections, but none of them is the quantitative scheduler
+proposed below:
 
 - Task `claims` reserve repository paths. They prevent conflicting roots from being briefed onto
   the same source, not two safe builds from competing for CPU and memory.
-- Task `serialize` names a machine-global mutex. It is FIFO and restart-aware, but only a dispatched
-  task that declared the token participates, and it holds the token for the task's whole queued,
-  spawning and briefed lifetime rather than for the few minutes spent compiling.
-- Restart maintenance protects terminal admission while `build.sh` replaces the running app. It
-  does not govern the earlier `swiftc`, test or packaging work.
+- Task `serialize` is not supported by the Go broker. A draft that carries it is refused by name
+  ("dispatch without it") rather than silently started (`internal/app/orchestrator/draft.go`).
+- The broker has a lease authority (`internal/app/orchestrator/leases.go`, served at
+  `/v1/orchestrator/leases`) with three exclusive resources: `heavy_compile` (one slot for the
+  machine), `landing` (one per absolute checkout) and `daemon_restart`. Each keeps a FIFO waiter
+  queue of at most `LeaseQueueLimit` (32; past it `429 queue_full`). A holder proves it is alive by
+  renewing within 60 seconds or by a pid and process start that are still there; a waiter silent
+  for 120 seconds is passed over; a process the system would not answer about is `unknown` and keeps
+  its lease. A `daemon_restart` holder and a `heavy_compile` or `landing` holder do not coexist.
+- `tools/heavy.sh` (`clawdline heavy`, `cmd/clawdline/heavy.go`) wraps one native build. It takes
+  the `heavy_compile` lease immediately before the command, then waits until available memory is
+  above a floor (a quarter of RAM, at most 1 GiB) and the memory pressure-stall average is below
+  10%, and runs the command at lower CPU priority (on Linux also first in line for the OOM killer).
+  It exits 75 when `--max-wait` passes without running the command, and 76 when a callback took the
+  queued command. `clawdline coordination run` holds `landing` or `daemon_restart` the same way.
 
-Both `build.sh` and `test.sh` invoke `swiftc` directly. A Root Session, contributor shell, CI job or
-third-party tool can therefore start an expensive build without appearing in the orchestrator's
-serialize queue. Private `TMPDIR` values prevent fixed test-output collisions, but they do not stop
-CPU, RAM and disk contention.
+Only callers that go through those wrappers participate. A contributor shell, CI job or third-party
+tool can still start an expensive build without appearing in any lease queue. Private `TMPDIR`
+values prevent fixed test-output collisions, but they do not stop CPU, RAM and disk contention.
 
 The distinction is important:
 
@@ -223,7 +233,7 @@ The expensive compile may run before an exclusive install lease exists. Promotio
 atomic and exclusive. Test compilation and test execution also become distinct: a focused test can
 reuse a compiled runner, while only a full execution may mint the full-suite receipt.
 
-This follows the runner direction in `docs/verification-workflow.md`: compile once, execute focused
+This follows the runner direction: compile once, execute focused
 groups many times, and reserve one exact candidate-tree full run for the landing Root.
 
 ### 7. Build identity, caching and coalescing
@@ -296,8 +306,8 @@ than its convenience story:
 - A contributor can disable the optional daemon and use the conservative documented lock path.
 - The feature cannot claim to control processes that bypass its wrapper. Detection may warn, but it
   must not present advisory observation as enforcement.
-- macOS can be the first implementation because Clawdline is currently a macOS app, while resource
-  names and lifecycle receipts should avoid unnecessary Apple-only semantics.
+- Clawdline is a cross-platform daemon (macOS, Linux and Windows), so resource names and lifecycle
+  receipts should avoid unnecessary Apple-only semantics.
 
 ## Failure behavior to design before implementation
 
@@ -336,8 +346,9 @@ by job class on the supported Mac.
 
 ### Phase 1 — correctness locks at the scripts
 
-**Built, in use, and the whole of what this machine runs.** `test.sh` takes the lock in `10130e45`;
-`build.sh` takes the same directory the same way.
+**Built for the retired Swift app, whose `test.sh` and `build.sh` took a directory lock
+(`10130e45`).** Neither script exists in this repository; compile coordination now runs through
+`tools/heavy.sh` and the `heavy_compile` lease (see *The current boundary*).
 
 - Add a machine-local exclusive fallback around install/restart/signing.
 - Add a conservative compile lock to `build.sh` and `test.sh`.
@@ -354,6 +365,11 @@ at the top of this page: the exit condition below was met and none of it was use
 different result from "it did not work" and is the one worth carrying forward. Anybody restarting
 this phase owes an answer to the question that decided it — *who is waiting on the queue this
 would make visible, and what would they do differently seeing it* — before writing the first route.
+
+The Go daemon has since rebuilt part of this phase: the lease authority and `tools/heavy.sh`
+wrapper described in *The current boundary*, with leases and waiters stored in the broker's
+database, FIFO queues, typed hold reasons and queue position. Quantitative CPU and I/O units are
+not part of it.
 
 - Introduce the local lease authority and wrapper.
 - Acquire only around compile, test execution and promotion phases.

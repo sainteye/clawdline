@@ -65,13 +65,15 @@ trusted identity from the permission request or enable native execution.
 This is defense in depth, not admission evidence. Since 2026-11-14 the Bots
 follow Codync and there is no read-only sandbox to preserve: the native CLI
 acts in the Bot's Project and the person answers each permission card, which
-shows the requested action (see project-assistants-native-entry.md). The
-classifier above still only gates the automatic answers of the AutoRead
-policy; `Verify`, native memory controls and the feature-off gate remain.
-If that evidence later permits allow-once, keep persistent permissions and all
-filesystem/terminal/MCP scope expansion rejected. The current policy still
-permits the existing reject-once/cancel path; it never converts a denial into
-an automatic native allow.
+shows the requested action (see project-assistants-native-entry.md). A Bot
+whose policy is `approve` ("Approve automatically", as in Codync) instead
+answers every request with the agent's allow-once option, whatever the
+classifier says. The classifier above still only gates the automatic answers
+of the AutoRead policy; `Verify`, native memory controls and the feature-off
+gate remain. For AutoRead the classifier never converts a denial into an
+automatic native allow. A person's answer may also pick an `allow_always` or
+`reject_always` option; as in Codync, that option is forwarded so the agent
+keeps the rule it defines.
 
 ## Cancellation and identity acceptance
 

@@ -229,14 +229,14 @@ clawdline task land <task id> pending --note "Its merge was reverted on main by 
 | 派工前 root 必須在 | 會解析 | 會解析（`root_unresolved`、`conversation_ambiguous`） | 一樣。root 不在，完成通知就沒有收件人 |
 | 4 分鐘時鐘 | 沒有 progress note 就 `spawn_failed` | 分頁還活著就不判 `spawn_failed`；分頁不見才判。第一個畫面是對話框的 child 不歸這個時鐘管，留給人回答（下面「A dialog is the person's」） | 見下面「實測抓到的三件事」第二條 |
 | `serialize`、`graph`、`attach_session` | 支援 | **明確拒絕**（`bad_task`，說出欄位名） | 還沒做。默默忽略 `serialize` 會把該等待的 task 直接開起來 |
-| `reasoning_effort` | 支援 | 支援（codex 限定，`high`／`xhigh`，接成 `--config model_reasoning_effort=…`） | 2026-09-20 補上。之前是具名拒絕，而那句拒絕請人「改用 Swift app」——那個 app 已經退役，等於沒有出路；同時 schedule 那邊早就會驗、會存這個欄位，存得下去卻發不出來 |
+| `reasoning_effort` | 支援 | 支援（codex：`high`／`xhigh`，接成 `--config model_reasoning_effort=…`；antigravity：`low`／`medium`／`high`／`xhigh`／`max`） | 2026-09-20 補上。之前是具名拒絕，而那句拒絕請人「改用 Swift app」——那個 app 已經退役，等於沒有出路；同時 schedule 那邊早就會驗、會存這個欄位，存得下去卻發不出來 |
 
 ## 實測抓到的三件事（都有測試）
 
 1. **游標不是 composer。** 第一次派的 child 開在新 checkout，Claude Code 畫出 workspace trust 對話框，
    broker 看到「有 assistant 在 tty 上」就打字加 Enter——那個 Enter 回答了對話框，而游標在「No, exit」。
-   child 什麼都沒讀就死了。現在要看到**有框線的輸入列**才打字；沒有框線的 `❯` 是選單的反白，不打
-   （`composer.go`，`TestADialogIsNeverTypedInto`）。規則看結構，不列舉對話框的字，所以沒見過的對話框也擋得住。
+   child 什麼都沒讀就死了。現在要認得出 composer 才打字：Claude Code 看**有框線的輸入列**（`framedComposer`／`frameUnder`），Codex 不畫框線，看輸入列下方的狀態列（`statusUnder`），沒被告知是哪個 assistant 時一律要框線；沒有框線的 `❯` 是選單的反白，不打
+   （`composer.go`；`composer_test.go`、`dialog_test.go`、`codex_test.go` 的 `TestACodexChildHoldingTheTrustDialogIsNeverTypedInto`）。規則看結構，不列舉對話框的字，所以沒見過的對話框也擋得住。
 2. **安靜不是失敗。** 時鐘原本把「4 分鐘沒 progress note」當 `spawn_failed`，但 briefing 明說**不要**送心跳，
    於是正常工作的 child 被記成沒開起來（B1 第一次實跑就撞到一次）。現在問分頁本身：不見了、或卡在對話框，才是 spawn 失敗；
    活著就交給 task 自己的 timeout（`spawnVerdict`，`TestSilenceFromALiveChildIsNotASpawnFailure`）。
@@ -469,7 +469,7 @@ Running it:
 - **Start** is the `callback.start` outbox effect, recorded with the task. The command runs under
   `/bin/sh -c <wrapper> sh <argv…>` in its own process group, stdout and stderr appended to
   `<task dir>/output.log`. The wrapper writes `pid` and, when the command ends, `exit`. The
-  environment is a fixed allowlist (PATH, HOME, locale, USER, SHELL, TMPDIR, TERM) and never a
+  environment is a fixed allowlist (PATH, HOME, locale, USER, LOGNAME, SHELL, TMPDIR, TERM) and never a
   credential.
 - **`run.lock`** is flocked by the start and inherited by the command as fd 3, so "the lock is
   held" means "something of this run is alive", across a daemon restart.
@@ -519,10 +519,9 @@ line was typed, not that the receiver read or completed the work.
 
 ## 還沒做（這一波刻意不做，或做不到）
 
-- `detached-tasks`、`handoffs`、`root-assignments`、`respawn`、`landing-queue`、`graphs`、`waits`、`coordinator/*`。
-- `/notify` 沒有推播：這個 daemon 還沒有 WebPush（另一個 task 在做）。所以一律 `409 not_subscribed`——
-  是事實，不是 stub。`Broker.Notify` 是接縫。
-- messages 的 `Idempotency-Key` **只檢查有沒有，不存也不重播**；`images` 不支援。
+- `landing-queue`。（`detached-tasks`、`handoffs`、`root-assignments`、`tasks/<id>/respawn`、`graphs`、`waits`、`coordinator/*` 都已經接上路由，見 `internal/transport/http/server.go`。）
+- `/notify` 走 daemon 的 Web Push（`orchestrator_wiring.go` 設定 `Push:`），受 `notify_limit` 與 `rate_limited` 限制；只有 `Push` 沒接上時才回 `409 not_subscribed`（`Broker.Notify`）。
+- messages 的 `Idempotency-Key` 是持久收據（`Broker.Relay` → `Store.ClaimReceipt`）：同 key 同 body 重播第一次的答案並帶 `Idempotent-Replayed: true`，同 key 不同 body 回 `idempotency_key_reused`；打字是 outbox effect，重啟後仍會補上。`images` 不支援：body 只有 `from_session`、`to_session`、`text`。
 - 打字前不清 composer 裡的草稿（舊版 `TerminalComposerClear`）。實測看到：relay 的訊息把 child composer 裡一段
   未送出的草稿一起送了出去。
 - `result.json.ready` 的收養沒有舊版的 30 秒觀察窗：marker 與 tmp 的 sha256 一致就收。

@@ -17,6 +17,17 @@ necessary was a Linux machine of 2 cores and 1.9 GB with nine sessions: overlapp
 checks twice for low memory. The admission half this page removed on the Mac is back in one
 narrow form — a memory floor read from the kernel, not a per-compile peak nobody had measured.
 
+**Since then** (`cmd/clawdline/heavy.go`), the paragraph above no longer describes every command or
+every failure. Only native compilation takes the slot and waits for memory: `--compile`, or an argv
+`nativeCompile` recognises (`go build`/`go install`, `swift build`, `cargo build`, `xcodebuild`
+builds, direct compiler calls). Everything else, `go test` and `go vet` included, runs directly with
+no lease, no memory wait and no lowered priority. Nice 10 applies on macOS too; `oom_score_adj` 500
+is Linux-only. It fails open only when no daemon answers: once a broker is selected, a request it
+cannot confirm, or a refusal other than granted, queued or queue-full, exits 1 without running the
+command. A queued slot, a full queue or a memory wait hands the command to a callback by default
+(`--handoff`) and exits 76; and a native build exits 2 without running while
+`CLAWDLINE_DAEMON_RESTART_HELD` is set.
+
 Status: **the exclusion is built and in use; the scheduler in front of it was built, used by
 nobody, and removed on 2026-09-03.** What is on this machine today:
 
@@ -67,7 +78,7 @@ review rather than by use.
 
 **What it was left on, and what is still true.** The third review found the same defect class
 outside the correction seam, which by this repository's rule
-([`AGENTS.md`](../../AGENTS.md#verifying-your-work)) stops the patch loop and sends the boundary back
+(`AGENTS.md`, *Verifying your work*, a section it no longer has) stops the patch loop and sends the boundary back
 rather than dispatching a fourth correction. Two boundaries were named, and neither was a bug in a
 line:
 
