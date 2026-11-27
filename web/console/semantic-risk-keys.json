@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14804,
+  "englishKeys": 14806,
   "counts": {
-    "negation": 3740,
-    "state": 2523,
+    "negation": 3741,
+    "state": 2524,
     "permission": 878,
-    "deletion": 345,
+    "deletion": 346,
     "uncertainty": 585
   },
-  "unionCount": 6264,
+  "unionCount": 6266,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -2713,6 +2713,7 @@
       "next.msInstaKeyExpired",
       "next.msInstaKeyHelp",
       "next.msInstaKeyRefused",
+      "next.msInstaKeyRemoved",
       "next.msInstaKeyRevoked",
       "next.msInstaKeyScope",
       "next.msInstaMachineGone",
@@ -5544,6 +5545,7 @@
       "next.msInstaKeyDashboard",
       "next.msInstaKeyExpired",
       "next.msInstaKeyHelp",
+      "next.msInstaKeySaved",
       "next.msInstaScheduleWebhookWakeHelp",
       "next.msOpen",
       "next.msSetupApprove",
@@ -7368,6 +7370,7 @@
       "next.msForget",
       "next.msForgetGo",
       "next.msInstaKeyRemove",
+      "next.msInstaKeyRemoved",
       "next.ownerDiagErrDeleted",
       "next.ownerDiagStateDeleted",
       "next.ownerRetentionOffKept",
@@ -12478,7 +12481,9 @@
     "next.msInstaKeyHelp",
     "next.msInstaKeyRefused",
     "next.msInstaKeyRemove",
+    "next.msInstaKeyRemoved",
     "next.msInstaKeyRevoked",
+    "next.msInstaKeySaved",
     "next.msInstaKeyScope",
     "next.msInstaMachineGone",
     "next.msInstaNoHelper",

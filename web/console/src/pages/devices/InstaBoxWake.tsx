@@ -35,6 +35,7 @@ export function InstaBoxKey({ origin, onChange }: { origin: string; onChange?: (
       const next = await instaBoxRequest<NonNullable<typeof status>>(origin, instaBoxProviderPath, method, data)
       setStatus(next)
       setKey("")
+      setMessage(next.configured && next.hint ? nextWord("msInstaKeySaved", { hint: next.hint }) : nextWord("msInstaKeyRemoved"))
       onChange?.()
     } catch (error) { setMessage(instaBoxWakeReason(error)) }
     finally { pending.current = false; setBusy(false) }
