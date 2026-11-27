@@ -173,7 +173,7 @@ delivery.
 `POST /v1/voice/copilot-recap` (Cloud word `copilot-recap`, API level 59). That machine reads the
 Session's whole record (at most 40 transcript pages): every request, every reply and every
 `clawdline session report` summary, each with when it happened (each line at most 1,200
-characters: requests and replies keep both ends, report summaries keep only their start; at most 60,000 characters in all, the oldest lines after the first
+characters, both ends kept; at most 60,000 characters in all, the oldest lines after the first
 request left out first). It also counts the Session's Board steps as the Board does (cancelled
 steps are not steps) and its direct to-dos, and asks `gpt-4.1-mini` on the voice copilot key for
 one spoken recap whose counts come only from that `progress`. The call says the recap as written.

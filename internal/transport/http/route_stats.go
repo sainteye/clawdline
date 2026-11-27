@@ -373,12 +373,10 @@ func botReadModeLabel(query string) string {
 		}
 		mode = pa.ReadViewMode(decoded)
 	}
-	switch mode {
-	case pa.ReadViewSnapshot, pa.ReadViewHistory, pa.ReadViewEvents, pa.ReadViewPermissions, pa.ReadViewTraces, pa.ReadViewDetail:
-		return " [" + string(mode) + "]"
-	default:
+	if !pa.KnownReadViewMode(mode) {
 		return " [unclassified]"
 	}
+	return " [" + string(mode) + "]"
 }
 
 func (t *routeStats) countRoute(key, caller string, w http.ResponseWriter, r *http.Request, next http.Handler) {

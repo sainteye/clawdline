@@ -185,7 +185,7 @@ func copilotRecapTimeline(read func(target string, into any) bool, id string, no
 				if summary == "" {
 					continue
 				}
-				line.Kind, line.Text = "report", clipRunes(summary, maxCopilotRecapReplyRunes)
+				line.Kind, line.Text = "report", clipEnds(summary, maxCopilotRecapReplyRunes)
 			default:
 				continue
 			}

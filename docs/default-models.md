@@ -28,8 +28,12 @@ The route still answers `models` lists, built from the daemon's
 them: both Settings pickers (the Work tab and "Defaults for new sessions") take their
 options and efforts from the catalog itself (`web/console/src/model-catalog`), and
 read this route only for the saved values. The website offers the agent default and
-a validated saved model without inventing model names, context sizes, quota, or prices. An unknown saved effort remains visible until explicitly
-changed; an invalid new write is refused. Saving a choice does not authorize paid
+a validated saved model without inventing model names, context sizes, quota, or prices. Settings
+offers no Antigravity effort control: native Antigravity models carry their own effort
+(removed on 2026-11-11 in `a51cd5f70`). A saved `antigravity_default_effort` is still read
+and applied at launch, and can be written through this route or the Cloud word
+`default-models-update`; the schedule form keeps its own per-schedule Antigravity
+effort chips. An invalid new write is refused. Saving a choice does not authorize paid
 calls or paid fallback.
 
 Startup (`internal/transport/http/start.go`) and broker composition
