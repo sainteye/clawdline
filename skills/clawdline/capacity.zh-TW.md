@@ -76,6 +76,12 @@
 | `bots.charter_conflict_sentence_bytes` | 2048 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_conflicts` | 50 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_conflicts_resolved` | 50 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `bots.charter_document_bytes` | 131072 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_playbook_bots` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_playbook_id_bytes` | 64 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_playbook_text_bytes` | 16384 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_playbook_title_bytes` | 120 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_playbooks` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_projects` | 512 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_proposals` | 20 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_reason_bytes` | 500 | `bytes` | `refuse` | `diagnostics, sender` | — |
