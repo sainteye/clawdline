@@ -3,6 +3,8 @@ import {inputMetadata} from "./inputs.ts"
 // @ts-expect-error -- Node strip-types source extension.
 import {outputMetadata} from "./outputs.ts"
 import type * as W from "@clawdline/contract"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { catalogWord } from "../catalog.ts"
 // @ts-expect-error -- Runtime enums use the generated source extension for Node's strip-types runner.
 import { ProjectAssistantAccessValues, ProjectAssistantAgentValues, ProjectAssistantShapeValues, ProjectAssistantPermissionPolicyValues, ProjectAssistantSourceStateValues, ProjectAssistantNativeMemoryModeValues, ProjectAssistantTurnStateValues, ProjectAssistantPermissionStateValues, ProjectAssistantMessageKindValues, ProjectAssistantWorkStateValues, ProjectAssistantEventKindValues, ProjectAssistantErrorCodeValues, ProjectAssistantReadViewModeValues } from "../../../contract/src/generated.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
@@ -80,6 +82,7 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   if(t.queue_edit_id!==undefined&&(!text(t.queue_edit_id)||t.state!=="queued"))throw failure("pa_invalid")
   if(t.origin!==undefined&&typeof t.origin!=="string"||t.released_restart!==undefined&&typeof t.released_restart!=="boolean")throw failure("pa_invalid")
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
+  if(t.state==="queued"&&t.steer_fallback!==undefined&&typeof t.steer_fallback!=="string")throw failure("pa_invalid")
 }
 function permissionSummary(p:W.ProjectAssistantReadPermissionSummary,scope:ReadScope,fence:W.ProjectAssistantFence) {
   if(!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!cursor(p.detail_cursor)||!p.detail_cursor||(p.title!==undefined&&typeof p.title!=="string")||(p.tool_kind!==undefined&&typeof p.tool_kind!=="string"))throw failure("pa_invalid")
@@ -281,4 +284,35 @@ export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:
   if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
  }
 }
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts,...(t.origin?{origin:t.origin}:{}),...(t.released_restart?{released_restart:true}:{})}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{steer_fallback:steerFallback(t)||undefined,id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts,...(t.origin?{origin:t.origin}:{}),...(t.released_restart?{released_restart:true}:{})}}
+
+/** A Bot steers unless the person explicitly chose to queue follow-ups. */
+export function replyInputPreference(bot:Pick<W.ProjectAssistantBot,"reply_input">):"queue"|"steer" {
+  return bot.reply_input==="queue"?"queue":"steer"
+}
+/** Why the source queued this turn instead of steering it; empty when it did not say. */
+export function steerFallback(turn:Pick<W.ProjectAssistantReadTurnSummary,"state"|"steer_fallback">|undefined):string {
+  return turn?.state==="queued"&&typeof turn.steer_fallback==="string"?turn.steer_fallback:""
+}
+export function queuedSendNow(source:{canSendNow?:()=>boolean},turn:W.ProjectAssistantReadTurnSummary|undefined,active:W.ProjectAssistantReadTurnSummary|undefined):boolean {
+  return turn?.state==="queued"&&active?.state==="running"&&source.canSendNow?.()===true
+}
+type FallbackWords={steerFallbackAgent:string;steerFallbackImages:string;steerFallbackPermission:string;steerFallbackTurnEnded:string;steerFallbackScope:string;steerFallbackQueued:string}
+/** The short reason shown under a message the source put back in the queue. */
+export function steerFallbackReason(code:string,w:FallbackWords):string {
+  switch(code){
+    case "":return ""
+    case "agent_unsupported":return w.steerFallbackAgent
+    case "images_unsupported":return w.steerFallbackImages
+    case "permission_pending":return w.steerFallbackPermission
+    case "turn_ended":return w.steerFallbackTurnEnded
+    case "scope":return w.steerFallbackScope
+    case "steer_busy":return catalogWord("projectAssistants", "steerFallbackBusy")
+    case "not_sent":return catalogWord("projectAssistants", "steerFallbackNotSent")
+    default:return w.steerFallbackQueued
+  }
+}
+/** A save carries reply_input only when the switch differs from the Bot's effective choice. */
+export function replyInputPatch(bot:Pick<W.ProjectAssistantBot,"reply_input">,chosen:"queue"|"steer"):{reply_input?:"queue"|"steer"} {
+  return chosen===replyInputPreference(bot)?{}:{reply_input:chosen}
+}

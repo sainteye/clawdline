@@ -812,7 +812,7 @@ func (r *Engine) finishOnceLocked(ctx context.Context, a *runtimeActor, t pa.Tur
 		}
 	}
 	wasSteering := t.Steering
-	t.State, t.QueueEditID, t.Steering = state, "", false
+	t.State, t.QueueEditID, t.Steering, t.SteerFallback = state, "", false, ""
 	if cause != nil {
 		field := "execution"
 		if state == pa.TurnUnknown {

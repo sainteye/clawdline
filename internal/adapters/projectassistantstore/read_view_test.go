@@ -158,6 +158,33 @@ func TestReadViewExplainsUnknownTurnWithoutCapturedFailureNarrative(t *testing.T
 	}
 }
 
+// The read view carries why a follow-up was left queued, so the page need not
+// guess it.
+func TestReadViewCarriesTheSteerFallbackOfAQueuedTurn(t *testing.T) {
+	e, _, _ := viewFixture(t, 1, 0, false)
+	e.Turns[0].State = pa.TurnQueued
+	e.Turns[0].StartedAt = nil
+	e.Turns[0].SteerFallback = pa.SteerFallbackImagesUnsupported
+	_, _, views, _ := restoreViews(t, e)
+	v := readView(t, views, viewQuery(e.Bot))
+	if len(v.Snapshot.PendingTurns) != 1 || v.Snapshot.PendingTurns[0].SteerFallback != pa.SteerFallbackImagesUnsupported {
+		t.Fatalf("pending turns lost steer_fallback: %+v", v.Snapshot.PendingTurns)
+	}
+}
+
+func TestReadViewTreatsFutureSteerFallbackAsPlainQueued(t *testing.T) {
+	e, _, _ := viewFixture(t, 1, 0, false)
+	e.Turns[0].State = pa.TurnQueued
+	db, _, views, _ := restoreViews(t, e)
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.steer_fallback','future_reason') WHERE bot=? AND collection='Turns' AND member='t1'`, e.Bot.Key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	v := readView(t, views, viewQuery(e.Bot))
+	if len(v.Snapshot.PendingTurns) != 1 || v.Snapshot.PendingTurns[0].State != pa.TurnQueued || v.Snapshot.PendingTurns[0].SteerFallback != "unknown" {
+		t.Fatalf("expected plain queued: %+v", v.Snapshot.PendingTurns)
+	}
+}
+
 func TestReadViewKeepsAnOpenDecisionAfterTheChatRebinds(t *testing.T) {
 	e, old, current := viewFixture(t, 2, 0, false)
 	offer := pa.PermissionOffer{

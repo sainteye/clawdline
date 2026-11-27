@@ -67,6 +67,8 @@ const (
 	// How long the agent may take to say whether a Send now joined its turn
 	// (Codync's STEER_ANSWER).
 	MaximumBotSteerAnswerMilliseconds = 15000
+	// The admission-to-steer budget covers the fresh checks and native answer.
+	MaximumBotAutoSteerMilliseconds = 20000
 	// The Project's Claude Code local settings, read to list and revoke the
 	// standing rules Always allow and Never leave there.
 	MaximumBotRulesFileBytes = 1 << 20
@@ -318,6 +320,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsSteerAnswer, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotSteerAnswerMilliseconds, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotSteerAnswerMilliseconds"}},
+		{Name: BotsAutoSteer, Class: Buffer, Unit: Milliseconds, Limit: MaximumBotAutoSteerMilliseconds, AtLimit: Refuse,
+			Told: []Channel{Diagnostics}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotAutoSteerMilliseconds"}},
 		{Name: BotsMemoryEntries, Class: Evidence, Unit: Rows, Limit: pa.MaxMemoryEntries, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender, Health}, EvictedBy: Person,
 			Sources: []string{"internal/domain/projectassistant.MaxMemoryEntries"}},

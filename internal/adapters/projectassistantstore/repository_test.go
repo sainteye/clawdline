@@ -9,6 +9,28 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+func TestAnOldSteerFallbackDoesNotBlockWritingAnotherTurn(t *testing.T) {
+	db, s, _ := testDB(t)
+	b := seed(t, s, "one")
+	fence := populate(t, s, b, pa.EffectDelivered)
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.steer_fallback','future_reason') WHERE bot=? AND collection='Turns' AND member='turn'`, b.Key.BotID); err != nil {
+		t.Fatal(err)
+	}
+	next := pa.Turn{ID: "next", Fence: fence, MessageID: "next-message", State: pa.TurnQueued, IdempotencyKey: "send-next"}
+	message := pa.Message{ID: next.MessageID, Fence: fence, Seq: 2, TurnID: next.ID, Kind: pa.UserMessage, Text: "second"}
+	m := app.Mutation{Command: command(b.Key, pa.SendOperation, "next"), ExpectedVersion: 2, Turn: &next, Messages: []pa.Message{message}, Receipt: pa.Receipt{ID: "accepted-next", State: pa.EffectAccepted}}
+	if _, err := s.Commit(testContext, m); err != nil {
+		t.Fatalf("writing another turn with a future reason in history: %v", err)
+	}
+	old, err := s.Turn(testContext, b.Key, "turn")
+	if err != nil || old.SteerFallback != "future_reason" {
+		t.Fatalf("writing another turn changed the old reason: %q, %v", old.SteerFallback, err)
+	}
+	next.SteerFallback = "unrecognized_new_write"
+	_, err = s.Commit(testContext, app.Mutation{Command: command(b.Key, pa.SendNowOperation, "bad-reason"), ExpectedVersion: 3, Turn: &next, Receipt: pa.Receipt{ID: "bad-reason", State: pa.EffectAccepted}})
+	requireCode(t, err, pa.Invalid)
+}
+
 func TestQueuedTurnCapturesLatestInstructionsOnceAtStart(t *testing.T) {
 	_, s, _ := testDB(t)
 	b := seed(t, s, "one")

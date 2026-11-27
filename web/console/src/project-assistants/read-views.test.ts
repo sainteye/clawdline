@@ -2,7 +2,11 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import type * as W from "@clawdline/contract"
 // @ts-expect-error -- Node executes source extensions.
-import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary } from "./read-views.ts"
+import { inCatalog } from "../catalog-testing.ts"
+// @ts-expect-error -- Node executes source extensions.
+import { readView,readViewRequest,mergeTimeline,eventTimeline,turnSummary,replyInputPreference,steerFallback,steerFallbackReason,replyInputPatch,queuedSendNow } from "./read-views.ts"
+// @ts-expect-error -- Node executes source extensions.
+import { en,zhHant as zh } from "./words.ts"
 // @ts-expect-error -- Node executes source extensions.
 import { errorCode } from "./client.ts"
 // @ts-expect-error -- Node executes source extensions.
@@ -268,4 +272,80 @@ test("trace details retain distinct step identities and accept legacy category i
     a.items[0].trace!.id=42 as never
     assert.throws(()=>readView(a,request("detail"),fence),e=>errorCode(e)==="pa_invalid")
   }
+})
+
+test("a Bot without a saved reply-input choice steers, and only an explicit queue choice queues",()=>{
+  assert.equal(replyInputPreference(bot),"steer")
+  assert.equal(replyInputPreference({...bot,reply_input:"queue"}),"queue")
+  assert.equal(replyInputPreference({...bot,reply_input:"steer"}),"steer")
+})
+test("a queued turn's steer fallback reason survives the snapshot and live-turn summaries",()=>{
+  const a=answer()
+  const queued={id:"queued",message_id:"later",fence,state:"queued" as const,failure_code:"",started_at:"",steer_fallback:"permission_pending"}
+  a.snapshot!.pending_turns=[queued as W.ProjectAssistantReadTurnSummary]
+  a.snapshot!.queued_messages=[{...message("later",601),kind:"user",turn_id:"queued"}]
+  a.head.conversation.last_message_seq=601
+  assert.equal(steerFallback(readView(a,request(),fence).snapshot!.pending_turns[0]),"permission_pending")
+  rejects(b=>{b.snapshot!.pending_turns=[{...queued,steer_fallback:7} as unknown as W.ProjectAssistantReadTurnSummary];b.snapshot!.queued_messages=[{...message("later",601),kind:"user",turn_id:"queued"}];b.head.conversation.last_message_seq=601})
+  const live={id:"queued",fence,message_id:"later",state:"queued",steer_fallback:"images_unsupported"} as unknown as W.ProjectAssistantTurn
+  assert.equal(steerFallback(turnSummary(live)),"images_unsupported")
+  assert.equal(steerFallback(turnSummary({...live,steer_fallback:undefined} as unknown as W.ProjectAssistantTurn)),"")
+})
+test("send now appears for a default steering Bot's queued message without a fallback reason",()=>{
+  const a=answer(),s=a.snapshot!
+  const running:W.ProjectAssistantReadTurnSummary={id:"running",message_id:"input",fence,state:"running",failure_code:"",started_at:"2026-11-12T00:00:00Z"}
+  const queued:W.ProjectAssistantReadTurnSummary={...running,id:"queued",message_id:"later",state:"queued"}
+  s.pending_turns=[running,queued]
+  s.queued_messages=[{...message("later",601),kind:"user",turn_id:queued.id}]
+  a.head.conversation.active_turn_id=running.id
+  a.head.conversation.last_message_seq=601
+  const snapshot=readView(a,request(),fence).snapshot!
+  const [active,next]=snapshot.pending_turns
+  assert.equal(replyInputPreference(snapshot.bot),"steer")
+  assert.equal(next.steer_fallback,undefined)
+  const supported={canSendNow:()=>true}
+  assert.equal(queuedSendNow(supported,next,active),true)
+  assert.equal(queuedSendNow(supported,{...next,steer_fallback:"agent_unsupported"},active),true)
+  assert.equal(queuedSendNow(supported,next,{...active,state:"waiting_permission"}),false)
+  assert.equal(queuedSendNow(supported,next,undefined),false)
+  assert.equal(queuedSendNow(supported,active,active),false)
+  assert.equal(queuedSendNow({},next,active),false)
+})
+test("a running turn's stale steer fallback does not break the chat snapshot",()=>{
+  const a=answer()
+  a.snapshot!.pending_turns=[{id:"running",message_id:"input",fence,state:"running",failure_code:"",started_at:"2026-11-12T00:00:00Z",steer_fallback:"permission_pending"}]
+  a.head.conversation.active_turn_id="running"
+  const running=readView(a,request(),fence).snapshot!.pending_turns[0]
+  assert.equal(running.state,"running")
+  assert.equal(steerFallback(running),"")
+  const live={id:running.id,message_id:running.message_id,fence,state:"running",steer_fallback:"permission_pending"} as W.ProjectAssistantTurn
+  assert.equal(turnSummary(live).steer_fallback,undefined)
+})
+test("each steer fallback code reads as a short reason, and an unknown code as plain queued",()=>{
+  for(const [language,words] of [["en",en],["zh-Hant",zh]] as const){
+    const reasons=["agent_unsupported","images_unsupported","permission_pending","turn_ended","scope"].map(code=>steerFallbackReason(code,words))
+    assert.equal(new Set(reasons).size,reasons.length,language)
+    for(const reason of reasons)assert.ok(reason&&reason!==words.steerFallbackQueued,language)
+    for(const code of ["something_new","constructor","__proto__"]){
+      assert.equal(steerFallbackReason(code,words),words.steerFallbackQueued)
+    }
+    assert.equal(steerFallbackReason("",words),"")
+  }
+  assert.equal(steerFallbackReason("agent_unsupported",zh),"這個 agent 不支援插話，已排隊")
+  assert.equal(steerFallbackReason("images_unsupported",zh),"這個 agent 不支援帶圖插話，已排隊")
+  assert.equal(steerFallbackReason("permission_pending",zh),"等待權限確認，已排隊")
+})
+test("steer_busy explains the other follow-up in both languages",()=>{
+  inCatalog("en",()=>assert.equal(steerFallbackReason("steer_busy",en),"Another message is being added to the reply, so this one is queued"))
+  inCatalog("zh-Hant",()=>assert.equal(steerFallbackReason("steer_busy",zh),"另一則訊息正在插話，已排隊"))
+})
+test("not_sent explains that the message did not reach the agent in both languages",()=>{
+  inCatalog("en",()=>assert.equal(steerFallbackReason("not_sent",en),"This message didn’t reach the agent, so it’s queued"))
+  inCatalog("zh-Hant",()=>assert.equal(steerFallbackReason("not_sent",zh),"Agent 沒有收到這則訊息，已排隊"))
+})
+test("saving settings sends reply_input only when the switch moved from what the Bot holds",()=>{
+  assert.deepEqual(replyInputPatch(bot,"steer"),{})
+  assert.deepEqual(replyInputPatch(bot,"queue"),{reply_input:"queue"})
+  assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"queue"),{})
+  assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"steer"),{reply_input:"steer"})
 })

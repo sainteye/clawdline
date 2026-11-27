@@ -4789,8 +4789,9 @@ type ProjectAssistantBot struct {
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy"`
 	Project          ProjectAssistantProjectScope     `json:"project"`
 
-	// How this Bot handles a message sent while it is replying. New Bots steer; Bots
-	// saved before this setting queue.
+	// How this Bot handles a message sent while it is replying. Only queue makes it
+	// wait; a Bot with no saved choice steers. A message with pictures steers only
+	// into a verified adapter build.
 	ReplyInput      string                           `json:"reply_input,omitempty"`
 	RuntimeSettings *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
 	SidebarPinned   ProjectAssistantSidebarPin       `json:"sidebar_pinned,omitempty"`
@@ -5639,8 +5640,9 @@ type ProjectAssistantEditSettings struct {
 	// Empty leaves the permission setting unchanged (API level 65).
 	PermissionPolicy ProjectAssistantPermissionPolicy `json:"permission_policy,omitempty"`
 
-	// How this Bot handles a message sent while it is replying. New Bots steer; Bots
-	// saved before this setting queue.
+	// How this Bot handles a message sent while it is replying. Only queue makes it
+	// wait; a Bot with no saved choice steers. A message with pictures steers only
+	// into a verified adapter build.
 	ReplyInput      string                           `json:"reply_input,omitempty"`
 	Roster          *ProjectAssistantRosterEdit      `json:"roster,omitempty"`
 	RuntimeSettings *ProjectAssistantRuntimeSettings `json:"runtime_settings,omitempty"`
@@ -6995,6 +6997,10 @@ type ProjectAssistantReadTurnSummary struct {
 	// When the turn began running, RFC 3339; empty while it waits.
 	StartedAt string                    `json:"started_at"`
 	State     ProjectAssistantTurnState `json:"state"`
+
+	// Optional reason for a queued follow-up. Readers ignore it in all other states
+	// and show unrecognized reasons as queued.
+	SteerFallback string `json:"steer_fallback,omitempty"`
 }
 
 // One SQL snapshot. Only a successful snapshot-mode response may replace the
@@ -7697,6 +7703,10 @@ type ProjectAssistantTurn struct {
 	// When the turn began running, RFC 3339; absent while it waits.
 	StartedAt string                    `json:"started_at,omitempty"`
 	State     ProjectAssistantTurnState `json:"state"`
+
+	// Optional reason for a queued follow-up. Readers ignore it in all other states
+	// and show unrecognized reasons as queued.
+	SteerFallback string `json:"steer_fallback,omitempty"`
 }
 
 type ProjectAssistantTurnState string

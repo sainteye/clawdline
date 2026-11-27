@@ -530,7 +530,7 @@ func (r *Engine) commitAttemptStartLocked(ctx context.Context, a *runtimeActor, 
 	s.roleChanged = s.resume && binding.LeadRole != leadRole
 	binding.LeadRole = leadRole
 	binding.InstructionRevision = bot.Instructions.Revision
-	t.State = pa.TurnRunning
+	t.State, t.SteerFallback = pa.TurnRunning, ""
 	started := r.o.Clock().UTC()
 	if t.StartedAt == nil {
 		t.StartedAt = &started

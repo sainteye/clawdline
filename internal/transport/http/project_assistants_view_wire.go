@@ -9,7 +9,7 @@ import (
 
 func paWireReadTurn(v app.ReadTurnSummary) contract.ProjectAssistantReadTurnSummary {
 	return contract.ProjectAssistantReadTurnSummary{ID: v.ID, Fence: paWireFence(v.Fence), MessageID: v.MessageID,
-		State: contract.ProjectAssistantTurnState(v.State), FailureCode: string(v.FailureCode), FailureField: v.FailureField, StartedAt: v.StartedAt, QueueEditID: v.QueueEditID, Origin: string(v.Origin), ReleasedRestart: v.ReleasedRestart, Attempts: paWireTurn(pa.Turn{Attempts: v.Attempts}).Attempts}
+		State: contract.ProjectAssistantTurnState(v.State), FailureCode: string(v.FailureCode), FailureField: v.FailureField, StartedAt: v.StartedAt, QueueEditID: v.QueueEditID, Origin: string(v.Origin), ReleasedRestart: v.ReleasedRestart, SteerFallback: string(v.SteerFallback), Attempts: paWireTurn(pa.Turn{Attempts: v.Attempts}).Attempts}
 }
 
 func paWireReadHead(v app.ReadViewHead) contract.ProjectAssistantReadViewHead {

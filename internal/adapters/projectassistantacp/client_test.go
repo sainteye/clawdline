@@ -156,7 +156,7 @@ func TestACPTestPeer(t *testing.T) {
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1, "agentInfo": map[string]string{"name": name, "version": version}, "agentCapabilities": map[string]any{"loadSession": true, "mcpCapabilities": map[string]bool{"http": true}, "sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}, "_meta": map[string]any{"claudeCode": map[string]any{}}}})})
 			} else if strings.HasPrefix(mode, "steer") {
 				send(frame{ID: f.ID, Result: raw(map[string]any{"protocolVersion": 1,
-					"agentInfo": map[string]string{"name": adapterPackage(pa.Codex), "version": CodexAdapterVersion},
+					"agentInfo": map[string]string{"name": adapterPackage(pa.Codex), "version": steerAdapterVersion(mode)},
 					"agentCapabilities": map[string]any{"loadSession": true, "promptCapabilities": map[string]bool{"image": mode != "steer-no-image"},
 						"sessionCapabilities": map[string]any{"systemPrompt": map[string]any{}}},
 
@@ -523,10 +523,13 @@ func openLimitedTestClient(t *testing.T, mode string, sink func(context.Context,
 	if mode == "provider-claude-terminal-quota" {
 		q.Bot.Agent = pa.ClaudeCode
 	}
+	if strings.HasPrefix(mode, "steer") {
+		// The scripted peer names itself as Codex ACP; the verified picture
+		// steering list is keyed by the agent the Bot uses.
+		q.Bot.Agent = pa.Codex
+	}
 	if mode == "steer-image-rejected" {
 		c.adapterVersion = CodexAdapterVersion
-		// The guard also verifies the adapter identity from initialize.
-		q.Bot.Agent = pa.Codex
 	}
 	if err = c.initialize(context.Background(), q); err != nil {
 		t.Fatal(err)
@@ -867,6 +870,7 @@ func TestACPSteeringCarriesWholeInputOnlyWhenReady(t *testing.T) {
 		{mode: "steer-image", want: app.SteerJoined},
 		{mode: "steer-image-rejected", want: app.SteerNext},
 		{mode: "steer-no-image", code: pa.Unsupported},
+		{mode: "steer-image-unverified", code: pa.Unsupported},
 		{mode: "steer-unsupported", code: pa.Unsupported},
 		{mode: "steer-permission", want: app.SteerNext},
 		{mode: "steer-later", want: app.SteerNext},
@@ -902,6 +906,41 @@ func TestACPSteeringCarriesWholeInputOnlyWhenReady(t *testing.T) {
 				if result, err := pending.Wait(t.Context()); err != nil || result.FinalText != "both done" {
 					t.Fatalf("active reply %+v, %v", result, err)
 				}
+			}
+		})
+	}
+}
+
+// steerAdapterVersion is the build the scripted steering peer names: an
+// unverified one declares the same capabilities as the verified build.
+func steerAdapterVersion(mode string) string {
+	if mode == "steer-image-unverified" {
+		return "2.5.9"
+	}
+	return CodexAdapterVersion
+}
+
+// Text steering follows the declared capability alone; pictures also need a
+// verified build. An empty list queues every picture follow-up.
+func TestPictureSteeringNeedsAVerifiedAdapterBuild(t *testing.T) {
+	for _, tt := range []struct {
+		mode           string
+		verified       []AdapterBuild
+		text, pictures bool
+	}{
+		{mode: "steer", verified: VerifiedImageSteering, text: true, pictures: true},
+		{mode: "steer-image-unverified", verified: VerifiedImageSteering, text: true},
+		{mode: "steer-no-image", verified: VerifiedImageSteering, text: true},
+		{mode: "steer-unsupported", verified: VerifiedImageSteering},
+		{mode: "steer", verified: nil, text: true},
+	} {
+		t.Run(fmt.Sprintf("%s verified=%d", tt.mode, len(tt.verified)), func(t *testing.T) {
+			saved := VerifiedImageSteering
+			VerifiedImageSteering = tt.verified
+			t.Cleanup(func() { VerifiedImageSteering = saved })
+			c, _ := openTestClient(t, tt.mode, func(context.Context, app.ProtocolEvent) error { return nil })
+			if c.SupportsSteering(false) != tt.text || c.SupportsSteering(true) != tt.pictures {
+				t.Fatalf("text %v pictures %v, want %v %v", c.SupportsSteering(false), c.SupportsSteering(true), tt.text, tt.pictures)
 			}
 		})
 	}

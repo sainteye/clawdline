@@ -5627,8 +5627,9 @@ export interface ProjectAssistantBot {
   project: ProjectAssistantProjectScope
 
   /**
-   * How this Bot handles a message sent while it is replying. New Bots steer; Bots
-   * saved before this setting queue.
+   * How this Bot handles a message sent while it is replying. Only queue makes it
+   * wait; a Bot with no saved choice steers. A message with pictures steers only
+   * into a verified adapter build.
    */
   reply_input?: string
   runtime_settings?: ProjectAssistantRuntimeSettings
@@ -6662,8 +6663,9 @@ export interface ProjectAssistantEditSettings {
   permission_policy?: ProjectAssistantPermissionPolicy
 
   /**
-   * How this Bot handles a message sent while it is replying. New Bots steer; Bots
-   * saved before this setting queue.
+   * How this Bot handles a message sent while it is replying. Only queue makes it
+   * wait; a Bot with no saved choice steers. A message with pictures steers only
+   * into a verified adapter build.
    */
   reply_input?: string
   roster?: ProjectAssistantRosterEdit
@@ -8121,6 +8123,12 @@ export interface ProjectAssistantReadTurnSummary {
    */
   started_at: string
   state: ProjectAssistantTurnState
+
+  /**
+   * Optional reason for a queued follow-up. Readers ignore it in all other states
+   * and show unrecognized reasons as queued.
+   */
+  steer_fallback?: string
 }
 
 /**
@@ -8934,6 +8942,12 @@ export interface ProjectAssistantTurn {
    */
   started_at?: string
   state: ProjectAssistantTurnState
+
+  /**
+   * Optional reason for a queued follow-up. Readers ignore it in all other states
+   * and show unrecognized reasons as queued.
+   */
+  steer_fallback?: string
 }
 
 export type ProjectAssistantTurnState =

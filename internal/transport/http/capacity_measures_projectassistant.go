@@ -370,6 +370,7 @@ func (s *Server) projectAssistantCapacityMeasures() map[string]func() capacity.R
 		"bots.shared_settings_body_bytes": pure,
 		capacity.BotsMemorySearchResults:  pure,
 		capacity.BotsSteerAnswer:          pure,
+		capacity.BotsAutoSteer:            pure,
 		capacity.BotsRulesFileBytes:       pure,
 
 		// Group rooms: per-room-turn and per-prompt bounds hold no occupancy.

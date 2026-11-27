@@ -4,6 +4,7 @@ package projectassistant
 
 import (
 	"context"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -128,14 +129,47 @@ const (
 	ReplyInputSteer ReplyInput = "steer"
 )
 
+// Effective is the behaviour a stored value means. Only an explicit "queue"
+// queues: a Bot that never saved a choice steers. The empty value stays
+// stored as empty, so a later change of default reaches it too.
 func (v ReplyInput) Effective() ReplyInput {
-	if v == "" {
+	if v == ReplyInputQueue {
 		return ReplyInputQueue
 	}
-	return v
+	return ReplyInputSteer
 }
 
-func (v ReplyInput) Valid() bool { return v.Effective() == ReplyInputQueue || v == ReplyInputSteer }
+func (v ReplyInput) Valid() bool { return v == "" || v == ReplyInputQueue || v == ReplyInputSteer }
+
+// SteerFallback says why a person's follow-up that would have joined the
+// running reply was left in the queue instead.
+type SteerFallback string
+
+const (
+	// SteerFallbackAgentUnsupported: the agent declared no steering.
+	SteerFallbackAgentUnsupported SteerFallback = "agent_unsupported"
+	// SteerFallbackImagesUnsupported: the message carries pictures and this
+	// agent version is not verified to take pictures while it replies.
+	SteerFallbackImagesUnsupported SteerFallback = "images_unsupported"
+	// SteerFallbackPermissionPending: a permission card is waiting.
+	SteerFallbackPermissionPending SteerFallback = "permission_pending"
+	// SteerFallbackTurnEnded: the reply ended before the message reached it.
+	SteerFallbackTurnEnded SteerFallback = "turn_ended"
+	// SteerFallbackScope: the running turn is automatic work or belongs to
+	// another room, network request or restart continuation.
+	SteerFallbackScope SteerFallback = "scope"
+	// SteerFallbackBusy: another message is being steered into the reply.
+	SteerFallbackBusy SteerFallback = "steer_busy"
+	// SteerFallbackNotSent: the agent refused the message before reading it.
+	SteerFallbackNotSent SteerFallback = "not_sent"
+)
+
+// SteerFallbacks lists the reasons this version can write.
+var SteerFallbacks = []SteerFallback{SteerFallbackAgentUnsupported, SteerFallbackImagesUnsupported, SteerFallbackPermissionPending,
+	SteerFallbackTurnEnded, SteerFallbackScope, SteerFallbackBusy, SteerFallbackNotSent}
+
+// Valid reports an absent reason or a known one.
+func (f SteerFallback) Valid() bool { return f == "" || slices.Contains(SteerFallbacks, f) }
 
 type Bot struct {
 	Extensions      ExtensionSelection `json:"extensions,omitempty,omitzero"`
@@ -305,6 +339,8 @@ type Turn struct {
 	QueueEditID string `json:"queue_edit_id,omitempty"`
 	// Steering records a queued message whose Send now has no settled native response.
 	Steering bool `json:"steering,omitempty"`
+	// SteerFallback records why an automatic steer left this message queued.
+	SteerFallback SteerFallback `json:"steer_fallback,omitempty"`
 	// ReleasedRestart marks the person's message that released a queue held
 	// by a turn a restart interrupted. It runs before automatic work already
 	// waiting in that queue and first inspects what the interrupted turn did.

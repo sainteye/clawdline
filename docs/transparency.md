@@ -316,6 +316,19 @@ cards describe queue fallback, permission checks, and the distinction between
 a confirmed injection and an unconfirmed delivery. An isolated browser and
 scripted ACP peer verify the transport and the persisted chat label.
 
+A Bot without a saved reply input now steers; only an explicit
+queue choice queues, and the stored value stays absent rather than being
+rewritten. Pictures steer only into the adapter builds listed in
+`VerifiedImageSteering` (claude-agent-acp 0.106.0 and codex-acp 2.6.0) when
+their initialize also declares steering and image input. A follow-up that
+falls back can record `steer_fallback` while queued: `agent_unsupported`,
+`images_unsupported`, `permission_pending`, `turn_ended`, `scope`,
+`steer_busy` or `not_sent`. A queued message can offer Send now during a
+reply even without a recorded reason. After durable admission, automatic
+steering uses its own bounded context so a disconnected caller cannot
+interrupt confirmation. The English and Taiwan Traditional Chinese card
+text names the default and the queue behavior.
+
 ## Updating an instruction or entry
 
 1. Change the implementation and update the matching entry, original excerpt, runtime path and source location. Add an entry for a new behavior; do not squeeze a new trigger into an unrelated existing card.

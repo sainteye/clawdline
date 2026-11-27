@@ -384,3 +384,5 @@
 .project-assistants .pa-memory-proposal .pa-decision-question { overflow-wrap:anywhere;white-space:pre-wrap; }
 .project-assistants .pa-memory-proposal-receipt { margin:4px 0;color:var(--pa-dim);font-size:12px; }
 .project-assistants .pa-memory-suggestion { justify-self:start;margin-top:4px; }
+.pa-queued-reason:empty { display:none; }
+.pa-queued-reason { grid-row:2;display:block;color:var(--pa-dim);font-size:12px;line-height:1.4;margin-top:2px; }

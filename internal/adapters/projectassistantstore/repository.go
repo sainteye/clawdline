@@ -596,46 +596,9 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 	}
 	previous := turnStateBefore(*a, m.Turn)
 	if m.Turn != nil {
-		t := *m.Turn
-		if old, ok := a.Turns[t.ID]; ok {
-			if old.Origin != t.Origin || old.ExchangeID != t.ExchangeID || old.Hops != t.Hops {
-				return failure(pa.ScopeDenied, "turn_origin")
-			}
-			if m.Command.Operation == pa.QueueEditOperation {
-				if t.State != pa.TurnQueued || old.State != pa.TurnQueued || old.StartedAt != nil ||
-					(old.QueueEditID == "") == (t.QueueEditID == "") {
-					return failure(pa.StaleVersion, "queue_edit")
-				}
-			} else if t.State == pa.TurnQueued && t.QueueEditID != old.QueueEditID ||
-				t.State != pa.TurnQueued && t.QueueEditID != "" ||
-				old.QueueEditID != "" && (t.State == pa.TurnRunning || t.State == pa.TurnSucceeded) {
-				return failure(pa.StaleVersion, "queue_edit")
-			}
-			if err := checkAttemptAppend(old, t); err != nil {
-				return err
-			}
-			capture := old.State == pa.TurnQueued && t.State == pa.TurnRunning
-			switching := old.State == pa.TurnRunning && t.State == pa.TurnRunning && pa.SafeAttemptClosed(old) && len(t.Attempts) == len(old.Attempts)+1 && t.Attempts[len(t.Attempts)-1].Stage == pa.AttemptOpening
-			if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.RoutineRunID != t.RoutineRunID || old.IdempotencyKey != t.IdempotencyKey || !capture && ((!switching && old.Fence != t.Fence) || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
-				return failure(pa.ScopeDenied, "turn_snapshot")
-			}
-			if (capture || switching) && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
-				return failure(pa.ContextStale, "turn_capture")
-			}
-			retryNotStarted := m.RoutineNotStarted && m.RoutineRun != nil && m.RoutineRun.ID == t.RoutineRunID && old.State == pa.TurnRunning && t.State == pa.TurnQueued && m.RoutineRun.NotStartedProved && m.RoutineRun.State == pa.TurnQueued && len(old.Attempts) == 0
-			steerUnknown := old.State == pa.TurnQueued && old.Steering && t.State == pa.TurnUnknown && !t.Steering
-			if old.State != t.State && !pa.CanTransition(old.State, t.State) && !retryNotStarted && !steerUnknown {
-				return failure(pa.StaleVersion, "turn_state")
-			}
-			// The running turn may end while the agent answers a steer, so a
-			// joined turn names any turn of this conversation that started.
-			joined := old.State == pa.TurnQueued && t.State == pa.TurnSucceeded
-			target, found := a.Turns[t.JoinedTurnID]
-			if joined && (t.JoinedTurnID == t.ID || !found || target.StartedAt == nil || target.Fence.ConversationID != t.Fence.ConversationID) || !joined && t.JoinedTurnID != old.JoinedTurnID {
-				return failure(pa.ScopeDenied, "turn_joined")
-			}
+		if err := applyTurnMutation(a, m, *m.Turn); err != nil {
+			return err
 		}
-		a.Turns[t.ID] = t
 	}
 	if msg := m.QueuedMessageEdit; msg != nil {
 		t := a.Turns[msg.TurnID]
@@ -699,6 +662,55 @@ func validateStoredBotSettings(b pa.Bot) error {
 	if !b.ReplyInput.Valid() {
 		return failure(pa.Invalid, "reply_input")
 	}
+	return nil
+}
+
+func applyTurnMutation(a *aggregate, m app.Mutation, t pa.Turn) error {
+	// A rollback can leave a newer reason in storage. Validate new values
+	// only, so touching this turn or another one can preserve old data.
+	old, exists := a.Turns[t.ID]
+	if t.SteerFallback != old.SteerFallback && (!t.SteerFallback.Valid() || t.SteerFallback != "" && t.State != pa.TurnQueued) {
+		return failure(pa.Invalid, "steer_fallback")
+	}
+	if exists {
+		if old.Origin != t.Origin || old.ExchangeID != t.ExchangeID || old.Hops != t.Hops {
+			return failure(pa.ScopeDenied, "turn_origin")
+		}
+		if m.Command.Operation == pa.QueueEditOperation {
+			if t.State != pa.TurnQueued || old.State != pa.TurnQueued || old.StartedAt != nil ||
+				(old.QueueEditID == "") == (t.QueueEditID == "") {
+				return failure(pa.StaleVersion, "queue_edit")
+			}
+		} else if t.State == pa.TurnQueued && t.QueueEditID != old.QueueEditID ||
+			t.State != pa.TurnQueued && t.QueueEditID != "" ||
+			old.QueueEditID != "" && (t.State == pa.TurnRunning || t.State == pa.TurnSucceeded) {
+			return failure(pa.StaleVersion, "queue_edit")
+		}
+		if err := checkAttemptAppend(old, t); err != nil {
+			return err
+		}
+		capture := old.State == pa.TurnQueued && t.State == pa.TurnRunning
+		switching := old.State == pa.TurnRunning && t.State == pa.TurnRunning && pa.SafeAttemptClosed(old) && len(t.Attempts) == len(old.Attempts)+1 && t.Attempts[len(t.Attempts)-1].Stage == pa.AttemptOpening
+		if old.Fence.Key != t.Fence.Key || old.Fence.Project != t.Fence.Project || old.Fence.ConversationID != t.Fence.ConversationID || old.MessageID != t.MessageID || old.RoutineRunID != t.RoutineRunID || old.IdempotencyKey != t.IdempotencyKey || !capture && ((!switching && old.Fence != t.Fence) || old.Instructions != t.Instructions || old.MemoryRevision != t.MemoryRevision) {
+			return failure(pa.ScopeDenied, "turn_snapshot")
+		}
+		if (capture || switching) && (t.Fence.BindingID != a.Conversation.BindingID || t.Fence.Generation != a.Conversation.Generation || t.Instructions != a.Bot.Instructions || t.MemoryRevision != a.Memory.Revision) {
+			return failure(pa.ContextStale, "turn_capture")
+		}
+		retryNotStarted := m.RoutineNotStarted && m.RoutineRun != nil && m.RoutineRun.ID == t.RoutineRunID && old.State == pa.TurnRunning && t.State == pa.TurnQueued && m.RoutineRun.NotStartedProved && m.RoutineRun.State == pa.TurnQueued && len(old.Attempts) == 0
+		steerUnknown := old.State == pa.TurnQueued && old.Steering && t.State == pa.TurnUnknown && !t.Steering
+		if old.State != t.State && !pa.CanTransition(old.State, t.State) && !retryNotStarted && !steerUnknown {
+			return failure(pa.StaleVersion, "turn_state")
+		}
+		// The running turn may end while the agent answers a steer, so a
+		// joined turn names any turn of this conversation that started.
+		joined := old.State == pa.TurnQueued && t.State == pa.TurnSucceeded
+		target, found := a.Turns[t.JoinedTurnID]
+		if joined && (t.JoinedTurnID == t.ID || !found || target.StartedAt == nil || target.Fence.ConversationID != t.Fence.ConversationID) || !joined && t.JoinedTurnID != old.JoinedTurnID {
+			return failure(pa.ScopeDenied, "turn_joined")
+		}
+	}
+	a.Turns[t.ID] = t
 	return nil
 }
 
@@ -815,11 +827,8 @@ func validateAggregate(a aggregate) error {
 		if err := pa.ValidateTurnOrigin(t); err != nil {
 			return err
 		}
-		if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
-			return failure(pa.Invalid, "queue_edit")
-		}
-		if t.Steering && (t.State != pa.TurnQueued || t.StartedAt != nil || t.QueueEditID != "") {
-			return failure(pa.Invalid, "steer_state")
+		if err := validateQueuedInput(t); err != nil {
+			return err
 		}
 		// Send now can join an existing conversation without its own snapshot.
 		steerUnknown := t.State == pa.TurnUnknown && t.StartedAt == nil && t.Failure != nil && t.Failure.Field == pa.SteerUnknownField
@@ -1659,4 +1668,14 @@ func newlyClosedPermissions(a aggregate, m app.Mutation) []pa.PermissionOffer {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+func validateQueuedInput(t pa.Turn) error {
+	if t.QueueEditID != "" && (t.State != pa.TurnQueued || t.StartedAt != nil || t.Room != nil) {
+		return failure(pa.Invalid, "queue_edit")
+	}
+	if t.Steering && (t.State != pa.TurnQueued || t.StartedAt != nil || t.QueueEditID != "") {
+		return failure(pa.Invalid, "steer_state")
+	}
+	return nil
 }
