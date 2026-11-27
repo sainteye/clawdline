@@ -51,6 +51,25 @@ func (g *Git) Head(ctx context.Context, repo, ref string) (string, error) {
 	return g.run(ctx, repo, "rev-parse", ref)
 }
 
+// Commit resolves rev to the full id of a commit in repo. It answers "" with
+// no error when repo has no such commit, and an error only when git itself
+// could not answer (not a repository, or the context ended).
+func (g *Git) Commit(ctx context.Context, repo, rev string) (string, error) {
+	if repo == "" || strings.TrimSpace(rev) == "" {
+		return "", nil
+	}
+	cmd := exec.CommandContext(ctx, g.Binary, "-C", repo, "rev-parse", "--verify", "--quiet", "--end-of-options", rev+"^{commit}")
+	cmd.Env = append(cmd.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		if exit, ok := err.(*exec.ExitError); ok && exit.ExitCode() == 1 && ctx.Err() == nil {
+			return "", nil
+		}
+		return "", fmt.Errorf("git rev-parse: %w", err)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 func (g *Git) run(ctx context.Context, repo string, args ...string) (string, error) {
 	full := append([]string{"-C", repo}, args...)
 	cmd := exec.CommandContext(ctx, g.Binary, full...)

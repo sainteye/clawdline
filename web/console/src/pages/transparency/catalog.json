@@ -5828,7 +5828,7 @@
     "internal/adapters/projectassistanthost/provider.go": "5d38b17eee9196911ed1c4a77da47641fc5491cb3b0b53ccf9b53ce0ea16a9d5",
     "internal/adapters/projectassistanthost/provider_message.go": "b0bee11362592c648cc1e611fcf135ddd0c4ca32755620f4c14c79f11ed666e6",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
-    "internal/adapters/projectassistanthost/tools.go": "c43eed6d278f8ec01f1da366cb8d445785c70bfe8de6581ba68ce05f08f9adb7",
+    "internal/adapters/projectassistanthost/tools.go": "305fd4a47658a3e2014ab75073400992b1c805c693964077125a39bcb8c2135b",
     "internal/adapters/projectassistanthost/work_completion.go": "53f0b16b1251c50ecf1275d0ecf790ba3600028ec8363979c7acefce6523dc8c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "4eca7f2fcd21ae79433f3280a723dfe07f3e4a5e90d82f1bc8ff8bff8313e2d3",

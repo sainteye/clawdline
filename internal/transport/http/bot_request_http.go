@@ -154,11 +154,7 @@ func (s *Server) botRequestPersonWrite(w http.ResponseWriter, r *http.Request, i
 		}
 	case "check":
 		apply = func(c *br.Card) ([]br.Event, error) {
-			changed, err := c.Check(person, body.Entries, now)
-			if err != nil || !changed {
-				return nil, err
-			}
-			return []br.Event{{Kind: br.EventChecklistMark}}, nil
+			return c.CheckEvents(person, body.Entries, now)
 		}
 	case "complete", "cancel", "reopen":
 		kind := map[string]string{"complete": br.EventDone, "cancel": br.EventCancelled, "reopen": br.EventReopened}[action]

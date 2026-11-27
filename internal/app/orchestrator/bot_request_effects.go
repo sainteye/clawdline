@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	br "github.com/sainteye/clawdline/internal/domain/botrequest"
@@ -126,7 +127,19 @@ func runBotRequestDoneNotice(ctx context.Context, b *Broker, e store.Effect) eff
 			outcome = "bot_request_done_partly_refused: " + res.outcome
 		}
 	}
+	if len(p.Bots) > 0 {
+		recordBotRequestNotified(ctx, b, p, "bots", outcome)
+	}
 	return effectResult{state: store.EffectDone, outcome: outcome}
+}
+
+// recordBotRequestNotified writes the card's notified event once the delivery
+// has its final outcome (§5). The effect row stays the delivery's own record,
+// so a failure to write the card's history only logs.
+func recordBotRequestNotified(ctx context.Context, b *Broker, p store.BotRequestDonePayload, to, outcome string) {
+	if err := b.Store.RecordBotRequestNotified(ctx, p.CardID, p.Cycle, to, outcome, b.now()); err != nil {
+		log.Printf("bot request %s: the card's notified event was not written: %v", p.CardID, err)
+	}
 }
 
 func deliverBotRequestNotice(ctx context.Context, b *Broker, e store.Effect, n BotRequestNotice, outcome string) effectResult {
@@ -165,15 +178,21 @@ func runBotRequestDonePush(ctx context.Context, b *Broker, e store.Effect) effec
 	sent, failed, err := b.Push(ctx, title, body, "", br.NotifyKey(p.CardID, p.Cycle))
 	payload, _ := json.Marshal(map[string]any{"card": p.CardID, "cycle": p.Cycle, "sent": sent, "failed": failed})
 	events := []store.Event{{Kind: "bot_request.done.pushed", Subject: p.CardID, Payload: payload}}
+	var res effectResult
 	switch {
 	case err != nil:
-		return effectResult{state: store.EffectFailed, outcome: err.Error(), events: events}
+		res = effectResult{state: store.EffectFailed, outcome: err.Error(), events: events}
+		recordBotRequestNotified(ctx, b, p, "person", "failed")
+		return res
 	case sent == 0 && failed == 0:
-		return effectResult{state: store.EffectDone, outcome: "not_subscribed", events: events}
+		res = effectResult{state: store.EffectDone, outcome: "not_subscribed", events: events}
 	case sent == 0:
-		return effectResult{state: store.EffectFailed, outcome: "no push service accepted it", events: events}
+		res = effectResult{state: store.EffectFailed, outcome: "no push service accepted it", events: events}
+	default:
+		res = effectResult{state: store.EffectDone, outcome: "pushed", events: events}
 	}
-	return effectResult{state: store.EffectDone, outcome: "pushed", events: events}
+	recordBotRequestNotified(ctx, b, p, "person", res.outcome)
+	return res
 }
 
 func botRequestDoneText(language, title string) (string, string) {
