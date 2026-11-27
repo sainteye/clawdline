@@ -287,7 +287,7 @@ func (s *Server) usageSession(ctx context.Context, w http.ResponseWriter, u *app
 }
 
 // usageTranscriptExists is whether a transcript of this conversation is on
-// disk: Claude's under any project, or a Codex rollout.
+// disk: Claude's under any project, a Codex rollout, or Antigravity's log.
 func usageTranscriptExists(home, id string) bool {
 	if home == "" {
 		return false
@@ -295,7 +295,16 @@ func usageTranscriptExists(home, id string) bool {
 	if found, _ := filepath.Glob(filepath.Join(home, ".claude", "projects", "*", id+".jsonl")); len(found) > 0 {
 		return true
 	}
-	return transcript.CodexPath(home, id) != "" || transcript.CodexArchivedPath(home, id) != ""
+	if transcript.CodexPath(home, id) != "" || transcript.CodexArchivedPath(home, id) != "" {
+		return true
+	}
+	// AntigravityPath composes the path before the first turn writes it.
+	if path, ok := transcript.AntigravityPath(home, id); ok {
+		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
 }
 
 // usageTask answers one child task: known when a session names it or the
