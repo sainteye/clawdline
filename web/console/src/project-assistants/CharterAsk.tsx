@@ -49,7 +49,7 @@ export function AskPolicyEditor({ policy, onChange }: { policy: AskPolicy; onCha
 }
 
 function AskRows({ tone, heading, items, onChange, first }: { tone: Tone; heading: string; items: readonly string[]; onChange: (items: string[]) => void; first?: boolean }) {
-  const inputs = useRef<(HTMLInputElement | null)[]>([])
+  const inputs = useRef<(HTMLTextAreaElement | null)[]>([])
   const [focus, setFocus] = useState(first ? 0 : -1)
   useEffect(() => {
     if (focus < 0) return
@@ -62,8 +62,8 @@ function AskRows({ tone, heading, items, onChange, first }: { tone: Tone; headin
     <ol className="pa-charter-ask-rows">
       {rows.map((item, i) => <li key={i} className="pa-charter-ask-row">
         <span className="pa-charter-ask-number" aria-hidden="true">{i + 1}</span>
-        <input ref={node => { inputs.current[i] = node }} type="text" value={item} aria-label={charterFormat("askRow", heading, i + 1)}
-          onChange={event => onChange(rows.map((row, j) => j === i ? event.target.value : row))}
+        <textarea ref={node => { inputs.current[i] = node; fitRow(node) }} rows={1} value={item} aria-label={charterFormat("askRow", heading, i + 1)}
+          onChange={event => { fitRow(event.target); onChange(rows.map((row, j) => j === i ? event.target.value.replace(/\s*\n+\s*/g, " ") : row)) }}
           onKeyDown={event => {
             if (event.nativeEvent.isComposing) return
             if (event.key === "Enter") { event.preventDefault(); apply(insertAskRow(rows, i)) }
@@ -75,6 +75,14 @@ function AskRows({ tone, heading, items, onChange, first }: { tone: Tone; headin
     </ol>
     <button type="button" className="pa-charter-ask-add" onClick={() => { onChange([...rows, ""]); setFocus(rows.length) }}>{charterWord("askAdd")}</button>
   </section>
+}
+
+// A long item wraps inside its own row instead of scrolling out of sight, so
+// every item reads whole while it is edited.
+function fitRow(node: HTMLTextAreaElement | null) {
+  if (!node) return
+  node.style.height = "auto"
+  node.style.height = `${node.scrollHeight + node.offsetHeight - node.clientHeight}px`
 }
 
 function ToneIcon({ tone }: { tone: Tone }) {

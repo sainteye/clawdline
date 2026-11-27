@@ -568,7 +568,7 @@ async function askPolicy(page,name,narrow){
   await shot(page,`ask-convert-offer-${name}`)
   await convert.click()
   await editor.locator(".pa-charter-ask-row").first().waitFor()
-  const rows=async tone=>editor.locator(`.pa-charter-ask-panel[data-tone="${tone}"] input`).evaluateAll(nodes=>nodes.map(n=>n.value))
+  const rows=async tone=>editor.locator(`.pa-charter-ask-panel[data-tone="${tone}"] textarea`).evaluateAll(nodes=>nodes.map(n=>n.value))
   const free=await rows("free"),ask=await rows("ask"),exceptions=await rows("exceptions")
   const how=await editor.locator(".pa-charter-ask-how-edit input").inputValue()
   check(`${name} converted rows`,()=>{
@@ -642,7 +642,7 @@ async function askPolicy(page,name,narrow){
   await page.getByRole("button",{name:"編輯第 3 段"}).click()
   await editor.locator(".pa-charter-ask-row").first().waitFor()
   const offers=await editor.getByRole("button",{name:"改成兩欄格式"}).count()
-  const textareas=await editor.locator("textarea").count()
+  const textareas=await editor.locator("textarea").evaluateAll(nodes=>nodes.filter(node=>!node.closest(".pa-charter-ask-row")).length)
   check(`${name} a saved policy edits as rows`,()=>{assert.equal(offers,0);assert.equal(textareas,0)})
   await page.keyboard.press("Escape")
   await editor.waitFor({state:"detached"})
