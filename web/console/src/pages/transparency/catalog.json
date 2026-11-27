@@ -6006,7 +6006,7 @@
     "web/console/src/cloud/relay-writer.ts": "c28dc4eca6842ead01330894a70a31c890076a5a8dbbac53682f9d824e334e03",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
-    "web/console/src/next-strings.ts": "4927c6df319c6f2a7260efb15a1eaefb7e171925f51127544d4de170dcac874d",
+    "web/console/src/next-strings.ts": "263c362898fd2518c68bc5ed079291dafdda7ea2cdf3e139aa9fb0d74514b644",
     "web/console/src/overlays/info.ts": "e7a0e7cdfe6b225b5629c646bb1a3f3652e2e8a773be83fc4a068f7f24807fda",
     "web/console/src/pages/settings/window/CopilotSettingsCard.tsx": "479471d65347218dce04ad9b46362949cdefaacb79e18df6e51e2e742706fa30",
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
