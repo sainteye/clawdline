@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	gitadapter "github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
@@ -50,6 +51,10 @@ type botRequestTurn struct {
 	Bot          pa.Bot
 	Conversation string
 	Turn         pa.Turn
+	// Directory is the Project's resolved directory for this turn, empty when
+	// the Project has none. A card snapshots it as project_path, and a
+	// verdict's commit is resolved in it.
+	Directory string
 }
 
 // botRequestAuthority answers the person's message a turn roots in (§7.1):
@@ -148,7 +153,7 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 		if err != nil {
 			return nil, err
 		}
-		card, err := br.NewCard(br.CardID(machine, auth.Bot, auth.ConversationID, auth.MessageID), t.Bot.Project.ProjectID, "", t.Bot.Key.BotID, auth,
+		card, err := br.NewCard(br.CardID(machine, auth.Bot, auth.ConversationID, auth.MessageID), t.Bot.Project.ProjectID, t.Directory, t.Bot.Key.BotID, auth,
 			br.CreateInput{Title: q.Title, Description: q.Description, Kind: q.Kind, Checklist: q.Checklist}, now)
 		if err != nil {
 			return nil, err
@@ -190,16 +195,16 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 		}
 	case "bot_request_check":
 		apply = func(c *br.Card) ([]br.Event, error) {
-			changed, err := c.Check(actor, q.Entries, now)
-			if err != nil || !changed {
-				return nil, err
-			}
-			return []br.Event{{Kind: br.EventChecklistMark}}, nil
+			return c.CheckEvents(actor, q.Entries, now)
 		}
 	case "bot_request_verdict":
 		verdictID := id
+		commit, err := resolveVerdictCommit(ctx, t.Directory, q.Commit)
+		if err != nil {
+			return nil, err
+		}
 		apply = func(c *br.Card) ([]br.Event, error) {
-			if err := c.RecordVerdict(actor, verdictID, q.Commit, q.Verdict, q.Text, now); err != nil {
+			if err := c.RecordVerdict(actor, verdictID, commit, q.Verdict, q.Text, now); err != nil {
 				return nil, err
 			}
 			return []br.Event{{Kind: br.EventVerdict, Detail: q.Verdict}}, nil
@@ -232,6 +237,28 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 		return nil, botRequestStoreError(err)
 	}
 	return botRequestAnswer(res.Card, res.Changed, res.Replayed), nil
+}
+
+// resolveVerdictCommit resolves a verdict's commit to a full object id in the
+// Project, before the card's transaction (docs/bot-request-cards.md §4, §10).
+// No commit is no commit; one that does not resolve in the Project, or a
+// Project with no directory to resolve it in, is refused on the commit field.
+func resolveVerdictCommit(ctx context.Context, dir, rev string) (string, error) {
+	rev = strings.TrimSpace(rev)
+	if rev == "" {
+		return "", nil
+	}
+	if dir == "" {
+		return "", &br.Refusal{Code: br.CodeInvalid, Field: "commit"}
+	}
+	full, err := gitadapter.New().Commit(ctx, dir, rev)
+	if ctx.Err() != nil {
+		return "", ctx.Err()
+	}
+	if err != nil || full == "" {
+		return "", &br.Refusal{Code: br.CodeInvalid, Field: "commit"}
+	}
+	return full, nil
 }
 
 // botRequestReply is a card as a Bot reads it: the card and its progress.

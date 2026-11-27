@@ -681,6 +681,22 @@ Built on 2026-11-24 (third delivery, console, phase 4, local daemon only):
   and with it off. The chat part of that script renders the card line beside the real work result
   card in a harness, not inside the whole chat.
 
+Fixed on 2026-11-27 (an EGM drift check found the record short of §4 and §5):
+
+- **`project_path` is set.** A card created by a Bot snapshots the turn's resolved Project directory
+  (`botRequestTurn.Directory`, from the turn's `OpenRequest.Directory`); it was always empty.
+- **A verdict's commit is resolved.** `resolveVerdictCommit`
+  (`internal/adapters/projectassistanthost/bot_request.go`) resolves it with `git rev-parse --verify`
+  in that directory before the card's transaction (`Git.Commit`, `internal/adapters/git/git.go`) and
+  stores the full id. A commit that does not resolve, or one named in a Project with no directory,
+  is refused `bot_request_invalid` on `commit`. A verdict without a commit is stored as before.
+- **`checklist.added` is written.** A check that adds an entry records `checklist.added` with its
+  label, and `checklist.marked` only when an entry's state or note changed (`Card.CheckEvents`,
+  used by the Bot tool, the person's route and the batch tick).
+- **`notified` is written.** Each completion delivery records one `notified` event on the card,
+  `person cycle=<n> <outcome>` or `bots cycle=<n> <outcome>`, once per cycle and recipient whatever
+  the retries (`Store.RecordBotRequestNotified`). The effect row remains the delivery's own record.
+
 Not built in the console: the Bot filter, split and merge lineage, reopening a closed card,
 ticking entries as the person, the linked Board item, the Broker's landing beside the `main` entry,
 and the per-entry, build and review lights of the §9 outline and phase 4a: a row shows one state dot

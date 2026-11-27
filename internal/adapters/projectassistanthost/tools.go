@@ -471,7 +471,7 @@ func (s *toolScope) bindTeamTools(tools *NativeWork) {
 		if e = journal(ctx, "botRequest"); e != nil {
 			return nil, e
 		}
-		return botRequestTool(ctx, h.o.Broker.Store, h.store, botRequestTurn{Bot: q.Bot, Conversation: q.Binding.Fence.ConversationID, Turn: turn}, q.Bot.Key.MachineID, h.o.ID(), h.o.Clock(), name, arguments)
+		return botRequestTool(ctx, h.o.Broker.Store, h.store, botRequestTurn{Bot: q.Bot, Conversation: q.Binding.Fence.ConversationID, Turn: turn, Directory: q.Directory}, q.Bot.Key.MachineID, h.o.ID(), h.o.Clock(), name, arguments)
 	}
 }
 

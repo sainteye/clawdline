@@ -3,6 +3,7 @@ package projectassistanthost
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -414,6 +415,23 @@ func TestBotRequestHandoffWakesOnceAndScopesDispatchToTheCard(t *testing.T) {
 	complete("2")
 	if len(pushes) != 2 || pushes[0] == pushes[1] {
 		t.Fatalf("pushes after reopen and second completion: %v", pushes)
+	}
+	// The card's history records each delivery once (§4, §5), across the
+	// retries and restarts above.
+	events, err := broker.Store.BotRequestEvents(ctx, card.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var notified []string
+	for _, e := range events {
+		if e.Kind == br.EventNotified {
+			notified = append(notified, e.Detail)
+		}
+	}
+	slices.Sort(notified)
+	want := []string{"bots cycle=1 bot_request_done_delivered", "bots cycle=2 bot_request_done_delivered", "person cycle=1 pushed", "person cycle=2 pushed"}
+	if !slices.Equal(notified, want) {
+		t.Fatalf("notified events %q, want %q", notified, want)
 	}
 }
 

@@ -517,6 +517,36 @@ func (c *Card) Check(a Actor, marks []Mark, now time.Time) (bool, error) {
 	return changed, nil
 }
 
+// CheckEvents applies marks as Check does and answers the card's events for
+// the write (§4): checklist.added with its label for each entry the marks
+// added, then one checklist.marked when an entry's state or note changed.
+// No change answers no events.
+func (c *Card) CheckEvents(a Actor, marks []Mark, now time.Time) ([]Event, error) {
+	before := make(map[string]Entry, len(c.Checklist))
+	for _, e := range c.Checklist {
+		before[e.Key] = e
+	}
+	changed, err := c.Check(a, marks, now)
+	if err != nil || !changed {
+		return nil, err
+	}
+	var out []Event
+	marked := false
+	for _, e := range c.Checklist {
+		prev, had := before[e.Key]
+		if !had {
+			out = append(out, Event{Kind: EventChecklistAdded, Detail: e.Label})
+			marked = marked || e.State != EntryOpen || e.Note != ""
+			continue
+		}
+		marked = marked || prev.State != e.State || prev.Note != e.Note
+	}
+	if marked {
+		out = append(out, Event{Kind: EventChecklistMark})
+	}
+	return out, nil
+}
+
 func (c Card) entry(key string) int {
 	for i, e := range c.Checklist {
 		if e.Key == key {

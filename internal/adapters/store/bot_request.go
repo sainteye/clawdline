@@ -379,11 +379,13 @@ func (s *Store) CheckBotRequests(ctx context.Context, a br.Actor, key string, ta
 		}
 		res, err := s.UpdateBotRequest(ctx, BotRequestWrite{CardID: t.CardID, Expected: t.Expected, Actor: a, Key: k, Now: now,
 			Apply: func(c *br.Card) ([]br.Event, error) {
-				changed, err := c.Check(a, marks, now)
-				if err != nil || !changed {
-					return nil, err
+				events, err := c.CheckEvents(a, marks, now)
+				for i := range events {
+					if events[i].Kind == br.EventChecklistMark {
+						events[i].Detail = markDetail(marks)
+					}
 				}
-				return []br.Event{{Kind: br.EventChecklistMark, Detail: markDetail(marks)}}, nil
+				return events, err
 			}})
 		r := BotRequestCheckResult{CardID: t.CardID, Version: res.Card.Version}
 		switch {
@@ -699,6 +701,33 @@ func (s *Store) JoinBotRequestChain(ctx context.Context, cardID, by, bot string,
 		return 1, nil
 	})
 	return out, err
+}
+
+// RecordBotRequestNotified writes the card's notified event for one delivery
+// of a completion (§5): to is "person" or "bots", outcome what the delivery
+// answered. A cycle's delivery to the same recipients is recorded once, so a
+// retried or recovered effect row adds nothing. It changes neither the card's
+// version nor its state; a card that is gone records nothing.
+func (s *Store) RecordBotRequestNotified(ctx context.Context, cardID string, cycle int64, to, outcome string, now time.Time) error {
+	prefix := to + " cycle=" + itoaStore(cycle) + " "
+	return s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		c, err := loadBotRequest(ctx, tx, cardID)
+		if errors.Is(err, ErrNoBotRequest) {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		var seen int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM bot_request_events WHERE card_id = ? AND kind = ? AND substr(detail, 1, ?) = ?`,
+			cardID, br.EventNotified, len(prefix), prefix).Scan(&seen); err != nil || seen > 0 {
+			return 0, err
+		}
+		if err := appendBotRequestEvent(ctx, tx, c, br.Event{Kind: br.EventNotified, Actor: "daemon", Detail: prefix + outcome, At: now}); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	})
 }
 
 // BotRequestOccupancy is what the capacity rows of botrequest.* read: the
