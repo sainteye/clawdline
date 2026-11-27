@@ -109,7 +109,7 @@ web/console/src/session/live-dictation.ts	connectLiveDictation	101	29
 web/console/src/session/video-preview.ts	bindVideoPreview	202	37
 web/console/src/setup/SetupGuide.tsx	Guide	186	51
 web/console/src/support/images.tsx	useSupportImages	118	27
-web/console/src/tool-library/ToolLibrary.tsx	ToolLibrary	150	54
+web/console/src/tool-library/ToolLibrary.tsx	ToolLibrary	149	53
 web/console/src/view-plugins/Frame.tsx	PluginFrame	107	18
 web/console/src/view-plugins/Host.tsx	useViewPlugins	409	134
 web/console/src/view-plugins/bridge.ts	pluginBridge	119	41

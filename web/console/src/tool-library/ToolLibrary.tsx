@@ -28,7 +28,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
-  const [tab, setTab] = useState<"saved" | "recommended" | null>(null)
+  const [tab, setTab] = useState<"saved" | "recommended">("recommended")
   const [category, setCategory] = useState("all")
   const [query, setQuery] = useState("")
   const [project, setProject] = useState<Project | null>(null)
@@ -59,7 +59,6 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
     void connection.current.read(abort.signal).then(value => {
       if (!abort.signal.aborted && mine === current.current) {
         setData(value)
-        setTab(selected => selected ?? (value.saved.length ? "saved" : "recommended"))
       }
     }, caught => { if (!abort.signal.aborted && mine === current.current) fail(caught) })
       .finally(() => { if (!abort.signal.aborted && mine === current.current) setLoading(false) })
@@ -164,7 +163,7 @@ export function ToolLibrary({ row, machine, onClose, onPrepared }: {
               <details className="tl-detail-extra"><summary>{w("Limitations")}</summary>{project.limitations?.map((v, i) => <p key={i}>{name(v)}</p>)}<p>{w("NoReceipt")}</p></details>
             </div><aside>{source(project)}<div className="tl-detail-buttons"><button type="button" onClick={() => toggleSave(project)} disabled={!write || busy || !data}>{w(saved(project) ? "Remove" : "Save")}</button>{button(project)}</div></aside></div></>}
           </section> : <>
-            <div className="tl-tabs" role="tablist" aria-label={w("Title")}>{(["saved", "recommended"] as const).map(id => <button type="button" key={id} role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setCategory("all"); setQuery("") }}>{w(id === "saved" ? "Saved" : "Recommended")} <small>{id === "saved" ? data?.saved.length : data?.catalog.projects.length}</small></button>)}</div>
+            <div className="tl-tabs" role="tablist" aria-label={w("Title")}>{(["recommended", "saved"] as const).map(id => <button type="button" key={id} role="tab" aria-selected={tab === id} onClick={() => { setTab(id); setCategory("all"); setQuery("") }}>{w(id === "saved" ? "Saved" : "Recommended")} <small>{id === "saved" ? data?.saved.length : data?.catalog.projects.length}</small></button>)}</div>
             <input className="tl-search" type="search" aria-label={w("Search")} placeholder={w("Search")} value={query} onChange={e => setQuery(e.target.value)} />
             <div className="tl-mobile-categories"><label>{w("Category")}<select value={category} onChange={e => setCategory(e.target.value)}><option value="all">{w("All")}</option>{data?.catalog.categories.map(c => <option key={c.id} value={c.id}>{name(c.name)}</option>)}</select></label></div>
             {tab === "recommended" && <p className="tl-caption">{w("RecommendationNote")}</p>}
