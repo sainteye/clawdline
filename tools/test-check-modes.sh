@@ -44,7 +44,7 @@ case "$1" in
     [ -f "$CALLS.deps" ] || exit 31
     if [ "${BROKEN_PLAN:-0}" = 1 ]; then printf 'invalid\n'; exit 0; fi
     if [ "${HANG_STEP:-}" != '' ] && [ "${2:-}" = --out ]; then
-      exec "$REAL_NODE" -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({full:false,reason:"hanging test fixture",go:{runs:[],compile:[]},paths:[],web:process.env.HANG_STEP==="web",webTests:["web/console/hang.test.mjs"],guards:{format:false,capacity:false,contract:false,legacy:false,borders:false,machine:false,shell:false,tooling:process.env.HANG_STEP==="tooling"}}))' "$3"
+      exec "$REAL_NODE" -e 'require("fs").writeFileSync(process.argv[1],JSON.stringify({full:false,reason:"hanging test fixture",go:{runs:[],compile:[]},paths:[],web:process.env.HANG_STEP==="web",webTests:["web/console/hang.test.mjs"],guards:{format:false,capacity:false,measures:false,contract:false,legacy:false,borders:false,machine:false,shell:false,tooling:process.env.HANG_STEP==="tooling"}}))' "$3"
     fi
     exec "$REAL_NODE" "$@" ;;
   tools/check-profile.mjs) exec "$REAL_NODE" "$@" ;;
