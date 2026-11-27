@@ -136,7 +136,7 @@ try{
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
   if(scenario==="restart-review-mobile"){
     await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
-    const notice=".pa-turn-review",button=notice+" button"
+    const notice=".pa-turn-review",button=notice+" button.pa-pill"
     await until(sessionId,`document.querySelector('${button}')?.innerText==='請 Bot 核對進度'`)
     const before=await capture(sessionId,"restart-review-before")
     assert.match(before.text,/Clawdline 在上一輪執行時重新啟動/)
@@ -171,14 +171,23 @@ try{
     const draft="Keep this draft"
     const showsPausedTurn="document.body.innerText.includes('上一輪已暫停')&&document.body.innerText.includes('等待處理')"
     const observedQueue="window.chatObservation.phases.some(p=>p.head?.queued_turn_count===1&&p.head?.unknown_turn_count===1)"
+    await send("Emulation.setTouchEmulationEnabled",{enabled:true,maxTouchPoints:1},sessionId)
     await evaluate(sessionId,openBot)
-    await until(sessionId,`document.querySelector('${clear}')?.innerText==='清除提示'`)
+    await until(sessionId,`document.querySelector('${clear}[aria-label="清除提示"]')?.innerText==='×'`)
     await until(sessionId,showsPausedTurn)
-    assert.ok(await evaluate(sessionId,`document.querySelector('${clear}').getBoundingClientRect().height>=44`))
     await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
     await send("Input.insertText",{text:draft},sessionId)
     await capture(sessionId,"before-clear")
-    await evaluate(sessionId,`document.querySelector('${clear}').click()`)
+    const {target,card,heading}=await evaluate(sessionId,`({
+      target:document.querySelector('${clear}').getBoundingClientRect().toJSON(),
+      card:document.querySelector('${notice}').getBoundingClientRect().toJSON(),
+      heading:document.querySelector('${notice} strong').getBoundingClientRect().toJSON(),
+    })`)
+    assert.ok(target.width>=44&&target.height>=44,"the close icon has a 44px touch target")
+    assert.ok(target.right<=card.right&&card.right-target.right<=12,"the close icon is against the right edge")
+    assert.ok(target.top>=card.top&&target.top<=heading.top&&target.left>=heading.right,"the close icon is beside the heading")
+    await send("Input.dispatchTouchEvent",{type:"touchStart",touchPoints:[{x:target.x+target.width/2,y:target.y+target.height/2}]},sessionId)
+    await send("Input.dispatchTouchEvent",{type:"touchEnd",touchPoints:[]},sessionId)
     await until(sessionId,`!document.querySelector('${notice}')`)
     assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),draft)
     assert.ok(await evaluate(sessionId,showsPausedTurn))

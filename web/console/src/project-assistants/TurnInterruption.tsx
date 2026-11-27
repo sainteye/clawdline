@@ -79,21 +79,23 @@ export function TurnReviewNotice({w,restarted,queued,enabled,canRequest,pending,
     try{setState(await onReview())}finally{sending.current=false}
   }
   return <div className="pa-turn-review">
-    <div role="status">
-      <strong>{w.turnReviewTitle}</strong>
-      <p>{restarted?w.turnReviewRestart:w.turnReviewUnknown}</p>
-      {queued>0&&<p>{w.turnReviewQueue.replace("{count}",String(queued))}</p>}
-      {state==="accepted"&&<p>{w.turnReviewAccepted}</p>}
-      {state==="refused"&&<p>{w.turnReviewRefused}</p>}
-      {pending&&state!=="sending"&&<p>{w.turnReviewUnconfirmed}</p>}
+    <div className="pa-turn-review-content">
+      <div className="pa-turn-review-heading">
+        <strong>{w.turnReviewTitle}</strong>
+        <button type="button" className="pa-circle pa-turn-review-clear" aria-label={w.turnReviewClear} onClick={onClear}>×</button>
+      </div>
+      <div role="status">
+        <p>{restarted?w.turnReviewRestart:w.turnReviewUnknown}</p>
+        {queued>0&&<p>{w.turnReviewQueue.replace("{count}",String(queued))}</p>}
+        {state==="accepted"&&<p>{w.turnReviewAccepted}</p>}
+        {state==="refused"&&<p>{w.turnReviewRefused}</p>}
+        {pending&&state!=="sending"&&<p>{w.turnReviewUnconfirmed}</p>}
+      </div>
     </div>
-    <div className="pa-turn-review-actions">
-      {enabled&&state!=="accepted"&&(!pending||state==="sending")&&
-        <button type="button" className="pa-pill" disabled={!canRequest||state==="sending"}
-          aria-busy={state==="sending"||undefined} onClick={()=>void request()}>
-          {state==="sending"?w.turnReviewSending:w.turnReviewAction}
-        </button>}
-      <button type="button" className="pa-pill pa-turn-review-clear" onClick={onClear}>{w.turnReviewClear}</button>
-    </div>
+    {enabled&&state!=="accepted"&&(!pending||state==="sending")&&
+      <button type="button" className="pa-pill" disabled={!canRequest||state==="sending"}
+        aria-busy={state==="sending"||undefined} onClick={()=>void request()}>
+        {state==="sending"?w.turnReviewSending:w.turnReviewAction}
+      </button>}
   </div>
 }

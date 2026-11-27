@@ -26,7 +26,10 @@
   overflow-wrap:anywhere;
 }
 .project-assistants .pa-turn-review p { margin:4px 0 0;color:var(--pa-dim); }
-.project-assistants .pa-turn-review-actions { display:flex;flex-wrap:wrap;gap:8px; }
+.project-assistants .pa-turn-review-content { width:100%; }
+.project-assistants .pa-turn-review-heading { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-block:-8px;margin-inline-end:-8px; }
+.project-assistants .pa-turn-review .pa-turn-review-clear { width:44px;height:44px;border:0;background:transparent;color:var(--pa-dim);line-height:1; }
+.project-assistants .pa-turn-review .pa-turn-review-clear:hover { background:var(--pa-line);color:var(--pa-text,#fafafa); }
 .project-assistants .pa-turn-review button { min-height:44px; }
 .project-assistants .pa-chat-surface .pa-info-panel { padding:18px 20px;background:var(--pa-bg); }
 .project-assistants .pa-chat-surface .pa-info-identity { padding:24px 0 18px;gap:8px; }
