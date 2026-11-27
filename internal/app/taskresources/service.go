@@ -45,10 +45,12 @@ type OwnerState struct {
 }
 
 type Service struct {
-	Store     *store.Store
-	FS        *resourcefs.Root
-	Owner     func(context.Context, string, string) (OwnerState, error)
-	Uses      func(context.Context, taskresource.Resource) string
+	Store *store.Store
+	FS    *resourcefs.Root
+	Owner func(context.Context, string, string) (OwnerState, error)
+	Uses  func(context.Context, taskresource.Resource) string
+	// Policy replaces the compiled policy in tests that change it between a
+	// plan and its apply. No caller sets it; there is no per-machine setting.
 	Policy    func() taskresource.Policy
 	FreeSpace func() (int64, error)
 	// OtherUsage accounts source-owned legacy roots without adopting or deleting them.
