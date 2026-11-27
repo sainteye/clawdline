@@ -78,7 +78,7 @@ test('paired Go tests retain whole-package fallback and guards follow their own 
     assert.equal(selectGoRuns(['internal/http/shared.go'],packages,root,['m/http'])[0].pattern,'');
     assert.equal(selectGoRuns(['internal/http/testdata/voice.json'],packages,root,['m/http'])[0].pattern,'');
     const front=guardPlan(['web/console/src/overlays/info.ts'],false);
-    for(const key of ['format','capacity','contract','legacy','borders','shell','tooling']) assert.equal(front[key],false,key);
+    for(const key of ['format','capacity','measures','contract','legacy','borders','shell','tooling']) assert.equal(front[key],false,key);
     assert.equal(guardPlan(['api/v1/routes.json'],false).contract,true);
     assert.equal(guardPlan(['internal/http/voice.go'],false).capacity,true);
     assert.equal(guardPlan(['web/console/src/page.css'],false).borders,true);
@@ -120,3 +120,12 @@ test('a capacity, refusal-source or reference change selects contract-gen', () =
   assert.equal(guardPlan(['internal/app/cloudops/ops.go'], false).contract, false)
   assert.equal(guardPlan(['web/console/src/cloud/carry.ts'], false).contract, false)
 })
+
+// On 2026-11-27 two register rows reached main without a measure: the gate
+// ran the register's own tests and not the HTTP package's measure tests.
+test('a register or measure change selects the capacity measure tests', () => {
+  for (const path of ['internal/domain/capacity/register_store.go', 'internal/transport/http/capacity_measures_store.go',
+    'internal/transport/http/testdata/capacity_measures.golden.json'])
+    assert.equal(guardPlan([path], false).measures, true, path);
+  assert.equal(guardPlan(['internal/transport/http/usage.go'], false).measures, false);
+});

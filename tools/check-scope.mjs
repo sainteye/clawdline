@@ -86,6 +86,10 @@ export function guardPlan(paths, full) {
     // table; a change to one of them can leave those files stale while api/ is
     // untouched.
     contract: any(/^api\/v1\/|^internal\/contract\/|^web\/contract\/|^tools\/contract-gen\/|^internal\/domain\/capacity\/|^internal\/domain\/work\/|^internal\/domain\/cloudvocab\/|^internal\/app\/cloudops\/zz_|^web\/console\/src\/cloud\/carry-generated\.ts$|^internal\/app\/orchestrator\/|^internal\/transport\/http\/|^skills\/clawdline\/(capacity|routes|refusals)/),
+    // A new register row needs a measure in internal/transport/http; that
+    // package's paired-test selection never reaches the two tests that say so
+    // (2026-11-27: two rows reached main without one and only CI noticed).
+    measures: any(/^internal\/domain\/capacity\/|^internal\/transport\/http\/(capacity_measures|testdata\/capacity_measures)/),
     legacy: any(/^web\/console\/(src\/legacy\/|public\/strings\/)/),
     borders: any(/^web\/.*\.css$/),
     shell: any(/\.sh$/),

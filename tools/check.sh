@@ -246,6 +246,7 @@ else
   fi
   check "repository copy guards (uncached)" go test -count=1 ./internal/config
   if selected capacity; then check "capacity registration and copy guards" go test -count=1 ./internal/domain/capacity '-run=^(TestEveryBoundIsRegistered|TestRegisterRowsAnswerTheFourQuestions|TestEveryRowExplainsItselfToAPerson)$'; fi
+  if selected measures; then check "capacity measures and their snapshot" go test -count=1 ./internal/transport/http '-run=^(TestEveryRegisteredRowIsMeasured|TestCapacityMeasuresMatchTheirSnapshot)$'; fi
 fi
 if selected contract; then check "contract-gen -check" go run ./tools/contract-gen -check; else summary+=("SKIP  contract-gen -check  (inputs unchanged; full CI retains coverage)"); fi
 if selected legacy; then check "check-legacy-css.sh" tools/check-legacy-css.sh; else summary+=("SKIP  check-legacy-css.sh  (inputs unchanged; full CI retains coverage)"); fi
