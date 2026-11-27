@@ -19,7 +19,7 @@ import {hostedConsole} from "../pages/terminal/api"
 import {traceDecision} from "./decision-trace-send"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import {chatEventDelay,chatPushSignal} from "./chat-push"
-import { readView, mergeTimeline, eventTimeline, turnSummary } from "./read-views"
+import { readView, mergeTimeline, eventTimeline, turnSummary, queuedSendNowShown, replyInputPreference, steerFallback, steerFallbackReason } from "./read-views"
 import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
 import { DispatchedWorkStrip } from "./DispatchedWorkStrip"
@@ -1973,9 +1973,13 @@ ${currentDraft}`:submitted)
       const hold=queuedTurn?.queue_edit_id
       const editable=!thread&&message.kind==="user"&&!decisionReplyOf(message)&&!!queuedTurn&&source.canEditQueue?.()&&!!source.editQueue
       const editor=editable&&queueEditor&&queueEditor.turnID===queuedTurn.id&&queueEditor.editID===hold?queueEditor:null
+      const fallback=steerFallback(queuedTurn)
+      // A Bot that steers keeps a message out of the queue unless the source said why it could not.
+      const sendNowShown=queuedSendNowShown(source.canReplyInput?.()?replyInputPreference(bot):"queue",fallback)
       return <div className="pa-queued" role="listitem" data-editing={editor?true:undefined} key={message.id} aria-busy={pending?true:undefined}>
         <div className="pa-queued-content">
           <span className="pa-queued-preview"><span className="pa-queued-label">{queuedLabel(message.id,turns,queuePaused,w)} · </span><QueuedText message={message} mentions={mentions} w={w}/></span>
+          {fallback&&<small className="pa-queued-reason">{steerFallbackReason(fallback,w)}</small>}
           {editor&&<textarea className="pa-queued-editor" ref={queueEditorInput} rows={1} cols={1}
             aria-label={w.editQueued} aria-description={w.queueHeld} value={decodeBotMentions(editor.text).display} disabled={!enabled||queueEditBusy}
             onChange={event=>setQueueEditor({...editor,text:encodeBotMentions(event.target.value,decodeBotMentions(editor.text).picks)})}/>}
@@ -1998,7 +2002,7 @@ ${currentDraft}`:submitted)
             onClick={()=>hold?setQueueEditor({turnID:queuedTurn.id,editID:hold,text:message.text}):void editQueued("begin",queuedTurn.id,"",message.text)}>
             <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10.5 2.5l3 3L6 13H3v-3z"/></svg>
           </button>}
-          {queuedTurn&&(source.canReplyInput?.()||!message.files?.length&&!message.attachments?.length)&&source.canSendNow?.()&&!noSteering.includes(bot.agent)&&activeTurn?.state==="running"&&!restartTurn&&
+          {queuedTurn&&(source.canReplyInput?.()||!message.files?.length&&!message.attachments?.length)&&source.canSendNow?.()&&sendNowShown&&!noSteering.includes(bot.agent)&&activeTurn?.state==="running"&&!restartTurn&&
             <button type="button" className="pa-queued-action pa-queued-send" aria-label={w.sendNow} title={w.sendNow}
               disabled={!enabled||busy||queueEditBusy||!!hold} onClick={()=>void actOnQueued(message.id,queuedTurn.id,"send_now")}>
               {pending==="send_now"?<span className="pa-send-spinner" aria-hidden="true"/>:"↳"}
