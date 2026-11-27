@@ -129,6 +129,19 @@ test("no card route hides the feature; a failed read is an error, never an empty
   assert.equal(asked, "/v1/bot-request/cards?bot=atlas&state=open")
 })
 
+test("every page of cards is read; a cursor that never ends is an error, not a short list", async () => {
+  const asked: string[] = []
+  const pages: Record<string, unknown> = {"": {cards: [card({id: "a"})], next_cursor: "p2"}, p2: {cards: [card({id: "b"})], next_cursor: "p3"}, p3: {cards: [card({id: "c"})]}}
+  const paged = async (path: string) => {
+    asked.push(path)
+    const cursor = new URL(path, "http://x").searchParams.get("cursor") ?? ""
+    return new Response(JSON.stringify(pages[cursor]))
+  }
+  assert.deepEqual((await readBotRequests({bot: "atlas"}, undefined, paged))?.map(c => c.id), ["a", "b", "c"])
+  assert.deepEqual(asked, ["/v1/bot-request/cards?bot=atlas", "/v1/bot-request/cards?bot=atlas&cursor=p2", "/v1/bot-request/cards?bot=atlas&cursor=p3"])
+  await assert.rejects(readBotRequests({}, undefined, async () => new Response(JSON.stringify({cards: [card({id: "a"})], next_cursor: "same"}))))
+})
+
 test("a write carries the version and its key, and a refusal keeps its code and current version", async () => {
   let sent: {path: string; init?: RequestInit} | undefined
   const result = await writeBotRequest("c 1", "complete", {expected_version: 4, reason: "Shipped"}, "key-1", undefined,

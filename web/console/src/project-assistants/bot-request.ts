@@ -175,16 +175,37 @@ function refused(body: unknown, status: number): BotRequestRefused {
  * load" is never shown as "nothing here".
  */
 export async function readBotRequests(query: {bot?: string; state?: string}, signal?: AbortSignal, fetcher: Fetcher = fetch): Promise<W.BotRequestView[] | null> {
-  const params = new URLSearchParams()
-  if (query.bot) params.set("bot", query.bot)
-  if (query.state) params.set("state", query.state)
-  const res = await fetcher("/v1/bot-request/cards" + (params.size ? "?" + params : ""), {credentials: "same-origin", signal})
-  if (res.status === 404 || res.status === 405 || res.status === 501) return null
-  const body = await answer(res)
-  if (!res.ok) throw refused(body, res.status)
-  const cards = (body as Partial<W.BotRequestPage> | undefined)?.cards
-  return Array.isArray(cards) ? cards : null
+  const out: W.BotRequestView[] = []
+  const seen = new Set<string>()
+  let cursor = ""
+  // Every page is read: a list cut at the first page would show fewer cards
+  // with nothing to say so. A cursor that repeats or never ends is an error.
+  for (let page = 0; page < BOT_REQUEST_MAX_PAGES; page++) {
+    const params = new URLSearchParams()
+    if (query.bot) params.set("bot", query.bot)
+    if (query.state) params.set("state", query.state)
+    if (cursor) params.set("cursor", cursor)
+    const res = await fetcher("/v1/bot-request/cards" + (params.size ? "?" + params : ""), {credentials: "same-origin", signal})
+    if (page === 0 && (res.status === 404 || res.status === 405 || res.status === 501)) return null
+    const body = await answer(res)
+    if (!res.ok) throw refused(body, res.status)
+    const reply = body as Partial<W.BotRequestPage> | undefined
+    if (!Array.isArray(reply?.cards)) {
+      if (page === 0) return null
+      throw new BotRequestRefused("unconfirmed", "bot_request_page")
+    }
+    out.push(...reply.cards)
+    const next = typeof reply.next_cursor === "string" ? reply.next_cursor : ""
+    if (!next) return out
+    if (seen.has(next)) throw new BotRequestRefused("unconfirmed", "bot_request_page")
+    seen.add(next)
+    cursor = next
+  }
+  throw new BotRequestRefused("unconfirmed", "bot_request_page")
 }
+
+/** Pages one card list may span (100 cards each) before the read is an error. */
+export const BOT_REQUEST_MAX_PAGES = 50
 
 /** One card with its history. */
 export async function readBotRequest(id: string, signal?: AbortSignal, fetcher: Fetcher = fetch): Promise<W.BotRequestView> {
