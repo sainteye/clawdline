@@ -4,12 +4,12 @@ import { readFileSync } from "node:fs"
 // @ts-expect-error Node executes source extensions.
 import { ProjectAssistantSourceClient, assistantRelayRequest, type AssistantGrant } from "../cloud/project-assistants.ts"
 // @ts-expect-error Node executes source extensions.
-import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, personalWorkspaceNames, playbookReaders } from "./charter-api.ts"
+import { CharterRefusal, charterApiFor, charterProjectKey, charterSummaries, charterWorkflow, personalWorkspaceNames, playbookReaders, proposalKind, workflowProposals, workflowRefusalSubject } from "./charter-api.ts"
 // @ts-expect-error Node executes source extensions.
-import { createCharterFixture, samplePlaybooks } from "./charter-fixture.ts"
+import { createCharterFixture, samplePlaybooks, sampleWorkflow, sampleWorkflowProposal } from "./charter-fixture.ts"
 
 // The charter screens' every call, sent through a real captured source, must be
-// one of the fourteen routes the daemon serves with exactly its Cloud word's local
+// one of the fifteen routes the daemon serves with exactly its Cloud word's local
 // query or body (internal/domain/cloudvocab/vocabulary.json is the contract).
 
 type Row = { op: string; local: { method: string }; shapes: { path: string; query?: string[]; local_body?: string[] }[] }
@@ -36,7 +36,7 @@ async function source(held: AssistantGrant, answer: (word: string) => unknown, s
 }
 
 test("every charter call is one daemon route with exactly its Cloud word's fields", async () => {
-  assert.equal(rows.length, 14)
+  assert.equal(rows.length, 15)
   const seen: Parameters<typeof source>[2] = []
   const api = charterApiFor(await source(grant(), () => ({ contract_version: "project-assistants.v1" }), seen))
   assert.ok(api)
@@ -82,6 +82,69 @@ test("every charter call is one daemon route with exactly its Cloud word's field
   assert.deepEqual(seen[13].fields.playbook, { title: "Release", text: "Tag.", bot_ids: ["bot-1"] })
   assert.equal(seen[13].fields.reason, "")
   assert.equal((seen[14].fields.playbook as { id: string }).id, "pb-1")
+})
+
+test("a workflow change request rides the change-request word's second shape, only at API 128", async () => {
+  const seen: Parameters<typeof source>[2] = []
+  const api = charterApiFor(await source(grant(128), () => ({ contract_version: "project-assistants.v1" }), seen))!
+  assert.equal(api.workflow, true)
+  await api.requestChange(project, { text: "Send a failed reliability review back.", target: "workflow" }, signal())
+  await api.requestChange(project, { text: "Add the review step.", target: "text" }, signal())
+  const row = rows.find(r => r.op === "project-assistants.charter-change-request")!
+  assert.deepEqual(seen.map(r => r.word), ["project-assistants.charter-change-request", "project-assistants.charter-change-request"])
+  assert.deepEqual(Object.keys(JSON.parse(String(seen[0].init?.body))).sort(), [...row.shapes[1].local_body!].sort())
+  assert.equal(seen[0].fields.target, "workflow")
+  // The text target is the default and is left out, as an older machine reads it.
+  assert.deepEqual(Object.keys(JSON.parse(String(seen[1].init?.body))).sort(), [...row.shapes[0].local_body!].sort())
+
+  // The workflow write relays as its own word with exactly its local body; a bad target never leaves.
+  const write = { machine_id: "machine", project_id: "project-one", idempotency_key: "wf-1", expected_version: 2, reason: "", workflow: { states: [], transitions: [] } }
+  const relayed = assistantRelayRequest("/v1/project-assistant-charters/workflow", { method: "PUT", body: JSON.stringify(write), headers: { "Idempotency-Key": "wf-1" } })
+  assert.equal(relayed.word, "project-assistants.charter-workflow-save")
+  assert.deepEqual(Object.keys(relayed.fields).sort(), [...rows.find(r => r.op === relayed.word)!.shapes[0].local_body!].sort())
+  assert.throws(() => assistantRelayRequest("/v1/project-assistant-charters/change-request", { method: "POST", body: JSON.stringify({ machine_id: "machine", project_id: "p", idempotency_key: "k", text: "x", target: "sideways" }), headers: { "Idempotency-Key": "k" } }))
+
+  const older: Parameters<typeof source>[2] = []
+  const old = charterApiFor(await source(grant(127), () => ({ contract_version: "project-assistants.v1" }), older))!
+  assert.equal(old.workflow, false)
+  await assert.rejects(old.requestChange(project, { text: "x", target: "workflow" }, signal()), (e: unknown) => e instanceof CharterRefusal && e.field === "target")
+  assert.equal(older.length, 0)
+})
+
+test("the fixture carries the team's workflow and the lead's pending workflow proposal", async () => {
+  const bots = [{ bot_id: "atlas", name: "Atlas", lead: true }, { bot_id: "xavia", name: "Xavia" }, { bot_id: "fuse", name: "Fuse" }, { bot_id: "lens", name: "Lens" }, { bot_id: "beacon", name: "Beacon" }]
+  const workflow = sampleWorkflow({ atlas: "atlas", xavia: "xavia", fuse: "fuse", lens: "lens", beacon: "beacon" })
+  const fixture = createCharterFixture("machine", [{ project_id: "project-one", bots, versions: [{ text: "## Who\n\nLead plans.", author: "template", reason: "" }], workflow, workflow_proposal: sampleWorkflowProposal(workflow) }])
+  const api = charterApiFor({ machineID: "machine", ...fixture } as never)!
+  assert.equal(api.workflow, true)
+  const charter = await api.read(project, 0, signal())
+  const flow = charterWorkflow(charter)!
+  assert.equal(charter.version, 2)
+  assert.deepEqual(flow.states.map(s => [s.id, s.title, s.bot_id, s.kind]), [["card", "開交辦卡", "", "start"], ["review", "派工・審證據", "atlas", "step"], ["integrate", "整合・推 GitHub・裝 dev", "xavia", "step"],
+    ["reliability", "可靠性審查", "fuse", "step"], ["visual", "畫面驗收", "lens", "step"], ["deploy", "部署 Cloud", "xavia", "step"], ["website", "更新官網與 README", "beacon", "step"], ["done", "完成", "", "done"]])
+  assert.deepEqual(flow.transitions.filter(t => t.from === "visual").map(t => [t.to, t.label, t.kind]), [["deploy", "通過", "pass"], ["review", "不通過", "return"]])
+  assert.deepEqual(flow.transitions.filter(t => t.from === "deploy").map(t => [t.to, t.label]), [["website", "對外看得到"], ["done", "其他"]])
+  // Every Bot heard the version before the workflow, so the workflow is news to all of them.
+  assert.ok((await api.readers(project, signal())).readers.every(r => r.delivery_version === 2 && r.version === 1))
+  const pending = await api.proposals(project, signal())
+  assert.deepEqual(workflowProposals(pending).map(p => [proposalKind(p), p.text, p.stale]), [["workflow", "", false]])
+  const added = workflowProposals(pending)[0].workflow!.transitions.filter(t => !flow.transitions.some(o => o.from === t.from && o.to === t.to))
+  assert.deepEqual(added, [{ from: "reliability", to: "review", label: "不通過", kind: "return" }])
+  // Applying it keeps the text and reaches every Bot; a later text save keeps it.
+  const applied = await api.applyProposal(project, pending.proposals[0].id, { expected_version: 2 }, signal())
+  assert.equal(applied.text, charter.text)
+  assert.equal(applied.history[0].author, "lead_proposal")
+  assert.equal(charterWorkflow(applied)!.transitions.length, 11)
+  const saved = await api.save(project, { expected_version: 3, text: "## Who\n\nLead plans; makers build.", reason: "" }, signal())
+  assert.equal(charterWorkflow(saved)!.transitions.length, 11)
+  assert.equal(charterWorkflow(await api.read(project, 1, signal()), true), null)
+  // A workflow change request comes back as a workflow proposal.
+  await api.requestChange(project, { text: "Lens checks both widths.", target: "workflow" }, signal())
+  const scripted = (await api.proposals(project, signal())).proposals[0]
+  assert.equal(proposalKind(scripted), "workflow")
+  assert.equal(scripted.workflow!.states[0].note, "Lens checks both widths.")
+  assert.deepEqual(workflowRefusalSubject("workflow_unreachable:review"), { rule: "workflow_unreachable", subject: "review" })
+  assert.deepEqual(workflowRefusalSubject("workflow_done"), { rule: "workflow_done", subject: "" })
 })
 
 test("a machine at API 125 offers no playbook writes, and never sends one", async () => {

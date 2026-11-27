@@ -1,7 +1,8 @@
 // The one place the console reads and writes a Project's team charter.
 //
 // Every call is one route under /v1/project-assistant-charters (API 122; removal
-// API 123; the Bots' conflict reports API 124; playbooks API 127), sent
+// API 123; the Bots' conflict reports API 124; playbooks API 127; the workflow,
+// its proposals and the change-request target API 128), sent
 // through the machine's captured source: locally over HTTP, from the phone as
 // the project-assistants.charter* Cloud words. The screens see the generated
 // contract shapes and a typed refusal, never a transport.
@@ -55,7 +56,7 @@ export function charterRefusal(error: unknown): CharterRefusal | unknown {
   const refusal = (error as Partial<W.ProjectAssistantErrorResponse> | null)?.error
   const code = refusal?.code ?? "", field = refusal?.field ?? ""
   if (code === "pa_stale_version") return new CharterRefusal("version_conflict", field, code)
-  if (code === "pa_capacity_full" && (field === "charter_text" || field === "charter_request" || field === "charter_reason" || field.startsWith("charter_playbook") || field === "charter_document")) return new CharterRefusal("too_large", field, code)
+  if (code === "pa_capacity_full" && (field === "charter_text" || field === "charter_request" || field === "charter_reason" || field.startsWith("charter_playbook") || field === "charter_document" || field.startsWith("charter_workflow"))) return new CharterRefusal("too_large", field, code)
   if (code === "pa_not_found") return new CharterRefusal("not_found", field, code)
   return new CharterRefusal("unknown", field, code || "unavailable")
 }
@@ -83,9 +84,18 @@ export interface CharterApi {
   savePlaybook?(project: CharterProject, request: { expected_version: number; playbook: CharterPlaybookDraft; reason?: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   /** Removes one playbook as the next version. Undefined before API 127. */
   removePlaybook?(project: CharterProject, request: { expected_version: number; id: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
-  /** The person's words to the machine's lead, which may answer with a proposal. */
-  requestChange(project: CharterProject, request: { text: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterChangeResponse>
+  /**
+   * The person's words to the machine's lead, which may answer with a proposal.
+   * target "workflow" asks for a workflow proposal; a machine older than API 128
+   * refuses it before anything is sent (field target), so ask workflow first.
+   */
+  requestChange(project: CharterProject, request: { text: string; target?: CharterChangeTarget }, signal: AbortSignal): Promise<W.ProjectAssistantCharterChangeResponse>
+  /** Whether this machine answers workflows, workflow proposals and the change-request target (API 128). */
+  workflow: boolean
 }
+
+/** Which part of the charter a change request is for. */
+export type CharterChangeTarget = "text" | "workflow"
 
 /** A playbook as the person writes it; no id creates one. */
 export interface CharterPlaybookDraft { id?: string; title: string; text: string; bot_ids: string[] }
@@ -97,7 +107,7 @@ const query = (fields: Record<string, string | number>) => "?" + new URLSearchPa
 const newKey = () => typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : Math.random().toString(36).slice(2)
 
 /** The routes, built over any sender with the source's request semantics. */
-export function charterRoutes(machineID: string, send: Send, options: { remove?: boolean; conflicts?: boolean; playbooks?: boolean } = {}): CharterApi {
+export function charterRoutes(machineID: string, send: Send, options: { remove?: boolean; conflicts?: boolean; playbooks?: boolean; workflow?: boolean } = {}): CharterApi {
   const call = async <T>(path: string, method: "GET" | "PUT" | "POST", body: CharterRequestBody | undefined, signal: AbortSignal) => {
     try { return await send<T>(path, method, body, signal) } catch (error) { throw charterRefusal(error) }
   }
@@ -106,7 +116,7 @@ export function charterRoutes(machineID: string, send: Send, options: { remove?:
     return { machine_id: machineID, project_id: project.project_id }
   }
   const write = <T extends CharterRequestBody>(project: CharterProject, fields: Omit<T, "machine_id" | "project_id" | "idempotency_key">) => ({ ...own(project), idempotency_key: newKey(), ...fields }) as T
-  const routes: CharterApi = {
+  const routes: Omit<CharterApi, "workflow"> = {
     list: signal => call(chartersPath + query({ machine_id: machineID }), "GET", undefined, signal),
     read: (project, version, signal) => call(chartersPath + "/charter" + query({ ...own(project), version }), "GET", undefined, signal),
     // Over Cloud a save always names its reason, so it is always sent.
@@ -132,10 +142,14 @@ export function charterRoutes(machineID: string, send: Send, options: { remove?:
     proposals: (project, signal) => call(chartersPath + "/proposals" + query(own(project)), "GET", undefined, signal),
     applyProposal: (project, id, request, signal) => call(chartersPath + "/proposal-apply", "POST", write<W.ProjectAssistantCharterApplyRequest>(project, { proposal_id: id, expected_version: request.expected_version }), signal),
     dismissProposal: (project, id, signal) => call(chartersPath + "/proposal-dismiss", "POST", write<W.ProjectAssistantCharterDismissRequest>(project, { proposal_id: id }), signal),
-    requestChange: (project, request, signal) => call(chartersPath + "/change-request", "POST", write<W.ProjectAssistantCharterChangeRequest>(project, { text: request.text }), signal),
+    // The text target is the default and is left out, so an older machine reads the same request.
+    requestChange: (project, request, signal) => {
+      if (request.target === "workflow" && !options.workflow) throw new CharterRefusal("unknown", "target")
+      return call(chartersPath + "/change-request", "POST", write<W.ProjectAssistantCharterChangeRequest>(project, { text: request.text, ...(request.target === "workflow" ? { target: "workflow" } : {}) }), signal)
+    },
   }
   // A refusal found while shaping a request (another machine's Project) is a rejected promise too.
-  return Object.fromEntries(Object.entries(routes).map(([name, route]) => [name, async (...args: unknown[]) => (route as (...a: unknown[]) => unknown)(...args)])) as unknown as CharterApi
+  return { ...Object.fromEntries(Object.entries(routes).map(([name, route]) => [name, async (...args: unknown[]) => (route as (...a: unknown[]) => unknown)(...args)])), workflow: options.workflow === true } as unknown as CharterApi
 }
 
 /** The charter client for one machine, or undefined when its source cannot answer charters. */
@@ -144,7 +158,7 @@ export function charterApiFor(source: SourceClient | undefined): CharterApi | un
   // One client per source object, so a screen holding it does not reread on every render.
   let api = clients.get(source)
   if (!api) {
-    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal), { remove: source.canRemoveCharter?.() === true, conflicts: source.canCharterConflicts?.() === true, playbooks: source.canCharterPlaybooks?.() === true })
+    api = charterRoutes(source.machineID, (path, method, body, signal) => source.charterRequest!(path, method, body, signal), { remove: source.canRemoveCharter?.() === true, conflicts: source.canCharterConflicts?.() === true, playbooks: source.canCharterPlaybooks?.() === true, workflow: source.canCharterWorkflow?.() === true })
     clients.set(source, api)
   }
   return api
@@ -171,6 +185,25 @@ export const readsCurrentAt = (version: number, reader: W.ProjectAssistantCharte
 
 /** The current playbooks; none from a machine older than API 127. */
 export const charterPlaybooks = (charter: W.ProjectAssistantCharterResponse): W.ProjectAssistantCharterPlaybook[] => charter.playbooks ?? []
+
+/** The current workflow, or the selected version's; null when it has none or the machine is older than API 128. */
+export const charterWorkflow = (charter: W.ProjectAssistantCharterResponse, selected = false): W.ProjectAssistantCharterWorkflow | null =>
+  (selected ? charter.selected?.workflow : charter.workflow) ?? null
+
+/** What a proposal replaces; a machine older than API 128 has only text proposals. */
+export const proposalKind = (proposal: W.ProjectAssistantCharterProposal): CharterChangeTarget => proposal.kind === "workflow" ? "workflow" : "text"
+
+/** The pending workflow proposals, oldest first. */
+export const workflowProposals = (answer: W.ProjectAssistantCharterProposalsResponse) => answer.proposals.filter(proposal => proposalKind(proposal) === "workflow")
+
+/**
+ * A workflow refusal's rule and the state id or from->to transition it names, from
+ * a field such as workflow_unreachable:review; subject is empty for a whole-graph rule.
+ */
+export function workflowRefusalSubject(field: string): { rule: string; subject: string } {
+  const at = field.indexOf(":")
+  return at < 0 ? { rule: field, subject: "" } : { rule: field.slice(0, at), subject: field.slice(at + 1) }
+}
 
 /** One playbook's assigned visible Bots: who has heard its latest content and who has not. */
 export interface PlaybookReaders { playbook: W.ProjectAssistantCharterPlaybook; read: W.ProjectAssistantCharterReader[]; unread: W.ProjectAssistantCharterReader[] }

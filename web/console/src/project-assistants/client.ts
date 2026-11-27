@@ -23,7 +23,7 @@ export type ProjectMemoryPage={page:number;page_size:number}
 
 /** Source authority is captured by the host, never read from the active-machine singleton. */
 /** A charter write's body: always the machine, Project and idempotency key. */
-export type CharterRequestBody = W.ProjectAssistantCharterSaveRequest | W.ProjectAssistantCharterRestoreRequest | W.ProjectAssistantCharterRemoveRequest | W.ProjectAssistantCharterApplyRequest | W.ProjectAssistantCharterDismissRequest | W.ProjectAssistantCharterChangeRequest | W.ProjectAssistantCharterConflictResolveRequest | W.ProjectAssistantCharterPlaybookSaveRequest | W.ProjectAssistantCharterPlaybookRemoveRequest
+export type CharterRequestBody = W.ProjectAssistantCharterSaveRequest | W.ProjectAssistantCharterRestoreRequest | W.ProjectAssistantCharterRemoveRequest | W.ProjectAssistantCharterApplyRequest | W.ProjectAssistantCharterDismissRequest | W.ProjectAssistantCharterChangeRequest | W.ProjectAssistantCharterConflictResolveRequest | W.ProjectAssistantCharterPlaybookSaveRequest | W.ProjectAssistantCharterPlaybookRemoveRequest | W.ProjectAssistantCharterWorkflowSaveRequest
 
 export interface SourceClient {
   beginReadObservation?(mode: BotReadMode, start: number, interactionID?: string): BotReadObservation | undefined
@@ -49,6 +49,8 @@ export interface SourceClient {
  canCharterConflicts?():boolean
  /** Charter playbooks, their writes and who heard each (API 127). */
  canCharterPlaybooks?():boolean
+ /** Charter workflows, workflow proposals and the change-request target (API 128). */
+ canCharterWorkflow?():boolean
  saveTowerFloor?(request:W.ProjectAssistantTowerFloorRequest,signal:AbortSignal):Promise<W.ProjectAssistantTowerFloorsResponse>
  canNetworkSettings?():boolean
  networkSettings?(key:W.ProjectAssistantBotKey,conversation:string,signal:AbortSignal):Promise<W.ProjectAssistantNetworkSettingsResponse>
