@@ -16,6 +16,7 @@ import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObse
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
 import {hostedConsole} from "../pages/terminal/api"
+import {failureSentence} from "../legacy/js/core/failure-text.js"
 import {traceDecision} from "./decision-trace-send"
 import {serialSnapshotRefresh} from "./snapshot-roster"
 import {chatEventDelay,chatPushSignal} from "./chat-push"
@@ -99,27 +100,38 @@ function transientChatRead(error:unknown) {
   return code==="pa_offline"||code==="pa_cursor_expired"||code==="pa_stale_generation"
 }
 
-function useBotMemoryPanel(read: () => Promise<W.ProjectAssistantMemoryViewResponse>, revision: number | undefined, fail: (error: unknown) => void) {
+type ChatLineFailure = { code: ReturnType<typeof errorCode>; field: string }
+
+function useBotMemoryPanel(read: () => Promise<W.ProjectAssistantMemoryViewResponse>, revision: number | undefined, valid: () => boolean) {
   const [memory, setMemory] = useState<W.ProjectAssistantMemoryViewResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
+  const [error, setError] = useState<ChatLineFailure | null>(null)
   const shown = useRef(false)
-  const load = async () => {
-    const value = await read()
-    if (shown.current) setMemory(previous => previous && previous.view.memory.revision > value.view.memory.revision ? previous : value)
-  }
-  const latest = useRef({load, fail})
-  latest.current = {load, fail}
-  useEffect(() => {
-    if (shown.current) void latest.current.load().catch(fail)
-  }, [revision, fail])
-  const panel = useRef<ReturnType<typeof memoryOpener> | null>(null)
-  panel.current ??= memoryOpener(() => latest.current.load(), {
+  const latest = useRef({read, valid})
+  latest.current = {read, valid}
+  const opener = useRef<ReturnType<typeof memoryOpener<W.ProjectAssistantMemoryViewResponse>> | null>(null)
+  const panel = opener.current ??= memoryOpener(() => latest.current.read(), {
     open: open => { shown.current = open; if (!open) setMemory(null) },
     loading: waiting => { if (waiting) setTimedOut(false); setLoading(waiting) },
-    fail: error => { if (refusalField(error) === "read_deadline") setTimedOut(true); else latest.current.fail(error) },
+    loaded: value => {
+      if (!latest.current.valid()) return
+      setMemory(previous => previous && previous.view.memory.revision > value.view.memory.revision ? previous : value)
+      setError(null)
+    },
+    fail: (error, opening) => {
+      if (!latest.current.valid()) return
+      const failure = {code: errorCode(error), field: refusalField(error)}
+      if (opening && failure.field === "read_deadline") {
+        setTimedOut(true)
+        setError(previous => previous && failure)
+      } else setError(failure)
+    },
   })
-  return { memory, loading, timedOut, shown, panel: panel.current, load }
+  useEffect(() => {
+    if (shown.current) void panel.open()
+  }, [revision, panel])
+  return { memory, loading, timedOut, shown, panel, error }
 }
 
 // These facts belong to the page's journal rows. A full reload restores a row
@@ -258,6 +270,22 @@ function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
       <span>{w.jump}</span>
       {working&&<span className="pa-jump-working"><span className="pa-background-mark" data-active="" aria-hidden="true"/>{w.jumpWorking}</span>}
     </button>
+  </div>
+}
+
+function ChatErrorLine({error,errorField,memoryError,checkingUpdates,retry,release,releaseRiskID,busy,enabled,w}:{
+  error:string;errorField?:string;memoryError:ChatLineFailure|null;checkingUpdates:boolean;retry:()=>void
+  release:()=>void;releaseRiskID:string;busy:boolean;enabled:boolean;w:Words
+}) {
+  const code=error||memoryError?.code
+  if(!code)return null
+  const field=error?errorField:memoryError?.field
+  const cleanup=error==="pa_capacity_full"&&field==="owned_cleanup"
+  return <div className="pa-chat-error" role="alert">
+    <span>{field==="read_deadline"?w.readTimedOut:field==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(field,w)??(cleanup?w.sendCleanupPending:code==="cli_not_installed"?w.setup_cli_not_installed:code==="provider_version_unsupported"?w.setup_version_unsupported:failureSentence({code},{sentence:w.unavailable}))}</span>
+    <button type="button" className="pa-pill" onClick={retry} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{memoryError||field==="read_deadline"?w.retry:w.refresh}</button>
+    {cleanup&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={release} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
+    {cleanup&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
   </div>
 }
 
@@ -422,9 +450,9 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   const refreshRun=useRef<(manual:boolean)=>Promise<void>>(async()=>{}),refreshQueue=useRef<(manual?:boolean)=>Promise<void>>(async()=>{})
   const refresh=useCallback((manual=false)=>refreshQueue.current(manual),[])
   const pushedRef=useRef(pushed);pushedRef.current=pushed
-  const checkForUpdates=async()=>{
+  const checkForUpdates=async(retryMemory?:()=>Promise<void>)=>{
     setCheckingUpdates(true)
-    try{await refresh(true)}finally{setCheckingUpdates(false)}
+    try{await Promise.all([(!retryMemory||error)&&refresh(true),retryMemory?.()])}finally{setCheckingUpdates(false)}
   }
   const timer=useRef<ReturnType<typeof setTimeout>|null>(null),eventControl=useRef<AbortController|null>(null),activeMutations=useRef(new Set<AbortController>())
   const reads=useRef(new Set<AbortController>()),collectionBusy=useRef(new Map<string,AbortController>()),historyCursors=useRef(new Set<string>())
@@ -1460,8 +1488,8 @@ ${currentDraft}`:submitted)
     return value
   }
   const botMemoryPage=projectMemoryPages?{page:0,page_size:projectMemoryPageSize}:undefined
-  const {memory,loading:memoryLoading,timedOut:memoryTimedOut,shown:memoryShown,panel:memoryPanel,load:loadExport}=useBotMemoryPanel(
-    () => readMemory(new AbortController().signal,undefined,botMemoryPage), data?.conversation.memory_revision, fail)
+  const {memory,loading:memoryLoading,timedOut:memoryTimedOut,shown:memoryShown,panel:memoryPanel,error:memoryError}=useBotMemoryPanel(
+    () => readMemory(new AbortController().signal,undefined,botMemoryPage), data?.conversation.memory_revision, valid)
   const memoryOutcomeUnknown=(error:unknown)=>["unavailable","pa_outcome_unknown","execution_effect_unknown","pa_revoked"].includes(errorCode(error))||(error as Error)?.name==="AbortError"
   const saveMemory=async(input:string|MemoryNoteDraft)=>{
     const note=typeof input==="string"?null:input,text=typeof input==="string"?input:input.text
@@ -1482,7 +1510,7 @@ ${currentDraft}`:submitted)
     try{await mutate((_,signal)=>{attempted=true;return source.saveMemory(request,signal)})}
     catch(error){if(!attempted||!memoryOutcomeUnknown(error))memorySave.current=null;throw error}
     memorySave.current=null
-    await loadExport().catch(fail)
+    await memoryPanel.open()
   }
   const forgetMemory=async(sourceIDs:string[])=>{
     if(!memory||!sourceIDs.length)return
@@ -1497,7 +1525,7 @@ ${currentDraft}`:submitted)
     catch(error){if(!attempted||!memoryOutcomeUnknown(error))memoryForget.current=null;throw error}
     memoryForget.current=null
     void handoff.refresh()
-    await loadExport().catch(fail)
+    await memoryPanel.open()
     void refresh(true)
   }
   // Opening a conversation draws chat-shaped placeholders after 150ms, until its first read answers.
@@ -1912,12 +1940,8 @@ ${currentDraft}`:submitted)
       </h2>
       <BotBrowserChip source={source} current={current} bot={bot} hidden={recoveryRequired} paused={!!browserOpener} onOpen={setBrowserOpener}/>
     </header>}
-    {!reconnecting&&error&&<div className="pa-chat-error" role="alert">
-      <span>{errorField==="read_deadline"?w.readTimedOut:errorField==="inspect_interrupted_turn"?w.sendInterrupted:providerSetupFailure(errorField,w)??(error==="pa_capacity_full"&&errorField==="owned_cleanup"?w.sendCleanupPending:error==="cli_not_installed"?w.setup_cli_not_installed:error==="provider_version_unsupported"?w.setup_version_unsupported:<>{w.unavailable} ({error})</>)}</span>
-      <button type="button" className="pa-pill" onClick={()=>void checkForUpdates()} disabled={checkingUpdates} aria-busy={checkingUpdates||undefined}>{errorField==="read_deadline"?w.retry:w.refresh}</button>
-      {error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={()=>void releaseUnconfirmed()} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
-      {error==="pa_capacity_full"&&errorField==="owned_cleanup"&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
-    </div>}
+    {!reconnecting&&<ChatErrorLine error={error} errorField={errorField} memoryError={memoryError} checkingUpdates={checkingUpdates}
+      retry={()=>void checkForUpdates(memoryError?memoryPanel.open:undefined)} release={()=>void releaseUnconfirmed()} releaseRiskID={releaseRiskID} busy={busy} enabled={enabled} w={w}/>}
     {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
       <button type="button" className="pa-pill" onClick={()=>setDecisionHandled(false)}>{w.decisionHandledDismiss}</button></div>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
@@ -2106,7 +2130,7 @@ ${currentDraft}`:submitted)
         const layer=value.view.layers.find(layer=>layer.layer==="project")
         if(!layer)throw failure("pa_invalid")
         return layer
-      }:undefined} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} working={!!activeTurn||queuedCount>0||exchangeRunning||turns.some(turn=>["queued","accepted","running","waiting_permission"].includes(turn.state))} onForget={forgetMemory} onRefresh={loadExport} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
+      }:undefined} pendingText={memorySave.current?.entry.kind==="note"?undefined:memorySave.current?.entry.text} pendingNote={memorySave.current?.entry.kind==="note"?{entry_id:memorySave.current.entry.id,title:memorySave.current.entry.title??"",summary:memorySave.current.entry.summary??"",text:memorySave.current.entry.text,expected_revision:memorySave.current.expected_revision}:undefined} noteDraft={memoryNoteDraft} onNoteDraft={setMemoryNoteDraft} onSaveNote={source.canTopicMemory?.()?saveMemory:undefined} pendingSources={memoryForget.current?.source_ids} enabled={enabled} onSave={saveMemory} working={!!activeTurn||queuedCount>0||exchangeRunning||turns.some(turn=>["queued","accepted","running","waiting_permission"].includes(turn.state))} onForget={forgetMemory} onRefresh={memoryPanel.refresh} onClose={()=>setInfoOpen(false)} w={w}/>}</div>,
       settings:null
     }}/>}
   </section>
