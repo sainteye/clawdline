@@ -59,6 +59,7 @@ import { PermissionCard, permissionMachineLabel, permissionState, samePermission
 import { DecisionCard, decisionsUnderCapsules } from "./DecisionCard"
 import { legacyMemoryProposalTitle } from "./notice-text"
 import { decisionFocus, decisionFollowUp, type DecisionFollowUp } from "./decision-focus"
+import { revealInChat, useMessageFocus } from "./message-focus"
 import { Trace,traceLabel,visibleTrace,workingCategory,type TraceLoadState } from "./Trace"
 import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
@@ -1539,29 +1540,12 @@ ${currentDraft}`:submitted)
       const card=viewport?.querySelector<HTMLElement>(`#pa-decision-${CSS.escape(id)}`)
       if(!viewport||!card){setFocusedDecision("");setDecisionHandled(true);return}
       followingRef.current=false;setFollowing(false)
-      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-      const block=card.offsetHeight>=viewport.clientHeight?"start":"center"
-      card.scrollIntoView({block,behavior:still?"auto":"smooth"})
-      card.focus({preventScroll:true})
+      revealInChat(viewport,card)
     })
     const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
     return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
   },[focusedDecision,focusedUnderExchange,focusedOfferLoaded])
-  useEffect(()=>{
-    if(!focusMessage||!data)return
-    const frame=requestAnimationFrame(()=>{
-      const viewport=scroll.current
-      const target=viewport?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(focusMessage)}"]`)
-      // The message is not in the loaded page: the chat stays where it opened.
-      onMessageFocused?.()
-      if(!viewport||!target)return
-      followingRef.current=false;setFollowing(false)
-      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-      target.scrollIntoView({block:target.offsetHeight>=viewport.clientHeight?"start":"center",behavior:still?"auto":"smooth"})
-      target.focus({preventScroll:true})
-    })
-    return()=>cancelAnimationFrame(frame)
-  },[focusMessage,data])
+  useMessageFocus(focusMessage,!!data,scroll,followingRef,setFollowing,onMessageFocused)
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{

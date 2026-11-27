@@ -30,13 +30,13 @@ func NotifyPersonText(q NotifyPersonRequest) (string, error) {
 	if summary == "" || !utf8.ValidString(summary) || strings.ContainsAny(summary, "\r\n") {
 		return "", fail(Invalid, "notify_summary")
 	}
-	if len(summary) > MaxNotifySummaryBytes {
+	if !notifySummaryBytes.admit(len(summary), MaxNotifySummaryBytes) {
 		return "", fail(CapacityFull, "notify_summary")
 	}
 	if !utf8.ValidString(detail) {
 		return "", fail(Invalid, "notify_detail")
 	}
-	if len(detail) > MaxNotifyDetailBytes {
+	if !notifyDetailBytes.admit(len(detail), MaxNotifyDetailBytes) {
 		return "", fail(CapacityFull, "notify_detail")
 	}
 	text := summary
@@ -52,3 +52,11 @@ func NotifyPersonID(text string) string {
 	sum := sha256.Sum256([]byte(text))
 	return "notify-" + hex.EncodeToString(sum[:12])
 }
+
+var notifySummaryBytes, notifyDetailBytes boundUsage
+
+// NotifySummaryBytesUsage is the diagnostics reading for bots.notify_summary_bytes.
+func NotifySummaryBytesUsage() BoundUsage { return notifySummaryBytes.usage() }
+
+// NotifyDetailBytesUsage is the diagnostics reading for bots.notify_detail_bytes.
+func NotifyDetailBytesUsage() BoundUsage { return notifyDetailBytes.usage() }

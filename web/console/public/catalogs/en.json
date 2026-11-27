@@ -12422,6 +12422,7 @@
   "projectAssistants.readTimedOut": "The read timed out.",
   "projectAssistants.dispatchedNoSession": "no Session to open yet",
   "projectAssistants.traceNotKept": "Processing steps are kept only while a turn runs. This turn has ended, so its steps are no longer stored.",
+  "projectAssistants.rosterNewActivity": "New activity",
   "projectFiles.antigravityInstructions": "Antigravity instructions",
   "projectFiles.applicability": "File applicability; Session context may differ.",
   "projectFiles.sharedInstructions": "Shared instructions",

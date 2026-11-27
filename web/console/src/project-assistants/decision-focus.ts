@@ -16,6 +16,12 @@ export function messageFromFragment(hash:string):string {
   return ids.length===1?ids[0]:""
 }
 
+/** What a push link opens a chat at: a question card, a message, or nothing. */
+export function pushTarget(hash:string,bot:string):{bot:string;id:string;message:string}|null {
+  const id=decisionFromFragment(hash),message=messageFromFragment(hash)
+  return id||message?{bot,id,message}:null
+}
+
 export type DecisionFocus="wait"|"scroll"|"handled"
 
 /**

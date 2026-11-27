@@ -32,3 +32,8 @@ export async function markConversationRead(source: SourceClient, current: () => 
     || !Number.isSafeInteger(cursor.message_seq) || cursor.message_seq < seq) throw failure("pa_scope_denied")
   return cursor
 }
+
+/** Whether reading the chat would clear anything: a count or the grey dot. */
+export function hasUnreadNews(item:W.ProjectAssistantBotSummary):boolean {
+  return item.unread_count>0||item.has_activity===true
+}
