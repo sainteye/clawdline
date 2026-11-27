@@ -30,27 +30,12 @@ func TestAntigravityBootstrapSyntheticProvider(t *testing.T) {
 	if root == "" {
 		return
 	}
-	if err := publishAntigravitySyntheticResult(filepath.Join(root, "bootstrap-ready"), []byte(strconv.Itoa(os.Getpid())), nil); err != nil {
-		os.Exit(2)
+	provider := newAntigravitySyntheticProvider(t, root)
+	provider.publish("bootstrap-ready", []byte(strconv.Itoa(os.Getpid())))
+	if provider.wait("bootstrap-hook") {
+		provider.hook("bootstrap-hook-result", "AG_RUNTIME_SYNTHETIC_ROOT="+root, "AG_RUNTIME_MANAGED=1")
+		provider.hold()
 	}
-	until := time.Now().Add(20 * time.Second)
-	for time.Now().Before(until) {
-		if _, err := os.Stat(filepath.Join(root, "bootstrap-hook")); err == nil {
-			cmd := exec.Command(os.Args[0], "-test.run=^TestAntigravityRuntimeSyntheticHook$")
-			cmd.Env = append(os.Environ(), "AG_RUNTIME_SYNTHETIC_ROOT="+root, "AG_RUNTIME_MANAGED=1")
-			output, err := cmd.CombinedOutput()
-			if err != nil {
-				output = append(output, []byte(err.Error())...)
-			}
-			if err := publishAntigravitySyntheticResult(filepath.Join(root, "bootstrap-hook-result"), output, nil); err != nil {
-				os.Exit(2)
-			}
-			<-time.After(20 * time.Second)
-			os.Exit(0)
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	os.Exit(2)
 }
 
 type bootstrapFixture struct {
@@ -136,31 +121,16 @@ func nativeBootstrapFixture(t *testing.T, wrongWorkspace bool) bootstrapFixture 
 		cwd = root
 	}
 	command := "exec env AG_BOOTSTRAP_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(exe) + " -test.run=^TestAntigravityBootstrapSyntheticProvider$"
-	run("-f", "/dev/null", "new-session", "-d", "-s", "bootstrap", "-c", cwd, command)
-	t.Cleanup(func() {
-		cmd := exec.Command(binary, "-S", tmux.Socket, "kill-server")
-		cmd.Env = []string{"PATH=/usr/bin:/bin"}
-		if err := cmd.Run(); err != nil {
-			t.Error("stop owned tmux", err)
-		}
-	})
-	pane := run("display-message", "-p", "#{pane_id}")
-	if err := s.antigravityLaunchStore.Load().AttachTerminal(ctx, prepared.Record.ID, "tmux", pane); err != nil {
+	pane := startAntigravitySyntheticPane(t, ctx, root, binary, tmux.Socket, "bootstrap", cwd, command)
+	if err := s.antigravityLaunchStore.Load().AttachTerminal(ctx, prepared.Record.ID, "tmux", pane.id); err != nil {
 		t.Fatal(err)
 	}
 	wait := func(name string) []byte {
 		t.Helper()
-		for ctx.Err() == nil {
-			if value, err := os.ReadFile(filepath.Join(root, name)); err == nil {
-				return value
-			}
-			time.Sleep(10 * time.Millisecond)
-		}
-		t.Fatal("synthetic condition deadline", name)
-		return nil
+		return pane.wait(t, name)
 	}
 	wait("bootstrap-ready")
-	return bootstrapFixture{s: s, ctx: ctx, root: root, prepared: prepared, pane: pane, run: run, wait: wait, stopRuntime: stopRuntime}
+	return bootstrapFixture{s: s, ctx: ctx, root: root, prepared: prepared, pane: pane.id, run: run, wait: wait, stopRuntime: stopRuntime}
 }
 func (f bootstrapFixture) hook(t *testing.T) {
 	t.Helper()

@@ -20,6 +20,27 @@ import (
 	"github.com/sainteye/clawdline/internal/app/ports"
 )
 
+func TestAntigravityManagedSyntheticProvider(t *testing.T) {
+	root := os.Getenv("AG_MANAGED_SYNTHETIC_ROOT")
+	if root == "" {
+		return
+	}
+	provider := newAntigravitySyntheticProvider(t, root)
+	if !provider.wait("managed-open") {
+		return
+	}
+	provider.hook("managed-bad-result", "AG_RUNTIME_WRONG_CAP=1")
+	if !provider.wait("managed-continue") {
+		return
+	}
+	provider.hook("hook-result")
+	if !provider.wait("managed-next") {
+		return
+	}
+	provider.hook("hook-next-result", "AG_RUNTIME_INVOCATION=2")
+	provider.hold()
+}
+
 func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T) {
 	for _, name := range []string{"original_workspace", "wrong_workspace", "partial_native_record", "missing_loaded_row", "model_echo", "replaced_transcript", "completed_post", "completed_stop", "completion_missing", "completion_model_echo", "completion_replaced", "empty_context", "empty_completion", "legacy_unfenced"} {
 		wrongWorkspace := name == "wrong_workspace"
@@ -105,16 +126,6 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 				t.Fatal(err)
 			}
 			defer stopRuntime() // callbacks join before the owner closes
-			run := func(args ...string) string {
-				t.Helper()
-				cmd := exec.CommandContext(ctx, binary, append([]string{"-S", tmux.Socket}, args...)...)
-				cmd.Env = append(os.Environ(), "TMUX=", "TMUX_PANE=")
-				output, err := cmd.CombinedOutput()
-				if err != nil {
-					t.Fatalf("private tmux %s: %v %s", args[0], err, output)
-				}
-				return strings.TrimSpace(string(output))
-			}
 			cwd := project
 			if wrongWorkspace {
 				cwd = root
@@ -125,17 +136,9 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			} else if strings.HasPrefix(name, "completion_") || name == "completed_stop" || name == "empty_completion" || name == "legacy_unfenced" {
 				followup = "Stop"
 			}
-			command := "exec env AG_RUNTIME_FOLLOWUP_EVENT=" + followup + " AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 AG_RUNTIME_CONTEXT_FOLLOWUP=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityRuntimeSyntheticProvider$"
-			run("-f", "/dev/null", "new-session", "-d", "-s", "managed", "-c", cwd, command)
-			defer func() {
-				cmd := exec.Command(binary, "-S", tmux.Socket, "kill-server")
-				cmd.Env = []string{"PATH=/usr/bin:/bin"}
-				if err := cmd.Run(); err != nil {
-					t.Errorf("stop private tmux: %v", err)
-				}
-			}()
-			pane := run("display-message", "-p", "#{pane_id}")
-			if err := owner.AttachTerminal(ctx, prepared.Record.ID, "tmux", pane); err != nil {
+			command := "exec env AG_RUNTIME_FOLLOWUP_EVENT=" + followup + " AG_RUNTIME_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_MANAGED_SYNTHETIC_ROOT=" + projects.ShellQuoted(root) + " AG_RUNTIME_MANAGED=1 " + strings.Join(prepared.PrivateEnv, " ") + " " + projects.ShellQuoted(executable) + " -test.run=^TestAntigravityManagedSyntheticProvider$"
+			pane := startAntigravitySyntheticPane(t, ctx, root, binary, tmux.Socket, "managed", cwd, command)
+			if err := owner.AttachTerminal(ctx, prepared.Record.ID, "tmux", pane.id); err != nil {
 				t.Fatal(err)
 			}
 			signal := func(name string) {
@@ -146,14 +149,7 @@ func TestManagedAntigravityAuthenticatesThenPreparesOriginalContext(t *testing.T
 			}
 			wait := func(name string) []byte {
 				t.Helper()
-				for ctx.Err() == nil {
-					if value, err := os.ReadFile(filepath.Join(root, name)); err == nil {
-						return value
-					}
-					time.Sleep(10 * time.Millisecond)
-				}
-				t.Fatalf("synthetic hook result %s did not arrive", name)
-				return nil
+				return pane.wait(t, name)
 			}
 			signal("managed-open")
 			bad := wait("managed-bad-result")
