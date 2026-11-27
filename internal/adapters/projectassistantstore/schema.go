@@ -101,6 +101,9 @@ func (Installer) Install(ctx context.Context, db *sql.DB) error {
 			return err
 		}
 	}
+	if err = addCharterPlaybookColumns(ctx, tx); err != nil {
+		return err
+	}
 	// V17 stores each Bot's messages, turns, bindings, permissions and work
 	// links one member per row. The members move unchanged; the Bot row keeps
 	// every other byte. A missing or repeated member identity fails the

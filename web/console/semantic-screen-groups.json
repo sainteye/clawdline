@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14804,
-  "riskKeys": 6264,
-  "nonRiskCount": 8540,
+  "englishContentKeys": 14816,
+  "riskKeys": 6271,
+  "nonRiskCount": 8545,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 807,
+      "count": 812,
       "sources": [
         null
       ],
@@ -704,6 +704,11 @@
         "capacityRow.bots.charter_body_bytes.what",
         "capacityRow.bots.charter_conflict_sentence_bytes.what",
         "capacityRow.bots.charter_conflicts_resolved.what",
+        "capacityRow.bots.charter_playbook_bots.what",
+        "capacityRow.bots.charter_playbook_id_bytes.what",
+        "capacityRow.bots.charter_playbook_text_bytes.what",
+        "capacityRow.bots.charter_playbook_title_bytes.what",
+        "capacityRow.bots.charter_playbooks.what",
         "capacityRow.bots.charter_projects.full",
         "capacityRow.bots.charter_projects.what",
         "capacityRow.bots.charter_request_bytes.what",

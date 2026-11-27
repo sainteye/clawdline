@@ -67,5 +67,13 @@ func charterBounds() []Entry {
 		{Name: "bots.charter_conflicts", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterConflicts, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterConflicts"}},
 		{Name: "bots.charter_conflicts_resolved", Class: Journal, Unit: Rows, Limit: pa.MaxCharterConflictsResolved, AtLimit: EvictOldest, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterConflictsResolved"}},
 		{Name: "bots.charter_conflict_sentence_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterConflictSentenceBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterConflictSentenceBytes"}},
+		// Playbooks are part of the charter document: the person writes them,
+		// so every bound refuses and nothing is evicted.
+		{Name: "bots.charter_playbooks", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterPlaybooks, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybooks"}},
+		{Name: "bots.charter_playbook_text_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterPlaybookTextBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookTextBytes"}},
+		{Name: "bots.charter_playbook_title_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterPlaybookTitleBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookTitleBytes"}},
+		{Name: "bots.charter_playbook_bots", Class: Buffer, Unit: Rows, Limit: pa.MaxCharterPlaybookBots, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookBots"}},
+		{Name: "bots.charter_playbook_id_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterPlaybookIDBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/projectassistant.MaxCharterPlaybookIDBytes"}},
+		{Name: "bots.charter_document_bytes", Class: Buffer, Unit: Bytes, Limit: pa.MaxCharterDocumentBytes, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Person, Sources: []string{"internal/domain/projectassistant.MaxCharterDocumentBytes"}},
 	}
 }

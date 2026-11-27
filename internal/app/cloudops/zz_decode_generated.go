@@ -105,6 +105,8 @@ var generatedDecoders = map[string]genDecoder{
 	"project-assistants.charter-change-request":   genDecodeProjectAssistantsCharterChangeRequest,
 	"project-assistants.charter-conflict-resolve": genDecodeProjectAssistantsCharterConflictResolve,
 	"project-assistants.charter-conflicts":        genDecodeProjectAssistantsCharterConflicts,
+	"project-assistants.charter-playbook-remove":  genDecodeProjectAssistantsCharterPlaybookRemove,
+	"project-assistants.charter-playbook-save":    genDecodeProjectAssistantsCharterPlaybookSave,
 	"project-assistants.charter-proposal-apply":   genDecodeProjectAssistantsCharterProposalApply,
 	"project-assistants.charter-proposal-dismiss": genDecodeProjectAssistantsCharterProposalDismiss,
 	"project-assistants.charter-proposals":        genDecodeProjectAssistantsCharterProposals,
@@ -2745,6 +2747,81 @@ func genDecodeProjectAssistantsCharterConflicts(b body) (plan, LocalRequest, boo
 	req := LocalRequest{Method: "GET", Path: path}
 	req.Query = b.genQuery(map[string]genValue{"machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}})
 	req.Header = asDevice()
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsCharterPlaybookRemove is the `project-assistants.charter-playbook-remove` row's decode.
+func genDecodeProjectAssistantsCharterPlaybookRemove(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_version", "id", "idempotency_key", "machine_id", "project_id", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(1), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("id", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-charters/playbook-remove"
+	req := LocalRequest{Method: "POST", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "id": genValue{from: "id"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}})
+	return p, req, true
+}
+
+// genDecodeProjectAssistantsCharterPlaybookSave is the `project-assistants.charter-playbook-save` row's decode.
+func genDecodeProjectAssistantsCharterPlaybookSave(b body) (plan, LocalRequest, bool) {
+	if !b.hasOneOf(
+		[]string{"type", "expected_version", "idempotency_key", "machine_id", "playbook", "project_id", "reason", "request", "session"},
+	) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("expected_version", genRule{kind: "integer", min: genInt(0), max: genInt(9007199254740991)}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("idempotency_key", genRule{kind: "string", nonEmpty: true, checks: []func(string) bool{genRequestName}, sameAs: "request"}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("playbook", genRule{kind: "object", maxBytes: 262144, properties: map[string]genRule{"bot_ids": genRule{kind: "list", items: &genRule{kind: "string", nonEmpty: true}, maxItems: genCount(64)}, "id": genRule{kind: "string", maxBytes: 64}, "text": genRule{kind: "string", maxBytes: 16384}, "title": genRule{kind: "string", nonEmpty: true, maxBytes: 120}}, required: []string{"title", "text", "bot_ids"}, closed: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("reason", genRule{kind: "string", maxBytes: 500}) {
+		return plan{}, LocalRequest{}, false
+	}
+	p, ok := actionPlan(b, false)
+	if !ok {
+		return plan{}, LocalRequest{}, false
+	}
+	path := "/v1/project-assistant-charters/playbook"
+	req := LocalRequest{Method: "PUT", Path: path}
+	req.Header = asDevice()
+	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
+		req.Header["Idempotency-Key"] = genText(v)
+	}
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "playbook": genValue{from: "playbook"}, "project_id": genValue{from: "project_id"}, "reason": genValue{from: "reason"}})
 	return p, req, true
 }
 

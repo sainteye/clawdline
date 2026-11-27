@@ -48,14 +48,21 @@ const (
 	CharterByRemoval CharterAuthor = "removed"
 )
 
-// CharterVersion is one immutable saved charter. Text is empty in a history
-// listing and set when one version is read.
+// CharterVersion is one immutable saved charter. Text and Playbooks are
+// empty in a history listing and set when one version is read.
 type CharterVersion struct {
-	Version   int64         `json:"version"`
-	Author    CharterAuthor `json:"author"`
-	Reason    string        `json:"reason"`
-	CreatedAt time.Time     `json:"created_at"`
-	Text      string        `json:"text,omitempty"`
+	Version   int64             `json:"version"`
+	Author    CharterAuthor     `json:"author"`
+	Reason    string            `json:"reason"`
+	CreatedAt time.Time         `json:"created_at"`
+	Text      string            `json:"text,omitempty"`
+	Playbooks []CharterPlaybook `json:"playbooks,omitempty"`
+	// TextVersion is the version at which the text last changed, and
+	// Deliveries the Bots whose playbooks changed after it, each with the
+	// version that changed them. Both are set when the version is saved, so
+	// a prompt never reads history; see DeliveryVersion.
+	TextVersion int64            `json:"-"`
+	Deliveries  map[string]int64 `json:"-"`
 }
 
 // CharterSummary is one Project's charter in the machine listing.
