@@ -182,6 +182,8 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `bots.name_runes` | 128 | `characters` | `refuse` | `diagnostics, sender` | — |
 | `bots.network_grants` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
 | `bots.network_receipts` | 64 | `rows` | `refuse` | `diagnostics, sender, health` | — |
+| `bots.notify_detail_bytes` | 4000 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.notify_summary_bytes` | 300 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.output_bytes` | 104857600 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.output_chunk_bytes` | 393216 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.owned_children` | 256 | `rows` | `disconnect` | `diagnostics, sender` | — |

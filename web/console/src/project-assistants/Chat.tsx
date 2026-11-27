@@ -204,6 +204,8 @@ export interface ChatProps {
   onBotChanged:(bot:W.ProjectAssistantBot)=>void;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onDeleted?:()=>void;onRead?:()=>void;onNewSession?:()=>void;newSessionCount?:number
   /** The decision a push notification opened this chat at, and the call that consumes it. */
   focusDecision?:string;onDecisionFocused?:()=>void
+  /** The message a push about it opened this chat at, and the call that consumes it. */
+  focusMessage?:string;onMessageFocused?:()=>void
 }
 const chatInitialPageRows = 20
 // A preflight before a write reads only the head and fence; its rows are discarded.
@@ -258,7 +260,7 @@ function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
   </div>
 }
 
-export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,pushed=false}:ChatProps) {
+export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,focusMessage,onMessageFocused,pushed=false}:ChatProps) {
   const teamCards=source.canTeamCards?.()===true
   const deferTraceCount=source.canDeferTraceCount?.()===true
   const key=summary.bot.key,identity=botIdentity(key),draftKey=draftIdentity(accountKey,key)
@@ -1545,6 +1547,21 @@ ${currentDraft}`:submitted)
     const clear=window.setTimeout(()=>setFocusedDecision(old=>old===id?"":old),2400)
     return()=>{cancelAnimationFrame(frame);window.clearTimeout(clear)}
   },[focusedDecision,focusedUnderExchange,focusedOfferLoaded])
+  useEffect(()=>{
+    if(!focusMessage||!data)return
+    const frame=requestAnimationFrame(()=>{
+      const viewport=scroll.current
+      const target=viewport?.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(focusMessage)}"]`)
+      // The message is not in the loaded page: the chat stays where it opened.
+      onMessageFocused?.()
+      if(!viewport||!target)return
+      followingRef.current=false;setFollowing(false)
+      const still=window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+      target.scrollIntoView({block:target.offsetHeight>=viewport.clientHeight?"start":"center",behavior:still?"auto":"smooth"})
+      target.focus({preventScroll:true})
+    })
+    return()=>cancelAnimationFrame(frame)
+  },[focusMessage,data])
   const inlineReview=timeline.find(({permission})=>permission&&currentPermission(permission,head)&&permissionState(permission)==="pending")?.permission
   const {count:pendingPermissionCount,nextDeadline}=pendingPermissionView(head,permissionCards,Date.now())
   useEffect(()=>{

@@ -70,7 +70,7 @@ import (
 // Bot chat pages that carry exchange excerpts instead of full exchange text arrive at API 125.
 // The console's "Send to Mac" diagnostic report route arrives at API 126.
 // Team charter playbooks the daemon delivers to their Bots, their routes and Cloud words arrive at API 127.
-const APILevel = 127
+const APILevel = 129
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

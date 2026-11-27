@@ -9,6 +9,13 @@ export function decisionFromFragment(hash:string):string {
   return ids.length===1?ids[0]:""
 }
 
+/** The Bot message a push about it points at; "" for any other link. */
+export function messageFromFragment(hash:string):string {
+  if(!botFromFragment(hash))return ""
+  const ids=new URLSearchParams(hash.replace(/^#/,"")).getAll("message")
+  return ids.length===1?ids[0]:""
+}
+
 export type DecisionFocus="wait"|"scroll"|"handled"
 
 /**

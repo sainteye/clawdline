@@ -24,6 +24,7 @@ const bots=[
  row("TimeUnread",1,{unread_count:3}),
  row("TimeClones",2,{activity:"running",dispatched_work:work(1)}),
  row("Everything",3,{activity:"running",dispatched_work:work(1),unread_count:1}),
+ row("TimeActivity",4,{has_activity:true}),
 ]
 const source={machineID:"fixture-machine",authorizationRevision:"fixture",canGroups:()=>false,current:()=>true,status:async()=>({sources:[status]})} as unknown as SourceClient
 const order=params.get("order"),scope="meta-fixture-"+(order??"default")

@@ -432,6 +432,7 @@ func paWireBotSummary(value pa.BotSummary) (contract.ProjectAssistantBotSummary,
 	}
 	out.ActivityAt = convertedActivityAt
 	out.UnreadCount = value.UnreadCount
+	out.HasActivity = value.HasActivity
 	// Metadata events have no reader observation. Scope only that exact zero
 	// value to its Bot; never repair a nonzero cursor or acknowledge a read.
 	cursor := value.ReadCursor
