@@ -1,8 +1,8 @@
 {
   "version": 1,
   "englishContentKeys": 14886,
-  "riskKeys": 6305,
-  "nonRiskCount": 8581,
+  "riskKeys": 6304,
+  "nonRiskCount": 8582,
   "groups": [
     {
       "name": "acp / other",
@@ -8595,7 +8595,7 @@
     },
     {
       "name": "transparency / other",
-      "count": 247,
+      "count": 248,
       "sources": [
         "src/pages/transparency/catalog.json"
       ],
@@ -8734,6 +8734,7 @@
         "transparency.card.persistent-bot-routines.title",
         "transparency.card.persistent-bot-selected-extensions.summary",
         "transparency.card.persistent-bot-selected-extensions.title",
+        "transparency.card.persistent-bot-steering.condition",
         "transparency.card.persistent-bot-steering.how",
         "transparency.card.persistent-bot-steering.summary",
         "transparency.card.persistent-bot-steering.title",

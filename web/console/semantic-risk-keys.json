@@ -3,12 +3,12 @@
   "englishKeys": 14886,
   "counts": {
     "negation": 3762,
-    "state": 2537,
+    "state": 2536,
     "permission": 880,
     "deletion": 356,
     "uncertainty": 585
   },
-  "unionCount": 6305,
+  "unionCount": 6304,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -6178,7 +6178,6 @@
       "transparency.card.persistent-bot-routines.effect",
       "transparency.card.persistent-bot-routines.how",
       "transparency.card.persistent-bot-selected-extensions.how",
-      "transparency.card.persistent-bot-steering.condition",
       "transparency.card.persistent-bot-steering.effect",
       "transparency.card.persistent-bot-team-charter.condition",
       "transparency.card.persistent-bot-team-charter.effect",
@@ -14148,7 +14147,6 @@
     "transparency.card.persistent-bot-selected-extensions.condition",
     "transparency.card.persistent-bot-selected-extensions.effect",
     "transparency.card.persistent-bot-selected-extensions.how",
-    "transparency.card.persistent-bot-steering.condition",
     "transparency.card.persistent-bot-steering.effect",
     "transparency.card.persistent-bot-team-charter.condition",
     "transparency.card.persistent-bot-team-charter.effect",

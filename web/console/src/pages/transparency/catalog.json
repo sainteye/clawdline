@@ -6017,9 +6017,9 @@
     "web/console/src/pages/settings/window/VoiceSettingsCards.tsx": "32de6b0297b15177cfd41a8318f69df854bd8b2fbba72178ea796ceec20be028",
     "web/console/src/project-assistants/ArtifactRename.tsx": "fcb22ccbfbfc6fd863e34e26e0b5ef619f20ff7100aa5e088aadec8e6266cf3e",
     "web/console/src/project-assistants/BackgroundTasks.tsx": "e0a274a21788687a383bb02c6824bf47b60cb6469619cd59474d410863a8c1aa",
-    "web/console/src/project-assistants/BotSettings.tsx": "139532f3581b1df293f90f101331b2b496d364b6fdaadb05e1f6b6e1859e668b",
+    "web/console/src/project-assistants/BotSettings.tsx": "0236e06b378851dc837494915fb69c32f269e1c41cc5de8de3533cf96e301f10",
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
-    "web/console/src/project-assistants/Chat.tsx": "83ddc786bf77aec4cdabd6a0485de783fa58bb8e78fa4198d12671ab2d708406",
+    "web/console/src/project-assistants/Chat.tsx": "eb3472c7415711d214b310dd18cefedf8131ec56622ea716e2771376c7c2663d",
     "web/console/src/project-assistants/ChatRows.tsx": "b8b1e0ec14d9ac1ab194830371d104130659852b95c626728fc16a7b8676db7c",
     "web/console/src/project-assistants/DecisionCard.tsx": "a770144b42746b07781b07da155d392f112569f86fb252a6d34c9fc861cf1e8a",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
@@ -6045,7 +6045,7 @@
     "web/console/src/project-assistants/routine-hook-intent.ts": "6959ca55d245759c6648ce14cd73d115e8b66bb9c9c8d9ff6cc78458744ab5d8",
     "web/console/src/project-assistants/routine-intent.ts": "13fb3182cddbad2de04e5c53436b34d2308298100cd5b189bb6e93198a799d40",
     "web/console/src/project-assistants/useDevServerObservation.ts": "8ca7acadd1b2fdcb23240f66a7a14c71fbd2a955d564f4610a24f65bebe25200",
-    "web/console/src/project-assistants/words.ts": "80d5dbd08cb2a93a5c1a85f34caf3ac856882e1f4fcd28d661095f3e01c667fd",
+    "web/console/src/project-assistants/words.ts": "62bd9aa34de0164093f96f3059f5120930d13a0278c864ffeb61e36e1d78c120",
     "web/console/src/realtime/CopilotToolHistory.tsx": "fd648f783f34009cecbc0cd7a962ff9174f22dd15a011c43e1c19bc84be85382",
     "web/console/src/realtime/RealtimeCopilotModal.tsx": "4dbadb7d79141202fd145ab2f3b01e0fddedcd2b99204cf5aa4637ddf779be5e",
     "web/console/src/realtime/copilot-call-control.ts": "3841de45dd35e21ef17b7865ca1ff07babccb612559d446be0ec28cbaf26b3a5",
@@ -6078,7 +6078,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "6bee272da6235379e75d4e7b417f59c16d3ade1bbaad087e54f19968f46ceafa",
-    "zh-Hant": "5ab3f4f455edaca90dce08eb008633ccbfa02bab4b3bd2d831bbca2d3fd9e994"
+    "en": "31c38f9081ae105be9079be9c64475597976032eeab8c132ee4f33152390f306",
+    "zh-Hant": "afad14d404d20e2f818e3f70ff1f0ac44b722dbf795f1f317573ad300328d6f1"
   }
 }
