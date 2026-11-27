@@ -40,11 +40,11 @@ The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 
 ### Team charter words
 
-Twelve machine-named words carry a Project's team charter (`docs/bots.md`, "Team charter"). `C` is
+Fourteen machine-named words carry a Project's team charter and its playbooks (`docs/bots.md`, "Team charter"). `C` is
 `/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
 `project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
 local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
-The console carries all twelve: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
+The console carries all fourteen: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
 
 | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- |
@@ -60,9 +60,16 @@ The console carries all twelve: the charter page sends them through the captured
 | project-assistants.charter-change-request | POST C/change-request (`text`) | Yes |
 | project-assistants.charter-conflicts | GET C/conflicts (API 124) | No |
 | project-assistants.charter-conflict-resolve | POST C/conflict-resolve (`conflict_id`, `action`: `follow_charter`, `change_charter` or `dismiss`; API 124) | Yes |
+| project-assistants.charter-playbook-save | PUT C/playbook (`expected_version`, `playbook` {`id`?, `title`, `text`, `bot_ids`}, `reason`; API 126) | Yes |
+| project-assistants.charter-playbook-remove | POST C/playbook-remove (`expected_version`, `id`; API 126) | Yes |
 
 Over Cloud `reason` is required (empty is allowed); the text bounds are copies of
-`MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`.
+`MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`. A playbook save's
+`playbook` is a closed object bounded by `MaxCharterBodyBytes`; its title, text and Bot list copy
+`MaxCharterPlaybookTitleBytes`, `MaxCharterPlaybookTextBytes` and `MaxCharterPlaybookBots`. The
+source refuses a Bot that is not one of the Project's, and the console offers both writes only
+to a source at API 126 or newer. `charter` and `charter-readers` answers from such a source carry
+`playbooks`, and each reader's `delivery_version` and `playbook_ids`.
 
 Projects retains `machine_id`, `cursor`, `page_size` and the optional
 `include_gemini` on its independent route.
