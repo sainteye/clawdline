@@ -3,6 +3,7 @@ import type * as W from "@clawdline/contract"
 import { BotAvatar } from "./BotAvatar"
 import { palette } from "./avatar-paths"
 import { charterFormat, charterWord } from "./charter-words"
+import { charterWorkflow, proposalKind, type CharterChangeTarget } from "./charter-api"
 import { layoutWorkflow, layoutWorkflowDiff, readingOrder, workflowDiff, type PlacedWorkflowState, type RoutedTransition, type WorkflowChange, type WorkflowLayout, type WorkflowTransition } from "./workflow-layout"
 import "./charter-workflow.css"
 
@@ -198,6 +199,45 @@ export function CharterWorkflowSection({ workflow, version, proposal, botOf, onA
       {oldText}
     </details>}
   </section>
+}
+
+/**
+ * The charter page's workflow wiring: which proposal is the workflow's, where
+ * the section goes (in place of its free-text section, kept behind a
+ * disclosure, or after the sections when there is none), and whether the
+ * composer's next request is for the workflow. A machine older than API 128
+ * is not enabled, so it shows nothing of this.
+ */
+export function useCharterWorkflow(input: {
+  enabled: boolean; doc: W.ProjectAssistantCharterResponse | null; proposals: readonly Proposal[]; headings: readonly string[]
+  readers: readonly { bot_id: string; name: string }[]; appearance?: (botID: string) => W.ProjectAssistantAppearance | undefined
+  next: number; busy: boolean; author: (botID: string) => string
+  /** The page's retouch: the proposal the composer's next request revises. */
+  setRetouch: (id: string | null) => void; focus: () => void
+  onApply: (p: Proposal) => void; onDismiss: (p: Proposal) => void
+}) {
+  const { enabled, doc, readers, appearance } = input
+  const [target, setTarget] = useState<CharterChangeTarget>("text")
+  const proposal = enabled ? input.proposals.find(item => proposalKind(item) === "workflow") : undefined
+  const workflow = enabled && doc ? charterWorkflow(doc) : null
+  const shown = !!doc && (!!workflow || !!proposal)
+  const at = shown ? input.headings.findIndex(isWorkflowHeading) : -1
+  const botOf = (id: string): WorkflowBot => ({ name: readers.find(r => r.bot_id === id)?.name ?? "", appearance: appearance?.(id) })
+  const retouch = (item: Proposal) => { input.setRetouch(item.id); setTarget(proposalKind(item)) }
+  const cancel = () => { input.setRetouch(null); setTarget("text") }
+  const section = (oldText?: ReactNode) => doc && <CharterWorkflowSection workflow={workflow} version={doc.version} busy={input.busy} oldText={oldText} botOf={botOf}
+    onAsk={() => { input.setRetouch(null); setTarget("workflow"); input.focus() }}
+    proposal={proposal && { proposal, author: input.author(proposal.bot_id), next: input.next, busy: input.busy, stale: proposal.stale || proposal.base_version !== doc.version,
+      onApply: () => input.onApply(proposal), onDismiss: () => input.onDismiss(proposal), onRetouch: () => retouch(proposal) }}/>
+  return {
+    proposal, target, retouch, cancel,
+    /** Above the composer: what its next request is for, with × to go back to a plain request. */
+    hint: (retouching: string | null) => (retouching || target === "workflow") && <p className="pa-charter-retouch">{charterWord(retouching ? "retouchHint" : "workflowRequestHint")}
+      <button type="button" onClick={cancel} aria-label={charterWord("retouchCancel")}>×</button></p>,
+    /** The section card at this position, or the workflow holding it as its old text. */
+    place: (position: number, key: number, card: ReactNode) => position === at ? <div key={key}>{section(card)}</div> : card,
+    after: shown && at < 0 ? section() : null,
+  }
 }
 
 function CardIcon() {

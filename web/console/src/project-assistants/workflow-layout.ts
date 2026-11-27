@@ -1,8 +1,7 @@
 // Where each state of a charter workflow sits and how each transition is drawn,
 // as a pure function of the states and transitions: no DOM, no React.
 //
-// Placement follows the Atrium flow graph: the graph is read top-down from the
-// start. The spine is the shortest forward path from the start to the nearest
+// The graph is read top-down from the start, like a hand-drawn flow chart. The spine is the shortest forward path from the start to the nearest
 // done state (pass transitions tried first, returns never), one state per row
 // in a centre column. Every other reachable state is a side branch beside the
 // state that first reaches it: on the left when its row is crossed by a way
