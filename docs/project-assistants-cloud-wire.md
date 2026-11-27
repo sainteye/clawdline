@@ -40,11 +40,11 @@ The 16 `SourceClient` methods use the following 16 `project-assistants.*` words.
 
 ### Team charter words
 
-Fourteen machine-named words carry a Project's team charter and its playbooks (`docs/bots.md`, "Team charter"). `C` is
+Fifteen machine-named words carry a Project's team charter, its playbooks and its workflow (`docs/bots.md`, "Team charter"). `C` is
 `/v1/project-assistant-charters`. Each read names `machine_id` and, except the listing,
 `project_id`; each write also names `idempotency_key`, which equals the request ref and becomes the
 local `Idempotency-Key`. The source checks that machine's Bots authority as for the tower floors.
-The console carries all fourteen: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
+The console carries all fifteen: the charter page sends them through the captured Bot source (`web/console/src/project-assistants/charter-api.ts`).
 
 | Cloud word | Local HTTP | Write gate |
 | --- | --- | --- |
@@ -57,11 +57,12 @@ The console carries all fourteen: the charter page sends them through the captur
 | project-assistants.charter-remove | POST C/remove (`expected_version`; API 123) | Yes |
 | project-assistants.charter-proposal-apply | POST C/proposal-apply (`proposal_id`, `expected_version`) | Yes |
 | project-assistants.charter-proposal-dismiss | POST C/proposal-dismiss (`proposal_id`) | Yes |
-| project-assistants.charter-change-request | POST C/change-request (`text`) | Yes |
+| project-assistants.charter-change-request | POST C/change-request (`text`, and an optional `target` `text` or `workflow` as a second shape; API 128) | Yes |
 | project-assistants.charter-conflicts | GET C/conflicts (API 124) | No |
 | project-assistants.charter-conflict-resolve | POST C/conflict-resolve (`conflict_id`, `action`: `follow_charter`, `change_charter` or `dismiss`; API 124) | Yes |
 | project-assistants.charter-playbook-save | PUT C/playbook (`expected_version`, `playbook` {`id`?, `title`, `text`, `bot_ids`}, `reason`; API 127) | Yes |
 | project-assistants.charter-playbook-remove | POST C/playbook-remove (`expected_version`, `id`; API 127) | Yes |
+| project-assistants.charter-workflow-save | PUT C/workflow (`expected_version`, `workflow` {`states`, `transitions`}, `reason`; API 128) | Yes |
 
 Over Cloud `reason` is required (empty is allowed); the text bounds are copies of
 `MaxCharterTextBytes`, `MaxCharterReasonBytes` and `MaxCharterRequestBytes`. A playbook save's
@@ -70,6 +71,16 @@ Over Cloud `reason` is required (empty is allowed); the text bounds are copies o
 source refuses a Bot that is not one of the Project's, and the console offers both writes only
 to a source at API 127 or newer. `charter` and `charter-readers` answers from such a source carry
 `playbooks`, and each reader's `delivery_version` and `playbook_ids`.
+
+A workflow save's `workflow` is a closed object bounded by `MaxCharterBodyBytes`: closed state
+objects (`id`, `title`, `bot_id`, `kind` `start`/`step`/`done`, `note`) and transition objects
+(`from`, `to`, `label`, `kind` `normal`/`pass`/`return`), whose counts and strings copy
+`MaxCharterWorkflowStates`, `MaxCharterWorkflowTransitions`, `MaxCharterWorkflowIDBytes`,
+`MaxCharterWorkflowTitleBytes` and `MaxCharterWorkflowNoteBytes`. The graph's rules and the
+Project's Bots are the source's to check. A source at API 128 or newer answers `workflow` in
+`charter`, and `kind` with `workflow` on each proposal in `charter-proposals`; the console offers
+the workflow write and the change-request target only to such a source. The local
+`GET C/workflow`, which a terminal Session reads with this machine's own token, has no Cloud word.
 
 Projects retains `machine_id`, `cursor`, `page_size` and the optional
 `include_gemini` on its independent route.

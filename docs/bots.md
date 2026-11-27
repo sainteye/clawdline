@@ -260,6 +260,58 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
     playbook, a playbook's conflict report names it by title, and a machine without
     `canCharterPlaybooks` shows none of this. The header status and the roster line count a Bot as
     current at its own `delivery_version`.
+- **Workflow** (API 128). The charter's "一件事怎麼走" (how one piece of work flows) is a small
+  state machine, not free text: `states` (`id` of `[a-z0-9-]`, a one-line `title`, the `bot_id`
+  of a visible Bot of the Project or empty for any Bot, `kind` `start`, `step` or `done`, an
+  optional `note`) and `transitions` (`from`, `to`, an optional outcome `label` such as 審過 or
+  不通過, `kind` `normal`, `pass` or `return`). It replaces the free-text section: there is one
+  source, and Bots read text generated from it. It lives on the charter version like the
+  playbooks; text and playbook saves, a text proposal applied and the template keep it, restore
+  brings back that version's, removal clears it.
+  - *Who changes it.* **Nobody edits the graph by hand, and the console shows no editor.** The
+    person asks the lead Bot, which proposes a whole new workflow with `propose_charter_workflow`
+    (lead only, in a direct turn from the person, beside `propose_charter_edit`) and the person
+    presses Apply; or the person asks a terminal Session (Claude Code, Codex) in its own
+    conversation, which runs `clawdline charter workflow set` (`clawdline guide project`). The
+    change request from the charter page takes `target: "workflow"`: the lead's turn then carries
+    `<charter_workflow_edit_request>` with the current workflow as JSON (`null` when none) and the
+    person's words quoted and escaped as data. A workflow proposal is stored beside text proposals
+    (`kind: "workflow"`, empty `text`) with the same bounds, staleness (`charter_proposal_base`) and
+    apply/dismiss routes; applying it saves a `lead_proposal` version with the current text and
+    playbooks unchanged.
+  - *Validation.* Exactly one `start`, at least one `done`, unique ids, every transition endpoint
+    exists, every non-empty `bot_id` is a visible Bot of this Project (checked inside the write's
+    transaction, and again when a proposal is applied), every state reachable from start, nothing
+    leaves a `done` state. A refusal is `pa_invalid` (or `pa_capacity_full` past a bound) whose
+    field names the rule and, after a colon, the state id or `from->to` transition — for example
+    `workflow_unreachable:review`, `workflow_state_bot:deploy`, `workflow_transition_to:open->nowhere`,
+    or `#N` for the Nth item when its id is not usable. The lead's tool result and the CLI pass it on;
+    the CLI adds a sentence saying what to fix. A kept or restored workflow is checked as a graph
+    only: its Bots were checked when it was written.
+  - *Delivery.* A workflow change is a text-level change: every Bot of the Project moves to the new
+    version (`text_version`) and hears the charter once, followed by the `<charter_check>`, which
+    therefore covers the workflow with no change of its own. Inside the charter block, after the
+    charter text and before the Bot's playbooks, comes a bilingual heading and one line per state in
+    breadth-first order from start, each Bot shown by the display name it has at prompt time (its
+    id when it has none):
+    `- 派工・審證據（Atlas｜產品開發主管）：審過 → 整合・推 GitHub・裝 dev；動到失敗處理 → 可靠性審查`.
+    A state's note follows its line, indented.
+  - *Routes and words.* `GET …/charter` carries `workflow` (and `selected.workflow`);
+    `GET …/proposals` names each proposal's `kind` and proposed `workflow`; `POST …/change-request`
+    takes an optional `target` (`text` or `workflow`). `PUT …/workflow` with `machine_id,
+    project_id, expected_version, idempotency_key, workflow, reason` saves the workflow as a `person`
+    version, validated as a proposal is; it answers the charter. It is the Session's write: the gate
+    accepts this machine's own orchestrator token on `/v1/project-assistant-charters/workflow` and on
+    no other charter route, where `GET` answers the charter and `machine_id` may be left out; a
+    person's device uses the same path under the machine's Bots authority. The Session acts on the
+    person's words in its own conversation, so its version is the person's. The Cloud word
+    `project-assistants.charter-workflow-save` carries the write; the change request's `target`
+    rides a second shape of `charter-change-request`.
+  - *Limits.* 40 states, 80 transitions, 80 bytes per title or label, 300 bytes per note and 40
+    bytes per state id (`bots.charter_workflow_*`).
+  - *Storage.* A `workflow` column on the version table (`''` is none) and `kind`/`workflow`
+    columns on the proposals table (an older row is a text proposal), added like the playbook
+    columns. An older daemon ignores them; a version it saves has no workflow.
 - **Storage.** The charter tables live in the Bots database next to the tower floors, outside any
   Bot's own record, keyed by machine and Project. They were added without a schema version bump,
   like the tower floors: an older daemon ignores them. An older daemon that rewrites a Bot drops
