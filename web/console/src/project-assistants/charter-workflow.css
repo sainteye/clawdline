@@ -1,5 +1,5 @@
 /* The charter's workflow graph (CharterWorkflow.tsx). Cards are HTML over one
-   SVG of lines; the drawing is zoomed to its box and, below the smallest scale,
+   SVG of lines; the drawing is scaled to its box and, below the smallest scale,
    scrolls sideways inside that box, never the page. */
 .project-assistants .pa-charter-scroll>.pa-wf { max-width:1040px; }
 .project-assistants .pa-wf { display:flex;flex-direction:column;gap:12px;padding:16px 18px 14px;border:1px solid var(--pa-line);border-radius:14px;background:var(--pa-card);min-width:0; }
@@ -8,7 +8,8 @@
 .project-assistants .pa-wf-head p { margin:4px 0 0;color:var(--pa-dim);font-size:13px; }
 .project-assistants .pa-wf-head .pa-pill { flex:none;min-height:44px; }
 .project-assistants .pa-wf-box { max-width:100%;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch; }
-.project-assistants .pa-wf-canvas { position:relative;margin-inline:auto; }
+.project-assistants .pa-wf-frame { position:relative;margin-inline:auto; }
+.project-assistants .pa-wf-canvas { position:absolute;left:0;top:0;transform-origin:0 0; }
 .project-assistants .pa-wf-lines { position:absolute;inset:0;overflow:visible; }
 .project-assistants .pa-wf-lines text { paint-order:stroke;stroke:var(--pa-card);stroke-width:4px;stroke-linejoin:round; }
 .project-assistants .pa-wf-state { position:absolute;box-sizing:border-box;display:flex;align-items:center;gap:10px;padding:0 14px 0 12px;border:1.5px solid #3a3a40;border-radius:14px;background:#141416; }

@@ -113,7 +113,10 @@ function WorkflowCanvas({ layout, botOf, label, states, transitions }: {
   }, [scale, layout.width, centre?.x])
   return <>
     <div ref={box} className="pa-wf-box">
-      <div className="pa-wf-canvas" aria-hidden="true" style={{ width: layout.width, height: layout.height, zoom: scale }}>
+      {/* A box of the scaled size holds the drawing, scaled from its top left with a
+          transform, so the layout and the sideways scroll use the scaled size. */}
+      <div className="pa-wf-frame" style={{ width: layout.width * scale, height: layout.height * scale }}>
+      <div className="pa-wf-canvas" aria-hidden="true" style={{ width: layout.width, height: layout.height, transform: `scale(${scale})` }}>
         <svg className="pa-wf-lines" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`}>
           <Arrowheads id={marker} colours={colours}/>
           {layout.transitions.map(edge => <Edge key={edge.key} edge={edge} marker={marker} change={transitions?.get(edge.key)}/>)}
@@ -122,6 +125,7 @@ function WorkflowCanvas({ layout, botOf, label, states, transitions }: {
         {start && <span className="pa-wf-start" style={{ left: start.x + start.width / 2, top: start.y - 30 }}>{charterWord("workflowStart")}</span>}
         {layout.unreachedTop !== undefined && <span className="pa-wf-unreached" style={{ top: layout.unreachedTop }}>{charterWord("workflowUnreached")}</span>}
         {layout.states.map(placed => <StateCard key={placed.state.id} placed={placed} bot={placed.state.bot_id ? botOf(placed.state.bot_id) : undefined} change={states?.get(placed.state.id)}/>)}
+      </div>
       </div>
     </div>
     <ul className="pa-visually-hidden" aria-label={label}>
