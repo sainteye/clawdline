@@ -505,6 +505,10 @@ func TestReadViewLongQueueKeepsCountAndTranscriptWhenItCannotAllFit(t *testing.T
 	if bounded.Head.QueuedTurnCount != 24 || len(bounded.Snapshot.PendingTurns) != 1 || bounded.Snapshot.PendingTurns[0].State != pa.TurnRunning || len(bounded.Items) == 0 {
 		t.Fatalf("bounded view hid queue controls or recent chat: %+v", bounded)
 	}
+	// The turns that did not fit are counted on the snapshot itself.
+	if complete.Snapshot.PendingOmitted != 0 || bounded.Snapshot.PendingOmitted != len(complete.Snapshot.PendingTurns)-1 {
+		t.Fatalf("omitted pending turns: complete %d, bounded %d of %d", complete.Snapshot.PendingOmitted, bounded.Snapshot.PendingOmitted, len(complete.Snapshot.PendingTurns))
+	}
 }
 
 func TestReadViewEventsUseLastIncludedSequence(t *testing.T) {
