@@ -14,7 +14,10 @@ const (
 	MaximumBotOwnedDescendants = 256
 	MaximumBotActors           = 64
 	MaximumBotRPCPending       = 32
-	MaximumBotFrameBytes       = 1048576
+	// Notifications a stdio connector may send before the reply to one
+	// request; past it the connector is treated as broken.
+	MaximumBotConnectorNotifications = 32
+	MaximumBotFrameBytes             = 1048576
 	// Existing process-identity inventory budget; never limits native ACP text.
 	MaximumBotProcessCensusBytes = 1048576
 	// A macOS census copy that outgrows its size estimate (ENOMEM) is taken
@@ -238,6 +241,9 @@ func projectAssistantBounds() []Entry {
 		{Name: BotsRPCPending, Class: Buffer, Unit: Rows, Limit: MaximumBotRPCPending, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
 			Sources: []string{"internal/domain/capacity.MaximumBotRPCPending", "internal/adapters/projectassistantacp.newClient:chan(l.RPCPending)"}},
+		{Name: BotsConnectorNotifications, Class: Buffer, Unit: Rows, Limit: MaximumBotConnectorNotifications, AtLimit: Refuse,
+			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,
+			Sources: []string{"internal/domain/capacity.MaximumBotConnectorNotifications"}},
 		// This still bounds owned MCP HTTP/manifest IO, not native ACP lines.
 		{Name: BotsFrames, Class: Buffer, Unit: Bytes, Limit: MaximumBotFrameBytes, AtLimit: Refuse,
 			Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon,

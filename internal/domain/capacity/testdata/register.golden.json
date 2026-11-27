@@ -1992,6 +1992,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.connector_notifications",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 32,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.MaximumBotConnectorNotifications"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.connector_processes",
     "Class": "buffer",
     "Unit": "rows",

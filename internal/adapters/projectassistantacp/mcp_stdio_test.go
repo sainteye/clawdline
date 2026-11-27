@@ -103,6 +103,12 @@ func TestOwnedConnectorStdioPeer(t *testing.T) {
 }
 
 func ownedConnectorFixture(t *testing.T, mode string) (OwnedMCP, string, *atomic.Bool) {
+	limits := testLimits()
+	limits.CleanupTimeout = 3 * time.Second
+	return ownedConnectorFixtureWith(t, mode, limits)
+}
+
+func ownedConnectorFixtureWith(t *testing.T, mode string, limits Limits) (OwnedMCP, string, *atomic.Bool) {
 	t.Helper()
 	state := t.TempDir()
 	if e := os.Mkdir(filepath.Join(state, "project-assistants"), 0700); e != nil {
@@ -143,8 +149,6 @@ func ownedConnectorFixture(t *testing.T, mode string) (OwnedMCP, string, *atomic
 		_, e := inventory.Resolve(context.Background(), bot, "")
 		return e
 	}}
-	limits := testLimits()
-	limits.CleanupTimeout = 3 * time.Second
 	client := &Client{l: limits, rpcSlots: make(chan struct{}, limits.RPCPending)}
 	lease, e := client.openMCP(context.Background(), app.OpenRequest{Directory: state, Binding: pa.ExecutionBinding{Fence: fence}, Tools: tools, Extensions: extensions})
 	if e != nil {
@@ -387,5 +391,16 @@ func TestStdioRevocationAfterEffectSuppressesPublication(t *testing.T) {
 	effects, e := os.ReadFile(filepath.Join(state, "effects"))
 	if e != nil || string(effects) != "effect\n" {
 		t.Fatal("late revocation permitted another effect", string(effects), e)
+	}
+}
+
+// The daemon's own limits read a connector's reply. Production once left
+// Notifications at zero, so every stdio connector request with an ID failed
+// as connector_effect_unknown while tests, which set 32, passed.
+func TestStdioConnectorAnswersUnderProductionLimits(t *testing.T) {
+	lease, _, _ := ownedConnectorFixtureWith(t, "credential", nativeLimits())
+	ownedConnectorHandshake(t, lease)
+	if code, body := ownedConnectorRequest(t, lease, ownedConnectorCall); code != 200 || !strings.Contains(body, "owned stdio result") {
+		t.Fatal(code, body)
 	}
 }

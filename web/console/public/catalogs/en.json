@@ -14795,5 +14795,7 @@
   "teamCharter.removeConfirm": "Remove",
   "teamCharter.author_removed": "You (removed)",
   "teamCharter.reasonRemoved": "Removed the charter",
-  "teamCharter.personalWorkspaceOf": "{arg0}'s own workspace"
+  "teamCharter.personalWorkspaceOf": "{arg0}'s own workspace",
+  "capacityRow.bots.connector_notifications.full": "The connector is treated as broken and the request is reported as possibly sent; it is never automatically replayed.",
+  "capacityRow.bots.connector_notifications.what": "Notifications one stdio connector may send before its reply to a single request."
 }
