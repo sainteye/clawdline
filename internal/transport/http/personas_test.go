@@ -227,10 +227,13 @@ func TestATaskRowNamesItsPersona(t *testing.T) {
 }
 
 // A restored session comes back as the persona it was recorded with while
-// this build has it, and as nobody once a build has dropped it.
+// this build has it or, for a custom Squad role, while the machine still has
+// it installed; otherwise as nobody.
 func TestARestoredPersonaIsOneThisBuildHas(t *testing.T) {
-	for in, want := range map[string]string{"architect": "architect", "": "", "retired-persona": ""} {
-		if got := restorablePersona(in); got != want {
+	installed := func(id string) bool { return id == "team.reviewer" }
+	for in, want := range map[string]string{"architect": "architect", "": "", "retired-persona": "",
+		"team.reviewer": "team.reviewer", "team.removed": "", "clawdline.architect": ""} {
+		if got := restorablePersona(in, installed); got != want {
 			t.Errorf("%q → %q, want %q", in, got, want)
 		}
 	}
