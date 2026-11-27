@@ -60,7 +60,9 @@ Selection is by path and tests execute the working tree; partial-hunk commits
 need exact-commit CI evidence; pending CI does not block dev installation. Repository-copy and
 capacity-registration guards still run, uncached, even for
 documentation edits. Contract generation runs when schema/generated-contract inputs change.
-Capacity guards run for Go or capacity-copy inputs; CSS and shell guards follow
+Capacity guards run for Go or capacity-copy inputs. A register, measure or measure-snapshot
+change also runs the two HTTP measure tests (`TestEveryRegisteredRowIsMeasured`,
+`TestCapacityMeasuresMatchTheirSnapshot`), which paired-test selection never reaches. CSS and shell guards follow
 their inputs. Tool self-tests run for tooling/full checks. Repository-copy,
 privacy and source guards remain; the machine-word guard scans changed source
 and catalog files, including new files, with whole-tree coverage in CI; full CI retains complete validation.
