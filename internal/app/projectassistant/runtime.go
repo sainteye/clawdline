@@ -66,6 +66,12 @@ type CharterSource interface {
 	CharterDelivered(ctx context.Context, bot pa.Bot, turnID string, version int64) error
 }
 
+// CharterWorkflowSource is a CharterSource that also reads a Project's
+// current workflow, as JSON, for a change request aimed at the workflow.
+type CharterWorkflowSource interface {
+	CurrentCharterWorkflow(context.Context, pa.ProjectScope) (version int64, workflowJSON string, err error)
+}
+
 // AttachmentReader returns the bytes stored for one attachment of a Bot.
 type AttachmentReader interface {
 	Read(key pa.BotKey, a pa.Attachment) ([]byte, error)

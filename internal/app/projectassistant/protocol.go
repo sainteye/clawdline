@@ -93,6 +93,22 @@ type CharterEditProposal struct {
 	Summary     string `json:"summary"`
 }
 
+// CharterWorkflowTools lets the lead Bot, under the same conditions as
+// CharterTools, propose a whole new team workflow for a Project. Only the
+// lead proposes it; the person applies it.
+type CharterWorkflowTools interface {
+	CharterTools
+	ProposeCharterWorkflow(context.Context, CharterWorkflowProposal) (pa.CharterProposal, error)
+}
+
+// CharterWorkflowProposal is the propose_charter_workflow tool's arguments.
+type CharterWorkflowProposal struct {
+	Project     string             `json:"project"`
+	BaseVersion int64              `json:"base_version"`
+	Workflow    pa.CharterWorkflow `json:"workflow"`
+	Summary     string             `json:"summary"`
+}
+
 // CharterConflictTools lets any Bot whose Project has a team charter report a
 // sentence of its own that the charter contradicts. A report changes
 // nothing; the person decides on the charter page.

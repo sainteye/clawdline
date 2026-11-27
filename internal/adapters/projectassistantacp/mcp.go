@@ -489,6 +489,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		if charter, ok := s.tools.(app.CharterTools); ok && charter.CharterProposalAvailable(ctx) == nil {
 			list = append(list, mcpCharterTool())
+			if _, ok := s.tools.(app.CharterWorkflowTools); ok {
+				list = append(list, mcpCharterWorkflowTool())
+			}
 		}
 		if conflicts, ok := s.tools.(app.CharterConflictTools); ok && conflicts.CharterConflictAvailable(ctx) == nil {
 			list = append(list, mcpCharterConflictTool())
@@ -520,7 +523,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" || q.Name == "report_charter_conflict" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" || q.Name == "propose_charter_workflow" || q.Name == "report_charter_conflict" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
@@ -585,6 +588,9 @@ func mcpToolResult(value any, failed bool) any {
 func (s *ownedMCPServer) callTool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
 	if name == "propose_charter_edit" {
 		return s.charterTool(ctx, arguments)
+	}
+	if name == "propose_charter_workflow" {
+		return s.charterWorkflowTool(ctx, arguments)
 	}
 	if name == "report_charter_conflict" {
 		return s.charterConflictTool(ctx, arguments)
@@ -961,6 +967,28 @@ func (s *ownedMCPServer) charterTool(ctx context.Context, arguments json.RawMess
 	return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
 }
 
+// charterWorkflowTool records the lead's workflow proposal; it changes
+// nothing until the person applies it. A refusal names the rule and the
+// state or transition that broke it.
+func (s *ownedMCPServer) charterWorkflowTool(ctx context.Context, arguments json.RawMessage) (any, error) {
+	charter, ok := s.tools.(app.CharterWorkflowTools)
+	if !ok {
+		return nil, refusal(pa.Unsupported, "charter_tools")
+	}
+	if err := charter.CharterProposalAvailable(ctx); err != nil {
+		return nil, err
+	}
+	var q app.CharterWorkflowProposal
+	if mcpDecode(arguments, &q) != nil || q.Project == "" || q.BaseVersion < 0 {
+		return nil, refusal(pa.Invalid, "charter_arguments")
+	}
+	p, err := charter.ProposeCharterWorkflow(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"proposal_id": p.ID, "base_version": p.BaseVersion, "state": "waiting_for_person"}, nil
+}
+
 // charterConflictTool records one report; it changes nothing by itself.
 func (s *ownedMCPServer) charterConflictTool(ctx context.Context, arguments json.RawMessage) (any, error) {
 	tools, ok := s.tools.(app.CharterConflictTools)
@@ -1016,6 +1044,46 @@ func mcpCharterTool() map[string]any {
 				"base_version": map[string]any{"type": "integer", "minimum": 0},
 				"new_text":     map[string]any{"type": "string"},
 				"summary":      map[string]any{"type": "string"},
+			},
+		},
+	}
+}
+
+// mcpCharterWorkflowTool is offered beside propose_charter_edit, to the lead
+// Bot only.
+func mcpCharterWorkflowTool() map[string]any {
+	text := func(description string) map[string]any {
+		return map[string]any{"type": "string", "description": description}
+	}
+	state := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"id", "title", "bot_id", "kind", "note"},
+		"properties": map[string]any{
+			"id":     map[string]any{"type": "string", "pattern": "^[a-z0-9-]+$", "maxLength": pa.MaxCharterWorkflowIDBytes},
+			"title":  text("The step, one line."),
+			"bot_id": text("The Bot of this Project that does it; empty for any Bot."),
+			"kind":   map[string]any{"type": "string", "enum": []string{"start", "step", "done"}},
+			"note":   text("Optional detail; empty for none."),
+		}}
+	transition := map[string]any{"type": "object", "additionalProperties": false, "required": []string{"from", "to", "label", "kind"},
+		"properties": map[string]any{
+			"from":  text("A state id."),
+			"to":    text("A state id."),
+			"label": text("The outcome that takes this way, e.g. passed or failed; empty for the only way on."),
+			"kind":  map[string]any{"type": "string", "enum": []string{"normal", "pass", "return"}},
+		}}
+	return map[string]any{
+		"name":        "propose_charter_workflow",
+		"description": "Propose a new team workflow (how one piece of work flows) for a Project on this computer when the person asks to change it. project is the Project id; base_version is the charter version you read (0 when it has none); workflow is the whole new state machine, not a diff: states with a unique id ([a-z0-9-]), a one-line title, the bot_id of a Bot of this Project (empty for any Bot), kind start, step or done, and an optional note; transitions from and to state ids, with an optional outcome label and kind normal, pass or return (a way back). Exactly one start, at least one done, every state reachable from start, nothing leaves a done state. summary says in one line what you changed. A refusal names the rule and the state or from->to transition to fix. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. 使用者要求修改「一件事怎麼走」時，為這台電腦上的某個 Project 提出新的團隊流程。workflow 是完整的狀態機，不是差異：每個狀態有唯一 id（[a-z0-9-]）、一行標題、這個 Project 的 Bot 的 bot_id（留空代表任何 Bot）、kind（start、step、done）與選填備註；每個轉換有 from、to、選填的結果標籤與 kind（normal、pass、return＝退回）。只能有一個起點、至少一個完成、每個狀態都要從起點走得到、完成之後不能再有轉換。被拒時會指出違反的規則與哪個狀態或轉換。使用者在章程頁按下套用前不會有任何改變。",
+		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
+			"required": []string{"project", "base_version", "workflow", "summary"},
+			"properties": map[string]any{
+				"project":      map[string]any{"type": "string", "minLength": 1},
+				"base_version": map[string]any{"type": "integer", "minimum": 0},
+				"workflow": map[string]any{"type": "object", "additionalProperties": false, "required": []string{"states", "transitions"},
+					"properties": map[string]any{
+						"states":      map[string]any{"type": "array", "maxItems": pa.MaxCharterWorkflowStates, "items": state},
+						"transitions": map[string]any{"type": "array", "maxItems": pa.MaxCharterWorkflowTransitions, "items": transition},
+					}},
+				"summary": map[string]any{"type": "string"},
 			},
 		},
 	}

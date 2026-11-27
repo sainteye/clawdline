@@ -348,11 +348,27 @@ func (r *Engine) readAttemptInputLocked(ctx context.Context, a *runtimeActor, s 
 		if r.o.Charter == nil || !bot.Lead || !pa.DirectUserTurn(t) {
 			return runtimeFailure(pa.ScopeDenied, "charter_edit")
 		}
-		version, text, err := r.o.Charter.CurrentCharter(ctx, pa.ProjectScope{MachineID: bot.Project.MachineID, ProjectID: t.CharterEdit.ProjectID})
-		if err != nil {
-			return err
+		scope := pa.ProjectScope{MachineID: bot.Project.MachineID, ProjectID: t.CharterEdit.ProjectID}
+		switch t.CharterEdit.Target {
+		case pa.CharterEditWorkflow:
+			source, ok := r.o.Charter.(CharterWorkflowSource)
+			if !ok {
+				return runtimeFailure(pa.Unsupported, "charter_workflow")
+			}
+			version, flow, err := source.CurrentCharterWorkflow(ctx, scope)
+			if err != nil {
+				return err
+			}
+			input.Text = pa.CharterWorkflowEditContext(t.CharterEdit.ProjectID, version, flow, input.Text)
+		case pa.CharterEditText:
+			version, text, err := r.o.Charter.CurrentCharter(ctx, scope)
+			if err != nil {
+				return err
+			}
+			input.Text = pa.CharterEditContext(t.CharterEdit.ProjectID, version, text, input.Text)
+		default:
+			return runtimeFailure(pa.ScopeDenied, "charter_edit")
 		}
-		input.Text = pa.CharterEditContext(t.CharterEdit.ProjectID, version, text, input.Text)
 	}
 	if t.CharterFix != nil {
 		// The report travels as the turn's own mark, set only by the charter

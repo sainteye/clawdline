@@ -93,6 +93,7 @@ type NativeWork struct {
 	charterAvailable   func(context.Context) error
 	dispatchKinds      func(context.Context) []string
 	proposeCharter     func(context.Context, app.CharterEditProposal) (pa.CharterProposal, error)
+	proposeWorkflow    func(context.Context, app.CharterWorkflowProposal) (pa.CharterProposal, error)
 	conflictsAvailable func(context.Context) error
 	reportConflict     func(context.Context, app.CharterConflictReport) (pa.CharterConflict, error)
 	manageBots         func(context.Context, app.LeadBotRequest) (json.RawMessage, error)
@@ -515,6 +516,13 @@ func (w NativeWork) ProposeCharterEdit(ctx context.Context, q app.CharterEditPro
 		return pa.CharterProposal{}, failure(pa.ScopeDenied, "lead_user_turn")
 	}
 	return w.proposeCharter(ctx, q)
+}
+
+func (w NativeWork) ProposeCharterWorkflow(ctx context.Context, q app.CharterWorkflowProposal) (pa.CharterProposal, error) {
+	if w.proposeWorkflow == nil {
+		return pa.CharterProposal{}, failure(pa.ScopeDenied, "lead_user_turn")
+	}
+	return w.proposeWorkflow(ctx, q)
 }
 
 func (w NativeWork) CharterConflictAvailable(ctx context.Context) error {
