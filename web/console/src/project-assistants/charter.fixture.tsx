@@ -6,9 +6,13 @@ import { mountFixture } from "./fixtures"
 
 const names = ["Project assistant", "Code review", "Interface design", "Documentation", "Research", "Testing"]
 const bots = (machine: string) => names.map((name, i) => ({ bot_id: `bot-${i}`, name, lead: i === 0 && machine === "studio" }))
+// "?ask" holds the live free text under 什麼要問你, which converts into the two-column ask policy.
+const askText = "不用問，直接做：已審、檢查全綠的修正，整合進 main、推 GitHub、裝 dev；Lens 驗收通過後部署 app.clawdline.com。\n一定要問：公開 Release、改 clawdline.com、刪除資料、花錢、產品方向取捨、檢查沒過要不要照上。\n例外：一次性、總費用確定低於 NTD 5 的外部 API 呼叫不用先問；先設好費用或次數上限，不自動重試，做完回報實際次數與費用。\n要問時用 ask_person 在自己的聊天跳決策卡，同一件事只問一次；不要請使用者轉貼文字，也不要請別的 Bot 替你問。"
+const ask = new URLSearchParams(location.search).has("ask")
 const v1 = "## 誰負責什麼\n\n- Project assistant：分派工作\n- Code review：審查每個修改\n\n## 一件事怎麼走\n\n先開卡，再派工。\n\n## 什麼要問你\n\n部署前先問。\n\n## Bot 之間怎麼溝通\n\n用交辦卡。\n\n## 交辦卡\n\n寫清楚目標。\n"
 const v2 = v1.replace("先開卡，再派工。", "先開卡，再派工，做完回報。")
-const v3 = v2.replace("用交辦卡。", "用交辦卡，不要私下改別人的檔案。").replace("寫清楚目標。", "寫清楚目標和驗收方式。")
+const v3plain = v2.replace("用交辦卡。", "用交辦卡，不要私下改別人的檔案。").replace("寫清楚目標。", "寫清楚目標和驗收方式。")
+const v3 = ask ? v3plain.replace("部署前先問。", askText) : v3plain
 
 // 品質驗收 goes to Code review and Interface design, 發版步驟 to Documentation, 文件寫法 to nobody.
 const seededPlaybooks = [
