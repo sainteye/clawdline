@@ -97,10 +97,11 @@ export function askPolicyFromText(body: string, language: AskLanguage): AskPolic
 }
 
 function splitItems(text: string, language: AskLanguage): string[] {
-  const [strong, weak] = language === "zh" ? [/[；;]/, /、/] : [/;/, /,/]
+  // Full-width marks are escaped: \uFF1B is the semicolon, \u3001 the enumeration comma, \u3002 the full stop.
+  const [strong, weak] = language === "zh" ? [/[\uFF1B;]/, /\u3001/] : [/;/, /,/]
   const parts = text.split(strong).map(item => item.trim()).filter(Boolean)
   const items = parts.length > 1 ? parts : text.split(weak).map(item => item.trim()).filter(Boolean)
-  return items.map(item => item.replace(/[。.]$/, "").trim()).filter(Boolean)
+  return items.map(item => item.replace(/[\u3002.]$/, "").trim()).filter(Boolean)
 }
 
 /** The rows after Enter in row `index`: a new empty row below it, which takes the focus. */
