@@ -33,17 +33,19 @@ import { sessionReportLine } from "./session-report"
 import { decisionReplyOf } from "./decision-reply"
 
 function renderTimelineFact(item: Exclude<ChatItem,{kind:"message"}>, {
-  timeFormat, reviews, w, language, source, onOpenWork, requestAbove, renderPermission, peerDispatchCards,
+  timeFormat, reviews, w, language, source, onOpenWork, requestAbove, renderPermission, renderMemoryCard, peerDispatchCards,
 }: {
   timeFormat: Intl.DateTimeFormat; reviews: ReadonlyMap<string,{text?:string;details?:string}>; w: Words; language: string;
   source?: SourceClient; onOpenWork?: (work:W.ProjectAssistantWorkLink,view?:"session")=>void;
   requestAbove?: (work:W.ProjectAssistantWorkLink)=>React.ReactNode;
-  renderPermission?: (offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode; peerDispatchCards: boolean;
+  renderPermission?: (offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;
+  renderMemoryCard?: (id:string)=>React.ReactNode; peerDispatchCards: boolean;
 }) {
   const key = JSON.stringify(item.kind==="work"&&item.dispatch?["dispatch",item.dispatch.task]:[item.kind,item.id])
   if(item.kind==="separator")return <div className="pa-separator" key={key}><time dateTime={item.at}>{timeFormat.format(Date.parse(item.at))}</time></div>
   if(item.kind==="work")return <Fragment key={key}>{requestAbove?.(item.work)}<WorkResultCard work={item.work} review={reviews.get(item.work.task_id)} dispatch={item.dispatch} language={language} w={w} source={source} onOpen={onOpenWork}/></Fragment>
   if(item.kind==="dispatch")return <Fragment key={key}><PeerDispatchStatusCard dispatch={item.dispatch} showRequester={peerDispatchCards} w={w}/></Fragment>
+  if(item.kind==="memory")return <Fragment key={key}>{renderMemoryCard?.(item.id)}</Fragment>
   return <Fragment key={key}>{renderPermission?.(item.offer)}</Fragment>
 }
 
@@ -114,7 +116,7 @@ function copyCodeFromMessage(e:React.MouseEvent) {
   }
 }
 
-export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderExchangeMemory,renderExchangeWork,timeline,turns=[],onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,roster,artifactComposer,mentions}: {requestAbove?:(work:W.ProjectAssistantWorkLink)=>React.ReactNode;mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];turns?:readonly W.ProjectAssistantReadTurnSummary[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode;renderExchangeMemory?:(exchange:W.ProjectAssistantExchange)=>React.ReactNode;renderExchangeWork?:(exchangeID:string,sender:W.ProjectAssistantBot|undefined,name:string)=>React.ReactNode}) {
+export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderExchangeMemory,renderExchangeWork,timeline,turns=[],onQuote,onOpenWork,w,language,attachmentURL,source,botKey,browserTraces=[],onOpenBrowser,dismissActionsKey,arrivals,onArrivalEnd,afterMessage,renderPermission,renderMemoryCard,roster,artifactComposer,mentions}: {requestAbove?:(work:W.ProjectAssistantWorkLink)=>React.ReactNode;mentions?:readonly BotMentionCandidate[];artifactComposer?:ArtifactComposerAccess;roster?:readonly W.ProjectAssistantBot[];dismissActionsKey?:string;browserTraces?:readonly W.ProjectAssistantTrace[];onOpenBrowser?:(opener:HTMLButtonElement)=>void;timeline:readonly W.ProjectAssistantReadViewItem[];turns?:readonly W.ProjectAssistantReadTurnSummary[];onOpenWork?:(work:W.ProjectAssistantWorkLink, view?:"session")=>void;onQuote?:(m:W.ProjectAssistantMessage)=>void;w:Words;language:string;attachmentURL?:(id:string)=>string|null;source?:SourceClient;botKey?:W.ProjectAssistantBotKey;arrivals?:ReadonlySet<string>;onArrivalEnd?:(id:string)=>void;afterMessage?:(message:W.ProjectAssistantMessage)=>React.ReactNode;renderPermission?:(offer:W.ProjectAssistantPermissionOffer)=>React.ReactNode;renderMemoryCard?:(id:string)=>React.ReactNode;onOpenBot?:(key:W.ProjectAssistantBotKey)=>void;renderExchangeDecision?:(exchangeID:string)=>React.ReactNode;renderExchangeMemory?:(exchange:W.ProjectAssistantExchange)=>React.ReactNode;renderExchangeWork?:(exchangeID:string,sender:W.ProjectAssistantBot|undefined,name:string)=>React.ReactNode}) {
   const messages=timeline.flatMap(row=>row.message?[row.message]:[])
   const byID=new Map(timeline.filter(row=>row.message).map(row=>[row.message!.id,row]))
   const artifacts=new Map<string,W.ProjectAssistantMessage>();for(const m of messages){if(m.output?.artifact_id)artifacts.set(m.output.artifact_id,m)}
@@ -176,7 +178,7 @@ export function ChatRows({requestAbove,onOpenBot,renderExchangeDecision,renderEx
   const resolved=useExchangeParticipants(source,roster,peers)
   const participants=resolved.length?[...roster??[],...resolved]:roster
   const copy=(m:W.ProjectAssistantMessage)=>{void navigator.clipboard?.writeText(m.text).then(()=>setCopied(m.id),()=>{})}
-  return <>{chat.map(item=>item.kind!=="message"?renderTimelineFact(item,{timeFormat,reviews,w,language,source,onOpenWork,requestAbove,renderPermission,peerDispatchCards})
+  return <>{chat.map(item=>item.kind!=="message"?renderTimelineFact(item,{timeFormat,reviews,w,language,source,onOpenWork,requestAbove,renderPermission,renderMemoryCard,peerDispatchCards})
     :item.message.exchange&&source&&botKey&&exchangeScope?(()=>{
     const entry=exchanges.get(item.message.exchange.id)
     if(!entry||first.has(entry.exchange.id)||!sameConversation(item.message.fence,exchangeScope))return null

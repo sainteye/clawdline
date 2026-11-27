@@ -126,6 +126,13 @@ function validateTimelineMessage(row:W.ProjectAssistantReadViewItem,scope:ReadSc
   if(m){message(m,scope);if(row.anchor_message_seq!==m.seq)throw failure("pa_invalid")}
 }
 
+function validatePermissionSummary(row:W.ProjectAssistantReadViewItem,scope:ReadScope,head:W.ProjectAssistantReadViewHead) {
+  const p=row.permission_summary
+  if(!p)return
+  if(row.anchor_message_seq>head.conversation.last_message_seq)throw failure("pa_invalid")
+  permissionSummary(p,scope,head.current_fence)
+}
+
 export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAssistantReadViewRequest,scope:ReadScope):W.ProjectAssistantReadViewResponse {
   readViewRequest(q)
   if(q.key.machine_id!==scope.key.machine_id||q.key.bot_id!==scope.key.bot_id||q.conversation_id!==scope.conversation_id)throw failure("pa_scope_denied")
@@ -178,7 +185,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     const identity=JSON.stringify([row.kind,payloadID]);if(identities.has(identity))throw failure("pa_invalid");identities.add(identity)
     validateTimelineMessage(row,scope)
     if(row.work)work(row.work,scope)
-    if(row.permission_summary)permissionSummary(row.permission_summary,scope,h.current_fence)
+    validatePermissionSummary(row,scope,h)
     if(row.trace_summary){const t=row.trace_summary;if(!text(t.id)||!text(t.turn_id)||!text(t.category)||typeof t.complete!=="boolean"||!cursor(t.detail_cursor)||!t.detail_cursor)throw failure("pa_invalid")}
     if(row.permission){
       if(q.mode==="detail")offer(row.permission,scope,h.current_fence)
@@ -223,7 +230,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
 export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadViewItem[])[]):W.ProjectAssistantReadViewItem[] {
   const rows=new Map<string,W.ProjectAssistantReadViewItem>()
   for(const row of pages.flat()) {
-    if(row.kind!=="message"&&row.kind!=="work"&&row.kind!=="permission")continue
+    if(row.kind!=="message"&&row.kind!=="work"&&row.kind!=="permission"&&row.kind!=="permission_summary")continue
     const id=JSON.stringify([row.kind,row.work?.id??row.message?.id??row.id]),old=rows.get(id)
     if(!old||row.observed_event_seq>=old.observed_event_seq)rows.set(id,row.work&&old?.anchor_message_seq&&!row.anchor_message_seq?{...row,id:old.id,anchor_message_seq:old.anchor_message_seq}:row)
     else if(row.work&&old.anchor_message_seq===0&&row.anchor_message_seq>0)rows.set(id,{...old,id:row.id,anchor_message_seq:row.anchor_message_seq})
@@ -241,7 +248,9 @@ export function mergeTimeline(pages:readonly (readonly W.ProjectAssistantReadVie
     return anchor?{...row,anchor_message_seq:anchor}:row
   })
   const position=(row:W.ProjectAssistantReadViewItem)=>row.work&&!row.anchor_message_seq?Number.MAX_SAFE_INTEGER:row.anchor_message_seq
-  return positioned.sort((a,b)=>position(a)-position(b)||rank[a.kind]-rank[b.kind]||(a.id<b.id?-1:a.id>b.id?1:0))
+  return positioned.sort((a,b)=>position(a)-position(b)||rank[a.kind]-rank[b.kind]||
+    (a.permission_summary&&b.permission_summary?Date.parse(a.permission_summary.expires_at)-Date.parse(b.permission_summary.expires_at):0)||
+    (a.id<b.id?-1:a.id>b.id?1:0))
 }
 
 /** Older sources send anchor zero; mergeTimeline can recover it from the loaded turn or history. */

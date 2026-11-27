@@ -11,7 +11,8 @@ import type { BotReadObservation } from "./read-observation"
 import { authorized, command, errorCode, errorField as refusalField, failure, pictureDataURL, provablyNotSent, sendBlockedByInterruptedTurn, steeringRefused, uncertainAfterSend } from "./client"
 import { botIdentity, canRead, canWrite, currentPermission, draftIdentity, permissionDeadline, sameBot, sameConversation, sameFence, type HeldOutcome, type ViewState } from "./view-state"
 import { decisionReplyOf } from "./decision-reply"
-import { isSendingAdmitted, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
+import { answeredMemoryRows, isSendingAdmitted, memoryCardsInSection, partitionMessages, placeTurn, queuedLabel, queuedAttachments, workingSubject } from "./chat-items"
+import type { ChatPermissionSummary } from "./chat-items"
 import {admittedReceipt,admittedMessage,admittedRow,sendAcknowledgement,ChatObservation} from "./chat-observation"
 import {useMessageArrivals} from "./message-arrivals"
 import {browserViewingPage, localViewingReport, watchBotViewing} from "./bot-viewing"
@@ -228,7 +229,7 @@ function chatReadFlags(source:SourceClient,mode:W.ProjectAssistantReadViewMode,d
 }
 
 type ChatPermissionCard = {
-  summary:W.ProjectAssistantReadPermissionSummary
+  summary:ChatPermissionSummary
   offer:W.ProjectAssistantPermissionOffer|undefined
   identity:string
 }
@@ -237,9 +238,24 @@ function permissionSections(cards:ChatPermissionCard[],visible:ChatPermissionCar
   const memory=cards.filter(({summary,offer})=>isMemoryProposal(summary,offer))
   const memoryIDs=new Set(memory.map(({summary})=>summary.id))
   const approvals=visible.filter(({summary})=>!memoryIDs.has(summary.id))
-  const pendingMemory=memory.filter(({summary,offer})=>currentPermission(summary,head)&&permissionState(summary)==="pending"&&permissionState(offer??summary)==="pending")
-  const memoryHistory=memory.filter(({summary,offer})=>summary.state==="answered"||offer?.state==="answered")
+  const pendingMemory=memoryCardsInSection(memory).filter(({summary,offer})=>currentPermission(summary,head)&&permissionState(summary)==="pending"&&permissionState(offer??summary)==="pending")
+  const memoryHistory=new Map(visible.filter(({summary,offer})=>memoryIDs.has(summary.id)&&(summary.state==="answered"||offer?.state==="answered")).map(card=>[card.summary.id,card]))
   return {pendingMemory,memoryHistory,approvals,pendingApprovals:Math.max(0,pending-pendingMemory.length)}
+}
+
+function chatPermissionSummary(row:W.ProjectAssistantReadViewItem):ChatPermissionSummary {
+  return {...row.permission_summary!,anchor_message_seq:row.anchor_message_seq}
+}
+
+function chatMemoryTimeline(history:readonly W.ProjectAssistantReadViewItem[],timeline:readonly W.ProjectAssistantReadViewItem[],memory:ReadonlyMap<string,ChatPermissionCard>,hasEarlier:boolean,briefID?:string) {
+  return [...(briefID?timeline.filter(row=>row.message?.id!==briefID):timeline),...answeredMemoryRows([...memory.values()],history,hasEarlier)]
+}
+
+function memoryReceiptRenderer(memory:ReadonlyMap<string,ChatPermissionCard>,name:string,readDetail:(id:string,cursor:string)=>Promise<boolean>,w:Words) {
+  return (id:string)=>{
+    const card=memory.get(id)
+    return card&&<MemoryProposalReceipt key={card.identity} summary={card.summary} offer={card.offer} name={name} onDetail={()=>readDetail(id,card.summary.detail_cursor)} w={w}/>
+  }
 }
 
 function ChatJump({shown,working,scroll,followingRef,setFollowing,w}:{
@@ -368,7 +384,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   // A question this chat already shows is not also pushed while it is on
   // screen. Only the console served by this machine reports it.
   useEffect(()=>hostedConsole()?undefined:watchBotViewing(key.bot_id,scope.conversation_id,browserViewingPage(),localViewingReport),[key.bot_id,scope.conversation_id])
-  const [permissions,setPermissions]=useState<W.ProjectAssistantReadPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
+  const [permissions,setPermissions]=useState<ChatPermissionSummary[]>([]),[turns,setTurns]=useState<W.ProjectAssistantReadTurnSummary[]>([]),[activity,setActivity]=useState<Record<string,string>>({})
   const [permissionTick,setPermissionTick]=useState(0)
   const permissionRows=useRef(permissions)
   const collapsedPermissions=useRef(new Set<string>())
@@ -570,7 +586,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
       if(cursor)cursors.add(cursor)
       adoptHead(page)
       if(mode==="permissions"){
-        const added=page.items.map(row=>row.permission_summary!)
+        const added=page.items.map(chatPermissionSummary)
         const rows=new Map((cursor?permissionRows.current:[]).map(row=>[row.id,row]))
         for(const row of added){
           const prior=rows.get(row.id)
@@ -1936,7 +1952,7 @@ ${currentDraft}`:submitted)
     <div className="pa-chat-scroll" ref={scroll} onScroll={onScroll} onFocus={markVisible} tabIndex={0} aria-label={w.compose+" "+bot.name}>
       <div className="pa-chat-content">{brief&&<details className="pa-thread-brief"><summary>{w.backgroundBrief}</summary><p>{brief.text}</p></details>}{chatSkeleton&&<ChatSkeleton label={w.chatLoading}/>}{data?.source.access==="history_only"&&<p role="status">{w.history_only}</p>}
       {!leadSetup.blocked&&showLeadStarter({thread:!!thread,lead:!!bot.lead,loaded:!!data,writable:enabled&&!unknown&&!legacyLocked,messages:timeline.length,earlier:!!more,sending:sending!==null,queued:parts.queued.length,draft:text})&&<LeadStarter w={w} onChoose={value=>{changeText(value);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}}/>}
-      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows renderExchangeWork={renderExchangeWork} requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} renderExchangeMemory={renderExchangeMemory} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={brief?chatTimeline.filter(item=>item.message?.id!==brief.id):chatTimeline} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
+      {!!more&&<button className="pa-pill" disabled={earlierLoading} aria-busy={earlierLoading||undefined} onClick={()=>void earlier()}>{earlierLoading?w.earlierLoading:w.earlier}</button>}<ChatRows renderExchangeWork={renderExchangeWork} requestAbove={work=>{const card=requests.above.get(work.id);return card&&<BotRequestLine card={card} w={w} onOpen={setOpenRequest}/>}} onOpenBot={onOpenBot} renderExchangeDecision={renderExchangeDecision} renderExchangeMemory={renderExchangeMemory} mentions={mentions} roster={[bot,...(roster??[])]} artifactComposer={artifactComposer} arrivals={motion.arrivals} onArrivalEnd={motion.finish} afterMessage={afterMessage} renderPermission={renderTeamPermission} renderMemoryCard={memoryReceiptRenderer(memoryHistory,bot.name,readPermissionDetails,w)} dismissActionsKey={infoOpen?infoTab:""} browserTraces={[...Object.values(details).filter((value):value is W.ProjectAssistantTrace=>"text" in value),...Object.values(observedBrowserTraces)]} onOpenBrowser={browserAvailable&&canReadActions?setBrowserOpener:undefined} source={source} botKey={key} attachmentURL={id=>source.attachmentURL?.(key,id)??null} turns={turns} timeline={chatMemoryTimeline(timeline,chatTimeline,memoryHistory,!!more,brief?.id)} onOpenWork={onOpenWork} onQuote={thread?undefined:m=>{setQuote(m.id);view.quotes.set(draftKey,m.id);scroll.current?.parentElement?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus()}} w={w} language={language}/>{!activeTurn&&sendingBubble}
       {pendingRows.map(row=>{
         const intent=row.intent as W.ProjectAssistantSendRequest,id=intent.command.idempotency_key
         if(id===recoveringID||admittedReceipt(row.receipt)&&messages.some(m=>m.turn_id===row.receipt?.resource_id&&m.kind==="user"))return null
@@ -1959,10 +1975,9 @@ ${currentDraft}`:submitted)
       })}
 
       {!thread&&!teamCards&&<TeamApprovals sources={[source]} bots={data?.conversation.active_turn_id?[bot]:[]}/>}
-      {(approvals.length>0||pendingPermissionCount>permissionCards.length||memoryHistory.length>0||!!permissionMore)&&<section className="pa-permissions">
+      {(approvals.length>0||pendingPermissionCount>permissionCards.length||!!permissionMore)&&<section className="pa-permissions">
         {(approvals.length>0||pendingPermissionCount>permissionCards.length)&&<h3>{w.permission}{pendingApprovals>0&&` · ${pendingApprovals}`}</h3>}
         {approvals.map(({summary:row,offer,identity})=>row.tool_kind==="decision"?renderDecision({summary:row,offer,identity}):<PermissionCard key={identity} startExpanded={row.state==="pending"&&row.tool_kind!=="team_create"&&row.tool_kind!=="team_update"&&!collapsedPermissions.current.has(identity)} onExpandedChange={open=>{if(open)collapsedPermissions.current.delete(identity);else collapsedPermissions.current.add(identity)}} summary={row} offer={offer} enabled={enabled&&pendingPermissionCount>0&&currentPermission(row,head)} onDetail={()=>readPermissionDetails(row.id,row.detail_cursor)} onAnswer={answer} context={permissionContext} machine={permissionMachine} w={w}/>)}
-        {memoryHistory.map(({summary,offer,identity})=><MemoryProposalReceipt key={identity} summary={summary} offer={offer} name={bot.name} onDetail={()=>readPermissionDetails(summary.id,summary.detail_cursor)} w={w}/>)}
         {permissionMore&&<button className="pa-pill" onClick={()=>void collection("permissions",permissionMore).catch(readFailed)}>{w.more}</button>}
       </section>}
       {visibleInterruptions.map(turn=>

@@ -3065,7 +3065,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 9007199254740991,
-          "description": "Immutable admission message anchor for timeline rows; zero for other collections."
+          "description": "Immutable admission message anchor for timeline rows and memory proposal summaries. Zero when absent."
         },
         "occurred_at": {
           "type": "string",

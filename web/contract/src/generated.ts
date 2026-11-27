@@ -8180,8 +8180,8 @@ export interface ProjectAssistantReadViewHead {
  */
 export interface ProjectAssistantReadViewItem {
   /**
-   * Immutable admission message anchor for timeline rows; zero for other
-   * collections.
+   * Immutable admission message anchor for timeline rows and memory proposal
+   * summaries. Zero when absent.
    */
   anchor_message_seq: number
   event?: ProjectAssistantEvent

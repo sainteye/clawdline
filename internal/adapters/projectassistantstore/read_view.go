@@ -593,6 +593,7 @@ func (s *ViewStore) permissions(ctx context.Context, tx *sql.Tx, q app.ReadViewQ
  'kind',json_extract(value,'$.kind'),'decision',CASE WHEN json_extract(value,'$.kind')='decision'
  THEN json_object('question',json_extract(value,'$.decision.question'),'memory_exchange_id',json_extract(value,'$.decision.memory_exchange_id')) END,
  'selected_option_id',CASE WHEN priority=2 THEN json_extract(value,'$.selected_option_id') END,
+ 'anchor_message_seq',CASE WHEN priority<>1 THEN json_extract(value,'$.anchor_message_seq') END,
  'expires_at',json_extract(value,'$.expires_at')) j
  FROM offers WHERE (?='' OR (priority,id COLLATE BINARY)>(?,? COLLATE BINARY))
  ORDER BY priority,id COLLATE BINARY LIMIT ?
@@ -636,6 +637,10 @@ SELECT priority,CASE WHEN spent<=? THEN id ELSE '' END,CASE WHEN spent<=? THEN j
 			item.PermissionSummary.Title, item.PermissionSummary.ToolKind = offer.Decision.Question, pa.DecisionOfferKind
 			item.PermissionSummary.DecisionKind = pa.RosterDecisionQuestion
 			if priority != 1 {
+				if offer.AnchorMessageSeq < 0 || offer.AnchorMessageSeq > out.Head.Conversation.LastMessageSeq {
+					return failure(pa.Invalid, "memory_anchor_message_seq")
+				}
+				item.AnchorMessageSeq = offer.AnchorMessageSeq
 				item.PermissionSummary.DecisionKind = pa.RosterDecisionMemorySave
 				item.PermissionSummary.MemoryExchangeID = offer.Decision.MemoryExchangeID
 				item.PermissionSummary.SelectedOptionID = offer.SelectedOptionID

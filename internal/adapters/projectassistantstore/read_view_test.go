@@ -270,7 +270,7 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 		t.Fatalf("the first page should show the pending proposal: %+v", first.Items)
 	}
 	p := first.Items[0].PermissionSummary
-	if p.DecisionKind != pa.RosterDecisionMemorySave || p.MemoryExchangeID != "source-exchange" || p.SelectedOptionID != "" {
+	if p.DecisionKind != pa.RosterDecisionMemorySave || p.MemoryExchangeID != "source-exchange" || p.SelectedOptionID != "" || first.Items[0].AnchorMessageSeq != proposal.AnchorMessageSeq {
 		t.Fatalf("pending proposal summary = %+v", p)
 	}
 	priority.Request.Cursor = first.Items[0].AfterCursor
@@ -297,9 +297,10 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 		t.Fatalf("permission summaries = %v, want saved and skipped memory cards alongside the pending offer", ids)
 	}
 	for i, want := range []pa.PermissionOffer{memory, skipped} {
-		summary := page.Items[i+2].PermissionSummary
-		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question || summary.SelectedOptionID != want.SelectedOptionID {
-			t.Fatalf("answered memory summary = %+v", summary)
+		item := page.Items[i+2]
+		summary := item.PermissionSummary
+		if summary == nil || summary.State != pa.PermissionResolved || summary.Fence != current || summary.Title != want.Decision.Question || summary.SelectedOptionID != want.SelectedOptionID || item.AnchorMessageSeq != want.AnchorMessageSeq {
+			t.Fatalf("answered memory summary = %+v, anchor = %d", summary, item.AnchorMessageSeq)
 		}
 		detailQuery := q
 		detailQuery.Request.Mode, detailQuery.Request.Cursor, detailQuery.Request.PageSize = pa.ReadViewDetail, summary.DetailCursor, 1
@@ -308,6 +309,9 @@ func TestReadViewKeepsAnsweredMemoryCardsAndCountsOnlyPendingOffers(t *testing.T
 		if len(detail.Items) != 1 || !reflect.DeepEqual(detail.Items[0].Permission, &want) {
 			t.Fatalf("answer detail = %+v, want %+v", detail.Items, want)
 		}
+	}
+	if page.Items[1].AnchorMessageSeq != 0 {
+		t.Fatalf("ordinary decision unexpectedly has a timeline anchor: %+v", page.Items[1])
 	}
 }
 

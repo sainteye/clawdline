@@ -6,6 +6,43 @@ import {mergeTimeline} from "./read-views.ts"
 // @ts-expect-error Node executes source extensions.
 import {chatTimeBreak} from "./chat-time.ts"
 import type { Words } from "./words"
+// @ts-expect-error Node executes source extensions.
+import {legacyMemoryProposalTitle} from "./notice-text.ts"
+
+type PermissionCard = {summary:W.ProjectAssistantReadPermissionSummary;offer:W.ProjectAssistantPermissionOffer|undefined}
+export type ChatPermissionSummary = W.ProjectAssistantReadPermissionSummary & {anchor_message_seq:number}
+
+export function isMemoryCard({summary,offer}:PermissionCard) {
+  if(offer?.decision)return !!offer.decision.memory
+  if(summary.decision_kind)return summary.decision_kind==="memory_save"
+  return summary.tool_kind==="decision"&&legacyMemoryProposalTitle(summary.title)
+}
+
+function memoryAnswered({summary,offer}:PermissionCard) {
+  return summary.state==="answered"||offer?.state==="answered"
+}
+
+export function memoryCardsInSection<T extends PermissionCard>(cards:readonly T[]) {
+  return cards.filter(card=>isMemoryCard(card)&&!memoryAnswered(card))
+}
+
+export function answeredMemoryRows(cards:readonly (PermissionCard&{summary:ChatPermissionSummary})[],timeline:readonly W.ProjectAssistantReadViewItem[],hasEarlier:boolean):W.ProjectAssistantReadViewItem[] {
+  const oldestAnchor=hasEarlier?timeline.find(row=>row.anchor_message_seq>0)?.anchor_message_seq:undefined
+  const messages=timeline.flatMap(row=>row.message?[row.message]:[]).reverse()
+  return cards.flatMap(card=>{
+    if(!isMemoryCard(card)||!memoryAnswered(card))return []
+    const {summary}=card
+    let anchor=summary.anchor_message_seq
+    if(!anchor){
+      // Older sources omit the anchor. The host's MaxDecisionOfferSeconds is
+      // one day, so the stored expiry recovers the original proposal time.
+      const proposedAt=Date.parse(summary.expires_at)-24*60*60*1000
+      anchor=messages.find(message=>Date.parse(message.at)<=proposedAt)?.seq??0
+    }
+    if(oldestAnchor!==undefined&&anchor<oldestAnchor)return []
+    return [{id:summary.id,kind:"permission_summary",anchor_message_seq:anchor,observed_event_seq:0,permission_summary:summary}]
+  })
+}
 
 export type PeerDispatch = {
   task: string
@@ -22,6 +59,7 @@ export type ChatItem = { id: string; kind: "separator"; at: string } |
   { id: string; kind: "message"; message: W.ProjectAssistantMessage; groupStart: boolean; dispatch?: PeerDispatch } |
   { id: string; kind: "work"; work: W.ProjectAssistantWorkLink; dispatch?: PeerDispatch } |
   { id: string; kind: "dispatch"; dispatch: PeerDispatch } |
+  { id: string; kind: "memory" } |
   { id: string; kind: "permission"; offer: W.ProjectAssistantPermissionOffer }
 export function mergeMessages(pages: readonly (readonly W.ProjectAssistantMessage[])[]): W.ProjectAssistantMessage[] {
   const byID = new Map<string,W.ProjectAssistantMessage>()
@@ -83,6 +121,7 @@ export function buildTimelineChat(timeline:readonly W.ProjectAssistantReadViewIt
   for (const row of rows) {
     if(row.work){out.push({id:row.work.id,kind:"work",work:row.work,dispatch:showRequesters?accepted.get(row.work.task_id):undefined});lastAuthor=null;continue}
     if(row.permission){out.push({id:row.permission.id,kind:"permission",offer:row.permission});lastAuthor=null;continue}
+    if(row.permission_summary){out.push({id:row.permission_summary.id,kind:"memory"});lastAuthor=null;continue}
     const message=row.message
     if(!message||message.kind==="notice"&&message.id.startsWith("lead-call-"))continue
     const dispatch = notices.get(message.id)
