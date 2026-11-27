@@ -945,6 +945,9 @@
 | `store.antigravity_consent_identity_bytes` | 128 | `bytes` | `refuse` | `diagnostics` | — |
 | `store.antigravity_consent_root_bytes` | 4096 | `bytes` | `refuse` | `diagnostics` | — |
 | `store.antigravity_project_consents` | 1024 | `rows` | `refuse` | `diagnostics, notice, health` | — |
+| `store.bot_process_open_seconds` | 15 | `seconds` | `coalesce` | `diagnostics` | — |
+| `store.bot_process_prune_batch` | 5000 | `rows` | `coalesce` | `diagnostics` | — |
+| `store.bot_process_vacuum_free_bytes` | 67108864 | `bytes` | `coalesce` | `diagnostics` | — |
 | `store.db` | 1073741824 | `bytes` | `none` | `diagnostics, notice, health` | limits §7.1: C1 only measures this row. Its class refuses new writes at the limit (limits §4.4 step 5, 507 storage_exhausted); nothing refuses yet, and ok:false on /v1/health is the only effect of full. |
 | `store.done_effect_retention_seconds` | 604800 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `store.events` | 150000 | `rows` | `evict_oldest` | `diagnostics` | — |

@@ -120,7 +120,7 @@ holds a collection inline is refused by every reader rather than read as empty.
 Lists use stable `(machine, bot)` ordering, case-insensitive name search and an
 opaque query-bound keyset cursor. Histories return newest-first message pages.
 Event pages return oldest-first durable events after a cursor. Page limits are
-the existing domain limits; this module adds no retention or summary bounds.
+the existing domain limits. Process traces are the one retention rule (below).
 An invalid/future event cursor and malformed, mismatched or missing list anchor
 return `pa_cursor_expired` so the caller can refresh a snapshot.
 
@@ -138,6 +138,42 @@ MarkRead stores its event and receipt atomically. Replaying it returns the
 original resulting cursor even if later commands advanced the principal further.
 Unknown Bots/conversations/turns/bindings/offers return typed `pa_not_found`.
 SQL/infrastructure errors propagate and are never reported as success.
+
+## Process traces
+
+A turn's process — streamed reply and thought chunks, tool calls and tool
+activity, plans — is shown while the turn runs. It is not kept after: the
+commit that stops a turn being its Bot's active turn (succeeded, failed,
+cancelled, unknown, or replaced) deletes that turn's `trace_updated` events
+and the `send` receipts of the events it published (`runtime-event-<turn>-…`).
+Two categories stay, because a reader needs them later:
+`bot_request` (a delegated request's reply) and `no_visible_reply`
+(`pa.RetainedTraceCategories`). The machine's newest event is never deleted,
+so no reader's event frontier moves backwards. Messages, turns, permissions,
+work links, memory events and the person's own send receipts are unaffected.
+
+Nothing can use what is deleted. An incoming event for a turn that is not
+active is refused before its receipt is consulted, so a runtime receipt can
+only deduplicate a retry while its turn runs. The chat shows a past turn's
+messages; its process disclosure says the steps are no longer stored.
+
+The roster journal (`project_assistant_roster_changes`) keeps one row per Bot.
+Each append first deletes the Bot's earlier rows. Every reader takes either
+the newest row per Bot or the rows after a frontier, and reads the Bot's
+current summary for each, so a frontier from before the deleted rows still
+sees the Bot through its newest row.
+
+Before this rule each streamed chunk wrote an event, a receipt and a roster
+row that were never deleted. On 2026-11-26 one machine's `clawdline.sqlite3`
+passed its 1 GiB limit (`store.db`, `capacity_exhausted` on `/v1/health`)
+with 271,244 trace events, 277,723 `send` receipts and 200,118 roster rows
+holding 47 MB of text. `store.Open` clears what such stores left behind with
+the same rules, `store.bot_process_prune_batch` rows per statement, for at most
+`store.bot_process_open_seconds` so a restart stays inside the updater's
+health wait; the maintenance clock (`MaintainEvery`, which also runs at start)
+deletes the rest in the background. An Open that finds nothing left gives the
+space back with one VACUUM when at least `store.bot_process_vacuum_free_bytes`
+are free (`internal/adapters/store/bot_process_retention.go`).
 
 ## Memory and forgetting
 

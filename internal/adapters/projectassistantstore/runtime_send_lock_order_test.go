@@ -119,22 +119,29 @@ func TestSendDoesNotWaitForActorDuringToolJournalCommit(t *testing.T) {
 		t.Fatal("tool journal did not commit after native send")
 	}
 
+	activities := func() int {
+		record, err := store.Export(testContext, bot.Key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n := 0
+		for _, event := range record.Events {
+			if event.Trace != nil && event.Trace.Category == "tool_activity" && event.Trace.Text == concurrentToolActivity {
+				n++
+			}
+		}
+		return n
+	}
+	if sends, activity := peer.sends.Load(), activities(); sends != 1 || activity != 1 {
+		t.Fatalf("native sends = %d, durable tool activities = %d while the turn runs, want one of each", sends, activity)
+	}
 	peer.result <- app.PromptResult{FinalText: "Synthetic reply"}
 	recoveryAwait(t, func() bool {
 		current, err := store.Turn(testContext, bot.Key, turn.ID)
 		return err == nil && current.State == pa.TurnSucceeded
 	})
-	record, err := store.Export(testContext, bot.Key)
-	if err != nil {
-		t.Fatal(err)
-	}
-	activity := 0
-	for _, event := range record.Events {
-		if event.Trace != nil && event.Trace.Category == "tool_activity" && event.Trace.Text == concurrentToolActivity {
-			activity++
-		}
-	}
-	if sends := peer.sends.Load(); sends != 1 || activity != 1 {
-		t.Fatalf("native sends = %d, durable tool activities = %d, want one of each", sends, activity)
+	// Process traces live only while their turn is active.
+	if activity := activities(); activity != 0 {
+		t.Fatalf("tool activities after the turn ended = %d, want 0", activity)
 	}
 }

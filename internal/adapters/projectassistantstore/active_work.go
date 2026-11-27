@@ -107,6 +107,13 @@ func addRosterBackground(summary *pa.BotSummary, work pa.BackgroundWork) {
 // worker is a hidden aggregate, so neither write would otherwise tell a live
 // roster that the owner's active work changed.
 func noteBackgroundOwner(ctx context.Context, tx *sql.Tx, owner pa.BotKey) error {
+	var exists int
+	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_bots WHERE machine=? AND bot=? AND json_extract(CAST(data AS TEXT),'$.BackgroundOwner') IS NULL`, owner.MachineID, owner.BotID).Scan(&exists); err != nil || exists == 0 {
+		return err
+	}
+	if err := replaceRosterChange(ctx, tx, owner); err != nil {
+		return err
+	}
 	_, err := tx.ExecContext(ctx, `INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed)
 		SELECT machine,bot,json_extract(CAST(data AS TEXT),'$.Bot.project'),json_extract(CAST(data AS TEXT),'$.Conversation.id'),
 			json_extract(CAST(data AS TEXT),'$.Conversation.generation'),json_extract(CAST(data AS TEXT),'$.Conversation.binding_id'),0

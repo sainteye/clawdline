@@ -256,7 +256,9 @@ func TestGroupTranscriptScopeHTTP(t *testing.T) {
 	f.groupID = first.Key.BotID
 	sendRoom("room-quoted", "Room A quoted reply", 1)
 	page = scopeSnapshotHTTP(t, f, b)
-	if len(page.Items) != 2 || page.Head.Conversation.LastMessageSeq != page.Items[0].Message.Seq || page.Head.TraceCategoryCount != 1 {
+	// The DM turn has ended, so its tool step is no longer stored
+	// (docs/project-assistants-store.md, "Process traces").
+	if len(page.Items) != 2 || page.Head.Conversation.LastMessageSeq != page.Items[0].Message.Seq || page.Head.TraceCategoryCount != 0 {
 		t.Fatalf("DM projection: %+v", page)
 	}
 	for _, item := range page.Items {

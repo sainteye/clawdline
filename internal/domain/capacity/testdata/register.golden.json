@@ -18387,6 +18387,63 @@
   },
   {
     "Register": "daemon",
+    "Name": "store.bot_process_open_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 15,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.BotProcessOpenBudgetLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.bot_process_prune_batch",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 5000,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.BotProcessPruneBatchLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "store.bot_process_vacuum_free_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 67108864,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/adapters/store.BotProcessVacuumFreeLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "store.db",
     "Class": "evidence",
     "Unit": "bytes",

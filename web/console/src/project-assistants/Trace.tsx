@@ -61,7 +61,7 @@ export function Trace({summaries,details,incomplete=false,more=false,inline=fals
       setSettled(old=>Object.fromEntries(Object.entries(old).filter(([,read])=>read.ok)));setRetry(value=>value+1)
     }}>{w.traceRetry}</button>}
     {loadFailed&&<button type="button" className="pa-trace-more-btn" onClick={loadDeferred}>{w.traceRetry}</button>}
-    {!ready.length&&!waiting&&!failed&&!pending&&!loadFailed&&<p className="pa-trace-state">{w.workNoSteps}</p>}
+    {!ready.length&&!waiting&&!failed&&!pending&&!loadFailed&&<p className="pa-trace-state">{inline?w.workNoSteps:w.traceNotKept}</p>}
     {more&&<button type="button" className="pa-trace-more-btn" onClick={onMore}>{w.moreTrace}</button>}
   </div>
   return inline?content:<details className="pa-trace pa-flow-disclosure" data-trace-count={eligible.length} onToggle={event=>{

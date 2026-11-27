@@ -1021,7 +1021,7 @@ func (r *Engine) incomingOnce(ctx context.Context, a *runtimeActor, e ProtocolEv
 		}
 		return r.postPeerNote(ctx, t, e)
 	}
-	cmd := r.command(a.key, pa.SendOperation, "runtime-event-"+t.ID+"-"+e.ID, e)
+	cmd := r.command(a.key, pa.SendOperation, pa.RuntimeEventCommandPrefix+t.ID+"-"+e.ID, e)
 	if rec, err := r.replay(ctx, cmd, pa.SendOperation); err != nil {
 		return err
 	} else if rec != nil {

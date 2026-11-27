@@ -274,7 +274,9 @@ func TestRosterSSESubscribeBeforeSnapshotAndReconnectConverges(t *testing.T) {
 	r = f.stream(t, checkpoint.Cursor, "reader", "")
 	_ = r.next(t)
 	replay := r.next(t)
-	if replay.Type != "changes" || len(replay.Changes) != 10 {
+	// The journal keeps each Bot's newest row, so the replay carries one
+	// change per Bot that changed: the converged state, not every step.
+	if replay.Type != "changes" || len(replay.Changes) != 2 {
 		t.Fatalf("replay %+v", replay)
 	}
 	seen := map[pa.BotKey]pa.RosterChange{}

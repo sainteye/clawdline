@@ -360,6 +360,24 @@ func persist(ctx context.Context, tx *sql.Tx, a aggregate, expected int64) error
 	}
 	return appendRosterChange(ctx, tx, a, false)
 }
+
+// appendEvents appends a commit's events, then deletes the process of the
+// turn that stopped being active in it (process_retention.go).
+func appendEvents(ctx context.Context, tx *sql.Tx, a *aggregate, events []pa.Event, result *pa.Receipt, wasActive string) error {
+	for _, event := range events {
+		seq, err := appendEvent(ctx, tx, *a, event)
+		if err != nil {
+			return err
+		}
+		result.EventSeq = seq
+		rememberRosterTrace(a, event)
+	}
+	if wasActive == a.Conversation.ActiveTurnID {
+		return nil
+	}
+	return dropTurnProcess(ctx, tx, a.Bot.Key, wasActive)
+}
+
 func (s *Store) Commit(ctx context.Context, m app.Mutation) (pa.Receipt, error) {
 	unlock := s.lock(m.Command.Key)
 	defer unlock()
@@ -406,6 +424,7 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 		}
 	}
 	previousBackgroundTurn := a.backgroundTurnState()
+	wasActive := a.Conversation.ActiveTurnID
 	completed := !m.QuietCompletion && m.Turn != nil && pa.NotifiableCompletion(a.Bot, *m.Turn) && a.Turns[m.Turn.ID].State != pa.TurnSucceeded
 	closeDecisionsThePersonAnswered(a, &m)
 	opened := append(newlyPendingPermissions(a, m), newlyClosedPermissions(a, m)...)
@@ -446,13 +465,8 @@ func (s *Store) commitWith(ctx context.Context, m app.Mutation, extra func(conte
 	if !validEffect(result.State) {
 		return pa.Receipt{}, failure(pa.Invalid, "receipt_state")
 	}
-	for _, event := range m.Events {
-		seq, e := appendEvent(ctx, tx, a, event)
-		if e != nil {
-			return pa.Receipt{}, e
-		}
-		result.EventSeq = seq
-		rememberRosterTrace(&a, event)
+	if err = appendEvents(ctx, tx, &a, m.Events, &result, wasActive); err != nil {
+		return pa.Receipt{}, err
 	}
 	if completed {
 		a.Completion = &pa.BotCompletion{TurnID: m.Turn.ID, ConversationID: m.Turn.Fence.ConversationID}

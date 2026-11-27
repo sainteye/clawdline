@@ -306,14 +306,16 @@ func (s *Store) noteSweep(now time.Time, removed int) {
 	s.images.mu.Unlock()
 }
 
-// MaintainEvery prunes the events table at once, then, on a clock until ctx
-// ends, sweeps reference-image files no row names and prunes events again.
+// MaintainEvery prunes the events table and deletes what Open's budget left of
+// finished Bot turns' process at once, then, on a clock until ctx ends, sweeps
+// reference-image files no row names and prunes events again.
 // Both are the store letting go of what nothing reads; one clock serves both.
 func (s *Store) MaintainEvery(ctx context.Context, every time.Duration) {
 	s.maintainSessionBoards(ctx, time.Now())
 	if _, err := s.PruneEvents(ctx, time.Now()); err != nil && ctx.Err() == nil {
 		log.Printf("store: the events prune failed: %v", err)
 	}
+	s.maintainBotProcessBacklog()
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {

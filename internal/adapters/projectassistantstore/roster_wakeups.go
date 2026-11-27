@@ -59,6 +59,9 @@ func appendRosterChange(ctx context.Context, tx *sql.Tx, a aggregate, removed bo
 	if err != nil {
 		return err
 	}
+	if err = replaceRosterChange(ctx, tx, a.Bot.Key); err != nil {
+		return err
+	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_roster_changes(machine,bot,project,conversation,generation,binding,removed) VALUES(?,?,?,?,?,?,?)`, a.Bot.Key.MachineID, a.Bot.Key.BotID, string(project), a.Bot.ConversationID, a.Conversation.Generation, a.Conversation.BindingID, removed)
 	return err
 }

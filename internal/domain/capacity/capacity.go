@@ -162,11 +162,16 @@ const (
 // The names of the rows. Stable: they are keys on the wire and in the
 // CLAWDLINE_NEXT_CAPACITY override.
 const (
-	AuditSecurity     = "audit.security"
-	StoreDB           = "store.db"
-	StoreEvents       = "store.events"
-	SessionExecutions = "session.executions"
-	SessionNoMovement = "session.no_movement_seconds"
+	AuditSecurity = "audit.security"
+	StoreDB       = "store.db"
+	StoreEvents   = "store.events"
+	// StoreBotProcessPruneBatch and StoreBotProcessVacuumFree bound Open's
+	// cleanup of finished Bot turns' process (store/bot_process_retention.go).
+	StoreBotProcessPruneBatch = "store.bot_process_prune_batch"
+	StoreBotProcessVacuumFree = "store.bot_process_vacuum_free_bytes"
+	StoreBotProcessOpenBudget = "store.bot_process_open_seconds"
+	SessionExecutions         = "session.executions"
+	SessionNoMovement         = "session.no_movement_seconds"
 	// How often a Cloud Session row whose only change is volatile is re-sent.
 	CloudSessionRowVolatile = "cloud.session_row_volatile_seconds"
 	// How long the Cloud publisher may go without reading its own task list

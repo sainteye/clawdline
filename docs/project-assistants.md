@@ -123,7 +123,10 @@ malformed JSON. A receipt lookup checks key scope before comparing content.
 No receipt needed to resolve an unknown effect or an in-window retry may be
 evicted. Receipt retention and durable storage budgets are PA-03 operational
 decisions requiring registration before implementation, not arbitrary defaults
-invented by this foundation.
+invented by this foundation. The first such decision (2026-11-27): a turn's
+process traces and its runtime-event receipts are deleted when it stops being
+the active turn, and the roster journal keeps one row per Bot
+(`docs/project-assistants-store.md`, "Process traces").
 
 One Bot runs one turn at a time; other Bots are independent. At admission,
 validate enabled state, current source authorization/freshness, Project

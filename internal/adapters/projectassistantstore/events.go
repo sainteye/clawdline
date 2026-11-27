@@ -113,7 +113,8 @@ func appendEvent(ctx context.Context, tx *sql.Tx, a aggregate, e pa.Event) (int6
 	return seq, err
 }
 
-// Read has no retention/eviction. Zero starts at the beginning; a cursor ahead
+// Read returns what is retained: a finished turn's process traces are deleted
+// (process_retention.go), every other event stays. Zero starts at the beginning; a cursor ahead
 // of the source's durable log is expired (for example after restoring a backup).
 func (s *Store) Read(ctx context.Context, q pa.EventQuery) (pa.EventPage, error) {
 	out := pa.EventPage{Items: []pa.Event{}, NextSeq: q.AfterSeq}

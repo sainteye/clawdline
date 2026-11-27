@@ -55,6 +55,15 @@ func (s *Server) storeCapacityMeasures() map[string]func() capacity.Reading {
 			removed, _ := s.store.EventPruneStats()
 			return capacity.Reading{Known: true, Used: int64(n), Counters: capacity.Counters{Evicted: removed}}
 		},
+		capacity.StoreBotProcessPruneBatch: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-statement bound of Open's cleanup of finished Bot turns; nothing is retained between steps"}
+		},
+		capacity.StoreBotProcessOpenBudget: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "time bound of Open's cleanup; the maintenance clock deletes the rest"}
+		},
+		capacity.StoreBotProcessVacuumFree: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "threshold read once at Open; the file size is store.db"}
+		},
 		capacity.StoreReceipts: func() capacity.Reading {
 			uses, err := s.store.ReceiptUses(context.Background(), store.ReceiptWindow, time.Now())
 			if err != nil {

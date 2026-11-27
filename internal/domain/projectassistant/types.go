@@ -782,6 +782,18 @@ const (
 	FeatureDisabled     EventKind = "feature_disabled"
 )
 
+// RetainedTraceCategories are the only trace categories a turn keeps once it
+// is no longer its Bot's active turn: a delegated request's reply and the
+// marker that a turn ended without a visible reply. Every other trace —
+// streamed reply and thought chunks, tool calls, tool activity, plans — is
+// process a person reads while the turn runs; it is deleted when the turn
+// ends (docs/project-assistants-store.md, "Process traces").
+var RetainedTraceCategories = []string{"bot_request", "no_visible_reply"}
+
+// RuntimeEventCommandPrefix starts the idempotency key of each event a running
+// turn publishes; the key continues with the turn ID and "-".
+const RuntimeEventCommandPrefix = "runtime-event-"
+
 type Trace struct {
 	ID       string `json:"id,omitempty"` // Stable step within a turn; empty for legacy category snapshots.
 	TurnID   string `json:"turn_id"`

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14804,
-  "riskKeys": 6264,
-  "nonRiskCount": 8540,
+  "englishContentKeys": 14811,
+  "riskKeys": 6270,
+  "nonRiskCount": 8541,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 807,
+      "count": 808,
       "sources": [
         null
       ],
@@ -1364,6 +1364,7 @@
         "capacityRow.squadpackage.manifest_bytes.what",
         "capacityRow.squadpackage.request_bytes.what",
         "capacityRow.store.antigravity_consent_root_bytes.what",
+        "capacityRow.store.bot_process_vacuum_free_bytes.what",
         "capacityRow.store.db.what",
         "capacityRow.terminal.history_lines.what",
         "capacityRow.terminal.input_bytes.what",

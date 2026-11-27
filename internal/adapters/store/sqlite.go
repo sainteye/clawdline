@@ -288,7 +288,7 @@ func Open(dir string) (*Store, error) {
 		_ = os.Chmod(path+suffix, 0o600)
 	}
 	images := &imageFiles{dir: ReferenceImagesDir(dir)}
-	if err := openReferenceImages(db, images); err != nil {
+	if err := openUpkeep(db, images); err != nil {
 		db.Close()
 		return nil, err
 	}

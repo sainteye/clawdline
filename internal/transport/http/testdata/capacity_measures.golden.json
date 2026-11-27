@@ -4612,6 +4612,21 @@
     "Known": true
   },
   {
+    "Name": "store.bot_process_open_seconds",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.bot_process_prune_batch",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "store.bot_process_vacuum_free_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "store.db",
     "Known": true,
     "HasDiskFree": true

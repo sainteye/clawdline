@@ -43,6 +43,36 @@ func storeBounds() []Entry {
 				"internal/adapters/store.EventPruneBatchLimit", "internal/adapters/store.EventKeptAgeLimit"},
 		},
 		{
+			// Rows one delete of Open's cleanup of finished Bot turns'
+			// process removes (streamed chunks, tool steps, their runtime
+			// receipts, superseded roster rows); the cleanup repeats until
+			// nothing is left, one short transaction at a time.
+			Name: StoreBotProcessPruneBatch, Class: Buffer, Unit: Rows,
+			Limit: 5_000, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.BotProcessPruneBatchLimit"},
+		},
+		{
+			// Free bytes in clawdline.sqlite3 at which Open gives the space
+			// back with VACUUM after that cleanup; below it the space is
+			// reused by later writes.
+			Name: StoreBotProcessVacuumFree, Class: Buffer, Unit: Bytes,
+			Limit: 64 << 20, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.BotProcessVacuumFreeLimit"},
+		},
+		{
+			// How long Open spends on that cleanup before the maintenance
+			// clock takes the rest, well inside the updater's health wait.
+			Name: StoreBotProcessOpenBudget, Class: Buffer, Unit: Seconds,
+			Limit: 15, AtLimit: Coalesce,
+			Told:      []Channel{Diagnostics},
+			EvictedBy: Daemon,
+			Sources:   []string{"internal/adapters/store.BotProcessOpenBudgetLimit"},
+		},
+		{
 			// The store's request receipts (D03, W2): per scope, inside each
 			// receipt's window. At the limit a new request in that scope is
 			// refused with a Retry-After; nothing inside its window is
