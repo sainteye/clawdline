@@ -70,7 +70,7 @@ web/console/src/pages/work/WorkV2.tsx	WorkCard	150	56
 web/console/src/pages/work/WorkV2.tsx	WorkV2Page	337	76
 web/console/src/project-assistants/BotCreate.tsx	BotCreate	150	47
 web/console/src/project-assistants/BotRoster.tsx	BotRoster	193	87
-web/console/src/project-assistants/BotSettings.tsx	BotSettingsForm	122	60
+web/console/src/project-assistants/BotSettings.tsx	BotSettingsForm	122	59
 web/console/src/project-assistants/Bots.tsx	Bots	437	136
 web/console/src/project-assistants/Chat.tsx	Chat	2056	594
 web/console/src/project-assistants/ChatRows.tsx	ChatRows	85	48

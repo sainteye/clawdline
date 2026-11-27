@@ -18,6 +18,7 @@ import {SettingsDisclosure} from "./SettingsDisclosure"
 import {catalogWord} from "../catalog"
 import {botFailureText,capabilityHint,providerSetupFailure} from "./source-errors"
 import {settingsBase,settingsConflicts} from "./settings-conflicts"
+import {replyInputPatch,replyInputPreference} from "./read-views"
 import "./bot-settings.css"
 import { useSharedMemorySwitch } from "./BotsSettingsModal"
 
@@ -35,7 +36,7 @@ export function sameEditableSettings(a:W.ProjectAssistantBot,b:W.ProjectAssistan
   const fields=(bot:W.ProjectAssistantBot)=>[
     bot.name,bot.appearance,bot.instructions.text,bot.agent,bot.permission_policy,bot.mode,
     bot.runtime_settings,bot.login_profile,bot.extensions,bot.fallback_agents,bot.fallback_steps,
-    bot.notify,bot.work_review,bot.reply_input??"queue",bot.background_threads,bot.manage_team,
+    bot.notify,bot.work_review,replyInputPreference(bot),bot.background_threads,bot.manage_team,
   ]
   return JSON.stringify(fields(a))===JSON.stringify(fields(b))
 }
@@ -55,7 +56,7 @@ export function attemptedSettingsPersisted(attempted:W.ProjectAssistantEditSetti
   if(attempted.agent!==undefined&&attempted.agent!==bot.agent)return false
   if(attempted.runtime_settings!==undefined&&!same(attempted.runtime_settings,bot.runtime_settings??{model:"",options:{}}))return false
   if(attempted.notify!==undefined&&(attempted.notify==="off")!==(bot.notify==="off"))return false
-  if(attempted.reply_input!==undefined&&attempted.reply_input!==(bot.reply_input??"queue"))return false
+  if(attempted.reply_input!==undefined&&attempted.reply_input!==replyInputPreference(bot))return false
   if(attempted.work_review!==undefined&&(attempted.work_review==="off")!==(bot.work_review==="off"))return false
   if(attempted.login_profile!==undefined&&(attempted.login_profile.id||"")!==(bot.login_profile??""))return false
   if(attempted.extensions!==undefined&&!same(attempted.extensions,bot.extensions??{skills:[],connectors:[]}))return false
@@ -103,8 +104,8 @@ function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,da
   const [fallbacks,setFallbacks]=useState(bot.fallback_agents??[]),[fallbackSteps,setFallbackSteps]=useState<W.ProjectAssistantFallbackStep[]>(originalSteps)
   const [agent,setAgent]=useState(bot.agent),[runtime,setRuntime]=useState<W.ProjectAssistantRuntimeSettings>(bot.runtime_settings??{model:"",options:{}})
   const [backgroundThreads,setBackgroundThreads]=useState(bot.background_threads??3)
-  const [replyInput,setReplyInput]=useState(bot.reply_input??"queue")
-  const replyInputChanged=replyInput!==(original.reply_input??"queue")
+  const [replyInput,setReplyInput]=useState(replyInputPreference(bot))
+  const replyInputChanged=replyInput!==replyInputPreference(original)
   const [workReview,setWorkReview]=useState(bot.work_review!=="off")
   const sharedMemory=useSharedMemorySwitch(source,bot.key.bot_id)
   const [notify,setNotify]=useState(bot.notify!=="off"),[manageTeam,setManageTeam]=useState(bot.manage_team??false)
@@ -129,7 +130,7 @@ function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,da
         ...(rebased?{base:settingsBase(original),...(overwrite?{overwrite_conflicts:true}:{})}:{}),
         ...(source?.canLoginProfiles?.()?{login_profile:{id:loginProfile},extensions}:{}),
         ...(modern?{agent,runtime_settings:runtime,notify:notify?"on" as const:"off" as const}:{}),
-        ...(replyInputChanged?{reply_input:replyInput}:{}),
+        ...replyInputPatch(original,replyInput),
         ...(workReview!==(original.work_review!=="off")?{work_review:workReview?"on" as const:"off" as const}:{}),
         ...(backgroundThreads!==(original.background_threads??3)?{background_threads:backgroundThreads}:{}),
         ...(teamChanged?{manage_team:manageTeam}:{})}
@@ -168,7 +169,7 @@ function BotSettingsForm({bot,onSave,onClose,w,enabled,reason="",rules,manage,da
     if(has("login_profile")||has("agent"))setLoginProfile(fresh.login_profile??"")
     if(has("extensions")||has("agent"))setExtensions(fresh.extensions??{skills:[],connectors:[]})
     if(has("fallbacks")||has("agent")){setFallbacks(fresh.fallback_agents??[]);setFallbackSteps(fresh.fallback_steps??(fresh.fallback_agents??[]).map(agent=>({agent})))}
-    if(has("reply_input"))setReplyInput(fresh.reply_input??"queue")
+    if(has("reply_input"))setReplyInput(replyInputPreference(fresh))
     if(has("notify"))setNotify(fresh.notify!=="off")
     if(has("background_threads"))setBackgroundThreads(fresh.background_threads??3)
     if(has("manage_team"))setManageTeam(fresh.manage_team??false)

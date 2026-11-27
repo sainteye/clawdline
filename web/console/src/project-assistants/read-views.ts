@@ -80,6 +80,8 @@ function turn(t:W.ProjectAssistantReadTurnSummary,scope:ReadScope,current?:W.Pro
   if(t.queue_edit_id!==undefined&&(!text(t.queue_edit_id)||t.state!=="queued"))throw failure("pa_invalid")
   if(t.origin!==undefined&&typeof t.origin!=="string"||t.released_restart!==undefined&&typeof t.released_restart!=="boolean")throw failure("pa_invalid")
   if(t.attempts!==undefined)validateAttempts(t.attempts,scope)
+  const fallback=(t as SteerFallbackTurn).steer_fallback
+  if(fallback!==undefined&&(!text(fallback)||t.state!=="queued"))throw failure("pa_invalid")
 }
 function offer(p:W.ProjectAssistantPermissionOffer,scope:ReadScope,current?:W.ProjectAssistantFence) {
   if(!p||!text(p.id)||!oneOf(p.state,permissionStates)||!date(p.expires_at)||!Array.isArray(p.options)||typeof p.native_request_id!=="string"||typeof p.selected_option_id!=="string")throw failure("pa_invalid")
@@ -277,4 +279,36 @@ export function validateAttempts(attempts:W.ProjectAssistantAttemptFact[],scope:
   if(f.carry_after_seq!==undefined&&!integer(f.carry_after_seq))throw failure("pa_invalid")
  }
 }
-export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {return{id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts,...(t.origin?{origin:t.origin}:{}),...(t.released_restart?{released_restart:true}:{})}}
+export function turnSummary(t:W.ProjectAssistantTurn):W.ProjectAssistantReadTurnSummary {const fallback=(t as SteerFallbackTurn).steer_fallback;return{...(fallback?{steer_fallback:fallback}:{}),id:t.id,fence:t.fence,message_id:t.message_id,state:t.state,failure_code:t.failure?.code??"",failure_field:t.failure?.field,started_at:t.started_at??"",queue_edit_id:t.queue_edit_id,attempts:t.attempts,...(t.origin?{origin:t.origin}:{}),...(t.released_restart?{released_restart:true}:{})}}
+
+// The source marks a queued turn it could not steer with steer_fallback. Until the generated
+// contract carries the field, it is read as an optional extra on the turn.
+type SteerFallbackTurn={steer_fallback?:unknown}
+/** A Bot steers unless the person explicitly chose to queue follow-ups. */
+export function replyInputPreference(bot:Pick<W.ProjectAssistantBot,"reply_input">):"queue"|"steer" {
+  return bot.reply_input==="queue"?"queue":"steer"
+}
+/** Why the source queued this turn instead of steering it; empty when it did not say. */
+export function steerFallback(turn:object|undefined):string {
+  const value=(turn as SteerFallbackTurn|undefined)?.steer_fallback
+  return typeof value==="string"?value:""
+}
+/** A steering Bot offers send now only on a message the source put back in the queue. */
+export function queuedSendNowShown(preference:"queue"|"steer",fallback:string):boolean {
+  return preference==="queue"||fallback!==""
+}
+/** Whether a queued message offers send now: never on an Agent that refused steering, and on a
+ *  steering Bot only after the source put it back in the queue. */
+export function queuedSendNow(source:{canReplyInput?:()=>boolean},bot:Pick<W.ProjectAssistantBot,"reply_input"|"agent">,turn:object|undefined,refused:readonly string[]):boolean {
+  return !refused.includes(bot.agent)&&queuedSendNowShown(source.canReplyInput?.()?replyInputPreference(bot):"queue",steerFallback(turn))
+}
+type FallbackWords={steerFallbackAgent:string;steerFallbackImages:string;steerFallbackPermission:string;steerFallbackTurnEnded:string;steerFallbackScope:string;steerFallbackQueued:string}
+/** The short reason shown under a message the source put back in the queue. */
+export function steerFallbackReason(code:string,w:FallbackWords):string {
+  if(!code)return ""
+  return ({agent_unsupported:w.steerFallbackAgent,images_unsupported:w.steerFallbackImages,permission_pending:w.steerFallbackPermission,turn_ended:w.steerFallbackTurnEnded,scope:w.steerFallbackScope} as Record<string,string>)[code]??w.steerFallbackQueued
+}
+/** A save carries reply_input only when the switch differs from the Bot's effective choice. */
+export function replyInputPatch(bot:Pick<W.ProjectAssistantBot,"reply_input">,chosen:"queue"|"steer"):{reply_input?:"queue"|"steer"} {
+  return chosen===replyInputPreference(bot)?{}:{reply_input:chosen}
+}
