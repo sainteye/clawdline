@@ -139,7 +139,7 @@ func projectAssistantRows(t *testing.T) []cloudvocab.Operation {
 			out = append(out, row)
 		}
 	}
-	if len(out) != 86 {
+	if len(out) != 88 {
 		t.Fatalf("Bot vocabulary has %d words", len(out))
 	}
 	return out
@@ -855,5 +855,7 @@ func charterOperationCases() []operationCase {
 	write("charter-proposal-dismiss", "POST", "/proposal-dismiss", map[string]any{"proposal_id": "cp-one"})
 	write("charter-change-request", "POST", "/change-request", map[string]any{"text": "Add a review rule."})
 	write("charter-conflict-resolve", "POST", "/conflict-resolve", map[string]any{"conflict_id": "cc-one", "action": "follow_charter"})
+	write("charter-playbook-save", "PUT", "/playbook", map[string]any{"expected_version": 1, "playbook": map[string]any{"title": "Release", "text": "Tag, then ship.", "bot_ids": []string{"bot-one"}}, "reason": ""})
+	write("charter-playbook-remove", "POST", "/playbook-remove", map[string]any{"expected_version": 2, "id": "pb-0123456789abcdef"})
 	return rows
 }

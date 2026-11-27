@@ -4969,18 +4969,20 @@ type ProjectAssistantCharterConflictResolveRequest struct {
 	ProjectID      string                                `json:"project_id"`
 }
 
-// Where the Bot's sentence lives: its memory, its instructions, or a file in
-// its workspace its instructions point to.
+// Where the Bot's sentence lives: its memory, its instructions, a file in its
+// workspace its instructions point to, or one of the charter playbooks assigned
+// to it (API 126; path is the playbook id).
 type ProjectAssistantCharterConflictSource string
 
 const (
 	ProjectAssistantCharterConflictSourceMemory        ProjectAssistantCharterConflictSource = "memory"
 	ProjectAssistantCharterConflictSourceInstructions  ProjectAssistantCharterConflictSource = "instructions"
 	ProjectAssistantCharterConflictSourceWorkspaceFile ProjectAssistantCharterConflictSource = "workspace_file"
+	ProjectAssistantCharterConflictSourcePlaybook      ProjectAssistantCharterConflictSource = "playbook"
 )
 
 // ProjectAssistantCharterConflictSourceValues is every value the contract allows, in contract order.
-var ProjectAssistantCharterConflictSourceValues = []ProjectAssistantCharterConflictSource{ProjectAssistantCharterConflictSourceMemory, ProjectAssistantCharterConflictSourceInstructions, ProjectAssistantCharterConflictSourceWorkspaceFile}
+var ProjectAssistantCharterConflictSourceValues = []ProjectAssistantCharterConflictSource{ProjectAssistantCharterConflictSourceMemory, ProjectAssistantCharterConflictSourceInstructions, ProjectAssistantCharterConflictSourceWorkspaceFile, ProjectAssistantCharterConflictSourcePlaybook}
 
 // What became of a report. fixed: the daemon replaced the Bot's sentence;
 // handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the
@@ -5023,11 +5025,74 @@ type ProjectAssistantCharterDismissRequest struct {
 
 // The charter bounds the source enforces.
 type ProjectAssistantCharterLimits struct {
+	// One version's charter text plus the text of all its playbooks (API 126).
+	DocumentBytes int64 `json:"document_bytes,omitempty"`
+
+	// Bots one playbook is assigned to (API 126).
+	PlaybookBots int64 `json:"playbook_bots,omitempty"`
+
+	// One playbook's text (API 126); absent from an older daemon.
+	PlaybookTextBytes int64 `json:"playbook_text_bytes,omitempty"`
+
+	// One playbook's one-line title (API 126).
+	PlaybookTitleBytes int64 `json:"playbook_title_bytes,omitempty"`
+
+	// Playbooks one charter version holds (API 126).
+	Playbooks    int64 `json:"playbooks,omitempty"`
 	Proposals    int64 `json:"proposals"`
 	ReasonBytes  int64 `json:"reason_bytes"`
 	RequestBytes int64 `json:"request_bytes"`
 	TextBytes    int64 `json:"text_bytes"`
 	Versions     int64 `json:"versions"`
+}
+
+// One playbook of a charter version (API 126): a named Markdown document
+// assigned to some of the Project's Bots. Each assigned Bot hears it inside its
+// charter block, after the charter text; the charter wins over a playbook and a
+// playbook over the Bot's own instructions and memory. id is issued by the
+// daemon and stays the same across versions.
+type ProjectAssistantCharterPlaybook struct {
+	BotIds []string `json:"bot_ids"`
+	ID     string   `json:"id"`
+	Text   string   `json:"text"`
+	Title  string   `json:"title"`
+}
+
+// A playbook as the person writes it. An empty or absent id creates a new
+// playbook; a known id replaces that one. bot_ids must be Bots of the Project.
+type ProjectAssistantCharterPlaybookInput struct {
+	BotIds []string `json:"bot_ids"`
+	ID     string   `json:"id,omitempty"`
+	Text   string   `json:"text"`
+	Title  string   `json:"title"`
+}
+
+// Remove one playbook as the next charter version while the charter is still at
+// expected_version (API 126). The Bots it was assigned to hear the charter
+// without it.
+type ProjectAssistantCharterPlaybookRemoveRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	ID              string `json:"id"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+}
+
+// Create or replace one playbook as the next charter version while the charter
+// is still at expected_version (API 126). The charter text and the other
+// playbooks are kept. A Project without a charter answers pa_invalid with field
+// charter; a stale base answers pa_stale_version with field charter_version; a
+// Bot that is not the Project's answers pa_invalid with field bot_ids.
+type ProjectAssistantCharterPlaybookSaveRequest struct {
+	ExpectedVersion int64                                `json:"expected_version"`
+	IdempotencyKey  string                               `json:"idempotency_key"`
+	MachineID       string                               `json:"machine_id"`
+	Playbook        ProjectAssistantCharterPlaybookInput `json:"playbook"`
+	ProjectID       string                               `json:"project_id"`
+
+	// Why the playbook changed, for the charter history; may be empty but is always
+	// sent.
+	Reason string `json:"reason"`
 }
 
 // A lead Bot's pending proposal: the whole replacement text. stale says the
@@ -5053,17 +5118,25 @@ type ProjectAssistantCharterProposalsResponse struct {
 }
 
 // One Bot of the Project: the charter version its most recent prompt carried (0
-// before any) and whether it has a running or queued turn now.
+// before any) and whether it has a running or queued turn now. A Bot has read
+// the current charter when version is at least delivery_version.
 type ProjectAssistantCharterReader struct {
-	BotID   string `json:"bot_id"`
-	Hidden  bool   `json:"hidden"`
-	Lead    bool   `json:"lead"`
-	Name    string `json:"name"`
-	Queued  bool   `json:"queued"`
-	ReadAt  string `json:"read_at,omitempty"`
-	Running bool   `json:"running"`
-	TurnID  string `json:"turn_id"`
-	Version int64  `json:"version"`
+	BotID string `json:"bot_id"`
+
+	// The newest charter version at which what this Bot hears changed: the text or its
+	// playbooks (API 126); absent from an older daemon.
+	DeliveryVersion int64  `json:"delivery_version,omitempty"`
+	Hidden          bool   `json:"hidden"`
+	Lead            bool   `json:"lead"`
+	Name            string `json:"name"`
+
+	// The current playbooks assigned to this Bot (API 126).
+	PlaybookIds []string `json:"playbook_ids,omitempty"`
+	Queued      bool     `json:"queued"`
+	ReadAt      string   `json:"read_at,omitempty"`
+	Running     bool     `json:"running"`
+	TurnID      string   `json:"turn_id"`
+	Version     int64    `json:"version"`
 }
 
 // Which charter version each Bot of the Project last worked under.
@@ -5095,10 +5168,14 @@ type ProjectAssistantCharterResponse struct {
 	Limits           ProjectAssistantCharterLimits    `json:"limits"`
 	MachineID        string                           `json:"machine_id"`
 	PendingProposals int64                            `json:"pending_proposals"`
-	ProjectID        string                           `json:"project_id"`
-	Selected         *ProjectAssistantCharterVersion  `json:"selected,omitempty"`
-	Text             string                           `json:"text"`
-	Version          int64                            `json:"version"`
+
+	// The current version's playbooks with the Bots each is assigned to (API 126);
+	// absent from an older daemon.
+	Playbooks []ProjectAssistantCharterPlaybook `json:"playbooks,omitempty"`
+	ProjectID string                            `json:"project_id"`
+	Selected  *ProjectAssistantCharterVersion   `json:"selected,omitempty"`
+	Text      string                            `json:"text"`
+	Version   int64                             `json:"version"`
 }
 
 // Save a copy of a retained earlier version as the next version.
@@ -5134,14 +5211,17 @@ type ProjectAssistantCharterSummary struct {
 	Version          int64                         `json:"version"`
 }
 
-// One immutable charter version. text is present only on the version a read
-// selected.
+// One immutable charter version. text and playbooks are present only on the
+// version a read selected.
 type ProjectAssistantCharterVersion struct {
 	Author    ProjectAssistantCharterAuthor `json:"author"`
 	CreatedAt string                        `json:"created_at"`
-	Reason    string                        `json:"reason"`
-	Text      string                        `json:"text,omitempty"`
-	Version   int64                         `json:"version"`
+
+	// The version's playbooks (API 126).
+	Playbooks []ProjectAssistantCharterPlaybook `json:"playbooks,omitempty"`
+	Reason    string                            `json:"reason"`
+	Text      string                            `json:"text,omitempty"`
+	Version   int64                             `json:"version"`
 }
 
 // Every Project of the machine with a charter, and the Projects that have Bots

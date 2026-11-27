@@ -281,21 +281,3 @@ func (s *Store) ReportedVersions(ctx context.Context, machine, project string) (
 	}
 	return out, rows.Err()
 }
-
-// ReportedBots names the Bots that reported anything against version.
-func (s *Store) ReportedBots(ctx context.Context, machine, project string, version int64) (map[string]bool, error) {
-	rows, err := s.reader.QueryContext(ctx, `SELECT DISTINCT bot FROM project_assistant_charter_conflicts WHERE machine=? AND project=? AND version=?`, machine, project, version)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]bool{}
-	for rows.Next() {
-		var bot string
-		if err = rows.Scan(&bot); err != nil {
-			return nil, err
-		}
-		out[bot] = true
-	}
-	return out, rows.Err()
-}

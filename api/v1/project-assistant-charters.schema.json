@@ -34,6 +34,26 @@
         },
         "request_bytes": {
           "type": "integer"
+        },
+        "playbook_text_bytes": {
+          "type": "integer",
+          "description": "One playbook's text (API 126); absent from an older daemon."
+        },
+        "playbooks": {
+          "type": "integer",
+          "description": "Playbooks one charter version holds (API 126)."
+        },
+        "playbook_title_bytes": {
+          "type": "integer",
+          "description": "One playbook's one-line title (API 126)."
+        },
+        "playbook_bots": {
+          "type": "integer",
+          "description": "Bots one playbook is assigned to (API 126)."
+        },
+        "document_bytes": {
+          "type": "integer",
+          "description": "One version's charter text plus the text of all its playbooks (API 126)."
         }
       },
       "required": [
@@ -118,7 +138,7 @@
     "ProjectAssistantCharterVersion": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One immutable charter version. text is present only on the version a read selected.",
+      "description": "One immutable charter version. text and playbooks are present only on the version a read selected.",
       "properties": {
         "version": {
           "type": "integer",
@@ -135,6 +155,13 @@
         },
         "text": {
           "type": "string"
+        },
+        "playbooks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterPlaybook"
+          },
+          "description": "The version's playbooks (API 126)."
         }
       },
       "required": [
@@ -142,6 +169,61 @@
         "author",
         "reason",
         "created_at"
+      ]
+    },
+    "ProjectAssistantCharterPlaybook": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One playbook of a charter version (API 126): a named Markdown document assigned to some of the Project's Bots. Each assigned Bot hears it inside its charter block, after the charter text; the charter wins over a playbook and a playbook over the Bot's own instructions and memory. id is issued by the daemon and stays the same across versions.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "bot_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "text",
+        "bot_ids"
+      ]
+    },
+    "ProjectAssistantCharterPlaybookInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A playbook as the person writes it. An empty or absent id creates a new playbook; a known id replaces that one. bot_ids must be Bots of the Project.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "bot_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "title",
+        "text",
+        "bot_ids"
       ]
     },
     "ProjectAssistantCharterResponse": {
@@ -164,6 +246,13 @@
         },
         "text": {
           "type": "string"
+        },
+        "playbooks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantCharterPlaybook"
+          },
+          "description": "The current version's playbooks with the Bots each is assigned to (API 126); absent from an older daemon."
         },
         "history": {
           "type": "array",
@@ -283,10 +372,75 @@
         "expected_version"
       ]
     },
+    "ProjectAssistantCharterPlaybookSaveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Create or replace one playbook as the next charter version while the charter is still at expected_version (API 126). The charter text and the other playbooks are kept. A Project without a charter answers pa_invalid with field charter; a stale base answers pa_stale_version with field charter_version; a Bot that is not the Project's answers pa_invalid with field bot_ids.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "playbook": {
+          "$ref": "#/$defs/ProjectAssistantCharterPlaybookInput"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Why the playbook changed, for the charter history; may be empty but is always sent."
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version",
+        "playbook",
+        "reason"
+      ]
+    },
+    "ProjectAssistantCharterPlaybookRemoveRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Remove one playbook as the next charter version while the charter is still at expected_version (API 126). The Bots it was assigned to hear the charter without it.",
+      "properties": {
+        "machine_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "expected_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "machine_id",
+        "project_id",
+        "idempotency_key",
+        "expected_version",
+        "id"
+      ]
+    },
     "ProjectAssistantCharterReader": {
       "type": "object",
       "additionalProperties": false,
-      "description": "One Bot of the Project: the charter version its most recent prompt carried (0 before any) and whether it has a running or queued turn now.",
+      "description": "One Bot of the Project: the charter version its most recent prompt carried (0 before any) and whether it has a running or queued turn now. A Bot has read the current charter when version is at least delivery_version.",
       "properties": {
         "bot_id": {
           "type": "string"
@@ -315,6 +469,18 @@
         },
         "queued": {
           "type": "boolean"
+        },
+        "delivery_version": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The newest charter version at which what this Bot hears changed: the text or its playbooks (API 126); absent from an older daemon."
+        },
+        "playbook_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "The current playbooks assigned to this Bot (API 126)."
         }
       },
       "required": [
@@ -550,9 +716,10 @@
       "enum": [
         "memory",
         "instructions",
-        "workspace_file"
+        "workspace_file",
+        "playbook"
       ],
-      "description": "Where the Bot's sentence lives: its memory, its instructions, or a file in its workspace its instructions point to."
+      "description": "Where the Bot's sentence lives: its memory, its instructions, a file in its workspace its instructions point to, or one of the charter playbooks assigned to it (API 126; path is the playbook id)."
     },
     "ProjectAssistantCharterConflictState": {
       "type": "string",
