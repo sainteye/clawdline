@@ -309,6 +309,19 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
     rides a second shape of `charter-change-request`.
   - *Limits.* 40 states, 80 transitions, 80 bytes per title or label, 300 bytes per note and 40
     bytes per state id (`bots.charter_workflow_*`).
+  - *The page.* The charter page draws the workflow (`CharterWorkflow.tsx`) in place of the free-text
+    section headed 一件事怎麼走 / How one piece of work flows, which stays readable behind 舊的文字說明
+    until the person removes it; with no such section the graph follows the sections. The layout is
+    a pure function (`workflow-layout.ts`): the spine is the shortest forward path from the start to
+    the nearest done state, other states branch beside the state that first reaches them (left
+    where a way back crosses the row), ways back run up a side channel in lanes of their own, and
+    unreachable states sit in a bottom row marked 未串接. Each card shows its Bot's avatar, name and
+    colour, or 接到事情的 Bot; an off-screen list reads every state and transition as a sentence.
+    A pending workflow proposal is drawn above the graph as only what changes (added green dashed,
+    removed red and struck, untouched neighbours dimmed) with 套用成第 N 版／先不要／再修一下, and
+    請主助理修改 opens the change-request composer with `target: "workflow"`. A phone zooms the graph
+    to 70% at least, then scrolls it sideways inside its own box. There is no editor. A machine
+    below API 128 shows the text as before.
   - *Storage.* A `workflow` column on the version table (`''` is none) and `kind`/`workflow`
     columns on the proposals table (an older row is a text proposal), added like the playbook
     columns. An older daemon ignores them; a version it saves has no workflow.

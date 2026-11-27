@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { BotMessageMarkdown } from "./BotMessageMarkdown"
 import type * as W from "@clawdline/contract"
-import { charterPlaybooks, charterRefusal, charterRefusalCode, readsCurrentAt, shownReaders, type CharterApi, type CharterProject } from "./charter-api"
+import { charterPlaybooks, charterRefusal, charterRefusalCode, proposalKind, readsCurrentAt, shownReaders, type CharterApi, type CharterProject } from "./charter-api"
+import { useCharterWorkflow } from "./CharterWorkflow"
 import { PlaybookDiffs, usePlaybooks, type BotAppearanceOf } from "./CharterPlaybooks"
 import { changedPlaybooks } from "./charter-playbooks"
 import { AskPolicyEditor, AskPolicyView } from "./CharterAsk"
@@ -140,7 +141,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const status = !doc || !readers.length ? "" : behind.length
     ? charterFormat("statusSome", readers.length - behind.length, doc.version, charterNames(behind.map(r => r.name)))
     : charterFormat("statusAll", readers.length, doc.version)
-  const proposal = proposals[0]
+  const proposal = proposals.find(item => proposalKind(item) === "text")
   const botName = (id: string) => readers.find(r => r.bot_id === id)?.name ?? charterWord("lead")
   const proposed: ChangedSection[] = doc && proposal ? changedCharterSections(doc.text, proposal.text) : []
   const proposedHeadings = new Set(proposed.map(change => change.heading))
@@ -163,14 +164,15 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const sendRequest = async () => {
     const text = request.trim()
     if (!text || busy) return
-    if (await write(signal => api.requestChange(project, { text }, signal), () => charterWord("requested"))) { setRequest(""); setRetouch(null); expectProposal() }
+    if (await write(signal => api.requestChange(project, { text, ...(flow.target === "workflow" ? { target: flow.target } : {}) }, signal), () => charterWord("requested"))) { setRequest(""); flow.cancel(); expectProposal() }
   }
   const remove = async () => {
     if (!doc || !api.remove) return
     if (await write(signal => api.remove!(project, { expected_version: doc.version }, signal), () => "", current => charterFormat("conflictVersion", version(current)))) { setRemoving(false); onRemoved?.() }
   }
-  const startRetouch = (item: CharterProposal) => setRetouch(item.id)
+  const startRetouch = (item: CharterProposal) => flow.retouch(item)
   useEffect(() => { if (retouch) composer.current?.focus() }, [retouch])
+
   const startEdit = (index: number) => {
     const section = sections[index]
     if (!section) return
@@ -203,6 +205,9 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
     }
   }
 
+  const flow = useCharterWorkflow({ enabled: api.workflow, doc, proposals, headings: shown.map(({ section }) => section.heading), readers, appearance, next, busy, author: botName,
+    setRetouch, focus: () => composer.current?.focus(), onApply: apply, onDismiss: dismiss })
+
   const editedSection = editing ? shown.findIndex(item => item.index === editing.index) + 1 : 0
   const editor = editing && doc && <SectionEditor key={editing.index} n={editedSection} editing={editing} heading={sections[editing.index]?.heading ?? ""} readers={readers} next={next} busy={busy} full={narrow}
     onDraft={draft => setEditing({ ...editing, draft })} onAsk={(ask, converted) => setEditing({ ...editing, ask, converted: converted || editing.converted })} onTitle={title => setEditing({ ...editing, title })} onCancel={() => setEditing(null)} onSave={() => void saveSection()}/>
@@ -226,19 +231,20 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
             <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setPanel("history")}>{charterWord("history")}</button>
           </div>
           {notice && notice.text && <p className="pa-charter-notice" data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
-          {waiting && !proposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
+          {waiting && !proposal && !flow.proposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
           {proposalsFailed && <p className="pa-charter-hint" role="status">{charterWord("proposalsUnavailable")}</p>}
           {proposal && <ProposalCard proposal={proposal} author={botName(proposal.bot_id)} changes={proposed} next={next} busy={busy} stale={proposal.stale || proposal.base_version !== doc.version}
             onApply={() => apply(proposal)} onDismiss={() => dismiss(proposal)} onRetouch={() => startRetouch(proposal)}/>}
-          {shown.map(({ section, index }, position) => editing?.index === index && !narrow
-            ? <div key={index}>{editor}</div>
-            : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
-              <SectionBody section={section} w={w}/>
-              <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
-                onClick={() => startEdit(index)}>
-                <PencilIcon/>
-              </button>
-            </article>)}
+          {shown.map(({ section, index }, position) => flow.place(position, index, editing?.index === index && !narrow
+              ? <div key={index}>{editor}</div>
+              : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
+                <SectionBody section={section} w={w}/>
+                <button type="button" className="pa-charter-edit" disabled={busy} aria-label={charterFormat("editSection", position + 1)} title={charterFormat("editSection", position + 1)}
+                  onClick={() => startEdit(index)}>
+                  <PencilIcon/>
+                </button>
+              </article>))}
+          {flow.after}
           {playbooks.section}
           {api.remove && doc.version > 0 && (removing
             ? <div className="pa-charter-remove-confirm" role="group" aria-label={charterWord("remove")}>
@@ -253,7 +259,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
         </>}
       </div>
       {doc && <form className="pa-charter-request" onSubmit={event => { event.preventDefault(); void sendRequest() }}>
-        {retouch && <p className="pa-charter-retouch">{charterWord("retouchHint")}<button type="button" onClick={() => setRetouch(null)} aria-label={charterWord("retouchCancel")}>×</button></p>}
+        {flow.hint(retouch)}
         <div className="pa-composer">
           <textarea ref={composer} rows={1} value={request} aria-label={charterWord("requestLabel")} placeholder={charterWord("requestPlaceholder")} disabled={busy}
             onChange={event => setRequest(event.target.value)}

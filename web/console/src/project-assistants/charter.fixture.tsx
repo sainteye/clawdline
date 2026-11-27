@@ -1,7 +1,7 @@
 // The Bots fixture with team charters: machine "studio" has one for its Project,
 // "notebook" has none. Exposes window.charterFixture for charter.e2e.mjs.
 import { bootCatalog } from "../catalog"
-import { createCharterFixture } from "./charter-fixture"
+import { createCharterFixture, sampleWorkflow, sampleWorkflowProposal } from "./charter-fixture"
 import { mountFixture } from "./fixtures"
 
 const names = ["Project assistant", "Code review", "Interface design", "Documentation", "Research", "Testing"]
@@ -27,11 +27,14 @@ export async function mountCharterFixture() {
   const controls = (window as unknown as { botsFixture: { a: object; b: object } }).botsFixture
   // "?playbooks" is a machine at API 127 whose charter holds three playbooks; without it the machine is older.
   const playbooks = new URLSearchParams(location.search).has("playbooks")
+  // "?workflow" is a machine at API 128 whose charter has the team workflow and the lead's pending workflow proposal.
+  const flow = new URLSearchParams(location.search).has("workflow")
+  const team = sampleWorkflow({ atlas: "bot-0", xavia: "bot-1", fuse: "bot-2", lens: "bot-3", beacon: "bot-4" })
   const studio = createCharterFixture("studio", [{ project_id: "project", bots: bots("studio"), versions: [
     { text: v1, author: "template", reason: "" }, { text: v2, author: "person", reason: "編輯「一件事怎麼走」" }, { text: v3, author: "lead_proposal", reason: "交辦卡寫清楚驗收方式" }],
-    ...(playbooks ? { playbooks: seededPlaybooks } : {}) }])
+    ...(playbooks ? { playbooks: seededPlaybooks } : {}), ...(flow ? { workflow: team, workflow_proposal: sampleWorkflowProposal(team) } : {}) }])
   const notebook = createCharterFixture("notebook", [{ project_id: "project", bots: bots("notebook") }])
-  Object.assign(controls.a, { canCharters: studio.canCharters, canRemoveCharter: studio.canRemoveCharter, canCharterConflicts: studio.canCharterConflicts, canCharterPlaybooks: () => playbooks, charterRequest: studio.charterRequest })
+  Object.assign(controls.a, { canCharters: studio.canCharters, canRemoveCharter: studio.canRemoveCharter, canCharterConflicts: studio.canCharterConflicts, canCharterPlaybooks: () => playbooks, canCharterWorkflow: () => flow, charterRequest: studio.charterRequest })
   Object.assign(controls.b, { canCharters: notebook.canCharters, canRemoveCharter: notebook.canRemoveCharter, canCharterConflicts: notebook.canCharterConflicts, charterRequest: notebook.charterRequest })
   Object.assign(window, { charterFixture: { studio, notebook } })
 }
