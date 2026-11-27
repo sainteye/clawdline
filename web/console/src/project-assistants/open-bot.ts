@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import type * as W from "@clawdline/contract"
 import { botIdentity } from "./view-state.js"
 import type { SourceClient } from "./client.js"
@@ -21,8 +21,9 @@ export function openableBot(items: readonly W.ProjectAssistantBotSummary[], key:
 // openable Bot from a deleted, hidden or unreadable one before offering a press.
 let directory: ReadonlySet<string> = new Set()
 const listeners = new Set<() => void>()
-export function publishBotDirectory(items: readonly W.ProjectAssistantBotSummary[], sources?: readonly SourceClient[]): void {
-  publishBots(items)
+export function publishBotDirectory(items: readonly W.ProjectAssistantBotSummary[], sources?: readonly SourceClient[],
+  states: Readonly<Record<string, BotDirectoryState>> = {}): void {
+  publishBots(items, states)
   if (sources) publishSources(sources)
   const next = new Set(items.filter(item => !item.bot.hidden).map(item => botIdentity(item.bot.key)))
   if (next.size === directory.size && [...next].every(id => directory.has(id))) return
@@ -43,22 +44,33 @@ export function requestOpenBot(request: OpenBotRequest): void {
 
 // The same reading with each Bot's name and avatar, for a surface outside the
 // Bots window that names a Bot by its ID (the Board's Bot work section).
-let bots: readonly W.ProjectAssistantBot[] = []
+export type BotDirectoryState = "loading" | "ready" | "unavailable"
+let botDirectory: {
+  bots: readonly W.ProjectAssistantBot[]
+  states: Readonly<Record<string, BotDirectoryState>>
+} = {bots: [], states: {}}
 let botsMark = ""
 const botListeners = new Set<() => void>()
-function publishBots(items: readonly W.ProjectAssistantBotSummary[]): void {
-  const mark = JSON.stringify(items.map(item => [botIdentity(item.bot.key), item.bot.name, item.bot.appearance, !!item.bot.hidden]))
+function publishBots(items: readonly W.ProjectAssistantBotSummary[], states: Readonly<Record<string, BotDirectoryState>>): void {
+  const mark = JSON.stringify([states, items.map(item => [botIdentity(item.bot.key), item.bot.name, item.bot.appearance, !!item.bot.hidden])])
   if (mark === botsMark) return
   botsMark = mark
-  bots = items.map(item => item.bot)
+  botDirectory = {bots: items.map(item => item.bot), states}
   for (const listener of botListeners) listener()
 }
 const subscribeBots = (listener: () => void) => { botListeners.add(listener); return () => { botListeners.delete(listener) } }
-const botsSnapshot = () => bots
+const botsSnapshot = () => botDirectory
 
-/** Every Bot the host last read, hidden ones included so a card can still name its holder. */
-export function useBotDirectory(): readonly W.ProjectAssistantBot[] {
-  return useSyncExternalStore(subscribeBots, botsSnapshot, botsSnapshot)
+/** The host's last roster, including hidden Bots. A missing name is conclusive only after a complete read. */
+export function useBotDirectory(machineID: string | null): {bots: readonly W.ProjectAssistantBot[]; state: BotDirectoryState} {
+  const {bots, states} = useSyncExternalStore(subscribeBots, botsSnapshot, botsSnapshot)
+  return useMemo(() => {
+    if (machineID !== null) return {bots: bots.filter(bot => bot.key.machine_id === machineID), state: states[machineID] ?? "loading"}
+    const current = Object.values(states)
+    const state = !current.length || current.includes("loading") ? "loading"
+      : current.includes("unavailable") ? "unavailable" : "ready"
+    return {bots, state}
+  }, [bots, states, machineID])
 }
 
 // The host's machine sources, so a surface outside the Bots window (the Board's

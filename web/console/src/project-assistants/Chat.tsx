@@ -26,8 +26,9 @@ import {agentName} from "./fallback-settings"
 import { BotAvatar } from "./BotAvatar"
 import { DispatchedWorkStrip } from "./DispatchedWorkStrip"
 import { BotRequestDetail, BotRequestLine, useBotRequests } from "./BotRequestCard"
-import { botOf, placeBotRequests, readsBotRequests } from "./bot-request"
+import { placeBotRequests, readsBotRequests } from "./bot-request"
 import { ChatHeldCards, useBotRequestIO } from "./HeldCards"
+import { useBotDirectory } from "./open-bot"
 import { useDispatchedWorkShown } from "./dispatched-work-preference"
 import { AgentBadge } from "./AgentMark"
 import "./chat-presentation.css"
@@ -294,6 +295,20 @@ function ChatErrorLine({error,errorField,memoryError,checkingUpdates,retry,relea
     {cleanup&&<button type="button" className="pa-pill" title={w.releaseUnconfirmedRisk} aria-describedby={releaseRiskID} onClick={release} disabled={busy||!enabled} aria-busy={busy||undefined}>{w.releaseUnconfirmed}</button>}
     {cleanup&&<small id={releaseRiskID} className="pa-chat-error-risk">{w.releaseUnconfirmedRisk}</small>}
   </div>
+}
+
+function useChatBotRequests(source:SourceClient,bot:W.ProjectAssistantBot,roster:ChatProps["roster"],enabled:boolean) {
+  const {machine_id:machineID,bot_id:botID}=bot.key
+  const {bots:directoryBots,state:botDirectoryState}=useBotDirectory(machineID)
+  const requestBots=useMemo(()=>{
+    const ownRoster=roster?.filter(item=>item.key.machine_id===machineID)??[]
+    const byID=new Map([...directoryBots,...ownRoster,bot].map(item=>[item.key.bot_id,item]))
+    return [...byID.values()]
+  },[directoryBots,roster,bot,machineID])
+  const requestIO=useBotRequestIO(source)
+  const requestReading=useBotRequests({enabled:enabled&&!!requestIO&&readsBotRequests(source),bot:botID,read:requestIO?.list})
+  const requestCards=requestReading.reading.state==="ready"?requestReading.reading.cards:undefined
+  return {requestIO,requestReading,requestCards,requestBots,botDirectoryState}
 }
 
 export function Chat({summary,source,current,accountKey,readerID,view,w,language,onBack,onBotChanged,onOpenBot,onOpenWork,onDeleted,onRead,onNewSession,newSessionCount,projectName,projectIcon,machineName,openedAt,showBack=false,backLabel,thread,editProfileRequest,roster,projectNameOf,projectIconOf,voiceShortcut,focusDecision,onDecisionFocused,focusMessage,onMessageFocused,pushed=false}:ChatProps) {
@@ -1695,10 +1710,8 @@ ${currentDraft}`:submitted)
   const showDispatched=useDispatchedWorkShown()
   // Bot request cards (docs/bot-request-cards.md §9): read for this Bot from the local daemon only.
   // Cards are read from the Bot's own machine: this daemon, or that machine over Cloud.
-  const requestIO=useBotRequestIO(source)
-  const requestReading=useBotRequests({enabled:!thread&&!!requestIO&&readsBotRequests(source),bot:key.bot_id,read:requestIO?.list})
+  const {requestIO,requestReading,requestCards,requestBots,botDirectoryState}=useChatBotRequests(source,bot,roster,!thread)
   const [openRequest,setOpenRequest]=useState<W.BotRequestView&{mode?:"view"|"handoff"|"complete"}>()
-  const requestCards=requestReading.reading.state==="ready"?requestReading.reading.cards:undefined
   const ownMood=live?(data?chatMood(data.source,visibleTurn,pendingApprovals,thread||recoveryRequired?[]:head?.background_tasks):rosterMood(summary)):"idle"
   const mood=ownMood==="idle"&&live&&showDispatched&&rosterMood(summary,true)==="waitingOnWork"?"waitingOnWork":ownMood
   const queuedIDs=new Set(parts.queued.map(message=>message.id)),chatTimeline=timeline.filter(row=>!row.message||!queuedIDs.has(row.message.id))
@@ -1945,7 +1958,7 @@ ${currentDraft}`:submitted)
       retry={()=>void checkForUpdates(memoryError?memoryPanel.open:undefined)} release={()=>void releaseUnconfirmed()} releaseRiskID={releaseRiskID} busy={busy} enabled={enabled} w={w}/>}
     {decisionHandled&&<div className="pa-decision-handled" role="status"><span>{w.decisionHandled}</span>
       <button type="button" className="pa-pill" onClick={dismissDecisionHandled}>{w.decisionHandledDismiss}</button></div>}
-    {!thread&&requestCards&&<ChatHeldCards source={source} enabled={enabled} cards={requestCards} bot={key.bot_id} botName={bot.name} bots={[bot,...(roster??[])]} w={w}
+    {!thread&&requestCards&&<ChatHeldCards source={source} enabled={enabled} cards={requestCards} bot={key.bot_id} botName={bot.name} bots={requestBots} botDirectoryState={botDirectoryState} w={w}
       onCompose={changeText} onOpen={(card,mode)=>setOpenRequest({...card,mode})}/>}
     {!thread&&<BotVoicePanel bot={bot} language={language} call={botVoice}/>}
     {!thread&&<BotCallBar call={call} state={callState} name={bot.name} language={language} realtime={realtimeCall}/>}
@@ -2064,7 +2077,7 @@ ${currentDraft}`:submitted)
       {/* Background and dispatched work are the latest facts of the conversation: they scroll at its end instead of sitting over the composer. */}
       {!thread&&(data||error)&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={capsuleTasks} appearance={bot.appearance} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
         // Open cards with no work in this chat are listed by the held cards line at the top.
-        return <>{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id+openRequest.mode} initialMode={openRequest.mode} read={requestIO?.read} write={requestIO?.write} card={openRequest} bots={[bot,...(roster??[])]} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=botOf(card.baton.bot,roster??[]);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
+        return <>{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id+openRequest.mode} initialMode={openRequest.mode} read={requestIO?.read} write={requestIO?.write} card={openRequest} bots={requestBots} botDirectoryState={botDirectoryState} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=roster?.find(item=>item.key.machine_id===key.machine_id&&item.key.bot_id===card.baton.bot);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
     </div>
       <ChatJump {...jump}/>

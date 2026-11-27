@@ -2,6 +2,7 @@ import {createContext, useContext, useEffect, useId, useLayoutEffect, useMemo, u
 import type * as W from "@clawdline/contract"
 import {actorName, botRequestFetcher, readBotRequest, writeBotRequest, cardFrom, checklistProgress, heldCards, heldCounts, lastUpdated, progressLabel, progressOf, readBotRequests, stalledWords, type BotRequestProgress} from "./bot-request"
 import type {SourceClient} from "./client"
+import type {BotDirectoryState} from "./open-bot"
 import type {Words} from "./words"
 import "./held-cards.css"
 
@@ -31,13 +32,14 @@ function CardIcon() {
   </svg>
 }
 
-function HeldRow({card, bots, botName, writable, w, now, onAction}: {
+function HeldRow({card, bots, botDirectoryState, botName, writable, w, now, onAction}: {
   card: W.BotRequestView; bots: readonly W.ProjectAssistantBot[]; botName: string; writable: boolean; w: Words; now: number
+  botDirectoryState: BotDirectoryState
   onAction: (card: W.BotRequestView, action: HeldCardAction) => void
 }) {
   const progress = progressOf(card), from = cardFrom(card), checked = checklistProgress(card, w), updated = lastUpdated(card.updated_at, now, w)
   const role = {maker: w.requestRoleMaker, reviewer: w.requestRoleReviewer, integrator: w.requestRoleIntegrator}[card.baton.role] ?? ""
-  const who = actorName(from.actor, bots, w)
+  const who = actorName(from.actor, bots, w, botDirectoryState)
   const actions: ReactNode[] = []
   if (progress === "stalled") {
     if (writable) actions.push(<button key="retry" type="button" className="pa-held-primary" onClick={() => onAction(card, "retry")}>{say(w.heldRetry, {name: botName})}</button>,
@@ -70,11 +72,12 @@ function HeldRow({card, bots, botName, writable, w, now, onAction}: {
  * counts them, opening a list on a desktop and a bottom sheet on a phone.
  * Nothing is drawn while the Bot holds no open card.
  */
-export function HeldCards({cards, bot, botName, bots, writable, w, onAction, onOpenBoard}: {
+export function HeldCards({cards, bot, botName, bots, botDirectoryState = "ready", writable, w, onAction, onOpenBoard}: {
   cards: readonly W.BotRequestView[]
   bot: string
   botName: string
   bots: readonly W.ProjectAssistantBot[]
+  botDirectoryState?: BotDirectoryState
   /** Whether this device may send the person's writes to the Bot's machine. */
   writable: boolean
   w: Words
@@ -115,8 +118,8 @@ export function HeldCards({cards, bot, botName, bots, writable, w, onAction, onO
     if (action === "retry") window.setTimeout(() => strip.current?.closest(".pa-chat")?.querySelector<HTMLTextAreaElement>(".pa-composer textarea")?.focus())
   }
   const list = <>
-    <ul className="pa-held-list">{open.map(card => <HeldRow key={card.id} card={card} bots={bots} botName={botName} writable={writable} w={w} now={now} onAction={act}/>)}</ul>
-    {showDone && done.length > 0 && <ul className="pa-held-list pa-held-done">{done.map(card => <HeldRow key={card.id} card={card} bots={bots} botName={botName} writable={false} w={w} now={now} onAction={act}/>)}</ul>}
+    <ul className="pa-held-list">{open.map(card => <HeldRow key={card.id} card={card} bots={bots} botDirectoryState={botDirectoryState} botName={botName} writable={writable} w={w} now={now} onAction={act}/>)}</ul>
+    {showDone && done.length > 0 && <ul className="pa-held-list pa-held-done">{done.map(card => <HeldRow key={card.id} card={card} bots={bots} botDirectoryState={botDirectoryState} botName={botName} writable={false} w={w} now={now} onAction={act}/>)}</ul>}
     {(done.length > 0 || onOpenBoard) && <footer className="pa-held-foot">
       {done.length > 0 ? <button type="button" aria-expanded={showDone} onClick={() => setShowDone(value => !value)}>{say(w.heldDone, {count: done.length})} ›</button> : <span/>}
       {onOpenBoard && <button type="button" onClick={() => { setExpanded(false); onOpenBoard() }}>{w.heldBoard} ›</button>}
@@ -212,12 +215,13 @@ export function useBotRequestIO(source: SourceClient) {
  * chat may send and the source may carry them, and Ask again fills the
  * composer for the person to send.
  */
-export function ChatHeldCards({source, enabled, cards, bot, botName, bots, w, onCompose, onOpen}: {
+export function ChatHeldCards({source, enabled, cards, bot, botName, bots, botDirectoryState, w, onCompose, onOpen}: {
   source: SourceClient; enabled: boolean; cards: readonly W.BotRequestView[]; bot: string; botName: string; bots: readonly W.ProjectAssistantBot[]; w: Words
+  botDirectoryState: BotDirectoryState
   onCompose: (text: string) => void; onOpen: (card: W.BotRequestView, mode: "view" | "handoff" | "complete") => void
 }) {
   const local = source.authorizationRevision === "local"
-  return <HeldCards cards={cards} bot={bot} botName={botName} bots={bots} w={w} writable={enabled && (local || source.canWriteBotRequests?.() === true)}
+  return <HeldCards cards={cards} bot={bot} botName={botName} bots={bots} botDirectoryState={botDirectoryState} w={w} writable={enabled && (local || source.canWriteBotRequests?.() === true)}
     onOpenBoard={() => { window.location.hash = "page=work" }}
     onAction={(card, action) => action === "retry" ? onCompose(say(w.heldRetryText, {title: card.title, id: card.id})) : onOpen(card, action)}/>
 }

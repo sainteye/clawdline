@@ -23,9 +23,9 @@ export function BotWorkSection({ project, items, onOpenItem }: {
   onOpenItem: (id: string) => void
 }) {
   const w = words(currentCatalogTag()), language = currentCatalogTag()
-  const bots = useBotDirectory()
   const [shown, setShown] = useState(() => readBotWorkShown())
   const machine = currentCloudMachineID(), source = useBotSource(machine)
+  const {bots, state: botDirectoryState} = useBotDirectory(machine)
   const fetcher = machine === null ? undefined : botRequestFetcher(source)
   const io = useMemo(() => boundBotRequests(fetcher), [source, machine])
   const { reading, refresh } = useBotRequests({ enabled: machine === null || !!fetcher, read: io.list })
@@ -51,9 +51,9 @@ export function BotWorkSection({ project, items, onOpenItem }: {
       : reading.state === "failed" ? <p className="work-empty" role="alert">{w.requestLoadFailed} <button type="button" className="pa-request-text-button" onClick={refresh}>{w.retry}</button></p>
         : cards.length === 0 ? <p className="work-empty">{w.requestEmpty}</p>
           : <ul className="bot-work-rows">{cards.map((card) => <li key={card.id}>
-            <BotRequestRow card={card} bots={bots} w={w} now={now} onOpen={setOpen} />
+            <BotRequestRow card={card} bots={bots} botDirectoryState={botDirectoryState} w={w} now={now} onOpen={setOpen} />
           </li>)}</ul>)}
-    {open && <BotRequestDetail key={open.id} card={open} bots={bots} w={w} language={language} read={io.read} write={io.write}
+    {open && <BotRequestDetail key={open.id} card={open} bots={bots} botDirectoryState={botDirectoryState} w={w} language={language} read={io.read} write={io.write}
       onClose={() => { setOpen(undefined); refresh() }} onChanged={refresh}
       onOpenChat={holder && !holder.hidden ? () => { setOpen(undefined); requestOpenBot({ key: holder.key }) } : undefined}
       boardItem={open.board_item_id ? <button type="button" className="chip bot-work-item" onClick={() => { const id = open.board_item_id!; setOpen(undefined); onOpenItem(id) }}>
