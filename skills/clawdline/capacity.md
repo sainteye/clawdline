@@ -526,7 +526,6 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `console.direct_history_hours` | 24 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.direct_history_machines` | 32 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `console.execution_recovery_attempts` | 1 | `rows` | `refuse` | `sender, diagnostics` | — |
-| `console.fleet_retry_attempts` | 6 | `rows` | `refuse` | `diagnostics` | — |
 | `console.fleet_retry_ceiling_milliseconds` | 30000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `console.fleet_retry_first_milliseconds` | 1000 | `milliseconds` | `refuse` | `diagnostics` | — |
 | `console.health_live_seconds` | 90 | `seconds` | `expire` | `diagnostics` | — |

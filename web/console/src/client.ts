@@ -34,6 +34,13 @@ export function fleetTransport(): StreamTransport | undefined {
 // terminal is open so there is capacity left for keystrokes and other reads.
 let quiet = 0
 const quietChanged = new Set<() => void>()
+const fleetRetryRequested = new Set<() => void>()
+
+/** Reconnect a local fleet stream whose retry is pending or was refused access. */
+export function retryFleetStream(): void {
+  if (fleetStream) return
+  for (const retry of fleetRetryRequested) retry()
+}
 
 /** Read the session list instead of following its stream until the returned function is called. */
 export function quietFleetStream(): () => void {
@@ -52,12 +59,11 @@ export function quietFleetStream(): () => void {
 const QUIET_READ_MS = 5_000
 const FLEET_STREAM_LOCK = "clawdline-local-fleet-stream"
 
-// An HTTP error (a 401, a 503) closes an EventSource for good: the browser
-// does not retry it. The holder lets the lock go, waits, reads once to learn
-// whether the daemon answers, and opens again; the wait doubles each time.
+// An HTTP error closes an EventSource for good. The holder lets the lock go,
+// waits, reads once to check access, and opens again. The wait doubles up to
+// the ceiling and stays there until the stream opens or the person retries.
 export const FLEET_RECONNECT_FIRST_MS = 1_000
 export const FLEET_RECONNECT_CEILING_MS = 30_000
-export const FLEET_RECONNECT_ATTEMPTS = 6
 /** The daemon refused this page's access: retrying will not help until the person signs in again. */
 const accessRefused = (cause: unknown) => cause instanceof RefusalError && (cause.status === 401 || cause.status === 403)
 
@@ -123,64 +129,112 @@ function requestFleetLease(locks: LockManager, steal: boolean, on: FleetLeaseEve
 interface ReconnectLadder {
   /** The stream was refused; the lock is already let go. */
   refused(): void
-  /** The stream opened: failures start counting again. */
+  /** The stream opened: the next failure waits the first interval. */
   opened(): void
-  /** Whether to keep waiting rather than claim the stream: a retry is pending, or the page stopped and stays hidden. */
+  pending(): boolean
+  accessStopped(): boolean
+  stopForAccess(cause: unknown): boolean
+  reset(): boolean
+  /** Whether a retry is pending or the page stopped and stays hidden. */
   holds(hidden: boolean): boolean
   close(): void
 }
 
-// Each wait doubles up to the ceiling. Before reopening, one read says
-// whether the daemon answers; a 401 or 403 there stops the retries, since
-// only a person signing in again can change it.
-function reconnectLadder(reopen: () => void): ReconnectLadder {
-  let failures = 0
-  let retry: ReturnType<typeof setTimeout> | undefined
+function reconnectLadder(
+  read: () => ReturnType<typeof client.sessions>,
+  reopen: () => void,
+  pause: () => void,
+): ReconnectLadder {
+  let wait = FLEET_RECONNECT_FIRST_MS
+  let retry: { timer: ReturnType<typeof setTimeout> } | undefined
   let stopped = false
-  let closed = false
-  const refused = () => {
-    failures += 1
-    if (failures > FLEET_RECONNECT_ATTEMPTS) { stopped = true; return }
-    const wait = Math.min(FLEET_RECONNECT_FIRST_MS * 2 ** (failures - 1), FLEET_RECONNECT_CEILING_MS)
-    retry = setTimeout(() => void probe(), wait)
+  const close = () => {
+    clearTimeout(retry?.timer)
+    retry = undefined
   }
-  const probe = async () => {
+  const reset = () => {
+    const recovering = retry !== undefined || stopped
+    close()
+    stopped = false
+    wait = FLEET_RECONNECT_FIRST_MS
+    return recovering
+  }
+  const stopForAccess = (cause: unknown) => {
+    if (!retry || !accessRefused(cause)) return false
+    reset()
+    stopped = true
+    pause()
+    return true
+  }
+  const refused = () => {
+    const pending = { timer: setTimeout(() => void probe(pending), wait) }
+    retry = pending
+    wait = Math.min(wait * 2, FLEET_RECONNECT_CEILING_MS)
+  }
+  const probe = async (pending: NonNullable<typeof retry>) => {
     try {
-      await client.sessions()
+      await read()
     } catch (cause) {
-      if (closed) return
-      retry = undefined
-      if (accessRefused(cause)) stopped = true
-      else refused()
+      if (retry === pending && !stopForAccess(cause)) refused()
       return
     }
-    if (closed) return
+    if (retry !== pending) return
     retry = undefined
     reopen()
   }
   return {
     refused,
-    opened() { failures = 0 },
+    opened() { wait = FLEET_RECONNECT_FIRST_MS },
+    pending: () => retry !== undefined,
+    accessStopped: () => stopped,
+    stopForAccess,
+    reset,
     holds(hidden) {
       if (retry) return true
-      if (!stopped) return false
       // A page shown again, or a terminal closed, is a person's new try.
-      if (hidden) return true
+      if (stopped && hidden) return true
       stopped = false
-      failures = 0
       return false
     },
-    close() {
-      closed = true
-      clearTimeout(retry)
+    close,
+  }
+}
+
+function fleetRecovery(handlers: StreamHandlers, polling: () => boolean, reopen: () => void, pause: () => void) {
+  // The fallback poll and the access probe can come due together.
+  let reading: ReturnType<typeof client.sessions> | undefined
+  const read = () => {
+    if (reading) return reading
+    const pending = client.sessions().finally(() => {
+      if (reading === pending) reading = undefined
+    })
+    reading = pending
+    return pending
+  }
+  const reads = pollingTransport(async () => JSON.stringify(await read()), QUIET_READ_MS)
+  const ladder = reconnectLadder(read, reopen, pause)
+  const polled: StreamHandlers = {
+    ...handlers,
+    onOpen() {
+      if (polling() && !ladder.pending()) handlers.onOpen?.()
+    },
+    onError(cause) {
+      handlers.onError?.(cause)
+      ladder.stopForAccess(cause)
     },
   }
+  const retryNow = () => {
+    if (!ladder.reset()) return
+    // A probe started before a manual retry cannot decide its outcome.
+    reading = undefined
+    reopen()
+  }
+  return { reads, polled, ladder, retryNow }
 }
 
 function quietableTransport(): StreamTransport | undefined {
   const stream = localStream
   if (!stream) return undefined
-  const reads = pollingTransport(async () => JSON.stringify(await client.sessions()), QUIET_READ_MS)
   return {
     open(url, handlers) {
       const locks = globalThis.navigator?.locks
@@ -190,7 +244,9 @@ function quietableTransport(): StreamTransport | undefined {
       let closed = false
       // Reopen by visibility: a shown page steals the stream back from
       // whichever tab took it meanwhile, a hidden one queues behind it.
-      const ladder = reconnectLadder(() => change())
+      const { reads, polled, ladder, retryNow } = fleetRecovery(
+        handlers, () => !closed && using === reads, () => change(), () => use(paused),
+      )
       const watched: StreamHandlers = {
         ...handlers,
         onOpen() {
@@ -199,20 +255,20 @@ function quietableTransport(): StreamTransport | undefined {
         },
         onError(cause) {
           handlers.onError?.(cause)
-          if (using !== stream || !closedForGood(cause)) return
+          if (closed || using !== stream || !closedForGood(cause)) return
           // Let another tab take the stream at once; this one tries again later.
           drop()
-          use(paused)
           ladder.refused()
+          waiting()
         },
       }
       const use = (transport: StreamTransport) => {
         if (using === transport) return
         inner?.close()
         using = transport
-        inner = transport.open(url, transport === stream ? watched : handlers)
+        inner = transport.open(url, transport === stream ? watched : polled)
       }
-      const waiting = () => use(hidden() ? paused : reads)
+      const waiting = () => use(hidden() || ladder.accessStopped() ? paused : reads)
       const drop = () => {
         const previous = lease
         lease = undefined
@@ -258,7 +314,10 @@ function quietableTransport(): StreamTransport | undefined {
           waiting()
           return
         }
-        if (ladder.holds(hidden())) return
+        if (ladder.holds(hidden())) {
+          waiting()
+          return
+        }
         if (!locks) { use(stream); return }
         if (yielding) return
         const current = lease
@@ -272,6 +331,7 @@ function quietableTransport(): StreamTransport | undefined {
         claim(true)
       }
       quietChanged.add(change)
+      fleetRetryRequested.add(retryNow)
       page?.addEventListener("visibilitychange", change)
       change()
       return {
@@ -280,6 +340,7 @@ function quietableTransport(): StreamTransport | undefined {
           yielding = undefined
           ladder.close()
           quietChanged.delete(change)
+          fleetRetryRequested.delete(retryNow)
           page?.removeEventListener("visibilitychange", change)
           inner?.close()
           drop()

@@ -10383,23 +10383,6 @@
   },
   {
     "Register": "daemon",
-    "Name": "console.fleet_retry_attempts",
-    "Class": "buffer",
-    "Unit": "rows",
-    "Limit": 6,
-    "WarnAt": 0,
-    "AtLimit": "refuse",
-    "Deviation": "",
-    "Told": [
-      "diagnostics"
-    ],
-    "EvictedBy": "person",
-    "Projects": false,
-    "QuietRecovery": false,
-    "Sources": null
-  },
-  {
-    "Register": "daemon",
     "Name": "console.fleet_retry_ceiling_milliseconds",
     "Class": "buffer",
     "Unit": "milliseconds",

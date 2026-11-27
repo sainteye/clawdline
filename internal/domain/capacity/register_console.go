@@ -30,15 +30,9 @@ func baseConsoleBounds() []Entry {
 		// The local shared stream retains only the latest fleet and task frames
 		// for a listener that joins after its tab's connection is open.
 		{Name: "console.local_fleet_stream_frames", Class: Buffer, Unit: Rows, Limit: 2, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
-		// A fleet stream the daemon answered with an HTTP error is opened again
-		// after FLEET_RECONNECT_FIRST_MS, then twice as long each time up to
-		// FLEET_RECONNECT_CEILING_MS, at most FLEET_RECONNECT_ATTEMPTS times
-		// before the tab stops until it is shown again (client.ts). The two waits
-		// are backoff intervals, registered as the other retry delays are: nothing is
-		// cached or expired, the wait just stops growing at the ceiling.
+		// Fleet reconnects keep retrying with backoff capped at 30 seconds. HTTP 401/403 pauses automatic retries until the page is visible again or the user clicks the connection light (client.ts).
 		{Name: "console.fleet_retry_first_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 1000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
 		{Name: "console.fleet_retry_ceiling_milliseconds", Class: Buffer, Unit: Milliseconds, Limit: 30000, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon},
-		{Name: "console.fleet_retry_attempts", Class: Buffer, Unit: Rows, Limit: 6, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Person},
 		// Native fetch gives up the connection if the local chat snapshot or
 		// memory read cannot finish (LOCAL_BOT_READ_TIMEOUT_MS); the measured
 		// latency behind the number is on MaximumLocalBotReadSeconds.

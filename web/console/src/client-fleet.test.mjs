@@ -105,11 +105,13 @@ function fleetBrowser(t, locks) {
   const handles = new Set()
   let tabs = 0
   mockBrowserGlobal(t, "navigator", locks ? { locks } : {})
-  const browser = { answer: 200 }
+  const browser = { answer: 200, sessions: [] }
   t.mock.method(globalThis, "fetch", async input => {
     traffic.push(`read ${input}`)
-    if (browser.answer === 200) return Response.json({ sessions: [] })
-    return Response.json({ error: { code: browser.answer === 401 ? "unauthorized" : "unavailable", detail: "refused" } }, { status: browser.answer })
+    const status = browser.nextRead ? await browser.nextRead() : browser.answer
+    if (status === 200) return Response.json({ sessions: browser.sessions })
+    const code = { 401: "unauthorized", 403: "forbidden", 503: "unavailable" }[status]
+    return Response.json({ error: { code, detail: "refused" } }, { status })
   })
   t.after(() => { for (const handle of handles) handle.close() })
   return Object.assign(browser, {
@@ -137,10 +139,14 @@ function fleetBrowser(t, locks) {
       const tab = await import(`${clientModule}#tab-${++tabNumber}`)
       const transport = tab.fleetTransport()
       assert.ok(transport)
-      const handle = transport.open("/v1/events", { onFrame() {} })
+      const frames = []
+      const handle = transport.open("/v1/events", {
+        onFrame(event, data) { if (event === "sessions") frames.push(JSON.parse(data)) },
+      })
       handles.add(handle)
       return {
         show,
+        frames,
         module: tab,
         quietFleetStream: tab.quietFleetStream,
         // The browser answers this tab's open stream with an HTTP error: the
@@ -277,11 +283,11 @@ test("a held stream refused with 503 reopens after a backoff", async t => {
   await settle()
   only.refuseStream()
   await settle()
-  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused"])
+  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused", "read /v1/sessions"])
 
   t.mock.timers.tick(only.module.FLEET_RECONNECT_FIRST_MS)
   await settle()
-  assert.deepEqual(browser.traffic.slice(2), ["read /v1/sessions", "tab1 stream /v1/events"])
+  assert.deepEqual(browser.traffic.slice(3), ["read /v1/sessions", "tab1 stream /v1/events"])
 })
 
 test("a visible holder whose stream is refused takes it back from a hidden tab after the backoff", async t => {
@@ -295,16 +301,16 @@ test("a visible holder whose stream is refused takes it back from a hidden tab a
 
   holder.refuseStream()
   await settle()
-  assert.deepEqual(browser.traffic.slice(1), ["tab1 stream refused", "tab2 stream /v1/events"])
+  assert.deepEqual(browser.traffic.slice(1), ["tab1 stream refused", "read /v1/sessions", "tab2 stream /v1/events"])
 
   // The page the person sees steals the stream back; the hidden one pauses.
   t.mock.timers.tick(holder.module.FLEET_RECONNECT_FIRST_MS)
   await settle()
-  assert.deepEqual(browser.traffic.slice(3), ["read /v1/sessions", "tab1 stream /v1/events", "tab2 close stream"])
+  assert.deepEqual(browser.traffic.slice(4), ["read /v1/sessions", "tab1 stream /v1/events", "tab2 close stream"])
 
   t.mock.timers.tick(holder.module.FLEET_RECONNECT_CEILING_MS)
   await settle()
-  assert.deepEqual(browser.traffic.slice(6), [])
+  assert.deepEqual(browser.traffic.slice(7), [])
 })
 
 test("a refused tab takes the stream back from a visible tab, which polls and does not steal it again", async t => {
@@ -318,11 +324,11 @@ test("a refused tab takes the stream back from a visible tab, which polls and do
 
   holder.refuseStream()
   await settle()
-  assert.deepEqual(browser.traffic.slice(4), ["tab2 stream refused", "tab1 stream /v1/events"])
+  assert.deepEqual(browser.traffic.slice(4), ["tab2 stream refused", "read /v1/sessions", "tab1 stream /v1/events"])
 
   t.mock.timers.tick(holder.module.FLEET_RECONNECT_FIRST_MS)
   await settle()
-  assert.deepEqual(browser.traffic.slice(6), ["read /v1/sessions", "tab2 stream /v1/events", "tab1 close stream", "read /v1/sessions"])
+  assert.deepEqual(browser.traffic.slice(7), ["read /v1/sessions", "tab2 stream /v1/events", "tab1 close stream", "read /v1/sessions"])
 
   const before = browser.traffic.length
   for (let i = 0; i < 6; i++) {
@@ -333,51 +339,162 @@ test("a refused tab takes the stream back from a visible tab, which polls and do
   assert.ok(later.length > 0 && later.every(line => line === "read /v1/sessions"), JSON.stringify(later))
 })
 
-test("a stream that keeps being refused stops reconnecting at the limit", async t => {
+test("successive stream refusals keep reconnecting at the 30-second ceiling", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] })
   const browser = fleetBrowser(t, fakeLocks())
   const only = await browser.openTab()
   await settle()
-  const { FLEET_RECONNECT_ATTEMPTS, FLEET_RECONNECT_CEILING_MS } = only.module
-  assert.ok(FLEET_RECONNECT_ATTEMPTS > 0)
   const opened = () => browser.traffic.filter(line => line === "tab1 stream /v1/events").length
-  for (let attempt = 0; attempt < FLEET_RECONNECT_ATTEMPTS; attempt++) {
+  for (const [attempt, wait] of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000].entries()) {
     only.refuseStream()
     await settle()
-    t.mock.timers.tick(FLEET_RECONNECT_CEILING_MS)
+    t.mock.timers.tick(wait - 1)
+    await settle()
+    assert.equal(opened(), attempt + 1)
+    t.mock.timers.tick(1)
     await settle()
     assert.equal(opened(), attempt + 2)
   }
-  only.refuseStream()
-  await settle()
-  const stopped = browser.traffic.length
-  t.mock.timers.tick(FLEET_RECONNECT_CEILING_MS * 10)
-  await settle()
-  assert.deepEqual(browser.traffic.slice(stopped), [])
-  assert.equal(opened(), FLEET_RECONNECT_ATTEMPTS + 1)
 })
 
-test("a refused stream whose read answers 401 stops at once and a shown page tries again", async t => {
+test("successive 503 probes still retry at the ceiling and reopen when reads recover", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab("hidden")
+  await settle()
+  browser.answer = 503
+  only.refuseStream()
+  await settle()
+  const reads = () => browser.traffic.filter(line => line === "read /v1/sessions").length
+  for (const [attempt, wait] of [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000].entries()) {
+    t.mock.timers.tick(wait - 1)
+    await settle()
+    assert.equal(reads(), attempt)
+    t.mock.timers.tick(1)
+    await settle()
+    assert.equal(reads(), attempt + 1)
+  }
+  browser.answer = 200
+  t.mock.timers.tick(30_000)
+  await settle()
+  assert.equal(browser.traffic.at(-1), "tab1 stream /v1/events")
+})
+
+for (const status of [401, 403]) {
+  test(`a refused stream whose read answers ${status} stops until the page is shown again`, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] })
+    const browser = fleetBrowser(t, fakeLocks())
+    const only = await browser.openTab()
+    await settle()
+    browser.answer = status
+    only.refuseStream()
+    await settle()
+    t.mock.timers.tick(1_000)
+    await settle()
+    assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused", "read /v1/sessions"])
+
+    browser.answer = 200
+    t.mock.timers.tick(30_000)
+    await settle()
+    assert.equal(browser.traffic.length, 3)
+
+    only.show("hidden")
+    await settle()
+    only.show("visible")
+    await settle()
+    assert.deepEqual(browser.traffic.slice(3), ["tab1 stream /v1/events"])
+  })
+}
+
+test("pressing the connection light retry reopens now and resets the first wait", async t => {
   t.mock.timers.enable({ apis: ["setTimeout"] })
   const browser = fleetBrowser(t, fakeLocks())
   const only = await browser.openTab()
   await settle()
-  browser.answer = 401
   only.refuseStream()
   await settle()
-  t.mock.timers.tick(only.module.FLEET_RECONNECT_FIRST_MS)
+  t.mock.timers.tick(1_000)
   await settle()
-  assert.deepEqual(browser.traffic, ["tab1 stream /v1/events", "tab1 stream refused", "read /v1/sessions"])
-
-  t.mock.timers.tick(only.module.FLEET_RECONNECT_CEILING_MS * 10)
+  only.refuseStream()
   await settle()
-  assert.equal(browser.traffic.length, 3)
+  const before = browser.traffic.length
+  only.module.retryFleetStream?.()
+  await only.module.client.sessions()
+  await settle()
+  assert.deepEqual(browser.traffic.slice(before), ["read /v1/sessions", "tab1 stream /v1/events"])
 
-  // Signed in again and back on the page: the person's return is a new try.
-  browser.answer = 200
+  only.refuseStream()
+  await settle()
+  t.mock.timers.tick(999)
+  await settle()
+  assert.equal(browser.traffic.filter(line => line === "tab1 stream /v1/events").length, 3)
+  t.mock.timers.tick(1)
+  await settle()
+  assert.equal(browser.traffic.filter(line => line === "tab1 stream /v1/events").length, 4)
+  const resumed = browser.traffic.length
+  t.mock.timers.tick(1_000)
+  await settle()
+  assert.equal(browser.traffic.length, resumed)
+})
+
+test("a visible tab reads new sessions every five seconds during stream backoff", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab()
+  await settle()
+  for (const wait of [1_000, 2_000, 4_000, 8_000, 16_000]) {
+    only.refuseStream()
+    await settle()
+    t.mock.timers.tick(wait)
+    await settle()
+  }
+  browser.sessions = [{ id: "initial" }]
+  only.refuseStream()
+  await settle()
+  const before = browser.traffic.length
+  for (const id of ["first update", "second update"]) {
+    browser.sessions = [{ id }]
+    t.mock.timers.tick(4_999)
+    await settle()
+    assert.notDeepEqual(only.frames.at(-1), { sessions: [{ id }] })
+    t.mock.timers.tick(1)
+    await settle()
+    assert.deepEqual(only.frames.at(-1), { sessions: [{ id }] })
+  }
+  assert.deepEqual(browser.traffic.slice(before), ["read /v1/sessions", "read /v1/sessions"])
+
   only.show("hidden")
+  browser.sessions = [{ id: "while hidden" }]
+  t.mock.timers.tick(5_000)
   await settle()
+  assert.equal(only.frames.at(-1).sessions[0].id, "second update")
   only.show("visible")
   await settle()
-  assert.deepEqual(browser.traffic.slice(3), ["tab1 stream /v1/events"])
+  assert.equal(only.frames.at(-1).sessions[0].id, "while hidden")
+})
+
+test("an access refusal from a probe before a manual retry cannot stop the new attempt", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] })
+  const browser = fleetBrowser(t, fakeLocks())
+  const only = await browser.openTab()
+  await settle()
+  only.refuseStream()
+  await settle()
+
+  const { promise, resolve } = Promise.withResolvers()
+  browser.nextRead = () => promise
+  t.mock.timers.tick(1_000)
+  await settle()
+  browser.nextRead = undefined
+
+  only.module.retryFleetStream()
+  await settle()
+  only.refuseStream()
+  await settle()
+  resolve(401)
+  await settle()
+
+  t.mock.timers.tick(1_000)
+  await settle()
+  assert.equal(browser.traffic.filter(line => line === "tab1 stream /v1/events").length, 3)
 })

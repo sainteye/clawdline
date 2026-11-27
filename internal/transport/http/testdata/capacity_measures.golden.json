@@ -2576,10 +2576,6 @@
     "Note": true
   },
   {
-    "Name": "console.fleet_retry_attempts",
-    "Err": true
-  },
-  {
     "Name": "console.fleet_retry_ceiling_milliseconds",
     "Err": true
   },

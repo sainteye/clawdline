@@ -19,7 +19,7 @@ import { transparencyURL } from "./pages/transparency/public-url.js"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import type { SessionRow } from "@clawdline/contract"
 import { ClawdlineClient } from "@clawdline/core"
-import { client, followsRelay } from "./client.js"
+import { client, followsRelay, retryFleetStream } from "./client.js"
 import { BRAND_IMAGE, detailSessionName } from "./brand-mark.js"
 import "./session/first-run.css"
 import { connectionLightState, connectionLightWords, type ConnectionLight } from "./connection-state.js"
@@ -1599,7 +1599,14 @@ function useConnectionLight(live: boolean, onRetry: () => void): ConnectionLight
     // The door listens to this reading instead of polling health itself.
     publishHealth(data)
   }, [data])
-  return { state, ...connectionLightWords(state, L.strings, version), onRetry }
+  return {
+    state,
+    ...connectionLightWords(state, L.strings, version),
+    onRetry() {
+      retryFleetStream()
+      onRetry()
+    },
+  }
 }
 
 /** The connection light as its own pill; pressing it asks again (`detail-actions.js`). */

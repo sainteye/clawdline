@@ -449,9 +449,9 @@ func withLocalConsoleCapacityMeasures(out map[string]func() capacity.Reading) ma
 	out["console.local_fleet_stream_frames"] = func() capacity.Reading {
 		return capacity.Unmeasured("the browser tab caches the latest Sessions and task frames; the daemon cannot observe which frames the tab retains")
 	}
-	for _, name := range []string{"console.fleet_retry_first_milliseconds", "console.fleet_retry_ceiling_milliseconds", "console.fleet_retry_attempts"} {
+	for _, name := range []string{"console.fleet_retry_first_milliseconds", "console.fleet_retry_ceiling_milliseconds"} {
 		out[name] = func() capacity.Reading {
-			return capacity.Unmeasured("the browser tab times its own fleet stream reconnects; a refused EventSource never reaches the daemon again, so it cannot count them")
+			return capacity.Unmeasured("the browser tab times its waits between fleet stream reconnects; the daemon does not observe those waits")
 		}
 	}
 	out["console.local_fleet_stream_lease"] = func() capacity.Reading {

@@ -79,7 +79,6 @@ func TestEveryRegisteredRowIsMeasured(t *testing.T) {
 		"console.local_fleet_stream_lease":            true,
 		"console.fleet_retry_first_milliseconds":      true,
 		"console.fleet_retry_ceiling_milliseconds":    true,
-		"console.fleet_retry_attempts":                true,
 	}
 	for _, e := range capacity.Register() {
 		m := measures[e.Name]
