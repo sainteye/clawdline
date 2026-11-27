@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
+import {quietFleetStream} from "../client"
 import {errorCode,errorField,provablyNotSent,sendBlockedByInterruptedTurn} from "./client"
 import {permissionState,samePermission} from "./view-state"
 import type { Words } from "./words"
@@ -56,7 +57,7 @@ export function decisionFailureText(f:DecisionFailure,w:Words,checking:boolean,d
   }
 }
 
-function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,offer?:W.ProjectAssistantPermissionOffer,onDetail?:()=>Promise<boolean>){
+function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,choice:DecisionChoice|null,offer?:W.ProjectAssistantPermissionOffer,onDetail?:()=>Promise<boolean>){
   const requested=useRef("")
   // The immutable proposal stays visible while the collection and detail
   // catch up to one another after an answer.
@@ -77,7 +78,12 @@ function useDecisionDetail(summary:W.ProjectAssistantReadPermissionSummary,offer
     requested.current=reference
     void onDetail().catch(()=>{})
   },[offer,onDetail,memory,summary.state,summary.detail_cursor,summary.title])
-  return memory
+  const [confirmedAnswer,setConfirmedAnswer]=useState<MemoryAnswer>()
+  const observedAnswer=memory&&offer?.state==="answered"?memoryOption(offer.selected_option_id):undefined
+  // A permission event can evict the answered detail before its replacement arrives.
+  if(observedAnswer&&!confirmedAnswer)setConfirmedAnswer(observedAnswer)
+  const selected=memory?(confirmedAnswer??observedAnswer??(choice?.phase==="sent"?memoryOption(choice.option):undefined)):undefined
+  return {memory,selected}
 }
 
 // A question a Bot asked with ask_person. The suggested replies are the
@@ -111,10 +117,10 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
   const traced=useRef<{attempt:string;at:number;option:string}|null>(null)
   useEffect(()=>()=>{const t=traced.current;if(pending.current&&t)traceDecision({attempt:t.attempt,phase:"unmounted",bot_id:botID,offer_id:summary.id,option:t.option,ms:performance.now()-t.at})},[])
   const offer=loaded&&samePermission(summary,loaded)?loaded:undefined
+  const {memory,selected}=useDecisionDetail(summary,choice,offer,onDetail)
   // A pending summary can lag the latest detail or the committed answer receipt.
-  const state=permissionState(summary.state==="pending"&&offer?offer:summary)
+  const state=selected?"answered":permissionState(summary.state==="pending"&&offer?offer:summary)
   const decision=offer?.decision
-  const memory=useDecisionDetail(summary,offer,onDetail)
   const send=async(option:W.ProjectAssistantPermissionOption|null,text?:string,check=-1)=>{
     if(!offer||!enabled||pending.current||state!=="pending")return
     if(!option&&text!==undefined&&utf8Bytes(text)>DECISION_ANSWER_BYTES){setError({kind:"tooLong",code:"pa_capacity_full",retry:false});setOwn(true);return}
@@ -125,6 +131,9 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
     const slow=setTimeout(()=>{if(pending.current&&traced.current===trace)traceDecision({attempt:trace.attempt,phase:"timeout",bot_id:botID,offer_id:offer.id,option:trace.option,ms:performance.now()-trace.at})},DECISION_TRACE_SLOW_MS)
     if(check<0){setError(null);setChecks(null)}
     setChoice({option:option?.id??null,text:option?.label??text??"",phase:"sending"})
+    // The roster and session streams share the browser's HTTP/1.1 pool.
+    // Free this tab's session stream slot for the answer and its preflight reads.
+    const restoreFleet=memory?quietFleetStream():undefined
     try{await onAnswer(offer,option,text,trace.attempt);setError(null);setChecks(null);setChoice(c=>c&&{...c,phase:"sent"});setOwn(false);setDraft("")}
     catch(e){
       const f=decisionFailure(e)
@@ -133,7 +142,7 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
       setError(f);setChoice(c=>c&&{...c,phase:"failed"});if(!option)setOwn(true)
       setChecks(f.kind==="check"?check+1:null)
     }
-    finally{clearTimeout(slow);pending.current=false;setBusy(false)}
+    finally{restoreFleet?.();clearTimeout(slow);pending.current=false;setBusy(false)}
   }
   const checking=error?.kind==="check"&&checks!==null&&checks<DECISION_CHECK_DELAYS_MS.length
   useEffect(()=>{
@@ -145,7 +154,7 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
   const draftBytes=own?utf8Bytes(draft.trim()):0,tooLong=draftBytes>DECISION_ANSWER_BYTES
   // The roster can focus the summary before the detail has arrived.
   if(memory||!offer&&summary.title===MEMORY_PROPOSAL_QUESTION)return <MemoryCard summary={summary} offer={offer} memory={memory}
-    state={state} choice={choice} enabled={enabled} busy={busy} checking={checking} error={error}
+    state={state} selected={selected} choice={choice} enabled={enabled} busy={busy} checking={checking} error={error}
     askerName={askerName} onSend={option=>void send(option)} highlight={highlight} w={w}/>
   const answered=decision?.answer_text||offer?.options.find(o=>o.id===offer.selected_option_id)?.label
   const sent=state==="pending"&&choice?.phase==="sent"
@@ -197,11 +206,12 @@ export function DecisionCard({summary,offer:loaded,enabled,onDetail,onAnswer,ask
 // A short fact the Bot proposed to remember while answering another Bot.
 // Only Save writes it, as the person's own memory entry; the card offers no
 // typed reply.
-function MemoryCard({summary,offer,memory,state,choice,enabled,busy,checking,error,askerName,onSend,highlight,w}:{
+function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,checking,error,askerName,onSend,highlight,w}:{
   summary:W.ProjectAssistantReadPermissionSummary
   offer?:W.ProjectAssistantPermissionOffer
   memory:string
   state:W.ProjectAssistantPermissionState
+  selected:MemoryAnswer|undefined
   choice:DecisionChoice|null
   enabled:boolean
   busy:boolean
@@ -212,9 +222,7 @@ function MemoryCard({summary,offer,memory,state,choice,enabled,busy,checking,err
   highlight?:boolean
   w:Words
 }) {
-  const selected=state==="answered"&&offer?.state==="answered"?offer.selected_option_id:undefined
-  const awaiting=state==="answered"&&!selected||state==="pending"&&
-    (choice?.phase==="sent"||error?.kind==="answered")
+  const awaiting=state==="answered"&&!selected||state==="pending"&&error?.kind==="answered"
   const problem=state==="pending"&&!awaiting?error:null
   const retry=problem?.retry&&!checking?offer?.options.find(o=>o.id===choice?.option):undefined
   const locked=awaiting||state==="pending"&&(busy||checking)
@@ -244,6 +252,10 @@ function MemoryCard({summary,offer,memory,state,choice,enabled,busy,checking,err
 // Mirrors the host's memory proposal question and its two option IDs.
 const MEMORY_PROPOSAL_QUESTION="Save this to memory?"
 const MEMORY_SAVE="reply-memory-save",MEMORY_SKIP="reply-memory-skip"
+type MemoryAnswer=typeof MEMORY_SAVE|typeof MEMORY_SKIP
+function memoryOption(option?:string|null):MemoryAnswer|undefined{
+  return option===MEMORY_SAVE||option===MEMORY_SKIP?option:undefined
+}
 
 // The requester's chat only points at the waiting question; it carries no
 // authority and cannot answer it.
