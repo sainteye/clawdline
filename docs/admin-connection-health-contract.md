@@ -691,7 +691,7 @@ or rule that fails Cloud's pattern, and a single record that alone would exceed 
 Durable-store loss markers (`loss` entries) have no producer sequence and cannot be record/1
 events; they are counted as `storage_loss_records`, and store gaps by reason as `store_gaps`. Their
 totals, with `totals.excluded`, travel to Cloud in a `local_loss` block
-(`clawdline.connection-health.local-loss/1`, Cloud contract §12.1: `counter_epoch`, `observed_at`,
+(`healthupload.LocalLossSchema`, local-loss/1, Cloud contract §12.1: `counter_epoch`, `observed_at`,
 `storage_lost_records`, `store_gaps`, `excluded`, the last two limited to Cloud's allowlists with
 an `unlisted` bucket). It rides only on a separate metadata-only batch with no events (`lossOnly`),
 built when the settled totals moved and there is nothing else to send; an event batch never
