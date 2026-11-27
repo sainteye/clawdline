@@ -594,10 +594,7 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		a.Turns[id] = t.AcknowledgeUnknown()
 	}
-	var previous pa.TurnState
-	if m.Turn != nil {
-		previous = a.Turns[m.Turn.ID].State
-	}
+	previous := turnStateBefore(*a, m.Turn)
 	if m.Turn != nil {
 		t := *m.Turn
 		if old, ok := a.Turns[t.ID]; ok {
@@ -654,25 +651,9 @@ func applyMutation(a *aggregate, m app.Mutation) error {
 		}
 		a.Messages[msg.Seq-1] = *msg
 	}
-	for _, msg := range m.Messages {
-		for _, old := range a.Messages {
-			if old.ID == msg.ID {
-				return failure(pa.IdempotencyConflict, "message_id")
-			}
-		}
-		next := int64(len(a.Messages) + 1)
-		if msg.Seq == 0 {
-			msg.Seq = next
-		}
-		if msg.Seq != next {
-			return failure(pa.StaleVersion, "message_seq")
-		}
-		if msg.Output != nil && msg.Output.ArtifactID != "" {
-			delete(a.ArtifactTitles, msg.Output.ArtifactID)
-		}
-		a.Messages = append(a.Messages, msg)
+	if err := appendMessages(a, m, previous); err != nil {
+		return err
 	}
-	a.addressed = stampForPerson(a, m, len(m.Messages), previous)
 	a.Conversation.LastMessageSeq = int64(len(a.Messages))
 	for _, p := range m.Permissions {
 		// Only a pending offer changes state, except that an answer recorded as

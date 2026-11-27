@@ -44,6 +44,40 @@ func stampForPerson(a *aggregate, m app.Mutation, added int, previous pa.TurnSta
 	return out
 }
 
+// turnStateBefore is the stored state of the turn a mutation writes, before
+// it is written; empty for a new turn or none.
+func turnStateBefore(a aggregate, t *pa.Turn) pa.TurnState {
+	if t == nil {
+		return ""
+	}
+	return a.Turns[t.ID].State
+}
+
+// appendMessages appends a mutation's new messages in sequence and records
+// which of them, and of the turn it ends, are addressed to the person.
+func appendMessages(a *aggregate, m app.Mutation, previous pa.TurnState) error {
+	for _, msg := range m.Messages {
+		for _, old := range a.Messages {
+			if old.ID == msg.ID {
+				return failure(pa.IdempotencyConflict, "message_id")
+			}
+		}
+		next := int64(len(a.Messages) + 1)
+		if msg.Seq == 0 {
+			msg.Seq = next
+		}
+		if msg.Seq != next {
+			return failure(pa.StaleVersion, "message_seq")
+		}
+		if msg.Output != nil && msg.Output.ArtifactID != "" {
+			delete(a.ArtifactTitles, msg.Output.ArtifactID)
+		}
+		a.Messages = append(a.Messages, msg)
+	}
+	a.addressed = stampForPerson(a, m, len(m.Messages), previous)
+	return nil
+}
+
 // syncMessageEvents gives each MessageCreated event the message as stored,
 // so its payload still matches the aggregate after stampForPerson.
 func syncMessageEvents(a aggregate, events []pa.Event) {

@@ -873,6 +873,16 @@
     "Note": true
   },
   {
+    "Name": "bots.notify_detail_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.notify_summary_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.output_bytes",
     "Known": true,
     "Note": true

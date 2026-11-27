@@ -677,25 +677,8 @@ func (s *ownedMCPServer) tool(ctx context.Context, name string, arguments json.R
 			return nil, refusal(pa.Unsupported, "bot_request_tools")
 		}
 		return tools.BotRequest(ctx, name, mcpEmpty(arguments))
-	case "ask_person", "list_questions", "withdraw_question":
+	case "ask_person", "list_questions", "withdraw_question", "notify_person":
 		return s.questionTool(ctx, name, arguments)
-	case "notify_person":
-		tools, ok := s.tools.(app.PersonNoticeTools)
-		if !ok {
-			return nil, refusal(pa.Unsupported, "notify_person")
-		}
-		var q pa.NotifyPersonRequest
-		if mcpDecode(arguments, &q) != nil {
-			return nil, refusal(pa.Invalid, "notify_person_arguments")
-		}
-		text, err := pa.NotifyPersonText(q)
-		if err != nil {
-			return nil, err
-		}
-		if err = tools.NotifyPerson(ctx, pa.NotifyPersonID(text), text); err != nil {
-			return nil, err
-		}
-		return map[string]string{"state": "delivered"}, nil
 	case "message_bot":
 		tools, ok := s.tools.(app.CollaborationTools)
 		if !ok {
@@ -1476,8 +1459,8 @@ func checkDispatchMode(mode string, continueOnCompletion bool) error {
 	return nil
 }
 
-// questionTool runs the tools a Bot uses to ask the person and to review or
-// withdraw its own open questions; none of them can answer a question.
+// questionTool runs the tools a Bot uses to ask or tell the person and to
+// review or withdraw its own open questions; none of them can answer one.
 func (s *ownedMCPServer) questionTool(ctx context.Context, name string, arguments json.RawMessage) (any, error) {
 	switch name {
 	case "ask_person":
@@ -1521,6 +1504,23 @@ func (s *ownedMCPServer) questionTool(ctx context.Context, name string, argument
 			return nil, err
 		}
 		return map[string]any{"question_id": offer.ID, "state": "withdrawn"}, nil
+	case "notify_person":
+		tools, ok := s.tools.(app.PersonNoticeTools)
+		if !ok {
+			return nil, refusal(pa.Unsupported, "notify_person")
+		}
+		var q pa.NotifyPersonRequest
+		if mcpDecode(arguments, &q) != nil {
+			return nil, refusal(pa.Invalid, "notify_person_arguments")
+		}
+		text, err := pa.NotifyPersonText(q)
+		if err != nil {
+			return nil, err
+		}
+		if err = tools.NotifyPerson(ctx, pa.NotifyPersonID(text), text); err != nil {
+			return nil, err
+		}
+		return map[string]string{"state": "delivered"}, nil
 	}
 	return nil, refusal(pa.Invalid, "mcp_tool")
 }
