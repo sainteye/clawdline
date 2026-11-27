@@ -128,8 +128,9 @@ try{
   }
   const {targetId}=await send("Target.createTarget",{url:"about:blank"}),{sessionId}=await send("Target.attachToTarget",{targetId,flatten:true})
   const text="Synthetic observation message"
+  const showsReplyTo=text=>`[...document.querySelectorAll('.pa-message:not(.pa-mine) .pa-message-bubble')].some(bubble=>bubble.innerText.startsWith('Answer to ')&&bubble.innerText.includes(${JSON.stringify(text)}))`
   await send("Page.enable",{},sessionId);await send("Runtime.enable",{},sessionId)
-  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange","restart-held-mobile","restart-review-mobile"].includes(scenario),lang=mobile?"zh-Hant":"en"
+  const mobile=["hidden-zh-mobile","read-failure","cleanup-timeout","quota-card","decision-card","decision-recovery","interrupted-exchange","restart-held-mobile","restart-review-mobile","restart-review-clear-mobile"].includes(scenario),lang=mobile?"zh-Hant":"en"
   await send("Emulation.setDeviceMetricsOverride",{width:mobile?390:1280,height:mobile?844:800,deviceScaleFactor:1,mobile},sessionId)
   await send("Page.navigate",{url:origin+"/?lang="+lang},sessionId)
   await until(sessionId,"!!document.querySelector('[data-bot-key]')")
@@ -139,7 +140,7 @@ try{
     await until(sessionId,`document.querySelector('${button}')?.innerText==='請 Bot 核對進度'`)
     const before=await capture(sessionId,"restart-review-before")
     assert.match(before.text,/Clawdline 在上一輪執行時重新啟動/)
-    assert.match(before.text,/已排隊的 1 則訊息/)
+    assert.match(before.text,/有 1 則訊息正在等待處理/)
     assert.equal(await evaluate(sessionId,`getComputedStyle(document.querySelector('${notice}')).rowGap`),"12px")
     assert.ok(await evaluate(sessionId,`document.querySelector('${button}').getBoundingClientRect().height>=44`))
     await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
@@ -158,12 +159,38 @@ try{
     while(!held&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20))
     assert.equal(held,true)
     await fetch(origin+"/control?release=1")
-    await until(sessionId,"document.body.innerText.includes('Answer to 請核對造成這個聊天室暫停的回合')")
+    await until(sessionId,showsReplyTo("請核對造成這個聊天室暫停的回合"))
     await until(sessionId,`!document.querySelector('${notice}')`)
     assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),"Keep this draft")
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1)
     await capture(sessionId,"restart-review-replied")
     results.push({scenario,sends:1,draftPreserved:true})
+  }else if(scenario==="restart-review-clear-mobile"){
+    const openBot="([...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot'))).click()"
+    const notice=".pa-turn-review",clear=notice+" .pa-turn-review-clear"
+    const draft="Keep this draft"
+    const showsPausedTurn="document.body.innerText.includes('上一輪已暫停')&&document.body.innerText.includes('等待處理')"
+    const observedQueue="window.chatObservation.phases.some(p=>p.head?.queued_turn_count===1&&p.head?.unknown_turn_count===1)"
+    await evaluate(sessionId,openBot)
+    await until(sessionId,`document.querySelector('${clear}')?.innerText==='清除提示'`)
+    await until(sessionId,showsPausedTurn)
+    assert.ok(await evaluate(sessionId,`document.querySelector('${clear}').getBoundingClientRect().height>=44`))
+    await evaluate(sessionId,"document.querySelector('.pa-composer textarea').focus()")
+    await send("Input.insertText",{text:draft},sessionId)
+    await capture(sessionId,"before-clear")
+    await evaluate(sessionId,`document.querySelector('${clear}').click()`)
+    await until(sessionId,`!document.querySelector('${notice}')`)
+    assert.equal(await evaluate(sessionId,"document.querySelector('.pa-composer textarea').value"),draft)
+    assert.ok(await evaluate(sessionId,showsPausedTurn))
+    await capture(sessionId,"after-clear")
+    await send("Page.reload",{},sessionId)
+    await until(sessionId,"!![...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot'))")
+    await evaluate(sessionId,openBot)
+    await until(sessionId,showsPausedTurn)
+    assert.equal(await evaluate(sessionId,`!!document.querySelector('${notice}')`),false)
+    assert.ok(await evaluate(sessionId,observedQueue))
+    assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,0)
+    results.push({scenario,sends:0,draftPreserved:true,hiddenAfterReload:true})
   }else if(scenario==="restart-held-mobile"){
     await evaluate(sessionId,"[...document.querySelectorAll('[data-bot-key]')].find(row=>row.innerText.includes('Synthetic Bot')).click()")
     await until(sessionId,"document.body.innerText.includes('上一輪已暫停')")
@@ -177,7 +204,7 @@ try{
     assert.equal(traffic.filter(p=>p.word==="project-assistants.send").length,1)
     await capture(sessionId,"restart-held-before-retry")
     await evaluate(sessionId,`[...document.querySelectorAll('${retry}')].find(button=>button.innerText==='重試送出').click()`)
-    await until(sessionId,`document.body.innerText.includes(${JSON.stringify(followup)})&&document.body.innerText.includes('Answer to '+${JSON.stringify(followup)})&&!document.querySelector('.pa-unsent')`)
+    await until(sessionId,`${showsReplyTo(followup)}&&!document.querySelector('.pa-unsent')`)
     const sends=traffic.filter(p=>p.word==="project-assistants.send")
     assert.deepEqual(sends.map(p=>p.status),[502,200])
     assert.ok(sends[0].request&&sends[0].request===sends[1].request,"manual retry must keep the original request identity")

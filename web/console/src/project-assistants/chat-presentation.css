@@ -26,6 +26,7 @@
   overflow-wrap:anywhere;
 }
 .project-assistants .pa-turn-review p { margin:4px 0 0;color:var(--pa-dim); }
+.project-assistants .pa-turn-review-actions { display:flex;flex-wrap:wrap;gap:8px; }
 .project-assistants .pa-turn-review button { min-height:44px; }
 .project-assistants .pa-chat-surface .pa-info-panel { padding:18px 20px;background:var(--pa-bg); }
 .project-assistants .pa-chat-surface .pa-info-identity { padding:24px 0 18px;gap:8px; }

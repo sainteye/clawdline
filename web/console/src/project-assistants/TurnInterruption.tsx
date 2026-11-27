@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import type { ProjectAssistantReadTurnSummary } from "@clawdline/contract"
+import type { ProjectAssistantReadTurnSummary, ProjectAssistantReadViewHead } from "@clawdline/contract"
 import { botFailureText, botTurnReason } from "./source-errors"
 import type { Words } from "./words"
 
@@ -38,7 +38,29 @@ export function TurnInterruption({turn,w,onProgress}: {
   </div>
 }
 
-export function TurnReviewNotice({w,restarted,queued,enabled,canRequest,pending,onReview}: {
+export function useTurnReviewDismissal({draftKey,head,turns,restartInterruption,visible}: {
+  draftKey: string
+  head: ProjectAssistantReadViewHead|null
+  turns: readonly ProjectAssistantReadTurnSummary[]
+  restartInterruption?: ProjectAssistantReadTurnSummary
+  visible: boolean
+}) {
+  const storageKey="clawdline.bot-turn-review-dismissed."+draftKey
+  const [dismissed,setDismissed]=useState(()=>{
+    try{return localStorage.getItem(storageKey)}catch{return null}
+  })
+  const interruptedTurn=restartInterruption??turns.find(turn=>turn.state==="unknown")
+  const identity=head&&JSON.stringify([head.conversation.id,head.unknown_turn_count,interruptedTurn?.id??head.conversation.last_message_seq])
+  const clearTurnReview=()=>{
+    if(!identity)return
+    setDismissed(identity)
+    try{localStorage.setItem(storageKey,identity)}catch{/* The current view can still dismiss the notice. */}
+  }
+  const showTurnReview=visible&&!!head?.unknown_turn_count&&dismissed!==identity
+  return {showTurnReview,clearTurnReview}
+}
+
+export function TurnReviewNotice({w,restarted,queued,enabled,canRequest,pending,onReview,onClear}: {
   w: Words
   restarted: boolean
   queued: number
@@ -46,6 +68,7 @@ export function TurnReviewNotice({w,restarted,queued,enabled,canRequest,pending,
   canRequest: boolean
   pending: boolean
   onReview: () => Promise<"accepted"|"refused"|"unknown">
+  onClear: () => void
 }) {
   const [state,setState]=useState<"sending"|"accepted"|"refused"|"unknown"|null>(null)
   const sending=useRef(false)
@@ -64,10 +87,13 @@ export function TurnReviewNotice({w,restarted,queued,enabled,canRequest,pending,
       {state==="refused"&&<p>{w.turnReviewRefused}</p>}
       {pending&&state!=="sending"&&<p>{w.turnReviewUnconfirmed}</p>}
     </div>
-    {enabled&&state!=="accepted"&&(!pending||state==="sending")&&
-      <button type="button" className="pa-pill" disabled={!canRequest||state==="sending"}
-        aria-busy={state==="sending"||undefined} onClick={()=>void request()}>
-        {state==="sending"?w.turnReviewSending:w.turnReviewAction}
-      </button>}
+    <div className="pa-turn-review-actions">
+      {enabled&&state!=="accepted"&&(!pending||state==="sending")&&
+        <button type="button" className="pa-pill" disabled={!canRequest||state==="sending"}
+          aria-busy={state==="sending"||undefined} onClick={()=>void request()}>
+          {state==="sending"?w.turnReviewSending:w.turnReviewAction}
+        </button>}
+      <button type="button" className="pa-pill pa-turn-review-clear" onClick={onClear}>{w.turnReviewClear}</button>
+    </div>
   </div>
 }

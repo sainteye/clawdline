@@ -64,7 +64,7 @@ import { activityOf, chatMood, liveActivity, rosterMood } from "./working"
 import {FallbackProgress} from "./FallbackProgress"
 import { WorkingTransition } from "./WorkingTransition"
 import { botWorkspaceName, providerSetupFailure, readOnlyReason, settingsReadOnlyReason } from "./source-errors"
-import { TurnInterruption, TurnReviewNotice } from "./TurnInterruption"
+import { TurnInterruption, TurnReviewNotice, useTurnReviewDismissal } from "./TurnInterruption"
 import { RuleList } from "./RuleList"
 import { BotManage } from "./BotManage"
 import { seenThrough } from "./read-position"
@@ -1752,7 +1752,7 @@ ${currentDraft}`:submitted)
     if(valid()&&result.state==="refused"&&["pa_stale_version","pa_stale_generation"].includes(result.code??""))void refresh(true)
     return result.state
   }
-  const showTurnReview=!thread&&unknownCount>0&&!restartNotice&&!reconnecting
+  const {showTurnReview,clearTurnReview}=useTurnReviewDismissal({draftKey,head,turns,restartInterruption,visible:!thread&&!restartNotice&&!reconnecting})
   const canRequestTurnReview=enabled&&!unknown&&!busy&&!legacyBlocked()&&!call.active&&!activeTurn
     &&!editingHandoff&&!handoff.busy&&!handoff.error&&handoff.card?.state!=="draft"
   const taskRows=head?.background_tasks
@@ -2050,7 +2050,7 @@ ${currentDraft}`:submitted)
         {w.restartRestoring}{restartWaitingCount>0&&` · ${w.restartQueueKept.replace("{count}",String(restartWaitingCount))}`}
       </p>}
       {showTurnReview&&<TurnReviewNotice w={w} restarted={!!restartInterruption&&unknownCount===1} queued={queuedCount}
-        enabled={enabled} canRequest={canRequestTurnReview} pending={reviewPending} onReview={requestTurnReview}/>}
+        enabled={enabled} canRequest={canRequestTurnReview} pending={reviewPending} onReview={requestTurnReview} onClear={clearTurnReview}/>}
       {!heldSend&&unknown&&<p role="status">{w.unknown}</p>}
       {heldSend&&isBotCallSend(heldSend.intent.command.idempotency_key)&&<p role="status">{w.unknown} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}
       {view.heldOutcomes.problem(draftKey)==="unreadable"&&<p role="alert">{w.heldUnreadable} <button type="button" onClick={leaveUnreadable}>{w.writeNewMessage}</button></p>}
