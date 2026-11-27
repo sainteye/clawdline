@@ -30,6 +30,10 @@ import (
 // DaemonBinary distinguishes the macOS background service from the public CLI.
 const DaemonBinary = "clawdline-daemon"
 
+// daemonCopySupport is carried by archives whose named daemon can identify
+// its release from a copy of the executable.
+const daemonCopySupport = "daemon-copy-support"
+
 // Layout is one installation's paths.
 type Layout struct {
 	Root     string
@@ -162,8 +166,8 @@ func (l Layout) ServiceExecutable(name string) string {
 }
 
 // InstallServiceBinary atomically selects the macOS daemon at a fixed path.
-// The hard link lets older daemons identify their release after a rollback.
-// Current named daemons detach the link before serving.
+// Copy-capable releases get a separate inode before launchd can start them.
+// Older releases still need a hard link to identify themselves on rollback.
 func (l Layout) InstallServiceBinary(name string) error {
 	if kindOfRelease(name) == KindNone {
 		return fmt.Errorf("%q is not a release or commit name", name)
@@ -193,13 +197,27 @@ func (l Layout) InstallServiceBinary(name string) error {
 		return fmt.Errorf("service console path %s links to %q, want %q", console, target, consoleTarget)
 	}
 	destination := l.ServiceExecutable(name)
-	source := "clawdline"
+	source := filepath.Join(l.ReleaseDir(name), "clawdline")
 	if destination == l.ServiceBin {
-		source = DaemonBinary
+		source = named
+		marker, err := os.Lstat(filepath.Join(l.ReleaseDir(name), daemonCopySupport))
+		switch {
+		case err == nil && marker.Mode().IsRegular():
+			f, err := os.Open(source)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			return copyServiceBinary(f, destination, nil)
+		case err == nil:
+			return fmt.Errorf("the daemon copy support marker is not a regular file")
+		case !os.IsNotExist(err):
+			return err
+		}
 	}
 	tmp := destination + ".new"
 	_ = os.Remove(tmp)
-	if err := os.Link(filepath.Join(l.ReleaseDir(name), source), tmp); err != nil {
+	if err := os.Link(source, tmp); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, destination); err != nil {

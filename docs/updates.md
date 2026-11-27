@@ -27,11 +27,14 @@ up.
 ## Release-day procedure for an installed Mac
 
 The macOS LaunchAgent uses `<install-root>/service/clawdline-daemon`, a stable real
-path selected atomically from the installed release. Before serving, the named
-daemon replaces the installer's hard link with an independent copy of the signed
-executable and re-execs it. macOS can resolve a hard-linked process to either
-name, including a version directory, and record a separate Automation entry.
-The updater can still roll back to an older executable that expects a hard link.
+path selected atomically from the installed release. For an archive that carries
+`daemon-copy-support`, setup and update install an independent copy of the
+signed executable before launchd starts it. A hard-linked executable can be
+attributed to its version directory, and macOS can retain that launch identity
+after a re-exec. Rolling back to an older archive still uses a hard link, which
+those binaries need to identify their release. A first update performed by an
+older supervisor also starts from a hard link. The new daemon detaches the file
+before serving, and its next start uses the fixed launch identity.
 Service installations keep
 the existing App bundle when its native shell revision is unchanged; the
 daemon serves the current web console. A native shell change replaces the App

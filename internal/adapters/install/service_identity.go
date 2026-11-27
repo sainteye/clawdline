@@ -85,8 +85,9 @@ func executableDigest(r io.Reader) ([]byte, error) {
 }
 
 // DetachServiceBinary replaces a managed hard link with a byte-for-byte copy.
-// macOS can report either hard-link path as the process's executable path.
-// The caller must exec the replacement before opening state or sending events.
+// This supports the first update performed by a supervisor that still installs
+// hard links. Re-exec updates the process image, but launch attribution can
+// keep its original path until the next start.
 func (l Layout) DetachServiceBinary() (bool, error) {
 	src, err := os.Open(l.ServiceBin)
 	if err != nil {
@@ -102,33 +103,46 @@ func (l Layout) DetachServiceBinary() (bool, error) {
 		return false, nil
 	}
 
-	tmp, err := os.CreateTemp(filepath.Dir(l.ServiceBin), ".daemon-copy-*")
-	if err != nil {
+	if err := copyServiceBinary(src, l.ServiceBin, old); err != nil {
 		return false, err
+	}
+	return true, nil
+}
+
+func copyServiceBinary(src *os.File, destination string, previous os.FileInfo) error {
+	info, err := src.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 {
+		return fmt.Errorf("the named background service is not an executable regular file")
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(destination), ".daemon-copy-*")
+	if err != nil {
+		return err
 	}
 	defer os.Remove(tmp.Name())
 	defer tmp.Close()
 	if _, err := io.Copy(tmp, src); err != nil {
-		return false, err
+		return err
 	}
-	if err := tmp.Chmod(old.Mode().Perm()); err != nil {
-		return false, err
+	if err := tmp.Chmod(info.Mode().Perm()); err != nil {
+		return err
 	}
 	if err := tmp.Sync(); err != nil {
-		return false, err
+		return err
 	}
 	if err := tmp.Close(); err != nil {
-		return false, err
+		return err
 	}
-	selected, err := os.Stat(l.ServiceBin)
-	if err != nil {
-		return false, err
+	if previous != nil {
+		selected, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+		if !os.SameFile(previous, selected) {
+			return fmt.Errorf("the selected background service changed while it was being copied")
+		}
 	}
-	if !os.SameFile(old, selected) {
-		return false, fmt.Errorf("the selected background service changed while it was being copied")
-	}
-	if err := os.Rename(tmp.Name(), l.ServiceBin); err != nil {
-		return false, err
-	}
-	return true, nil
+	return os.Rename(tmp.Name(), destination)
 }
