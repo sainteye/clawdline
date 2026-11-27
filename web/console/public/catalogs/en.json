@@ -2117,6 +2117,8 @@
   "capacityRow.diagnostics.doctor_version_bytes.what": "Maximum output accepted from a CLI version probe.",
   "capacityRow.diagnostics.doctor_version_seconds.full": "A slow CLI is reported as a timeout, without blocking other checks.",
   "capacityRow.diagnostics.doctor_version_seconds.what": "Deadline for each explicit CLI version probe.",
+  "capacityRow.diagnostics.report_bytes.full": "A larger report is refused whole, never cut down; the last report that was kept stays where it is.",
+  "capacityRow.diagnostics.report_bytes.what": "The largest diagnostic report a page can send from its diagnostics panel. It is kept as one file in this machine's log folder.",
   "capacityRow.diagnostics.route_latency_samples.full": "The oldest time is overwritten by the newest; the slowest time ever seen is kept separately. Nothing for you to do.",
   "capacityRow.diagnostics.route_latency_samples.what": "How many recent response times the diagnostics keep for each kind of request, used to show the typical and slow times. Keeping only recent ones holds memory steady however long the daemon runs.",
   "capacityRow.diagnostics.route_stat_keys.full": "Further kinds are added together under one \"overflow\" entry; every request is still answered normally, only its own line in the diagnostics is missing. Nothing for you to do.",

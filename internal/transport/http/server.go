@@ -531,6 +531,9 @@ func (s *Server) routeTable() []route {
 		{Route{"*", "/v1/auth/"}, s.authRoute},
 		{Route{"*", "/v1/health"}, s.health},
 		{Route{"*", "/v1/diagnostics"}, s.diagnostics},
+		// "Send to Mac" in the console's layout-diagnostics panel: any paired
+		// device, at read level, into two fixed files (diagnostics_report.go).
+		{Route{"POST", diagnosticReportRoute}, s.diagnosticsReport},
 		{Route{"*", "/v1/api-performance"}, s.apiPerformanceRoute},
 		{Route{"*", "/v1/capacity"}, s.capacityRoute},
 		// What the connection-health watchdog sees now and its journal

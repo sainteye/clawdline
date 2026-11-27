@@ -674,6 +674,7 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `diagnostics.doctor_report_bytes` | 8192 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `diagnostics.doctor_version_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `diagnostics.doctor_version_seconds` | 3 | `seconds` | `expire` | `diagnostics, sender` | — |
+| `diagnostics.report_bytes` | 1048576 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `diagnostics.route_latency_samples` | 256 | `rows` | `evict_oldest` | `diagnostics` | — |
 | `diagnostics.route_stat_keys` | 512 | `rows` | `coalesce` | `diagnostics` | — |
 | `dispatch.also_work_ids` | 7 | `rows` | `refuse` | `diagnostics, sender` | — |

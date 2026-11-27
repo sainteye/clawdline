@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14800,
-  "riskKeys": 6263,
-  "nonRiskCount": 8537,
+  "englishContentKeys": 14802,
+  "riskKeys": 6264,
+  "nonRiskCount": 8538,
   "groups": [
     {
       "name": "acp / other",
@@ -640,7 +640,7 @@
     },
     {
       "name": "capacityRow / other",
-      "count": 806,
+      "count": 807,
       "sources": [
         null
       ],
@@ -1174,6 +1174,7 @@
         "capacityRow.diagnostics.doctor_report_bytes.what",
         "capacityRow.diagnostics.doctor_version_bytes.full",
         "capacityRow.diagnostics.doctor_version_seconds.what",
+        "capacityRow.diagnostics.report_bytes.what",
         "capacityRow.diagnostics.route_latency_samples.what",
         "capacityRow.diagnostics.route_stat_keys.what",
         "capacityRow.dispatch.also_work_ids.what",

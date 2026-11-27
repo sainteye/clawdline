@@ -1,13 +1,21 @@
 > **Retired Swift-generation record (through 2026-09-19):** The product reasoning is preserved, but Swift/AppKit/iTerm implementation details, source paths, route inventory, port 7717, `/tmp/.clawdline`, and claims about the running Mac app do not describe the Go daemon. References to unavailable retired files are rendered as code instead of live links.
 <!-- clawdline-doc: kind=record audience=both -->
 
-> **What the Go daemon does today:** it has no report inbox. It registers no
-> `POST /v1/diagnostics/report` route (`/v1/diagnostics` is the daemon's own self-description), it
-> refuses the Cloud command `diagnostics.report` (`internal/app/cloudops/ops_unavailable_commands.go`),
-> and it writes none of `report.json`, `previous.json`, `cloud-status.json` or
-> `cloud-viewer-events.jsonl`; there is no Cloud read `cloud.status`. The console's copied panel
-> (`web/console/src/legacy/js/core/layout-diagnostics.js`) still posts **Send to Mac** to the
-> retired route. The part that survives is `diagnostics.events`: `ViewerEventLog.Write` in
+> **What the Go daemon does today:** `POST /v1/diagnostics/report`
+> (`internal/transport/http/diagnostics_report.go`, API 126) is the inbox again for the console's
+> **Send to Mac**. Any paired device may send, at read level, and the orchestrator credential is
+> not a device here. The daemon writes `CLAWDLINE_NEXT_DIR/logs/diagnostics/report.json` at mode
+> `0600`, moving the one before it to `previous.json` beside it, inside the envelope described below
+> (`written_by` is the device). It answers `{ok, path, previous, bytes, limit,
+> completeness_stated}`; refusals are `empty_report`, `report_not_json`, `report_too_large` (over
+> `diagnostics.report_bytes`, 1 MiB, half the daemon's 2 MiB command body bound so this is the
+> refusal a page sees) and `report_write_failed`, in the `{"error":{"code","message"}}` shape the
+> panel prints. Nothing is truncated to fit. The report is not written to the audit log. Over
+> Clawdline Cloud the daemon still refuses the command `diagnostics.report`
+> (`internal/app/cloudops/ops_unavailable_commands.go`), so on the hosted console the panel says
+> so instead of writing a file; it writes none of `cloud-status.json` or `cloud-viewer-events.jsonl`,
+> and there is no Cloud read `cloud.status`. The part of the Cloud half that survives is
+> `diagnostics.events`: `ViewerEventLog.Write` in
 > `internal/app/cloudops/viewer_events.go` refuses a batch over 256 KiB or without `v == 1`, writes
 > one daemon-log line per row (at most 128 rows, each line at most 1 KiB, with a second deny-list of
 > fields that are never logged) and one `cloud: viewer events delivered: …` summary line, and

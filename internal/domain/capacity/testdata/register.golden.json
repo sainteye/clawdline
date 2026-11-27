@@ -13033,6 +13033,24 @@
   },
   {
     "Register": "daemon",
+    "Name": "diagnostics.report_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 1048576,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": null
+  },
+  {
+    "Register": "daemon",
     "Name": "diagnostics.route_latency_samples",
     "Class": "observation",
     "Unit": "rows",

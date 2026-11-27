@@ -504,7 +504,7 @@ func writePolicy(method, p string, machine bool, v auth.Verdict) (int, string, s
 	send := v.Allowed && v.Caps.Has(auth.Send)
 	if v.Allowed && !v.Local && !send && !machine && !strings.HasPrefix(p, "/v1/auth/") && p != "/v1/terminals" && !strings.HasPrefix(p, "/v1/terminals/") &&
 		p != "/v1/squad-packages/preview" && p != "/v1/squad-packages/export" &&
-		p != "/v1/push/subscribe" && p != "/v1/push/unsubscribe" && p != "/v1/push/test" && !projectAssistantMetadataWrite(method, p) {
+		p != "/v1/push/subscribe" && p != "/v1/push/unsubscribe" && p != "/v1/push/test" && p != diagnosticReportRoute && !projectAssistantMetadataWrite(method, p) {
 		return http.StatusForbidden, "forbidden", "This device may read, and not send."
 	}
 	switch {

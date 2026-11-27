@@ -199,10 +199,8 @@ function stateSnapshot(reason) {
 /**
  * Where a report goes when somebody presses "Send to Mac".
  *
- * Written twice — here and as a `case` in `Sources/RemoteServer.swift` — because a route is a
- * string on both sides of a wire. `Tests/web-diagnostics-send.mjs` holds the two copies against
- * each other: two spellings of one name in two languages is the shape that drifts, and the drift
- * is silent.
+ * The daemon's side is `diagnosticReportRoute` in
+ * `internal/transport/http/diagnostics_report.go`.
  */
 export var REPORT_ROUTE = "/v1/diagnostics/report";
 

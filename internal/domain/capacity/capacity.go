@@ -564,8 +564,10 @@ const (
 	TerminalLeaseSeconds = "terminal.lease_seconds"
 	// Every API call this daemon answers, counted by route shape and caller
 	// (`/v1/diagnostics.routes`).
-	DiagnosticsRouteStatKeys          = "diagnostics.route_stat_keys"
-	DiagnosticsRouteLatencySamples    = "diagnostics.route_latency_samples"
+	DiagnosticsRouteStatKeys       = "diagnostics.route_stat_keys"
+	DiagnosticsRouteLatencySamples = "diagnostics.route_latency_samples"
+	// One report a page sends with "Send to Mac" (`POST /v1/diagnostics/report`).
+	DiagnosticsReportBytes            = "diagnostics.report_bytes"
 	CloudTerminalRosterRefresh        = "cloud.terminal_roster_refresh_seconds"
 	CloudTerminalRosterDeadline       = "cloud.terminal_roster_deadline_seconds"
 	CloudTerminalRosterRetry          = "cloud.terminal_roster_retry_seconds"
