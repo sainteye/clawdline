@@ -35,8 +35,8 @@ func TestPersonIntentCommitsWithTheReplyAndNeverForAnEmptyTurn(t *testing.T) {
 	}
 	injected := errors.New("intent transaction failed")
 	fail := true
-	s.PersonIntent = func(ctx context.Context, tx *sql.Tx, _ pa.Bot, told pa.Message) error {
-		if told.ForPerson == nil || !*told.ForPerson || told.ID != "reply-turn" {
+	s.PersonIntent = func(ctx context.Context, tx *sql.Tx, _ pa.Bot, told pa.Message, reply bool) error {
+		if !reply || told.ForPerson == nil || !*told.ForPerson || told.ID != "reply-turn" {
 			t.Fatalf("told the person of %+v", told)
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO completion_intents(turn) VALUES(?)`, told.TurnID); err != nil {

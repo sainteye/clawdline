@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"regexp"
+	"strings"
 
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
@@ -39,17 +41,62 @@ func BotMessageTag(machine, bot, message string) string {
 // store calls it once per such message, so a replayed receipt cannot enqueue
 // a second push. A routine, a request from another Bot, a background helper
 // or a work result reaches here only through notify_person.
-func (b *Broker) BotPersonMessageIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, msg pa.Message) error {
+func (b *Broker) BotPersonMessageIntent(ctx context.Context, tx *sql.Tx, bot pa.Bot, msg pa.Message, reply bool) error {
 	if bot.Notify == "off" || bot.Hidden || msg.ID == "" || msg.Fence.ConversationID == "" || !pa.CountsAsUnread(msg, bot.Key) {
 		return nil
 	}
+	preview := BotDecisionSummary
+	if reply {
+		preview = botReplyPushPreview
+	}
 	p := botCompletedPush{Bot: bot.Key.BotID, Conversation: msg.Fence.ConversationID, Turn: msg.TurnID, Message: msg.ID, Seq: msg.Seq,
-		Name: bot.Name, Preview: BotDecisionSummary(msg.Text), Tag: BotMessageTag(bot.Key.MachineID, bot.Key.BotID, msg.ID)}
+		Name: bot.Name, Preview: preview(msg.Text), Tag: BotMessageTag(bot.Key.MachineID, bot.Key.BotID, msg.ID)}
 	payload, err := json.Marshal(p)
 	if err != nil {
 		return err
 	}
 	return b.Store.AppendEffectTx(ctx, tx, store.Effect{Kind: EffectBotCompletedPush, Subject: p.Tag, Payload: payload})
+}
+
+var botReplyListMarker = regexp.MustCompile(`^(?:[-+*•]|[0-9]+[.)])[ 	]+`)
+
+// botReplyPushPreview keeps a short opening intact and fills in a lead-in
+// ending in a colon with the paragraph or list it introduces.
+func botReplyPushPreview(text string) string {
+	lead, rest, _ := strings.Cut(strings.TrimSpace(text), "\n")
+	lead = strings.TrimSpace(lead)
+	separator := " "
+	switch {
+	case strings.HasSuffix(lead, "："):
+		separator = ""
+	case !strings.HasSuffix(lead, ":"):
+		return botPushPreview(lead)
+	}
+
+	var preview strings.Builder
+	preview.WriteString(lead)
+	inList := false
+	for line := range strings.SplitSeq(strings.TrimSpace(rest), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "```") || strings.HasPrefix(line, "~~~") {
+			break
+		}
+		item := botReplyListMarker.ReplaceAllString(line, "")
+		if inList && item == line {
+			break
+		}
+		preview.WriteString(separator)
+		preview.WriteString(item)
+		if item == line {
+			break
+		}
+		inList = true
+		separator = " · "
+	}
+	if preview.Len() == len(lead) {
+		return botPushPreview(strings.TrimRight(lead, ":："))
+	}
+	return botPushPreview(preview.String())
 }
 
 func runBotCompletedPush(ctx context.Context, b *Broker, e store.Effect) effectResult {

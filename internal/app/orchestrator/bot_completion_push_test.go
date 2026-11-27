@@ -3,11 +3,12 @@ package orchestrator
 import (
 	"context"
 	"encoding/json"
-	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"strings"
 	"testing"
 
 	adapterpush "github.com/sainteye/clawdline/internal/adapters/push"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
@@ -96,14 +97,14 @@ func TestOnlyAMessageForThePersonEnqueuesAPush(t *testing.T) {
 		{pa.Message{ID: "routine-reply", Fence: f, Kind: pa.AssistantMessage, Text: "Checked", ForPerson: pa.ForPersonFlag(false)}, false},
 		{pa.Message{ID: "work", Fence: f, Kind: pa.WorkMessage, Text: "Done", ForPerson: pa.ForPersonFlag(false)}, false},
 		{pa.Message{ID: "mine", Fence: f, Kind: pa.UserMessage, Text: "Hi", ForPerson: pa.ForPersonFlag(true)}, false},
-		{pa.Message{ID: "notice", Fence: f, Kind: pa.AssistantMessage, Text: "Deployment failed; needs you", ForPerson: pa.ForPersonFlag(true)}, true},
+		{pa.Message{ID: "notice", Fence: f, Kind: pa.AssistantMessage, Text: "Deployment failed; needs you:\nPrivate follow-up detail.", ForPerson: pa.ForPersonFlag(true)}, true},
 	}
 	tx, err := s.ProjectAssistantDatabase().BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range cases {
-		if err = b.BotPersonMessageIntent(ctx, tx, bot, c.msg); err != nil {
+		if err = b.BotPersonMessageIntent(ctx, tx, bot, c.msg, false); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -118,7 +119,7 @@ func TestOnlyAMessageForThePersonEnqueuesAPush(t *testing.T) {
 	}
 	effects, _ := s.Effects(ctx, EffectBotCompletedPush, BotMessageTag("machine", "bot", "notice"))
 	var p botCompletedPush
-	if json.Unmarshal(effects[0].Payload, &p) != nil || p.Preview != "Deployment failed; needs you" || p.Message != "notice" {
+	if json.Unmarshal(effects[0].Payload, &p) != nil || p.Preview != "Deployment failed; needs you:" || p.Message != "notice" {
 		t.Fatalf("payload %+v", p)
 	}
 }
@@ -133,12 +134,12 @@ func TestBotCompletionIntentSharesThePrimaryTransaction(t *testing.T) {
 	defer s.Close()
 	b := &Broker{Store: s, Dir: dir}
 	bot := pa.Bot{Key: pa.BotKey{MachineID: "machine", BotID: "bot"}, Name: "Synthetic Bot"}
-	reply := pa.Message{ID: "reply-turn", TurnID: "turn", Seq: 2, Kind: pa.AssistantMessage, Text: "Done", Fence: pa.Fence{ConversationID: "chat"}, ForPerson: pa.ForPersonFlag(true)}
+	reply := pa.Message{ID: "reply-turn", TurnID: "turn", Seq: 2, Kind: pa.AssistantMessage, Text: "已開始驗證。接下來：\n- 重跑檢查\n- 回報結果\n\n這段是聊天室詳情。", Fence: pa.Fence{ConversationID: "chat"}, ForPerson: pa.ForPersonFlag(true)}
 	tx, err := s.ProjectAssistantDatabase().BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = b.BotPersonMessageIntent(ctx, tx, bot, reply); err != nil {
+	if err = b.BotPersonMessageIntent(ctx, tx, bot, reply, true); err != nil {
 		t.Fatal(err)
 	}
 	if err = tx.Rollback(); err != nil {
@@ -153,7 +154,7 @@ func TestBotCompletionIntentSharesThePrimaryTransaction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = b.BotPersonMessageIntent(ctx, tx, bot, reply); err != nil {
+	if err = b.BotPersonMessageIntent(ctx, tx, bot, reply, true); err != nil {
 		t.Fatal(err)
 	}
 	if err = tx.Commit(); err != nil {
@@ -166,5 +167,48 @@ func TestBotCompletionIntentSharesThePrimaryTransaction(t *testing.T) {
 	var payload botCompletedPush
 	if json.Unmarshal(effects[0].Payload, &payload) != nil || payload.Bot != "bot" || payload.Conversation != "chat" || payload.Turn != "turn" || payload.Message != "reply-turn" || payload.Seq != 2 {
 		t.Fatalf("payload %+v", payload)
+	}
+	const wantPreview = "已開始驗證。接下來：重跑檢查 · 回報結果"
+	b.Push = func(ctx context.Context, _, body, _, _ string) (int, int, error) {
+		if body != wantPreview || adapterpush.BotMessageFromContext(ctx) != reply.ID {
+			t.Fatalf("push body = %q, destination message = %q", body, adapterpush.BotMessageFromContext(ctx))
+		}
+		message, shortened, ok := adapterpush.Build(adapterpush.Notification{Title: bot.Name, Body: body}, adapterpush.Subscription{
+			Endpoint: "https://web.push.apple.com/synthetic", Origin: "https://console.example",
+		})
+		var apple struct {
+			Notification struct{ Body string }
+		}
+		if !ok || shortened || message.ContentType != "application/notification+json" ||
+			json.Unmarshal(message.Plaintext, &apple) != nil || apple.Notification.Body != wantPreview {
+			t.Fatalf("Apple push: %s, shortened=%v", message.Plaintext, shortened)
+		}
+		return 1, 0, nil
+	}
+	if result, err := b.runEffect(ctx, effects[0].ID); err != nil || result.outcome != "pushed" {
+		t.Fatalf("push outcome = %q, error = %v", result.outcome, err)
+	}
+}
+
+func TestBotReplyPushPreview(t *testing.T) {
+	for _, c := range []struct {
+		name, text, want string
+	}{
+		{"short opening", "The check passed.\nMore details.", "The check passed."},
+		{"wrapped prose", "The remaining issue:\n\nThe build still needs approval.\n\nOther notes.", "The remaining issue: The build still needs approval."},
+		{"numbered list", "Next:\r\n1. Build\r\n2) Check\r\nLater notes.", "Next: Build · Check"},
+		{"redacted list", "Verify:\n- token: example-secret\n- /private/example/path\n- Confirm the result", "Verify: token … · … · Confirm the result"},
+		{"code block", "Debug output:\n```text\nprivate detail\n```", "Debug output"},
+		{"bare lead-in", "Next:", "Next"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := botReplyPushPreview(c.text); got != c.want {
+				t.Fatalf("push preview = %q, want %q", got, c.want)
+			}
+		})
+	}
+	overlong := botReplyPushPreview("後續：\n- " + strings.Repeat("長", MaxBotDecisionPushRunes))
+	if runes := []rune(overlong); len(runes) != MaxBotDecisionPushRunes || runes[len(runes)-1] != '…' {
+		t.Fatalf("a long preview exceeded the bound or lost its ellipsis: %q", overlong)
 	}
 }

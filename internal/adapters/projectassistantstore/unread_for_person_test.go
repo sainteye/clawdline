@@ -121,7 +121,7 @@ func TestStampForPersonByTurnOrigin(t *testing.T) {
 		a := aggregate{Turns: map[string]pa.Turn{"turn": turn}}
 		a.Messages = []pa.Message{{ID: "message", TurnID: "turn", Kind: pa.UserMessage}, {ID: "notify", TurnID: "turn", Kind: pa.AssistantMessage, ForPerson: pa.ForPersonFlag(true)}}
 		told := stampForPerson(&a, app.Mutation{}, 2, "")
-		if len(told) != 1 || told[0].ID != "notify" || *a.Messages[0].ForPerson {
+		if len(told) != 1 || told[0].message.ID != "notify" || told[0].reply || *a.Messages[0].ForPerson {
 			t.Fatalf("%s: notify_person told %+v", c.name, told)
 		}
 		finished := turn

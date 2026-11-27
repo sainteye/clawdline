@@ -23,9 +23,9 @@ import (
 type Store struct {
 	// PersonIntent is told, inside the Bot transaction that writes it, of each
 	// message addressed to the person (pa.CountsAsUnread): the reply to the
-	// person's own message or a notify_person message. It adds only database
-	// writes and must not perform external IO.
-	PersonIntent func(context.Context, *sql.Tx, pa.Bot, pa.Message) error
+	// person's own message or a notify_person message. The reply flag
+	// identifies which one it is. The callback adds only database writes.
+	PersonIntent func(ctx context.Context, tx *sql.Tx, bot pa.Bot, message pa.Message, reply bool) error
 	// DecisionIntent is told, inside the same transaction, of each permission
 	// or question this commit first makes pending, and of each pending one it
 	// closes (answered, withdrawn, written past). Database writes only.
@@ -72,7 +72,7 @@ type aggregate struct {
 	RosterTrace *pa.Event `json:",omitempty"`
 	// addressed holds the messages this commit addressed to the person
 	// (stampForPerson); it is never stored.
-	addressed []pa.Message
+	addressed []addressedMessage
 }
 
 func failure(code pa.ErrorCode, field string) error { return &pa.Failure{Code: code, Field: field} }

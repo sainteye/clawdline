@@ -100,7 +100,13 @@ var (
 // BotDecisionSummary is the first line of the question with anything shaped
 // like a credential or a filesystem path taken out, cut to the push bound.
 func BotDecisionSummary(question string) string {
-	line := strings.TrimSpace(strings.SplitN(strings.TrimSpace(question), "\n", 2)[0])
+	line, _, _ := strings.Cut(strings.TrimSpace(question), "\n")
+	return botPushPreview(line)
+}
+
+// botPushPreview applies the lock-screen redaction and length bound to both
+// question and message previews.
+func botPushPreview(line string) string {
 	line = decisionSecretKV.ReplaceAllString(line, "$1 …")
 	line = decisionSecretWord.ReplaceAllString(line, "…")
 	line = decisionPathWord.ReplaceAllString(line, "…")

@@ -8,21 +8,26 @@ import (
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
+type addressedMessage struct {
+	message pa.Message
+	reply   bool
+}
+
 // stampForPerson records, as the messages are written, which of them are
 // addressed to the person (pa.CountsAsUnread). Every message this mutation
 // adds gets an explicit answer: false unless its writer marked it, as
 // notify_person does. When the mutation ends a turn the person started, that
 // turn's last visible Bot message becomes the reply that counts. It returns
 // the messages that became addressed to the person in this commit, once each.
-func stampForPerson(a *aggregate, m app.Mutation, added int, previous pa.TurnState) []pa.Message {
-	var out []pa.Message
+func stampForPerson(a *aggregate, m app.Mutation, added int, previous pa.TurnState) []addressedMessage {
+	var out []addressedMessage
 	for i := len(a.Messages) - added; i < len(a.Messages); i++ {
 		msg := &a.Messages[i]
 		if msg.ForPerson == nil || msg.Kind != pa.AssistantMessage || !ownChatTurn(*a, msg.TurnID) {
 			msg.ForPerson = pa.ForPersonFlag(false)
 		}
 		if *msg.ForPerson {
-			out = append(out, *msg)
+			out = append(out, addressedMessage{message: *msg})
 		}
 	}
 	t := m.Turn
@@ -37,7 +42,7 @@ func stampForPerson(a *aggregate, m app.Mutation, added int, previous pa.TurnSta
 		}
 		if msg.ForPerson == nil || !*msg.ForPerson {
 			msg.ForPerson = pa.ForPersonFlag(true)
-			out = append(out, *msg)
+			out = append(out, addressedMessage{message: *msg, reply: true})
 		}
 		break
 	}
@@ -100,12 +105,12 @@ func syncMessageEvents(a aggregate, events []pa.Event) {
 // tellPerson hands each message addressed to the person in this commit to
 // PersonIntent, inside the same transaction, so a replayed receipt cannot
 // tell the person twice.
-func (s *Store) tellPerson(ctx context.Context, tx *sql.Tx, a aggregate, addressed []pa.Message) error {
+func (s *Store) tellPerson(ctx context.Context, tx *sql.Tx, a aggregate, addressed []addressedMessage) error {
 	if s.PersonIntent == nil {
 		return nil
 	}
-	for _, msg := range addressed {
-		if err := s.PersonIntent(ctx, tx, a.Bot, msg); err != nil {
+	for _, entry := range addressed {
+		if err := s.PersonIntent(ctx, tx, a.Bot, entry.message, entry.reply); err != nil {
 			return err
 		}
 	}

@@ -342,9 +342,11 @@ finished a task" and a tap could open a chat with nothing new. The store calls
 `PersonIntent` inside the transaction that records the message, which writes
 the `bot.completed.push` intent (the kind keeps its earlier name) tagged
 `bot-message-<machine>-<bot>-<message>`; receipt replay and a later write of the
-same turn cannot create another. The title is the Bot's name and the body the
-first line of the message, with credential- and path-shaped words removed and
-cut to the 120-character decision preview bound. An intent queued by an older
+same turn cannot create another. The title is the Bot's name. A direct reply
+previews its opening line and includes text from the paragraph or list it introduces if
+it ends in a colon. A `notify_person` message previews its summary line. Both
+remove credential- and path-shaped words and use the 120-character preview
+bound. An intent queued by an older
 build names no message and settles as `superseded_no_message` without a push.
 A question from `ask_person` keeps its own `bot.decision.push` ("needs your
 decision") and is not pushed twice.
