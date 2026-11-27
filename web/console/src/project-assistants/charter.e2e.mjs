@@ -17,6 +17,8 @@
 // each is for and whether they read it; the detail reminds who has not; edit,
 // reassign (a bottom sheet on a phone), delete, create, history and a playbook's
 // conflict report each do what they say; an older machine shows no section.
+// 什麼要問你 ("?ask"), at 1280x800 and 390x844: 改成兩欄格式 sorts free text into rows,
+// the row editor's Enter, Backspace, × and 新增一條, and the two-column view.
 // PLAYWRIGHT_MODULE=<playwright index.mjs> CHARTER_ARTIFACTS=<dir> node charter.e2e.mjs
 import assert from "node:assert/strict"
 import {createServer} from "node:http"
@@ -546,12 +548,117 @@ async function playbooks(page,name,narrow){
   await shot(page,`playbook-conflict-${name}`)
 }
 
+// 什麼要問你 ("?ask"): free text offers 改成兩欄格式, which sorts the live text into
+// rows; Enter adds a row below, Backspace in an empty row and × remove one; the
+// save is the recognised Markdown, shown as two columns over the exceptions.
+async function askPolicy(page,name,narrow){
+  await page.goto(origin+"/?ask")
+  await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
+  await page.evaluate(()=>window.botsFixture.open())
+  await page.locator(".pa-charter-row").click()
+  await page.locator(".pa-charter-section").first().waitFor()
+  const third=page.locator(".pa-charter-section").nth(2)
+  const before=await third.locator(".pa-charter-ask").count()
+  check(`${name} free text is not shown as columns`,()=>assert.equal(before,0))
+  await page.getByRole("button",{name:"編輯第 3 段"}).click()
+  const editor=page.locator(".pa-charter-editor")
+  await editor.getByRole("textbox",{name:"第 3 段內容"}).waitFor()
+  const convert=editor.getByRole("button",{name:"改成兩欄格式"})
+  await convert.scrollIntoViewIfNeeded()
+  await shot(page,`ask-convert-offer-${name}`)
+  await convert.click()
+  await editor.locator(".pa-charter-ask-row").first().waitFor()
+  const rows=async tone=>editor.locator(`.pa-charter-ask-panel[data-tone="${tone}"] textarea`).evaluateAll(nodes=>nodes.map(n=>n.value))
+  const free=await rows("free"),ask=await rows("ask"),exceptions=await rows("exceptions")
+  const how=await editor.locator(".pa-charter-ask-how-edit input").inputValue()
+  check(`${name} converted rows`,()=>{
+    assert.deepEqual(free,["已審、檢查全綠的修正，整合進 main、推 GitHub、裝 dev","Lens 驗收通過後部署 app.clawdline.com"])
+    assert.deepEqual(ask,["公開 Release","改 clawdline.com","刪除資料","花錢","產品方向取捨","檢查沒過要不要照上"])
+    assert.equal(exceptions.length,1);assert.match(exceptions[0],/^一次性、總費用確定低於 NTD 5/)
+    assert.match(how,/^要問時用 ask_person/)
+  })
+  const focused=await page.evaluate(()=>document.activeElement?.getAttribute("aria-label"))
+  check(`${name} conversion focuses the first row`,()=>assert.equal(focused,"「不用問，直接做」第 1 條"))
+  const converted=await editor.locator(".pa-charter-ask-converted").innerText()
+  check(`${name} conversion says to check before saving`,()=>assert.match(converted,/看過再儲存/))
+  const columns=await editor.locator(".pa-charter-ask-columns > .pa-charter-ask-panel").evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:Math.round(r.x),y:Math.round(r.y)}}))
+  check(`${name} editor columns ${narrow?"stack":"side by side"}`,()=>narrow?assert.ok(columns[1].y>columns[0].y&&columns[1].x===columns[0].x,JSON.stringify(columns)):assert.ok(columns[1].x>columns[0].x&&columns[1].y===columns[0].y,JSON.stringify(columns)))
+  await shot(page,`ask-edit-${name}`)
+  const small=await smallTargets(page,".pa-charter-ask-editing")
+  check(`${name} row editor touch targets`,()=>assert.deepEqual(small,[]))
+  // Enter in a row adds an empty one below and moves there.
+  const askRow=n=>editor.getByRole("textbox",{name:`「一定要問」第 ${n} 條`})
+  await askRow(2).click()
+  await page.keyboard.press("End")
+  await page.keyboard.press("Enter")
+  const afterEnter=await rows("ask")
+  const there=await page.evaluate(()=>document.activeElement?.getAttribute("aria-label"))
+  check(`${name} Enter adds a row below and focuses it`,()=>{assert.deepEqual(afterEnter.slice(1,4),["改 clawdline.com","","刪除資料"]);assert.equal(there,"「一定要問」第 3 條")})
+  await page.keyboard.type("改公開文件")
+  await page.keyboard.press("Enter")
+  await shot(page,`ask-enter-adds-row-${name}`)
+  // Backspace in the new empty row removes it and goes back to the one before.
+  await page.keyboard.press("Backspace")
+  const afterBack=await rows("ask")
+  const back=await page.evaluate(()=>document.activeElement?.getAttribute("aria-label"))
+  check(`${name} Backspace in an empty row removes it`,()=>{assert.deepEqual(afterBack.slice(1,4),["改 clawdline.com","改公開文件","刪除資料"]);assert.equal(back,"「一定要問」第 3 條")})
+  // × removes 花錢 (row 5 now); 新增一條 adds an exception.
+  await editor.getByRole("button",{name:"刪除「一定要問」第 5 條"}).click()
+  const afterDelete=await rows("ask")
+  check(`${name} × removes that row`,()=>assert.ok(!afterDelete.includes("花錢")&&afterDelete.length===6,JSON.stringify(afterDelete)))
+  await shot(page,`ask-delete-${name}`)
+  const exceptionsPanel=editor.locator('.pa-charter-ask-panel[data-tone="exceptions"]')
+  await exceptionsPanel.getByRole("button",{name:"＋ 新增一條"}).click()
+  const newest=await page.evaluate(()=>document.activeElement?.getAttribute("aria-label"))
+  check(`${name} 新增一條 focuses the new row`,()=>assert.equal(newest,"「例外狀況」第 2 條"))
+  await page.keyboard.type("緊急修正可以先上再補報告")
+  // An empty row left in a list is dropped on save.
+  await exceptionsPanel.getByRole("button",{name:"＋ 新增一條"}).click()
+  if(narrow)await page.locator(".pa-charter-editor-bar").getByRole("button",{name:"儲存",exact:true}).click()
+  else await page.getByRole("button",{name:"儲存為第 4 版"}).click()
+  await page.locator(".pa-charter-notice").waitFor()
+  const text=await fixture(page,()=>window.charterFixture.studio.text("project"))
+  check(`${name} saved as the ask-policy Markdown`,()=>assert.ok(text.includes("## 什麼要問你\n\n### 不用問，直接做\n\n- 已審、檢查全綠的修正，整合進 main、推 GitHub、裝 dev\n- Lens 驗收通過後部署 app.clawdline.com\n\n### 一定要問\n\n- 公開 Release\n- 改 clawdline.com\n- 改公開文件\n- 刪除資料\n- 產品方向取捨\n- 檢查沒過要不要照上\n\n### 例外狀況\n\n- 一次性、總費用確定低於 NTD 5 的外部 API 呼叫不用先問；先設好費用或次數上限，不自動重試，做完回報實際次數與費用。\n- 緊急修正可以先上再補報告\n\n### 怎麼問\n\n要問時用 ask_person 在自己的聊天跳決策卡，同一件事只問一次；不要請使用者轉貼文字，也不要請別的 Bot 替你問。\n\n## Bot 之間怎麼溝通"),text))
+  const reason=await fixture(page,()=>window.charterFixture.studio.log.filter(r=>r.method==="PUT").at(-1)?.body.reason)
+  check(`${name} save reason names the section`,()=>assert.equal(reason,"編輯「什麼要問你」"))
+  // The saved section shows as two columns over the exceptions and how to ask.
+  const view=page.locator(".pa-charter-section").nth(2).locator(".pa-charter-ask")
+  await view.waitFor()
+  const panels=await view.locator(".pa-charter-ask-panel").evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {tone:n.dataset.tone,x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),items:n.querySelectorAll("li").length}}))
+  check(`${name} view ${narrow?"stacks the columns":"shows two columns"} above a full-width exceptions block`,()=>{
+    const [f,a,e]=panels
+    assert.deepEqual(panels.map(p=>[p.tone,p.items]),[["free",2],["ask",6],["exceptions",2]])
+    if(narrow)assert.ok(a.y>f.y&&a.x===f.x,JSON.stringify(panels));else assert.ok(a.x>f.x&&a.y===f.y,JSON.stringify(panels))
+    assert.ok(e.y>Math.max(f.y,a.y)&&e.w>=(narrow?f.w:f.w+a.w),JSON.stringify(panels))
+  })
+  const colours=await view.evaluate(n=>[...n.querySelectorAll(".pa-charter-ask-panel h3")].map(h=>getComputedStyle(h).color))
+  check(`${name} column headers in green and orange`,()=>assert.deepEqual(colours.slice(0,2),["rgb(163, 217, 177)","rgb(239, 178, 142)"]))
+  const howLine=await view.locator(".pa-charter-ask-how").innerText()
+  check(`${name} how to ask is one line`,()=>assert.match(howLine,/怎麼問[\s\S]*要問時用 ask_person/))
+  if(narrow){const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}));check(`${name} no sideways scroll`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))}
+  await view.scrollIntoViewIfNeeded()
+  await shot(page,`ask-view-${name}`)
+  // Editing again opens the rows directly, with no conversion offer.
+  await page.getByRole("button",{name:"編輯第 3 段"}).click()
+  await editor.locator(".pa-charter-ask-row").first().waitFor()
+  const offers=await editor.getByRole("button",{name:"改成兩欄格式"}).count()
+  const textareas=await editor.locator("textarea").evaluateAll(nodes=>nodes.filter(node=>!node.closest(".pa-charter-ask-row")).length)
+  check(`${name} a saved policy edits as rows`,()=>{assert.equal(offers,0);assert.equal(textareas,0)})
+  await page.keyboard.press("Escape")
+  await editor.waitFor({state:"detached"})
+  // Another section never offers the conversion.
+  await page.getByRole("button",{name:"編輯第 4 段"}).click()
+  await editor.getByRole("textbox",{name:"第 4 段內容"}).waitFor()
+  const elsewhere=await editor.getByRole("button",{name:"改成兩欄格式"}).count()
+  check(`${name} other sections offer no conversion`,()=>assert.equal(elsewhere,0))
+}
+
 try{
   for(const [name,viewport] of [["1280",{width:1280,height:800}],["979x605",{width:979,height:605}],["390",{width:390,height:844}],["1440x900",{width:1440,height:900}]]){
     const narrow=name==="390"
     // 1440x900 is the conflict panel's design size; the other screens are covered above.
     // CHARTER_ONLY=<run name> runs one check, at every size it belongs to.
-    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks]
+    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks,askPolicy]
     for(const run of runs.filter(r=>!process.env.CHARTER_ONLY||r.name===process.env.CHARTER_ONLY)){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)
