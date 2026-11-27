@@ -1675,6 +1675,106 @@
   },
   {
     "Register": "daemon",
+    "Name": "bots.charter_workflow_id_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 40,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterWorkflowIDBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_workflow_note_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 300,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterWorkflowNoteBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_workflow_states",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 40,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterWorkflowStates"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_workflow_title_bytes",
+    "Class": "buffer",
+    "Unit": "bytes",
+    "Limit": 80,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterWorkflowTitleBytes"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "bots.charter_workflow_transitions",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 80,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "person",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/projectassistant.MaxCharterWorkflowTransitions"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "bots.chat_gap_ms",
     "Class": "buffer",
     "Unit": "milliseconds",

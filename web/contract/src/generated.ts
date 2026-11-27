@@ -5749,6 +5749,13 @@ export interface ProjectAssistantCharterChangeRequest {
   idempotency_key: string
   machine_id: string
   project_id: string
+
+  /**
+   * Which part the person wants changed (API 128); absent means text. For workflow
+   * the lead's turn carries the current workflow as JSON and the lead answers with
+   * propose_charter_workflow.
+   */
+  target?: string
   text: string
 }
 
@@ -5928,6 +5935,31 @@ export interface ProjectAssistantCharterLimits {
   request_bytes: number
   text_bytes: number
   versions: number
+
+  /**
+   * A workflow state's id (API 128).
+   */
+  workflow_id_bytes?: number
+
+  /**
+   * A workflow state's note (API 128).
+   */
+  workflow_note_bytes?: number
+
+  /**
+   * States of one workflow (API 128); absent from an older daemon.
+   */
+  workflow_states?: number
+
+  /**
+   * A workflow state's title or a transition's label (API 128).
+   */
+  workflow_title_bytes?: number
+
+  /**
+   * Transitions of one workflow (API 128).
+   */
+  workflow_transitions?: number
 }
 
 /**
@@ -5998,10 +6030,21 @@ export interface ProjectAssistantCharterProposal {
   bot_id: string
   created_at: string
   id: string
+
+  /**
+   * What the proposal replaces (API 128): the charter text, or the workflow (text
+   * is then empty). Absent from an older daemon, which has only text proposals.
+   */
+  kind?: string
   stale: boolean
   summary: string
   text: string
   turn_id: string
+
+  /**
+   * The proposed workflow, for a workflow proposal (API 128).
+   */
+  workflow?: ProjectAssistantCharterWorkflow
 }
 
 /**
@@ -6087,6 +6130,11 @@ export interface ProjectAssistantCharterResponse {
   selected?: ProjectAssistantCharterVersion
   text: string
   version: number
+
+  /**
+   * The current version's workflow (API 128); absent when it has none.
+   */
+  workflow?: ProjectAssistantCharterWorkflow
 }
 
 /**
@@ -6131,8 +6179,8 @@ export interface ProjectAssistantCharterSummary {
 }
 
 /**
- * One immutable charter version. text and playbooks are present only on the version
- * a read selected.
+ * One immutable charter version. text, playbooks and workflow are present only on
+ * the version a read selected.
  */
 export interface ProjectAssistantCharterVersion {
   author: ProjectAssistantCharterAuthor
@@ -6145,6 +6193,72 @@ export interface ProjectAssistantCharterVersion {
   reason: string
   text?: string
   version: number
+
+  /**
+   * The selected version's workflow (API 128); absent when it has none.
+   */
+  workflow?: ProjectAssistantCharterWorkflow
+}
+
+/**
+ * A charter version's workflow (API 128): how one piece of work flows, as states
+ * and transitions. It replaces the free-text section of the charter that described
+ * the flow; every Bot of the Project hears it rendered as one line per state. Only
+ * the lead Bot proposes it (the person applies it) or a terminal Session writes it
+ * on the person's words; the console shows no editor. Exactly one start, at least
+ * one done, every state reachable from start, nothing leaves a done state.
+ */
+export interface ProjectAssistantCharterWorkflow {
+  states: ProjectAssistantCharterWorkflowState[]
+  transitions: ProjectAssistantCharterWorkflowTransition[]
+}
+
+/**
+ * Replace the charter's workflow as the next version while the charter is still at
+ * expected_version (API 128), keeping its text and playbooks; a Project without a
+ * charter gets one holding only the workflow. It is the write a terminal Session
+ * makes on the person's words (clawdline charter workflow set), under the machine's
+ * authority, and is validated exactly as a lead proposal: a broken rule answers
+ * pa_invalid with a field naming the rule and, after a colon, the state id or
+ * from->to transition (for example workflow_unreachable:review or
+ * workflow_state_bot:deploy); a stale base answers pa_stale_version with field
+ * charter_version. The version is authored person.
+ */
+export interface ProjectAssistantCharterWorkflowSaveRequest {
+  expected_version: number
+  idempotency_key: string
+  machine_id: string
+  project_id: string
+
+  /**
+   * Why the workflow changed, for the charter history; may be empty but is always
+   * sent.
+   */
+  reason: string
+  workflow: ProjectAssistantCharterWorkflow
+}
+
+/**
+ * One step of a charter workflow (API 128). bot_id is a visible Bot of the Project,
+ * or empty for any Bot. id is [a-z0-9-] and unique in the workflow.
+ */
+export interface ProjectAssistantCharterWorkflowState {
+  bot_id: string
+  id: string
+  kind: string
+  note: string
+  title: string
+}
+
+/**
+ * One way from a state to another (API 128). label names the outcome that takes it
+ * and may be empty; kind return is a way back.
+ */
+export interface ProjectAssistantCharterWorkflowTransition {
+  from: string
+  kind: string
+  label: string
+  to: string
 }
 
 /**

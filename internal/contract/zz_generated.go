@@ -4893,7 +4893,12 @@ type ProjectAssistantCharterChangeRequest struct {
 	IdempotencyKey string `json:"idempotency_key"`
 	MachineID      string `json:"machine_id"`
 	ProjectID      string `json:"project_id"`
-	Text           string `json:"text"`
+
+	// Which part the person wants changed (API 128); absent means text. For workflow
+	// the lead's turn carries the current workflow as JSON and the lead answers with
+	// propose_charter_workflow.
+	Target string `json:"target,omitempty"`
+	Text   string `json:"text"`
 }
 
 // The lead Bot that received the change request and the send receipt.
@@ -5044,6 +5049,21 @@ type ProjectAssistantCharterLimits struct {
 	RequestBytes int64 `json:"request_bytes"`
 	TextBytes    int64 `json:"text_bytes"`
 	Versions     int64 `json:"versions"`
+
+	// A workflow state's id (API 128).
+	WorkflowIDBytes int64 `json:"workflow_id_bytes,omitempty"`
+
+	// A workflow state's note (API 128).
+	WorkflowNoteBytes int64 `json:"workflow_note_bytes,omitempty"`
+
+	// States of one workflow (API 128); absent from an older daemon.
+	WorkflowStates int64 `json:"workflow_states,omitempty"`
+
+	// A workflow state's title or a transition's label (API 128).
+	WorkflowTitleBytes int64 `json:"workflow_title_bytes,omitempty"`
+
+	// Transitions of one workflow (API 128).
+	WorkflowTransitions int64 `json:"workflow_transitions,omitempty"`
 }
 
 // One playbook of a charter version (API 127): a named Markdown document
@@ -5102,10 +5122,17 @@ type ProjectAssistantCharterProposal struct {
 	BotID       string `json:"bot_id"`
 	CreatedAt   string `json:"created_at"`
 	ID          string `json:"id"`
-	Stale       bool   `json:"stale"`
-	Summary     string `json:"summary"`
-	Text        string `json:"text"`
-	TurnID      string `json:"turn_id"`
+
+	// What the proposal replaces (API 128): the charter text, or the workflow (text is
+	// then empty). Absent from an older daemon, which has only text proposals.
+	Kind    string `json:"kind,omitempty"`
+	Stale   bool   `json:"stale"`
+	Summary string `json:"summary"`
+	Text    string `json:"text"`
+	TurnID  string `json:"turn_id"`
+
+	// The proposed workflow, for a workflow proposal (API 128).
+	Workflow *ProjectAssistantCharterWorkflow `json:"workflow,omitempty"`
 }
 
 // A Project's pending lead proposals, oldest first.
@@ -5176,6 +5203,9 @@ type ProjectAssistantCharterResponse struct {
 	Selected  *ProjectAssistantCharterVersion   `json:"selected,omitempty"`
 	Text      string                            `json:"text"`
 	Version   int64                             `json:"version"`
+
+	// The current version's workflow (API 128); absent when it has none.
+	Workflow *ProjectAssistantCharterWorkflow `json:"workflow,omitempty"`
 }
 
 // Save a copy of a retained earlier version as the next version.
@@ -5211,8 +5241,8 @@ type ProjectAssistantCharterSummary struct {
 	Version          int64                         `json:"version"`
 }
 
-// One immutable charter version. text and playbooks are present only on the
-// version a read selected.
+// One immutable charter version. text, playbooks and workflow are present only
+// on the version a read selected.
 type ProjectAssistantCharterVersion struct {
 	Author    ProjectAssistantCharterAuthor `json:"author"`
 	CreatedAt string                        `json:"created_at"`
@@ -5222,6 +5252,62 @@ type ProjectAssistantCharterVersion struct {
 	Reason    string                            `json:"reason"`
 	Text      string                            `json:"text,omitempty"`
 	Version   int64                             `json:"version"`
+
+	// The selected version's workflow (API 128); absent when it has none.
+	Workflow *ProjectAssistantCharterWorkflow `json:"workflow,omitempty"`
+}
+
+// A charter version's workflow (API 128): how one piece of work flows, as
+// states and transitions. It replaces the free-text section of the charter that
+// described the flow; every Bot of the Project hears it rendered as one line
+// per state. Only the lead Bot proposes it (the person applies it) or a
+// terminal Session writes it on the person's words; the console shows no
+// editor. Exactly one start, at least one done, every state reachable from
+// start, nothing leaves a done state.
+type ProjectAssistantCharterWorkflow struct {
+	States      []ProjectAssistantCharterWorkflowState      `json:"states"`
+	Transitions []ProjectAssistantCharterWorkflowTransition `json:"transitions"`
+}
+
+// Replace the charter's workflow as the next version while the charter is still
+// at expected_version (API 128), keeping its text and playbooks; a Project
+// without a charter gets one holding only the workflow. It is the write a
+// terminal Session makes on the person's words (clawdline charter workflow
+// set), under the machine's authority, and is validated exactly as a lead
+// proposal: a broken rule answers pa_invalid with a field naming the rule and,
+// after a colon, the state id or from->to transition (for example
+// workflow_unreachable:review or workflow_state_bot:deploy); a stale base
+// answers pa_stale_version with field charter_version. The version is authored
+// person.
+type ProjectAssistantCharterWorkflowSaveRequest struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	IdempotencyKey  string `json:"idempotency_key"`
+	MachineID       string `json:"machine_id"`
+	ProjectID       string `json:"project_id"`
+
+	// Why the workflow changed, for the charter history; may be empty but is always
+	// sent.
+	Reason   string                          `json:"reason"`
+	Workflow ProjectAssistantCharterWorkflow `json:"workflow"`
+}
+
+// One step of a charter workflow (API 128). bot_id is a visible Bot of the
+// Project, or empty for any Bot. id is [a-z0-9-] and unique in the workflow.
+type ProjectAssistantCharterWorkflowState struct {
+	BotID string `json:"bot_id"`
+	ID    string `json:"id"`
+	Kind  string `json:"kind"`
+	Note  string `json:"note"`
+	Title string `json:"title"`
+}
+
+// One way from a state to another (API 128). label names the outcome that takes
+// it and may be empty; kind return is a way back.
+type ProjectAssistantCharterWorkflowTransition struct {
+	From  string `json:"from"`
+	Kind  string `json:"kind"`
+	Label string `json:"label"`
+	To    string `json:"to"`
 }
 
 // Every Project of the machine with a charter, and the Projects that have Bots

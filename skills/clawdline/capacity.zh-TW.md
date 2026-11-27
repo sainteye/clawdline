@@ -88,6 +88,11 @@
 | `bots.charter_request_bytes` | 4096 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_text_bytes` | 32768 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `bots.charter_versions` | 200 | `rows` | `evict_oldest` | `diagnostics` | — |
+| `bots.charter_workflow_id_bytes` | 40 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_workflow_note_bytes` | 300 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_workflow_states` | 40 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_workflow_title_bytes` | 80 | `bytes` | `refuse` | `diagnostics, sender` | — |
+| `bots.charter_workflow_transitions` | 80 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_gap_ms` | 3600000 | `milliseconds` | `refuse` | `diagnostics, sender` | — |
 | `bots.chat_initial_page_rows` | 20 | `rows` | `coalesce` | `diagnostics, sender` | — |
 | `bots.cleanup_ms` | 5000 | `milliseconds` | `disconnect` | `diagnostics, sender` | — |

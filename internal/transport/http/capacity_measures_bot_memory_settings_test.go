@@ -39,8 +39,18 @@ func TestBotCharterCapacityReadsDurableUsage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	flow := pa.CharterWorkflow{States: []pa.WorkflowState{{ID: "open", Title: "開始", Kind: pa.WorkflowStart, Note: "備註"}, {ID: "finished", Title: "Done", Kind: pa.WorkflowDone}},
+		Transitions: []pa.WorkflowTransition{{From: "open", To: "finished", Label: "通過審查", Kind: pa.WorkflowPass}}}
+	if _, err := st.SaveCharterWorkflow(t.Context(), projectassistantstore.CharterWorkflowWrite{MachineID: "one", ProjectID: "p2", ExpectedVersion: 1, Workflow: flow, IdempotencyKey: "wf", At: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
 	measures := f.s.capacityMeasures()
 	for name, want := range map[string]int64{
+		"bots.charter_workflow_states":      2,
+		"bots.charter_workflow_transitions": 1,
+		"bots.charter_workflow_title_bytes": int64(len("通過審查")),
+		"bots.charter_workflow_note_bytes":  int64(len("備註")),
+		"bots.charter_workflow_id_bytes":    int64(len("finished")),
 		"bots.charter_playbooks":            2,
 		"bots.charter_playbook_text_bytes":  int64(len("Two approvals")),
 		"bots.charter_playbook_title_bytes": int64(len("發布")),

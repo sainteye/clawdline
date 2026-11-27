@@ -14,6 +14,8 @@ type charterCapacityUsage struct {
 	openConflicts, handledConflicts, conflictBytes        int64
 	playbooks, playbookText, playbookTitle, playbookBots  int64
 	playbookID, documentBytes                             int64
+	workflowStates, workflowTransitions, workflowTitle    int64
+	workflowNote, workflowID                              int64
 }
 
 func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
@@ -51,6 +53,9 @@ func (s *Server) readCharterCapacity() (charterCapacityUsage, error) {
 		return usage, errors.New("Bot charter rows cannot be read")
 	}
 	if err = readPlaybookCapacity(db, &usage); err != nil {
+		return usage, err
+	}
+	if err = readWorkflowCapacity(db, &usage); err != nil {
 		return usage, err
 	}
 	var conflicts int
@@ -102,6 +107,37 @@ func readPlaybookCapacity(db interface {
 	return nil
 }
 
+// readWorkflowCapacity reads the workflows of every retained version and
+// pending proposal, when both tables have the workflow column yet.
+func readWorkflowCapacity(db interface {
+	QueryRow(string, ...any) *sql.Row
+}, usage *charterCapacityUsage) error {
+	var columns int
+	if err := db.QueryRow(`SELECT (SELECT count(*) FROM pragma_table_info('project_assistant_charter_versions') WHERE name='workflow') +
+		(SELECT count(*) FROM pragma_table_info('project_assistant_charter_proposals') WHERE name='workflow')`).Scan(&columns); err != nil {
+		return errors.New("Bot charter workflow columns cannot be inspected")
+	}
+	if columns < 2 {
+		return nil
+	}
+	err := db.QueryRow(`WITH w AS (
+		SELECT workflow AS flow FROM project_assistant_charter_versions WHERE workflow<>''
+		UNION ALL SELECT workflow FROM project_assistant_charter_proposals WHERE workflow<>''
+	), st AS (
+		SELECT octet_length(json_extract(e.value,'$.title')) AS title, octet_length(json_extract(e.value,'$.note')) AS note, octet_length(json_extract(e.value,'$.id')) AS id
+		FROM w, json_each(w.flow,'$.states') e
+	), tr AS (
+		SELECT octet_length(json_extract(e.value,'$.label')) AS label FROM w, json_each(w.flow,'$.transitions') e
+	)
+	SELECT coalesce((SELECT max(json_array_length(flow,'$.states')) FROM w), 0), coalesce((SELECT max(json_array_length(flow,'$.transitions')) FROM w), 0),
+		max(coalesce((SELECT max(title) FROM st), 0), coalesce((SELECT max(label) FROM tr), 0)), coalesce((SELECT max(note) FROM st), 0), coalesce((SELECT max(id) FROM st), 0)`).
+		Scan(&usage.workflowStates, &usage.workflowTransitions, &usage.workflowTitle, &usage.workflowNote, &usage.workflowID)
+	if err != nil {
+		return errors.New("Bot charter workflows cannot be read")
+	}
+	return nil
+}
+
 func (s *Server) withCharterCapacityMeasures(measures map[string]func() capacity.Reading) map[string]func() capacity.Reading {
 	usage := sync.OnceValues(s.readCharterCapacity)
 	charter := func(value func(charterCapacityUsage) int64, note string) func() capacity.Reading {
@@ -129,6 +165,11 @@ func (s *Server) withCharterCapacityMeasures(measures map[string]func() capacity
 		"bots.charter_playbook_bots":           charter(func(u charterCapacityUsage) int64 { return u.playbookBots }, "largest count of Bots one retained playbook is assigned to"),
 		"bots.charter_playbook_id_bytes":       charter(func(u charterCapacityUsage) int64 { return u.playbookID }, "largest retained daemon-issued playbook identifier in bytes"),
 		"bots.charter_document_bytes":          charter(func(u charterCapacityUsage) int64 { return u.documentBytes }, "largest retained charter text plus all its playbook text in UTF-8 bytes"),
+		"bots.charter_workflow_states":         charter(func(u charterCapacityUsage) int64 { return u.workflowStates }, "largest state count of one retained or proposed workflow"),
+		"bots.charter_workflow_transitions":    charter(func(u charterCapacityUsage) int64 { return u.workflowTransitions }, "largest transition count of one retained or proposed workflow"),
+		"bots.charter_workflow_title_bytes":    charter(func(u charterCapacityUsage) int64 { return u.workflowTitle }, "largest retained or proposed workflow state title or transition label in UTF-8 bytes"),
+		"bots.charter_workflow_note_bytes":     charter(func(u charterCapacityUsage) int64 { return u.workflowNote }, "largest retained or proposed workflow state note in UTF-8 bytes"),
+		"bots.charter_workflow_id_bytes":       charter(func(u charterCapacityUsage) int64 { return u.workflowID }, "largest retained or proposed workflow state identifier in bytes"),
 		"bots.charter_request_bytes": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-change-request text guard; accepted text belongs to Bot conversation storage"}
 		},

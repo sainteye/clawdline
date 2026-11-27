@@ -405,6 +405,31 @@
     "Note": true
   },
   {
+    "Name": "bots.charter_workflow_id_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_workflow_note_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_workflow_states",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_workflow_title_bytes",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "bots.charter_workflow_transitions",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "bots.chat_gap_ms",
     "Known": true,
     "Note": true
