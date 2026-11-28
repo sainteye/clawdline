@@ -454,6 +454,7 @@ func (h *Host) connect() error {
 	h.o.Broker.AssistantWorkChanged = b.Sync
 	h.o.Broker.AssistantWorkCompleted = h.completeWork
 	h.o.Broker.AssistantRootDelivered = h.rootDelivered
+	h.o.Broker.AssistantRootClosed = h.rootClosed
 	h.o.Broker.BotRequestNotice = h.botRequestNotice
 	return nil
 }
@@ -661,6 +662,43 @@ func (h *Host) reconcileSettledWork(parent context.Context) {
 			}
 			if err != nil && ctx.Err() == nil {
 				log.Printf("bots: cannot reconcile settled work %s: %s", id, pa.Code(err))
+			}
+			after = id
+		}
+		if len(ids) < pa.MaxPageRows {
+			break
+		}
+	}
+	h.reconcileClosedRoots(ctx, st, bridge)
+}
+
+func (h *Host) reconcileClosedRoots(ctx context.Context, st *featurestore.Store, bridge *app.BrokerWorkBridge) {
+	after := ""
+	for {
+		ids, err := st.ClosedRootWorkRepairs(ctx, h.o.MachineID, after)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("bots: cannot read closed roots for reconciliation: %v", err)
+			}
+			return
+		}
+		for _, id := range ids {
+			a, err := h.o.Broker.RootAssignmentByID(ctx, id)
+			if err == nil && a.BotOwner != nil {
+				closure := orchestrator.AssistantRootClosure{
+					AssignmentID: a.ID,
+					Owner:        *a.BotOwner,
+				}
+				if a.Closure != nil {
+					closure.TerminalID = a.Closure.TerminalID
+					closure.ClosedAt = time.Unix(a.Closure.ClosedAt, 0).UTC()
+					closure.Safe = a.Closure.Safe
+					closure.Forced = a.Closure.Forced
+				}
+				err = bridge.SyncRootClosure(ctx, closure)
+			}
+			if err != nil && ctx.Err() == nil {
+				log.Printf("bots: cannot reconcile closed root %s: %s", id, pa.Code(err))
 			}
 			after = id
 		}

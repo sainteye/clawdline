@@ -58,6 +58,12 @@ export function dispatchedStrip(links: readonly W.ProjectAssistantWorkLink[], wo
   return {counts, rows, more: Math.max(0, total - rows.length), showWorking: hasExecutingDispatch(work)}
 }
 
+export function dispatchedMoreLabel(shownCount: number, more: number, w: Words) {
+  if (more <= 0) return ""
+  const template = shownCount > 0 ? w.dispatchedStripMore : w.dispatchedStripViewInSessions
+  return template.replace("{count}", String(more))
+}
+
 export function dispatchedReason(row: DispatchedRow, w: Words) {
   switch (row.kind) {
     case "needsYou": return w.dispatchedStateNeedsYou

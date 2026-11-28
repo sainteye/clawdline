@@ -54,6 +54,9 @@ type Broker struct {
 	// AssistantRootDelivered tells the Bot that opened a Root, once, that the
 	// Root reported delivery (handoffs.go). Nil queues no notice.
 	AssistantRootDelivered func(context.Context, AssistantRootDelivery) error
+	// AssistantRootClosed tells the Bot that opened a Root when the Root closes
+	// without a delivery report so its work link stops counting as running.
+	AssistantRootClosed func(context.Context, AssistantRootClosure) error
 	// BotRequestNotice wakes one Bot with a Bot request card notice: the new
 	// holder after a handoff, or an asking Bot after completion
 	// (bot_request_effects.go). The Bot host sets it.

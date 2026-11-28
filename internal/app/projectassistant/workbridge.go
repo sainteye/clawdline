@@ -170,6 +170,38 @@ func (b *BrokerWorkBridge) SyncRootDelivery(ctx context.Context, d orchestrator.
 	return link, b.persistLink(ctx, a.BotOwner.Fence, link, result, nil)
 }
 
+// SyncRootClosure settles a Bot-opened Root's WorkLink when the Root closes
+// without a delivery report (or failed to open), without posting a delivery
+// result message or waking a review turn. Already delivered links are kept.
+func (b *BrokerWorkBridge) SyncRootClosure(ctx context.Context, c orchestrator.AssistantRootClosure) error {
+	a, err := b.o.Broker.RootAssignmentByID(ctx, c.AssignmentID)
+	if err != nil {
+		return err
+	}
+	if a.BotOwner == nil || a.BotOwner.Fence != c.Owner.Fence || a.BotOwner.Command != c.Owner.Command {
+		return bridgeFailure(pa.ScopeDenied, "work_snapshot")
+	}
+	if a.BotOwner.DeliveredAt != 0 {
+		return nil
+	}
+	if a.Closure == nil && a.State != orchestrator.AssignmentFailed {
+		return nil
+	}
+	link := orchestrator.AssistantRootLink(a)
+	b.syncMu.Lock()
+	defer b.syncMu.Unlock()
+	export, err := b.o.Repository.Export(ctx, a.BotOwner.Fence.Key)
+	if err != nil {
+		return err
+	}
+	for i := range export.WorkLinks {
+		if export.WorkLinks[i].ID == link.ID && (export.WorkLinks[i].State == pa.WorkCompleted || export.WorkLinks[i].State == pa.WorkLanded) {
+			return nil
+		}
+	}
+	return b.persistExportLink(ctx, export, a.BotOwner.Fence, link, "", nil)
+}
+
 func (b *BrokerWorkBridge) Status(ctx context.Context, actor pa.AssistantExecutionActor, taskID string) (pa.WorkLink, error) {
 	snapshot, err := b.o.Broker.AssistantStatus(ctx, actor, taskID)
 	if err != nil {
@@ -205,6 +237,11 @@ func (b *BrokerWorkBridge) persistLink(ctx context.Context, owner pa.Fence, link
 	if err != nil {
 		return err
 	}
+	return b.persistExportLink(ctx, export, owner, link, result, record)
+}
+
+func (b *BrokerWorkBridge) persistExportLink(ctx context.Context, export Export, owner pa.Fence, link pa.WorkLink, result string, record *orchestrator.Record) error {
+	var err error
 	if export.Bot.Project != owner.Project || export.Bot.ConversationID != owner.ConversationID {
 		return bridgeFailure(pa.ScopeDenied, "work_projection")
 	}

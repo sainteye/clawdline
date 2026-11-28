@@ -161,3 +161,73 @@ func TestBotRootRecordsAppearanceWithoutBreakingRetryDigest(t *testing.T) {
 		t.Fatalf("briefing typed %d times, want once", typed)
 	}
 }
+
+func TestBotIsToldWhenItsRootClosesWithoutDeliveryReport(t *testing.T) {
+	b, ctx, q, _ := assistantRootFixture(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	b.Clock = func() time.Time { return now }
+	var closed []AssistantRootClosure
+	b.AssistantRootClosed = func(_ context.Context, c AssistantRootClosure) error {
+		closed = append(closed, c)
+		return nil
+	}
+	a, _, err := b.DispatchAssistantRoot(ctx, q)
+	if err != nil || a.Executor == nil {
+		t.Fatalf("open = %+v %v", a, err)
+	}
+	now = now.Add(5 * time.Minute)
+	sess := session.Session{ID: a.Executor.TerminalID, Backend: session.Backend(a.Executor.Backend),
+		Assistant: session.Assistant(a.Assistant), ConversationID: rootConversation}
+	if err := b.RecordRootClosure(ctx, a.ID, sess, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	b.RecoverEffects(ctx)
+	b.RecoverEffects(ctx)
+	if len(closed) != 1 {
+		t.Fatalf("Bot closure notified %d times, want once: %+v", len(closed), closed)
+	}
+	if closed[0].AssignmentID != a.ID || closed[0].TerminalID != a.Executor.TerminalID || !closed[0].Safe || closed[0].Forced || !closed[0].ClosedAt.Equal(now) {
+		t.Fatalf("closure notice = %+v", closed[0])
+	}
+	stored, err := b.RootAssignmentByID(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := AssistantRootLink(stored)
+	if link.State != pa.WorkUnknown || !link.FinishedAt.Equal(now) {
+		t.Fatalf("closed Root link = %+v, want unknown finished at %v", link, now)
+	}
+}
+
+func TestBotDeliveredRootDoesNotSendClosureAfterDelivery(t *testing.T) {
+	b, ctx, q, _ := assistantRootFixture(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	b.Clock = func() time.Time { return now }
+	b.AssistantRootDelivered = func(context.Context, AssistantRootDelivery) error { return nil }
+	var closed []AssistantRootClosure
+	b.AssistantRootClosed = func(_ context.Context, c AssistantRootClosure) error {
+		closed = append(closed, c)
+		return nil
+	}
+	a, _, err := b.DispatchAssistantRoot(ctx, q)
+	if err != nil || a.Executor == nil {
+		t.Fatalf("open = %+v %v", a, err)
+	}
+	row := session.Session{ID: a.Executor.TerminalID, Backend: session.Backend(a.Executor.Backend),
+		Assistant: session.Assistant(a.Assistant), ConversationID: rootConversation,
+		State: session.StateIdle, Evidence: session.EvidenceRegistry,
+		Observation: session.Observation{ObservedAt: now, Freshness: session.FreshnessCurrent}}
+	b.Live = func(context.Context) []session.Session { return []session.Session{row} }
+	if _, err := b.ReportSessionDelivery(ctx, a.Executor.TerminalID, "Done."); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(10 * time.Minute)
+	b.RecoverEffects(ctx)
+	if err := b.RecordRootClosure(ctx, a.ID, row, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	b.RecoverEffects(ctx)
+	if len(closed) != 0 {
+		t.Fatalf("delivered Root sent closure notice: %+v", closed)
+	}
+}

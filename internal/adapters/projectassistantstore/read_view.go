@@ -15,6 +15,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/botreadtrace"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 )
 
@@ -318,21 +319,63 @@ SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_
 	lastTurn := botreadtrace.Measure(ctx, "sqlite_last_turn")
 	err = tx.QueryRowContext(ctx, statement, h.Key.MachineID, h.Key.BotID, q.ByteLimit-*rawBytes).Scan(&last)
 	lastTurn()
-	if errors.Is(err, sql.ErrNoRows) {
-		return out, nil
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, err
 	}
+	if err == nil {
+		if !last.Valid {
+			return nil, failure(pa.CapacityFull, "read_view_snapshot_bytes")
+		}
+		*rawBytes += len(last.String)
+		summary, err := viewTurn(last.String, h)
+		if err != nil {
+			return nil, err
+		}
+		out.LastTurn = &summary
+	}
+	activeLinks, err := viewSnapshotActiveWork(ctx, tx, q, h, rawBytes)
 	if err != nil {
 		return nil, err
 	}
-	if !last.Valid {
-		return nil, failure(pa.CapacityFull, "read_view_snapshot_bytes")
+	out.ActiveWorkLinks = activeLinks
+	return out, nil
+}
+
+// viewSnapshotActiveWork returns up to the strip row limit of active work links
+// across the Bot's history so the chat strip lists running work even when its
+// originating message sits on an older page.
+func viewSnapshotActiveWork(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h app.ReadViewHead, rawBytes *int) ([]pa.WorkLink, error) {
+	statement := viewAggregateSQL + `SELECT w.key,w.value FROM a,fact_work_links w
+ WHERE w.type='object' AND json_extract(w.value,'$.state') IN ` + activeWorkLinkStatesSQL + `
+ ORDER BY CASE WHEN json_extract(w.value,'$.state')='waiting_for_person' THEN 0 ELSE 1 END,
+  CASE WHEN coalesce(json_extract(w.value,'$.started_at'),'')='' THEN 1 ELSE 0 END,
+  json_extract(w.value,'$.started_at') ASC, w.key COLLATE BINARY ASC
+ LIMIT ?`
+	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, capacity.MaximumBotDispatchedStripRows)
+	if err != nil {
+		return nil, err
 	}
-	*rawBytes += len(last.String)
-	summary, err := viewTurn(last.String, h)
-	if err == nil {
-		out.LastTurn = &summary
+	defer rows.Close()
+	var links []pa.WorkLink
+	for rows.Next() {
+		var id, raw string
+		if err = rows.Scan(&id, &raw); err != nil {
+			return nil, err
+		}
+		if *rawBytes+len(raw) > q.ByteLimit {
+			break
+		}
+		var link pa.WorkLink
+		if json.Unmarshal([]byte(raw), &link) != nil || link.ID != id || link.TaskID == "" || !activeWorkLink(link.State) {
+			return nil, failure(pa.Invalid, "read_view_work")
+		}
+		if err = viewCheckFence(link.Fence, h, false); err != nil {
+			return nil, err
+		}
+		*rawBytes += len(raw)
+		links = append(links, link)
 	}
-	return out, err
+	return links, rows.Err()
 }
 
 func viewRowFailure() app.ReadViewItem {

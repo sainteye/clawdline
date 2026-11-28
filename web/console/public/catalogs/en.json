@@ -12342,6 +12342,7 @@
   "projectAssistants.requestRefusedOther": "Couldn’t change this card. Try again.",
   "projectAssistants.requestUnconfirmed": "Couldn’t confirm whether the change was saved. The card was reloaded; check it before trying again.",
   "projectAssistants.dispatchedStripMore": "{count} more in Sessions",
+  "projectAssistants.dispatchedStripViewInSessions": "View {count} in Sessions",
   "projectAssistants.dispatchedStateRunning": "Running",
   "projectAssistants.dispatchedStateQueued": "Starting",
   "projectAssistants.dispatchedStateNeedsYou": "Waiting for you to answer it",

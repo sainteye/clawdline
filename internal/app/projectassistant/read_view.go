@@ -76,8 +76,9 @@ type ReadSnapshot struct {
 	PendingTurns   []ReadTurnSummary
 	QueuedMessages []pa.Message
 	// PendingOmitted counts pending turns past the byte budget.
-	PendingOmitted int
-	LastTurn       *ReadTurnSummary
+	PendingOmitted  int
+	LastTurn        *ReadTurnSummary
+	ActiveWorkLinks []pa.WorkLink
 }
 
 // A summary is not enough to approve a native operation. DetailCursor fetches

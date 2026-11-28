@@ -17,32 +17,42 @@ func (b *Broker) RecordRootClosure(ctx context.Context, id string, closed sessio
 	if b == nil || b.Store == nil || id == "" || closed.ID == "" || (method != "close" && method != "archive" && method != "scheduled") {
 		return errors.New("root closure has no verified assignment and close identity")
 	}
-	_, err := b.Store.UpdateOpened(ctx, store.TableRootAssignments, id, func(o store.Opened) (*store.Opened, []store.Event, error) {
+	_, effectIDs, err := b.Store.UpdateOpenedWithEffects(ctx, store.TableRootAssignments, id, func(o store.Opened) (*store.Opened, []store.Event, []store.Effect, error) {
 		var a RootAssignment
 		if err := json.Unmarshal(o.Record, &a); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		if a.State != AssignmentBriefed || a.Executor == nil || a.Executor.TerminalID != closed.ID ||
 			a.Executor.Backend != string(closed.Backend) || a.Assistant != string(closed.Assistant) {
-			return nil, nil, errors.New("closed Session is not the Root Assignment executor")
+			return nil, nil, nil, errors.New("closed Session is not the Root Assignment executor")
 		}
 		if a.Closure != nil {
-			return nil, nil, nil
+			return nil, nil, nil, nil
 		}
 		a.Closure = &RootAssignmentClosure{TerminalID: closed.ID, ConversationID: closed.ConversationID,
 			Method: method, Forced: forced, Safe: !forced, ClosedAt: b.now().Unix()}
 		body, err := json.Marshal(a)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		payload, err := json.Marshal(a.Closure)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
+		}
+		var effects []store.Effect
+		if a.BotOwner != nil && a.BotOwner.DeliveredAt == 0 && b.AssistantRootClosed != nil {
+			effects = append(effects, store.Effect{Kind: EffectAssistantRootClosed, Subject: a.ID, Payload: payload})
 		}
 		return &store.Opened{ID: o.ID, State: o.State, Record: body, CreatedAt: o.CreatedAt, UpdatedAt: b.now()},
-			[]store.Event{{Kind: "root_assignment.closed", Subject: id, Payload: payload}}, nil
+			[]store.Event{{Kind: "root_assignment.closed", Subject: id, Payload: payload}}, effects, nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	if len(effectIDs) > 0 {
+		b.runRecorded(ctx, effectIDs)
+	}
+	return nil
 }
 
 // rootCleanup projects the current evidence without changing the assignment

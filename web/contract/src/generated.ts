@@ -8070,6 +8070,12 @@ export interface ProjectAssistantReadResponse {
  * are counted in head. Permissions and traces are separate bounded collections.
  */
 export interface ProjectAssistantReadSnapshot {
+  /**
+   * Up to the strip row limit of active dispatched work links (waiting_for_person,
+   * executing, accepted) across the Bot's history so the strip can list running
+   * work even when its originating message is on an older page.
+   */
+  active_work_links?: ProjectAssistantWorkLink[]
   bot: ProjectAssistantBot
   last_turn?: ProjectAssistantReadTurnSummary
 

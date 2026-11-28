@@ -150,3 +150,35 @@ ORDER BY t.id LIMIT ?`, machine, after, pa.MaxPageRows)
 	}
 	return ids, rows.Err()
 }
+
+// ClosedRootWorkRepairs finds active WorkLinks whose Bot-opened Root Assignment
+// has already closed or failed, so startup reconciliation settles links that
+// missed a live closure effect.
+func (s *Store) ClosedRootWorkRepairs(ctx context.Context, machine, after string) ([]string, error) {
+	rows, err := s.reader.QueryContext(ctx, `
+SELECT r.id
+FROM project_assistant_bots b `+factJoinSQL(factWorkLinks, "w", "b")+`
+JOIN broker_root_assignments r ON r.id=json_extract(w.value,'$.task_id')
+WHERE b.machine=? AND r.id>? AND json_valid(r.record)
+AND json_extract(r.record,'$.bot_owner.fence.key.machine_id')=b.machine
+AND json_extract(r.record,'$.bot_owner.fence.key.bot_id')=b.bot
+AND json_extract(w.value,'$.state') IN `+activeWorkLinkStatesSQL+`
+AND (
+	json_extract(r.record,'$.closure') IS NOT NULL
+	OR json_extract(r.record,'$.state')='failed'
+)
+ORDER BY r.id LIMIT ?`, machine, after, pa.MaxPageRows)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}

@@ -354,6 +354,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
   },[browserOpener])
   const [data,setData]=useState<W.ProjectAssistantGetResponse|null>(null)
   const [timeline,setTimeline]=useState<W.ProjectAssistantReadViewItem[]>([]),timelineRef=useRef(timeline)
+  const [snapshotActiveWork,setSnapshotActiveWork]=useState<W.ProjectAssistantWorkLink[]>([])
   const opening = useRef<{ at: number; trace?: string }>({at:openedAt ?? performance.now()})
   const readyRead = useRef<BotReadObservation | undefined>(undefined)
   const finishCommittedRead = useRef<(() => void) | undefined>(undefined)
@@ -575,6 +576,7 @@ export function Chat({summary,source,current,accountKey,readerID,view,w,language
     setTraceLoad(traceRequested.current?"loading":"idle")
     setPermissions([]);permissionRows.current=[];requestedTraceReferences.current.clear();backgroundTraceReferences.current.clear();setObservedBrowserTraces({});setTraceSummaries([]);traceRows.current=[];setDetails({});detailRows.current={};setPermissionMore("");setTraceMore("")
     setTurns([...snapshot.pending_turns,...snapshot.last_turn?[snapshot.last_turn]:[]])
+    setSnapshotActiveWork(snapshot.active_work_links??[])
     const queued=snapshot.queued_messages.map(message=>({id:message.id,kind:"message" as const,anchor_message_seq:message.seq,observed_event_seq:page.head.event_frontier,message}))
     const rows=mergeTimeline([page.items,queued]);observation.apply(page)
     prepareReadDisplay(trace);timelineRef.current=rows;setTimeline(rows)
@@ -2075,9 +2077,7 @@ ${currentDraft}`:submitted)
           <button type="button" className="pa-pill" disabled={busy} onClick={()=>{archiveLegacyDraft();repaintJournal()}}>{w.unverifiedSave}</button>}
       </div>}
       {/* Background and dispatched work are the latest facts of the conversation: they scroll at its end instead of sitting over the composer. */}
-      {!thread&&(data||error)&&<div className="pa-chat-work">{(()=>{const capsule=<BackgroundCapsule tasks={capsuleTasks} appearance={bot.appearance} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} w={w}/>
-        // Open cards with no work in this chat are listed by the held cards line at the top.
-        return <>{showDispatched?<DispatchedWorkStrip links={chatTimeline.flatMap(row=>row.work?[row.work]:[])} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} background={capsule} onOpen={onOpenWork} w={w}/>:capsule}</>})()}{openRequest&&<BotRequestDetail key={openRequest.id+openRequest.mode} initialMode={openRequest.mode} read={requestIO?.read} write={requestIO?.write} card={openRequest} bots={requestBots} botDirectoryState={botDirectoryState} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=roster?.find(item=>item.key.machine_id===key.machine_id&&item.key.bot_id===card.baton.bot);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
+      {!thread&&(data||error)&&<div className="pa-chat-work"><ChatWorkArea tasks={capsuleTasks} appearance={bot.appearance} open={openTask} stop={task=>void stopTask(task)} stopping={backgroundStopping} outcomes={backgroundOutcomes} writable={enabled&&!!data&&canWrite(data.source)} showDispatched={showDispatched} snapshotWork={snapshotActiveWork} timeline={chatTimeline} work={summary.dispatched_work} ownProjectID={summary.bot.project.kind==="personal"?undefined:summary.bot.project.project_id} onOpenWork={onOpenWork} w={w}/>{openRequest&&<BotRequestDetail key={openRequest.id+openRequest.mode} initialMode={openRequest.mode} read={requestIO?.read} write={requestIO?.write} card={openRequest} bots={requestBots} botDirectoryState={botDirectoryState} links={requests.links.get(openRequest.id)} w={w} language={language} onClose={()=>{setOpenRequest(undefined);requestReading.refresh()}} onChanged={requestReading.refresh} onOpenChat={openRequest.baton.bot===key.bot_id?()=>setOpenRequest(undefined):onOpenBot&&(card=>{const holder=roster?.find(item=>item.key.machine_id===key.machine_id&&item.key.bot_id===card.baton.bot);setOpenRequest(undefined);if(holder)onOpenBot(holder.key)})} onOpenWork={onOpenWork}/>}{backgroundError&&<p className="pa-turn" role="status">{w.unavailable} ({backgroundError})</p>}</div>}
       </div>
     </div>
       <ChatJump {...jump}/>
@@ -2178,4 +2178,15 @@ function QueuedText({message,mentions,w}:{message:W.ProjectAssistantMessage;ment
   const reply=decisionReplyOf(message)
   if(reply)return <><span className="pa-queued-decision">{w.decisionReplyLabel} · </span>{reply.answer}</>
   return message.text?<BotMentionText text={message.text} candidates={mentions}/>:<>{queuedAttachments(message,w.heldPictures)}</>
+}
+
+function ChatWorkArea({tasks,appearance,open,stop,stopping,outcomes,writable,showDispatched,snapshotWork,timeline,work,ownProjectID,onOpenWork,w}:Parameters<typeof BackgroundCapsule>[0]&{
+  showDispatched:boolean;snapshotWork:readonly W.ProjectAssistantWorkLink[];timeline:readonly W.ProjectAssistantReadViewItem[];work?:W.ProjectAssistantDispatchedWork;ownProjectID?:string
+  onOpenWork?:(link:W.ProjectAssistantWorkLink,view?:"session")=>void
+}){
+  const capsule=<BackgroundCapsule tasks={tasks} appearance={appearance} open={open} stop={stop} stopping={stopping} outcomes={outcomes} writable={writable} w={w}/>
+  // Open cards with no work in this chat are listed by the held cards line at the top.
+  return showDispatched
+    ?<DispatchedWorkStrip links={[...snapshotWork,...timeline.flatMap(row=>row.work?[row.work]:[])]} work={work} ownProjectID={ownProjectID} background={capsule} onOpen={onOpenWork} w={w}/>
+    :capsule
 }

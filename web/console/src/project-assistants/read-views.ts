@@ -11,6 +11,8 @@ import { ProjectAssistantAccessValues, ProjectAssistantAgentValues, ProjectAssis
 import { failure } from "./client.ts"
 // @ts-expect-error -- Node's strip-types runner loads the source extension.
 import { sameConversation, sameFence, canRead } from "./view-state.ts"
+// @ts-expect-error -- Node's strip-types runner loads the source extension.
+import { DispatchedStripRows } from "./dispatched-work.ts"
 
 export type ReadScope = Pick<W.ProjectAssistantFence,"key"|"project"|"conversation_id">
 const integer=(n:unknown,min=0):n is number=>Number.isSafeInteger(n)&&Number(n)>=min
@@ -133,6 +135,18 @@ function validatePermissionSummary(row:W.ProjectAssistantReadViewItem,scope:Read
   permissionSummary(p,scope,head.current_fence)
 }
 
+function validateSnapshotTail(s:W.ProjectAssistantReadSnapshot,scope:ReadScope,h:W.ProjectAssistantReadViewHead) {
+  if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
+  if(s.active_work_links===undefined)return
+  if(!Array.isArray(s.active_work_links)||s.active_work_links.length>DispatchedStripRows)throw failure("pa_invalid")
+  const activeIDs=new Set<string>()
+  for(const link of s.active_work_links){
+    work(link,scope)
+    if(activeIDs.has(link.id)||!["accepted","waiting_for_person","executing"].includes(link.state))throw failure("pa_invalid")
+    activeIDs.add(link.id)
+  }
+}
+
 export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAssistantReadViewRequest,scope:ReadScope):W.ProjectAssistantReadViewResponse {
   readViewRequest(q)
   if(q.key.machine_id!==scope.key.machine_id||q.key.bot_id!==scope.key.bot_id||q.conversation_id!==scope.conversation_id)throw failure("pa_scope_denied")
@@ -170,7 +184,7 @@ export function readView(answer:W.ProjectAssistantReadViewResponse,q:W.ProjectAs
     for(const t of s.pending_turns){turn(t,scope);if(ids.has(t.id)||pending.has(t.message_id)||!["accepted","queued","running","waiting_permission"].includes(t.state))throw failure("pa_invalid");ids.add(t.id);pending.set(t.message_id,t);if(t.state==="accepted"||t.state==="queued")queued.add(t.message_id)}
     for(const m of s.queued_messages){message(m,scope);const t=pending.get(m.id);if((m.kind!=="user"&&m.kind!=="notice")||!t||m.turn_id!==t.id||included.has(m.id))throw failure("pa_invalid");included.add(m.id);queued.delete(m.id)}
     if(queued.size)throw failure("pa_invalid")
-    if(s.last_turn){turn(s.last_turn,scope);if(!["succeeded","failed","cancelled","unknown"].includes(s.last_turn.state)||s.last_turn.fence.generation>h.current_fence.generation)throw failure("pa_invalid")}
+    validateSnapshotTail(s,scope,h)
   }else if(answer.snapshot!==undefined)throw failure("pa_invalid")
   const allowed=q.mode==="snapshot"||q.mode==="history"?(q.team_cards?["message","work","permission"]:["message","work"]):q.mode==="events"?["event"]:q.mode==="permissions"?["permission_summary"]:q.mode==="traces"?["trace_summary"]:q.mode==="progress"?["trace"]:["permission","trace"]
   const ids=new Set<string>(),identities=new Set<string>();let seq=q.after_seq

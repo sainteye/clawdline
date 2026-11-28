@@ -1205,8 +1205,13 @@ func packageRoots(state string, addDirs []string) []string {
 // reported delivery with `clawdline session report`.
 const EffectAssistantRootDelivered = "bot.root.delivered"
 
+// EffectAssistantRootClosed tells the Bot that opened a Root that the Root
+// closed without reporting delivery so its WorkLink stops counting as running.
+const EffectAssistantRootClosed = "bot.root.closed"
+
 func init() {
 	effectHandlers[EffectAssistantRootDelivered] = effectHandler{idempotent: true, run: runAssistantRootDelivered}
+	effectHandlers[EffectAssistantRootClosed] = effectHandler{idempotent: true, run: runAssistantRootClosed}
 }
 
 // AssistantRootDelivery is what the Bot host receives once per Bot-opened
@@ -1294,6 +1299,61 @@ func runAssistantRootDelivered(ctx context.Context, b *Broker, e store.Effect) e
 	return effectResult{state: store.EffectDone, outcome: "bot_root_delivery_told"}
 }
 
+// AssistantRootClosure is what the Bot host receives when a Bot-opened Root
+// closes without having reported delivery.
+type AssistantRootClosure struct {
+	AssignmentID string
+	TerminalID   string
+	ClosedAt     time.Time
+	Safe         bool
+	Forced       bool
+	Owner        RootBotOwner
+	LastAttempt  bool
+}
+
+func runAssistantRootClosed(ctx context.Context, b *Broker, e store.Effect) effectResult {
+	a, err := b.RootAssignmentByID(ctx, e.Subject)
+	if err != nil {
+		if isNotFound(err) {
+			return effectResult{state: store.EffectFailed, outcome: "root_missing"}
+		}
+		return effectResult{deferErr: err}
+	}
+	if a.BotOwner == nil {
+		return effectResult{state: store.EffectFailed, outcome: "root_not_bot_owned"}
+	}
+	if a.BotOwner.DeliveredAt != 0 {
+		return effectResult{state: store.EffectDone, outcome: "bot_already_delivered"}
+	}
+	if a.Closure == nil {
+		return effectResult{state: store.EffectFailed, outcome: "root_not_closed"}
+	}
+	closedAt := time.Unix(a.Closure.ClosedAt, 0).UTC()
+	sink := b.AssistantRootClosed
+	if sink == nil {
+		if b.now().Sub(closedAt) >= pa.CompletionWakeRetryWindow {
+			return effectResult{state: store.EffectFailed, outcome: "bot_host_unavailable"}
+		}
+		return effectResult{deferErr: errors.New("Bot Root closure host is unavailable")}
+	}
+	notice := AssistantRootClosure{
+		AssignmentID: a.ID,
+		TerminalID:   a.Closure.TerminalID,
+		ClosedAt:     closedAt,
+		Safe:         a.Closure.Safe,
+		Forced:       a.Closure.Forced,
+		Owner:        *a.BotOwner,
+		LastAttempt:  b.now().Sub(closedAt) >= pa.CompletionWakeRetryWindow,
+	}
+	if err := sink(HostContext(ctx), notice); err != nil {
+		if AssistantWorkRefused(pa.Code(err)) || notice.LastAttempt {
+			return effectResult{state: store.EffectFailed, outcome: string(pa.Code(err))}
+		}
+		return effectResult{deferErr: err}
+	}
+	return effectResult{state: store.EffectDone, outcome: "bot_root_closure_synced"}
+}
+
 // AssistantRootLink is the chat strip's projection of a Bot-opened Root. Its
 // TaskID is the Root Assignment id: a Root has no task record, so work_status
 // does not follow it, and its delivery arrives as AssistantRootDelivery.
@@ -1314,6 +1374,12 @@ func AssistantRootLink(a RootAssignment) pa.WorkLink {
 		link.State = pa.WorkWaitingForPerson
 	case AssignmentFailed:
 		link.State, link.FailureReason = pa.WorkFailed, a.Failure
+	}
+	if a.State != AssignmentFailed && a.Closure != nil {
+		link.State = pa.WorkUnknown
+		if a.Closure.ClosedAt > 0 {
+			link.FinishedAt = time.Unix(a.Closure.ClosedAt, 0).UTC()
+		}
 	}
 	return link
 }

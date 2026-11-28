@@ -349,3 +349,12 @@ test("saving settings sends reply_input only when the switch moved from what the
   assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"queue"),{})
   assert.deepEqual(replyInputPatch({...bot,reply_input:"queue"},"steer"),{reply_input:"steer"})
 })
+test("snapshot active_work_links accepts bounded active links and rejects inactive or excess entries",()=>{
+  const makeLink=(id:string,state:W.ProjectAssistantWorkState="executing"):W.ProjectAssistantWorkLink=>({id,fence,turn_id:"t",board_item_id:"",task_id:id,state,landing_commit:"",result_message_id:""})
+  const ok=answer()
+  ok.snapshot!.active_work_links=[makeLink("w1","waiting_for_person"),makeLink("w2","executing"),makeLink("w3","accepted")]
+  assert.deepEqual(readView(ok,request(),fence).snapshot!.active_work_links?.map(x=>x.id),["w1","w2","w3"])
+  rejects(b=>{b.snapshot!.active_work_links=[makeLink("done","completed")]})
+  rejects(b=>{b.snapshot!.active_work_links=[makeLink("dup"),makeLink("dup")]})
+  rejects(b=>{b.snapshot!.active_work_links=Array.from({length:6},(_,i)=>makeLink(`w${i}`))})
+})

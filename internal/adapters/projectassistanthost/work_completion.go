@@ -62,3 +62,9 @@ func (h *Host) rootDelivered(ctx context.Context, d orchestrator.AssistantRootDe
 	}
 	return h.completeLink(ctx, link, false, d.LastAttempt)
 }
+
+// rootClosed settles a Bot-opened Root's WorkLink when its Session closes
+// without reporting delivery. It never wakes a review turn.
+func (h *Host) rootClosed(ctx context.Context, c orchestrator.AssistantRootClosure) error {
+	return h.bridge.SyncRootClosure(ctx, c)
+}

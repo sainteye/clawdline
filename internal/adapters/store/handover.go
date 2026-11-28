@@ -227,19 +227,31 @@ func (s *Store) CreateOpened(ctx context.Context, table string, o Opened, events
 // inside the write transaction and answers the row to write, or nil to leave
 // it alone.
 func (s *Store) UpdateOpened(ctx context.Context, table, id string, change func(Opened) (*Opened, []Event, error)) (Opened, error) {
+	out, _, err := s.UpdateOpenedWithEffects(ctx, table, id, func(cur Opened) (*Opened, []Event, []Effect, error) {
+		next, events, err := change(cur)
+		return next, events, nil, err
+	})
+	return out, err
+}
+
+// UpdateOpenedWithEffects updates an opened row and records its events and
+// outbox effects in one write transaction, returning the recorded effect IDs.
+func (s *Store) UpdateOpenedWithEffects(ctx context.Context, table, id string, change func(Opened) (*Opened, []Event, []Effect, error)) (Opened, []int64, error) {
 	name, err := openedTable(table)
 	if err != nil {
-		return Opened{}, err
+		return Opened{}, nil, err
 	}
 	var out Opened
+	var effectIDs []int64
 	err = s.write(ctx, func(tx *sql.Tx) (int64, error) {
+		effectIDs = effectIDs[:0]
 		cur, err := scanOpened(tx.QueryRowContext(ctx,
 			`SELECT id, state, record, created_at, updated_at FROM `+name+` WHERE id = ?`, id))
 		if err != nil {
 			return 0, err
 		}
 		out = cur
-		next, events, err := change(cur)
+		next, events, effects, err := change(cur)
 		if err != nil || next == nil {
 			return 0, err
 		}
@@ -251,10 +263,17 @@ func (s *Store) UpdateOpened(ctx context.Context, table, id string, change func(
 		if err := insertEvents(ctx, tx, events); err != nil {
 			return 0, err
 		}
+		for _, effect := range effects {
+			eid, err := s.insertEffect(ctx, tx, effect)
+			if err != nil {
+				return 0, err
+			}
+			effectIDs = append(effectIDs, eid)
+		}
 		out = *next
-		return 1 + int64(len(events)), nil
+		return 1 + int64(len(events)+len(effects)), nil
 	})
-	return out, err
+	return out, effectIDs, err
 }
 
 // ReadOpened reads one row.

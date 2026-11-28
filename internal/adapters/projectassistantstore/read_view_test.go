@@ -1255,3 +1255,36 @@ func TestReadViewExchangeExcerptsShortenOnlyWhenAsked(t *testing.T) {
 		t.Fatal("a message without an exchange changed")
 	}
 }
+
+func TestReadViewSnapshotIncludesActiveWorkLinksFromOlderPages(t *testing.T) {
+	e, _, _ := viewFixture(t, 60, 0, false)
+	fence := e.Turns[0].Fence
+	base := time.Date(2026, 11, 28, 10, 0, 0, 0, time.UTC)
+	e.WorkLinks = []pa.WorkLink{
+		{ID: "done-old", TaskID: "done-old", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkCompleted, StartedAt: base.Add(-2 * time.Hour)},
+		{ID: "exec-new", TaskID: "exec-new", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkExecuting, Title: "Newer", StartedAt: base.Add(4 * time.Minute)},
+		{ID: "exec-old", TaskID: "exec-old", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkExecuting, Title: "Oldest", StartedAt: base},
+		{ID: "need-you", TaskID: "need-you", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkWaitingForPerson, Title: "Waiting", StartedAt: base.Add(10 * time.Minute)},
+		{ID: "queued-1", TaskID: "queued-1", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkAccepted, StartedAt: base.Add(1 * time.Minute)},
+		{ID: "exec-2", TaskID: "exec-2", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkExecuting, StartedAt: base.Add(2 * time.Minute)},
+		{ID: "exec-3", TaskID: "exec-3", Fence: fence, TurnID: e.Turns[0].ID, State: pa.WorkExecuting, StartedAt: base.Add(3 * time.Minute)},
+	}
+	_, _, views, _ := restoreViews(t, e)
+	q := viewQuery(e.Bot)
+	q.Request.PageSize = 5
+	v := readView(t, views, q)
+	// The first page holds only the newest 5 messages, none of which carry turn 0's work links.
+	for _, item := range v.Items {
+		if item.Work != nil {
+			t.Fatalf("expected older work links off the first page, got %+v", item.Work)
+		}
+	}
+	got := make([]string, len(v.Snapshot.ActiveWorkLinks))
+	for i, link := range v.Snapshot.ActiveWorkLinks {
+		got[i] = link.ID
+	}
+	want := []string{"need-you", "exec-old", "queued-1", "exec-2", "exec-3"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshot active_work_links = %v, want %v", got, want)
+	}
+}

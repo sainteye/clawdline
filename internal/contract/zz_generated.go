@@ -6958,8 +6958,12 @@ type ProjectAssistantReadResponse struct {
 // barriers are counted in head. Permissions and traces are separate bounded
 // collections.
 type ProjectAssistantReadSnapshot struct {
-	Bot      ProjectAssistantBot              `json:"bot"`
-	LastTurn *ProjectAssistantReadTurnSummary `json:"last_turn,omitempty"`
+	// Up to the strip row limit of active dispatched work links (waiting_for_person,
+	// executing, accepted) across the Bot's history so the strip can list running work
+	// even when its originating message is on an older page.
+	ActiveWorkLinks []ProjectAssistantWorkLink       `json:"active_work_links,omitempty"`
+	Bot             ProjectAssistantBot              `json:"bot"`
+	LastTurn        *ProjectAssistantReadTurnSummary `json:"last_turn,omitempty"`
 
 	// Pending turns past the snapshot's byte budget, left out of pending_turns and
 	// queued_messages. Absent when every pending turn is present.

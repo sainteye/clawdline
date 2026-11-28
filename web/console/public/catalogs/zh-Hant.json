@@ -12342,6 +12342,7 @@
   "projectAssistants.requestRefusedOther": "無法更改這張卡，請再試一次。",
   "projectAssistants.requestUnconfirmed": "無法確認這次更改有沒有存下來。這張卡已重新載入，請確認後再試。",
   "projectAssistants.dispatchedStripMore": "還有 {count} 個，到 Sessions 查看",
+  "projectAssistants.dispatchedStripViewInSessions": "到 Sessions 查看這 {count} 個工作",
   "projectAssistants.dispatchedStateRunning": "執行中",
   "projectAssistants.dispatchedStateQueued": "啟動中",
   "projectAssistants.dispatchedStateNeedsYou": "等你回答分身的問題",

@@ -71,6 +71,12 @@ func paWireReadSnapshot(v app.ReadSnapshot) (*contract.ProjectAssistantReadSnaps
 		turn := paWireReadTurn(*v.LastTurn)
 		out.LastTurn = &turn
 	}
+	if len(v.ActiveWorkLinks) > 0 {
+		out.ActiveWorkLinks = make([]contract.ProjectAssistantWorkLink, len(v.ActiveWorkLinks))
+		for i, link := range v.ActiveWorkLinks {
+			out.ActiveWorkLinks[i] = paWireWorkLink(link)
+		}
+	}
 	return out, nil
 }
 

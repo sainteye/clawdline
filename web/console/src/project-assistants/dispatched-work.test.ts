@@ -4,7 +4,7 @@ import assert from "node:assert/strict"
 // @ts-expect-error Node executes source extensions.
 import { botRosterActivity, dispatchedCount, rosterMood } from "./working.ts"
 // @ts-expect-error Node executes source extensions.
-import { dispatchedRows, dispatchedCounts, dispatchedReason, dispatchedStrip, DispatchedStripRows } from "./dispatched-work.ts"
+import { dispatchedRows, dispatchedCounts, dispatchedMoreLabel, dispatchedReason, dispatchedStrip, DispatchedStripRows } from "./dispatched-work.ts"
 // @ts-expect-error Node executes source extensions.
 import { words } from "./words.ts"
 
@@ -126,4 +126,20 @@ test("past the row limit the strip lists the limit and says how many more there 
   assert.equal(older.rows.length + older.more, 9)
   // A fresh active count can supersede the chat's older snapshot.
   assert.equal(dispatchedStrip(loaded, {running:0, executing:0, needs_you:0, delivered:14}).rows.length, 0)
+})
+
+test("when no rows are loaded the strip points directly to Sessions instead of saying more", () => {
+  assert.equal(dispatchedMoreLabel(0, 4, w), "到 Sessions 查看這 4 個工作")
+  assert.doesNotMatch(dispatchedMoreLabel(0, 4, w), /還有/)
+  assert.equal(dispatchedMoreLabel(0, 4, words("en")), "View 4 in Sessions")
+  assert.equal(dispatchedMoreLabel(2, 3, w), "還有 3 個，到 Sessions 查看")
+  assert.equal(dispatchedMoreLabel(2, 3, words("en")), "3 more in Sessions")
+  assert.equal(dispatchedMoreLabel(2, 0, w), "")
+  // Snapshot active links from older pages appear in the strip and clear once a newer update arrives.
+  const olderActive = {id:"old-run", task_id:"old-run", state:"executing", title:"Older task"} as W.ProjectAssistantWorkLink
+  const strip = dispatchedStrip([olderActive], {running:1, executing:1, needs_you:0, delivered:0})
+  assert.deepEqual(strip.rows.map(r => r.link.id), ["old-run"])
+  assert.equal(strip.more, 0)
+  const closed = {...olderActive, state:"unknown"} as W.ProjectAssistantWorkLink
+  assert.deepEqual(dispatchedStrip([olderActive, closed], {running:0, executing:0, needs_you:0, delivered:0}).rows, [])
 })

@@ -2951,6 +2951,13 @@
         },
         "last_turn": {
           "$ref": "#/$defs/ProjectAssistantReadTurnSummary"
+        },
+        "active_work_links": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ProjectAssistantWorkLink"
+          },
+          "description": "Up to the strip row limit of active dispatched work links (waiting_for_person, executing, accepted) across the Bot's history so the strip can list running work even when its originating message is on an older page."
         }
       },
       "required": [

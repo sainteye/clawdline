@@ -11,6 +11,7 @@ import (
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
+	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
 // dispatchUnrequested dispatches without continue_on_completion and lets the
@@ -430,5 +431,95 @@ func TestHostRepairsPreviouslySettledWorkWithoutReview(t *testing.T) {
 	fixtureEventually(t, func() bool { return count() == 0 })
 	if wakes, results := workTurns(t, n); wakes != 0 || results != 1 {
 		t.Fatalf("landing replayed work or its review: wakes=%d, results=%d", wakes, results)
+	}
+}
+
+func TestHostRepairsClosedBotRootAndSyncsLiveClosureWithoutReview(t *testing.T) {
+	n := startNative(t, nil)
+	f := n.f
+	ctx := t.Context()
+	f.o.Broker.Type = func(context.Context, string, string) error { return nil }
+	s := fixtureReceive(t, f.p.sessions)
+	dispatchRoot := func(key, title string) pa.WorkLink {
+		t.Helper()
+		rootCtx := pa.WithDispatchChoice(ctx, pa.DispatchChoice{Mode: pa.DispatchModeRoot})
+		link, err := n.tools.Dispatch(rootCtx, key, title, "Install dev and verify.", []string{})
+		if err != nil {
+			t.Fatalf("dispatch root %s: %v", key, err)
+		}
+		return link
+	}
+	liveRoot := dispatchRoot("root-live-close", "Live closed root")
+	missedRoot := dispatchRoot("root-missed-close", "Closed before restart")
+	s.reply <- app.PromptResult{FinalText: "Opened both roots."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, n.bot.Key, n.prompt.Turn.ID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	runningCount := func() int64 {
+		page, err := f.h.store.List(ctx, pa.ListBots{MachineID: n.bot.Key.MachineID, PageSize: pa.MaxPageRows})
+		if err != nil || len(page.Items) != 1 {
+			t.Fatalf("Bot list: %d, %v", len(page.Items), err)
+		}
+		if page.Items[0].DispatchedWork == nil {
+			return 0
+		}
+		return page.Items[0].DispatchedWork.Running
+	}
+	if got := runningCount(); got != 2 {
+		t.Fatalf("initial running count = %d, want 2", got)
+	}
+	// 1) A live close without delivery settles the WorkLink via the outbox without waking a review turn.
+	a1, err := f.o.Broker.RootAssignmentByID(ctx, liveRoot.TaskID)
+	if err != nil || a1.Executor == nil {
+		t.Fatalf("live root assignment: %+v %v", a1, err)
+	}
+	if err = f.o.Broker.RecordRootClosure(ctx, a1.ID, session.Session{
+		ID: a1.Executor.TerminalID, Backend: session.Backend(a1.Executor.Backend),
+		Assistant: session.Assistant(a1.Assistant), ConversationID: "conv-live",
+	}, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker.RecoverEffects(ctx)
+	if got := runningCount(); got != 1 {
+		t.Fatalf("after live close running count = %d, want 1", got)
+	}
+
+	// 2) A Root closed while the Bot host had no closure callback is repaired on restart.
+	if err = f.h.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	f.o.Broker.AssistantRootClosed = nil
+	a2, err := f.o.Broker.RootAssignmentByID(ctx, missedRoot.TaskID)
+	if err != nil || a2.Executor == nil {
+		t.Fatalf("missed root assignment: %+v %v", a2, err)
+	}
+	if err = f.o.Broker.RecordRootClosure(ctx, a2.ID, session.Session{
+		ID: a2.Executor.TerminalID, Backend: session.Backend(a2.Executor.Backend),
+		Assistant: session.Assistant(a2.Assistant), ConversationID: "conv-missed",
+	}, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	if got := runningCount(); got != 1 {
+		t.Fatalf("before restart reconciliation running count = %d, want 1", got)
+	}
+	f.o.Broker = f.broker(t, f.o.Broker.Dir)
+	f.start(t)
+	f.enable(t)
+	fixtureEventually(t, func() bool { return runningCount() == 0 })
+
+	x, err := f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	states := map[string]pa.WorkState{}
+	for _, wl := range x.WorkLinks {
+		states[wl.ID] = wl.State
+	}
+	if states[liveRoot.ID] != pa.WorkUnknown || states[missedRoot.ID] != pa.WorkUnknown {
+		t.Fatalf("reconciled root work link states = %+v, want both unknown", states)
+	}
+	if wakes, results := workTurns(t, n); wakes != 0 || results != 0 {
+		t.Fatalf("closed roots created result or review: wakes=%d, results=%d", wakes, results)
 	}
 }

@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14992,
+  "englishContentKeys": 14993,
   "riskKeys": 6339,
-  "nonRiskCount": 8653,
+  "nonRiskCount": 8654,
   "groups": [
     {
       "name": "acp / other",
@@ -6393,7 +6393,7 @@
     },
     {
       "name": "projectAssistants / other",
-      "count": 774,
+      "count": 775,
       "sources": [
         null
       ],
@@ -6536,6 +6536,7 @@
         "projectAssistants.dispatchedStripLabel",
         "projectAssistants.dispatchedStripMore",
         "projectAssistants.dispatchedStripNeedsYou",
+        "projectAssistants.dispatchedStripViewInSessions",
         "projectAssistants.downloadFile",
         "projectAssistants.dropAttach",
         "projectAssistants.dropAttachHint",

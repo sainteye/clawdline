@@ -1,7 +1,7 @@
 import {useEffect, useState, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
 import {CloneMark} from "./BotRow"
-import {dispatchedReason, dispatchedStrip} from "./dispatched-work"
+import {dispatchedMoreLabel, dispatchedReason, dispatchedStrip} from "./dispatched-work"
 import {ThinkingOrb} from "./ThinkingOrb"
 import {elapsed} from "./working"
 import type {Words} from "./words"
@@ -69,7 +69,7 @@ export function DispatchedWorkStrip({links, work, ownProjectID, background, onOp
           })()}
         </li>
       })}
-      {more > 0 && <li><a className="pa-dispatched-more" href="#page=sessions">{w.dispatchedStripMore.replace("{count}", String(more))}</a></li>}
+      {more > 0 && <li><a className="pa-dispatched-more" href="#page=sessions">{dispatchedMoreLabel(shown.length, more, w)}</a></li>}
     </ul>}
   </div>
 }
