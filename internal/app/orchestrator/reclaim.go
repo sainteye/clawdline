@@ -96,6 +96,7 @@ const (
 	WhyOutputsUnverified = "outputs_unverified"
 	WhyUnrecorded        = "intent_not_recorded"
 	WhyRemoveFailed      = "remove_failed"
+	WhyReclaimDeadline   = "reclaim_deadline_exceeded"
 )
 
 // The outcome recorded before a removal is attempted, so a removal that a
@@ -153,8 +154,7 @@ type ReclaimReport struct {
 	Preserved    int   `json:"preserved"`
 	Kept         int   `json:"kept"`
 	BytesFreed   int64 `json:"bytes_freed"`
-	// Deferred is how many subjects were left for the next sweep by the
-	// per-sweep limit.
+	// Deferred counts candidate tasks left unchecked by the limit or deadline.
 	Deferred int `json:"deferred"`
 	// Unreadable is how many stored rows could not be decoded; their files
 	// are not touched, because nothing about them can be proved.
@@ -168,7 +168,7 @@ type reclaimState struct {
 	mu      sync.Mutex
 	running bool
 	next    time.Time
-	cursor  int
+	cursors [2]reclaimPosition
 	last    *ReclaimReport
 	started time.Time
 	// seen is the beat's last reading, for the inventory's `dispose` advice
@@ -280,7 +280,7 @@ func (b *Broker) Reclaim(ctx context.Context, dryRun bool) (ReclaimReport, error
 		return ReclaimReport{}, ErrReclaimRunning
 	}
 	b.reclaim.running = true
-	cursor := b.reclaim.cursor
+	cursors := b.reclaim.cursors
 	b.reclaim.mu.Unlock()
 	defer func() {
 		b.reclaim.mu.Lock()
@@ -296,67 +296,150 @@ func (b *Broker) Reclaim(ctx context.Context, dryRun bool) (ReclaimReport, error
 		Foreign: []string{}, Unreadable: len(bad)}
 	rd := b.read(ctx)
 
-	// Oldest first, so the sweep reaches what has waited longest; then
-	// rotated by where the last sweep stopped, so a limit never pins it to
-	// the same first few.
+	// Keep an independent cursor for each group. Candidates whose owner may
+	// be proved idle go first; an unavailable terminal source cannot use up
+	// their batch. Within each group the check resumes after the last task.
 	sort.Slice(records, func(i, j int) bool {
-		if !records[i].FinishedAt.Equal(records[j].FinishedAt) {
-			return records[i].FinishedAt.Before(records[j].FinishedAt)
-		}
-		return records[i].ID < records[j].ID
+		return reclaimOrder(&records[i]).before(reclaimOrder(&records[j]))
 	})
-	if n := len(records); n > 0 {
-		cursor %= n
-		records = append(records[cursor:], records[:cursor]...)
-	}
+	groups := b.reclaimCandidates(ctx, records, rd, &rep)
 	asked := 0
-	next := cursor
-	for _, r := range records {
-		if asked >= reclaimSweepLimit || ctx.Err() != nil {
-			rep.Deferred++
-			continue
-		}
-		next++
-		touched := false
-		if r.Worktree != nil {
-			d := b.reclaimCheckout(ctx, rd, r, rep.At, dryRun)
-			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
-			b.decide(ctx, &rep, d, dryRun)
-		}
-		if r.Dir != "" {
-			d := b.reclaimTaskDir(ctx, rd, r, rep.At, dryRun)
-			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
-			b.decide(ctx, &rep, d, dryRun)
-			if !dryRun {
-				b.recordTaskGoCacheDecision(ctx, r, d, rep.At)
+	for group, candidates := range groups {
+		cursor := cursors[group]
+		start := sort.Search(len(candidates), func(i int) bool {
+			return cursor.before(reclaimOrder(candidates[i].record))
+		})
+		for i := range candidates {
+			if asked >= reclaimSweepLimit || ctx.Err() != nil {
+				rep.Deferred += len(candidates) - i
+				break
 			}
-		}
-		if r.Dir != "" {
-			d := b.reclaimTaskArtifacts(ctx, rd, r, rep.At, dryRun)
-			touched = touched || (d.Subject != "" && d.Reason != WhyLive)
-			b.decide(ctx, &rep, d, dryRun)
-		}
-		if r.Callback != nil {
-			d := b.reclaimCallback(ctx, r, rep.At, dryRun)
-			touched = touched || d.Subject != ""
-			b.decide(ctx, &rep, d, dryRun)
-		}
-		if touched {
-			asked++
+			candidate := candidates[(start+i)%len(candidates)]
+			touched, deferred := b.reclaimCandidate(ctx, rd, candidate, &rep)
+			if touched {
+				asked++
+			}
+			if deferred {
+				rep.Deferred++
+			}
+			cursors[group] = reclaimOrder(candidate.record)
 		}
 	}
 	b.foreign(records, bad, &rep)
 
 	if !dryRun {
 		b.reclaim.mu.Lock()
-		if len(records) > 0 {
-			b.reclaim.cursor = next % len(records)
-		}
+		b.reclaim.cursors = cursors
 		copied := rep
 		b.reclaim.last = &copied
 		b.reclaim.mu.Unlock()
 	}
 	return rep, nil
+}
+
+type reclaimPosition struct {
+	finished time.Time
+	id       string
+}
+
+func reclaimOrder(r *Record) reclaimPosition {
+	return reclaimPosition{r.FinishedAt, r.ID}
+}
+
+func (p reclaimPosition) before(next reclaimPosition) bool {
+	order := p.finished.Compare(next.finished)
+	return order < 0 || (order == 0 && p.id < next.id)
+}
+
+type reclaimCandidate struct {
+	record                             *Record
+	checkout, scratch, artifacts, logs bool
+}
+
+func (b *Broker) reclaimCandidates(ctx context.Context, records []Record, rd reading, rep *ReclaimReport) [2][]reclaimCandidate {
+	var groups [2][]reclaimCandidate
+	for i := range records {
+		r := &records[i]
+		if !r.State.Terminal() {
+			if r.Worktree != nil {
+				b.decide(ctx, rep, kept(*r, ReclaimWorktree, r.Worktree.Path, WhyLive, nil), rep.DryRun)
+			}
+			if r.Dir != "" {
+				b.decide(ctx, rep, kept(*r, ReclaimTaskDir, filepath.Join(r.Dir, "work"), WhyLive, nil), rep.DryRun)
+			}
+			continue
+		}
+		candidate := reclaimCandidate{record: r}
+		candidate.checkout = r.Worktree != nil && dirExists(r.Worktree.Path)
+		candidate.scratch = r.Dir != "" && dirExists(filepath.Join(r.Dir, "work"))
+		candidate.artifacts = r.Dir != "" &&
+			(r.FinishedAt.IsZero() || !artifactRetentionState(r.State) || rep.At.Sub(ended(*r)) >= artifactRetention()) &&
+			dirExists(filepath.Join(r.Dir, "artifacts"))
+		candidate.logs = hasReclaimableCallbackFiles(r, rep.At)
+		if !candidate.checkout && !candidate.scratch && !candidate.artifacts && !candidate.logs {
+			if r.Dir != "" && r.Gate != nil && !rep.DryRun && ctx.Err() == nil {
+				b.recordTaskGoCacheDecision(ctx, *r, ReclaimDecision{}, rep.At)
+			}
+			continue
+		}
+		group := 0
+		if _, why := ownerTabEvidence(rd, *r); why != "" && !candidate.logs && !(candidate.artifacts && r.Callback != nil) {
+			group = 1
+		}
+		groups[group] = append(groups[group], candidate)
+	}
+	return groups
+}
+
+func hasReclaimableCallbackFiles(r *Record, now time.Time) bool {
+	if r.Callback == nil || r.Dir == "" || r.FinishedAt.IsZero() ||
+		now.Sub(r.FinishedAt) < CallbackRetentionDays*24*time.Hour {
+		return false
+	}
+	files := callbackFiles{r.Dir}
+	for _, path := range []string{files.log(), files.pid(), files.exit(), files.attempt(), files.lock()} {
+		if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Broker) reclaimCandidate(ctx context.Context, rd reading, candidate reclaimCandidate, rep *ReclaimReport) (touched, deferred bool) {
+	r := *candidate.record
+	record := func(d ReclaimDecision) {
+		touched = touched || (d.Subject != "" && d.Reason != WhyLive)
+		b.decide(ctx, rep, d, rep.DryRun)
+	}
+	if candidate.checkout {
+		if ctx.Err() != nil {
+			return touched, true
+		}
+		record(b.reclaimCheckout(ctx, rd, r, rep.At, rep.DryRun))
+	}
+	if candidate.scratch || (r.Gate != nil && r.Dir != "") {
+		if ctx.Err() != nil {
+			return touched, candidate.scratch || candidate.artifacts || candidate.logs
+		}
+		d := b.reclaimTaskDir(ctx, rd, r, rep.At, rep.DryRun)
+		record(d)
+		if !rep.DryRun {
+			b.recordTaskGoCacheDecision(ctx, r, d, rep.At)
+		}
+	}
+	if candidate.artifacts {
+		if ctx.Err() != nil {
+			return touched, true
+		}
+		record(b.reclaimTaskArtifacts(ctx, rd, r, rep.At, rep.DryRun))
+	}
+	if candidate.logs {
+		if ctx.Err() != nil {
+			return touched, true
+		}
+		record(b.reclaimCallback(ctx, r, rep.At, rep.DryRun))
+	}
+	return touched, false
 }
 
 // decide adds one decision to the report and, on a real sweep, records it —
@@ -378,6 +461,11 @@ func (b *Broker) decide(ctx context.Context, rep *ReclaimReport, d ReclaimDecisi
 	}
 	if dryRun || d.Reason == WhyLive {
 		return
+	}
+	if ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = recordContext(ctx)
+		defer cancel()
 	}
 	if err := b.markReclaim(ctx, d, rep.At); err != nil {
 		log.Printf("orchestrator: the sweep's decision about %s %s (%s) could not be recorded: %v",
@@ -434,23 +522,17 @@ func (b *Broker) ownerGone(ctx context.Context, rd reading, r Record, paths ...s
 func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (string, error), paths ...string) (bool, string, map[string]any) {
 	evidence := map[string]any{"terminal": r.ChildTerminalID, "backend": r.ChildBackend,
 		"reading_sessions": len(rd.sessions), "source_complete": rd.sourceComplete(r.ChildBackend)}
-	switch {
-	case r.ChildTerminalID == "" && r.State == StateSpawnFailed && r.SpawnedAt.IsZero():
-		evidence["tab"] = "never_opened"
-	case r.ChildTerminalID == "":
-		return false, WhyOwnerUnknown, evidence
-	default:
-		if _, present := rd.session(r.ChildTerminalID); present {
-			return false, WhyOwnerPresent, evidence
-		}
-		if len(rd.sessions) == 0 || !rd.sourceComplete(r.ChildBackend) {
-			return false, WhyOwnerUnknown, evidence
-		}
-		evidence["tab"] = "absent_from_complete_source"
+	tab, why := ownerTabEvidence(rd, r)
+	if why != "" {
+		return false, why, evidence
 	}
+	evidence["tab"] = tab
 	inside, err := occupied(paths...)
 	if err != nil {
 		evidence["process_table"] = err.Error()
+		if errors.Is(err, context.DeadlineExceeded) {
+			return false, WhyReclaimDeadline, evidence
+		}
 		return false, WhyOwnerUnknown, evidence
 	}
 	if inside != "" {
@@ -459,6 +541,22 @@ func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (stri
 	}
 	evidence["process_table"] = "no process works inside"
 	return true, "", evidence
+}
+
+func ownerTabEvidence(rd reading, r Record) (answer, reason string) {
+	if r.ChildTerminalID == "" {
+		if r.State == StateSpawnFailed && r.SpawnedAt.IsZero() {
+			return "never_opened", ""
+		}
+		return "", WhyOwnerUnknown
+	}
+	if _, present := rd.session(r.ChildTerminalID); present {
+		return "", WhyOwnerPresent
+	}
+	if len(rd.sessions) == 0 || !rd.sourceComplete(r.ChildBackend) {
+		return "", WhyOwnerUnknown
+	}
+	return "absent_from_complete_source", ""
 }
 
 // occupied names a process working directory inside any of paths, or answers
@@ -528,6 +626,9 @@ func foldPath(p string) string {
 func lsofCWDs(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "lsof", "-n", "-P", "-w", "-d", "cwd", "-Fn")
 	out, err := cmd.Output()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	paths := []string{}
 	for _, line := range strings.Split(string(out), "\n") {
 		if strings.HasPrefix(line, "n/") {
