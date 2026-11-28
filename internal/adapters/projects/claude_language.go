@@ -85,7 +85,9 @@ func CodexBoardLanguage(tag string) string {
 	return t
 }
 
-func codexBoardLanguageInstruction(tag string) string {
+// BoardLanguageInstruction is the shared prompt line telling a Root Session
+// which BCP 47 language to author Clawdline Board items in.
+func BoardLanguageInstruction(tag string) string {
 	return fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", tag)
 }
 

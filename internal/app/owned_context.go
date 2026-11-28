@@ -78,6 +78,12 @@ func (s Starter) OwnedContextFromPublished(ctx context.Context, place projects.P
 
 // OwnedContextFromPublishedFor does not import another provider's preferences.
 func (s Starter) OwnedContextFromPublishedFor(ctx context.Context, place projects.Place, persona, launchID string, files squadfiles.Files, assistant string) (OwnedContext, error) {
+	return s.OwnedContextFromPublishedWithAudience(ctx, place, persona, launchID, files, assistant, projects.AudienceRoot)
+}
+
+// OwnedContextFromPublishedWithAudience prepares owned-provider context with
+// explicit audience scoping so automated children omit interactive rules.
+func (s Starter) OwnedContextFromPublishedWithAudience(ctx context.Context, place projects.Place, persona, launchID string, files squadfiles.Files, assistant string, audience projects.LaunchAudience) (OwnedContext, error) {
 	if assistant != projects.AssistantAntigravity && assistant != "grok" {
 		return OwnedContext{}, projects.ErrProviderOptionsUnsupported
 	}
@@ -108,14 +114,14 @@ func (s Starter) OwnedContextFromPublishedFor(ctx context.Context, place project
 		language = s.Language(assistant)
 	}
 	var explainSteps *bool
-	if assistant == "grok" {
+	if assistant == "grok" || audience.IsAutomatedWorker() {
 		off := false
 		explainSteps = &off
 	} else if s.GeminiStepExplanations != nil {
 		on := s.GeminiStepExplanations()
 		explainSteps = &on
 	}
-	bound, err := projects.PrepareAntigravityContextWithExplanations(files.PromptPath, prompt, memory, language, explainSteps)
+	bound, err := projects.PrepareAntigravityContextForAudience(files.PromptPath, prompt, memory, language, explainSteps, audience)
 	if err != nil {
 		return OwnedContext{}, err
 	}

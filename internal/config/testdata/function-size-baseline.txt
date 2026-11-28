@@ -33,7 +33,7 @@ internal/adapters/projectassistantstore/export.go	Store.Restore	144	64
 internal/adapters/projectassistantstore/repository.go	validateAggregate	234	101
 internal/adapters/projectassistantstore/routines.go	applyRoutines	139	56
 internal/adapters/projectassistantstore/routines_human.go	ViewStore.ReadRoutines	109	34
-internal/adapters/projects/launch.go	Admit	98	45
+internal/adapters/projects/launch.go	Admit	93	42
 internal/adapters/squadfiles/launch.go	PublishFor	105	32
 internal/adapters/store/events_retention.go	Store.pruneEvents	110	27
 internal/adapters/store/session_boards.go	changeSessionBoard	128	49

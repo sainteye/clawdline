@@ -761,7 +761,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 	if r.Root != nil {
 		parent = r.Root.SessionID
 	}
-	preparedWorkflow, err := b.prepareWorkflow(ctx, cwd, parent)
+	preparedWorkflow, err := b.prepareWorkflowForAudience(ctx, cwd, parent, RecordAudience(r))
 	if err != nil {
 		r.State = StateSpawnFailed
 		r.SpawnError = err.Error()
@@ -775,7 +775,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		}
 	}()
 	integrations := ""
-	if b.PrepareWorkflow != nil {
+	if b.PrepareWorkflowForAudience != nil || b.PrepareWorkflow != nil {
 		integrations = preparedWorkflow.Text
 	} else {
 		integrations, err = b.integrationInstructions(ctx, cwd)
@@ -793,6 +793,7 @@ func (b *Broker) spawn(ctx context.Context, r Record, cwd, secret string, opened
 		}
 	}
 	request := projects.LaunchRequest{
+		Audience:    RecordAudience(r),
 		ProjectRoot: cwd,
 		Assistant:   r.Assistant,
 		Model:       r.Model,

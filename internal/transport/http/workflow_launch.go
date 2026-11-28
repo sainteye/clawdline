@@ -2,6 +2,8 @@ package http
 
 import (
 	"context"
+
+	"github.com/sainteye/clawdline/internal/adapters/projects"
 	"github.com/sainteye/clawdline/internal/adapters/workflowlaunch"
 	"github.com/sainteye/clawdline/internal/contract"
 	"github.com/sainteye/clawdline/internal/domain/session"
@@ -10,6 +12,10 @@ import (
 
 func (s *Server) prepareWorkflow(ctx context.Context, root, resume, parent string) (workflowlaunch.Prepared, error) {
 	return (workflowlaunch.Service{Store: s.store, Dir: s.cfg.Dir, Resolve: skills.ResolveWorkflow}).Prepare(ctx, root, resume, parent)
+}
+
+func (s *Server) prepareWorkflowForAudience(ctx context.Context, root, resume, parent string, audience projects.LaunchAudience) (workflowlaunch.Prepared, error) {
+	return (workflowlaunch.Service{Store: s.store, Dir: s.cfg.Dir, Resolve: skills.ResolveWorkflow}).PrepareForAudience(ctx, root, resume, parent, audience)
 }
 func (s *Server) fillWorkflowInfo(ctx context.Context, item session.Session, info *contract.SessionInfo) {
 	info.Workflow = &contract.SessionWorkflow{State: "legacy_unsnapshotted"}

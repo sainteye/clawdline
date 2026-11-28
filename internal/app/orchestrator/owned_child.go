@@ -76,7 +76,7 @@ func (b *Broker) spawnOwnedChild(ctx context.Context, r Record, cwd, secret stri
 	if r.Root != nil {
 		parent = r.Root.SessionID
 	}
-	workflow, err := b.prepareWorkflow(ctx, cwd, parent)
+	workflow, err := b.prepareWorkflowForAudience(ctx, cwd, parent, RecordAudience(r))
 	if err != nil {
 		return fail(err)
 	}

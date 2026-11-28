@@ -17,14 +17,15 @@ var ErrSquadContextUnavailable = errors.New("squad_context_unavailable")
 // Squad snapshot and Project memory, never from hook JSON or browser input.
 // Store this exact document with the launch; resume reloads it, not the catalog.
 type AntigravityContext struct {
-	PromptPath           string `json:"prompt_path,omitempty"`
-	PromptHash           string `json:"prompt_hash,omitempty"`
-	Prompt               string `json:"prompt,omitempty"`
-	Memory               string `json:"memory,omitempty"`
-	MemoryHash           string `json:"memory_hash"`
-	Language             string `json:"language,omitempty"`
-	ExplainSteps         *bool  `json:"explain_steps,omitempty"`
-	WorkflowInstructions string `json:"workflow_instructions,omitempty"`
+	PromptPath           string         `json:"prompt_path,omitempty"`
+	PromptHash           string         `json:"prompt_hash,omitempty"`
+	Prompt               string         `json:"prompt,omitempty"`
+	Memory               string         `json:"memory,omitempty"`
+	MemoryHash           string         `json:"memory_hash"`
+	Language             string         `json:"language,omitempty"`
+	ExplainSteps         *bool          `json:"explain_steps,omitempty"`
+	WorkflowInstructions string         `json:"workflow_instructions,omitempty"`
+	Audience             LaunchAudience `json:"audience,omitempty"`
 }
 
 func contextHash(text string) string {
@@ -33,6 +34,9 @@ func contextHash(text string) string {
 }
 
 func (c AntigravityContext) ShouldExplainSteps() bool {
+	if c.Audience.IsAutomatedWorker() {
+		return false
+	}
 	if c.ExplainSteps == nil {
 		return true
 	}
@@ -42,13 +46,19 @@ func (c AntigravityContext) ShouldExplainSteps() bool {
 // PrepareAntigravityContext takes only already selected private snapshot bytes.
 // It performs no filesystem reads and never replaces the provider base prompt.
 func PrepareAntigravityContext(promptPath, prompt, memory, language string) (AntigravityContext, error) {
-	return PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, language, nil)
+	return PrepareAntigravityContextForAudience(promptPath, prompt, memory, language, nil, AudienceRoot)
 }
 
 // PrepareAntigravityContextWithExplanations preserves the caller's explicit step explanation switch.
 func PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, language string, explainSteps *bool) (AntigravityContext, error) {
+	return PrepareAntigravityContextForAudience(promptPath, prompt, memory, language, explainSteps, AudienceRoot)
+}
+
+// PrepareAntigravityContextForAudience prepares immutable context for a specific
+// Session audience, suppressing human-interactive rules for automated workers.
+func PrepareAntigravityContextForAudience(promptPath, prompt, memory, language string, explainSteps *bool, audience LaunchAudience) (AntigravityContext, error) {
 	c := AntigravityContext{PromptPath: promptPath, Prompt: prompt, Memory: memory, Language: language,
-		MemoryHash: contextHash(memory), ExplainSteps: explainSteps}
+		MemoryHash: contextHash(memory), ExplainSteps: explainSteps, Audience: audience}
 	if prompt != "" {
 		c.PromptHash = contextHash(prompt)
 	}
@@ -59,7 +69,8 @@ func PrepareAntigravityContextWithExplanations(promptPath, prompt, memory, langu
 }
 
 func (c AntigravityContext) Validate() error {
-	if len(c.Prompt) > squad.MaxSquadRequestBytes || len(c.Memory) > MemoryLaunchLimit || len(c.WorkflowInstructions) > squad.MaxSquadRequestBytes ||
+	if !c.Audience.Valid() ||
+		len(c.Prompt) > squad.MaxSquadRequestBytes || len(c.Memory) > MemoryLaunchLimit || len(c.WorkflowInstructions) > squad.MaxSquadRequestBytes ||
 		c.MemoryHash != contextHash(c.Memory) ||
 		(c.Language != "" && CodexBoardLanguage(c.Language) != c.Language) {
 		return ErrSquadContextUnavailable
@@ -112,16 +123,15 @@ func (c AntigravityContext) TurnReminder() string {
 
 // Instructions joins the immutable role, language and shared Project memory.
 func (c AntigravityContext) Instructions() string {
-	if !c.ShouldExplainSteps() && c.Prompt == "" && c.Language == "" && c.Memory == "" && c.WorkflowInstructions == "" {
-
+	if !c.ShouldExplainSteps() && c.Prompt == "" && (c.Language == "" || c.Audience.IsAutomatedWorker()) && c.Memory == "" && c.WorkflowInstructions == "" {
 		return ""
 	}
 	var parts []string
 	if c.Prompt != "" {
 		parts = append(parts, c.Prompt)
 	}
-	if c.Language != "" {
-		parts = append(parts, fmt.Sprintf("Write every Clawdline Board item title, description, and step you author in the language identified by BCP 47 tag %q.", c.Language))
+	if c.Language != "" && !c.Audience.IsAutomatedWorker() {
+		parts = append(parts, BoardLanguageInstruction(c.Language))
 	}
 	if c.ShouldExplainSteps() {
 		if c.Language != "" {
@@ -139,7 +149,9 @@ func (c AntigravityContext) Instructions() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	parts = append(parts, antigravityNoteInstruction)
+	if !c.Audience.IsAutomatedWorker() {
+		parts = append(parts, antigravityNoteInstruction)
+	}
 	return strings.Join(parts, "\n\n")
 }
 

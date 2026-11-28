@@ -111,10 +111,39 @@ func InheritedIdentityKeys(assistant string) []string {
 	return nil
 }
 
+// LaunchAudience identifies who a launched Session serves so interactive
+// human-facing guidance (Notes, toolbox suggestions, Board authoring language,
+// step-by-step chat narration) is omitted for bounded children and gate checkers.
+type LaunchAudience string
+
+const (
+	// AudienceRoot is an interactive or independently assigned Root Session
+	// talking directly with the person (default when empty).
+	AudienceRoot LaunchAudience = ""
+	// AudienceChild is a bounded child worker dispatched by a Root or Bot.
+	AudienceChild LaunchAudience = "child"
+	// AudienceGateChecker is an automated planning or verification gate checker.
+	AudienceGateChecker LaunchAudience = "gate_checker"
+)
+
+// Valid reports whether a is one of the known launch audiences.
+func (a LaunchAudience) Valid() bool {
+	return a == AudienceRoot || a == AudienceChild || a == AudienceGateChecker
+}
+
+// IsAutomatedWorker reports whether a is a bounded child or gate checker rather
+// than a human-facing Root Session.
+func (a LaunchAudience) IsAutomatedWorker() bool {
+	return a == AudienceChild || a == AudienceGateChecker
+}
+
 // LaunchRequest is the pure start/resume plan input. Existing browser launches
 // retain their ask policy. Antigravity requires an explicit measured native
 // permission mode and daemon-validated executable; neither is a browser input.
 type LaunchRequest struct {
+	// Audience scopes interactive instructions (Notes, Board language,
+	// step-explanation narration). Only daemon launch code sets it.
+	Audience LaunchAudience
 	// AntigravityContext is daemon-prepared, persisted immutable context.
 	AntigravityContext *AntigravityContext
 	// Executable is the absolute standalone executable validated by the
@@ -230,9 +259,13 @@ func codexDeveloperArgs(instructions ...string) []string {
 	return []string{"-c", ShellQuoted("developer_instructions=" + TOMLString(strings.Join(instructions, "\n\n")))}
 }
 
-const codexNoteInstruction = "When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Codex's non-blocking request_user_input_async, also create one answer Note with the same question and complete replies so the person can return to it later. A blocking question prompt already waits for an answer and needs no duplicate Note. Never act on a suggested or preselected option before the person sends an answer."
+const (
+	noteInstructionPrefix = "When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. "
+	noteInstructionSuffix = " Never act on a suggested or preselected option before the person sends an answer."
 
-const antigravityNoteInstruction = "When you need the person to choose between concrete options in a Clawdline Session, read `clawdline guide note` and create one answer Note with the question and complete suggested replies before asking in chat. Wait for the person's sent message before acting on the choice. For Gemini (Antigravity), when asking multiple-choice questions or offering concrete options, create one answer Note with the question and complete suggested replies (with label and draft for each option) using `clawdline note create` so the person can choose from the Note buttons. Do not rely on plain chat text or the native ask_question tool alone. Never act on a suggested or preselected option before the person sends an answer."
+	codexNoteInstruction       = noteInstructionPrefix + "For Codex's non-blocking request_user_input_async, also create one answer Note with the same question and complete replies so the person can return to it later. A blocking question prompt already waits for an answer and needs no duplicate Note." + noteInstructionSuffix
+	antigravityNoteInstruction = noteInstructionPrefix + "For Gemini (Antigravity), when asking multiple-choice questions or offering concrete options, create one answer Note with the question and complete suggested replies (with label and draft for each option) using `clawdline note create` so the person can choose from the Note buttons. Do not rely on plain chat text or the native ask_question tool alone." + noteInstructionSuffix
+)
 
 // TOMLString is value as a TOML basic string: quoted, with the backslash, the
 // double quote and every control character escaped.
@@ -267,6 +300,31 @@ func TOMLString(value string) string {
 	return b.String()
 }
 
+func admitAntigravity(req LaunchRequest) error {
+	if !usable(req.Executable) || !filepath.IsAbs(req.Executable) {
+		return errors.Join(ErrInvalidLaunch, ErrProviderExecutableUnavailable)
+	}
+	switch req.PermissionMode {
+	case "accept-edits", "auto", "plan":
+	default:
+		return errors.Join(ErrInvalidLaunch, ErrProviderPermissionUnsupported)
+	}
+	if req.AntigravityContext == nil {
+		if req.Language != "" || req.Persona != "" || req.PersonaDir != "" || req.SquadPromptPath != "" || req.Memory != "" {
+			return errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
+		}
+		return nil
+	}
+	if req.AntigravityContext.Validate() != nil ||
+		req.AntigravityContext.Audience != req.Audience ||
+		req.AntigravityContext.Language != req.Language || req.AntigravityContext.Memory != req.Memory ||
+		req.AntigravityContext.PromptPath != req.SquadPromptPath ||
+		(req.Persona != "" && req.SquadPromptPath == "") {
+		return errors.Join(ErrInvalidLaunch, ErrSquadContextUnavailable)
+	}
+	return nil
+}
+
 // Admit is SessionLaunchPolicy.admit with the capability half left to the
 // caller, which knows what this platform can open.
 func Admit(req LaunchRequest) (Launch, error) {
@@ -280,24 +338,12 @@ func Admit(req LaunchRequest) (Launch, error) {
 	if !KnownAssistant(req.Assistant) {
 		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the assistant is not one this machine starts"))
 	}
+	if !req.Audience.Valid() {
+		return Launch{}, errors.Join(ErrInvalidLaunch, errors.New("the launch audience is not one this machine starts"))
+	}
 	if req.Assistant == AssistantAntigravity {
-		if !usable(req.Executable) || !filepath.IsAbs(req.Executable) {
-			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderExecutableUnavailable)
-		}
-		switch req.PermissionMode {
-		case "accept-edits", "auto", "plan":
-		default:
-			return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderPermissionUnsupported)
-		}
-		if req.AntigravityContext == nil {
-			if req.Language != "" || req.Persona != "" || req.PersonaDir != "" || req.SquadPromptPath != "" || req.Memory != "" {
-				return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
-			}
-		} else if req.AntigravityContext.Validate() != nil ||
-			req.AntigravityContext.Language != req.Language || req.AntigravityContext.Memory != req.Memory ||
-			req.AntigravityContext.PromptPath != req.SquadPromptPath ||
-			(req.Persona != "" && req.SquadPromptPath == "") {
-			return Launch{}, errors.Join(ErrInvalidLaunch, ErrSquadContextUnavailable)
+		if err := admitAntigravity(req); err != nil {
+			return Launch{}, err
 		}
 	} else if req.Executable != "" || req.PermissionMode != "" || req.AntigravityContext != nil {
 		return Launch{}, errors.Join(ErrInvalidLaunch, ErrProviderOptionsUnsupported)
@@ -373,8 +419,8 @@ func Admit(req LaunchRequest) (Launch, error) {
 			personaArgs = PersonaArgs(req.Assistant, p, path)
 		}
 	}
-	if req.Assistant == AssistantCodex && req.Language != "" {
-		codexInstructions = append(codexInstructions, codexBoardLanguageInstruction(req.Language))
+	if req.Assistant == AssistantCodex && req.Language != "" && !req.Audience.IsAutomatedWorker() {
+		codexInstructions = append(codexInstructions, BoardLanguageInstruction(req.Language))
 	}
 	extra := req.Memory
 	if req.Resume == "" && req.IntegrationInstructions != "" &&
@@ -391,7 +437,9 @@ func Admit(req LaunchRequest) (Launch, error) {
 		}
 	}
 	if len(codexInstructions) > 0 {
-		codexInstructions = append(codexInstructions, codexNoteInstruction)
+		if !req.Audience.IsAutomatedWorker() {
+			codexInstructions = append(codexInstructions, codexNoteInstruction)
+		}
 		personaArgs = codexDeveloperArgs(codexInstructions...)
 	}
 	var args []string

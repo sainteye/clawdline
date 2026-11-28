@@ -22,11 +22,21 @@ type Prepared struct {
 	store    *store.Store
 }
 
-// Prepare preserves workflow inheritance. Image-review consent is sampled for
-// each new execution, including children, and never sampled for a resume.
+// Prepare preserves workflow inheritance for interactive Root launches.
+// Image-review consent is sampled for each new execution and never for a resume.
 func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prepared, error) {
+	return s.PrepareForAudience(ctx, root, resume, parent, projects.AudienceRoot)
+}
+
+// PrepareForAudience prepares workflow and optional integration instructions
+// tailored to the Session audience. Bounded children never receive interactive
+// tool-library suggestions, and gate checkers omit image/browser/tool opt-ins.
+func (s Service) PrepareForAudience(ctx context.Context, root, resume, parent string, audience projects.LaunchAudience) (Prepared, error) {
 	if s.Store == nil {
 		return Prepared{}, errors.New("workflow_store_unavailable")
+	}
+	if !audience.Valid() {
+		return Prepared{}, errors.New("invalid_launch_audience")
 	}
 	var snap workflow.Snapshot
 	var err error
@@ -74,6 +84,12 @@ func (s Service) Prepare(ctx context.Context, root, resume, parent string) (Prep
 				return Prepared{}, err
 			}
 			browser = true
+		}
+		switch audience {
+		case projects.AudienceChild:
+			tools = false
+		case projects.AudienceGateChecker:
+			on, browser, tools = false, false, false
 		}
 		if snap.ProfileID == "" {
 			// Legacy parents still cannot acquire today's workflow choice.

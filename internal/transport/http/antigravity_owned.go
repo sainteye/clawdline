@@ -500,7 +500,7 @@ func (s *Server) openOwnedAntigravityChild(ctx context.Context, r orchestrator.R
 		return values.GeminiStepExplanations()
 	}}
 	place := projects.Place{Path: cwd, Label: r.Title}
-	prepared, err := starter.OwnedContextFromPublishedFor(ctx, place, r.Persona, launchID, files, r.Assistant)
+	prepared, err := starter.OwnedContextFromPublishedWithAudience(ctx, place, r.Persona, launchID, files, r.Assistant, orchestrator.RecordAudience(r))
 	if err != nil {
 		return orchestrator.OwnedChild{}, err
 	}

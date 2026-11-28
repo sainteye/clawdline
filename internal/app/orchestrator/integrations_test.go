@@ -154,3 +154,37 @@ func TestChildrenAreToldAboutTheBrowserOnlyWhenTheirNewLaunchHasItOn(t *testing.
 		}
 	}
 }
+
+func TestDispatchedChildrenOmitInteractiveToolSuggestionsAndNoteInstructions(t *testing.T) {
+	for _, assistant := range []string{"claude", "codex"} {
+		b, _ := newTestBroker(t)
+		dir := t.TempDir()
+		svc := workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}
+		b.PrepareWorkflow = svc.Prepare
+		b.PrepareWorkflowForAudience = svc.PrepareForAudience
+		b.Language = "zh-Hant-TW"
+		b.Memory = func(string) string { return "Synthetic project memory" }
+		if _, err := nextconfig.Open(dir).Set(map[string]any{
+			"tool_library_suggestions_enabled": true,
+			"space_saving_images":              true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		record, line := dispatchWith(t, b, "c2800051-0000-4000-8000-000000000051", assistant, nil)
+		if record.State == StateSpawnFailed {
+			t.Fatalf("%s spawn failed: %+v", assistant, record)
+		}
+		if strings.Contains(line, "tool_library") || strings.Contains(line, "Clawdline tool library") {
+			t.Fatalf("%s child received tool library suggestions: %s", assistant, line)
+		}
+		if strings.Contains(line, "clawdline guide note") || strings.Contains(line, "answer Note") {
+			t.Fatalf("%s child received Note instruction: %s", assistant, line)
+		}
+		if assistant == "codex" && strings.Contains(line, "Clawdline Board item title") {
+			t.Fatalf("codex child received Board authoring language instruction: %s", line)
+		}
+		if !strings.Contains(line, "# Space-saving image review") {
+			t.Fatalf("%s child lost space-saving image review: %s", assistant, line)
+		}
+	}
+}

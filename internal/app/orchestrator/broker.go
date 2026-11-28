@@ -142,9 +142,10 @@ type Broker struct {
 	// Memory is the shared memory a session launched in dir is given
 	// (memory.Store.LaunchText): "" for a Project with none, and "" launches
 	// exactly as before it existed. Nil gives none, which only a test wants.
-	Memory                  func(dir string) string
-	IntegrationInstructions func(context.Context, string) (string, error)
-	PrepareWorkflow         func(context.Context, string, string, string) (workflowlaunch.Prepared, error)
+	Memory                     func(dir string) string
+	IntegrationInstructions    func(context.Context, string) (string, error)
+	PrepareWorkflow            func(context.Context, string, string, string) (workflowlaunch.Prepared, error)
+	PrepareWorkflowForAudience func(context.Context, string, string, string, projects.LaunchAudience) (workflowlaunch.Prepared, error)
 	// RootAssignmentSettled is told when a Feature Root left at a dialog
 	// (root_dialog.go) was briefed after all, or failed while it waited, so
 	// whoever asked for it — a Board item's new Session — can settle its own
