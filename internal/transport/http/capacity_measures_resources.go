@@ -32,6 +32,18 @@ func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading 
 		"resources.page_rows": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-inspection-page admission guard"}
 		},
+		capacity.ResourceCleanupBatchRows: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "per-page resource discovery bound for automatic cleanup"}
+		},
+		capacity.ResourceCleanupItemSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: capacity.ResourceCleanupItemSecondsLimit, Note: "time budget for one automatic cleanup item, including any replan"}
+		},
+		capacity.ResourceCleanupPlanAttempts: func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "plan attempt bound for one automatic cleanup item"}
+		},
+		capacity.ResourceCleanupBackoffSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: capacity.ResourceCleanupBackoffSecondsLimit, Note: "retry delay when automatic cleanup cannot read the registry or enter maintenance"}
+		},
 		"resources.scan_files": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-resource filesystem scan guard; incomplete scans never authorize deletion"}
 		},

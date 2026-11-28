@@ -844,6 +844,10 @@ Generated directly from `internal/domain/capacity.Register()`; these are default
 | `resources.artifact_seconds` | 2592000 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `resources.cache_bytes` | 4294967296 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
 | `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.cleanup_backoff_seconds` | 60 | `seconds` | `coalesce` | `diagnostics` | — |
+| `resources.cleanup_batch_rows` | 8 | `rows` | `coalesce` | `diagnostics` | — |
+| `resources.cleanup_item_seconds` | 120 | `seconds` | `refuse` | `diagnostics` | — |
+| `resources.cleanup_plan_attempts` | 2 | `rows` | `refuse` | `diagnostics` | — |
 | `resources.disk_low_free_bytes` | 21474836480 | `bytes` | `coalesce` | `diagnostics, notice` | — |
 | `resources.disk_reserve_bytes` | 2147483648 | `bytes` | `refuse` | `diagnostics, sender` | — |
 | `resources.disk_source_scan_files` | 2000000 | `rows` | `refuse` | `diagnostics` | — |

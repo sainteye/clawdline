@@ -646,6 +646,16 @@ const (
 	// How long a finished, settled task keeps its artifacts/ before the
 	// reclamation sweep takes them (the person's 30 days, 2026-11-23).
 	ResourceArtifactRetention = "resources.artifact_seconds"
+
+	ResourceCleanupBatchRows      = "resources.cleanup_batch_rows"
+	ResourceCleanupItemSeconds    = "resources.cleanup_item_seconds"
+	ResourceCleanupPlanAttempts   = "resources.cleanup_plan_attempts"
+	ResourceCleanupBackoffSeconds = "resources.cleanup_backoff_seconds"
+
+	ResourceCleanupBatchRowsLimit      = 8
+	ResourceCleanupItemSecondsLimit    = 120
+	ResourceCleanupPlanAttemptsLimit   = 2
+	ResourceCleanupBackoffSecondsLimit = 60
 )
 
 // Entry is one row of the register.

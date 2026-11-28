@@ -178,6 +178,11 @@ func (s *Service) Seal(ctx context.Context, scope Scope, id string) (taskresourc
 	if err != nil {
 		return r, err
 	}
+	updated, err := s.sealResourceLocked(ctx, r)
+	return visibleResource(scope, updated), err
+}
+
+func (s *Service) sealResourceLocked(ctx context.Context, r taskresource.Resource) (taskresource.Resource, error) {
 	o, err := s.Owner(ctx, r.Owner.Kind, r.Owner.ID)
 	if err != nil {
 		return r, err
@@ -189,14 +194,13 @@ func (s *Service) Seal(ctx context.Context, scope Scope, id string) (taskresourc
 	if err != nil {
 		return r, err
 	}
-	updated, err := s.Store.UpdateTaskResource(ctx, id, "resource.outputs_sealed", s.now(), func(next *taskresource.Resource) error {
+	return s.Store.UpdateTaskResource(ctx, r.ID, "resource.outputs_sealed", s.now(), func(next *taskresource.Resource) error {
 		if next.LastOutcome == "removed" || next.LastOutcome == "removing" {
 			return fail("resource_cleanup_in_progress")
 		}
 		next.Manifest = hash
 		return nil
 	})
-	return visibleResource(scope, updated), err
 }
 
 func (s *Service) Pin(ctx context.Context, scope Scope, id string, pin bool) (taskresource.Resource, error) {
@@ -809,6 +813,44 @@ func (s *Service) Sweep(ctx context.Context, after string) (Result, string, erro
 	}
 	result, err := s.Apply(ctx, scope, plan, uuid.NewString())
 	return result, page.Next, err
+}
+
+// SweepResource limits automatic maintenance to one resource and its durable
+// receipt. The caller owns admission serialization and the per-item deadline.
+func (s *Service) SweepResource(ctx context.Context, id string) (Result, error) {
+	scope := Scope{Actor: "daemon", AllProjects: true, Inspect: true, Reclaim: true}
+	if err := s.prepareSweepResource(ctx, scope, id); err != nil {
+		return Result{}, err
+	}
+	plan, err := s.Plan(ctx, scope, []string{id})
+	if err != nil {
+		return Result{}, err
+	}
+	if err := ctx.Err(); err != nil {
+		return Result{}, err
+	}
+	if plan.Items[0].Decision.Outcome != "eligible" {
+		return Result{}, nil
+	}
+	return s.Apply(ctx, scope, plan, uuid.NewString())
+}
+
+func (s *Service) prepareSweepResource(ctx context.Context, scope Scope, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	r, err := s.resource(ctx, scope, id)
+	if err != nil {
+		return err
+	}
+	if err := s.recoverResourceLocked(ctx, r); err != nil {
+		return err
+	}
+	if r.Manifest == "" && r.LastOutcome != "removed" && r.LastOutcome != "removing" {
+		// A failed first seal leaves the normal inspection to keep the resource.
+		// Replacing an existing seal would hide evidence that outputs changed.
+		_, _ = s.sealResourceLocked(ctx, r)
+	}
+	return ctx.Err()
 }
 
 // Admit first tries a bounded safe sweep, then refuses new managed heavy work if

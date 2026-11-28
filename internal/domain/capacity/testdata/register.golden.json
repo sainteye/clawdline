@@ -16388,6 +16388,82 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.cleanup_backoff_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 60,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceCleanupBackoffSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.cleanup_batch_rows",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 8,
+    "WarnAt": 0,
+    "AtLimit": "coalesce",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceCleanupBatchRowsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.cleanup_item_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 120,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceCleanupItemSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.cleanup_plan_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceCleanupPlanAttemptsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "resources.disk_low_free_bytes",
     "Class": "buffer",
     "Unit": "bytes",
