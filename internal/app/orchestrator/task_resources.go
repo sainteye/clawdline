@@ -333,9 +333,9 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		return nil
 	}
 	var failure taskresources.Failure
-	pressure := errors.As(err, &failure) && (failure.Code == "disk_reserve_unavailable" || failure.Code == "cache_total_over_budget" || failure.Code == "scratch_over_budget")
+	pressure := errors.As(err, &failure) && failure.Code == "disk_reserve_unavailable"
 	if pressure {
-		// Only measured aggregate/reserve pressure puts cleanup on the compile
+		// Only measured reserve pressure puts cleanup on the compile
 		// path. Optional cache maintenance belongs to the periodic sweeper.
 		b.reclaim.mu.Lock()
 		after := b.reclaim.resourcesAfter
@@ -390,7 +390,7 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		return refuseWith(503, failure.Code, "The process-table read is stuck. End the stuck lsof process or restart the daemon to recover.", extra)
 	case taskresource.ProcessTableTimeout:
 		return refuseWith(503, failure.Code, "The process-table read timed out. Retry after the process table responds.", extra)
-	case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
+	case "disk_reserve_unavailable":
 		message = "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
 	}
 	return refuseWith(507, failure.Code, message, extra)

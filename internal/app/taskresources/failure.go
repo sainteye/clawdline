@@ -107,7 +107,7 @@ func (e Failure) WithContext(ctx context.Context, phase, resource string) Failur
 	e.detail = Diagnostic{Code: e.Code, Caller: c.kind, CallerID: c.id, CallbackTaskID: c.callback, Phase: phase, ResourceID: opaqueID(resource), Cause: causeCode(e.Cause), ContextState: "active"}
 	if e.Cause == nil {
 		switch e.Code {
-		case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
+		case "disk_reserve_unavailable":
 			e.detail.Cause = "capacity"
 		case taskresource.ProcessTableStalled:
 			e.detail.Cause = taskresource.ProcessTableStalled

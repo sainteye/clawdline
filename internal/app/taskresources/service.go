@@ -911,9 +911,8 @@ func (s *Service) Admit(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	// A per-cache target is maintained by the periodic sweeper. Waiting for
-	// optional owner/output inspection here can exhaust the compile lease
-	// deadline even when measured aggregate capacity is available.
+	// Background maintenance handles cache and scratch thresholds.
+	// Start cleanup here only when free space is below the reserve.
 	if reason := taskresource.Admission(s.policy(), u); reason == "" {
 		return nil
 	}

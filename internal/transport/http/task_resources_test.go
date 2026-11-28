@@ -123,7 +123,7 @@ func TestManagedResourceHTTPRequiresMachineAuthorityAndReviewedPlan(t *testing.T
 	}
 }
 
-func TestResourceAdmissionHTTPAllowsRepeatedWithinBudgetCleanup(t *testing.T) {
+func TestResourceAdmissionHTTPAllowsOverTargetStorageDuringCacheMaintenance(t *testing.T) {
 	pane := shellPane(t.TempDir())
 	s, h, _, machine := wholeServer(t, pane, pane)
 	if err := s.broker.EnableTaskResources(); err != nil {
@@ -165,16 +165,21 @@ func TestResourceAdmissionHTTPAllowsRepeatedWithinBudgetCleanup(t *testing.T) {
 	var sweeping atomic.Bool
 	var sweeps atomic.Int32
 	service.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
-		if sweeping.CompareAndSwap(false, true) {
-			defer sweeping.Store(false)
-			for range 3 {
-				if _, _, err := s.broker.SweepTaskResources(c, ""); err != nil {
-					return taskresource.Usage{}, err
-				}
-				sweeps.Add(1)
-			}
+		if !sweeping.CompareAndSwap(false, true) {
+			return taskresource.Usage{Known: true}, nil
 		}
-		return taskresource.Usage{Known: true}, nil
+		defer sweeping.Store(false)
+		for range 3 {
+			if _, _, err := s.broker.SweepTaskResources(c, ""); err != nil {
+				return taskresource.Usage{}, err
+			}
+			sweeps.Add(1)
+		}
+		return taskresource.Usage{
+			Known:        true,
+			CacheTotal:   taskresource.CacheTotalBytesLimit + 1,
+			ScratchTotal: taskresource.ScratchTotalBytesLimit + 1,
+		}, nil
 	}
 
 	post := func(path, body string) *httptest.ResponseRecorder {
@@ -190,8 +195,9 @@ func TestResourceAdmissionHTTPAllowsRepeatedWithinBudgetCleanup(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("admission after %d completed sweeps: HTTP %d %s", sweeps.Load(), rec.Code, rec.Body)
 	}
-	if sweeps.Load() != 3 || !service.Usage().Known {
-		t.Fatalf("expected a single admission scan and three overlapping sweeps, got %d sweeps and %+v", sweeps.Load(), service.Usage())
+	usage := service.Usage()
+	if sweeps.Load() != 3 || !usage.Known || usage.ScratchTotal != taskresource.ScratchTotalBytesLimit+1 || usage.CacheTotal <= taskresource.CacheTotalBytesLimit {
+		t.Fatalf("expected one scan reporting over-target totals and three overlapping sweeps, got %d sweeps and %+v", sweeps.Load(), usage)
 	}
 
 	// The dev installer submits the same compile lease identity until storage

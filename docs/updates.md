@@ -282,6 +282,8 @@ clawdline dev install [--rev <commit>]     # inside a clawdline checkout
   `releases/v<x.y.z>-dev.<short commit>/`, where `v<x.y.z>` is the release it goes over. The
   switch is the updater's own (`updater.BeginLocal`, then `Execute`): store snapshot, supervisor,
   health check, rollback when it does not come up. The checkout's HEAD does not move.
+  The build checks the filesystem reserve before compilation. Aggregate managed cache and scratch
+  use raise capacity notices and continue through background cleanup.
 - **Who can start it.** Only the CLI on this machine. The unsigned manifest is a local file the
   CLI hands the updater; no route takes one, so Cloud and a phone cannot install a dev build.
   `BeginLocal` refuses a version that is not `-dev.` (`not_a_dev_build`).

@@ -843,7 +843,7 @@
 | `resources.admission_measurement_attempts` | 2 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.artifact_seconds` | 2592000 | `seconds` | `evict_oldest` | `diagnostics` | — |
 | `resources.cache_bytes` | 4294967296 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
-| `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.cache_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, notice` | — |
 | `resources.cleanup_backoff_seconds` | 60 | `seconds` | `coalesce` | `diagnostics` | — |
 | `resources.cleanup_batch_rows` | 8 | `rows` | `coalesce` | `diagnostics` | — |
 | `resources.cleanup_item_seconds` | 120 | `seconds` | `refuse` | `diagnostics` | — |
@@ -858,7 +858,7 @@
 | `resources.ready_seconds` | 60 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `resources.scan_files` | 262144 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.scratch_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |
-| `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, sender` | — |
+| `resources.scratch_total_bytes` | 17179869184 | `bytes` | `evict_oldest` | `diagnostics, notice` | — |
 | `run.claimed_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `run.created_items` | 5 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `run.decision_answer_age` | 86400 | `seconds` | `expire` | `diagnostics, sender` | — |

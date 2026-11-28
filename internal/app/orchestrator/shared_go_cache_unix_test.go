@@ -435,6 +435,10 @@ func TestSharedGoTrimRecoversAfterProcessTableSaturation(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > time.Second || !errors.As(err, &failure) || failure.Code != taskresource.ProcessTableStalled {
 		t.Fatalf("apply took %s, expected process_table_stalled: %v", elapsed, err)
 	}
+	if err := b.AdmitHeavyResources(ctx); err != nil {
+		t.Fatal("an affordable build waited for optional cleanup", err)
+	}
+	b.Resources.FreeSpace = func() (int64, error) { return policy.DiskReserve - 1, nil }
 	start = time.Now()
 	err = b.AdmitHeavyResources(ctx)
 	refusal, ok := err.(Refusal)
@@ -638,7 +642,7 @@ func TestHeavyCallbackCanContinueWithAnActiveOverTargetCache(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	p := taskresource.DefaultPolicy()
-	p.CacheBytes = 1
+	p.CacheBytes, p.CacheTotal = 1, 1
 	b.Resources.Policy = func() taskresource.Policy { return p }
 	if err := b.AdmitHeavyResources(ctx); err != nil {
 		t.Fatal("active callback could not acquire its next compile", err)
@@ -647,11 +651,6 @@ func TestHeavyCallbackCanContinueWithAnActiveOverTargetCache(t *testing.T) {
 	if _, err := os.Stat(cacheEntry); err != nil {
 		t.Fatal("active cache entry was removed", err)
 	}
-	p.CacheTotal = p.CacheBytes
-	if err := b.AdmitHeavyResources(ctx); err == nil {
-		t.Fatal("aggregate cache pressure allowed another compile")
-	}
-	p.CacheTotal = taskresource.DefaultPolicy().CacheTotal
 	release()
 	if r := settledWithin(t, b, ctx, req.TaskID, 10*time.Second); r.State != StateSuccess {
 		t.Fatal(r.Verdict)

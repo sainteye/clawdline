@@ -213,8 +213,8 @@ rejecting an unregistered bound before the final green check.
 | Successful-task disposable scratch | 24 hours after proved completion |
 | Failed/cancelled-task disposable scratch | 24 hours after proved completion |
 | Non-artifact execution logs | 7 days after completion |
-| Idle managed cache, each / aggregate | 4 GiB eviction target / 16 GiB aggregate admission limit; no retention floor |
-| Other managed scratch, aggregate | 16 GiB |
+| Idle managed cache, each / aggregate | 4 GiB eviction target / 16 GiB aggregate notice threshold; no retention floor |
+| Other managed scratch, aggregate | 16 GiB notice threshold |
 | Minimum available filesystem space | 2 GiB |
 | Settled task `artifacts/` | 30 days after completion or the later landing (2026-11-23) |
 | Results and other protected evidence | No automatic deletion |
@@ -238,10 +238,11 @@ never becomes disposable merely to meet a budget.
 
 The per-cache value is a best-effort eviction target, not an admission limit.
 An active or unsealed cache may temporarily exceed it without blocking an
-otherwise affordable compile. Admission retries source-backed sealing and
-safe eviction when this target is exceeded. Aggregate cache/scratch budgets
-and the filesystem reserve remain new-work admission thresholds; none is a
-hard in-flight filesystem quota. Check before producer admission and after release;
+otherwise affordable compile. Periodic maintenance handles source-backed sealing
+and safe eviction. The cache and scratch totals raise capacity notices at their
+thresholds. Eligible data follows the same background retention and reclamation
+rules. The filesystem reserve is a new-work admission threshold.
+Check before producer admission and after release;
 reclaim eligible data first. If pressure remains, refuse a new relevant build or
 scratch allocation with a typed reason and recovery action. Do not kill an
 active job, delete its open files or block reading results, preserving work,

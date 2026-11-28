@@ -131,6 +131,32 @@ func TestANoticeOwesOnePushSentAfterItsCommit(t *testing.T) {
 	}
 }
 
+func TestManagedStorageTotalsPushWithoutExhaustingCapacity(t *testing.T) {
+	s := capacityServer(t)
+	p := &pushes{}
+	const cache = "resources.cache_total_bytes"
+	const scratch = "resources.scratch_total_bytes"
+	b := pushBeat(t, s, map[string]capacity.Reading{
+		cache:   {Known: true, Used: 11},
+		scratch: {Known: true, Used: 11},
+	}, map[string]int64{cache: 10, scratch: 10}, p, true)
+	passAndSend(b)
+	passAndSend(b)
+
+	got := p.sent()
+	if len(got) != 2 || eventCount(t, s, capacity.EventNotify) != 2 {
+		t.Fatalf("expected one capacity notice per managed total: %q", got)
+	}
+	d, _ := s.capacityDiagnostics()
+	for _, name := range []string{cache, scratch} {
+		e := entry(t, d, name)
+		if e.Exhausted || e.State != contract.CapacityStateFull || e.LastPush == nil ||
+			e.LastPush.Push != contract.CapacityPushStatePushed {
+			t.Fatalf("%s did not report an advisory push: %+v", name, e)
+		}
+	}
+}
+
 func TestCapacityPushKeepsLanguageChosenAtIntent(t *testing.T) {
 	s := capacityServer(t)
 	p := &pushes{}

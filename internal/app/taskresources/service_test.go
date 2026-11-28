@@ -254,15 +254,20 @@ func TestPressureReclaimsOnlyEligibleDataAndKeepsActiveResources(t *testing.T) {
 		t.Run(map[bool]string{false: "eligible", true: "active"}[active], func(t *testing.T) {
 			f := setup(t, taskresource.Scratch)
 			f.seal(t)
-			p := taskresource.DefaultPolicy()
-			p.ScratchTotal = 1
-			f.s.Policy = func() taskresource.Policy { return p }
+			reserve := taskresource.DefaultPolicy().DiskReserve
+			f.s.FreeSpace = func() (int64, error) {
+				absent, err := f.s.FS.Absent(f.allocation.Resource)
+				if absent {
+					return reserve, err
+				}
+				return reserve - 1, err
+			}
 			if active {
 				f.owner.UsePresence = "present"
 			}
 			err := f.s.Admit(context.Background())
 			if active && err == nil {
-				t.Fatal("over-budget active resource admitted new work")
+				t.Fatal("insufficient disk reserve admitted new work")
 			}
 			if !active && err != nil {
 				t.Fatal("safe pressure reclaim failed", err)
@@ -276,12 +281,12 @@ func TestPressureReclaimsOnlyEligibleDataAndKeepsActiveResources(t *testing.T) {
 	}
 }
 
-func TestIndividualCachePressureKeepsProtectedDataWithoutBlockingWork(t *testing.T) {
+func TestCacheTargetsKeepProtectedDataWithoutBlockingWork(t *testing.T) {
 	for _, active := range []bool{false, true} {
 		t.Run(map[bool]string{false: "unsealed", true: "active"}[active], func(t *testing.T) {
 			f := setup(t, taskresource.Cache)
 			p := taskresource.DefaultPolicy()
-			p.CacheBytes = 1
+			p.CacheBytes, p.CacheTotal = 1, 1
 			f.s.Policy = func() taskresource.Policy { return p }
 			if active {
 				f.owner.Complete = false
@@ -292,12 +297,6 @@ func TestIndividualCachePressureKeepsProtectedDataWithoutBlockingWork(t *testing
 			}
 			if raw, err := os.ReadFile(filepath.Join(f.allocation.Path, "rebuildable.tmp")); err != nil || string(raw) != "temporary computation" {
 				t.Fatal("protected cache was removed", err)
-			}
-			// The aggregate limit still refuses work without deleting active or
-			// unsealed data. Only the per-cache eviction target is nonblocking.
-			p.CacheTotal = p.CacheBytes
-			if err := f.s.Admit(context.Background()); err == nil || err.Error() != "cache_total_over_budget" {
-				t.Fatal("aggregate protection lost", err)
 			}
 			preserved(t, f)
 		})
@@ -443,12 +442,10 @@ func TestPressureAdmissionVisitsOneAdvancingCleanupPage(t *testing.T) {
 	f.owner.Complete = true
 	seen := map[string]bool{}
 	f.s.Uses = func(_ context.Context, r taskresource.Resource) string { seen[r.ID] = true; return "present" }
-	p := taskresource.DefaultPolicy()
-	f.s.OtherUsage = func(context.Context) (taskresource.Usage, error) {
-		return taskresource.Usage{Known: true, ScratchTotal: p.ScratchTotal + 1}, nil
-	}
+	reserve := taskresource.DefaultPolicy().DiskReserve
+	f.s.FreeSpace = func() (int64, error) { return reserve - 1, nil }
 	if err := f.s.Admit(ctx); err == nil {
-		t.Fatal("active over-budget resources were admitted")
+		t.Fatal("insufficient disk reserve admitted new work")
 	}
 	if len(seen) > taskresource.PageRowsLimit {
 		t.Fatalf("one admission inspected %d resources, page limit %d", len(seen), taskresource.PageRowsLimit)
@@ -456,7 +453,7 @@ func TestPressureAdmissionVisitsOneAdvancingCleanupPage(t *testing.T) {
 	prior := seen
 	seen = map[string]bool{}
 	if err := f.s.Admit(ctx); err == nil {
-		t.Fatal("next over-budget admission passed")
+		t.Fatal("next low-reserve admission passed")
 	}
 	advanced := false
 	for id := range seen {

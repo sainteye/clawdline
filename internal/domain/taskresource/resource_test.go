@@ -80,14 +80,28 @@ func TestStoragePressureRefusesNewWorkWithoutRelaxingProtection(t *testing.T) {
 	}{
 		{"storage_unknown", func(u *Usage) { u.Known = false }},
 		{"disk_reserve_unavailable", func(u *Usage) { u.Available-- }},
-		{"cache_total_over_budget", func(u *Usage) { u.CacheTotal++ }},
-		{"scratch_over_budget", func(u *Usage) { u.ScratchTotal++ }},
+		{"storage_unknown", func(u *Usage) { u.CacheTotal = -1 }},
+		{"storage_unknown", func(u *Usage) { u.ScratchTotal = -1 }},
 	} {
 		t.Run(tc.reason, func(t *testing.T) {
 			v := u
 			tc.change(&v)
 			if got := Admission(p, v); got != tc.reason {
 				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestManagedTotalsOverTargetDoNotRefuseWork(t *testing.T) {
+	p := DefaultPolicy()
+	for name, u := range map[string]Usage{
+		"scratch": {Known: true, ScratchTotal: p.ScratchTotal + 1, Available: p.DiskReserve},
+		"cache":   {Known: true, CacheTotal: p.CacheTotal + 1, Available: p.DiskReserve},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if reason := Admission(p, u); reason != "" {
+				t.Fatalf("managed usage blocked work with sufficient disk space: %s", reason)
 			}
 		})
 	}
