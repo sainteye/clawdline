@@ -496,6 +496,24 @@ func (f *paServerFixture) pin(t *testing.T, sender, scope string, invited bool) 
 	}
 	return pin
 }
+func (f *paServerFixture) cloudRouter() cloudtransport.Router {
+	pins := adaptercloud.NewPinnedStore(filepath.Join(f.s.cfg.Dir, cloudkeys.DirName))
+	return cloudtransport.Router{
+		Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine),
+		ViewerGrant: func(_ context.Context, account, viewer string, key ed25519.PublicKey) (adaptercloud.AssistantViewerGrant, error) {
+			// HTTP fixtures that start at the route supply the verified pin's key.
+			if len(key) == 0 {
+				var err error
+				key, _, err = pins.PublicKeyFor(viewer)
+				if err != nil {
+					return adaptercloud.AssistantViewerGrant{}, err
+				}
+			}
+			return pins.VerifiedProjectAssistantGrant(account, viewer, key)
+		},
+	}
+}
+
 func (f *paServerFixture) cloud(t *testing.T, sender, method, path string, body any) cloudops.LocalResponse {
 	t.Helper()
 	var raw []byte
@@ -506,7 +524,7 @@ func (f *paServerFixture) cloud(t *testing.T, sender, method, path string, body 
 			t.Fatal(err)
 		}
 	}
-	router := cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}
+	router := f.cloudRouter()
 	var envelope struct {
 		Command contract.ProjectAssistantCommand `json:"command"`
 	}

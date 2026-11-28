@@ -17,7 +17,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 type handoffSourceProbe struct {
@@ -214,7 +213,7 @@ func TestHandoffCardSourceForgetAndRevocationBeforePrompt(t *testing.T) {
 			var matrix *paMatrix
 			if effect == "revoke-cloud" {
 				matrix = &paMatrix{paServerFixture: f, pins: map[string]adaptercloud.PinnedDevice{}, privs: map[string]ed25519.PrivateKey{},
-					bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}}
+					bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}}
 				matrix.pair(t, "write-viewer", adaptercloud.ScopeOperate, false)
 				answer, raw := matrix.word(t, "write-viewer", "handoff-card", map[string]string{"bot_id": f.key.BotID, "machine_id": f.key.MachineID, "conversation_id": card.Fence.ConversationID})
 				if !answer.OK() || readHandoffResponse(t, raw).Card.Ref != card.Card.Ref {

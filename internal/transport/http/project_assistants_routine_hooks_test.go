@@ -22,7 +22,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func saveHookRoutine(t *testing.T, f *paServerFixture, server *httptest.Server, trigger contract.ProjectAssistantRoutineTrigger) (contract.ProjectAssistantRoutineDefinition, contract.ProjectAssistantRoutineListResponse, string) {
@@ -52,7 +51,7 @@ func TestRoutineHookCloudBridgeKeepsVersionKeyAndWriteAuthority(t *testing.T) {
 	d, page, key := saveHookRoutine(t, f, server, contract.ProjectAssistantRoutineTrigger{Type: "webhook"})
 	f.pin(t, "hook-writer", adaptercloud.ScopeOperate, false)
 	f.pin(t, "hook-reader", adaptercloud.ScopeReadOnly, false)
-	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 	for _, sender := range []string{"hook-writer", "hook-reader"} {
 		q := contract.ProjectAssistantRoutineHookRequest{Command: f.command(pa.EditOperation, sender), Fence: page.Fence, ID: d.ID, ExpectedRevision: d.Version}
 		raw, _ := json.Marshal(q)

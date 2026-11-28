@@ -3,11 +3,13 @@ package cloud
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
+	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 )
 
@@ -45,6 +47,8 @@ type Router struct {
 	// Empty is a router that cannot say, and a route that wanted it then reads
 	// the request's own Origin as it always did.
 	AppOrigin string
+	// ViewerGrant rechecks a verified viewer at the destination route.
+	ViewerGrant func(context.Context, string, string, ed25519.PublicKey) (adaptercloud.AssistantViewerGrant, error)
 }
 
 // Do dispatches one request and returns what the route answered.
@@ -81,6 +85,12 @@ func (r Router) Do(ctx context.Context, req cloudops.LocalRequest) (cloudops.Loc
 		Body:          io.NopCloser(bytes.NewReader(req.Body)),
 		ContentLength: int64(len(req.Body)),
 	}).WithContext(withCloudViewer(WithAppOrigin(withViaCloud(ctx), r.AppOrigin), req.Viewer))
+	if req.Viewer != "" && r.ViewerGrant != nil {
+		grant := func(ctx context.Context, account string) (adaptercloud.AssistantViewerGrant, error) {
+			return r.ViewerGrant(ctx, account, req.Viewer, req.ViewerKey)
+		}
+		request = request.WithContext(context.WithValue(request.Context(), viewerGrantKey{}, grant))
+	}
 	if len(req.Body) > 0 {
 		// The gate refuses a change whose body is neither JSON nor nothing,
 		// because a page elsewhere can post a form without asking and cannot
@@ -157,6 +167,18 @@ func withCloudViewer(ctx context.Context, viewer string) context.Context {
 func CloudViewerOf(ctx context.Context) string {
 	viewer, _ := ctx.Value(cloudViewerKey{}).(string)
 	return viewer
+}
+
+type viewerGrantKey struct{}
+
+// CloudViewerGrant rechecks the transport's authenticated viewer. A socket
+// request cannot provide this proof through any header or request field.
+func CloudViewerGrant(ctx context.Context, account string) (adaptercloud.AssistantViewerGrant, error) {
+	resolve, _ := ctx.Value(viewerGrantKey{}).(func(context.Context, string) (adaptercloud.AssistantViewerGrant, error))
+	if resolve == nil {
+		return adaptercloud.AssistantViewerGrant{}, adaptercloud.ErrViewerNotPinned
+	}
+	return resolve(ctx, account)
 }
 
 // recorder is the ResponseWriter an in-process dispatch answers into. It keeps

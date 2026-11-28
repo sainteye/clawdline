@@ -885,7 +885,7 @@ func (l *Link) wire() error {
 			EnforceSessionReceipts: true,
 			AdmitExecution:         opts.AdmitExecution,
 			Router: Router{Handler: opts.Handler, Authorize: opts.Authorize,
-				AppOrigin: settings.AppOrigin},
+				AppOrigin: settings.AppOrigin, ViewerGrant: l.viewerGrant},
 			AllowCommands:       l.allowCommands,
 			Authority:           l.authority,
 			TranscriptAuthority: l.transcriptAuthority,
@@ -1730,9 +1730,11 @@ func (l *Link) authority(ctx context.Context, sender string, verifiedKey ed25519
 		if device.RevokedAt != nil && *device.RevokedAt != "" {
 			return a
 		}
-		if device.Kind == adaptercloud.RosterKindInvitedBrowser && pairedKey == nil {
-			// Admitted only by a live local pin, never by the roster alone.
-			return a
+		if device.Kind == adaptercloud.RosterKindInvitedBrowser {
+			a.Invited = true
+			if pairedKey == nil {
+				return a // Invitations always require a live local pin.
+			}
 		}
 		if requiresWriteGate {
 			rosterKey, err := base64.StdEncoding.DecodeString(device.PublicKey)

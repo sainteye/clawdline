@@ -28,7 +28,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 const outputFixtureHTML = `<!doctype html><html><body><h1>Interactive report</h1><button onclick="this.textContent='Clicked'">Try interaction</button><button onclick="location.href='https://escape.invalid/navigation'">Try blocked navigation</button><p id="isolation"></p><a href="https://example.invalid/report">Reference</a><script>
@@ -297,7 +296,7 @@ func TestProjectAssistantOutputCloudRead(t *testing.T) {
 	// decoder, pairing grant, actual router and bounded complete Cloud reply.
 	pin := f.pin(t, "output-reader", adaptercloud.ScopeReadOnly, false)
 	public, _ := base64.StdEncoding.DecodeString(pin.PublicKey)
-	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 	fields := map[string]any{"type": "project-assistants.output", "session": cloudops.MachineReplySession, "request": strings.Repeat("<", 128), "machine_id": f.key.MachineID, "bot_id": f.key.BotID, "conversation_id": x.Conversation.ID, "message_id": cards[0].ID, "id": cards[0].Output.ID, "artifact_id": "", "offset": 0}
 	ask := func() cloudops.Answer {
 		raw, _ := json.Marshal(fields)

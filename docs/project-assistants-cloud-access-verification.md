@@ -30,7 +30,7 @@ Test files: `internal/transport/http/project_assistants_cloud_access_matrix_test
 
 | Row | Assertion | Proof level |
 |---|---|---|
-| A1 | Account-paired operate and read-only pins, and invited read-only and operate pins, read `get` and `history` through real words; an empty or unpinned sender reads nothing. | source fixture |
+| A1 | Account-paired operate and read-only pins, and invited read-only and operate pins, read `get` and `history` through real words; a viewer without authenticated Cloud authority reads nothing. | source fixture |
 | A2 | Read-only grants (account and invited) are refused `send` with `pa_read_only` before the provider or store; an invited writer is admitted as itself. | source fixture |
 | A3 | The `read` body's `reader_id` is never identity: the returned cursor is the pin grant's reader. Account-paired devices share the owner reader; each invitation has its own. | source fixture |
 | A4 | A TCP device token cannot borrow an owner, Cloud viewer or another reader through spoofed headers or body; its read-only send is refused by the device gate (`forbidden`). | source fixture over TCP |
@@ -52,7 +52,7 @@ Test files: `internal/transport/http/project_assistants_cloud_access_matrix_test
 | E1 | Every one of the 86 Bot words' executable vocabulary examples is routed exactly once as the verified sender; commands carry their idempotency key; only real commands ask for the write gate, `read`/`observed` do not, reads ask no command authority. | Bridge unit, recording ports |
 | E2 | The machine write switch stops every command before routing and never stops reads or read/observed metadata. | Bridge unit |
 | E3 | A read-only viewer (marked as the relay link marks it, only when a write gate is asked) is refused every command with `viewer_read_only` before routing and keeps reads and its own metadata. | Bridge unit |
-| E4 | A sender the roster no longer holds is refused every command with `unknown_sender`; Bot reads are not refused at the Bridge and stay the source pin grant's decision (A1, B1). | Bridge unit |
+| E4 | A sender the roster no longer holds is refused every command with `unknown_sender`; the source rechecks the same Cloud viewer authority for Bot reads on both rails (A1, B1). | Bridge unit |
 | E5 | A body cannot name its own viewer, and a request on another machine's channel is `wrong_machine`; neither is routed. | Bridge unit |
 
 Mutation checks were run in the task worktree and reverted: making every Cloud
@@ -75,8 +75,9 @@ exact effect-authority comparison, and the runtime calls it after the slow
 admission reads and before it writes anything, including the acknowledgement
 of an unknown turn. `TestProjectAssistantCloudAccessDefectD1RePairDuringAdmission`
 (`internal/transport/http/project_assistants_cloud_repair_admission_test.go`)
-answered 200 before the change and is refused as `pa_stale_version` with no
-prompt after it.
+now checks that a new revision for the same key returns `pa_stale_version`,
+while replacement of the authenticated key returns `pa_revoked`. Neither
+request reaches the provider.
 
 ## Still pending, not proved here
 

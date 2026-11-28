@@ -138,6 +138,8 @@ type LocalRequest struct {
 	// does, so a viewer cannot name another one. Empty is a request this
 	// machine makes of itself, such as the publisher's own reads.
 	Viewer string
+	// ViewerKey is the key that verified this sender's encrypted request.
+	ViewerKey ed25519.PublicKey
 }
 
 // LocalResponse is what that route answered. ContentType matters for exactly
@@ -192,6 +194,19 @@ type Authority struct {
 	// ReadTranscriptAllows is set only after the machine rechecks the viewer's
 	// current roster capability and signing key for the separate r/ rail.
 	ReadTranscriptAllows bool
+}
+
+// AllowsContentRead reports the same permission used by Session content reads.
+func (a Authority) AllowsContentRead() bool {
+	_, denied := contentReadRefusal(a)
+	return !denied
+}
+
+// AllowsOperation reports whether the current authority permits the operation
+// used to obtain it. Callers requesting write authority must enable its gate.
+func (a Authority) AllowsOperation() bool {
+	_, denied := authorityRefusal(a)
+	return !denied
 }
 
 // Bridge answers Cloud requests out of this machine's local routes.
@@ -716,7 +731,7 @@ func (b Bridge) route(ctx context.Context, cmd Command, plan plan, o op) Answer 
 	// Every viewer on the account reaches the routes holding this machine's
 	// own credential, so the sender is what makes one phone's subscriptions
 	// and receipts its own rather than the whole account's.
-	req.Viewer = cmd.Sender
+	req.Viewer, req.ViewerKey = cmd.Sender, cmd.VerifiedKey
 	if !o.read && !o.readLevel {
 		ctx = app.WithOperationCheck(ctx, func() error {
 			if refusal, denied := b.authorize(ctx, cmd.Sender, cmd.VerifiedKey, true); denied {
@@ -782,7 +797,10 @@ func (b Bridge) authorizeTranscript(ctx context.Context, sender string, verified
 		return Refusal{Status: 503, Code: "read_transcript_unavailable",
 			Message: "This machine cannot check transcript permissions now.", fixedCopy: true}, true
 	}
-	a := b.TranscriptAuthority(ctx, sender, verifiedKey)
+	return contentReadRefusal(b.TranscriptAuthority(ctx, sender, verifiedKey))
+}
+
+func contentReadRefusal(a Authority) (Refusal, bool) {
 	if refusal, denied := authorityRefusal(a); denied {
 		return refusal, true
 	}

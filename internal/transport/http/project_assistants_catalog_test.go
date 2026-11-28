@@ -59,8 +59,7 @@ func TestProjectAssistantCatalogBridgeThroughServerAndRegistry(t *testing.T) {
 		"owner":  f.pin(t, "owner", adaptercloud.ScopeOperate, false),
 		"reader": f.pin(t, "reader", adaptercloud.ScopeReadOnly, false),
 	}
-	router := &paCatalogBridgeRouter{local: cloudtransport.Router{Handler: f.h,
-		Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}}
+	router := &paCatalogBridgeRouter{local: f.cloudRouter()}
 	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: router,
 		AllowCommands: func() bool { return false }}
 	sequence := uint64(0)

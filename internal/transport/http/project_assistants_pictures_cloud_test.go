@@ -20,7 +20,6 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // This starts at the verified/decrypted sender seam and uses the production
@@ -36,7 +35,7 @@ func TestProjectAssistantPicturesCloudUploadReadReplayAndRevocation(t *testing.T
 	f.enable(t)
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
 	pins := map[string]adaptercloud.PinnedDevice{"owner": f.pin(t, "owner", adaptercloud.ScopeOperate, false), "reader": f.pin(t, "reader", adaptercloud.ScopeReadOnly, false)}
-	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 	ask := func(sender, word string, fields map[string]any) cloudops.Answer {
 		t.Helper()
 		fields["type"] = "project-assistants." + word

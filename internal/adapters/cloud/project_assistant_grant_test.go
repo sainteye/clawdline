@@ -33,7 +33,11 @@ func writeAssistantPins(t *testing.T, store *PinnedStore, record pinnedRecord) {
 
 func requireAssistantGrant(t *testing.T, store *PinnedStore, account, sender string) AssistantViewerGrant {
 	t.Helper()
-	grant, err := store.ProjectAssistantGrant(account, sender)
+	key, ok, err := store.PublicKeyFor(sender)
+	if err != nil || !ok {
+		t.Fatalf("no active fixture key for %q: %v", sender, err)
+	}
+	grant, err := store.VerifiedProjectAssistantGrant(account, sender, key)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +134,14 @@ func TestProjectAssistantGrantFollowsEffectiveScopeWithoutChangingViewerScope(t 
 	if scope, err := store.ViewerScope("missing"); err != nil || scope != ScopeOperate {
 		t.Fatalf("legacy missing-pin scope changed: %q %v", scope, err)
 	}
-	if grant, err := store.ProjectAssistantGrant("account", "missing"); !errors.Is(err, ErrViewerNotPinned) || grant != (AssistantViewerGrant{}) {
-		t.Fatalf("missing pin produced an assistant grant: %+v %v", grant, err)
+	if grant, err := store.VerifiedProjectAssistantGrant("account", "missing", nil); !errors.Is(err, ErrViewerNotPinned) || grant != (AssistantViewerGrant{}) {
+		t.Fatalf("missing proof produced an assistant grant: %+v %v", grant, err)
+	}
+	key, _ := assistantPin(t, "missing").Key()
+	grant, err := store.VerifiedProjectAssistantGrant("account", "missing", key)
+	owner, reader := ProjectAssistantOwnerIdentity("account")
+	if err != nil || grant.PrincipalID != owner || grant.ReaderID != reader {
+		t.Fatalf("verified legacy viewer lost the account reader: %+v %v", grant, err)
 	}
 	if _, err := os.Stat(store.Path()); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("missing-pin read created a file: %v", err)
@@ -163,6 +173,7 @@ func TestProjectAssistantGrantFollowsEffectiveScopeWithoutChangingViewerScope(t 
 
 func TestProjectAssistantGrantRejectsInvalidPins(t *testing.T) {
 	valid := assistantPin(t, "viewer")
+	key, _ := valid.Key()
 	for _, test := range []struct {
 		name   string
 		mutate func(*pinnedRecord)
@@ -170,7 +181,6 @@ func TestProjectAssistantGrantRejectsInvalidPins(t *testing.T) {
 	}{
 		{"no account", func(r *pinnedRecord) { r.AccountID = "" }, ErrViewerNotPinned},
 		{"wrong account", func(r *pinnedRecord) { r.AccountID = "other" }, ErrViewerNotPinned},
-		{"missing sender", func(r *pinnedRecord) { r.Devices = nil }, ErrViewerNotPinned},
 		{"pending", func(r *pinnedRecord) { r.Devices[0].PairingPending = true }, ErrViewerNotPinned},
 		{"revoked", func(r *pinnedRecord) { r.Devices[0].RevokedAt = 1 }, ErrViewerNotPinned},
 		{"expired", func(r *pinnedRecord) { r.Devices[0].ExpiresAt = 1 }, ErrViewerNotPinned},
@@ -194,7 +204,7 @@ func TestProjectAssistantGrantRejectsInvalidPins(t *testing.T) {
 			record := pinnedRecord{Version: 1, AccountID: "account", Devices: []PinnedDevice{valid}}
 			test.mutate(&record)
 			writeAssistantPins(t, store, record)
-			grant, err := store.ProjectAssistantGrant("account", "viewer")
+			grant, err := store.VerifiedProjectAssistantGrant("account", "viewer", key)
 			if !errors.Is(err, test.want) || grant != (AssistantViewerGrant{}) {
 				t.Fatalf("invalid pin granted authority: %+v %v; want %v", grant, err, test.want)
 			}
@@ -205,7 +215,7 @@ func TestProjectAssistantGrantRejectsInvalidPins(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, args := range [][2]string{{"", "viewer"}, {"account", ""}, {" account", "viewer"}, {"account", " viewer"}} {
-		grant, err := store.ProjectAssistantGrant(args[0], args[1])
+		grant, err := store.VerifiedProjectAssistantGrant(args[0], args[1], key)
 		if !errors.Is(err, ErrViewerNotPinned) || grant != (AssistantViewerGrant{}) {
 			t.Fatalf("unmatched identity granted authority: %+v %v", grant, err)
 		}
@@ -254,10 +264,11 @@ func TestProjectAssistantGrantReloadsAuthorizationAndKeepsReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertChanged()
+	key, _ := pin.Key()
 	if changed, err := writer.Revoke("viewer", time.Now()); err != nil || !changed {
 		t.Fatalf("revoke: %v %v", changed, err)
 	}
-	if _, err := reader.ProjectAssistantGrant("account", "viewer"); !errors.Is(err, ErrViewerNotPinned) {
+	if _, err := reader.VerifiedProjectAssistantGrant("account", "viewer", key); !errors.Is(err, ErrViewerNotPinned) {
 		t.Fatalf("cached authorization survived revoke: %v", err)
 	}
 	if err := writer.Pin("account", pin); err != nil {
@@ -268,24 +279,25 @@ func TestProjectAssistantGrantReloadsAuthorizationAndKeepsReader(t *testing.T) {
 	if err := writer.Pin("account", pin); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.ProjectAssistantGrant("account", "viewer"); !errors.Is(err, ErrViewerNotPinned) {
+	if _, err := reader.VerifiedProjectAssistantGrant("account", "viewer", key); !errors.Is(err, ErrViewerNotPinned) {
 		t.Fatalf("cached authorization survived expiry change: %v", err)
 	}
 	writeAssistantPins(t, writer, pinnedRecord{Version: 1, AccountID: "other-account", Devices: []PinnedDevice{pin}})
-	if _, err := reader.ProjectAssistantGrant("account", "viewer"); !errors.Is(err, ErrViewerNotPinned) {
+	if _, err := reader.VerifiedProjectAssistantGrant("account", "viewer", key); !errors.Is(err, ErrViewerNotPinned) {
 		t.Fatalf("cached account survived replacement: %v", err)
 	}
 	if err := os.WriteFile(writer.Path(), []byte("{broken"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.ProjectAssistantGrant("account", "viewer"); !errors.Is(err, ErrPinnedUnreadable) {
+	if _, err := reader.VerifiedProjectAssistantGrant("account", "viewer", key); !errors.Is(err, ErrPinnedUnreadable) {
 		t.Fatalf("broken file reused cached authority: %v", err)
 	}
 	if err := writer.Forget(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := reader.ProjectAssistantGrant("account", "viewer"); !errors.Is(err, ErrViewerNotPinned) {
-		t.Fatalf("deleted file reused cached authority: %v", err)
+	legacy, err := reader.VerifiedProjectAssistantGrant("account", "viewer", key)
+	if err != nil || legacy.AuthorizationRevision == previous.AuthorizationRevision {
+		t.Fatalf("deleted file did not produce a separate legacy revision: %+v %v", legacy, err)
 	}
 }
 
@@ -369,7 +381,15 @@ func TestProjectAssistantGrantReloadsAnUnchangedFileStamp(t *testing.T) {
 	if afterInfo.Size() != info.Size() || !afterInfo.ModTime().Equal(info.ModTime()) {
 		t.Fatal("fixture did not preserve the stamp")
 	}
-	after := requireAssistantGrant(t, store, "account", "viewer")
+	oldKey, _ := pin.Key()
+	if _, err := store.VerifiedProjectAssistantGrant("account", "viewer", oldKey); !errors.Is(err, ErrPinnedUnreadable) {
+		t.Fatalf("same-stamp replacement accepted the old key: %v", err)
+	}
+	newKey, _ := replacement.Key()
+	after, err := store.VerifiedProjectAssistantGrant("account", "viewer", newKey)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if after.AuthorizationRevision == before.AuthorizationRevision || after.ReaderID != before.ReaderID {
 		t.Fatal("same-stamp key replacement did not refresh authority with the same reader")
 	}
@@ -377,7 +397,9 @@ func TestProjectAssistantGrantReloadsAnUnchangedFileStamp(t *testing.T) {
 
 func TestProjectAssistantGrantSerializesWithScopeChanges(t *testing.T) {
 	store := NewPinnedStore(t.TempDir())
-	if err := store.Pin("account", assistantPin(t, "viewer")); err != nil {
+	pin := assistantPin(t, "viewer")
+	key, _ := pin.Key()
+	if err := store.Pin("account", pin); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.SetScope("viewer", ScopeReadOnly); err != nil {
@@ -406,7 +428,7 @@ func TestProjectAssistantGrantSerializesWithScopeChanges(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < 40; i++ {
-			grant, err := store.ProjectAssistantGrant("account", "viewer")
+			grant, err := store.VerifiedProjectAssistantGrant("account", "viewer", key)
 			if err != nil || (grant != readonly && grant != operate) {
 				t.Errorf("mixed authorization snapshot: %+v %v", grant, err)
 				return

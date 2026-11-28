@@ -18,7 +18,6 @@ import (
 	servers "github.com/sainteye/clawdline/internal/app/botdevserver"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	"github.com/sainteye/clawdline/internal/contract"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func TestDevServerCloudWordsReachPairedSourceAndKeepKnownHandleFences(t *testing.T) {
@@ -47,7 +46,7 @@ func TestDevServerCloudWordsReachPairedSourceAndKeepKnownHandleFences(t *testing
 	if err = host.Enable(ctx); err != nil {
 		t.Fatal(err)
 	}
-	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 	sequence := 0
 	call := func(sender, word string, fields map[string]any) (int, json.RawMessage) {
 		t.Helper()
