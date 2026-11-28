@@ -38,6 +38,7 @@ func TestBotRequestKeepsItsPathAndResolvesAVerdictCommit(t *testing.T) {
 	look := fakeTurns{
 		turns:     map[string]pa.Turn{"t1": {ID: "t1", MessageID: "msg-1", Origin: pa.UserOrigin}},
 		exchanges: map[string]pa.Exchange{"x1": {ID: "x1", Source: pa.ExchangeEndpoint{Key: brBot("lead").Key, ConversationID: "c"}, SourceTurnID: "t1"}},
+		bots:      map[pa.BotKey]pa.Bot{brBot("rev").Key: brBot("rev")},
 	}
 	lead := botRequestTurn{Bot: brBot("lead"), Conversation: "c", Turn: look.turns["t1"], Directory: dir}
 	rev := botRequestTurn{Bot: brBot("rev"), Conversation: "c2", Turn: pa.Turn{ID: "t2", MessageID: "m2", Origin: pa.BotRequestOrigin, ExchangeID: "x1"}, Directory: dir}

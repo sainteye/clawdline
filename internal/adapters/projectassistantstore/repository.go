@@ -152,6 +152,13 @@ func (s *Store) Bot(ctx context.Context, key pa.BotKey) (pa.Bot, error) {
 	a, e := loadHead(ctx, s.db, key)
 	return a.Bot, e
 }
+
+// BotInTransaction reads a Bot's current identity inside a Bot request card's write.
+func (s *Store) BotInTransaction(ctx context.Context, tx *sql.Tx, key pa.BotKey) (pa.Bot, error) {
+	a, err := loadHead(ctx, tx, key)
+	return a.Bot, err
+}
+
 func (s *Store) Conversation(ctx context.Context, key pa.BotKey, id string) (pa.Conversation, error) {
 	a, e := loadHead(ctx, s.db, key)
 	if e != nil {

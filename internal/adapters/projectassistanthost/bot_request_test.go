@@ -2,7 +2,9 @@ package projectassistanthost
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -18,6 +20,14 @@ import (
 type fakeTurns struct {
 	turns     map[string]pa.Turn
 	exchanges map[string]pa.Exchange
+	bots      map[pa.BotKey]pa.Bot
+}
+
+func (f fakeTurns) BotInTransaction(_ context.Context, _ *sql.Tx, key pa.BotKey) (pa.Bot, error) {
+	if b, ok := f.bots[key]; ok {
+		return b, nil
+	}
+	return pa.Bot{}, failure(pa.NotFound, "bot")
 }
 
 func (f fakeTurns) Turn(_ context.Context, _ pa.BotKey, id string) (pa.Turn, error) {
@@ -117,6 +127,208 @@ func TestBotRequestOnePersonMessageThroughTwoBotsIsOneCard(t *testing.T) {
 	}
 	if len(second.Card.Chain) != 2 || second.Card.Authorities[0].MessageID != "msg-1" {
 		t.Fatalf("chain %v authority %+v", second.Card.Chain, second.Card.Authorities)
+	}
+}
+
+func TestBotRequestHandoffJoinsOnlyAnEligibleProjectBot(t *testing.T) {
+	s := brOpen(t)
+	ctx := t.Context()
+	lead, reviewer, foreign, hidden := brBot("lead"), brBot("reviewer"), brBot("foreign"), brBot("hidden")
+	foreign.Project.ProjectID = "different-project"
+	hidden.Hidden = true
+	look := fakeTurns{bots: map[pa.BotKey]pa.Bot{reviewer.Key: reviewer, foreign.Key: foreign, hidden.Key: hidden}}
+	turn := botRequestTurn{Bot: lead, Conversation: "c", Turn: pa.Turn{ID: "t1", MessageID: "msg-handoff", Origin: pa.UserOrigin}}
+	out, err := brCall(t, s, look, turn, "bot_request_create", map[string]any{"idempotency_key": "create", "title": "Handoff", "checklist": []string{"ship"}})
+	card := brCreated(t, out, err)
+	handoff := func(turn botRequestTurn, recipient string) (any, error) {
+		return brCall(t, s, look, turn, "bot_request_handoff", botRequestArgs{
+			CardID: card.ID, ExpectedVersion: card.Version, IdempotencyKey: recipient, ToBot: recipient, Role: br.RoleReviewer,
+		})
+	}
+	for _, target := range []string{"missing", foreign.Key.BotID, hidden.Key.BotID} {
+		if _, err := handoff(turn, target); br.CodeOf(err) != br.CodeForbidden {
+			t.Errorf("ineligible recipient %s: %v", target, err)
+		}
+	}
+	stranger := turn
+	stranger.Bot = brBot("stranger")
+	if _, err := handoff(stranger, reviewer.Key.BotID); br.CodeOf(err) != br.CodeForbidden {
+		t.Fatalf("stranger handed off the card: %v", err)
+	}
+	before, err := s.BotRequestCard(ctx, card.ID)
+	if err != nil || before.Version != card.Version || !slices.Equal(before.Chain, []string{lead.Key.BotID}) {
+		t.Fatalf("refused handoff changed the card: %+v, %v", before, err)
+	}
+	for attempt := 0; attempt < 2; attempt++ {
+		out, err := handoff(turn, reviewer.Key.BotID)
+		if err != nil {
+			t.Fatalf("handoff without a preceding message, attempt %d: %v", attempt, err)
+		}
+		got := out.(botRequestReply)
+		if got.Card.Baton.Bot != reviewer.Key.BotID || !slices.Equal(got.Card.Chain, []string{lead.Key.BotID, reviewer.Key.BotID}) ||
+			got.Card.Version != card.Version+1 || got.Replayed != (attempt == 1) {
+			t.Fatalf("handoff %d: %+v", attempt, got)
+		}
+	}
+}
+
+func TestBotRequestToolsResolveShortCardIDs(t *testing.T) {
+	s := brOpen(t)
+	ctx := t.Context()
+	lead, reviewer := brBot("lead"), brBot("reviewer")
+	look := fakeTurns{bots: map[pa.BotKey]pa.Bot{lead.Key: lead, reviewer.Key: reviewer}}
+	turn := botRequestTurn{Bot: lead}
+	const first = "aaaaaaaa-1111-8111-8111-111111111111"
+	const second = "aaaaaaaa-2222-8222-8222-222222222222"
+	for _, id := range []string{first, second} {
+		card, err := br.NewCard(id, lead.Project.ProjectID, "", lead.Key.BotID, br.Authority{Bot: lead.Key.BotID, MessageID: id},
+			br.CreateInput{Title: "Short IDs", Checklist: []string{"ship"}}, brNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err = s.CreateBotRequest(ctx, card); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("read", func(t *testing.T) {
+		out, err := brCall(t, s, look, turn, "bot_request_read", botRequestArgs{CardID: first[:10]})
+		if err != nil || out.(botRequestReply).Card.ID != first {
+			t.Fatalf("unique prefix did not read the card: %+v, %v", out, err)
+		}
+		for _, name := range []string{"bot_request_read", "bot_request_handoff", "bot_request_check"} {
+			_, err := brCall(t, s, look, turn, name, botRequestArgs{
+				CardID: first[:8], IdempotencyKey: "ambiguous", ExpectedVersion: 1, ToBot: reviewer.Key.BotID, Role: br.RoleReviewer,
+			})
+			var refusal *br.Refusal
+			if !errors.As(err, &refusal) || refusal.Code != "bot_request_ambiguous" {
+				t.Errorf("%s accepted an ambiguous prefix: %v", name, err)
+				continue
+			}
+			b, _ := json.Marshal(refusal)
+			if !strings.Contains(string(b), first) || !strings.Contains(string(b), second) {
+				t.Errorf("%s omitted candidates: %s", name, b)
+			}
+		}
+		if _, err := brCall(t, s, look, turn, "bot_request_read", botRequestArgs{CardID: first[:7]}); br.CodeOf(err) != br.CodeNotFound {
+			t.Fatalf("prefix shorter than eight characters resolved: %v", err)
+		}
+	})
+	t.Run("handoff and check", func(t *testing.T) {
+		args := botRequestArgs{CardID: first[:10], IdempotencyKey: "handoff", ExpectedVersion: 1, ToBot: lead.Key.BotID, Role: br.RoleReviewer}
+		out, err := brCall(t, s, look, turn, "bot_request_handoff", args)
+		if err != nil || out.(botRequestReply).Card.ID != first {
+			t.Fatalf("handoff by prefix: %+v, %v", out, err)
+		}
+		args.CardID = first
+		out, err = brCall(t, s, look, turn, "bot_request_handoff", args)
+		if err != nil || !out.(botRequestReply).Replayed {
+			t.Fatalf("full ID did not replay the prefix write: %+v, %v", out, err)
+		}
+		args = botRequestArgs{CardID: first[:10], IdempotencyKey: "check", ExpectedVersion: 2, Entries: []br.Mark{{Label: "ship", State: br.EntryDone, Note: "shipped"}}}
+		out, err = brCall(t, s, look, turn, "bot_request_check", args)
+		if err != nil || out.(botRequestReply).Done != 1 {
+			t.Fatalf("check by prefix: %+v, %v", out, err)
+		}
+	})
+	t.Run("batch check", func(t *testing.T) {
+		args := botRequestArgs{IdempotencyKey: "batch",
+			Cards:   []store.BotRequestCheckTarget{{CardID: first[:8], Expected: 1}, {CardID: second[:10], Expected: 1}},
+			Entries: []br.Mark{{Label: "ship", State: br.EntryDone, Note: "shipped"}}}
+		out, err := brCall(t, s, look, turn, "bot_request_check", args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		results := out.(map[string]any)["results"].([]store.BotRequestCheckResult)
+		b, _ := json.Marshal(results[0])
+		if results[0].Code != "bot_request_ambiguous" || !strings.Contains(string(b), first) || !strings.Contains(string(b), second) ||
+			results[1].Outcome != "ok" || results[1].CardID != second {
+			t.Fatalf("batch results: %+v", results)
+		}
+		args.Cards = []store.BotRequestCheckTarget{{CardID: second, Expected: 1}}
+		out, err = brCall(t, s, look, turn, "bot_request_check", args)
+		if err != nil || out.(map[string]any)["results"].([]store.BotRequestCheckResult)[0].Outcome != "unchanged" {
+			t.Fatalf("full ID did not replay the batch prefix write: %+v, %v", out, err)
+		}
+	})
+}
+
+func TestBotRequestPeerThreadDispatchUsesVerifiedWorkOwner(t *testing.T) {
+	ctx := t.Context()
+	f := newHostFixture(t)
+	f.o.Limits.MaxBots = 4
+	f.start(t)
+	f.enable(t)
+	maker, asker := f.create(t, "maker"), f.create(t, "asker")
+	makeCard := func(owner pa.Bot, msg string) br.Card {
+		t.Helper()
+		in := br.CreateInput{Title: "Peer work", Checklist: []string{"ship"}}
+		c, err := br.NewCard(br.CardID(owner.Key.MachineID, asker.Key.BotID, asker.ConversationID, msg), owner.Project.ProjectID, "", owner.Key.BotID,
+			br.Authority{Bot: asker.Key.BotID, MessageID: msg}, in, brNow)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.JoinChain(asker.Key.BotID)
+		c, _, err = f.o.Broker.Store.CreateBotRequest(ctx, c)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	card, unrelated := makeCard(maker, "accepted"), makeCard(asker, "refused")
+	foreignMaker := maker
+	foreignMaker.Project.ProjectID = "different-project"
+	foreign := makeCard(foreignMaker, "wrong-project")
+	if _, err := f.send(t, asker, "ask"); err != nil {
+		t.Fatal(err)
+	}
+	main := fixtureReceive(t, f.p.sessions)
+	fixtureReceive(t, f.p.sent)
+	x, err := main.q.Tools.(peerWorkTools).MessageBot(pa.WithBotRequest(ctx, card.ID),
+		pa.BotMessageRequest{TargetBotID: maker.Key.BotID, Text: "Please dispatch this card's work.", IdempotencyKey: "ask"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	main.reply <- app.PromptResult{FinalText: "Asked the maker."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, asker.Key, x.SourceTurnID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	f.h.tickBackgroundTasks(ctx)
+	worker := fixtureReceive(t, f.p.sessions)
+	request := fixtureReceive(t, f.p.sent)
+	if request.Turn.Origin != pa.BotRequestOrigin || worker.q.Bot.Key == maker.Key || card.InChain(worker.q.Bot.Key.BotID) {
+		t.Fatalf("wanted a private peer worker outside the chain: %+v", request.Turn)
+	}
+	tools := worker.q.Tools.(peerWorkTools)
+	for _, id := range []string{unrelated.ID, foreign.ID} {
+		_, err := tools.Dispatch(pa.WithBotRequest(ctx, id), "denied-"+id, "Unrelated work", "Change a.go.", []string{"a.go"})
+		var refusal *pa.Failure
+		if !errors.As(err, &refusal) || refusal.Code != pa.ScopeDenied || refusal.Field != "bot_request_chain" {
+			t.Fatalf("nonmember or cross-Project dispatch: %v", err)
+		}
+	}
+	link, err := tools.Dispatch(pa.WithBotRequest(ctx, card.ID), "peer-card", "Card work", "Change a.go.", []string{"a.go"})
+	if err != nil || link.BotRequestID != card.ID || link.Fence.Key != maker.Key {
+		t.Fatalf("card holder's private peer thread could not dispatch: %+v, %v", link, err)
+	}
+	again, err := tools.Dispatch(pa.WithBotRequest(ctx, card.ID[:8]), "peer-card", "Card work", "Change a.go.", []string{"a.go"})
+	if err != nil || again.TaskID != link.TaskID {
+		t.Fatalf("short ID did not replay the full ID dispatch: %+v, %v", again, err)
+	}
+	collision := card
+	collision.ID = card.ID[:8] + "-ffff-8fff-8fff-ffffffffffff"
+	if _, _, err = f.o.Broker.Store.CreateBotRequest(ctx, collision); err != nil {
+		t.Fatal(err)
+	}
+	_, err = tools.Dispatch(pa.WithBotRequest(ctx, card.ID[:8]), "ambiguous", "Card work", "Change a.go.", []string{"a.go"})
+	var ambiguous *br.Refusal
+	if !errors.As(err, &ambiguous) || ambiguous.Code != br.CodeAmbiguous || ambiguous.Field != "bot_request_id" ||
+		!slices.Contains(ambiguous.Candidates, card.ID) || !slices.Contains(ambiguous.Candidates, collision.ID) {
+		t.Fatalf("dispatch did not return both candidates: %v", err)
+	}
+	var invalid *pa.Failure
+	if _, err := tools.Status(ctx, link.TaskID[:8]); !errors.As(err, &invalid) || invalid.Code != pa.Invalid || invalid.Field != "task_id" {
+		t.Fatalf("work_status short task ID: %v", err)
 	}
 }
 
@@ -349,7 +561,7 @@ func TestBotRequestHandoffWakesOnceAndScopesDispatchToTheCard(t *testing.T) {
 	if _, err := handTools.Dispatch(pa.WithBotRequest(ctx, "00000000-0000-8000-8000-000000000000"), "hand-other", "Other", "Read d.go.", []string{}); br.CodeOf(err) != br.CodeHandoffScope {
 		t.Fatalf("dispatch naming another card in a handoff turn: %v", err)
 	}
-	second, err := handTools.Dispatch(named, "hand-card", "Second part", "Change a.go again.", []string{"a.go"})
+	second, err := handTools.Dispatch(pa.WithBotRequest(ctx, card.ID[:8]), "hand-card", "Second part", "Change a.go again.", []string{"a.go"})
 	if err != nil || second.BotRequestID != card.ID {
 		t.Fatalf("dispatch naming the card in its handoff turn: %+v %v", second, err)
 	}

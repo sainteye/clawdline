@@ -399,25 +399,25 @@ func (s *toolScope) bindTeamTools(tools *NativeWork) {
 		return r.ListBots(ctx, q.Binding.Fence, turnID, request)
 	}
 	tools.messageBot = func(ctx context.Context, request pa.BotMessageRequest) (pa.Exchange, error) {
-		named := pa.BotRequestFrom(ctx)
-		cards := h.botRequestCards()
-		if _, e := botRequestDispatchScope(ctx, cards, nil, q.Bot.Key.BotID, turn, named); e != nil {
-			return pa.Exchange{}, e
-		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return pa.Exchange{}, e
 		}
 		defer cancel()
+		cards := h.botRequestCards()
+		named, e := resolveDispatchBotRequestID(ctx, cards)
+		if e != nil {
+			return pa.Exchange{}, e
+		}
+		if _, e = botRequestDispatchScope(ctx, cards, nil, q.Bot.Key.BotID, turn, named); e != nil {
+			return pa.Exchange{}, e
+		}
 		if e = journal(ctx, "messageBot"); e != nil {
 			return pa.Exchange{}, e
 		}
 		if named != "" {
 			// The recipient joins the card's chain before it is messaged, so
 			// the work it dispatches for the card is accepted (§7.1).
-			if cards == nil {
-				return pa.Exchange{}, failure(pa.Unsupported, "bot_request_store")
-			}
 			if _, e = cards.JoinBotRequestChain(ctx, named, q.Bot.Key.BotID, request.TargetBotID, h.o.Clock()); e != nil {
 				return pa.Exchange{}, botRequestStoreError(e)
 			}
@@ -813,22 +813,26 @@ func (s *toolScope) bindDispatchTools(tools *NativeWork) {
 		return r.Publish(ctx, app.ProtocolEvent{ID: id, Fence: q.Binding.Fence, TurnID: turnID, Message: text, ForPerson: true})
 	}
 	tools.dispatch = func(ctx context.Context, id, title, brief string, claims []string, project, persona, boardItemID string, continueOnCompletion bool) (pa.WorkLink, error) {
-		botRequestID := pa.BotRequestFrom(ctx)
-		if e := dispatchScope(ctx, h.botRequestCards(), q.Bot.Key.BotID, turn, botRequestID); e != nil {
-			return pa.WorkLink{}, e
-		}
-		// A request from another machine has no dispatch authority.
-		if turn.Origin == pa.NetworkRequestOrigin {
-			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
-		}
-		if continueOnCompletion && !directUserTurn(turn) {
-			return pa.WorkLink{}, failure(pa.ScopeDenied, "work_completion_origin")
-		}
 		ctx, cancel, e := bound(ctx)
 		if e != nil {
 			return pa.WorkLink{}, e
 		}
 		defer cancel()
+		// A request from another machine has no dispatch authority.
+		if turn.Origin == pa.NetworkRequestOrigin {
+			return pa.WorkLink{}, failure(pa.ScopeDenied, "peer_dispatch")
+		}
+		cards := h.botRequestCards()
+		botRequestID, e := resolveDispatchBotRequestID(ctx, cards)
+		if e != nil {
+			return pa.WorkLink{}, e
+		}
+		if e = dispatchScope(ctx, cards, q.Bot.Key.BotID, turn, botRequestID); e != nil {
+			return pa.WorkLink{}, e
+		}
+		if continueOnCompletion && !directUserTurn(turn) {
+			return pa.WorkLink{}, failure(pa.ScopeDenied, "work_completion_origin")
+		}
 		if actor.CapabilityID == "" {
 			return pa.WorkLink{}, failure(pa.ScopeDenied, "dispatch_policy")
 		}

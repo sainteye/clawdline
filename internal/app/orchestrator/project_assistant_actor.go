@@ -274,6 +274,7 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 	if q.TurnID != c.ActiveTurnID {
 		return c, assistantFailure(pa.StaleVersion, "work_turn")
 	}
+	var workOwner pa.Fence
 	if q.OwnerTurnID != "" || q.OwnerFence != (pa.Fence{}) {
 		// Only a thread worker answering another Bot hands its work to the
 		// main chat the host resolved for it, and only for plain work in
@@ -284,6 +285,7 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 			q.OwnerFence.ConversationID != owner.ConversationID || q.BoardItemID != "" || q.ContinueOnCompletion || q.TargetProject != (pa.ProjectScope{}) {
 			return c, assistantFailure(pa.ScopeDenied, "work_owner")
 		}
+		workOwner = owner
 	}
 	if _, err = admitPersona(assistantPersona(q)); err != nil {
 		return c, assistantFailure(pa.Invalid, "persona")
@@ -325,7 +327,7 @@ func (b *Broker) checkAssistantRequest(ctx context.Context, q pa.WorkRequest) (A
 		}
 	}
 	if q.BotRequestID != "" {
-		card, err := b.botRequestCard(ctx, q.BotRequestID, q.Actor.Fence.Key.BotID)
+		card, err := b.botRequestCard(ctx, q.BotRequestID, q.Actor.Fence.Key.BotID, workOwner)
 		if err != nil {
 			return c, err
 		}

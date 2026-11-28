@@ -2,6 +2,7 @@ package projectassistanthost
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -29,6 +30,7 @@ type botRequestStore interface {
 	UpdateBotRequest(context.Context, store.BotRequestWrite) (store.BotRequestResult, error)
 	CheckBotRequests(context.Context, br.Actor, string, []store.BotRequestCheckTarget, []br.Mark, time.Time) ([]store.BotRequestCheckResult, error)
 	BotRequestCard(context.Context, string) (br.Card, error)
+	ResolveBotRequestID(context.Context, string) (string, error)
 	JoinBotRequestChain(ctx context.Context, cardID, by, bot string, now time.Time) (br.Card, error)
 }
 
@@ -53,10 +55,11 @@ func (h *Host) BotRequestStalls(ctx context.Context, holds []featurestore.BotReq
 	return st.BotRequestStalls(ctx, h.o.MachineID, holds)
 }
 
-// botTurnLookup reads the turns and exchanges a creation walks back through.
+// botTurnLookup reads a creation's origin and a handoff's recipient.
 type botTurnLookup interface {
 	Turn(context.Context, pa.BotKey, string) (pa.Turn, error)
 	Exchange(context.Context, pa.BotKey, string) (pa.Exchange, error)
+	BotInTransaction(context.Context, *sql.Tx, pa.BotKey) (pa.Bot, error)
 }
 
 // botRequestTurn is what a card tool knows about the turn that called it.
@@ -150,7 +153,11 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 		if q.CardID == "" {
 			return nil, &br.Refusal{Code: br.CodeInvalid, Field: "card_id"}
 		}
-		c, err := s.BotRequestCard(ctx, q.CardID)
+		id, err := s.ResolveBotRequestID(ctx, q.CardID)
+		if err != nil {
+			return nil, botRequestStoreError(err)
+		}
+		c, err := s.BotRequestCard(ctx, id)
 		if err != nil {
 			return nil, botRequestStoreError(err)
 		}
@@ -197,17 +204,33 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 	if q.ExpectedVersion <= 0 {
 		return nil, &br.Refusal{Code: br.CodeInvalid, Field: "expected_version"}
 	}
-	var apply func(*br.Card) ([]br.Event, error)
+	cardID, err := s.ResolveBotRequestID(ctx, q.CardID)
+	if err != nil {
+		return nil, botRequestStoreError(err)
+	}
+	write := store.BotRequestWrite{CardID: cardID, Expected: q.ExpectedVersion, Actor: actor, Key: key, Now: now}
 	switch name {
 	case "bot_request_handoff":
-		apply = func(c *br.Card) ([]br.Event, error) {
+		write.Apply = func(c *br.Card) ([]br.Event, error) {
 			if err := c.Handoff(actor, q.ToBot, q.Role, q.Note); err != nil {
 				return nil, err
 			}
 			return []br.Event{{Kind: br.EventHanded, Detail: q.Note}}, nil
 		}
+		write.Validate = func(tx *sql.Tx, c br.Card) error {
+			key := pa.BotKey{MachineID: t.Bot.Key.MachineID, BotID: c.Baton.Bot}
+			target, err := look.BotInTransaction(ctx, tx, key)
+			if err != nil && pa.Code(err) != pa.NotFound {
+				return err
+			}
+			if err != nil || target.Hidden || target.Project != t.Bot.Project || target.Project.ProjectID != c.ProjectID {
+				return &br.Refusal{Code: br.CodeForbidden, Field: "to_bot",
+					Reason: "The recipient must be a visible Bot on this machine in the same Project as you and the card. Choose a recipient from that Project. 接棒者必須是同一台裝置上、與你及交辦卡同 Project 的可見 Bot。請改選該 Project 的 Bot。"}
+			}
+			return nil
+		}
 	case "bot_request_check":
-		apply = func(c *br.Card) ([]br.Event, error) {
+		write.Apply = func(c *br.Card) ([]br.Event, error) {
 			return c.CheckEvents(actor, q.Entries, now)
 		}
 	case "bot_request_verdict":
@@ -216,14 +239,14 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 		if err != nil {
 			return nil, err
 		}
-		apply = func(c *br.Card) ([]br.Event, error) {
+		write.Apply = func(c *br.Card) ([]br.Event, error) {
 			if err := c.RecordVerdict(actor, verdictID, commit, q.Verdict, q.Text, now); err != nil {
 				return nil, err
 			}
 			return []br.Event{{Kind: br.EventVerdict, Detail: q.Verdict}}, nil
 		}
 	case "bot_request_wait_person":
-		apply = func(c *br.Card) ([]br.Event, error) {
+		write.Apply = func(c *br.Card) ([]br.Event, error) {
 			changed, err := c.SetWaiting(actor, q.QuestionID)
 			if err != nil || !changed {
 				return nil, err
@@ -235,7 +258,7 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 			return []br.Event{{Kind: kind, Detail: q.QuestionID}}, nil
 		}
 	case "bot_request_done":
-		apply = func(c *br.Card) ([]br.Event, error) {
+		write.Apply = func(c *br.Card) ([]br.Event, error) {
 			changed, err := c.Done(actor, now)
 			if err != nil || !changed {
 				return nil, err
@@ -245,7 +268,7 @@ func botRequestTool(ctx context.Context, s botRequestStore, look botTurnLookup, 
 	default:
 		return nil, failure(pa.Unsupported, "bot_request_tool")
 	}
-	res, err := s.UpdateBotRequest(ctx, store.BotRequestWrite{CardID: q.CardID, Expected: q.ExpectedVersion, Actor: actor, Key: key, Now: now, Apply: apply})
+	res, err := s.UpdateBotRequest(ctx, write)
 	if err != nil {
 		return nil, botRequestStoreError(err)
 	}
@@ -293,6 +316,29 @@ func botRequestStoreError(err error) error {
 		return &br.Refusal{Code: br.CodeNotFound, Field: "card_id"}
 	}
 	return err
+}
+
+// resolveDispatchBotRequestID canonicalizes a card before the scope check or
+// dispatch hash, so a full ID and its unique prefix name the same operation.
+func resolveDispatchBotRequestID(ctx context.Context, s botRequestStore) (string, error) {
+	named := pa.BotRequestFrom(ctx)
+	if named == "" {
+		return "", nil
+	}
+	if s == nil {
+		return "", failure(pa.Unsupported, "bot_request_store")
+	}
+	id, err := s.ResolveBotRequestID(ctx, named)
+	if errors.Is(err, store.ErrNoBotRequest) {
+		return "", failure(pa.NotFound, "bot_request_id")
+	}
+	var ref *br.Refusal
+	if errors.As(err, &ref) {
+		dispatchRefusal := *ref
+		dispatchRefusal.Field = "bot_request_id"
+		return "", &dispatchRefusal
+	}
+	return id, err
 }
 
 // botRequestNotice delivers one card notice from the broker's outbox as a

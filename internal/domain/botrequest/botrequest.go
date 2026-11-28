@@ -98,6 +98,7 @@ const (
 	CodeForbidden       = "bot_request_forbidden"
 	CodeInvalid         = "bot_request_invalid"
 	CodeNotFound        = "bot_request_not_found"
+	CodeAmbiguous       = "bot_request_ambiguous"
 	CodeClosed          = "bot_request_closed"
 	CodeNoAuthority     = "bot_request_no_person_authority"
 )
@@ -106,16 +107,25 @@ const (
 // input at fault when there is one; Version is the card's current version on a
 // version conflict.
 type Refusal struct {
-	Code    string `json:"code"`
-	Field   string `json:"field,omitempty"`
-	Version int64  `json:"version,omitempty"`
+	Code       string   `json:"code"`
+	Field      string   `json:"field,omitempty"`
+	Version    int64    `json:"version,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	Candidates []string `json:"candidates,omitempty"`
 }
 
 func (r *Refusal) Error() string {
+	message := r.Code
 	if r.Field != "" {
-		return r.Code + ": " + r.Field
+		message += ": " + r.Field
 	}
-	return r.Code
+	if r.Reason != "" {
+		message += ": " + r.Reason
+	}
+	if len(r.Candidates) > 0 {
+		message += ": " + strings.Join(r.Candidates, ", ")
+	}
+	return message
 }
 
 func refuse(code, field string) error { return &Refusal{Code: code, Field: field} }
@@ -247,16 +257,20 @@ func Authorize(c Card, a Actor, act Action) error {
 	creator := c.isAuthorityBot(a.Bot)
 	ok := false
 	switch act {
-	case ActEdit, ActHandoffChain:
+	case ActEdit, ActHandoffChain, ActHandoffOutside:
 		ok = holder || creator
 	case ActVerdict:
 		ok = holder && c.Baton.Role == RoleReviewer
 	case ActMark, ActWait, ActDone:
 		ok = holder
-	case ActHandoffOutside, ActCancelReopen:
+	case ActCancelReopen:
 		ok = false
 	}
 	if !ok {
+		if act == ActHandoffOutside {
+			return &Refusal{Code: CodeForbidden, Field: string(act),
+				Reason: "Only the holder, creating Bot or an authority Bot can hand the card to a new Bot. Ask one of them to hand it off. 只有持棒者、開卡 Bot 或交辦來源的 Bot 能交棒給新成員。請其中一位交棒。"}
+		}
 		return refuse(CodeForbidden, string(act))
 	}
 	return nil
@@ -401,9 +415,7 @@ func (c *Card) addEntry(label string) error {
 	return nil
 }
 
-// JoinChain adds bot to the card's chain, as a second create rooted in the
-// same message or a message_bot naming the card does. It answers whether the
-// chain changed.
+// JoinChain adds bot to the card's chain. It answers whether the chain changed.
 func (c *Card) JoinChain(bot string) bool {
 	if bot == "" || c.InChain(bot) {
 		return false
@@ -422,8 +434,8 @@ func (c Card) requireOpen() error {
 	return refuse(CodeClosed, "state")
 }
 
-// Handoff moves the baton (§7.2). The person may hand to any Bot; a Bot only
-// within the chain.
+// Handoff moves the baton and adds the recipient to the chain (§7.2).
+// The Bot tool host checks the recipient's eligibility in the card's Project.
 func (c *Card) Handoff(a Actor, toBot, role, note string) error {
 	if err := c.requireOpen(); err != nil {
 		return err

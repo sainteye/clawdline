@@ -210,6 +210,9 @@ type BotRequestWrite struct {
 	Key   string
 	Now   time.Time
 	Apply func(*br.Card) ([]br.Event, error)
+	// Validate checks related records through the same transaction before
+	// persistence. Replays and writes with no events skip it.
+	Validate func(*sql.Tx, br.Card) error
 }
 
 // BotRequestResult is what one write did.
@@ -264,6 +267,12 @@ func (s *Store) UpdateBotRequest(ctx context.Context, w BotRequestWrite) (BotReq
 		if len(events) == 0 {
 			res.Card = prev
 			return 0, nil
+		}
+		if w.Validate != nil {
+			if err := w.Validate(tx, next); err != nil {
+				res.Card = prev
+				return 0, err
+			}
 		}
 		next.Version = prev.Version + 1
 		next.UpdatedAt = w.Now
@@ -357,11 +366,12 @@ type BotRequestCheckTarget struct {
 
 // BotRequestCheckResult is one card's answer in a batch tick.
 type BotRequestCheckResult struct {
-	CardID  string `json:"card_id"`
-	Outcome string `json:"outcome"` // ok, unchanged, refused
-	Code    string `json:"code,omitempty"`
-	Field   string `json:"field,omitempty"`
-	Version int64  `json:"version,omitempty"`
+	CardID     string   `json:"card_id"`
+	Outcome    string   `json:"outcome"` // ok, unchanged, refused
+	Code       string   `json:"code,omitempty"`
+	Field      string   `json:"field,omitempty"`
+	Version    int64    `json:"version,omitempty"`
+	Candidates []string `json:"candidates,omitempty"`
 }
 
 // CheckBotRequests applies the same marks to several cards (§5, batch tick).
@@ -373,26 +383,33 @@ func (s *Store) CheckBotRequests(ctx context.Context, a br.Actor, key string, ta
 	}
 	out := make([]BotRequestCheckResult, 0, len(targets))
 	for _, t := range targets {
-		k := ""
-		if key != "" {
-			k = key + "/" + t.CardID
-		}
-		res, err := s.UpdateBotRequest(ctx, BotRequestWrite{CardID: t.CardID, Expected: t.Expected, Actor: a, Key: k, Now: now,
-			Apply: func(c *br.Card) ([]br.Event, error) {
-				events, err := c.CheckEvents(a, marks, now)
-				for i := range events {
-					if events[i].Kind == br.EventChecklistMark {
-						events[i].Detail = markDetail(marks)
+		r := BotRequestCheckResult{CardID: t.CardID}
+		id, err := s.ResolveBotRequestID(ctx, t.CardID)
+		var res BotRequestResult
+		if err == nil {
+			r.CardID = id
+			k := ""
+			if key != "" {
+				k = key + "/" + id
+			}
+			res, err = s.UpdateBotRequest(ctx, BotRequestWrite{CardID: id, Expected: t.Expected, Actor: a, Key: k, Now: now,
+				Apply: func(c *br.Card) ([]br.Event, error) {
+					events, err := c.CheckEvents(a, marks, now)
+					for i := range events {
+						if events[i].Kind == br.EventChecklistMark {
+							events[i].Detail = markDetail(marks)
+						}
 					}
-				}
-				return events, err
-			}})
-		r := BotRequestCheckResult{CardID: t.CardID, Version: res.Card.Version}
+					return events, err
+				}})
+		}
+		r.Version = res.Card.Version
 		switch {
 		case err != nil:
 			var ref *br.Refusal
 			if errors.As(err, &ref) {
 				r.Outcome, r.Code, r.Field = "refused", ref.Code, ref.Field
+				r.Candidates = ref.Candidates
 				if ref.Version != 0 {
 					r.Version = ref.Version
 				}
@@ -417,6 +434,49 @@ func markDetail(marks []br.Mark) string {
 		parts = append(parts, br.EntryKey(m.Label)+"="+m.State)
 	}
 	return strings.Join(parts, ",")
+}
+
+// ResolveBotRequestID returns a full ID for an unambiguous UUID prefix.
+// Exact IDs go straight to the caller's existing read or write.
+func (s *Store) ResolveBotRequestID(ctx context.Context, id string) (string, error) {
+	if len(id) == 36 {
+		return id, nil
+	}
+	if len(id) < 8 || len(id) > 36 {
+		return "", ErrNoBotRequest
+	}
+	for _, c := range id {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c == '-') {
+			return "", ErrNoBotRequest
+		}
+	}
+	if err := reading(); err != nil {
+		return "", err
+	}
+	rows, err := s.rd.QueryContext(ctx, `SELECT id FROM bot_request_cards WHERE id GLOB ? ORDER BY id`, id+"*")
+	if err != nil {
+		return "", err
+	}
+	defer rows.Close()
+	var candidates []string
+	for rows.Next() {
+		var match string
+		if err := rows.Scan(&match); err != nil {
+			return "", err
+		}
+		candidates = append(candidates, match)
+	}
+	if err := rows.Err(); err != nil {
+		return "", err
+	}
+	switch len(candidates) {
+	case 0:
+		return "", ErrNoBotRequest
+	case 1:
+		return candidates[0], nil
+	default:
+		return "", &br.Refusal{Code: br.CodeAmbiguous, Field: "card_id", Candidates: candidates}
+	}
 }
 
 // BotRequestCard reads one card with its checklist and verdicts.

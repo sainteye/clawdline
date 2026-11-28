@@ -127,7 +127,7 @@ card without them simply does not show them.
 | Broker task | one dispatch | attaches to a card through `bot_request_id` on the task (§8.1); a card may have none |
 | Board v2 item | the person's work | optional `board_item_id` link when the person's message named it; the card never edits or moves the item. The linked item's independent verification keeps showing on the work result card as it does now |
 | Agent proposal, Quick Session to-do | — | unrelated |
-| Bot exchange (`message_bot`) | one Bot-to-Bot request | carries `bot_request_id` so the recipient's work attaches to the same card |
+| Bot exchange (`message_bot`) | one Bot-to-Bot request | its optional `bot_request_id` adds the recipient to the chain so the recipient can name the card in a dispatch |
 
 The split in one line: the work result card is **one Session's result**; the Bot request card is
 **one request's custody** — who holds it, what review said, which steps have been reported finished.
@@ -239,7 +239,7 @@ are reserved. Tables, tool names and wire words are irreversible once shipped (�
 | Tables | `bot_request_cards`, `bot_request_events`, `bot_request_verdicts`, `bot_request_checklist`, `bot_request_receipts` |
 | Field on the broker task, the work link, `dispatch_work` and `message_bot` | `bot_request_id` (Go: `WorkLink.BotRequestID`) |
 | Bot tools | `bot_request_read`, `bot_request_create`, `bot_request_handoff`, `bot_request_verdict`, `bot_request_check`, `bot_request_wait_person`, `bot_request_split`, `bot_request_merge`, `bot_request_done` |
-| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope`; also shipped: `bot_request_forbidden`, `bot_request_invalid`, `bot_request_not_found`, `bot_request_closed`, `bot_request_no_person_authority` |
+| Refusal codes | `bot_request_checklist_open`, `bot_request_checklist_empty`, `bot_request_already_merged`, `bot_request_version_conflict`, `bot_request_handoff_scope`, `bot_request_forbidden`, `bot_request_invalid`, `bot_request_not_found`, `bot_request_ambiguous`, `bot_request_closed`, `bot_request_no_person_authority` |
 | Turn origin | `bot_request_handoff` |
 | HTTP routes | `/v1/bot-request/cards`, `/v1/bot-request/cards/<id>`, `/v1/bot-request/agent/...` |
 | Cloud wire words | `bot-request.cards`, `bot-request.card` (read) and `bot-request.write` (the person's action), API 130 |
@@ -370,8 +370,12 @@ existing card unchanged and adds that Bot to its chain. Several cards from one m
 split (§6), never from a second create.
 
 **Work attaches by naming the card.** `dispatch_work` and `message_bot` take an optional
-`bot_request_id`; the daemon checks the Bot is in the card's chain and follows `merged_into`. A
-dispatch that names no card attaches to none.
+`bot_request_id`. Dispatch follows `merged_into` and checks membership on the surviving open
+card. In a private thread answering another Bot, the Broker can also use the same-Project
+membership of the thread's verified main-chat owner. The thread keeps its own signed execution
+fence. The owner comes from the host's durable thread record and must match the Broker's existing
+delegated work checks. This allows card attachment for child work in the same Project. A dispatch
+that names no card attaches to none.
 
 **The automatic creation of revision 3 is dropped**, not kept as a safety net. It only fired on a
 writing dispatch, so it could not cover a task without one, and keeping it would leave two
@@ -382,21 +386,26 @@ the first response.
 ### 7.2 Handoff
 
 `bot_request_handoff {card_id, expected_version, to_bot, role, note, idempotency_key}` moves the
-baton, appends `baton.handed` and queues **one** host notice for the new holder, keyed by card and
-version. The note is where a Bot says what it is handing over — the commit to review, "this
-replaces that", "landed together with that card". It is prose on the card instead of prose in a
-chat, and that is all this version claims for it.
+baton, adds the recipient to the chain, appends `baton.handed` and, when the baton changes, queues
+**one** host notice for the new holder, keyed by card and version. The recipient check, card change and outbox write share
+one transaction. The holder, creating Bot and the Bot named by a person's originating message
+can hand off to a visible Bot on the same machine and in the same Project as the caller and card.
+The authority Bot and holder can hand off directly even when this is the recipient's first contact
+with the card. A Bot that lacks this authority is directed to the holder or another authorized
+Bot. An ineligible recipient is refused on `to_bot` and the caller is directed to select a visible
+Bot from the card's Project. The note can name a commit to review, a related card or the work
+being handed over.
 
 A Bot answering another Bot's request cannot call `message_bot`
-(`CheckCollaborationRequest`, `collaboration.go`) and has no dispatch (`native_work` is disabled for that turn); the card
-tools are allowed in such a turn, so a reviewer reached that way can still record its verdict and
-hand the baton on.
+(`CheckCollaborationRequest`, `collaboration.go`). It can dispatch child work within its own
+Project using the existing work policy. Card tools still apply their own card-level authority
+checks. A thread worker's delegated dispatch does not confer authority to write to cards as the
+main-chat Bot.
 
 **The handoff notice can start work (decided 2026-11-24).** The host notice that wakes the new
 holder is a turn of origin `bot_request_handoff` that carries the card id and the handoff event's
 version. Its authority roots in the card's authority — the person's original message — not in the
-Bot that handed it over. In that turn, and only there, `dispatch_work` and `message_bot` are
-accepted when all three hold:
+Bot that handed it over. For `dispatch_work` and `message_bot` in that turn, all three must hold:
 
 1. the card's state is `open` and it has an authority from a person's message (§7.1);
 2. the card's holder is the Bot running the turn (`baton.bot`), at the version the notice named or
@@ -413,8 +422,8 @@ usual hop and follow-up bounds (`MaxCollaborationHops`, `bots.follow_up_chain`) 
 |---|---|---|---|---|---|
 | Read | yes | yes | yes | yes | yes (machine read authority) |
 | Edit title / description, add a checklist entry | yes | yes | yes | no | no |
-| Hand off within the chain | yes | yes | yes | no | no |
-| Hand off to a Bot outside the chain | yes | no | no | no | no |
+| Hand off within the chain | yes | visible Bot in the same Project | visible Bot in the same Project | no | no |
+| Hand off to a Bot outside the chain | yes | visible Bot in the same Project | visible Bot in the same Project | no | no |
 | Record a verdict | no | no | only as `reviewer` | no | no |
 | Mark a checklist entry | yes | no | yes | no | no |
 | Set `waiting` | — | — | yes, with an `ask_person` id; cleared on the answer | — | — |
@@ -449,9 +458,16 @@ answers `bot_request_version_conflict` with the current one.
 `bot_request_create` takes `title`, `description`, optional `kind` and optional `checklist` (a list of
 labels); with neither a known kind nor a checklist it is refused (`bot_request_checklist_empty`).
 
-`dispatch_work` and `message_bot` gain an optional `bot_request_id` (§7.1). For `message_bot` the
-daemon checks the sender is in the chain, adds the recipient to it, and names the card in the
-recipient's turn.
+The Bot tools that take `card_id`, including each target in a batch check, also accept a unique
+prefix of at least eight characters. The same rule applies to `bot_request_id` in `dispatch_work`
+and `message_bot` (§7.1). Ambiguous prefixes return `bot_request_ambiguous` and a `candidates`
+list of full IDs in sorted order. Use a full ID or a longer unique prefix to continue. A resolved
+prefix and the full ID identify the same write or dispatch when retried with the same key.
+
+For `message_bot` the daemon checks the sender is in the chain and adds the recipient to it.
+`work_status` takes a full task ID or the dispatch idempotency key. The Broker validates
+`task_id` with `IsTaskID` before looking up the record and returns `pa_invalid` on `task_id` for
+a short ID.
 
 ### 8.3 HTTP routes
 
@@ -609,7 +625,8 @@ minimal list view is a console surface, so the gate applies to it as well.
 `_handoff`, `_check` (one card, or `cards` for a batch), `_verdict`, `_wait_person` and `_done` are
 in `mcpBotRequestTools()` (`internal/adapters/projectassistantacp/mcp.go`) and run in
 `internal/adapters/projectassistanthost/bot_request.go` against the daemon store. A card refusal
-reaches the Bot as `{code, field, version}`. Creation finds the person's message by walking a
+reaches the Bot with `code` and, where relevant, `field`, `version`, `reason` or `candidates`.
+Creation finds the person's message by walking a
 `bot_request` turn's exchange chain back to a `user` turn (at most `MaxCollaborationHops`); a turn
 from a host notice, a routine run, a room, the network, a compaction or a Bot reply is refused
 `bot_request_no_person_authority`. The card tools are offered in Bot-to-Bot turns too (§7.2).
@@ -623,7 +640,8 @@ Built on 2026-11-24 (second delivery, same API level, now 119):
   that names `bot_request_id` is refused (`draft.go`). It enters `AssistantRequestHash` and the host's
   payload hash only when non-empty, and `WorkLink.BotRequestID` is `omitempty`, so old receipts keep
   their hash. `dispatch_work` and `message_bot` take `bot_request_id`; `message_bot` adds the recipient
-  to the card's chain first (`Store.JoinBotRequestChain`).
+  to the card's chain first (`Store.JoinBotRequestChain`). A private peer-request worker can also
+  attach work using its verified main-chat owner's same-Project membership (§7.1).
 - **Handoff notice delivery: built.** The `bot_request.handoff` row is drained by
   `runBotRequestHandoff` into one host-notice turn for the holder through
   `Engine.WakeBotRequest` (`internal/app/projectassistant/bot_request_notice.go`), keyed
@@ -702,16 +720,9 @@ ticking entries as the person, the linked Board item, the Broker's landing besid
 and the per-entry, build and review lights of the §9 outline and phase 4a: a row shows one state dot
 and "n/m ✓", and the detail shows the latest verdict as text.
 
-Not built yet: a Bot-to-Bot request turn whose exchange names a card (the recipient of a
-`message_bot` with `bot_request_id`) still cannot dispatch for it: the exchange does not record the
-card, and such turns keep their `peer_dispatch` / `bot_request_tools` refusals. Split and merge.
-The agent routes of §8.3. Editing a card's title or description (§7.3). Setting `board_item_id`:
-`bot_request_create` takes no such argument, so no card has one yet.
-
-**Relation to the wider Bot-to-Bot tool loss.** A separate report says Bots lose their tools in
-every Bot-to-Bot turn (`pa_disabled` / `bot_request_tools`). The handoff rule in §7.2 deliberately
-grants only card-scoped dispatch in a handoff turn and does not fix that wider defect; if the
-wider fix lands first, the card scope still applies on top of it rather than being replaced.
+Not built yet: durable card IDs on Bot-to-Bot exchange records, split and merge, the agent routes
+of §8.3, editing a card's title or description (§7.3), and setting `board_item_id` through
+`bot_request_create`.
 
 Built on 2026-11-27 (the cards a Bot holds, the stalled light and Cloud parity, API 130):
 
