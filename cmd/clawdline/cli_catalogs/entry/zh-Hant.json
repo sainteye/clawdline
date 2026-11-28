@@ -1,6 +1,7 @@
 {
   "main_board_tracks_rows_json_the_old": "  board tracks [--rows] [--json]   以唯讀方式查看三個軌道上的舊卡片",
   "main_boot_rollback": "clawdline：此發行版的更新已退回；服務將啟動上一個版本",
+  "main_isolated_daemon_config": "請將 CLAWDLINE_NEXT_DIR 設為獨立且已存在的測試目錄絕對路徑，並將 CLAWDLINE_NEXT_PORT 設為 7727 以外未使用的連接埠。",
   "main_callback_title_t_command_run_a": "  callback --title <t> -- <command…>   由 daemon 執行命令並結束本回合；命令結束時喚醒此 Session",
   "main_clawdline_no_backend_for": "clawdline: 沒有可用的後端：",
   "main_clawdline_type_needs_text": "clawdline type 需要文字",

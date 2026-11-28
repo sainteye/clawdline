@@ -1,6 +1,7 @@
 {
   "main_board_tracks_rows_json_the_old": "  board tracks [--rows] [--json]   the old cards on the three tracks, read-only",
   "main_boot_rollback": "clawdline: this release's update was rolled back; the service starts the previous release",
+  "main_isolated_daemon_config": "Set CLAWDLINE_NEXT_DIR to a separate, existing absolute test directory and CLAWDLINE_NEXT_PORT to an unused port other than 7727.",
   "main_callback_title_t_command_run_a": "  callback --title <t> -- <command…>   run a command under the daemon and end the turn; its exit wakes this session",
   "main_clawdline_no_backend_for": "clawdline: no backend for",
   "main_clawdline_type_needs_text": "clawdline type needs text",
