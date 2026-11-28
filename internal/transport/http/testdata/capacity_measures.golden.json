@@ -4114,6 +4114,28 @@
     "Note": true
   },
   {
+    "Name": "resources.cleanup_backoff_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "resources.cleanup_batch_rows",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.cleanup_item_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
+    "Name": "resources.cleanup_plan_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "resources.disk_low_free_bytes",
     "Known": true,
     "Note": true,

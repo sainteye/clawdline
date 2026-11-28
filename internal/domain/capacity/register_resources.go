@@ -26,5 +26,9 @@ func resourceBounds() []Entry {
 		{Name: MachineDiskLow, Class: Buffer, Unit: Bytes, Limit: taskresource.LowDiskAlertBytesLimit, AtLimit: Coalesce, Told: []Channel{Diagnostics, Notice}, EvictedBy: Person, QuietRecovery: true, Sources: []string{"internal/domain/taskresource.LowDiskAlertBytesLimit"}},
 		{Name: "resources.disk_source_scan_files", Class: Buffer, Unit: Rows, Limit: taskresource.DiskSourceScanFilesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.DiskSourceScanFilesLimit"}},
 		{Name: "resources.page_rows", Class: Buffer, Unit: Rows, Limit: taskresource.PageRowsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.PageRowsLimit"}},
+		{Name: ResourceCleanupBatchRows, Class: Buffer, Unit: Rows, Limit: ResourceCleanupBatchRowsLimit, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupBatchRowsLimit"}},
+		{Name: ResourceCleanupItemSeconds, Class: Buffer, Unit: Seconds, Limit: ResourceCleanupItemSecondsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupItemSecondsLimit"}},
+		{Name: ResourceCleanupPlanAttempts, Class: Buffer, Unit: Rows, Limit: ResourceCleanupPlanAttemptsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupPlanAttemptsLimit"}},
+		{Name: ResourceCleanupBackoffSeconds, Class: Buffer, Unit: Seconds, Limit: ResourceCleanupBackoffSecondsLimit, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupBackoffSecondsLimit"}},
 	}
 }

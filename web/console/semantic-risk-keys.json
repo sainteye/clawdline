@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14974,
+  "englishKeys": 14982,
   "counts": {
-    "negation": 3768,
+    "negation": 3769,
     "state": 2558,
-    "permission": 881,
+    "permission": 882,
     "deletion": 361,
     "uncertainty": 587
   },
-  "unionCount": 6335,
+  "unionCount": 6337,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -727,6 +727,7 @@
       "capacityRow.release.unpacked_bytes.full",
       "capacityRow.resources.artifact_seconds.full",
       "capacityRow.resources.cache_bytes.full",
+      "capacityRow.resources.cleanup_backoff_seconds.what",
       "capacityRow.resources.disk_low_free_bytes.full",
       "capacityRow.resources.disk_reserve_bytes.what",
       "capacityRow.resources.disk_source_scan_files.full",
@@ -6490,6 +6491,7 @@
       "capacityRow.projects.codegraph_request_ms.what",
       "capacityRow.push.subscriptions.full",
       "capacityRow.release.metadata_concurrency.full",
+      "capacityRow.resources.cleanup_item_seconds.what",
       "capacityRow.session.recap_fork_milliseconds.what",
       "capacityRow.session.todo_batch_rows.what",
       "capacityRow.sessions.claude_remote_response_bytes.what",
@@ -9494,6 +9496,8 @@
     "capacityRow.resources.artifact_seconds.what",
     "capacityRow.resources.cache_bytes.full",
     "capacityRow.resources.cache_bytes.what",
+    "capacityRow.resources.cleanup_backoff_seconds.what",
+    "capacityRow.resources.cleanup_item_seconds.what",
     "capacityRow.resources.disk_low_free_bytes.full",
     "capacityRow.resources.disk_low_free_bytes.what",
     "capacityRow.resources.disk_reserve_bytes.what",

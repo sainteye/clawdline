@@ -246,22 +246,11 @@ func (b *Broker) reclaimDue(ctx context.Context) {
 	if !due {
 		return
 	}
+	b.scheduleManagedResourceCleanup(ctx, true)
 	go func() {
 		sweep, cancel := context.WithTimeout(context.WithoutCancel(ctx), reclaimDeadline)
 		defer cancel()
 		_, _ = b.Reclaim(sweep, false)
-		if b.Resources != nil {
-			b.reclaim.mu.Lock()
-			after := b.reclaim.resourcesAfter
-			b.reclaim.mu.Unlock()
-			_, next, err := b.SweepTaskResources(sweep, after)
-			if err == nil {
-				b.reclaim.mu.Lock()
-				b.reclaim.resourcesAfter = next
-				b.reclaim.mu.Unlock()
-			}
-			_, _ = b.Resources.Measure(sweep)
-		}
 	}()
 }
 
