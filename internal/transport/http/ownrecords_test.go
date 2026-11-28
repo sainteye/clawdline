@@ -8,6 +8,7 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/ownrecords"
 	"github.com/sainteye/clawdline/internal/adapters/store"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
+	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
 	"github.com/sainteye/clawdline/internal/domain/session"
 )
 
@@ -201,6 +202,43 @@ func TestSessionLabelsIdentifyBotDispatchedTasks(t *testing.T) {
 			}
 			if dispatch := titles.BotDispatch; dispatch != nil && (dispatch.Name != tc.owner.BotName || dispatch.TaskTitle != title) {
 				t.Fatalf("Bot dispatch = %+v, want recorded name %q and task %q", dispatch, tc.owner.BotName, title)
+			}
+		})
+	}
+}
+
+func TestSessionLabelsIdentifyBotOpenedRoots(t *testing.T) {
+	const title = "Install five fixes on local dev"
+	key := pa.BotKey{MachineID: "fixture-machine", BotID: "fixture-bot"}
+	for _, tc := range []struct {
+		name         string
+		start        int64
+		owner        *orchestrator.RootBotOwner
+		wantLabel    string
+		wantDispatch bool
+	}{
+		{"Bot opened Root", 1001, &orchestrator.RootBotOwner{Fence: pa.Fence{Key: key}, BotName: "Test dispatcher"}, title, true},
+		{"reused pane", 2000, &orchestrator.RootBotOwner{Fence: pa.Fence{Key: key}, BotName: "Test dispatcher"}, "", false},
+		{"ordinary Root", 1001, nil, title, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var assignment orchestrator.RootAssignment
+			if err := json.Unmarshal([]byte(`{"id":"root","assistant":"codex","project_dir":"/project","label":"`+title+`","state":"briefed","executor":{"terminal_id":"%1","backend":"tmux","opened_at":1000},"briefed_at":1010}`), &assignment); err != nil {
+				t.Fatal(err)
+			}
+			assignment.BotOwner = tc.owner
+			live := ownrecords.Live{TerminalID: "%1", Assistant: "codex", PID: 9, ProcessStart: time.Unix(tc.start, 0), ConversationID: "current"}
+			roots := ownAssignments([]orchestrator.RootAssignment{assignment}, map[string]ownrecords.Live{"%1": live})
+			snapshot := (ownrecords.Snapshot{}).With(ownrecords.Own{RootAssignments: roots})
+			titles := snapshot.TitleOf(live, "", []ownrecords.Live{live})
+			if got := rowLabel(session.Session{}, titles, ""); got != tc.wantLabel {
+				t.Fatalf("Session label = %q, want %q", got, tc.wantLabel)
+			}
+			if (titles.BotDispatch != nil) != tc.wantDispatch {
+				t.Fatalf("Bot dispatch = %+v, want presence %t", titles.BotDispatch, tc.wantDispatch)
+			}
+			if dispatch := titles.BotDispatch; dispatch != nil && (dispatch.Key != key || dispatch.Name != tc.owner.BotName || dispatch.ProjectDir != "/project" || dispatch.TaskTitle != "") {
+				t.Fatalf("Bot dispatch = %+v, want key %+v name %q project /project and empty task title", dispatch, key, tc.owner.BotName)
 			}
 		})
 	}

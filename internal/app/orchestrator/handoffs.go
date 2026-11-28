@@ -769,13 +769,14 @@ type RootAssignmentRequest struct {
 // RootBotOwner records which Bot, turn and request opened a Root, so the
 // opening Bot can be told once when the Root reports delivery.
 type RootBotOwner struct {
-	Fence        pa.Fence   `json:"fence"`
-	TurnID       string     `json:"turn_id"`
-	Command      pa.Command `json:"command"`
-	RequestHash  string     `json:"request_hash"`
-	BotName      string     `json:"bot_name,omitempty"`
-	BotRequestID string     `json:"bot_request_id,omitempty"`
-	BoardItemID  string     `json:"board_item_id,omitempty"`
+	Fence         pa.Fence      `json:"fence"`
+	TurnID        string        `json:"turn_id"`
+	Command       pa.Command    `json:"command"`
+	RequestHash   string        `json:"request_hash"`
+	BotName       string        `json:"bot_name,omitempty"`
+	BotAppearance pa.Appearance `json:"bot_appearance,omitzero"`
+	BotRequestID  string        `json:"bot_request_id,omitempty"`
+	BoardItemID   string        `json:"board_item_id,omitempty"`
 	// DeliveredAt is when the opening Bot accepted the delivery notice; it
 	// is set on the stored row only, never in a request.
 	DeliveredAt int64 `json:"delivered_at,omitempty"`
@@ -970,6 +971,13 @@ func AssignmentLine(id, path string, language ...string) string {
 // body, so the same assignment resent is recognised and a different one under
 // the same request_id is refused.
 func assignmentDigest(req RootAssignmentRequest) string {
+	// Display appearance is recorded at first admission and does not alter
+	// whether a retry matches an earlier receipt (including pre-appearance rows).
+	if req.BotOwner != nil && req.BotOwner.BotAppearance != (pa.Appearance{}) {
+		owner := *req.BotOwner
+		owner.BotAppearance = pa.Appearance{}
+		req.BotOwner = &owner
+	}
 	body, _ := json.Marshal(req)
 	sum := sha256.Sum256(body)
 	return hex.EncodeToString(sum[:])

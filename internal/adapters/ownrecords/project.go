@@ -596,11 +596,19 @@ func (s Snapshot) orchestratorTitle(row Live, live []Live) (string, *BotDispatch
 	if len(labels) == 1 {
 		found = labels[0]
 	}
+	var botDispatch *BotDispatch
 	for _, a := range s.RootAssignments {
 		if a.Identity == nil || a.Identity.TerminalID != terminalID || !liveAssignment(a.State) || !alive(*a.Identity) {
 			continue
 		}
 		found = a.Label
+		if a.BotDispatch != nil {
+			dispatch := *a.BotDispatch
+			dispatch.ProjectDir = a.ProjectDir
+			botDispatch = &dispatch
+		} else {
+			botDispatch = nil
+		}
 	}
 	// A finished task can name only its verified child conversation. Pane ids
 	// are reused, and an unbound old task must not rename the next session.
@@ -615,7 +623,6 @@ func (s Snapshot) orchestratorTitle(row Live, live []Live) (string, *BotDispatch
 			(t.ChildSession == nil || *t.ChildSession == row.ConversationID)
 	}
 	assignmentTitle := found
-	var botDispatch *BotDispatch
 	for _, t := range tasksOldestFirst(s.Tasks) {
 		if deref(t.ChildTerminal) != terminalID || t.AttachSession != nil || !taskAlive(t) {
 			continue
