@@ -6028,7 +6028,7 @@
     "web/console/src/project-assistants/BotVoicePanel.tsx": "0c7f1098add45c5a5bfd64c4e2d4cc41cac9411230a3923c60500736fb58e2fe",
     "web/console/src/project-assistants/Chat.tsx": "028b83f7ef1cded8c397fa5444791e689a80001f98122e96e176ca866af081b9",
     "web/console/src/project-assistants/ChatRows.tsx": "189ba089ca53cf9b2577a39be3f3e2aad4f33cf2fb988a410c60f727a065bf3a",
-    "web/console/src/project-assistants/DecisionCard.tsx": "f98710cf6b589c1f12d59a7f8e505d912b4345eb1efb1ad69da57ebac2e6a04a",
+    "web/console/src/project-assistants/DecisionCard.tsx": "4f30d4fabb759ea206c598852946e199ca4dc56b21f6e632c1a4a2d44c351340",
     "web/console/src/project-assistants/DevServers.tsx": "ae64b0c9073bcc573d47f78fae1e38d7dd4fa8341f6d2f74ec7ca951c6e06e4a",
     "web/console/src/project-assistants/ExchangePanel.tsx": "847500eed7acf76ec8e1ec4095abb0fd97fd5fa4a9d8653c10b815901ae9ef6a",
     "web/console/src/project-assistants/GroupMemberOutcome.tsx": "5c2f80ac45847355b7169db2059dea22f2e2438a5380cfa04c7bf22b7a0d01fe",
@@ -6085,7 +6085,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "427ff50fa3808ed41d1e70cf0b712777d8988fcd985e069755a8088624ec10b5",
-    "zh-Hant": "23a6529193e6d1dac9294938857337eb0198284867c46fedeb02a19cd9f98bc9"
+    "en": "87f448feec5f6e4c94a733c8032769e6958d5c338a803e7ce456e318db7749df",
+    "zh-Hant": "512babb00aec4d3ded706f1264e62d65655a7cca3cfa09c13e6d9c699de4ec00"
   }
 }

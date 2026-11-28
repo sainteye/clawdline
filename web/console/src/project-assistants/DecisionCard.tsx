@@ -1,4 +1,5 @@
 import { legacyMemoryProposalTitle } from "./notice-text"
+import { MEMORY_SAVE, MEMORY_SKIP } from "./chat-items"
 import { useEffect, useRef, useState } from "react"
 import type * as W from "@clawdline/contract"
 import {quietFleetStream} from "../client"
@@ -264,8 +265,6 @@ function MemoryCard({summary,offer,memory,state,selected,choice,enabled,busy,che
   </section>
 }
 
-// These option IDs are also understood by older sources.
-const MEMORY_SAVE="reply-memory-save",MEMORY_SKIP="reply-memory-skip"
 type MemoryAnswer=typeof MEMORY_SAVE|typeof MEMORY_SKIP
 function memoryOption(option?:string|null):MemoryAnswer|undefined{
   return option===MEMORY_SAVE||option===MEMORY_SKIP?option:undefined
@@ -290,8 +289,7 @@ export function MemoryProposalReceipt({summary,offer,onDetail,name,w}:{
 }) {
   const observed=memoryOption(summary.selected_option_id)
   const {selected}=useDecisionDetail(summary,null,offer,observed?undefined:onDetail)
-  const text=memoryReceiptText(selected??observed,name,w)
-  return text?<p className="pa-memory-proposal-receipt">{text}</p>:null
+  return (selected??observed)===MEMORY_SAVE?<p className="pa-memory-proposal-receipt">{w.memoryCardSaved.replace("{name}",name)}</p>:null
 }
 
 /** Only the exchange started in the person's current turn gets a chat link. */

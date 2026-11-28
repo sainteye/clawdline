@@ -125,10 +125,24 @@ test("memory proposals use localized controls and show the confirmed detail whil
         assert.ok(answered.includes(fact))
         assert.doesNotMatch(answered,/<button|aria-busy|pa-decision-spinner/)
         const receipt=renderToStaticMarkup(React.createElement(MemoryProposalReceipt,{summary:cardSummary,offer:answer,name:"Beacon",w}))
-        assert.equal(receipt,`<p class="pa-memory-proposal-receipt">${label}</p>`)
+        assert.equal(receipt,answer===saved?`<p class="pa-memory-proposal-receipt">${label}</p>`:"")
       }
     }
   }
+})
+
+test("skipped memory proposals disappear from the chat, including older sources",async()=>{
+  const {MemoryProposalReceipt,words}=await load()
+  const question="Save this to memory?"
+  const message:W.ProjectAssistantMessage={id:"original",seq:1,at,kind:"user",text:"Original message",turn_id:"t",quote_message_id:"",fence:fence(beacon)}
+  const skipped:W.ProjectAssistantPermissionOffer={...offer("answered"),selected_option_id:"reply-memory-skip",decision:{question,memory:"The meeting starts at nine."}}
+  const legacy={...summary("answered"),title:question,anchor_message_seq:1}
+  const current={...legacy,decision_kind:"memory_save" as const,selected_option_id:skipped.selected_option_id}
+  const messages=timeline(message)
+  assert.deepEqual(answeredMemoryRows([{summary:current,offer:undefined}],messages,false),[],"a freshly opened chat omits the skipped row")
+  assert.deepEqual(answeredMemoryRows([{summary:{...legacy,state:"pending"},offer:skipped}],messages,false),[],"the row stays hidden while the summary catches up")
+  const receipt=renderToStaticMarkup(React.createElement(MemoryProposalReceipt,{summary:legacy,offer:skipped,name:"Beacon",w:words("zh-Hant")}))
+  assert.equal(receipt,"","an older source's answered detail produces no receipt")
 })
 
 test("a memory shortcut appears only next to the exchange in the person's current turn",async()=>{

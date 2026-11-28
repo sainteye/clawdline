@@ -9,6 +9,9 @@ import type { Words } from "./words"
 // @ts-expect-error Node executes source extensions.
 import {legacyMemoryProposalTitle} from "./notice-text.ts"
 
+// These option IDs are also understood by older sources.
+export const MEMORY_SAVE="reply-memory-save",MEMORY_SKIP="reply-memory-skip"
+
 type PermissionCard = {summary:W.ProjectAssistantReadPermissionSummary;offer:W.ProjectAssistantPermissionOffer|undefined}
 export type ChatPermissionSummary = W.ProjectAssistantReadPermissionSummary & {anchor_message_seq:number}
 
@@ -31,7 +34,9 @@ export function answeredMemoryRows(cards:readonly (PermissionCard&{summary:ChatP
   const messages=timeline.flatMap(row=>row.message?[row.message]:[]).reverse()
   return cards.flatMap(card=>{
     if(!isMemoryCard(card)||!memoryAnswered(card))return []
-    const {summary}=card
+    const {summary,offer}=card
+    const answer=offer?.state==="answered"?offer.selected_option_id:summary.selected_option_id
+    if(answer===MEMORY_SKIP)return []
     let anchor=summary.anchor_message_seq
     if(!anchor){
       // Older sources omit the anchor. The host's MaxDecisionOfferSeconds is
