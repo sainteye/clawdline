@@ -989,8 +989,8 @@ func (s *toolScope) restrictBackgroundThread(tools *NativeWork) {
 }
 
 // computeToolVisibility hides MCP tools from tools/list that are unconditionally
-// unavailable or refused for this turn's capabilities and origin, saving prompt
-// schema tokens without relaxing any call-time Host enforcement.
+// unavailable or refused at call time for this turn's capabilities and origin,
+// saving prompt schema tokens without relaxing any call-time Host enforcement.
 func (s *toolScope) computeToolVisibility(tools *NativeWork) {
 	h, q, turn, taskOwner, actor := s.h, s.q, s.turn, s.taskOwner, s.actor
 	hidden := make(map[string]bool)
@@ -1011,41 +1011,46 @@ func (s *toolScope) computeToolVisibility(tools *NativeWork) {
 	if pa.IsPeerRequest(turn.Origin) {
 		hide("send_file", "publish_artifact")
 	}
+	if turn.Room != nil || (q.Bot.Hidden && !pa.IsPeerRequest(turn.Origin)) || turn.Origin == pa.NetworkRequestOrigin {
+		hide("notify_person")
+	}
 	if turn.Origin == pa.NetworkRequestOrigin {
-		hide("list_artifacts")
+		hide("send_message", "ask_person")
 	}
 	writeRoutineTools := []string{
 		"save_routine", "enable_routine", "delete_routine", "test_run_routine",
 		"save_progress", "read_progress", "routine_hook", "routine_webhook_status",
-		"rotate_routine_hook", "follow_up", "cancel_follow_up", "read_webhook_guide",
+		"rotate_routine_hook", "follow_up", "cancel_follow_up",
 	}
-	if tools.routines == nil || turn.Origin == pa.NetworkRequestOrigin {
+	if tools.routines == nil {
 		hide("list_routines")
 		hide(writeRoutineTools...)
 	} else if pa.IsPeerRequest(turn.Origin) {
 		hide(writeRoutineTools...)
 	} else if q.Binding.SessionSlot != "" {
-		hide("follow_up", "cancel_follow_up")
+		// Isolated routine runs refuse follow_up (routines.go), while cancel_follow_up
+		// remains callable for pending reminders owned by the same Bot.
+		hide("follow_up")
 	}
-	if tools.listBots == nil || turn.Origin == pa.NetworkRequestOrigin {
+	if tools.listBots == nil {
 		hide("list_bots")
 	}
-	if tools.messageBot == nil || turn.Origin == pa.NetworkRequestOrigin {
+	if tools.messageBot == nil || pa.IsPeerRequest(turn.Origin) {
 		hide("message_bot")
 	}
 	if tools.dispatch == nil || actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin {
 		hide("dispatch_work")
 	}
-	if actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin {
+	if actor.CapabilityID == "" {
 		hide("work_status")
 	}
-	if actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin || (taskOwner.BotID != "" && !pa.IsPeerRequest(turn.Origin)) {
+	if actor.CapabilityID == "" || (taskOwner.BotID != "" && !pa.IsPeerRequest(turn.Origin)) {
 		hide("message_work")
 	}
 	if pa.IsPeerRequest(turn.Origin) && !tools.memoryCard {
 		hide("edit_memory")
 	}
-	if h.o.Broker == nil || h.o.Broker.Store == nil || turn.Origin == pa.NetworkRequestOrigin {
+	if h.o.Broker == nil || h.o.Broker.Store == nil {
 		hide("bot_request_read", "bot_request_create", "bot_request_handoff", "bot_request_check", "bot_request_verdict", "bot_request_wait_person", "bot_request_done")
 	}
 	if len(hidden) > 0 {

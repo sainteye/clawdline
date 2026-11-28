@@ -146,9 +146,6 @@ func (c AntigravityContext) Instructions() string {
 	if c.WorkflowInstructions != "" {
 		parts = append(parts, c.WorkflowInstructions)
 	}
-	if len(parts) == 0 {
-		return ""
-	}
 	if !c.Audience.IsAutomatedWorker() {
 		parts = append(parts, antigravityNoteInstruction)
 	}

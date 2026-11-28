@@ -80,60 +80,84 @@ func TestComputeToolVisibilityMatchesCapabilitiesAndTurnOrigin(t *testing.T) {
 
 	t.Run("same-machine peer request hides forbidden tools", func(t *testing.T) {
 		w := baseScope(pa.BotRequestOrigin, "", true, true, true, false)
-		for _, hidden := range []string{"react", "network_bot", "send_file", "publish_artifact", "save_routine", "follow_up", "save_progress", "read_webhook_guide"} {
+		for _, hidden := range []string{"react", "network_bot", "send_file", "publish_artifact", "message_bot", "save_routine", "follow_up", "cancel_follow_up", "save_progress"} {
 			if w.ToolVisible(hidden) {
 				t.Errorf("%q should be hidden in peer request", hidden)
 			}
 		}
-		for _, visible := range []string{"list_routines", "browser_command", "dispatch_work", "ask_person", "notify_person", "edit_memory", "list_bots", "message_bot"} {
+		for _, visible := range []string{"list_routines", "read_webhook_guide", "browser_command", "dispatch_work", "ask_person", "notify_person", "edit_memory", "list_bots"} {
 			if !w.ToolVisible(visible) {
 				t.Errorf("%q should remain visible in same-machine peer request", visible)
 			}
 		}
 	})
 
-	t.Run("network request hides all restricted tools", func(t *testing.T) {
+	t.Run("bot reply keeps message_bot for follow-up", func(t *testing.T) {
+		w := baseScope(pa.BotReplyOrigin, "", false, true, true, false)
+		if w.ToolVisible("network_bot") || w.ToolVisible("react") {
+			t.Errorf("bot reply should hide network_bot and react")
+		}
+		if !w.ToolVisible("message_bot") || !w.ToolVisible("notify_person") {
+			t.Errorf("bot reply should keep message_bot and notify_person")
+		}
+	})
+
+	t.Run("network request hides call-time refused tools", func(t *testing.T) {
 		w := baseScope(pa.NetworkRequestOrigin, "", true, true, true, false)
 		for _, hidden := range []string{
 			"react", "network_bot", "browser_status", "browser_command",
-			"send_file", "publish_artifact", "list_artifacts",
-			"list_routines", "save_routine", "follow_up",
-			"list_bots", "message_bot", "dispatch_work", "work_status", "message_work",
-			"edit_memory", "bot_request_read",
+			"send_file", "publish_artifact", "send_message", "notify_person", "ask_person",
+			"save_routine", "follow_up", "message_bot", "dispatch_work", "edit_memory",
 		} {
 			if w.ToolVisible(hidden) {
 				t.Errorf("%q should be hidden in network request", hidden)
 			}
 		}
-		for _, visible := range []string{"read_memory", "search_memory", "send_message"} {
+		for _, visible := range []string{"read_memory", "search_memory", "read_webhook_guide"} {
 			if !w.ToolVisible(visible) {
 				t.Errorf("%q should remain visible in network request", visible)
 			}
 		}
 	})
 
-	t.Run("isolated routine hides browser, react and follow_up", func(t *testing.T) {
+	t.Run("isolated routine hides browser, react and follow_up but keeps cancel_follow_up", func(t *testing.T) {
 		w := baseScope(pa.HostNoticeOrigin, "routine-1", true, false, true, false)
-		for _, hidden := range []string{"browser_status", "browser_command", "react", "follow_up", "cancel_follow_up"} {
+		for _, hidden := range []string{"browser_status", "browser_command", "react", "follow_up"} {
 			if w.ToolVisible(hidden) {
 				t.Errorf("%q should be hidden in isolated routine", hidden)
 			}
 		}
-		for _, visible := range []string{"save_progress", "read_progress", "notify_person", "send_message", "dispatch_work"} {
+		for _, visible := range []string{"cancel_follow_up", "save_progress", "read_progress", "notify_person", "send_message", "dispatch_work"} {
 			if !w.ToolVisible(visible) {
 				t.Errorf("%q should remain visible in isolated routine", visible)
 			}
 		}
 	})
 
+	t.Run("group room hides react, browser and notify_person", func(t *testing.T) {
+		h := &Host{}
+		s := &toolScope{
+			h:    h,
+			q:    app.OpenRequest{},
+			turn: pa.Turn{Origin: pa.UserOrigin, Room: &pa.RoomTicket{}},
+		}
+		w := NativeWork{}
+		s.computeToolVisibility(&w)
+		for _, hidden := range []string{"react", "browser_status", "browser_command", "notify_person"} {
+			if w.ToolVisible(hidden) {
+				t.Errorf("%q should be hidden in group room", hidden)
+			}
+		}
+	})
+
 	t.Run("background thread hides routines, team, bots and dispatch", func(t *testing.T) {
 		w := baseScope(pa.UserOrigin, "", false, false, true, true)
-		for _, hidden := range []string{"list_routines", "save_routine", "read_webhook_guide", "list_bots", "message_bot", "dispatch_work", "message_work"} {
+		for _, hidden := range []string{"list_routines", "save_routine", "list_bots", "message_bot", "dispatch_work", "message_work"} {
 			if w.ToolVisible(hidden) {
 				t.Errorf("%q should be hidden in background thread", hidden)
 			}
 		}
-		for _, visible := range []string{"send_message", "ask_person", "read_memory", "edit_memory"} {
+		for _, visible := range []string{"send_message", "ask_person", "read_memory", "edit_memory", "read_webhook_guide"} {
 			if !w.ToolVisible(visible) {
 				t.Errorf("%q should remain visible in background thread", visible)
 			}

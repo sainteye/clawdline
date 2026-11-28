@@ -188,3 +188,23 @@ func TestDispatchedChildrenOmitInteractiveToolSuggestionsAndNoteInstructions(t *
 		}
 	}
 }
+
+func TestBrokerPrepareWorkflowDefaultsToRootAudienceForHandoffs(t *testing.T) {
+	b, _ := newTestBroker(t)
+	dir := t.TempDir()
+	svc := workflowlaunch.Service{Store: b.Store, Dir: dir, Resolve: skills.ResolveWorkflow}
+	b.PrepareWorkflow = svc.Prepare
+	b.PrepareWorkflowForAudience = svc.PrepareForAudience
+	if _, err := nextconfig.Open(dir).Set(map[string]any{
+		"tool_library_suggestions_enabled": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := b.prepareWorkflow(context.Background(), t.TempDir(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(prepared.Text, "tool library") {
+		t.Fatalf("Root handoff prepareWorkflow lost tool library suggestions: %q", prepared.Text)
+	}
+}

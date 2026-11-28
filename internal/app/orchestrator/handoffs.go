@@ -113,7 +113,7 @@ func (b *Broker) openSession(ctx context.Context, cwd, name, assistant, model, p
 		}
 	}()
 	integrations := ""
-	if b.PrepareWorkflow != nil {
+	if b.PrepareWorkflowForAudience != nil || b.PrepareWorkflow != nil {
 		integrations = preparedWorkflow.Text
 	} else {
 		integrations, err = b.integrationInstructions(ctx, cwd)

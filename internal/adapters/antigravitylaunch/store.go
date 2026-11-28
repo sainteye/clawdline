@@ -420,7 +420,7 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 		if req.AntigravityContext != nil {
 			explainSteps = req.AntigravityContext.ExplainSteps
 		}
-		c, err = projects.PrepareAntigravityContextWithExplanations(req.SquadPromptPath, string(prompt), req.Memory, req.Language, explainSteps)
+		c, err = projects.PrepareAntigravityContextForAudience(req.SquadPromptPath, string(prompt), req.Memory, req.Language, explainSteps, req.Audience)
 		c.WorkflowInstructions = req.IntegrationInstructions
 		if err != nil {
 			return Prepared{}, fail("request_invalid")
@@ -438,7 +438,7 @@ func (s *Store) prepareLaunch(ctx context.Context, id string, req projects.Launc
 		return Prepared{}, fail("context_too_large")
 	}
 	req.AntigravityContext = &c
-	req.Memory, req.Language, req.SquadPromptPath = c.Memory, c.Language, c.PromptPath
+	req.Audience, req.Memory, req.Language, req.SquadPromptPath = c.Audience, c.Memory, c.Language, c.PromptPath
 	requestDigest, err := launchRequestDigest(req, policy)
 	if err != nil {
 		return Prepared{}, err

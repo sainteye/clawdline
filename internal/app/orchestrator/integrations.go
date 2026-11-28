@@ -24,7 +24,7 @@ func RecordAudience(r Record) projects.LaunchAudience {
 }
 
 func (b *Broker) prepareWorkflow(ctx context.Context, root, parent string) (workflowlaunch.Prepared, error) {
-	return b.prepareWorkflowForAudience(ctx, root, parent, projects.AudienceChild)
+	return b.prepareWorkflowForAudience(ctx, root, parent, projects.AudienceRoot)
 }
 
 func (b *Broker) prepareWorkflowForAudience(ctx context.Context, root, parent string, audience projects.LaunchAudience) (workflowlaunch.Prepared, error) {

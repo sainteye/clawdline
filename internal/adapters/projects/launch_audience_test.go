@@ -91,4 +91,27 @@ func TestLaunchAudienceOmitsInteractiveRulesForAutomatedWorkers(t *testing.T) {
 			t.Fatal("expected unknown audience refusal")
 		}
 	})
+
+	t.Run("antigravity context document round-trip and legacy JSON compatibility", func(t *testing.T) {
+		// Child context round-trips through Document/RestoreAntigravityContext with audience intact.
+		childCtx, err := PrepareAntigravityContextForAudience("", "", "Synthetic memory", "zh-Hant-TW", nil, AudienceChild)
+		if err != nil {
+			t.Fatal(err)
+		}
+		doc, digest, err := childCtx.Document()
+		if err != nil {
+			t.Fatal(err)
+		}
+		restored, err := RestoreAntigravityContext(doc, digest)
+		if err != nil || restored.Audience != AudienceChild || restored.ShouldExplainSteps() {
+			t.Fatalf("child restore failed: %+v err=%v", restored, err)
+		}
+
+		// Legacy persisted JSON without an audience field restores cleanly as AudienceRoot.
+		legacy := []byte(`{"memory":"Synthetic memory","memory_hash":"` + contextHash("Synthetic memory") + `","language":"zh-Hant-TW"}`)
+		legacyRestored, err := RestoreAntigravityContext(legacy, contextHash(string(legacy)))
+		if err != nil || legacyRestored.Audience != AudienceRoot || !legacyRestored.ShouldExplainSteps() {
+			t.Fatalf("legacy restore failed: %+v err=%v", legacyRestored, err)
+		}
+	})
 }
