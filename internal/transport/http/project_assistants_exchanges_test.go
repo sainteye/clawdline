@@ -18,7 +18,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // This is a read fixture, not exchange admission or model execution. Durable
@@ -79,7 +78,7 @@ func TestProjectAssistantExchangeCapturedReadSQLite(t *testing.T) {
 	if err := projectassistanttest.MoveInlineCollections(context.Background(), db, f.key.MachineID, f.key.BotID); err != nil {
 		t.Fatal(err)
 	}
-	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}}
+	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: f.cloudRouter()}
 	exportRequest, err := json.Marshal(map[string]any{"type": "project-assistants.export", "session": cloudops.MachineReplySession, "request": "exchange-export", "machine_id": f.key.MachineID, "bot_id": f.key.BotID})
 	if err != nil {
 		t.Fatal(err)

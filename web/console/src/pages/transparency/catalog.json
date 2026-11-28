@@ -4584,7 +4584,7 @@
         },
         {
           "path": "internal/transport/http/project_assistants_host.go",
-          "line": 379
+          "line": 380
         },
         {
           "path": "internal/adapters/projectassistantacp/session_configuration.go",
@@ -5994,7 +5994,7 @@
     "internal/transport/http/project_assistants_assistant_cloud.go": "fac5fc5a9774d186b6318a2616568f8229331a0f4cd8effea692fdc0df41a635",
     "internal/transport/http/project_assistants_cloud_hooks.go": "0b3d3e05276e67e3ad4ad1644c00c268be0b784374853a9199e1dcc58bdf8193",
     "internal/transport/http/project_assistants_connector_credentials.go": "d5734c4e6ebff636c46b24c87a044df390b26d226f95dff6308b4d7f70caf89f",
-    "internal/transport/http/project_assistants_host.go": "6862fc92b7d6a7b2c9ff290a8a7489a155a398c75dea75b36ca86ff1f70016b8",
+    "internal/transport/http/project_assistants_host.go": "1630eeaf4783b44bd83c1f3d9f09c35d2dacfbc94149162d27856963f578359c",
     "internal/transport/http/project_assistants_lead_control.go": "ecc4f622a9b1b0864efe0247f88a2aecba8137093c4690efbfc628a93c19932e",
     "internal/transport/http/project_assistants_login_profiles.go": "10a43acbb279c6455d8d7adf226ffdb36da32b18e124b37d23849da0aec73ad2",
     "internal/transport/http/project_assistants_memory_settings.go": "e38bc87ca019942b520a7027f87d85039d6ae623a4e7858f77f4a0bfe4fbd0c1",

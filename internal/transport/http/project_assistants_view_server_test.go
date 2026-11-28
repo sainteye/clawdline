@@ -158,7 +158,7 @@ func paViewServerBridgeContext(ctx context.Context, t *testing.T, f *paServerFix
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return false }}
+	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return false }}
 	started := time.Now()
 	answer := bridge.Handle(ctx, cloudops.Command{Channel: "ctl/" + f.identity.MachineID, Class: cloudops.ClassCtl, Sender: sender, Sequence: 1, Plaintext: raw})
 	t.Logf("Cloud Bridge request mode=%s page_size=%d after_seq=%d status=%d elapsed=%s", fields.Mode, fields.PageSize, fields.AfterSeq, answer.Status, time.Since(started))
@@ -355,7 +355,7 @@ func TestProjectAssistantCloudReadRecordsReachedStages(t *testing.T) {
 		t.Fatal(err)
 	}
 	bridge := cloudops.Bridge{MachineID: f.identity.MachineID,
-		Router:        cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)},
+		Router:        f.cloudRouter(),
 		AllowCommands: func() bool { return false }}
 	var row struct {
 		TraceID     string           `json:"trace_id"`

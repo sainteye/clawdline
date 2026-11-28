@@ -13,7 +13,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func TestProjectAssistantSendRecoveryHasOneWinner(t *testing.T) {
@@ -40,9 +39,7 @@ func TestProjectAssistantSendRecoveryHasOneWinner(t *testing.T) {
 				return base + "/send-receipt?" + url.Values{"machine_id": {f.key.MachineID}, "conversation_id": {conversation}, "idempotency_key": {id}}.Encode()
 			}
 			paAssertHTTPFailure(t, f.request(t, "GET", lookup(g.Conversation.ID), f.readonly, nil), http.StatusNotFound, pa.NotFound)
-			bridge := cloudops.Bridge{MachineID: f.identity.MachineID, AllowCommands: func() bool { return true }, Router: cloudtransport.Router{
-				Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine),
-			}}
+			bridge := cloudops.Bridge{MachineID: f.identity.MachineID, AllowCommands: func() bool { return true }, Router: f.cloudRouter()}
 			if order == "editor through Cloud" {
 				f.pin(t, "send-recovery-owner", "operate", false)
 			}

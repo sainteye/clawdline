@@ -25,7 +25,6 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The access/resume matrix composes only production pieces after the
@@ -130,7 +129,7 @@ func newPAMatrix(t *testing.T) *paMatrix {
 		t.Fatalf("matrix listener is not loopback TCP: %s", server.URL)
 	}
 	return &paMatrix{paServerFixture: f, p: p, server: server, pins: map[string]adaptercloud.PinnedDevice{}, privs: map[string]ed25519.PrivateKey{},
-		bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}}
+		bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}}
 }
 
 func (m *paMatrix) pinned() *adaptercloud.PinnedStore {
@@ -158,7 +157,8 @@ func (m *paMatrix) pair(t *testing.T, sender, scope string, invited bool) {
 
 func (m *paMatrix) grant(t *testing.T, sender string) adaptercloud.AssistantViewerGrant {
 	t.Helper()
-	g, err := m.pinned().ProjectAssistantGrant(m.identity.AccountID, sender)
+	key, _ := m.pins[sender].Key()
+	g, err := m.pinned().VerifiedProjectAssistantGrant(m.identity.AccountID, sender, key)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 type conflictFixture struct {
@@ -195,8 +194,7 @@ func TestChangeCharterAndDismissOverHTTPAndCloud(t *testing.T) {
 	// read-only one only reads.
 	c.pin(t, "owner", adaptercloud.ScopeOperate, false)
 	c.pin(t, "reader", adaptercloud.ScopeReadOnly, false)
-	bridge := cloudops.Bridge{MachineID: c.identity.MachineID, AllowCommands: func() bool { return true }, Router: cloudtransport.Router{
-		Handler: c.h, Authorize: cloudtransport.LocalAuthorizer(c.local, c.machine)}}
+	bridge := cloudops.Bridge{MachineID: c.identity.MachineID, AllowCommands: func() bool { return true }, Router: c.cloudRouter()}
 	sequence := uint64(0)
 	word := func(sender, op, request string, fields map[string]any) cloudops.Answer {
 		body := map[string]any{"type": "project-assistants." + op, "session": cloudops.MachineReplySession, "request": request, "machine_id": c.key.MachineID, "project_id": c.bot.Project.ProjectID}

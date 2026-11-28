@@ -29,7 +29,6 @@ import (
 	"github.com/sainteye/clawdline/internal/contract"
 	domaincloud "github.com/sainteye/clawdline/internal/domain/cloud"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // This synthetic ACP process reads the actual private paths in the native
@@ -365,7 +364,7 @@ func TestProjectAssistantInputCloudBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 
 	bridge.Authority = func(_ context.Context, sender string, key ed25519.PublicKey, write bool) cloudops.Authority {
 		current, ok, err := pins.PublicKeyFor(sender)

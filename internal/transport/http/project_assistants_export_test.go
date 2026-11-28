@@ -14,7 +14,6 @@ import (
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func TestProjectAssistantExportIncludesStoredRoutinesAndGroupsWithoutSecrets(t *testing.T) {
@@ -126,7 +125,7 @@ func TestProjectAssistantExportIncludesStoredRoutinesAndGroupsWithoutSecrets(t *
 	})
 	t.Run("Cloud", func(t *testing.T) {
 		f.pin(t, "export-reader", "readonly", false)
-		bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}}
+		bridge := cloudops.Bridge{MachineID: f.identity.MachineID, Router: f.cloudRouter()}
 		request, _ := json.Marshal(map[string]any{"type": "project-assistants.export", "session": cloudops.MachineReplySession, "request": "export-check", "machine_id": f.key.MachineID, "bot_id": f.key.BotID})
 		answer := bridge.Handle(ctx, cloudops.Command{Channel: "ctl/" + f.identity.MachineID, Class: cloudops.ClassCtl, Sender: "export-reader", Sequence: 1, Plaintext: request})
 		if !answer.OK() {

@@ -10,7 +10,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 // The phone's Cloud relay drops the empty `text` of a "Compact now" (and of a
@@ -28,9 +27,7 @@ func TestCompactNowThroughCloudReachesTheBot(t *testing.T) {
 	paServerOK(t, f.request(t, "POST", "/v1/project-assistants", f.local, f.create()))
 	g := f.get(t, f.local)
 	f.pin(t, "compact-phone", "operate", false)
-	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, AllowCommands: func() bool { return true }, Router: cloudtransport.Router{
-		Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine),
-	}}
+	bridge := cloudops.Bridge{MachineID: f.identity.MachineID, AllowCommands: func() bool { return true }, Router: f.cloudRouter()}
 	const id = "compact-c6000001-0000-4000-8000-000000000003"
 	fence := contract.ProjectAssistantFence{Key: g.Bot.Key, Project: g.Bot.Project, ConversationID: g.Conversation.ID,
 		BindingID: g.Conversation.BindingID, Generation: g.Conversation.Generation}

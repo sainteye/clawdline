@@ -60,6 +60,13 @@ The [local CLI viewer authorization contract](cloud-local-viewer.md) records the
 
 The account roster and the machine's local pinned-device record are distinct evidence. A locally revoked device is refused even if it appears in the account roster; a roster read failure is not treated as an empty roster. Browser pairing is also distinct from account sign-in: a browser listed under an account does not thereby have this machine's content key.
 
+Sessions and Bots share the Cloud viewer authority for encrypted reads and
+commands. The machine checks the verified sender, current account roster and
+capabilities, and the local pin when present. A legacy browser with the
+machine's content key can keep using both surfaces when its signed requests
+pass those checks. A local denial takes precedence. Bots use the checked
+identity to find the account owner or invited reader and to bind roster cursors.
+
 Machine-to-machine Agent messages and work handoffs require a signed, revocable machine pair in each allowed direction. A Cloud account or viewer pairing alone does not grant one machine authority to act as another machine's Agent. Each request still names exact source and target Session executions; the receiver checks the current execution before applying work. The admission and receipt contract is in [cross-machine Agent handoff](cross-machine-agent-handoff.md).
 
 An Agent-owned cross-machine task also needs a machine-targeted start before a target Session exists and a durable result path back to the source Session. Its contract and acceptance scenario are in [remote Agent work](remote-agent-work.md).

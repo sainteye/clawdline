@@ -19,7 +19,6 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/botcapabilities"
 	"github.com/sainteye/clawdline/internal/adapters/botloginprofiles"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
-	"github.com/sainteye/clawdline/internal/adapters/cloudkeys"
 	"github.com/sainteye/clawdline/internal/adapters/nextconfig"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistantacp"
 	"github.com/sainteye/clawdline/internal/adapters/projectassistanthost"
@@ -330,7 +329,7 @@ func (s *Server) projectAssistantHuman(ctx context.Context, a access, i adapterc
 			err = paHTTPFailure(pa.Unpaired, "source_identity")
 			return
 		}
-		grant, e := adaptercloud.NewPinnedStore(filepath.Join(s.cfg.Dir, cloudkeys.DirName)).ProjectAssistantGrant(i.AccountID, sender)
+		grant, e := cloudtransport.CloudViewerGrant(ctx, i.AccountID)
 		if e != nil {
 			err = errors.Join(paHTTPFailure(pa.Revoked, "viewer_grant"), e)
 			return

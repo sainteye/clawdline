@@ -18,7 +18,6 @@ import (
 	app "github.com/sainteye/clawdline/internal/app/projectassistant"
 	"github.com/sainteye/clawdline/internal/contract"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 func TestReadOnlyMaintenanceHistoryIsComposedByServer(t *testing.T) {
@@ -150,7 +149,7 @@ func TestHandoffHistoryRechecksViewerBeforeOpen(t *testing.T) {
 	var armed atomic.Bool
 	revoked := make(chan error, 1)
 	matrix := &paMatrix{paServerFixture: f, pins: map[string]adaptercloud.PinnedDevice{}, privs: map[string]ed25519.PrivateKey{},
-		bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}}
+		bridge: cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}}
 	f.s.projectAssistants.provider = func() (app.Provider, error) {
 		p, err := probe.provider()
 		return handoffHistoryProvider{Provider: p, before: func() {

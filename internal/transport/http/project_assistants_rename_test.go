@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	adaptercloud "github.com/sainteye/clawdline/internal/adapters/cloud"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 	"net/http"
 	"reflect"
 	"strings"
@@ -149,7 +148,7 @@ func TestProjectAssistantArtifactRenameCloud(t *testing.T) {
 	got := f.get(t, f.local)
 	pin := f.pin(t, "rename-controller", adaptercloud.ScopeOperate, false)
 	public, _ := base64.StdEncoding.DecodeString(pin.PublicKey)
-	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return true }}
+	bridge := cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return true }}
 	q := contract.ProjectAssistantRenameArtifactRequest{Command: f.command(pa.RenameArtifactOperation, "cloud-rename"), Fence: contract.ProjectAssistantFence{Key: got.Bot.Key, Project: got.Bot.Project, ConversationID: got.Conversation.ID, BindingID: got.Conversation.BindingID, Generation: got.Conversation.Generation}, ArtifactID: "library-artifact", ExpectedOutputID: "artifact-v2", ExpectedVersion: 1, Title: "Cloud title"}
 	raw, _ := json.Marshal(q)
 	fields := map[string]any{}

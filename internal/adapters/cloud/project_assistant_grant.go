@@ -1,14 +1,17 @@
 package cloud
 
 import (
+	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"strconv"
+	"strings"
 
 	domain "github.com/sainteye/clawdline/internal/domain/cloud"
 )
 
-// AssistantViewerGrant is a snapshot of a locally paired viewer's authority.
+// AssistantViewerGrant is a snapshot of a Cloud viewer's Bot identity and scope.
 // It contains no pairing credentials. Its revision identifies authorization
 // facts, not a new reader: a scope change must not reset an account's cursor.
 type AssistantViewerGrant struct {
@@ -16,22 +19,16 @@ type AssistantViewerGrant struct {
 	ReaderID              string
 	AuthorizationRevision string
 	Writable              bool
+	Invited               bool
 }
 
-// ProjectAssistantGrant requires a completed local pairing; unlike ViewerScope,
-// it never admits a missing pin through the legacy roster fallback.
-//
-// The host must supply expectedAccountID from its currently loaded Cloud
-// Identity, and verifiedSender from transport/cloud.CloudViewerOf(ctx), which
-// carries the authenticated envelope sender. Neither argument may come from a
-// browser body or header. This adapter checks the pin, not envelope signatures.
-//
-// All pin facts are freshly read under the store lock, without changing the
-// receiver's cache or relying on its size/mtime stamp. The grant is only a
-// snapshot: callers must revalidate authority when applying a protected
-// operation. Other processes can replace the file after this call.
-func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender string) (AssistantViewerGrant, error) {
-	if s == nil || expectedAccountID == "" || verifiedSender == "" {
+// VerifiedProjectAssistantGrant resolves an assistant identity after the Cloud
+// transport has rechecked the signed viewer's account and machine-key access.
+// The verified key supports a legacy account pairing with no local pin. Every
+// stored pin is freshly read, and an invalid or refused pin takes precedence.
+func (s *PinnedStore) VerifiedProjectAssistantGrant(expectedAccountID, verifiedSender string, verifiedKey ed25519.PublicKey) (AssistantViewerGrant, error) {
+	if s == nil || expectedAccountID == "" || verifiedSender == "" || len(verifiedKey) != ed25519.PublicKeySize ||
+		strings.TrimSpace(verifiedSender) != verifiedSender {
 		return AssistantViewerGrant{}, ErrViewerNotPinned
 	}
 	s.mu.Lock()
@@ -42,7 +39,7 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 	if err := snapshot.loadLocked(); err != nil {
 		return AssistantViewerGrant{}, err
 	}
-	if snapshot.record.AccountID != expectedAccountID {
+	if snapshot.record.AccountID != expectedAccountID && !snapshot.stamp.missing {
 		return AssistantViewerGrant{}, ErrViewerNotPinned
 	}
 	var pin PinnedDevice
@@ -56,7 +53,14 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 		}
 		pin, found = row, true
 	}
-	if !found || !pin.Active() || pin.PairingPending || pin.PairedAt <= 0 {
+	if !found {
+		principal, reader := ProjectAssistantOwnerIdentity(expectedAccountID)
+		return AssistantViewerGrant{
+			PrincipalID: principal, ReaderID: reader, Writable: true,
+			AuthorizationRevision: assistantGrantDigest("legacy-authorization", expectedAccountID, verifiedSender, string(verifiedKey)),
+		}, nil
+	}
+	if !pin.Active() || pin.PairingPending || pin.PairedAt <= 0 {
 		return AssistantViewerGrant{}, ErrViewerNotPinned
 	}
 	scope := pin.EffectiveScope()
@@ -64,7 +68,7 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 		return AssistantViewerGrant{}, ErrViewerScope
 	}
 	key, ok := pin.Key()
-	if !ok || pin.Fingerprint == "" || domain.Fingerprint(key) != pin.Fingerprint {
+	if !ok || pin.Fingerprint == "" || domain.Fingerprint(key) != pin.Fingerprint || !bytes.Equal(key, verifiedKey) {
 		return AssistantViewerGrant{}, ErrPinnedUnreadable
 	}
 	// Only account-paired devices share the owner. Invitations have their own
@@ -82,6 +86,7 @@ func (s *PinnedStore) ProjectAssistantGrant(expectedAccountID, verifiedSender st
 			strconv.FormatInt(pin.RevokedAt, 10), strconv.FormatInt(pin.ExpiresAt, 10),
 			strconv.FormatBool(pin.Invited), strconv.FormatBool(pin.PairingPending)),
 		Writable: scope == ScopeOperate,
+		Invited:  pin.Invited,
 	}, nil
 }
 

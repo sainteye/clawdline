@@ -25,7 +25,6 @@ import (
 	featurestore "github.com/sainteye/clawdline/internal/adapters/projectassistantstore"
 	"github.com/sainteye/clawdline/internal/app/cloudops"
 	pa "github.com/sainteye/clawdline/internal/domain/projectassistant"
-	cloudtransport "github.com/sainteye/clawdline/internal/transport/cloud"
 )
 
 type paJointFixture struct {
@@ -318,7 +317,7 @@ func TestProjectAssistantJointCapturedSourceAndRealReadViews(t *testing.T) {
 				if keyErr != nil {
 					t.Fatal(keyErr)
 				}
-				bridge = cloudops.Bridge{MachineID: f.key.MachineID, Router: cloudtransport.Router{Handler: f.h, Authorize: cloudtransport.LocalAuthorizer(f.local, f.machine)}, AllowCommands: func() bool { return frame.Fixture == "create" }}
+				bridge = cloudops.Bridge{MachineID: f.key.MachineID, Router: f.cloudRouter(), AllowCommands: func() bool { return frame.Fixture == "create" }}
 				command.Channel, command.Sender, command.VerifiedKey = "ctl/"+f.key.MachineID, frame.Sender, ed25519.PublicKey(key)
 			}
 			answer := bridge.Handle(ctx, command)
