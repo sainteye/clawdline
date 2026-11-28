@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/domain/session"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
 func TestReclaimChecksProvableOwnersBeforeUnknownOwners(t *testing.T) {
@@ -112,15 +113,15 @@ func TestReclaimRecordsTimedOutOwnerProofAndChecksTheNextTask(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("injected deadline: removed=%d deferred=%d kept=%d", rep.Removed, rep.Deferred, rep.Kept)
+	t.Logf("injected process-table timeout: removed=%d deferred=%d kept=%d", rep.Removed, rep.Deferred, rep.Kept)
 	if rep.Removed != 1 || rep.Deferred != 0 || rep.Kept != 1 {
 		t.Fatalf("a deadline on one candidate should preserve it and let the next one proceed")
 	}
-	if d := w6Decision(rep, records[0].ID, ReclaimTaskArtifacts); d.Reason != WhyReclaimDeadline {
+	if d := w6Decision(rep, records[0].ID, ReclaimTaskArtifacts); d.Reason != taskresource.ProcessTableTimeout {
 		t.Fatalf("missing deadline in sweep report: %+v", d)
 	}
 	row, err := b.Store.ReclaimOf(ctx, records[0].ID, ReclaimTaskArtifacts)
-	if err != nil || row.Outcome != ReclaimKept || row.Reason != WhyReclaimDeadline {
+	if err != nil || row.Outcome != ReclaimKept || row.Reason != taskresource.ProcessTableTimeout {
 		t.Fatalf("missing standing deadline decision: %+v, %v", row, err)
 	}
 	if _, err := os.Stat(paths[0]); err != nil {
@@ -133,6 +134,39 @@ func TestReclaimRecordsTimedOutOwnerProofAndChecksTheNextTask(t *testing.T) {
 	if err != nil || rep.Removed != 1 || rep.Deferred != 0 {
 		t.Fatalf("the next sweep did not retry the timed out resource: %+v, %v", rep, err)
 	}
+}
+
+func TestReclaimRecordsSweepDeadlineAndDefersTheNextTask(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	finishedAt := time.Now().Add(-artifactRetention() - time.Hour)
+	b.Reading = func(context.Context) session.Inventory {
+		return session.Inventory{Sessions: []session.Session{{ID: "%live"}}, Sources: map[string]bool{"tmux": true}}
+	}
+	b.ProcessCWDs = func(ctx context.Context) ([]string, error) {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	for i := range 2 {
+		id := fmt.Sprintf("ee3d0000-0000-4000-8000-%012x", i)
+		r := Record{Protocol: Protocol, ID: id, State: StateSuccess, CreatedAt: finishedAt, FinishedAt: finishedAt,
+			Dir: b.Tasks.Path(id), ChildTerminalID: "%finished", ChildBackend: "tmux"}
+		reclaimFixtureArtifact(t, r)
+		if err := b.save(ctx, r, HashSecret("s"), "test.fixture"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sweep, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	rep, err := b.Reclaim(sweep, false)
+	if err != nil || rep.Removed != 0 || rep.Deferred != 1 || rep.Kept != 1 ||
+		len(rep.Decisions) != 1 || rep.Decisions[0].Reason != WhyReclaimDeadline {
+		t.Fatalf("expected one sweep deadline and one deferred task: %+v, %v", rep, err)
+	}
+	row, err := b.Store.ReclaimOf(ctx, rep.Decisions[0].Task, ReclaimTaskArtifacts)
+	if err != nil || row.Outcome != ReclaimKept || row.Reason != WhyReclaimDeadline {
+		t.Fatalf("missing standing sweep deadline: %+v, %v", row, err)
+	}
+	t.Logf("whole-sweep deadline: removed=%d deferred=%d kept=%d", rep.Removed, rep.Deferred, rep.Kept)
 }
 
 func reclaimFixtureArtifact(t *testing.T, r Record) string {

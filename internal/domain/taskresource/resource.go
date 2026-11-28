@@ -115,6 +115,15 @@ type Decision struct {
 	EligibleAt int64  `json:"eligible_at,omitempty"`
 }
 
+const (
+	ProcessTableStalled = "process_table_stalled"
+	ProcessTableTimeout = "process_table_timeout"
+)
+
+func IsProcessTableFailure(code string) bool {
+	return code == ProcessTableStalled || code == ProcessTableTimeout
+}
+
 // Evaluate cannot be relaxed by a Bot verdict, a large byte count or disk pressure.
 // The executor must obtain fresh Facts again immediately before unlinking.
 func Evaluate(r Resource, p Policy, f Facts, now time.Time) Decision {

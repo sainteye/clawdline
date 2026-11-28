@@ -128,11 +128,11 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 		if r.Callback != nil {
 			out.Presence = b.callbackResourcePresence(r)
 		} else {
-			gone, why, _ := b.ownerGone(ctx, b.read(ctx), r, r.Dir)
-			if gone {
-				out.Presence = "absent"
-			} else if why == WhyOwnerPresent {
-				out.Presence = "present"
+			out.Presence, err = childResourcePresence(r, b.read(ctx), func(paths ...string) (string, error) {
+				return b.occupied(ctx, paths...)
+			}, r.Dir)
+			if err != nil {
+				return out, err
 			}
 		}
 	case "root":
@@ -142,7 +142,16 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 		}
 		out.Owner = taskresource.Owner{Kind: kind, ID: id, Project: a.ProjectDir}
 		out.OutputRoot = filepath.Join(b.AssignmentRoot(), id, "artifacts")
-		p := b.rootCleanup(ctx, b.read(ctx), a)
+		var processErr error
+		p := rootCleanupWithOccupancy(b.read(ctx), a, func(paths ...string) (string, error) {
+			inside, err := b.occupied(ctx, paths...)
+			processErr = err
+			return inside, err
+		})
+		var failure taskresources.Failure
+		if errors.As(processErr, &failure) && taskresource.IsProcessTableFailure(failure.Code) {
+			return out, failure
+		}
 		out.Complete = p.Completion
 		out.Presence = p.Owner
 		if a.Closure != nil {
@@ -175,6 +184,27 @@ func (b *Broker) resourceOwner(ctx context.Context, kind, id string) (taskresour
 		out.UsePresence = "absent"
 	}
 	return out, nil
+}
+
+func childResourcePresence(r Record, rd reading, occupied func(...string) (string, error), paths ...string) (string, error) {
+	_, why := ownerTabEvidence(rd, r)
+	if why == WhyOwnerPresent {
+		return "present", nil
+	}
+	if why != "" {
+		return "unknown", nil
+	}
+	inside, err := occupied(paths...)
+	if err != nil {
+		if taskresource.IsProcessTableFailure(processTableReclaimReason(err)) {
+			return "unknown", err
+		}
+		return "unknown", nil
+	}
+	if inside != "" {
+		return "present", nil
+	}
+	return "absent", nil
 }
 
 func (b *Broker) callbackResourcePresence(r Record) string {
@@ -310,15 +340,25 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 		b.reclaim.mu.Lock()
 		after := b.reclaim.resourcesAfter
 		b.reclaim.mu.Unlock()
-		if _, next, e := b.SweepTaskResources(ctx, after); e == nil {
-			b.reclaim.mu.Lock()
-			b.reclaim.resourcesAfter = next
-			b.reclaim.mu.Unlock()
-		}
-		_, _ = b.Reclaim(ctx, false)
-		err = b.Resources.Admit(ctx)
-		if err == nil {
-			return nil
+		_, next, sweepErr := b.SweepTaskResources(ctx, after)
+		var sweepFailure taskresources.Failure
+		if errors.As(sweepErr, &sweepFailure) && taskresource.IsProcessTableFailure(sweepFailure.Code) {
+			err = sweepErr
+		} else {
+			if sweepErr == nil {
+				b.reclaim.mu.Lock()
+				b.reclaim.resourcesAfter = next
+				b.reclaim.mu.Unlock()
+			}
+			if _, stalled := ProcessTableReadStatus(); stalled {
+				err = taskresources.Failure{Code: taskresource.ProcessTableStalled}
+			} else {
+				_, _ = b.Reclaim(ctx, false)
+				err = b.Resources.Admit(ctx)
+				if err == nil {
+					return nil
+				}
+			}
 		}
 	}
 	failure = taskresources.Explain(ctx, err, "admission")
@@ -346,6 +386,10 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 	switch failure.Code {
 	case "resource_measurement_changed":
 		return refuseWith(503, failure.Code, message, extra)
+	case taskresource.ProcessTableStalled:
+		return refuseWith(503, failure.Code, "The process-table read is stuck. End the stuck lsof process or restart the daemon to recover.", extra)
+	case taskresource.ProcessTableTimeout:
+		return refuseWith(503, failure.Code, "The process-table read timed out. Retry after the process table responds.", extra)
 	case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
 		message = "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
 	}
@@ -610,7 +654,7 @@ func (b *Broker) artifactOwnerGone(ctx context.Context, rd reading, r Record, ch
 	inside, err := b.occupied(ctx, r.Dir)
 	if err != nil {
 		evidence["process_table"] = err.Error()
-		return false, WhyOwnerUnknown, evidence
+		return false, processTableReclaimReason(err), evidence
 	}
 	if inside != "" {
 		evidence["working_inside"] = inside

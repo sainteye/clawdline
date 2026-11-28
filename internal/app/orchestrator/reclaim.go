@@ -20,7 +20,9 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
 // Reclamation: taking back the checkouts and task directories finished work
@@ -520,10 +522,7 @@ func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (stri
 	inside, err := occupied(paths...)
 	if err != nil {
 		evidence["process_table"] = err.Error()
-		if errors.Is(err, context.DeadlineExceeded) {
-			return false, WhyReclaimDeadline, evidence
-		}
-		return false, WhyOwnerUnknown, evidence
+		return false, processTableReclaimReason(err), evidence
 	}
 	if inside != "" {
 		evidence["working_inside"] = inside
@@ -531,6 +530,17 @@ func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (stri
 	}
 	evidence["process_table"] = "no process works inside"
 	return true, "", evidence
+}
+
+func processTableReclaimReason(err error) string {
+	var failure taskresources.Failure
+	if errors.As(err, &failure) && taskresource.IsProcessTableFailure(failure.Code) {
+		return failure.Code
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return WhyReclaimDeadline
+	}
+	return WhyOwnerUnknown
 }
 
 func ownerTabEvidence(rd reading, r Record) (answer, reason string) {
@@ -633,26 +643,77 @@ func lsofCWDs(ctx context.Context) ([]string, error) {
 	return paths, nil
 }
 
-// A reader that has not stopped still owns its slot after the caller times
-// out. In particular, a stalled kernel read cannot accumulate one process
-// and goroutine per inventory or cleanup request.
-var processTableSlots = make(chan struct{}, capacity.ResourceProcessTableReadsLimit)
-
-// ActiveProcessTableReads counts occupied slots, including reads still
-// running after their callers stopped waiting.
-func ActiveProcessTableReads() int {
-	return len(processTableSlots)
+// The slot belongs to the read until it exits. A full pool with an abandoned
+// read rejects new work and wakes callers already waiting for a slot.
+type processTablePool struct {
+	mu        sync.Mutex
+	slots     chan struct{}
+	abandoned int
+	changed   chan struct{}
 }
 
-func (b *Broker) readProcessCWDs(ctx context.Context) ([]string, error) {
-	ctx, cancel := context.WithTimeout(ctx, capacity.ResourceProcessTableSecondsLimit*time.Second)
-	defer cancel()
-	select {
-	case processTableSlots <- struct{}{}:
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+var processTable = processTablePool{
+	slots:   make(chan struct{}, capacity.ResourceProcessTableReadsLimit),
+	changed: make(chan struct{}),
+}
 
+func (p *processTablePool) stalled() bool {
+	return len(p.slots) == cap(p.slots) && p.abandoned > 0
+}
+
+func (p *processTablePool) signal() {
+	close(p.changed)
+	p.changed = make(chan struct{})
+}
+
+// ProcessTableReadStatus observes occupied slots and whether fresh reads are refused.
+func ProcessTableReadStatus() (active int, stalled bool) {
+	processTable.mu.Lock()
+	defer processTable.mu.Unlock()
+	return len(processTable.slots), processTable.stalled()
+}
+
+func (p *processTablePool) acquire(ctx context.Context) error {
+	for {
+		p.mu.Lock()
+		switch {
+		case ctx.Err() != nil:
+			p.mu.Unlock()
+			return ctx.Err()
+		case p.stalled():
+			p.mu.Unlock()
+			return taskresources.Failure{Code: taskresource.ProcessTableStalled}
+		case len(p.slots) < cap(p.slots):
+			p.slots <- struct{}{}
+			p.mu.Unlock()
+			return nil
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (b *Broker) readProcessCWDs(parent context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(parent, capacity.ResourceProcessTableSecondsLimit*time.Second)
+	defer cancel()
+	classify := func(err error) error {
+		if parent.Err() != nil {
+			return parent.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return taskresources.Failure{Code: taskresource.ProcessTableTimeout, Cause: err}
+		}
+		return err
+	}
+	p := &processTable
+	if err := p.acquire(ctx); err != nil {
+		return nil, classify(err)
+	}
 	read := b.ProcessCWDs
 	if read == nil {
 		read = lsofCWDs
@@ -662,23 +723,40 @@ func (b *Broker) readProcessCWDs(ctx context.Context) ([]string, error) {
 		err   error
 	}
 	done := make(chan result, 1)
+	var finished, abandoned bool // protected by p.mu
 	go func() {
-		defer func() { <-processTableSlots }()
-		if err := ctx.Err(); err != nil {
-			done <- result{err: err}
-			return
+		var paths []string
+		err := ctx.Err()
+		if err == nil {
+			paths, err = read(ctx)
 		}
-		paths, err := read(ctx)
+		p.mu.Lock()
+		finished = true
+		<-p.slots
+		if abandoned {
+			p.abandoned--
+		}
+		p.signal()
+		p.mu.Unlock()
 		done <- result{paths, err}
 	}()
 	select {
 	case got := <-done:
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, classify(err)
 		}
-		return got.paths, got.err
+		return got.paths, classify(got.err)
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		p.mu.Lock()
+		if !finished {
+			abandoned = true
+			p.abandoned++
+			if p.stalled() {
+				p.signal()
+			}
+		}
+		p.mu.Unlock()
+		return nil, classify(ctx.Err())
 	}
 }
 
@@ -1012,7 +1090,7 @@ func (b *Broker) removeCheckout(ctx context.Context, r Record, snap git.Snapshot
 		d.Evidence["second_process_table"] = inside
 		if err != nil {
 			d.Evidence["second_process_table"] = err.Error()
-			return kept(r, ReclaimWorktree, d.Path, WhyOwnerUnknown, d.Evidence)
+			return kept(r, ReclaimWorktree, d.Path, processTableReclaimReason(err), d.Evidence)
 		}
 		return kept(r, ReclaimWorktree, d.Path, WhyOwnerPresent, d.Evidence)
 	}

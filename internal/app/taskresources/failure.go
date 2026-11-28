@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
 // Diagnostic contains source-owned correlation only, never database error text,
@@ -35,6 +36,13 @@ var errMeasurementChanged = errors.New("accounted resources changed during measu
 func (e Failure) Error() string { return e.Code }
 func (e Failure) Unwrap() error { return e.Cause }
 func fail(code string) Failure  { return Failure{Code: code} }
+
+func processTableDecisionFailure(ctx context.Context, code, phase, resource string) error {
+	if !taskresource.IsProcessTableFailure(code) {
+		return nil
+	}
+	return fail(code).WithContext(ctx, phase, resource)
+}
 
 type callerKey struct{}
 type caller struct{ kind, id, callback string }
@@ -101,6 +109,10 @@ func (e Failure) WithContext(ctx context.Context, phase, resource string) Failur
 		switch e.Code {
 		case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
 			e.detail.Cause = "capacity"
+		case taskresource.ProcessTableStalled:
+			e.detail.Cause = taskresource.ProcessTableStalled
+		case taskresource.ProcessTableTimeout:
+			e.detail.Cause = "deadline_exceeded"
 		}
 	}
 	if err := ctx.Err(); err != nil {
