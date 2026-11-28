@@ -4,20 +4,25 @@ package orchestrator
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/session"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
+	"github.com/sainteye/clawdline/internal/productcopy"
 )
 
 func TestEditingChildrenShareGoCachesWithoutWritingTaskWork(t *testing.T) {
@@ -178,6 +183,295 @@ func TestSharedGoTrimUsesChildLifetimeWithoutAResult(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSharedGoTrimBoundsFinalProcessTableRead(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		stalled bool
+		reason  string
+	}{
+		{name: "responsive", reason: "shared_cache_trimmed"},
+		{name: "stalled", stalled: true, reason: taskresource.ProcessTableTimeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, ctx := newTestBroker(t)
+			enableTestResources(t, b)
+			scope := ResourceOwnerScope()
+			policy := taskresource.DefaultPolicy()
+			policy.CacheBytes = 1
+			b.Resources.Policy = func() taskresource.Policy { return policy }
+			b.Reading = func(context.Context) session.Inventory {
+				return session.Inventory{Sessions: []session.Session{{ID: "%other", Backend: session.BackendTmux}}, Sources: map[string]bool{"tmux": true}}
+			}
+			atFinalCheck := false
+			b.Resources.Fault = func(point, _ string) error {
+				if point == "after_intent" {
+					atFinalCheck = true
+				}
+				return nil
+			}
+			stalled := make(chan struct{})
+			release := make(chan struct{})
+			b.ProcessCWDs = func(context.Context) ([]string, error) {
+				if tc.stalled && atFinalCheck {
+					close(stalled)
+					<-release
+				}
+				return nil, nil
+			}
+
+			r := Record{Protocol: Protocol, ID: uuid.NewString(), Title: "Fixture", Assistant: "codex",
+				ProjectDir: t.TempDir(), State: StateQueued, CreatedAt: b.now()}
+			r.Dir = b.Tasks.Path(r.ID)
+			if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.save(ctx, r, HashSecret(w1Secret), "task.queued"); err != nil {
+				t.Fatal(err)
+			}
+			r, err := b.attachSharedGoCache(ctx, r, true)
+			if err != nil || r.SharedGoCache == nil {
+				t.Fatal(r.SharedGoCache, err)
+			}
+			cache := r.SharedGoCache
+			entry := filepath.Join(cache.BuildPath, "ab", fmt.Sprintf("%064x-d", 1))
+			if err := os.MkdirAll(filepath.Dir(entry), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(entry, []byte("cached"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = b.mutate(ctx, r.ID, "task.fixture", func(r *Record) error {
+				r.State, r.FinishedAt = StateCancelled, b.now()
+				r.ChildTerminalID, r.ChildBackend, r.SpawnedAt = "%child", "tmux", b.now()
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan, err := b.Resources.Plan(ctx, scope, []string{cache.ID})
+			if err != nil || len(plan.Items) != 1 || plan.Items[0].Decision.Outcome != "eligible" {
+				t.Fatalf("expected an eligible cache: %+v, %v", plan, err)
+			}
+			applyCtx, cancel := context.WithCancel(ctx)
+			var workers sync.WaitGroup
+			t.Cleanup(func() {
+				cancel()
+				close(release)
+				workers.Wait()
+			})
+			type outcome struct {
+				result taskresources.Result
+				err    error
+			}
+			applied := make(chan outcome, 1)
+			workers.Go(func() {
+				result, err := b.Resources.Apply(applyCtx, scope, plan, uuid.NewString())
+				applied <- outcome{result, err}
+			})
+			used := make(chan error, 1)
+			watchdog := time.NewTimer(15 * time.Second)
+			defer watchdog.Stop()
+			if tc.stalled {
+				select {
+				case <-stalled:
+				case early := <-applied:
+					t.Fatalf("Apply never reached the final process-table check: %+v", early)
+				case <-watchdog.C:
+					t.Fatal("Apply did not reach the final process-table check")
+				}
+				workers.Go(func() {
+					used <- b.Resources.UseSharedGo(ctx, scope, cache.Project, func(resource taskresource.Resource, _ string) error {
+						if resource.ID != cache.ID {
+							return fmt.Errorf("attached cache %s, want %s", resource.ID, cache.ID)
+						}
+						return nil
+					})
+				})
+			}
+			var got outcome
+			select {
+			case got = <-applied:
+			case <-watchdog.C:
+				select {
+				case err := <-used:
+					t.Fatalf("Apply stayed blocked after 15s but UseSharedGo returned: %v", err)
+				default:
+					t.Fatal("Apply stayed blocked in the process-table read and UseSharedGo could not acquire the lock after 15s")
+				}
+			}
+			if got.err != nil || len(got.result.Items) != 1 || got.result.Items[0].Reason != tc.reason {
+				t.Fatalf("unexpected cleanup result: %+v, %v", got.result, got.err)
+			}
+			if tc.stalled {
+				row, err := b.Store.TaskResource(ctx, cache.ID)
+				if err != nil || row.LastReason != taskresource.ProcessTableTimeout || row.LastOutcome != "kept" {
+					t.Fatalf("standing cleanup decision lost the timeout: %+v, %v", row, err)
+				}
+				select {
+				case err := <-used:
+					if err != nil {
+						t.Fatal(err)
+					}
+				case <-watchdog.C:
+					t.Fatal("UseSharedGo could not acquire the released lock")
+				}
+				if raw, err := os.ReadFile(entry); err != nil || string(raw) != "cached" {
+					t.Fatalf("uncertain cache was not retained: %q, %v", raw, err)
+				}
+			} else if _, err := os.Stat(entry); !os.IsNotExist(err) {
+				t.Fatalf("confirmed idle cache was not trimmed: %v", err)
+			}
+			t.Logf("Apply returned %s", got.result.Items[0].Reason)
+		})
+	}
+}
+
+func TestSharedGoTrimRecoversAfterProcessTableSaturation(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	policy := taskresource.DefaultPolicy()
+	policy.CacheBytes, policy.CacheTotal = 1, 1
+	b.Resources.Policy = func() taskresource.Policy { return policy }
+	b.ProcessCWDs = func(context.Context) ([]string, error) { return nil, nil }
+
+	r := Record{Protocol: Protocol, ID: uuid.NewString(), Title: "Fixture", Assistant: "codex",
+		ProjectDir: t.TempDir(), State: StateQueued, CreatedAt: b.now()}
+	r.Dir = b.Tasks.Path(r.ID)
+	if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.save(ctx, r, HashSecret(w1Secret), "task.queued"); err != nil {
+		t.Fatal(err)
+	}
+	r, err := b.attachSharedGoCache(ctx, r, true)
+	if err != nil || r.SharedGoCache == nil {
+		t.Fatal(r.SharedGoCache, err)
+	}
+	entry := filepath.Join(r.SharedGoCache.BuildPath, "ab", fmt.Sprintf("%064x-d", 1))
+	if err := os.MkdirAll(filepath.Dir(entry), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.mutate(ctx, r.ID, "task.fixture", func(r *Record) error {
+		r.State, r.FinishedAt = StateSpawnFailed, b.now()
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	scope := ResourceOwnerScope()
+	plan, err := b.Resources.Plan(ctx, scope, []string{r.SharedGoCache.ID})
+	if err != nil || len(plan.Items) != 1 || plan.Items[0].Decision.Outcome != "eligible" {
+		t.Fatalf("expected an eligible cache before saturation: %+v, %v", plan, err)
+	}
+
+	const slots = capacity.ResourceProcessTableReadsLimit
+	started, returned := make(chan struct{}, slots), make(chan error, slots)
+	waitForActive := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		active, _ := ProcessTableReadStatus()
+		for active != want && time.Now().Before(deadline) {
+			time.Sleep(time.Millisecond)
+			active, _ = ProcessTableReadStatus()
+		}
+		if active != want {
+			t.Errorf("active process-table reads = %d, want %d", active, want)
+		}
+	}
+	waitForActive(0)
+	var release [slots]func()
+	t.Cleanup(func() {
+		for _, unblock := range release {
+			unblock()
+		}
+		waitForActive(0)
+	})
+	for i := range release {
+		blocked := make(chan struct{})
+		release[i] = sync.OnceFunc(func() { close(blocked) })
+		reader := &Broker{ProcessCWDs: func(context.Context) ([]string, error) {
+			started <- struct{}{}
+			<-blocked
+			return nil, nil
+		}}
+		go func() {
+			readCtx, cancel := context.WithTimeout(ctx, time.Second)
+			defer cancel()
+			_, err := reader.readProcessCWDs(readCtx)
+			returned <- err
+		}()
+	}
+	for range slots {
+		select {
+		case <-started:
+		case <-time.After(2 * time.Second):
+			t.Fatal("fixture did not occupy every process-table slot")
+		}
+	}
+	for range slots {
+		if err := <-returned; err != context.DeadlineExceeded {
+			t.Fatalf("expected the caller deadline to expire, got %v", err)
+		}
+	}
+	waitForActive(slots)
+	if _, stalled := ProcessTableReadStatus(); !stalled {
+		t.Fatal("diagnostics did not show the saturated process table")
+	}
+
+	start := time.Now()
+	page, err := b.Resources.Inventory(ctx, scope, "", taskresource.PageRowsLimit)
+	elapsed := time.Since(start)
+	if elapsed > time.Second || err != nil || len(page.Items) != 1 || page.Items[0].Decision.Reason != taskresource.ProcessTableStalled {
+		t.Fatalf("inventory took %s, expected a prompt process_table_stalled decision: %+v, %v", elapsed, page, err)
+	}
+	t.Logf("inventory refused to infer idle in %s", elapsed)
+	start = time.Now()
+	_, err = b.Resources.Apply(ctx, scope, plan, uuid.NewString())
+	var failure taskresources.Failure
+	if elapsed := time.Since(start); elapsed > time.Second || !errors.As(err, &failure) || failure.Code != taskresource.ProcessTableStalled {
+		t.Fatalf("apply took %s, expected process_table_stalled: %v", elapsed, err)
+	}
+	start = time.Now()
+	err = b.AdmitHeavyResources(ctx)
+	refusal, ok := err.(Refusal)
+	if elapsed := time.Since(start); elapsed > time.Second || !ok || refusal.Code != taskresource.ProcessTableStalled {
+		t.Fatalf("admission took %s, expected process_table_stalled: %v", elapsed, err)
+	}
+	t.Logf("admission refused in %s", time.Since(start))
+	events, err := b.Store.LatestEvents(ctx, "resource.admission_refused", []string{"resources.admit"})
+	diagnostic, ok := refusal.Extra["resource_diagnostic"].(taskresources.Diagnostic)
+	var recorded taskresources.Diagnostic
+	if err != nil || !ok || diagnostic.Code != taskresource.ProcessTableStalled || diagnostic.ResourceID != r.SharedGoCache.ID ||
+		diagnostic.ContextState != "active" || json.Unmarshal(events["resources.admit"].Payload, &recorded) != nil ||
+		recorded != diagnostic || !strings.Contains(refusal.Message, "End the stuck lsof") {
+		t.Fatalf("admission lost its recovery detail or durable diagnostic: %+v, %+v, %v", refusal, events, err)
+	}
+	key := productcopy.HTTPRefusalKey(refusal.Message)
+	if message := productcopy.HTTPRefusalText("zh-Hant", key, refusal.Message); !strings.Contains(message, "結束卡住的 lsof 或重啟 daemon 即可恢復") {
+		t.Fatalf("admission recovery detail was not localized: %q", message)
+	}
+	if raw, err := os.ReadFile(entry); err != nil || string(raw) != "cached" {
+		t.Fatalf("cache was not preserved while saturated: %q, %v", raw, err)
+	}
+
+	// One released slot is enough to resume fresh checks while the other
+	// timed-out readers still own their slots.
+	release[0]()
+	waitForActive(slots - 1)
+	if _, stalled := ProcessTableReadStatus(); stalled {
+		t.Fatal("diagnostics still showed a stalled process table after a slot was released")
+	}
+	if _, _, err := b.SweepTaskResources(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(entry); !os.IsNotExist(err) {
+		t.Fatalf("cache did not trim after a reader finished: %v", err)
+	}
+	t.Log("the next sweep trimmed the cache after one slot was released")
 }
 
 func TestSharedGoOwnerReadsConsumerPresenceOnce(t *testing.T) {

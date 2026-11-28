@@ -20,6 +20,9 @@ import (
 	"github.com/sainteye/clawdline/internal/adapters/git"
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/adapters/store"
+	"github.com/sainteye/clawdline/internal/app/taskresources"
+	"github.com/sainteye/clawdline/internal/domain/capacity"
+	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
 
 // Reclamation: taking back the checkouts and task directories finished work
@@ -519,10 +522,7 @@ func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (stri
 	inside, err := occupied(paths...)
 	if err != nil {
 		evidence["process_table"] = err.Error()
-		if errors.Is(err, context.DeadlineExceeded) {
-			return false, WhyReclaimDeadline, evidence
-		}
-		return false, WhyOwnerUnknown, evidence
+		return false, processTableReclaimReason(err), evidence
 	}
 	if inside != "" {
 		evidence["working_inside"] = inside
@@ -530,6 +530,17 @@ func ownerGoneWithOccupancy(rd reading, r Record, occupied func(...string) (stri
 	}
 	evidence["process_table"] = "no process works inside"
 	return true, "", evidence
+}
+
+func processTableReclaimReason(err error) string {
+	var failure taskresources.Failure
+	if errors.As(err, &failure) && taskresource.IsProcessTableFailure(failure.Code) {
+		return failure.Code
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return WhyReclaimDeadline
+	}
+	return WhyOwnerUnknown
 }
 
 func ownerTabEvidence(rd reading, r Record) (answer, reason string) {
@@ -561,11 +572,7 @@ func (b *Broker) occupied(ctx context.Context, paths ...string) (string, error) 
 	if len(targets) == 0 {
 		return "", nil
 	}
-	read := b.ProcessCWDs
-	if read == nil {
-		read = lsofCWDs
-	}
-	cwds, err := read(ctx)
+	cwds, err := b.readProcessCWDs(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -614,6 +621,7 @@ func foldPath(p string) string {
 // of its own — and neither is a failure with no output.
 func lsofCWDs(ctx context.Context) ([]string, error) {
 	cmd := exec.CommandContext(ctx, "lsof", "-n", "-P", "-w", "-d", "cwd", "-Fn")
+	cmd.WaitDelay = capacity.ResourceProcessTableSecondsLimit * time.Second
 	out, err := cmd.Output()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -633,6 +641,123 @@ func lsofCWDs(ctx context.Context) ([]string, error) {
 	// lsof exits 1 when some process could not be inspected; what it did
 	// list is still the kernel's answer for this user's processes.
 	return paths, nil
+}
+
+// The slot belongs to the read until it exits. A full pool with an abandoned
+// read rejects new work and wakes callers already waiting for a slot.
+type processTablePool struct {
+	mu        sync.Mutex
+	slots     chan struct{}
+	abandoned int
+	changed   chan struct{}
+}
+
+var processTable = processTablePool{
+	slots:   make(chan struct{}, capacity.ResourceProcessTableReadsLimit),
+	changed: make(chan struct{}),
+}
+
+func (p *processTablePool) stalled() bool {
+	return len(p.slots) == cap(p.slots) && p.abandoned > 0
+}
+
+func (p *processTablePool) signal() {
+	close(p.changed)
+	p.changed = make(chan struct{})
+}
+
+// ProcessTableReadStatus observes occupied slots and whether fresh reads are refused.
+func ProcessTableReadStatus() (active int, stalled bool) {
+	processTable.mu.Lock()
+	defer processTable.mu.Unlock()
+	return len(processTable.slots), processTable.stalled()
+}
+
+func (p *processTablePool) acquire(ctx context.Context) error {
+	for {
+		p.mu.Lock()
+		switch {
+		case ctx.Err() != nil:
+			p.mu.Unlock()
+			return ctx.Err()
+		case p.stalled():
+			p.mu.Unlock()
+			return taskresources.Failure{Code: taskresource.ProcessTableStalled}
+		case len(p.slots) < cap(p.slots):
+			p.slots <- struct{}{}
+			p.mu.Unlock()
+			return nil
+		}
+		changed := p.changed
+		p.mu.Unlock()
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+func (b *Broker) readProcessCWDs(parent context.Context) ([]string, error) {
+	ctx, cancel := context.WithTimeout(parent, capacity.ResourceProcessTableSecondsLimit*time.Second)
+	defer cancel()
+	classify := func(err error) error {
+		if parent.Err() != nil {
+			return parent.Err()
+		}
+		if errors.Is(err, context.DeadlineExceeded) {
+			return taskresources.Failure{Code: taskresource.ProcessTableTimeout, Cause: err}
+		}
+		return err
+	}
+	p := &processTable
+	if err := p.acquire(ctx); err != nil {
+		return nil, classify(err)
+	}
+	read := b.ProcessCWDs
+	if read == nil {
+		read = lsofCWDs
+	}
+	type result struct {
+		paths []string
+		err   error
+	}
+	done := make(chan result, 1)
+	var finished, abandoned bool // protected by p.mu
+	go func() {
+		var paths []string
+		err := ctx.Err()
+		if err == nil {
+			paths, err = read(ctx)
+		}
+		p.mu.Lock()
+		finished = true
+		<-p.slots
+		if abandoned {
+			p.abandoned--
+		}
+		p.signal()
+		p.mu.Unlock()
+		done <- result{paths, err}
+	}()
+	select {
+	case got := <-done:
+		if err := ctx.Err(); err != nil {
+			return nil, classify(err)
+		}
+		return got.paths, classify(got.err)
+	case <-ctx.Done():
+		p.mu.Lock()
+		if !finished {
+			abandoned = true
+			p.abandoned++
+			if p.stalled() {
+				p.signal()
+			}
+		}
+		p.mu.Unlock()
+		return nil, classify(ctx.Err())
+	}
 }
 
 // ownedPath is whether path is exactly where this broker would have put the
@@ -965,7 +1090,7 @@ func (b *Broker) removeCheckout(ctx context.Context, r Record, snap git.Snapshot
 		d.Evidence["second_process_table"] = inside
 		if err != nil {
 			d.Evidence["second_process_table"] = err.Error()
-			return kept(r, ReclaimWorktree, d.Path, WhyOwnerUnknown, d.Evidence)
+			return kept(r, ReclaimWorktree, d.Path, processTableReclaimReason(err), d.Evidence)
 		}
 		return kept(r, ReclaimWorktree, d.Path, WhyOwnerPresent, d.Evidence)
 	}
@@ -1260,9 +1385,8 @@ func (b *Broker) reclaimedDirty(ctx context.Context, taskID string) (dirty bool,
 	return false, "", false
 }
 
-// occupancySnapshot reads process directories lazily, at most once for one
-// read-only projection. Errors stay unknown for every row. Each new request
-// gets a fresh reader; destructive reclamation still uses occupied directly.
+// occupancySnapshot reads process directories once on demand. Each owner
+// check or projection gets a fresh snapshot, with any error shared by its rows.
 func (b *Broker) occupancySnapshot(ctx context.Context) func(...string) (string, error) {
 	var cwds []string
 	var cwdErr error
@@ -1279,11 +1403,7 @@ func (b *Broker) occupancySnapshot(ctx context.Context) func(...string) (string,
 		}
 		if !read {
 			read = true
-			readCWDs := b.ProcessCWDs
-			if readCWDs == nil {
-				readCWDs = lsofCWDs
-			}
-			cwds, cwdErr = readCWDs(ctx)
+			cwds, cwdErr = b.readProcessCWDs(ctx)
 		}
 		if cwdErr != nil {
 			return "", cwdErr

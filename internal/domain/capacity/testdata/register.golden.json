@@ -16563,6 +16563,45 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.process_table_reads",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 4,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceProcessTableReadsLimit",
+      "internal/app/orchestrator.package:chan(capacity.ResourceProcessTableReadsLimit)"
+    ]
+  },
+  {
+    "Register": "daemon",
+    "Name": "resources.process_table_seconds",
+    "Class": "buffer",
+    "Unit": "seconds",
+    "Limit": 10,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/capacity.ResourceProcessTableSecondsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "resources.ready_seconds",
     "Class": "cache",
     "Unit": "seconds",

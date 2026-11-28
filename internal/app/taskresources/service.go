@@ -253,6 +253,11 @@ func (s *Service) inspectFor(ctx context.Context, scope Scope, id, execution str
 	}
 	f := taskresource.Facts{ScopeAllowed: scope.allows(r)}
 	o, ownerErr := s.Owner(ctx, r.Owner.Kind, r.Owner.ID)
+	var failure Failure
+	if errors.As(ownerErr, &failure) && taskresource.IsProcessTableFailure(failure.Code) {
+		i.Decision = taskresource.Decision{Resource: id, Outcome: "kept", Reason: failure.Code, NextOwner: "broker"}
+		return i, nil
+	}
 	if ownerErr == nil && o.Owner == r.Owner {
 		f.OwnerComplete, f.CompletedAt, f.OwnerPresence, f.UsePresence, f.OutputsSaved = o.Complete, o.CompletedAt, o.Presence, o.UsePresence, o.OutputsSaved
 		if f.OwnerComplete && f.OwnerPresence == "absent" && f.UsePresence == "absent" && s.Uses != nil {
@@ -434,6 +439,11 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 			return Result{}, err
 		}
 		if fresh.Digest != plan.Digest {
+			for _, item := range fresh.Items {
+				if err := processTableDecisionFailure(ctx, item.Decision.Reason, "cleanup.replan", item.Resource.ID); err != nil {
+					return Result{}, err
+				}
+			}
 			return Result{}, fail("resource_plan_changed")
 		}
 		plan = fresh
@@ -513,8 +523,9 @@ func (s *Service) applyRemovalLocked(ctx context.Context, scope Scope, item Insp
 	if r.Owner.Kind == "shared_go" {
 		return s.trimSharedGoLocked(ctx, scope, item, r, execution)
 	}
-	row := Receipt{Resource: r.ID, Outcome: "kept", Reason: "resource_changed_before_remove"}
-	if ready, err := s.prepareRemovalLocked(ctx, scope, item, r, execution); !ready || err != nil {
+	row := Receipt{Resource: r.ID, Outcome: "kept"}
+	if reason, err := s.prepareRemovalLocked(ctx, scope, item, r, execution); reason != "" || err != nil {
+		row.Reason = reason
 		return row, err
 	}
 	endChange := s.beginUsageChange()
@@ -563,14 +574,14 @@ func (s *Service) trimSharedGoLocked(ctx context.Context, scope Scope, item Insp
 	var intentErr error
 	row.Reason = "shared_cache_no_trim_candidates"
 	removed, trimErr := s.FS.TrimGoCache(ctx, r, item.Snapshot.Digest, target, func() (bool, error) {
-		var ready bool
-		ready, intentErr = s.prepareRemovalLocked(ctx, scope, item, r, execution)
-		if ready {
-			endChange = s.beginUsageChange()
-		} else {
-			row.Reason = "resource_changed_before_remove"
+		reason, err := s.prepareRemovalLocked(ctx, scope, item, r, execution)
+		intentErr = err
+		if reason != "" || err != nil {
+			row.Reason = reason
+			return false, err
 		}
-		return ready, intentErr
+		endChange = s.beginUsageChange()
+		return true, nil
 	})
 	if intentErr != nil {
 		return Receipt{}, intentErr
@@ -587,28 +598,32 @@ func (s *Service) trimSharedGoLocked(ctx context.Context, scope Scope, item Insp
 	return row, s.finishRemovalLocked(ctx, r, execution, scope.Actor, row)
 }
 
-func (s *Service) prepareRemovalLocked(ctx context.Context, scope Scope, item Inspection, r taskresource.Resource, execution string) (bool, error) {
+func (s *Service) prepareRemovalLocked(ctx context.Context, scope Scope, item Inspection, r taskresource.Resource, execution string) (string, error) {
 	if s.Fault != nil {
 		if err := s.Fault("before_intent", r.ID); err != nil {
-			return false, err
+			return "", err
 		}
 	}
 	if _, err := s.mark(ctx, r, execution, scope.Actor, "removing", "completed_owned_scratch"); err != nil {
-		return false, err
+		return "", err
 	}
 	if s.Fault != nil {
 		if err := s.Fault("after_intent", r.ID); err != nil {
-			return false, err
+			return "", err
 		}
 	}
 	// A fresh owner read after the intent catches readers or protection
 	// changes between planning and the actual filesystem operation.
 	check, err := s.inspectFor(ctx, scope, r.ID, execution)
 	if err != nil || check.Decision.Outcome != "eligible" || check.Snapshot.Digest != item.Snapshot.Digest || check.Manifest != item.Manifest {
-		_, err := s.mark(ctx, r, execution, scope.Actor, "kept", "resource_changed_before_remove")
-		return false, err
+		reason := "resource_changed_before_remove"
+		if taskresource.IsProcessTableFailure(check.Decision.Reason) {
+			reason = check.Decision.Reason
+		}
+		_, err := s.mark(ctx, r, execution, scope.Actor, "kept", reason)
+		return reason, err
 	}
-	return true, nil
+	return "", nil
 }
 
 func (s *Service) finishRemovalLocked(ctx context.Context, r taskresource.Resource, execution, actor string, row Receipt) error {
@@ -811,20 +826,32 @@ func (s *Service) Sweep(ctx context.Context, after string) (Result, string, erro
 		return Result{}, "", err
 	}
 	ids := []string{}
+	var processErr error
 	for _, i := range page.Items {
 		if i.Decision.Outcome == "eligible" {
 			ids = append(ids, i.Resource.ID)
 		}
+		if processErr == nil {
+			processErr = processTableDecisionFailure(ctx, i.Decision.Reason, "cleanup.inspect", i.Resource.ID)
+		}
 	}
 	if len(ids) == 0 {
-		return Result{Items: []Receipt{}}, page.Next, nil
+		return Result{Items: []Receipt{}}, page.Next, processErr
 	}
 	plan, err := s.Plan(ctx, scope, ids)
 	if err != nil {
 		return Result{}, page.Next, err
 	}
 	result, err := s.Apply(ctx, scope, plan, uuid.NewString())
-	return result, page.Next, err
+	if err != nil {
+		return result, page.Next, err
+	}
+	for _, row := range result.Items {
+		if err := processTableDecisionFailure(ctx, row.Reason, "cleanup.apply", row.Resource); err != nil {
+			return result, page.Next, err
+		}
+	}
+	return result, page.Next, processErr
 }
 
 // SweepResource limits automatic maintenance to one resource and its durable
@@ -842,9 +869,13 @@ func (s *Service) SweepResource(ctx context.Context, id string) (Result, error) 
 		return Result{}, err
 	}
 	if plan.Items[0].Decision.Outcome != "eligible" {
-		return Result{}, nil
+		return Result{}, processTableDecisionFailure(ctx, plan.Items[0].Decision.Reason, "cleanup.inspect", id)
 	}
-	return s.Apply(ctx, scope, plan, uuid.NewString())
+	result, err := s.Apply(ctx, scope, plan, uuid.NewString())
+	if err == nil && len(result.Items) == 1 {
+		err = processTableDecisionFailure(ctx, result.Items[0].Reason, "cleanup.apply", id)
+	}
+	return result, err
 }
 
 func (s *Service) prepareSweepResource(ctx context.Context, scope Scope, id string) error {

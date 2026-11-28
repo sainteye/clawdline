@@ -150,7 +150,11 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 			if !ownedPath(b.Tasks.Dir, r.Dir, r.ID) {
 				return out, errors.New("resource_shared_use_unverified")
 			}
-			if presence := b.sharedGoConsumerPresence(r, read, occupied); presence != "absent" {
+			presence, err := b.sharedGoConsumerPresence(r, read, occupied)
+			if err != nil {
+				return out, err
+			}
+			if presence != "absent" {
 				out.Presence, out.UsePresence = presence, presence
 				return out, nil
 			}
@@ -177,22 +181,15 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	return out, nil
 }
 
-func (b *Broker) sharedGoConsumerPresence(r Record, read func() reading, occupied func(...string) (string, error)) string {
+func (b *Broker) sharedGoConsumerPresence(r Record, read func() reading, occupied func(...string) (string, error)) (string, error) {
 	if r.Callback != nil {
-		return b.callbackResourcePresence(r)
+		return b.callbackResourcePresence(r), nil
 	}
 	paths := []string{r.Dir}
 	if r.Worktree != nil {
 		paths = append(paths, r.Worktree.Path)
 	}
-	gone, why, _ := ownerGoneWithOccupancy(read(), r, occupied, paths...)
-	if gone {
-		return "absent"
-	}
-	if why == WhyOwnerPresent {
-		return "present"
-	}
-	return "unknown"
+	return childResourcePresence(r, read(), occupied, paths...)
 }
 
 // UseCallbackGoCache lets trusted check tooling attach before its first Go
