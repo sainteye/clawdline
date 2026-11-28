@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
@@ -141,11 +142,13 @@ func replaceNativeTurn(t *testing.T, n *nativeFixture, newGeneration bool) {
 }
 
 func TestNativeWorkRejectsCurrentRevocationAndCapturedTurnChanges(t *testing.T) {
+	const promptTimeout = 100 * time.Millisecond
 	for _, mode := range []string{"source", "project", "same-binding-turn", "generation", "binding-revoked", "deadline"} {
-		t.Run(mode, func(t *testing.T) {
+		check := func(t *testing.T) {
 			n := startNative(t, func(f *hostFixture) {
 				if mode == "deadline" {
-					f.o.Limits.PromptTimeout = 100 * time.Millisecond
+					f.o.Limits.PromptTimeout = promptTimeout
+					f.p.promptContexts = make(chan context.Context, 1)
 				}
 			})
 			switch mode {
@@ -173,6 +176,18 @@ func TestNativeWorkRejectsCurrentRevocationAndCapturedTurnChanges(t *testing.T) 
 					t.Fatal(e)
 				}
 			case "deadline":
+				promptCtx := fixtureReceive(t, n.f.p.promptContexts)
+				deadline, bounded := promptCtx.Deadline()
+				if remaining := time.Until(deadline); !bounded || remaining != promptTimeout {
+					t.Fatalf("prompt timeout remaining at readiness = %v (bounded: %t), want %v", remaining, bounded, promptTimeout)
+				}
+				if got := n.unregistered.Load(); got != 0 {
+					t.Fatalf("registration revoked before deadline: %d", got)
+				}
+				fixtureReceive(t, promptCtx.Done())
+				if e := promptCtx.Err(); e != context.DeadlineExceeded {
+					t.Fatalf("prompt context after deadline = %v, want deadline exceeded", e)
+				}
 				fixtureEventually(t, func() bool { return n.unregistered.Load() == 1 })
 			}
 			before, e := n.f.h.store.Export(context.Background(), n.bot.Key)
@@ -195,6 +210,14 @@ func TestNativeWorkRejectsCurrentRevocationAndCapturedTurnChanges(t *testing.T) 
 			if n.unregistered.Load() != 1 {
 				t.Fatal("stale registration retained")
 			}
+		}
+		t.Run(mode, func(t *testing.T) {
+			if mode == "deadline" {
+				// Slow fixture startup must leave the full virtual timeout for the ready prompt.
+				synctest.Test(t, check)
+				return
+			}
+			check(t)
 		})
 	}
 }
