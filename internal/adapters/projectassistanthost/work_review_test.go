@@ -285,6 +285,59 @@ func TestAChildsReportingRequestStillWakesTheBotAfterLaterTurns(t *testing.T) {
 	}
 }
 
+func TestWorkReviewSurvivesNewSession(t *testing.T) {
+	n := startNative(t, nil)
+	f, ctx := n.f, t.Context()
+	link := dispatchUnrequested(t, n, "finish-after-new-session")
+	service, err := f.h.Service()
+	if err != nil {
+		t.Fatal(err)
+	}
+	bot, err := f.h.store.Bot(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = service.Edit(ctx, pa.Command{Key: bot.Key, Operation: pa.EditOperation, IdempotencyKey: "new-session-work-review"},
+		pa.EditBot{ExpectedVersion: bot.Version, Roster: &pa.RosterEdit{NewSession: true}}); err != nil {
+		t.Fatal(err)
+	}
+
+	const summary = "Worker finished after the Bot started a new session."
+	record, err := f.o.Broker.Settle(ctx, link.TaskID, orchestrator.StateSuccess, "", &taskdir.Result{Status: "success", Summary: summary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := f.h.store.Export(ctx, bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, message := range x.Messages {
+		if message.Notice != nil && message.Notice.Key == pa.NoticeWorkReviewHeld && message.Notice.Cause == link.TaskID {
+			t.Fatalf("broker result was held instead of reaching the Bot: %s", message.Text)
+		}
+	}
+	review := fixtureReceive(t, f.p.sessions)
+	wake := fixtureReceive(t, f.p.sent)
+	if pa.WorkCompletionTask(wake.Turn) != link.TaskID || wake.Turn.Fence.ConversationID != bot.ConversationID ||
+		wake.Quote == nil || wake.Quote.Text != summary {
+		t.Fatalf("review did not receive the result in the owning Bot's chat: %+v", wake)
+	}
+	if review.q.Resume || wake.Handoff == nil || len(wake.Handoff.Continuation) != 0 || wake.Handoff.Recap != nil {
+		t.Fatalf("review must start fresh without earlier chat: resume=%v handoff=%+v", review.q.Resume, wake.Handoff)
+	}
+	if err = f.h.completeWork(ctx, orchestrator.AssistantWorkSnapshotOf(record)); err != nil {
+		t.Fatal(err)
+	}
+	review.reply <- app.PromptResult{FinalText: "Reviewed the completed work."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, bot.Key, wake.Turn.ID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	if wakes, results := workTurns(t, n); wakes != 1 || results != 1 || f.launcher.calls.Load() != 1 {
+		t.Fatalf("wakes=%d results=%d workers=%d, want one each", wakes, results, f.launcher.calls.Load())
+	}
+}
+
 // A wake the host refuses for good is not silent: the person reads the typed
 // reason in the chat, once, and no review turn follows later.
 func TestARefusedWakeTellsThePersonInTheChatOnce(t *testing.T) {

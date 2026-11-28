@@ -249,11 +249,13 @@ reviewed again when it settles, and replay or restart queues nothing.
 
 The review prompt says it is a report on dispatched work, not a new
 instruction from the user, and names the task ID, title and state; the result
-summary is the quoted message. The turn is a host notice and carries no user
-authorization. A review turn that dispatches again extends a chain; at the
-routine follow-up limit (`bots.follow_up_chain`, 24) the host writes one notice
-in the chat instead of a turn, under the same receipt. The Bot reply uses the ordinary conversation
-queue. The task ID keys its send receipt, so a retry of callback delivery
+summary is the quoted message. Starting a new native session keeps the
+Bot's dispatched work in the same conversation. An eligible review can use
+the result summary without loading the previous native session's history.
+The turn is a host notice and carries no user authorization. A review turn
+that dispatches again extends a chain. At the routine follow-up limit
+(`bots.follow_up_chain`, 24) the host writes one notice in the chat under the
+same receipt. The Bot reply uses the ordinary conversation queue. The task ID keys its send receipt, so a retry of callback delivery
 does not launch the worker or queue another Bot turn. The broker's existing
 outbox recovery handles interrupted delivery. An unstarted follow-up survives a
 daemon restart; an interrupted model prompt is never sent again automatically.
