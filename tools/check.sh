@@ -96,6 +96,11 @@ if [ "$plan_only" != yes ] && [ -n "${CLAWDLINE_CALLBACK_TASK_ID:-}" ] && [ "${C
   if clawdline guide callback 2>/dev/null | grep -F 'resources use-go' >/dev/null; then
     check_go_cache=$(clawdline resources use-go "$CLAWDLINE_CALLBACK_TASK_ID") || exit 2
     export GOCACHE="$check_go_cache"
+    check_go_modules="${check_go_cache%/*}/go-mod"
+    # Earlier daemons only create go-build. Preserve an explicit module cache.
+    if [ -z "${GOMODCACHE:-}" ] && [ -d "$check_go_modules" ] && [ ! -L "$check_go_modules" ]; then
+      export GOMODCACHE="$check_go_modules"
+    fi
   fi
 fi
 

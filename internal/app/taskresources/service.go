@@ -156,7 +156,13 @@ func visibleResource(scope Scope, r taskresource.Resource) taskresource.Resource
 }
 
 func manifest(ctx context.Context, o OwnerState) (string, error) {
-	if o.OutputRoot == "" || o.EvidenceDigest == "" {
+	if o.EvidenceDigest == "" {
+		return "", fail("resource_outputs_unavailable")
+	}
+	if o.Owner.Kind == "shared_go" {
+		return digest(o.EvidenceDigest), nil
+	}
+	if o.OutputRoot == "" {
 		return "", fail("resource_outputs_unavailable")
 	}
 	snapshot, err := resourcefs.Manifest(ctx, o.OutputRoot)
@@ -261,10 +267,11 @@ func (s *Service) inspectFor(ctx context.Context, scope Scope, id, execution str
 		f.PathOwned, f.IdentityMatches = true, true
 	}
 	evaluated := r
+	sharedGo := r.Owner.Kind == "shared_go"
 	if evaluated.LastOutcome == "removing" && execution != "" && evaluated.LastExecution == execution {
 		evaluated.LastOutcome = ""
 	}
-	if scanErr == nil && (r.Pinned || !f.OwnerComplete || f.OwnerPresence != "absent" || f.UsePresence != "absent" || !f.OutputsSaved || r.Manifest == "" || evaluated.LastOutcome == "removing") {
+	if scanErr == nil && (r.Pinned || !f.OwnerComplete || f.OwnerPresence != "absent" || f.UsePresence != "absent" || !f.OutputsSaved || (!sharedGo && r.Manifest == "") || evaluated.LastOutcome == "removing") {
 		i.Decision = taskresource.Evaluate(evaluated, s.policy(), f, s.now())
 		return i, nil
 	}
@@ -275,7 +282,12 @@ func (s *Service) inspectFor(ctx context.Context, scope Scope, id, execution str
 	}
 	if ownerErr == nil && o.Owner == r.Owner {
 		i.Manifest, err = manifest(ctx, o)
-		f.ManifestMatches = err == nil && i.Manifest == r.Manifest
+		if sharedGo {
+			// Apply still compares this live proof with the reviewed plan and
+			// checks for new readers under the consumer-attachment fence.
+			evaluated.Manifest = i.Manifest
+		}
+		f.ManifestMatches = err == nil && i.Manifest == evaluated.Manifest
 	}
 	i.Decision = taskresource.Evaluate(evaluated, s.policy(), f, s.now())
 	if scanErr != nil {

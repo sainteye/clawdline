@@ -6,13 +6,62 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
+	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
-	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
 	"github.com/sainteye/clawdline/internal/app/taskresources"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
+
+type childGoCache struct {
+	ID        string `json:"id"`
+	Project   string `json:"project"`
+	BuildPath string `json:"build_path"`
+}
+
+func (b *Broker) spawnWithGoCache(ctx context.Context, r Record, cwd, secret string, opened func()) Record {
+	if next, err := b.prepareChildGoCache(ctx, r, cwd); err == nil {
+		r = next
+	} else {
+		log.Printf("broker: task %s could not attach its Project Go cache: %v", r.ID, err)
+	}
+	return b.spawn(ctx, r, cwd, secret, opened)
+}
+
+func (b *Broker) prepareChildGoCache(ctx context.Context, r Record, cwd string) (Record, error) {
+	// Verification and support launches have a closed writable filesystem.
+	// Provider-owned and ask-mode Sessions keep their configured permissions.
+	if b.Resources == nil || r.Gate != nil || r.Kind == TaskKindSupportAnswer {
+		return r, nil
+	}
+	switch r.Assistant {
+	case projects.AssistantCodex:
+		if (r.PermissionMode != "edits" && r.PermissionMode != "full") || len(codexGitWritePaths(r, cwd)) == 0 {
+			return r, nil
+		}
+	case projects.AssistantClaude:
+		if r.PermissionMode != "full" {
+			return r, nil
+		}
+	default:
+		return r, nil
+	}
+	// Avoid allocating a resource for a project without a Go workspace.
+	for dir := cwd; filepath.IsAbs(dir); dir = filepath.Dir(dir) {
+		for _, name := range []string{"go.mod", "go.work"} {
+			if info, err := os.Stat(filepath.Join(dir, name)); err == nil && info.Mode().IsRegular() {
+				return b.attachSharedGoCache(ctx, r, true)
+			}
+		}
+		if dir == r.Repository || (r.Worktree != nil && dir == r.Worktree.Path) || dir == filepath.Dir(dir) {
+			break
+		}
+	}
+	return r, nil
+}
 
 func (b *Broker) prepareSharedGoCache(ctx context.Context, r Record) (Record, error) {
 	return b.attachSharedGoCache(ctx, r, true)
@@ -31,6 +80,14 @@ func (b *Broker) attachSharedGoCache(ctx context.Context, r Record, beforeStart 
 	err := b.Resources.UseSharedGo(ctx, ResourceOwnerScope(), project, func(resource taskresource.Resource, path string) error {
 		var err error
 		next, err = b.mutate(ctx, r.ID, "task.shared_go_cache_attached", func(x *Record) error {
+			if x.Callback == nil && x.State == StateQueued && beforeStart {
+				cache := childGoCache{ID: resource.ID, Project: project, BuildPath: path}
+				if x.SharedGoCache != nil && *x.SharedGoCache != cache {
+					return errors.New("resource_identity_changed")
+				}
+				x.SharedGoCache = &cache
+				return nil
+			}
 			if x.Callback == nil || x.State.Terminal() || (beforeStart && !x.Callback.StartedAt.IsZero()) {
 				return errors.New("resource_owner_already_started")
 			}
@@ -45,8 +102,8 @@ func (b *Broker) attachSharedGoCache(ctx context.Context, r Record, beforeStart 
 	return next, err
 }
 
-// Every consumer is a durable callback record, not a client assertion or a
-// heartbeat timeout. A live group or unreadable publication preserves the cache.
+// The durable consumer records identify which processes must have stopped.
+// Their output publication is relevant only to their individual resources.
 func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.OwnerState, error) {
 	out := taskresources.OwnerState{Presence: "unknown", UsePresence: "unknown"}
 	resources, next, err := b.Store.TaskResourcesByOwnerPage(ctx, "shared_go", id, "")
@@ -55,7 +112,6 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	}
 	resource := resources[0]
 	out.Owner = resource.Owner
-	out.Complete, out.OutputsSaved = true, true
 	out.Presence, out.UsePresence = "absent", "absent"
 	proofs := sha256.New()
 	consumers := 0
@@ -70,37 +126,39 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 			if json.Unmarshal(row.Record, &r) != nil || r.ID != row.ID || !IsTaskID(r.ID) {
 				return out, errors.New("resource_source_unknown")
 			}
-			if r.Callback == nil || r.Callback.GoCacheID != resource.ID {
+			use := r.SharedGoCache
+			if r.Callback != nil && r.Callback.GoCacheID != "" {
+				use = &childGoCache{ID: r.Callback.GoCacheID, Project: r.Callback.GoCacheProject, BuildPath: r.Callback.GoCachePath}
+			}
+			if use == nil || use.ID != resource.ID {
 				continue
 			}
-			if r.Callback.GoCacheProject != resource.Owner.Project || r.Callback.GoCachePath != filepath.Join(b.Resources.FS.Path(), resource.ID, "go-build") {
+			if use.Project != resource.Owner.Project || use.BuildPath != filepath.Join(b.Resources.FS.Path(), resource.ID, "go-build") {
 				return out, errors.New("resource_shared_use_unverified")
 			}
-			o, err := b.resourceOwner(ctx, "task", r.ID)
+			r, err := Decode(row.Record)
 			if err != nil {
-				return out, err
+				return out, errors.New("resource_source_unknown")
 			}
-			out.Complete = out.Complete && o.Complete
-			out.OutputsSaved = out.OutputsSaved && o.OutputsSaved
-			out.CompletedAt = max(out.CompletedAt, o.CompletedAt)
-			if o.Presence != "absent" {
-				out.Presence = o.Presence
-			}
-			if o.UsePresence != "absent" {
-				out.UsePresence = o.UsePresence
-			}
-			if !out.Complete || !out.OutputsSaved || out.Presence != "absent" || out.UsePresence != "absent" {
+			if !r.State.Terminal() || r.FinishedAt.IsZero() {
 				return out, nil
 			}
-			manifest, err := resourcefs.Manifest(ctx, o.OutputRoot)
-			if err != nil {
-				return out, err
+			if !ownedPath(b.Tasks.Dir, r.Dir, r.ID) {
+				return out, errors.New("resource_shared_use_unverified")
 			}
-			proofs.Write([]byte(evidenceDigest(struct{ ID, Evidence, Files string }{r.ID, o.EvidenceDigest, manifest.Digest})))
+			out.Presence = b.sharedGoConsumerPresence(ctx, r)
+			out.UsePresence = out.Presence
+			if out.Presence != "absent" {
+				return out, nil
+			}
+			out.CompletedAt = max(out.CompletedAt, r.FinishedAt.Unix())
+			proofs.Write([]byte(evidenceDigest(struct {
+				ID, Terminal, Backend string
+				State                 State
+				Spawned, Finished     time.Time
+				Callback              *Callback
+			}{r.ID, r.ChildTerminalID, r.ChildBackend, r.State, r.SpawnedAt, r.FinishedAt, r.Callback})))
 			consumers++
-			if out.OutputRoot == "" {
-				out.OutputRoot = o.OutputRoot
-			}
 		}
 		if next == "" {
 			break
@@ -110,8 +168,27 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	if consumers == 0 {
 		return out, errors.New("resource_shared_use_missing")
 	}
+	out.Complete, out.OutputsSaved = true, true
 	out.EvidenceDigest = hex.EncodeToString(proofs.Sum(nil))
 	return out, nil
+}
+
+func (b *Broker) sharedGoConsumerPresence(ctx context.Context, r Record) string {
+	if r.Callback != nil {
+		return b.callbackResourcePresence(r)
+	}
+	paths := []string{r.Dir}
+	if r.Worktree != nil {
+		paths = append(paths, r.Worktree.Path)
+	}
+	gone, why, _ := b.ownerGone(ctx, b.read(ctx), r, paths...)
+	if gone {
+		return "absent"
+	}
+	if why == WhyOwnerPresent {
+		return "present"
+	}
+	return "unknown"
 }
 
 // UseCallbackGoCache lets trusted check tooling attach before its first Go
