@@ -24,10 +24,6 @@ var decisionRules = []string{
 	"do not draft the authorization yourself",
 	"their own direct message in your chat",
 	"within the scope of your question and their reply",
-	"需要使用者允許、授權或在選項中做決定",
-	"一般的小問題直接在聊天問",
-	"不要請使用者複製貼上授權文字",
-	"不要自己代擬授權文字",
 }
 
 // The instructions each agent actually receives when its session opens.
@@ -109,7 +105,7 @@ func TestMessageBotToolTellsTheRequesterWhereThePersonAnswers(t *testing.T) {
 		if tool.Name != "message_bot" {
 			continue
 		}
-		for _, rule := range []string{"waiting for the user's decision", "Go to", "do not draft authorization text", "不要自己代擬授權文字"} {
+		for _, rule := range []string{"waiting for the user's decision", "Go to", "do not draft authorization text"} {
 			if !strings.Contains(tool.Description, rule) {
 				t.Errorf("message_bot does not say %q", rule)
 			}

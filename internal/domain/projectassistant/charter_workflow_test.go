@@ -102,7 +102,7 @@ func TestRenderCharterWorkflowIsExact(t *testing.T) {
 	names := map[string]string{"atlas": "Atlas｜產品開發主管", "xavia": "Xavia", "fuse": "Fuse", "lens": "Lens"}
 	got := RenderCharterWorkflow(&w, func(id string) string { return names[id] })
 	want := workflowRule + "\n" +
-		"- 開交辦卡（any Bot 任何 Bot）：→ 派工・審證據\n" +
+		"- 開交辦卡（any Bot）：→ 派工・審證據\n" +
 		"- 派工・審證據（Atlas｜產品開發主管）：審過 → 整合・推 GitHub・裝 dev；動到失敗處理 → 可靠性審查\n" +
 		"- 整合・推 GitHub・裝 dev（Xavia）：→ 畫面驗收\n" +
 		"- 可靠性審查（Fuse）：通過 → 整合・推 GitHub・裝 dev\n" +
@@ -110,12 +110,12 @@ func TestRenderCharterWorkflowIsExact(t *testing.T) {
 		"  Both phone and desktop widths.\n" +
 		"- 部署 Cloud（Xavia）：對外看得到 → 更新官網與 README；其他 → 完成\n" +
 		"- 更新官網與 README（beacon）：→ 完成\n" +
-		"- 完成（done 完成）"
+		"- 完成（done）"
 	if got != want {
 		t.Fatalf("rendered workflow:\n%s\nwant:\n%s", got, want)
 	}
-	if !strings.Contains(workflowRule, "How one piece of work flows") || !strings.Contains(workflowRule, "一件事怎麼走") {
-		t.Fatalf("the heading is bilingual: %q", workflowRule)
+	if !strings.Contains(workflowRule, "How one piece of work flows") {
+		t.Fatalf("the heading is missing: %q", workflowRule)
 	}
 	if RenderCharterWorkflow(nil, nil) != "" || RenderCharterWorkflow(&CharterWorkflow{}, nil) != "" {
 		t.Fatal("no workflow renders nothing")

@@ -22,8 +22,8 @@ func TestDeliveredTextCarriesOnlyTheBotsPlaybooks(t *testing.T) {
 		strings.Contains(got, "Two approvals.") || strings.HasSuffix(got, "\n") {
 		t.Fatalf("maker hears %q", got)
 	}
-	if !strings.Contains(playbookRule, "the charter, then these playbooks, then your own instructions, then your memory") || !strings.Contains(playbookRule, "優先順序") {
-		t.Fatalf("the precedence is stated in both languages: %q", playbookRule)
+	if !strings.Contains(playbookRule, "the charter, then these playbooks, then your own instructions, then your memory") {
+		t.Fatalf("the precedence is missing: %q", playbookRule)
 	}
 	if got := v.DeliveredText("other"); got != "Ask before deploying." {
 		t.Fatalf("a Bot without playbooks hears only the charter: %q", got)

@@ -82,7 +82,7 @@ func TestWorkReviewWakesUnrequestedWorkForEveryEnding(t *testing.T) {
 			wake := fixtureReceive(t, n.f.p.sent)
 			text := wake.Text
 			if pa.WorkCompletionTask(wake.Turn) != link.TaskID || wake.Quote == nil || wake.Quote.Text != "Worker summary." ||
-				!strings.Contains(text, "not a new instruction from the user") || !strings.Contains(text, "不是使用者的新指示") ||
+				!strings.Contains(text, "not a new instruction from the user") ||
 				!strings.Contains(text, link.TaskID) || !strings.Contains(text, "Review the result") {
 				t.Fatalf("review turn did not carry the report: %+v", wake.Turn)
 			}

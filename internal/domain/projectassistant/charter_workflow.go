@@ -244,7 +244,7 @@ func workflowOrder(w CharterWorkflow) []WorkflowState {
 	return out
 }
 
-const workflowRule = "How one piece of work flows in this team. Follow these steps; each line is a step, who does it, and where each outcome goes next. 一件事怎麼走：請依照以下流程；每行是一個步驟、由誰負責，以及每種結果接著到哪一步。"
+const workflowRule = "How one piece of work flows in this team. Follow these steps; each line is a step, who does it, and where each outcome goes next."
 
 // RenderCharterWorkflow is the workflow as every Bot hears it: one line per
 // state in breadth-first order from start. name gives a Bot's display name
@@ -260,7 +260,7 @@ func RenderCharterWorkflow(w *CharterWorkflow, name func(string) string) string 
 	var b strings.Builder
 	b.WriteString(workflowRule)
 	for _, s := range workflowOrder(*w) {
-		who := "any Bot 任何 Bot"
+		who := "any Bot"
 		if s.BotID != "" {
 			who = s.BotID
 			if name != nil {
@@ -270,7 +270,7 @@ func RenderCharterWorkflow(w *CharterWorkflow, name func(string) string) string 
 			}
 		}
 		if s.Kind == WorkflowDone {
-			who = "done 完成"
+			who = "done"
 		}
 		b.WriteString("\n- " + s.Title + "（" + who + "）")
 		ways := []string{}
@@ -303,7 +303,7 @@ func CharterWorkflowEditContext(projectID string, version int64, workflowJSON, w
 	}
 	v := strconv.FormatInt(version, 10)
 	return "<charter_workflow_edit_request project=\"" + projectID + "\" version=\"" + v + "\">\n" +
-		"The person asked, from this Project's charter page, to change how one piece of work flows: the team workflow, a state machine of states and transitions. Read the current workflow below (null when there is none), then call propose_charter_workflow once with this project, base_version " + v + ", the whole new workflow and a one-line summary of what you changed. Exactly one start state, at least one done state, every state reachable from start, no transition out of a done state; bot_id is a Bot of this Project or empty for any Bot. Nothing changes until the person presses Apply. Reply briefly in their language with what you changed. 使用者從章程頁要求修改「一件事怎麼走」的團隊流程（狀態與轉換組成的狀態機）：讀完以下目前流程（沒有時為 null）後，呼叫一次 propose_charter_workflow，填入完整新流程與一句修改摘要；只能有一個起點、至少一個完成、每個狀態都要從起點走得到、完成之後不能再有轉換；bot_id 填這個 Project 的 Bot，留空代表任何 Bot。使用者按下套用前不會有任何改變。\n" +
+		"The person asked, from this Project's charter page, to change how one piece of work flows: the team workflow, a state machine of states and transitions. Read the current workflow below (null when there is none), then call propose_charter_workflow once with this project, base_version " + v + ", the whole new workflow and a one-line summary of what you changed. Exactly one start state, at least one done state, every state reachable from start, no transition out of a done state; bot_id is a Bot of this Project or empty for any Bot. Nothing changes until the person presses Apply. Reply briefly in their language with what you changed.\n" +
 		"<current_workflow>\n" + xmlText(workflowJSON) + "\n</current_workflow>\n" +
 		"<person_request>\n" + xmlText(words) + "\n</person_request>\n</charter_workflow_edit_request>\n\n"
 }

@@ -96,7 +96,7 @@ func (v CharterVersion) DeliveredTextNamed(bot string, name func(string) string)
 	return text + renderPlaybooks(v.PlaybooksFor(bot))
 }
 
-const playbookRule = "The playbooks below belong to this charter and are assigned to you. Order of precedence: the charter, then these playbooks, then your own instructions, then your memory. 以下 playbook 屬於這份章程並指派給你。優先順序：章程，其次是這些 playbook，再來是你自己的指示，最後是記憶。"
+const playbookRule = "The playbooks below belong to this charter and are assigned to you. Order of precedence: the charter, then these playbooks, then your own instructions, then your memory."
 
 func renderPlaybooks(playbooks []CharterPlaybook) string {
 	if len(playbooks) == 0 {

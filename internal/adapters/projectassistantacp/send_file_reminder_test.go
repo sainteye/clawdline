@@ -14,7 +14,7 @@ import (
 func TestEveryBotFrameSaysToSendFilesNotPaths(t *testing.T) {
 	for _, agent := range []pa.Agent{pa.ClaudeCode, pa.Codex, pa.Grok, pa.Gemini} {
 		prompt := systemPrompt(projectassistant.OpenRequest{Bot: pa.Bot{Name: "Synthetic", Agent: agent}, Directory: t.TempDir()})
-		for _, fact := range []string{"call send_file with its path", "file:// link in your text is not a download", "呼叫 send_file"} {
+		for _, fact := range []string{"call send_file with its path", "file:// link in your text is not a download"} {
 			if !strings.Contains(prompt, fact) {
 				t.Fatalf("%s frame does not say %q", agent, fact)
 			}

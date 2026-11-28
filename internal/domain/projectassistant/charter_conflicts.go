@@ -139,8 +139,7 @@ func ValidateCharterConflict(c CharterConflict) error {
 func CharterCheck(version int64) string {
 	v := strconv.FormatInt(version, 10)
 	return "<charter_check version=\"" + v + "\">\n" +
-		"Before you answer, compare version " + v + " of the team charter once with the playbooks it assigns to you, your own memory, your instructions and any workspace file your instructions tell you to follow. For a sentence in a charter playbook use source playbook with the playbook id as path. For each sentence of yours the charter contradicts, call report_charter_conflict once with the exact sentence, the exact charter sentence and its section. Change nothing yourself: the person decides on the charter page. Do not mention this check unless you found something; then continue with the request below. " +
-		"回答前，請把第 " + v + " 版團隊章程與它指派給你的 playbook、你的記憶、指示，以及指示要你遵循的工作區檔案對照一次；章程 playbook 裡的句子，source 填 playbook、path 填 playbook id。每找到一句和章程矛盾的話，就呼叫一次 report_charter_conflict，填入你的原句、章程原句與所在段落。不要自己修改，由使用者在章程頁決定。沒有發現就不必提起這次對照，接著處理下面的請求。\n" +
+		"Before you answer, compare version " + v + " of the team charter once with the playbooks it assigns to you, your own memory, your instructions and any workspace file your instructions tell you to follow. For a sentence in a charter playbook use source playbook with the playbook id as path. For each sentence of yours the charter contradicts, call report_charter_conflict once with the exact sentence, the exact charter sentence and its section. Change nothing yourself: the person decides on the charter page. Do not mention this check unless you found something; then continue with the request below.\n" +
 		"</charter_check>\n\n"
 }
 
@@ -204,7 +203,7 @@ func CharterFixContext(f CharterFix) string {
 		suggested = "<suggested_replacement>\n" + xmlText(f.Suggested) + "\n</suggested_replacement>\n"
 	}
 	return "<charter_fix_request project=\"" + xmlText(f.ProjectID) + "\" version=\"" + strconv.FormatInt(f.Version, 10) + "\" report=\"" + xmlText(f.ReportID) + "\">\n" +
-		"On the charter page the person chose to follow the team charter for a conflict you reported. Change the sentence below in " + where + " so it agrees with the charter: replace it with the suggested sentence when there is one, otherwise rewrite or remove it. Use your own memory tools for memory and edit the file for a workspace file. Reply briefly with what you changed. 使用者在章程頁選擇以章程為準：請把下面這句改成與章程一致（有建議句就用建議句，否則改寫或刪除），記憶用你的記憶工具改，檔案直接編輯，然後簡短回覆你改了什麼。\n" +
+		"On the charter page the person chose to follow the team charter for a conflict you reported. Change the sentence below in " + where + " so it agrees with the charter: replace it with the suggested sentence when there is one, otherwise rewrite or remove it. Use your own memory tools for memory and edit the file for a workspace file. Reply briefly with what you changed.\n" +
 		"<your_sentence>\n" + xmlText(f.BotSentence) + "\n</your_sentence>\n" +
 		"<charter_sentence section=\"" + xmlText(f.Section) + "\">\n" + xmlText(f.CharterSentence) + "\n</charter_sentence>\n" +
 		suggested + "</charter_fix_request>\n\n"

@@ -30,7 +30,7 @@ func TestOwnedMCPMessageWorkRoutesOnlyTheTaskAndReportsItsStage(t *testing.T) {
 	f := newMCPFixture(t, messageWorkTestTools{sent: &sent})
 	f.initialize(t)
 	_, list := f.post(t, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`, nil)
-	if !bytes.Contains(list, []byte(`"message_work"`)) || !bytes.Contains(list, []byte("not as the user's authorization")) || !bytes.Contains(list, []byte("不是使用者授權")) {
+	if !bytes.Contains(list, []byte(`"message_work"`)) || !bytes.Contains(list, []byte("not as the user's authorization")) {
 		t.Fatalf("message_work is not described: %s", list)
 	}
 	_, b := f.post(t, mcpCall("message_work", map[string]any{"task_id": "owned-task", "text": "Look at the backend first.", "idempotency_key": "k1"}), nil)

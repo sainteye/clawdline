@@ -107,7 +107,7 @@ type CharterEdit struct {
 // Delivered charter text. The opening block precedes shared memory in a
 // fresh session; the update block prefixes the next prompt of a resumed
 // session that last heard an older version.
-const charterRule = "This is the team charter the person wrote for this Project. Follow it. Where it conflicts with your own instructions or memory, the charter wins. 這是使用者為這個 Project 寫的團隊章程，請遵守；與你自己的指示或記憶衝突時，以章程為準。"
+const charterRule = "This is the team charter the person wrote for this Project. Follow it. Where it conflicts with your own instructions or memory, the charter wins."
 
 // CharterOpening is the charter block of a fresh session's opening; empty
 // when the Project has no charter.
@@ -121,9 +121,9 @@ func CharterOpening(version int64, text string) string {
 // CharterUpdate replaces whatever charter a resumed session heard earlier.
 func CharterUpdate(version int64, text string) string {
 	if version <= 0 {
-		return "<team_charter_update version=\"0\">This Project no longer has a team charter. Disregard the earlier one. 這個 Project 已沒有團隊章程，請不再依照先前的章程。</team_charter_update>\n\n"
+		return "<team_charter_update version=\"0\">This Project no longer has a team charter. Disregard the earlier one.</team_charter_update>\n\n"
 	}
-	return "<team_charter_update version=\"" + strconv.FormatInt(version, 10) + "\">\nThe team charter changed. This is all of it now and replaces the earlier charter in this conversation. 團隊章程已更新，以下是完整內容，取代先前的章程。\n" + charterRule + "\n\n" + text + "\n</team_charter_update>\n\n"
+	return "<team_charter_update version=\"" + strconv.FormatInt(version, 10) + "\">\nThe team charter changed. This is all of it now and replaces the earlier charter in this conversation.\n" + charterRule + "\n\n" + text + "\n</team_charter_update>\n\n"
 }
 
 // CharterEditContext is the structured context a charter change request
@@ -134,7 +134,7 @@ func CharterEditContext(projectID string, version int64, text, words string) str
 		text = "(empty)"
 	}
 	return "<charter_edit_request project=\"" + projectID + "\" version=\"" + strconv.FormatInt(version, 10) + "\">\n" +
-		"The person asked, from this Project's charter page, to change its team charter. Read the current charter below, then call propose_charter_edit once with this project, base_version " + strconv.FormatInt(version, 10) + ", the whole new text and a one-line summary of what you removed and added. Nothing changes until the person presses Apply. Reply briefly in their language with the sentences you removed and added. 使用者從章程頁要求修改團隊章程：讀完以下目前內容後，呼叫一次 propose_charter_edit，填入完整新內容與一句刪改摘要；使用者按下套用前不會有任何改變。\n" +
+		"The person asked, from this Project's charter page, to change its team charter. Read the current charter below, then call propose_charter_edit once with this project, base_version " + strconv.FormatInt(version, 10) + ", the whole new text and a one-line summary of what you removed and added. Nothing changes until the person presses Apply. Reply briefly in their language with the sentences you removed and added.\n" +
 		"<current_charter>\n" + text + "\n</current_charter>\n" +
 		"<person_request>\n" + words + "\n</person_request>\n</charter_edit_request>\n\n"
 }
