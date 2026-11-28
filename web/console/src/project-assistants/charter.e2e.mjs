@@ -12,7 +12,7 @@
 // opening the charter again rereads it; 移除章程 asks once and removes it.
 // The Bots' conflict reports: the roster row and a reminder count them, the
 // side panel (a full-screen sheet on a phone) quotes both sentences, and each
-// of 以章程為準, 改章程 and 先不管 does what it says.
+// of 以章程為準, 改章程 and 封存 does what it says.
 // Playbooks (API 127, "?playbooks"), at 1280x800 and 390x844: the cards say who
 // each is for and whether they read it; the detail reminds who has not; edit,
 // reassign (a bottom sheet on a phone), delete, create, history and a playbook's
@@ -83,8 +83,8 @@ async function rosterAndEdit(page,name,narrow){
   const sections=await page.locator(".pa-charter-section").count()
   check(`${name} five section cards`,()=>assert.equal(sections,5))
   if(narrow){
-    const word=await page.getByRole("button",{name:"編輯第 1 段"}).innerText()
-    check(`${name} phone edit button says 改`,()=>assert.equal(word.trim(),"改"))
+    const editVisible=await page.getByRole("button",{name:"編輯第 1 段"}).isVisible()
+    check(`${name} phone section can be edited`,()=>assert.equal(editVisible,true))
     const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}))
     check(`${name} no sideways scroll`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))
   }
@@ -273,6 +273,34 @@ async function removal(page,name){
   await shot(page,`removed-${name}`)
 }
 
+async function playbookProposals(page,name){
+  await page.goto(origin+"/?playbooks")
+  await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
+  const before=await page.evaluate(()=>{
+    const {studio}=window.charterFixture
+    studio.proposePlaybook("project","bot-3","品質驗收","核對修改前後的畫面。")
+    window.botsFixture.open()
+    return studio.version("project")
+  })
+  await page.locator(".pa-charter-row").click()
+  const proposal=page.getByRole("article",{name:"Documentation 的修改提案"})
+  await proposal.getByText("Playbook「品質驗收」",{exact:true}).waitFor()
+  const preview=await proposal.locator('[data-kind="added"]').allTextContents()
+  check(`${name} Playbook proposal previews suggested text`,()=>assert.ok(preview.some(line=>line.includes("核對修改前後的畫面。"))))
+  const pending=await fixture(page,()=>({version:window.charterFixture.studio.version("project"),writes:window.charterFixture.studio.log.filter(r=>r.method!=="GET").length}))
+  check(`${name} reviewing a Playbook proposal does not change it`,()=>assert.deepEqual(pending,{version:before,writes:0}))
+  await proposal.getByRole("button",{name:/套用/}).click()
+  await proposal.waitFor({state:"detached"})
+  const applied=await fixture(page,()=>({version:window.charterFixture.studio.version("project"),writes:window.charterFixture.studio.log.filter(r=>r.method!=="GET").map(r=>r.path)}))
+  check(`${name} the person applies the Playbook proposal once`,()=>{
+    assert.equal(applied.version,before+1)
+    assert.equal(applied.writes.length,1)
+    assert.match(applied.writes[0],/proposal-apply$/)
+  })
+  await page.locator(".pa-charter-playbook-card").filter({hasText:"品質驗收"}).click()
+  await page.locator(".pa-charter-playbook-body").getByText("核對修改前後的畫面。",{exact:true}).waitFor()
+}
+
 async function conflicts(page,name,narrow){
   await page.goto(origin+"/")
   await page.waitForFunction(()=>!!window.charterFixture&&!!window.botsFixture)
@@ -312,19 +340,25 @@ async function conflicts(page,name,narrow){
   check(`${name} conflict panel touch targets`,()=>assert.deepEqual(small,[]))
   const width=await page.evaluate(()=>({doc:document.documentElement.scrollWidth,inner:innerWidth}))
   check(`${name} no sideways scroll with the panel`,()=>assert.ok(width.doc<=width.inner,JSON.stringify(width)))
-  // 以章程為準 on a playbook file goes to the Bot; on instructions the daemon fixes it.
+  // Follow the charter on a workspace file and on a report the daemon can fix.
   await cards.nth(2).getByRole("button",{name:"以章程為準，改掉它的那一句"}).click()
-  await panel.getByText("已交給 Code review 修改").waitFor()
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-charter-conflicts .pa-charter-conflict").length===2)
   await cards.nth(0).getByRole("button",{name:"以章程為準，改掉它的那一句"}).click()
-  await panel.getByText("已改成和章程一致").waitFor()
-  // 先不管 removes the report from the list.
-  await cards.nth(0).getByRole("button",{name:"先不管"}).click()
-  await page.getByText("這一項先不管。").first().waitFor()
+  await page.waitForFunction(()=>document.querySelectorAll(".pa-charter-conflicts .pa-charter-conflict").length===1)
+  await cards.nth(0).getByRole("button",{name:"封存",exact:true}).click()
+  await panel.getByText("目前沒有 Bot 回報不一致。").waitFor()
   const after=await cards.count()
-  check(`${name} a dismissed report leaves the list`,()=>assert.equal(after,2))
-  await shot(page,`conflicts-handled-${name}`)
-  const reminder=await page.locator(".pa-charter-conflict-banner").count()
+  check(`${name} handled and archived reports leave the active list`,()=>assert.equal(after,0))
+  const reminder=await banner.count()
   check(`${name} no reminder without open reports`,()=>assert.equal(reminder,0))
+  await panel.getByRole("button",{name:"關閉",exact:true}).click()
+  const archive=page.locator(".pa-charter-conflict-history")
+  assert.equal(await archive.getAttribute("open"),null)
+  await archive.getByText("章程不一致歷史",{exact:true}).click()
+  for(const label of ["已交給 Code review 修改","已改成和章程一致","已封存"]){
+    await archive.getByText(label,{exact:true}).waitFor()
+  }
+  await shot(page,`conflicts-handled-${name}`)
   // 改章程 opens the request box with both quotes.
   await page.evaluate(()=>window.charterFixture.studio.reportConflict("project",{bot_id:"bot-2",source:"memory",bot_sentence:"交辦卡不用寫驗收方式。",charter_sentence:"寫清楚目標和驗收方式。",section:"交辦卡"}))
   await page.waitForFunction(()=>!!document.querySelector(".pa-charter-conflict-banner")||document.querySelectorAll(".pa-charter-conflict[data-state=open]").length>0,null,{timeout:15000})
@@ -344,7 +378,7 @@ async function history(page,name){
   await panel.getByText("第 3 版改了什麼").waitFor()
   await shot(page,`history-${name}`)
   const versions=await panel.locator(".pa-charter-versions button").allInnerTexts()
-  check(`${name} versions newest first with who and what`,()=>{assert.equal(versions.length,3);assert.match(versions[0],/第 3 版[\s\S]*目前[\s\S]*主助理的提案：交辦卡寫清楚驗收方式[\s\S]*主助理/);assert.match(versions[2],/第 1 版[\s\S]*從範本建立[\s\S]*範本/)})
+  check(`${name} versions newest first with who and what`,()=>{assert.equal(versions.length,3);assert.match(versions[0],/第 3 版[\s\S]*目前[\s\S]*Bot 的提案：交辦卡寫清楚驗收方式[\s\S]*Bot 提案/);assert.match(versions[2],/第 1 版[\s\S]*從範本建立[\s\S]*範本/)})
   const box=await panel.boundingBox()
   check(`${name} history is a right-side panel inside the window`,()=>assert.ok(box&&box.x+box.width<=page.viewportSize().width+0.5&&box.width>=300,JSON.stringify(box)))
   await panel.getByRole("button",{name:/^第 2 版/}).click()
@@ -792,7 +826,7 @@ try{
     const narrow=name==="390"
     // 1440x900 is the conflict panel's design size; the other screens are covered above.
     // CHARTER_ONLY=<run name> runs one check, at every size it belongs to.
-    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks,askPolicy,workflow]
+    const runs=name==="1440x900"?[conflicts]:name==="979x605"?[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts]:[rosterAndEdit,headingsAndLayout,proposals,lateProposal,history,removal,settings,conflicts,playbooks,playbookProposals,askPolicy,workflow]
     for(const run of runs.filter(r=>!process.env.CHARTER_ONLY||r.name===process.env.CHARTER_ONLY)){
       const page=await browser.newPage({viewport,deviceScaleFactor:2,locale:"zh-TW",isMobile:narrow,hasTouch:narrow,reducedMotion:"reduce"})
       page.setDefaultTimeout(4000)

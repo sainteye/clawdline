@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishContentKeys": 14974,
+  "englishContentKeys": 14978,
   "riskKeys": 6335,
-  "nonRiskCount": 8639,
+  "nonRiskCount": 8643,
   "groups": [
     {
       "name": "acp / other",
@@ -8468,7 +8468,7 @@
     },
     {
       "name": "teamCharter / other",
-      "count": 154,
+      "count": 158,
       "sources": [
         null
       ],
@@ -8483,6 +8483,7 @@
         "teamCharter.author_person",
         "teamCharter.author_template",
         "teamCharter.cancel",
+        "teamCharter.conflictArchived",
         "teamCharter.conflictChange",
         "teamCharter.conflictChangeReady",
         "teamCharter.conflictChangeRequest",
@@ -8507,9 +8508,11 @@
         "teamCharter.conflictSource_memory",
         "teamCharter.conflictSource_playbook",
         "teamCharter.conflictSource_workspace_file",
+        "teamCharter.conflictSuperseded",
         "teamCharter.conflictsBannerMany",
         "teamCharter.conflictsBannerOne",
         "teamCharter.conflictsClose",
+        "teamCharter.conflictsHistory",
         "teamCharter.conflictsIntro",
         "teamCharter.conflictsJudgment",
         "teamCharter.conflictsTitle",
@@ -8554,6 +8557,7 @@
         "teamCharter.playbooks",
         "teamCharter.playbooksHint",
         "teamCharter.proposalFrom",
+        "teamCharter.proposalPlaybook",
         "teamCharter.proposalStale",
         "teamCharter.reasonCreated",
         "teamCharter.reasonEdit",

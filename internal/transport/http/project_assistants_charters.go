@@ -330,6 +330,13 @@ func (s *Server) charterReaders(r *http.Request) (contract.ProjectAssistantChart
 	return out, after()
 }
 
+func wireProposedPlaybook(p *pa.CharterPlaybook) *contract.ProjectAssistantCharterPlaybook {
+	if p == nil {
+		return nil
+	}
+	return &contract.ProjectAssistantCharterPlaybook{ID: p.ID, Title: p.Title, Text: p.Text, BotIds: []string{}}
+}
+
 func (s *Server) charterProposalsAnswer(ctx context.Context, machine, project string) (contract.ProjectAssistantCharterProposalsResponse, error) {
 	store := s.projectAssistantFloorsStore()
 	current, err := store.Charter(ctx, machine, project)
@@ -342,7 +349,7 @@ func (s *Server) charterProposalsAnswer(ctx context.Context, machine, project st
 	}
 	out := contract.ProjectAssistantCharterProposalsResponse{ContractVersion: pa.ContractVersion, MachineID: machine, ProjectID: project, Version: current.Version, Proposals: make([]contract.ProjectAssistantCharterProposal, 0, len(proposals))}
 	for _, p := range proposals {
-		out.Proposals = append(out.Proposals, contract.ProjectAssistantCharterProposal{ID: p.ID, BaseVersion: p.BaseVersion, Kind: string(p.Kind), Text: p.Text, Workflow: wireWorkflow(p.Workflow),
+		out.Proposals = append(out.Proposals, contract.ProjectAssistantCharterProposal{ID: p.ID, BaseVersion: p.BaseVersion, Kind: string(p.Kind), Text: p.Text, Workflow: wireWorkflow(p.Workflow), Playbook: wireProposedPlaybook(p.Playbook),
 			Summary: p.Summary, BotID: p.BotID, TurnID: p.TurnID, CreatedAt: charterTime(p.CreatedAt), Stale: p.BaseVersion != current.Version})
 	}
 	return out, nil
@@ -369,7 +376,7 @@ func (s *Server) charterApply(w http.ResponseWriter, r *http.Request) (any, erro
 		return nil, err
 	}
 	return s.charterWrite(r, body.MachineID, body.ProjectID, body.IdempotencyKey, func(ctx context.Context) error {
-		_, err := s.projectAssistantFloorsStore().ApplyCharterProposal(ctx, body.MachineID, body.ProjectID, body.ProposalID, body.ExpectedVersion, body.IdempotencyKey, time.Now())
+		_, err := s.projectAssistantFloorsStore().ApplyCharterProposal(ctx, body.MachineID, body.ProjectID, body.ProposalID, body.ExpectedVersion, body.IdempotencyKey, body.PlaybookID, time.Now())
 		return err
 	}, func(ctx context.Context) (any, error) { return s.charterAnswer(ctx, body.MachineID, body.ProjectID, 0) })
 }

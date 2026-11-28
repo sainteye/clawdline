@@ -102,6 +102,9 @@
 .project-assistants .pa-charter-conflict-banner>span { flex:1;min-width:0; }
 .project-assistants .pa-charter-conflict-banner>strong { flex:none;color:#e39567;font-weight:550; }
 .project-assistants .pa-charter-conflicts-intro { margin:0;color:var(--pa-dim);font-size:13px;line-height:1.6; }
+.project-assistants .pa-charter-conflict-history { border-top:1px solid var(--pa-line); }
+.project-assistants .pa-charter-conflict-history summary { min-height:44px;padding:12px 0;color:var(--pa-dim);cursor:pointer; }
+.project-assistants .pa-charter-conflict-history[open] summary { margin-bottom:8px; }
 .project-assistants .pa-charter-conflict-list { list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px; }
 .project-assistants .pa-charter-conflict { display:flex;flex-direction:column;gap:10px;padding:12px 14px;border:1px solid var(--pa-line);border-radius:14px;background:var(--pa-card); }
 .project-assistants .pa-charter-conflict p { margin:0; }

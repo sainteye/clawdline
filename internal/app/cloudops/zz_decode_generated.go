@@ -2943,6 +2943,7 @@ func genDecodeProjectAssistantsCharterPlaybookSave(b body) (plan, LocalRequest, 
 func genDecodeProjectAssistantsCharterProposalApply(b body) (plan, LocalRequest, bool) {
 	if !b.hasOneOf(
 		[]string{"type", "expected_version", "idempotency_key", "machine_id", "project_id", "proposal_id", "request", "session"},
+		[]string{"type", "expected_version", "idempotency_key", "machine_id", "playbook_id", "project_id", "proposal_id", "request", "session"},
 	) {
 		return plan{}, LocalRequest{}, false
 	}
@@ -2953,6 +2954,9 @@ func genDecodeProjectAssistantsCharterProposalApply(b body) (plan, LocalRequest,
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("machine_id", genRule{kind: "string", nonEmpty: true}) {
+		return plan{}, LocalRequest{}, false
+	}
+	if !b.genValid("playbook_id", genRule{kind: "string", nonEmpty: true, maxBytes: 64}) {
 		return plan{}, LocalRequest{}, false
 	}
 	if !b.genValid("project_id", genRule{kind: "string", nonEmpty: true, maxBytes: 200}) {
@@ -2971,7 +2975,7 @@ func genDecodeProjectAssistantsCharterProposalApply(b body) (plan, LocalRequest,
 	if v, sent := b.genSource(genValue{from: "idempotency_key"}); sent {
 		req.Header["Idempotency-Key"] = genText(v)
 	}
-	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "project_id": genValue{from: "project_id"}, "proposal_id": genValue{from: "proposal_id"}})
+	req.Body = b.genFields(map[string]genValue{"expected_version": genValue{from: "expected_version"}, "idempotency_key": genValue{from: "idempotency_key"}, "machine_id": genValue{from: "machine_id"}, "playbook_id": genValue{from: "playbook_id"}, "project_id": genValue{from: "project_id"}, "proposal_id": genValue{from: "proposal_id"}})
 	return p, req, true
 }
 

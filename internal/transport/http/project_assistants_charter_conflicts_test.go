@@ -223,8 +223,8 @@ func TestChangeCharterAndDismissOverHTTPAndCloud(t *testing.T) {
 		t.Fatalf("Cloud read: %d %s", read.Status, read.Payload)
 	}
 	got := envelope.Body
-	if conflictState(t, got, two.ID) != "" || conflictState(t, got, one.ID) != contract.ProjectAssistantCharterConflictStateHandedToCharter {
-		t.Fatalf("a dismissed report is not listed: %+v %s", got.Conflicts, read.Payload)
+	if conflictState(t, got, two.ID) != contract.ProjectAssistantCharterConflictStateDismissed || conflictState(t, got, one.ID) != contract.ProjectAssistantCharterConflictStateHandedToCharter {
+		t.Fatalf("a dismissed report is available in history: %+v %s", got.Conflicts, read.Payload)
 	}
 	// other-bot is not a visible Bot of the Project; the fixture Bot reported.
 	if got.CheckedWithoutReport != 0 || got.Version != c.version || got.Limits.Open != pa.MaxCharterConflicts {

@@ -133,9 +133,11 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   in its chat. The lead answers with a proposal: the whole new text and one line saying which
   sentences it removed and added. **Nothing changes until you press Apply.** A proposal written
   against an older version is marked stale and Apply refuses it (`pa_stale_version`, field
-  `charter_proposal_base`); dismiss it or ask again. The lead's `propose_charter_edit` tool is
-  offered only in its own turns that come directly from you, never to a helper working for it. Its
-  `project` argument may name any Project registered on this machine.
+  `charter_proposal_base`); dismiss it or ask again. Since API 131, any Bot can propose changes to
+  its Project's charter text, workflow or an existing
+  Playbook in a direct conversation or while answering a teammate from the same Project. The
+  request worker makes the proposal in the visible Bot's name. The machine's lead can
+  still propose charter text and workflow for another registered Project in a direct turn.
 - **Removing it.** 移除章程 on the charter page (API 123, `POST …/remove` with the
   `expected_version` you read) takes the charter away. It saves a `removed` version with empty
   text: the Project then reads as having no charter (version 0), its pending proposals go, a Bot
@@ -166,8 +168,7 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
 - **In the console.** A Project with a charter shows a 團隊章程 row first in its roster section;
   it opens the charter where a chat would be, one card per `## ` section with a pencil to edit
   that section (its title and body as separate fields, so clearing the body never drops the
-  heading; saved as the whole document with `expected_version`), the lead's pending
-  proposal as a red/green line diff with Apply, Dismiss and Revise, a 版本紀錄 side panel with
+  heading; saved as the whole document with `expected_version`), pending proposals as red/green diffs with Apply and Dismiss, and Revise for charter text and workflows, a 版本紀錄 side panel with
   each version's diff and a restore, and a composer that sends a change request.
   The page rereads every ten seconds while visible, at once when the tab becomes visible or the
   charter is opened again, and every two seconds for two minutes after a change request, so the
@@ -207,9 +208,10 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   the person sends to the lead as in a change request. The Cloud words are
   `project-assistants.charter-conflicts` and `project-assistants.charter-conflict-resolve`.
   In the console the roster row says “N 個衝突”, the page shows a reminder at the top, and a
-  ~380px side panel (a full-screen sheet on a phone) lists one card per report with
-  以章程為準，改掉它的那一句, 改章程 and 先不管, the count of Bots that reported nothing, and the
-  plain warning that each report is that Bot's own judgment and may miss things.
+  ~380px side panel (a full-screen sheet on a phone) lists open reports with
+  以章程為準，改掉它的那一句, 改章程 and 封存, the count of Bots that reported nothing, and the
+  plain warning that each report is that Bot's own judgment and may miss things. Once handled,
+  a report moves into the collapsed disagreement history below the charter and Playbooks.
 - **Playbooks** (API 127). A playbook is a named Markdown document that belongs to the charter
   and is assigned to some of the Project's Bots (章程管理裡的 playbook). It is part of the charter
   document: creating, editing, reassigning or removing one saves a new charter version authored by
@@ -234,6 +236,11 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
     row, the `<charter_check>` and a conflict report's version are all this per-Bot number.
   - *Who has read it.* `GET …/readers` adds each Bot's `delivery_version` and `playbook_ids`; a Bot
     has heard its latest content when its read `version` is at least its `delivery_version`.
+  - *Bot proposals* (API 131). A Project Bot can use `read_charter` for the current charter
+    version and `read_playbooks` to list its Project's Playbooks or read one by id. It submits
+    the full title and text for one existing Playbook with `propose_playbook_edit`. The proposal
+    appears under the Bot's name. Apply names the reviewed Playbook id and its exact charter
+    version, and preserves the Playbook's assignments and all other charter content.
   - *Conflicts.* The check also asks the Bot to compare the charter with its playbooks; a sentence
     in one is reported with source `playbook` and the playbook id as `path`. `follow_charter` on such
     a report replaces the sentence when it appears exactly once in that playbook, as a new charter
@@ -269,8 +276,7 @@ charter and a Bot's own instructions or memory disagree, **the charter wins**.
   playbooks; text and playbook saves, a text proposal applied and the template keep it, restore
   brings back that version's, removal clears it.
   - *Who changes it.* **Nobody edits the graph by hand, and the console shows no editor.** The
-    person asks the lead Bot, which proposes a whole new workflow with `propose_charter_workflow`
-    (lead only, in a direct turn from the person, beside `propose_charter_edit`) and the person
+    a Project Bot proposes a whole new workflow with `propose_charter_workflow` and the person
     presses Apply; or the person asks a terminal Session (Claude Code, Codex) in its own
     conversation, which runs `clawdline charter workflow set` (`clawdline guide project`). The
     change request from the charter page takes `target: "workflow"`: the lead's turn then carries

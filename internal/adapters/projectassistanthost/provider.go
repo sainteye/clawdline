@@ -91,6 +91,10 @@ type NativeWork struct {
 	messageWork func(context.Context, string, string, string) (pa.WorkMessageReceipt, error)
 
 	leadBotAvailable   func(context.Context) error
+	playbookAccess     func(context.Context) error
+	readPlaybooks      func(context.Context, string) (app.PlaybookRead, error)
+	proposePlaybook    func(context.Context, app.PlaybookEdit) (pa.CharterProposal, error)
+	readCharter        func(context.Context) (app.CharterRead, error)
 	charterAvailable   func(context.Context) error
 	dispatchKinds      func(context.Context) []string
 	proposeCharter     func(context.Context, app.CharterEditProposal) (pa.CharterProposal, error)
@@ -509,6 +513,34 @@ func (w NativeWork) DispatchKinds(ctx context.Context) []string {
 		return nil
 	}
 	return w.dispatchKinds(ctx)
+}
+
+func (w NativeWork) PlaybooksAvailable(ctx context.Context) error {
+	if w.playbookAccess == nil {
+		return failure(pa.ScopeDenied, "charter_project")
+	}
+	return w.playbookAccess(ctx)
+}
+
+func (w NativeWork) ReadPlaybooks(ctx context.Context, id string) (app.PlaybookRead, error) {
+	if w.readPlaybooks == nil {
+		return app.PlaybookRead{}, failure(pa.ScopeDenied, "charter_project")
+	}
+	return w.readPlaybooks(ctx, id)
+}
+
+func (w NativeWork) ProposePlaybookEdit(ctx context.Context, edit app.PlaybookEdit) (pa.CharterProposal, error) {
+	if w.proposePlaybook == nil {
+		return pa.CharterProposal{}, failure(pa.ScopeDenied, "charter_project")
+	}
+	return w.proposePlaybook(ctx, edit)
+}
+
+func (w NativeWork) ReadCharter(ctx context.Context) (app.CharterRead, error) {
+	if w.readCharter == nil {
+		return app.CharterRead{}, failure(pa.ScopeDenied, "charter_project")
+	}
+	return w.readCharter(ctx)
 }
 
 func (w NativeWork) CharterProposalAvailable(ctx context.Context) error {

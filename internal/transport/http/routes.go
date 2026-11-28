@@ -73,7 +73,8 @@ import (
 // Team charter workflows, their proposals, the change-request target, PUT …/workflow and its Cloud word arrive at API 128.
 // Bot rows that tell a counted unread from other new activity (has_activity), and notify_person, arrive at API 129.
 // Bot request cards, their person actions and the daemon's stalled light carried over Cloud arrive at API 130.
-const APILevel = 130
+// Bot charter Playbook proposals and conflict history arrive at API 131.
+const APILevel = 131
 
 // Route is one pattern this daemon registers. Method is "*" for a handler
 // that judges the method itself, which today is every one of them: Go's mux

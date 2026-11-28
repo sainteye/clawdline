@@ -61,7 +61,7 @@ func TestCharterPlaybooksAreVersionsOfTheCharter(t *testing.T) {
 		t.Fatal(err)
 	}
 	proposals, _ := store.CharterProposals(testContext, "m", "p")
-	applied, err := store.ApplyCharterProposal(testContext, "m", "p", proposals[0].ID, 6, "k7", charterAt)
+	applied, err := store.ApplyCharterProposal(testContext, "m", "p", proposals[0].ID, 6, "k7", "", charterAt)
 	if err != nil || len(applied.Playbooks) != 1 {
 		t.Fatalf("an applied proposal keeps the playbooks: %+v %v", applied, err)
 	}

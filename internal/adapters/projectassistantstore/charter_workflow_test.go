@@ -136,12 +136,12 @@ func TestCharterWorkflowProposalAppliesOnlyTheWorkflow(t *testing.T) {
 	if err != nil || len(pending) != 2 || pending[0].Kind != pa.CharterProposalWorkflow || !pa.SameWorkflow(pending[0].Workflow, &flow) || pending[1].Kind != pa.CharterProposalText || pending[1].Workflow != nil {
 		t.Fatalf("proposals carry their kind and workflow: %+v %v", pending, err)
 	}
-	applied, err := store.ApplyCharterProposal(testContext, "m", "p", p.ID, 2, "k3", charterAt)
+	applied, err := store.ApplyCharterProposal(testContext, "m", "p", p.ID, 2, "k3", "", charterAt)
 	if err != nil || applied.Author != pa.CharterByLeadProposal || applied.Text != "Lead plans." || len(applied.Playbooks) != 1 || !pa.SameWorkflow(applied.Workflow, &flow) || applied.DeliveryVersion("idle") != 3 {
 		t.Fatalf("an applied workflow proposal: %+v %v", applied, err)
 	}
 	// The text proposal was made on version 2 and is now stale.
-	_, err = store.ApplyCharterProposal(testContext, "m", "p", pending[1].ID, 3, "k4", charterAt)
+	_, err = store.ApplyCharterProposal(testContext, "m", "p", pending[1].ID, 3, "k4", "", charterAt)
 	requireFailure(t, err, pa.StaleVersion, "charter_proposal_base")
 }
 

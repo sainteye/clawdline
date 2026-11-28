@@ -97,10 +97,10 @@ func (s *Store) ReportCharterConflict(ctx context.Context, machine string, c pa.
 }
 
 // CharterConflicts lists a Project's open reports and the handled ones it
-// keeps, newest first. Dismissed and superseded reports are not listed.
+// keeps, with open reports first and handled reports ordered by resolution.
 func (s *Store) CharterConflicts(ctx context.Context, machine, project string) ([]pa.CharterConflict, error) {
-	rows, err := s.reader.QueryContext(ctx, `SELECT `+conflictColumns+` FROM project_assistant_charter_conflicts WHERE machine=? AND project=? AND state NOT IN ('dismissed','superseded')
- ORDER BY state<>'open', created_at DESC, id LIMIT ?`, machine, project, pa.MaxCharterConflicts+pa.MaxCharterConflictsResolved)
+	rows, err := s.reader.QueryContext(ctx, `SELECT `+conflictColumns+` FROM project_assistant_charter_conflicts WHERE machine=? AND project=?
+ ORDER BY state<>'open', resolved_at DESC, created_at DESC, id LIMIT ?`, machine, project, pa.MaxCharterConflicts+pa.MaxCharterConflictsResolved)
 	if err != nil {
 		return nil, err
 	}

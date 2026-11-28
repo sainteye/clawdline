@@ -114,16 +114,16 @@ func TestCharterProposalApplyDismissAndStaleBase(t *testing.T) {
 	if list, _ := store.Charters(testContext, "m"); len(list) != 1 || list[0].Pending != 2 {
 		t.Fatalf("the listing counts pending proposals: %+v", list)
 	}
-	applied, err := store.ApplyCharterProposal(testContext, "m", "p", proposal.ID, 1, "a1", charterAt)
+	applied, err := store.ApplyCharterProposal(testContext, "m", "p", proposal.ID, 1, "a1", "", charterAt)
 	if err != nil || applied.Version != 2 || applied.Text != "New rule." || applied.Author != pa.CharterByLeadProposal || applied.Reason != "Replace the old rule" {
 		t.Fatalf("apply saves the proposal as the next version: %+v %v", applied, err)
 	}
-	replay, err := store.ApplyCharterProposal(testContext, "m", "p", proposal.ID, 1, "a1", charterAt)
+	replay, err := store.ApplyCharterProposal(testContext, "m", "p", proposal.ID, 1, "a1", "", charterAt)
 	if err != nil || replay.Version != 2 {
 		t.Fatalf("a repeated apply answers its own version: %+v %v", replay, err)
 	}
 	// The other proposal was written against version 1; the charter moved.
-	_, err = store.ApplyCharterProposal(testContext, "m", "p", dismissed.ID, 2, "a2", charterAt)
+	_, err = store.ApplyCharterProposal(testContext, "m", "p", dismissed.ID, 2, "a2", "", charterAt)
 	requireFailure(t, err, pa.StaleVersion, "charter_proposal_base")
 	if err = store.DismissCharterProposal(testContext, "m", "p", dismissed.ID); err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func TestCharterProposalApplyDismissAndStaleBase(t *testing.T) {
 	if err != nil || len(pending) != 0 {
 		t.Fatalf("no proposals remain: %+v %v", pending, err)
 	}
-	_, err = store.ApplyCharterProposal(testContext, "m", "p", dismissed.ID, 2, "a3", charterAt)
+	_, err = store.ApplyCharterProposal(testContext, "m", "p", dismissed.ID, 2, "a3", "", charterAt)
 	requireCode(t, err, pa.NotFound)
 	if err = store.RecordCharterRead(testContext, "m", "p", "bot-1", 2, "turn-9", charterAt); err != nil {
 		t.Fatal(err)

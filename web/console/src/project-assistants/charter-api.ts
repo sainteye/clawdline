@@ -71,7 +71,7 @@ export interface CharterApi {
   remove?(project: CharterProject, request: { expected_version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   readers(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterReadersResponse>
   proposals(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterProposalsResponse>
-  applyProposal(project: CharterProject, id: string, request: { expected_version: number }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
+  applyProposal(project: CharterProject, id: string, request: { expected_version: number; playbook_id?: string }, signal: AbortSignal): Promise<W.ProjectAssistantCharterResponse>
   dismissProposal(project: CharterProject, id: string, signal: AbortSignal): Promise<W.ProjectAssistantCharterProposalsResponse>
   /** The Bots' reports where their own sentences disagree with the charter; undefined before API 124. */
   conflicts?(project: CharterProject, signal: AbortSignal): Promise<W.ProjectAssistantCharterConflictsResponse>
@@ -140,7 +140,7 @@ export function charterRoutes(machineID: string, send: Send, options: { remove?:
     } : {}),
     readers: (project, signal) => call(chartersPath + "/readers" + query(own(project)), "GET", undefined, signal),
     proposals: (project, signal) => call(chartersPath + "/proposals" + query(own(project)), "GET", undefined, signal),
-    applyProposal: (project, id, request, signal) => call(chartersPath + "/proposal-apply", "POST", write<W.ProjectAssistantCharterApplyRequest>(project, { proposal_id: id, expected_version: request.expected_version }), signal),
+    applyProposal: (project, id, request, signal) => call(chartersPath + "/proposal-apply", "POST", write<W.ProjectAssistantCharterApplyRequest>(project, { proposal_id: id, expected_version: request.expected_version, ...(request.playbook_id ? { playbook_id: request.playbook_id } : {}) }), signal),
     dismissProposal: (project, id, signal) => call(chartersPath + "/proposal-dismiss", "POST", write<W.ProjectAssistantCharterDismissRequest>(project, { proposal_id: id }), signal),
     // The text target is the default and is left out, so an older machine reads the same request.
     requestChange: (project, request, signal) => {
@@ -191,7 +191,7 @@ export const charterWorkflow = (charter: W.ProjectAssistantCharterResponse, sele
   (selected ? charter.selected?.workflow : charter.workflow) ?? null
 
 /** What a proposal replaces; a machine older than API 128 has only text proposals. */
-export const proposalKind = (proposal: W.ProjectAssistantCharterProposal): CharterChangeTarget => proposal.kind === "workflow" ? "workflow" : "text"
+export const proposalKind = (proposal: W.ProjectAssistantCharterProposal): CharterChangeTarget | "playbook" => proposal.kind === "workflow" || proposal.kind === "playbook" ? proposal.kind : "text"
 
 /** The pending workflow proposals, oldest first. */
 export const workflowProposals = (answer: W.ProjectAssistantCharterProposalsResponse) => answer.proposals.filter(proposal => proposalKind(proposal) === "workflow")

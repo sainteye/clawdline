@@ -98,6 +98,9 @@ func sessionParameters(q app.OpenRequest, owned *OwnedMCP) (map[string]any, erro
 			if _, ok := q.Tools.(app.CharterWorkflowTools); ok {
 				allowed = append(allowed, "mcp__clawdline__propose_charter_workflow")
 			}
+			if _, ok := q.Tools.(app.PlaybookTools); ok {
+				allowed = append(allowed, "mcp__clawdline__read_charter", "mcp__clawdline__read_playbooks", "mcp__clawdline__propose_playbook_edit")
+			}
 			// A report changes nothing until the person chooses.
 			if _, ok := q.Tools.(app.CharterConflictTools); ok {
 				allowed = append(allowed, "mcp__clawdline__report_charter_conflict")

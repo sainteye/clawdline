@@ -84,6 +84,21 @@ test("every charter call is one daemon route with exactly its Cloud word's field
   assert.equal((seen[14].fields.playbook as { id: string }).id, "pb-1")
 })
 
+test("a Playbook approval carries the reviewed Playbook on API 131", async () => {
+  const seen: Parameters<typeof source>[2] = []
+  const api = charterApiFor(await source(grant(131), () => ({ contract_version: "project-assistants.v1" }), seen))!
+  const review = { expected_version: 7, playbook_id: "pb-one" }
+  await api.applyProposal(project, "cp-one", review, signal())
+  const row = rows.find(r => r.op === "project-assistants.charter-proposal-apply")!
+  assert.deepEqual(Object.keys(seen[0].fields).sort(), [...row.shapes[1].local_body!].sort())
+  assert.equal(seen[0].fields.playbook_id, review.playbook_id)
+
+  const older: Parameters<typeof source>[2] = []
+  const old = charterApiFor(await source(grant(130), () => ({ contract_version: "project-assistants.v1" }), older))!
+  await assert.rejects(old.applyProposal(project, "cp-one", review, signal()))
+  assert.equal(older.length, 0)
+})
+
 test("a workflow change request rides the change-request word's second shape, only at API 128", async () => {
   const seen: Parameters<typeof source>[2] = []
   const api = charterApiFor(await source(grant(128), () => ({ contract_version: "project-assistants.v1" }), seen))!

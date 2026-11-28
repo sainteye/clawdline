@@ -85,6 +85,7 @@ export const PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL = 124
 export const PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL = 127
 /** Charter workflows, workflow proposals, the change-request target and PUT …/workflow (API 128). */
 export const PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL = 128
+export const PROJECT_ASSISTANTS_CHARTER_PLAYBOOK_PROPOSALS_API_LEVEL = 131
 /** Bot request cards, their person actions and the stalled light, read from a Bot's own machine (API 130). */
 export const BOT_REQUESTS_API_LEVEL = 130
 const base = "/v1/project-assistants"
@@ -680,7 +681,8 @@ export class ProjectAssistantSourceClient implements SourceClient {
   charterRequest<T>(path:string,method:"GET"|"PUT"|"POST",body:CharterRequestBody|undefined,s:AbortSignal){
     if(!path.startsWith(chartersPath))throw failure("pa_invalid")
     const route=new URL(path,"http://source.invalid").pathname
-    const level=route===chartersPath+"/remove"?PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL:route===chartersPath+"/conflicts"||route===chartersPath+"/conflict-resolve"?PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL
+    const level=route===chartersPath+"/proposal-apply"&&body!==undefined&&"playbook_id" in body?PROJECT_ASSISTANTS_CHARTER_PLAYBOOK_PROPOSALS_API_LEVEL:
+      route===chartersPath+"/remove"?PROJECT_ASSISTANTS_CHARTER_REMOVE_API_LEVEL:route===chartersPath+"/conflicts"||route===chartersPath+"/conflict-resolve"?PROJECT_ASSISTANTS_CHARTER_CONFLICTS_API_LEVEL
       :route===chartersPath+"/playbook"||route===chartersPath+"/playbook-remove"?PROJECT_ASSISTANTS_CHARTER_PLAYBOOKS_API_LEVEL
       :route===chartersPath+"/workflow"||route===chartersPath+"/change-request"&&body!==undefined&&"target" in body?PROJECT_ASSISTANTS_CHARTER_WORKFLOW_API_LEVEL:PROJECT_ASSISTANTS_CHARTERS_API_LEVEL
     return this.request<T>(path,s,body,method,true,level)
@@ -797,7 +799,7 @@ const charterRoutes: Record<string,{method:string;word:string;query?:string[];bo
   "/proposals":{method:"GET",word:"project-assistants.charter-proposals",query:["machine_id","project_id"]},
   "/restore":{method:"POST",word:"project-assistants.charter-restore",body:["expected_version","idempotency_key","machine_id","project_id","version"]},
   "/remove":{method:"POST",word:"project-assistants.charter-remove",body:["expected_version","idempotency_key","machine_id","project_id"]},
-  "/proposal-apply":{method:"POST",word:"project-assistants.charter-proposal-apply",body:["expected_version","idempotency_key","machine_id","project_id","proposal_id"]},
+  "/proposal-apply":{method:"POST",word:"project-assistants.charter-proposal-apply",body:["expected_version","idempotency_key","machine_id","project_id","proposal_id"],optional:["playbook_id"]},
   "/proposal-dismiss":{method:"POST",word:"project-assistants.charter-proposal-dismiss",body:["idempotency_key","machine_id","project_id","proposal_id"]},
   "/change-request":{method:"POST",word:"project-assistants.charter-change-request",body:["idempotency_key","machine_id","project_id","text"],optional:["target"]},
   "/conflicts":{method:"GET",word:"project-assistants.charter-conflicts",query:["machine_id","project_id"]},
@@ -827,6 +829,7 @@ export function charterRelayRequest(url: URL, method: string, init?: RequestInit
   try { fields = JSON.parse(init.body) } catch { throw failure("pa_invalid") }
   const names = route.body!, optional = (route.optional ?? []).filter(name => fields && typeof fields === "object" && Object.hasOwn(fields, name))
   if (!fields || typeof fields !== "object" || Array.isArray(fields) || Object.keys(fields).length !== names.length + optional.length || names.some(name => !Object.hasOwn(fields, name)) ||
+    "playbook_id" in fields && (typeof fields.playbook_id !== "string" || !fields.playbook_id) ||
     "target" in fields && fields.target !== "text" && fields.target !== "workflow" ||
     "workflow" in fields && (!fields.workflow || typeof fields.workflow !== "object" || Array.isArray(fields.workflow) || !Array.isArray(fields.workflow.states) || !Array.isArray(fields.workflow.transitions)) ||
     typeof fields.machine_id !== "string" || !fields.machine_id || typeof fields.project_id !== "string" || !fields.project_id ||

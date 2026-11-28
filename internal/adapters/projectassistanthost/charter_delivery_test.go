@@ -145,7 +145,7 @@ func TestBotRequestWorkerWithOnlyACharterFinishes(t *testing.T) {
 
 // A change request from a charter page reaches the lead as the person's own
 // turn carrying the Project's current charter; the lead's proposal waits for
-// the person. An ordinary Bot is offered no proposal tool.
+// the person. An ordinary Bot can also propose changes in its own Project.
 func TestCharterChangeRequestLetsTheLeadPropose(t *testing.T) {
 	ctx := context.Background()
 	f := newHostFixture(t)
@@ -215,8 +215,8 @@ func TestCharterChangeRequestLetsTheLeadPropose(t *testing.T) {
 	}
 	fixtureReceive(t, f.p.sent)
 	other := fixtureReceive(t, f.p.sessions)
-	if tools, ok := other.q.Tools.(app.CharterTools); ok && tools.CharterProposalAvailable(ctx) == nil {
-		t.Fatal("an ordinary Bot must not be offered the proposal tool")
+	if tools, ok := other.q.Tools.(app.CharterTools); !ok || tools.CharterProposalAvailable(ctx) != nil {
+		t.Fatal("a Project Bot can ask the person to approve a charter change")
 	}
 	other.reply <- app.PromptResult{FinalText: "ok"}
 }

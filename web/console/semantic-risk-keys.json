@@ -1,8 +1,8 @@
 {
   "version": 1,
-  "englishKeys": 14974,
+  "englishKeys": 14978,
   "counts": {
-    "negation": 3768,
+    "negation": 3767,
     "state": 2558,
     "permission": 881,
     "deletion": 361,
@@ -3611,7 +3611,6 @@
       "transparency.card.persistent-bot-selected-extensions.how",
       "transparency.card.persistent-bot-steering.condition",
       "transparency.card.persistent-bot-steering.effect",
-      "transparency.card.persistent-bot-team-charter.effect",
       "transparency.card.persistent-bot-team-charter.how",
       "transparency.card.persistent-bot-team.effect",
       "transparency.card.persistent-bot-team.how",

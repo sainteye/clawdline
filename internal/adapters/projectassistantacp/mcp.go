@@ -487,15 +487,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if lead, ok := s.tools.(app.LeadBotTools); ok && lead.LeadBotAvailable(ctx) == nil {
 			list = append(list, mcpLeadBotTool())
 		}
-		if charter, ok := s.tools.(app.CharterTools); ok && charter.CharterProposalAvailable(ctx) == nil {
-			list = append(list, mcpCharterTool())
-			if _, ok := s.tools.(app.CharterWorkflowTools); ok {
-				list = append(list, mcpCharterWorkflowTool())
-			}
-		}
-		if conflicts, ok := s.tools.(app.CharterConflictTools); ok && conflicts.CharterConflictAvailable(ctx) == nil {
-			list = append(list, mcpCharterConflictTool())
-		}
+		list = append(list, s.charterTools(ctx)...)
 		if _, ok := s.tools.(app.BotRequestTools); ok {
 			list = append(list, mcpBotRequestTools()...)
 		}
@@ -523,7 +515,7 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		}
 		if err != nil {
 			result := map[string]string{"code": string(pa.Code(err))}
-			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" || q.Name == "propose_charter_workflow" || q.Name == "report_charter_conflict" {
+			if q.Name == "create_bot" || q.Name == "update_bot" || q.Name == "dispatch_work" || q.Name == "manage_bots" || q.Name == "message_work" || q.Name == "work_status" || q.Name == "propose_charter_edit" || q.Name == "propose_charter_workflow" || q.Name == "report_charter_conflict" || q.Name == "read_playbooks" || q.Name == "propose_playbook_edit" || q.Name == "read_charter" {
 				var failure *pa.Failure
 				if errors.As(err, &failure) {
 					result["field"] = failure.Field
@@ -591,6 +583,9 @@ func (s *ownedMCPServer) callTool(ctx context.Context, name string, arguments js
 	}
 	if name == "propose_charter_workflow" {
 		return s.charterWorkflowTool(ctx, arguments)
+	}
+	if name == "read_playbooks" || name == "propose_playbook_edit" || name == "read_charter" {
+		return s.playbookTool(ctx, name, arguments)
 	}
 	if name == "report_charter_conflict" {
 		return s.charterConflictTool(ctx, arguments)
@@ -1036,7 +1031,7 @@ func mcpCharterConflictTool() map[string]any {
 func mcpCharterTool() map[string]any {
 	return map[string]any{
 		"name":        "propose_charter_edit",
-		"description": "Propose a new team charter for a Project on this computer when the person asks to change it. project is the Project id from the charter request or list_bots; base_version is the charter version you read (0 when it has none); new_text is the whole new Markdown charter, not a diff; summary says in one line which sentences you removed and added. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. Tell the person briefly what you proposed. 使用者要求修改團隊章程時，為這台電腦上的某個 Project 提出新版章程。project 是章程請求或 list_bots 提供的 Project id；base_version 是你讀到的章程版本（沒有章程時為 0）；new_text 是完整的新 Markdown 章程，不是差異；summary 用一句話說明刪掉與加上的句子。使用者在章程頁按下套用前不會有任何改變；章程若已更新，提案會失效，請重新讀取後再提。簡短告訴使用者你提了什麼。",
+		"description": "Ask the person to approve a new team charter for your Project. project is the Project id from read_charter or the charter request; base_version is the charter version you read (0 when it has none); new_text is the whole new Markdown charter, not a diff; summary says in one line which sentences you removed and added. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. Tell the person briefly what you proposed. 提出所屬 Project 的新版團隊章程，請使用者核准。project 是 read_charter 或章程請求提供的 Project id；base_version 是你讀到的章程版本（沒有章程時為 0）；new_text 是完整的新 Markdown 章程，不是差異；summary 用一句話說明刪掉與加上的句子。使用者在章程頁按下套用前不會有任何改變；章程若已更新，提案會失效，請重新讀取後再提。簡短告訴使用者你提了什麼。",
 		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
 			"required": []string{"project", "base_version", "new_text", "summary"},
 			"properties": map[string]any{
@@ -1049,8 +1044,7 @@ func mcpCharterTool() map[string]any {
 	}
 }
 
-// mcpCharterWorkflowTool is offered beside propose_charter_edit, to the lead
-// Bot only.
+// mcpCharterWorkflowTool is offered beside propose_charter_edit.
 func mcpCharterWorkflowTool() map[string]any {
 	text := func(description string) map[string]any {
 		return map[string]any{"type": "string", "description": description}
@@ -1072,7 +1066,7 @@ func mcpCharterWorkflowTool() map[string]any {
 		}}
 	return map[string]any{
 		"name":        "propose_charter_workflow",
-		"description": "Propose a new team workflow (how one piece of work flows) for a Project on this computer when the person asks to change it. project is the Project id; base_version is the charter version you read (0 when it has none); workflow is the whole new state machine, not a diff: states with a unique id ([a-z0-9-]), a one-line title, the bot_id of a Bot of this Project (empty for any Bot), kind start, step or done, and an optional note; transitions from and to state ids, with an optional outcome label and kind normal, pass or return (a way back). Exactly one start, at least one done, every state reachable from start, nothing leaves a done state. summary says in one line what you changed. A refusal names the rule and the state or from->to transition to fix. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. 使用者要求修改「一件事怎麼走」時，為這台電腦上的某個 Project 提出新的團隊流程。workflow 是完整的狀態機，不是差異：每個狀態有唯一 id（[a-z0-9-]）、一行標題、這個 Project 的 Bot 的 bot_id（留空代表任何 Bot）、kind（start、step、done）與選填備註；每個轉換有 from、to、選填的結果標籤與 kind（normal、pass、return＝退回）。只能有一個起點、至少一個完成、每個狀態都要從起點走得到、完成之後不能再有轉換。被拒時會指出違反的規則與哪個狀態或轉換。使用者在章程頁按下套用前不會有任何改變。",
+		"description": "Ask the person to approve a proposed team workflow (how one piece of work flows) for your Project. project is the Project id; base_version is the charter version you read (0 when it has none); workflow is the whole new state machine, not a diff: states with a unique id ([a-z0-9-]), a one-line title, the bot_id of a Bot of this Project (empty for any Bot), kind start, step or done, and an optional note; transitions from and to state ids, with an optional outcome label and kind normal, pass or return (a way back). Exactly one start, at least one done, every state reachable from start, nothing leaves a done state. summary says in one line what you changed. A refusal names the rule and the state or from->to transition to fix. Nothing changes until the person presses Apply on the charter page; a newer charter makes the proposal stale, so read again and propose again. 提出所屬 Project 的新團隊流程，請使用者核准「一件事怎麼走」的修改。workflow 是完整的狀態機，不是差異：每個狀態有唯一 id（[a-z0-9-]）、一行標題、這個 Project 的 Bot 的 bot_id（留空代表任何 Bot）、kind（start、step、done）與選填備註；每個轉換有 from、to、選填的結果標籤與 kind（normal、pass、return＝退回）。只能有一個起點、至少一個完成、每個狀態都要從起點走得到、完成之後不能再有轉換。被拒時會指出違反的規則與哪個狀態或轉換。使用者在章程頁按下套用前不會有任何改變。",
 		"inputSchema": map[string]any{"type": "object", "additionalProperties": false,
 			"required": []string{"project", "base_version", "workflow", "summary"},
 			"properties": map[string]any{

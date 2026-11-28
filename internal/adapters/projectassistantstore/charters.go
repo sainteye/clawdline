@@ -40,11 +40,11 @@ var charterPlaybookColumns = []struct{ name, ddl string }{
 	{"workflow", `ALTER TABLE project_assistant_charter_versions ADD COLUMN workflow TEXT NOT NULL DEFAULT ''`},
 }
 
-// charterProposalColumns are added to a proposals table made before
-// workflow proposals: an older row is a text proposal.
+// Charter proposal variants add columns while retaining legacy text rows.
 var charterProposalColumns = []struct{ name, ddl string }{
 	{"kind", `ALTER TABLE project_assistant_charter_proposals ADD COLUMN kind TEXT NOT NULL DEFAULT 'text'`},
 	{"workflow", `ALTER TABLE project_assistant_charter_proposals ADD COLUMN workflow TEXT NOT NULL DEFAULT ''`},
+	{"playbook", `ALTER TABLE project_assistant_charter_proposals ADD COLUMN playbook TEXT NOT NULL DEFAULT ''`},
 }
 
 func addCharterPlaybookColumns(ctx context.Context, tx *sql.Tx) error {
@@ -587,8 +587,8 @@ func checkWorkflowBots(ctx context.Context, r reader, machine, project string, w
 	return pa.ValidateCharterWorkflow(w, func(id string) bool { return visible[id] })
 }
 
-// ProposeCharter records a lead proposal of a new text, or of a new
-// workflow (Kind workflow). The same Bot turn proposing the same thing again
+// ProposeCharter records a proposal for the text, workflow or a Playbook.
+// The same Bot turn proposing the same thing again
 // answers the existing proposal.
 func (s *Store) ProposeCharter(ctx context.Context, machine string, p pa.CharterProposal) (pa.CharterProposal, error) {
 	if machine == "" || p.BotID == "" || p.TurnID == "" {
@@ -603,13 +603,13 @@ func (s *Store) ProposeCharter(ctx context.Context, machine string, p pa.Charter
 	if p.BaseVersion < 0 {
 		return pa.CharterProposal{}, failure(pa.Invalid, "base_version")
 	}
-	workflow := ""
+	workflow, playbook := "", ""
 	switch p.Kind {
 	case "", pa.CharterProposalText:
-		p.Kind, p.Workflow = pa.CharterProposalText, nil
+		p.Kind, p.Workflow, p.Playbook = pa.CharterProposalText, nil, nil
 		p.ID = "cp-" + charterDigest(p.BotID, p.TurnID, strconv.FormatInt(p.BaseVersion, 10), p.Text)[:24]
 	case pa.CharterProposalWorkflow:
-		if p.Workflow == nil || p.Text != "" {
+		if p.Workflow == nil || p.Text != "" || p.Playbook != nil {
 			return pa.CharterProposal{}, failure(pa.Invalid, "workflow")
 		}
 		if err := pa.ValidateCharterWorkflow(*p.Workflow, nil); err != nil {
@@ -620,6 +620,19 @@ func (s *Store) ProposeCharter(ctx context.Context, machine string, p pa.Charter
 			return pa.CharterProposal{}, err
 		}
 		p.ID = "cp-" + charterDigest(p.BotID, p.TurnID, strconv.FormatInt(p.BaseVersion, 10), "workflow", workflow)[:24]
+	case pa.CharterProposalPlaybook:
+		if p.Playbook == nil || p.Playbook.ID == "" || len(p.Playbook.BotIDs) != 0 || p.Workflow != nil || p.Text != "" {
+			return pa.CharterProposal{}, failure(pa.Invalid, "charter_playbook")
+		}
+		if err := pa.ValidateCharterPlaybook(*p.Playbook); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		encoded, err := json.Marshal(p.Playbook)
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		playbook = string(encoded)
+		p.ID = "cp-" + charterDigest(p.BotID, p.TurnID, strconv.FormatInt(p.BaseVersion, 10), "playbook", playbook)[:24]
 	default:
 		return pa.CharterProposal{}, failure(pa.Invalid, "kind")
 	}
@@ -648,6 +661,18 @@ func (s *Store) ProposeCharter(ctx context.Context, machine string, p pa.Charter
 			return pa.CharterProposal{}, err
 		}
 	}
+	if p.Playbook != nil {
+		body, err := withProposedPlaybook(current, *p.Playbook)
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		if err = pa.ValidateCharterDocument(body.Text, body.Playbooks); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		// Older binaries treat an unfamiliar proposal kind as charter text.
+		p.Text = current.Text
+	}
+
 	var pending int
 	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM project_assistant_charter_proposals WHERE machine=? AND project=?`, machine, p.ProjectID).Scan(&pending); err != nil {
 		return pa.CharterProposal{}, err
@@ -655,20 +680,20 @@ func (s *Store) ProposeCharter(ctx context.Context, machine string, p pa.Charter
 	if pending >= pa.MaxCharterProposals {
 		return pa.CharterProposal{}, failure(pa.CapacityFull, "charter_proposals")
 	}
-	if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_charter_proposals(machine,project,id,base,text,summary,bot,turn,created_at,kind,workflow) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-		machine, p.ProjectID, p.ID, p.BaseVersion, p.Text, p.Summary, p.BotID, p.TurnID, p.CreatedAt.UnixMilli(), string(p.Kind), workflow); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO project_assistant_charter_proposals(machine,project,id,base,text,summary,bot,turn,created_at,kind,workflow,playbook) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+		machine, p.ProjectID, p.ID, p.BaseVersion, p.Text, p.Summary, p.BotID, p.TurnID, p.CreatedAt.UnixMilli(), string(p.Kind), workflow, playbook); err != nil {
 		return pa.CharterProposal{}, err
 	}
 	return p, tx.Commit()
 }
 
-const charterProposalColumnList = `id,project,base,text,summary,bot,turn,created_at,kind,workflow`
+const charterProposalColumnList = `id,project,base,text,summary,bot,turn,created_at,kind,workflow,playbook`
 
 func scanProposal(scan func(...any) error) (pa.CharterProposal, error) {
 	var p pa.CharterProposal
 	var at int64
-	var workflow string
-	if err := scan(&p.ID, &p.ProjectID, &p.BaseVersion, &p.Text, &p.Summary, &p.BotID, &p.TurnID, &at, &p.Kind, &workflow); err != nil {
+	var workflow, playbook string
+	if err := scan(&p.ID, &p.ProjectID, &p.BaseVersion, &p.Text, &p.Summary, &p.BotID, &p.TurnID, &at, &p.Kind, &workflow, &playbook); err != nil {
 		return pa.CharterProposal{}, err
 	}
 	p.CreatedAt = time.UnixMilli(at).UTC()
@@ -677,6 +702,11 @@ func scanProposal(scan func(...any) error) (pa.CharterProposal, error) {
 		return pa.CharterProposal{}, err
 	}
 	p.Workflow = w
+	if playbook != "" {
+		if err := json.Unmarshal([]byte(playbook), &p.Playbook); err != nil {
+			return pa.CharterProposal{}, err
+		}
+	}
 	if p.Kind == "" {
 		p.Kind = pa.CharterProposalText
 	}
@@ -709,11 +739,14 @@ func (s *Store) CharterProposals(ctx context.Context, machine, project string) (
 // charter is still at expected and at the proposal's base, and removes it. A
 // text proposal keeps the current workflow; a workflow proposal keeps the
 // current text and playbooks, and its Bots must still be the Project's.
-func (s *Store) ApplyCharterProposal(ctx context.Context, machine, project, id string, expected int64, idem string, at time.Time) (pa.CharterVersion, error) {
+func (s *Store) ApplyCharterProposal(ctx context.Context, machine, project, id string, expected int64, idem, reviewedPlaybook string, at time.Time) (pa.CharterVersion, error) {
 	if idem == "" || id == "" || expected < 0 {
 		return pa.CharterVersion{}, failure(pa.Invalid, "charter_proposal")
 	}
 	request := charterDigest("apply", id, strconv.FormatInt(expected, 10))
+	if reviewedPlaybook != "" {
+		request = charterDigest("apply-playbook", id, strconv.FormatInt(expected, 10), reviewedPlaybook)
+	}
 	p, err := scanProposal(s.db.QueryRowContext(ctx, `SELECT `+charterProposalColumnList+` FROM project_assistant_charter_proposals WHERE machine=? AND project=? AND id=?`, machine, project, id).Scan)
 	missing := errors.Is(err, sql.ErrNoRows)
 	if err != nil && !missing {
@@ -731,12 +764,24 @@ func (s *Store) ApplyCharterProposal(ctx context.Context, machine, project, id s
 			return body, nil
 		}
 	}
+	if p.Kind == pa.CharterProposalPlaybook && p.Playbook != nil {
+		w.shape = func(_ *sql.Tx, current pa.CharterVersion) (charterBody, error) {
+			return withProposedPlaybook(current, *p.Playbook)
+		}
+	}
 	return s.insertCharter(ctx, w, request, func(tx *sql.Tx) error {
 		if missing {
 			return failure(pa.NotFound, "charter_proposal")
 		}
 		if p.BaseVersion != expected {
 			return failure(pa.StaleVersion, "charter_proposal_base")
+		}
+		if p.Kind == pa.CharterProposalPlaybook {
+			if p.Playbook == nil || reviewedPlaybook == "" || reviewedPlaybook != p.Playbook.ID {
+				return failure(pa.Invalid, "playbook_id")
+			}
+		} else if reviewedPlaybook != "" {
+			return failure(pa.Invalid, "playbook_id")
 		}
 		res, err := tx.ExecContext(ctx, `DELETE FROM project_assistant_charter_proposals WHERE machine=? AND project=? AND id=?`, machine, project, id)
 		if err != nil {

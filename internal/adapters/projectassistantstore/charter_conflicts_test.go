@@ -91,7 +91,7 @@ func TestACheckOfANewerVersionSupersedesTheBotsOlderOpenReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := openConflicts(t, store)
-	if _, listed := got["Atlas open."]; listed || got["Atlas handled."] != pa.ConflictHandedToCharter || got["Lens open."] != pa.ConflictOpen {
+	if got["Atlas open."] != pa.ConflictSuperseded || got["Atlas handled."] != pa.ConflictHandedToCharter || got["Lens open."] != pa.ConflictOpen {
 		t.Fatalf("after Atlas checked version 2: %+v", got)
 	}
 	checks, err := store.CharterChecks(testContext, "m", "p")

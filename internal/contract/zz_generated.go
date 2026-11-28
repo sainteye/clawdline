@@ -4894,8 +4894,12 @@ type ProjectAssistantCharterApplyRequest struct {
 	ExpectedVersion int64  `json:"expected_version"`
 	IdempotencyKey  string `json:"idempotency_key"`
 	MachineID       string `json:"machine_id"`
-	ProjectID       string `json:"project_id"`
-	ProposalID      string `json:"proposal_id"`
+
+	// Required for approval of a Playbook proposal. It must match the reviewed
+	// Playbook.
+	PlaybookID string `json:"playbook_id,omitempty"`
+	ProjectID  string `json:"project_id"`
+	ProposalID string `json:"proposal_id"`
 }
 
 // How a charter version came to be. A removed version is the Project's charter
@@ -5020,7 +5024,7 @@ var ProjectAssistantCharterConflictSourceValues = []ProjectAssistantCharterConfl
 // What became of a report. fixed: the daemon replaced the Bot's sentence;
 // handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the
 // person chose to change the charter instead. Dismissed and superseded reports
-// are not listed.
+// are included in the retained history.
 type ProjectAssistantCharterConflictState string
 
 const (
@@ -5028,10 +5032,12 @@ const (
 	ProjectAssistantCharterConflictStateFixed           ProjectAssistantCharterConflictState = "fixed"
 	ProjectAssistantCharterConflictStateHandedToBot     ProjectAssistantCharterConflictState = "handed_to_bot"
 	ProjectAssistantCharterConflictStateHandedToCharter ProjectAssistantCharterConflictState = "handed_to_charter"
+	ProjectAssistantCharterConflictStateDismissed       ProjectAssistantCharterConflictState = "dismissed"
+	ProjectAssistantCharterConflictStateSuperseded      ProjectAssistantCharterConflictState = "superseded"
 )
 
 // ProjectAssistantCharterConflictStateValues is every value the contract allows, in contract order.
-var ProjectAssistantCharterConflictStateValues = []ProjectAssistantCharterConflictState{ProjectAssistantCharterConflictStateOpen, ProjectAssistantCharterConflictStateFixed, ProjectAssistantCharterConflictStateHandedToBot, ProjectAssistantCharterConflictStateHandedToCharter}
+var ProjectAssistantCharterConflictStateValues = []ProjectAssistantCharterConflictState{ProjectAssistantCharterConflictStateOpen, ProjectAssistantCharterConflictStateFixed, ProjectAssistantCharterConflictStateHandedToBot, ProjectAssistantCharterConflictStateHandedToCharter, ProjectAssistantCharterConflictStateDismissed, ProjectAssistantCharterConflictStateSuperseded}
 
 // A Project's conflict reports, open ones first, newest first (API 124).
 // checked_without_report counts the visible Bots that were asked to compare the
@@ -5143,21 +5149,22 @@ type ProjectAssistantCharterPlaybookSaveRequest struct {
 	Reason string `json:"reason"`
 }
 
-// A lead Bot's pending proposal: the whole replacement text. stale says the
-// charter moved past base_version, so applying it is refused.
+// A Bot's pending proposal to change the charter text, workflow or one existing
+// Playbook. stale says the charter moved past base_version, so applying it is
+// refused.
 type ProjectAssistantCharterProposal struct {
 	BaseVersion int64  `json:"base_version"`
 	BotID       string `json:"bot_id"`
 	CreatedAt   string `json:"created_at"`
 	ID          string `json:"id"`
 
-	// What the proposal replaces (API 128): the charter text, or the workflow (text is
-	// then empty). Absent from an older daemon, which has only text proposals.
-	Kind    string `json:"kind,omitempty"`
-	Stale   bool   `json:"stale"`
-	Summary string `json:"summary"`
-	Text    string `json:"text"`
-	TurnID  string `json:"turn_id"`
+	// What the proposal replaces. Older daemons may omit the kind for text proposals.
+	Kind     string                           `json:"kind,omitempty"`
+	Playbook *ProjectAssistantCharterPlaybook `json:"playbook,omitempty"`
+	Stale    bool                             `json:"stale"`
+	Summary  string                           `json:"summary"`
+	Text     string                           `json:"text"`
+	TurnID   string                           `json:"turn_id"`
 
 	// The proposed workflow, for a workflow proposal (API 128).
 	Workflow *ProjectAssistantCharterWorkflow `json:"workflow,omitempty"`

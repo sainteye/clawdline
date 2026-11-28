@@ -680,7 +680,7 @@
     "ProjectAssistantCharterProposal": {
       "type": "object",
       "additionalProperties": false,
-      "description": "A lead Bot's pending proposal: the whole replacement text. stale says the charter moved past base_version, so applying it is refused.",
+      "description": "A Bot's pending proposal to change the charter text, workflow or one existing Playbook. stale says the charter moved past base_version, so applying it is refused.",
       "properties": {
         "id": {
           "type": "string"
@@ -693,9 +693,10 @@
           "type": "string",
           "enum": [
             "text",
-            "workflow"
+            "workflow",
+            "playbook"
           ],
-          "description": "What the proposal replaces (API 128): the charter text, or the workflow (text is then empty). Absent from an older daemon, which has only text proposals."
+          "description": "What the proposal replaces. Older daemons may omit the kind for text proposals."
         },
         "text": {
           "type": "string"
@@ -704,6 +705,7 @@
           "$ref": "#/$defs/ProjectAssistantCharterWorkflow",
           "description": "The proposed workflow, for a workflow proposal (API 128)."
         },
+        "playbook": { "$ref": "#/$defs/ProjectAssistantCharterPlaybook" },
         "summary": {
           "type": "string"
         },
@@ -781,6 +783,7 @@
         "proposal_id": {
           "type": "string"
         },
+        "playbook_id": { "type": "string", "description": "Required for approval of a Playbook proposal. It must match the reviewed Playbook." },
         "expected_version": {
           "type": "integer",
           "minimum": 0
@@ -897,9 +900,11 @@
         "open",
         "fixed",
         "handed_to_bot",
-        "handed_to_charter"
+        "handed_to_charter",
+        "dismissed",
+        "superseded"
       ],
-      "description": "What became of a report. fixed: the daemon replaced the Bot's sentence; handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the person chose to change the charter instead. Dismissed and superseded reports are not listed."
+      "description": "What became of a report. fixed: the daemon replaced the Bot's sentence; handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the person chose to change the charter instead. Dismissed and superseded reports are included in the retained history."
     },
     "ProjectAssistantCharterConflictAction": {
       "type": "string",

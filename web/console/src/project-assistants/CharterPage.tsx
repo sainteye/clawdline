@@ -141,10 +141,10 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const status = !doc || !readers.length ? "" : behind.length
     ? charterFormat("statusSome", readers.length - behind.length, doc.version, charterNames(behind.map(r => r.name)))
     : charterFormat("statusAll", readers.length, doc.version)
-  const proposal = proposals.find(item => proposalKind(item) === "text")
+  const textProposals = proposals.filter(item => proposalKind(item) === "text")
   const botName = (id: string) => readers.find(r => r.bot_id === id)?.name ?? charterWord("lead")
-  const proposed: ChangedSection[] = doc && proposal ? changedCharterSections(doc.text, proposal.text) : []
-  const proposedHeadings = new Set(proposed.map(change => change.heading))
+  const textPreviews = doc ? textProposals.map(item => ({ item, changes: changedCharterSections(doc.text, item.text) })) : []
+  const proposedHeadings = new Set(textPreviews.flatMap(({ changes }) => changes.map(change => change.heading)))
   const version = (current: CharterDocument | null) => current?.version ?? doc?.version ?? 0
 
   const saveSection = async () => {
@@ -157,7 +157,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
       saved => charterFormat("saved", version(saved)), current => charterFormat("conflictEdit", version(current)))
     if (ok) setEditing(null)
   }
-  const apply = (item: CharterProposal) => doc && void write(signal => api.applyProposal(project, item.id, { expected_version: doc.version }, signal),
+  const apply = (item: CharterProposal) => doc && void write(signal => api.applyProposal(project, item.id, { expected_version: doc.version, playbook_id: item.playbook?.id }, signal),
     saved => charterFormat("applied", version(saved)),
     (current, field) => field === "charter_proposal_base" ? charterFormat("conflictProposal", item.base_version, version(current)) : charterFormat("conflictVersion", version(current)))
   const dismiss = (item: CharterProposal) => void write(async signal => { await api.dismissProposal(project, item.id, signal); if (retouch === item.id) setRetouch(null) }, () => charterWord("dismissed"))
@@ -187,7 +187,9 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   const playbooks = usePlaybooks({ api, project, doc, readers, busy, narrow, write, notice, open: panel === "playbook", onOpen: () => setPanel("playbook"), onClose: () => setPanel(null), appearance, refreshReaders, w })
   // A report from a playbook names it by id; the card shows its title.
   const reportPath = (item: CharterConflict) => item.source === "playbook" ? doc && charterPlaybooks(doc).find(p => p.id === item.path)?.title || "" : item.path
-  const open = conflicts?.conflicts.filter(item => item.state === "open") ?? []
+  const reports = conflicts?.conflicts ?? []
+  const open = reports.filter(item => item.state === "open")
+  const archived = reports.filter(item => item.state !== "open")
   // A report names the section by its heading; the page numbers the shown sections.
   const sectionLabel = (heading: string) => {
     const position = shown.findIndex(({ section }) => section.heading === heading)
@@ -231,10 +233,13 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
             <button ref={historyButton} type="button" className="pa-pill pa-charter-history-open" aria-expanded={historyOpen} onClick={() => historyOpen ? closeHistory() : setPanel("history")}>{charterWord("history")}</button>
           </div>
           {notice && notice.text && <p className="pa-charter-notice" data-tone={notice.tone} role={notice.tone === "error" ? "alert" : "status"}>{notice.text}</p>}
-          {waiting && !proposal && !flow.proposal && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
+          {waiting && !proposals.length && <p className="pa-charter-waiting" role="status">{charterWord("waiting")}</p>}
           {proposalsFailed && <p className="pa-charter-hint" role="status">{charterWord("proposalsUnavailable")}</p>}
-          {proposal && <ProposalCard proposal={proposal} author={botName(proposal.bot_id)} changes={proposed} next={next} busy={busy} stale={proposal.stale || proposal.base_version !== doc.version}
-            onApply={() => apply(proposal)} onDismiss={() => dismiss(proposal)} onRetouch={() => startRetouch(proposal)}/>}
+          {textPreviews.map(({ item, changes }) => <ProposalCard key={item.id} proposal={item} author={botName(item.bot_id)} changes={changes} next={next} busy={busy} stale={item.stale || item.base_version !== doc.version}
+            onApply={() => apply(item)} onDismiss={() => dismiss(item)} onRetouch={() => startRetouch(item)}/>)}
+          {proposals.filter(item => proposalKind(item) === "playbook").map(item => <ProposalCard key={item.id} proposal={item} author={botName(item.bot_id)}
+            changes={playbookProposalChanges(doc, item)} next={next} busy={busy} stale={item.stale || item.base_version !== doc.version}
+            onApply={() => apply(item)} onDismiss={() => dismiss(item)}/>)}
           {shown.map(({ section, index }, position) => flow.place(position, index, editing?.index === index && !narrow
               ? <div key={index}>{editor}</div>
               : <article key={index} className="pa-charter-section" data-proposed={proposedHeadings.has(section.heading) || undefined} aria-label={section.heading || charterWord("intro")}>
@@ -256,6 +261,10 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
               </div>
             </div>
             : <div className="pa-charter-remove"><button type="button" disabled={busy} onClick={() => setRemoving(true)}>{charterWord("remove")}</button></div>)}
+          {archived.length > 0 && <details className="pa-charter-conflict-history">
+            <summary>{charterWord("conflictsHistory")}</summary>
+            <ConflictList items={archived} language={language} sectionLabel={sectionLabel} reporter={reporter} reportPath={reportPath}/>
+          </details>}
         </>}
       </div>
       {doc && <form className="pa-charter-request" onSubmit={event => { event.preventDefault(); void sendRequest() }}>
@@ -273,7 +282,7 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
     {narrow && editor}
     {doc && api.conflicts && <aside hidden={panel !== "conflicts"} inert={panel !== "conflicts" ? true : undefined} className="pa-info-panel pa-side-inspector pa-charter-conflicts" aria-label={charterWord("conflictsTitle")}
       onKeyDown={event => { if (event.key === "Escape" && !event.defaultPrevented) { event.stopPropagation(); closePanel() } }}>
-      {panel === "conflicts" && <ConflictsPanel answer={conflicts} busy={busy} language={language} sectionLabel={sectionLabel} reporter={reporter} reportPath={reportPath} onClose={closePanel}
+      {panel === "conflicts" && <ConflictsPanel items={open} checkedWithoutReport={conflicts?.checked_without_report} busy={busy} language={language} sectionLabel={sectionLabel} reporter={reporter} reportPath={reportPath} onClose={closePanel}
         onFollow={item => void resolve(item, "follow_charter", charterWord("conflictFollowed"))} onChange={item => void changeCharter(item)}
         onDismiss={item => void resolve(item, "dismiss", charterWord("conflictDismissed"))}/>}
     </aside>}
@@ -287,51 +296,70 @@ export function CharterPage({ api, project, projectName, opened = 0, narrow, sho
   </section>
 }
 
-/** The Bots' reports beside the charter: one card per report, its Bot's sentence and the charter's. */
-function ConflictsPanel({ answer, busy, language, sectionLabel, reporter, reportPath, onClose, onFollow, onChange, onDismiss }: {
-  answer: CharterConflicts | null; busy: boolean; language: string; sectionLabel: (heading: string) => string; reporter: (item: CharterConflict) => string; reportPath: (item: CharterConflict) => string
-  onClose: () => void; onFollow: (item: CharterConflict) => void; onChange: (item: CharterConflict) => void; onDismiss: (item: CharterConflict) => void
+type ConflictListProps = {
+  items: CharterConflict[]; language: string; sectionLabel: (heading: string) => string
+  reporter: (item: CharterConflict) => string; reportPath: (item: CharterConflict) => string
+}
+
+type ConflictActions = {
+  busy: boolean; onFollow: (item: CharterConflict) => void; onChange: (item: CharterConflict) => void; onDismiss: (item: CharterConflict) => void
+}
+
+function ConflictsPanel({ checkedWithoutReport, onClose, busy, onFollow, onChange, onDismiss, ...list }: ConflictListProps & ConflictActions & {
+  checkedWithoutReport?: number; onClose: () => void
 }) {
   const panel = useRef<HTMLDivElement>(null)
   useEffect(() => { panel.current?.querySelector<HTMLElement>(".pa-charter-history-close")?.focus({ preventScroll: true }) }, [])
-  const date = new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
-  const items = answer?.conflicts ?? []
-  const others = answer?.checked_without_report ?? 0
   return <div ref={panel} className="pa-charter-history-body pa-charter-conflicts-body">
     <header className="pa-charter-history-head">
       <h3>{charterWord("conflictsTitle")}</h3>
       <button type="button" className="pa-circle pa-charter-history-close" onClick={onClose} aria-label={charterWord("conflictsClose")} title={charterWord("conflictsClose")}>×</button>
     </header>
     <p className="pa-charter-conflicts-intro">{charterWord("conflictsIntro")}</p>
-    {!items.length && <p className="pa-charter-hint">{charterWord("conflictsNone")}</p>}
-    <ol className="pa-charter-conflict-list">
-      {items.map(item => <li key={item.id}>
-        <article className="pa-charter-conflict" data-state={item.state} aria-label={charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}>
-          <p className="pa-charter-conflict-who"><ConflictIcon/><span>{charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}</span></p>
-          {item.outdated && <p className="pa-charter-conflict-outdated">{charterFormat("conflictOutdated", item.version)}</p>}
-          <div className="pa-charter-conflict-quote" data-side="bot">
-            <small>{charterWord(`conflictSource_${item.source}`)}{reportPath(item) && <span className="pa-charter-conflict-path"> · {reportPath(item)}</span>}</small>
-            <blockquote>{item.bot_sentence}</blockquote>
-          </div>
-          <div className="pa-charter-conflict-quote" data-side="charter">
-            <small>{sectionLabel(item.section)}</small>
-            <blockquote>{item.charter_sentence}</blockquote>
-          </div>
-          {item.state === "open"
-            ? <div className="pa-charter-conflict-actions">
-              <button type="button" className="pa-charter-primary" disabled={busy} onClick={() => onFollow(item)}>{charterWord("conflictFollow")}</button>
-              <div>
-                <button type="button" disabled={busy} onClick={() => onChange(item)}>{charterWord("conflictChange")}</button>
-                <button type="button" disabled={busy} onClick={() => onDismiss(item)}>{charterWord("conflictDismiss")}</button>
-              </div>
-            </div>
-            : <p className="pa-charter-conflict-done" role="status">{item.state === "handed_to_bot" ? charterFormat("conflictHandedToBot", reporter(item)) : charterWord(item.state === "fixed" ? "conflictFixed" : "conflictHandedToCharter")}</p>}
-        </article>
-      </li>)}
-    </ol>
-    {answer && <p className="pa-charter-conflicts-others">{charterFormat(others === 1 ? "conflictsOthersOne" : "conflictsOthersMany", others)}</p>}
+    {list.items.length > 0 ? <ConflictList {...list} actions={{ busy, onFollow, onChange, onDismiss }}/> : <p className="pa-charter-hint">{charterWord("conflictsNone")}</p>}
+    {checkedWithoutReport !== undefined && <p className="pa-charter-conflicts-others">{charterFormat(checkedWithoutReport === 1 ? "conflictsOthersOne" : "conflictsOthersMany", checkedWithoutReport)}</p>}
     <p className="pa-charter-hint">{charterWord("conflictsJudgment")}</p>
   </div>
+}
+
+function ConflictList({ items, language, sectionLabel, reporter, reportPath, actions }: ConflictListProps & { actions?: ConflictActions }) {
+  const date = new Intl.DateTimeFormat(language, { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  return <ol className="pa-charter-conflict-list">
+    {items.map(item => <li key={item.id}>
+      <article className="pa-charter-conflict" data-state={item.state} aria-label={charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}>
+        <p className="pa-charter-conflict-who"><ConflictIcon/><span>{charterFormat("conflictReported", reporter(item), safeDate(date, item.created_at))}</span></p>
+        {item.outdated && <p className="pa-charter-conflict-outdated">{charterFormat("conflictOutdated", item.version)}</p>}
+        <div className="pa-charter-conflict-quote" data-side="bot">
+          <small>{charterWord(`conflictSource_${item.source}`)}{reportPath(item) && <span className="pa-charter-conflict-path"> · {reportPath(item)}</span>}</small>
+          <blockquote>{item.bot_sentence}</blockquote>
+        </div>
+        <div className="pa-charter-conflict-quote" data-side="charter">
+          <small>{sectionLabel(item.section)}</small>
+          <blockquote>{item.charter_sentence}</blockquote>
+        </div>
+        {actions && item.state === "open"
+          ? <div className="pa-charter-conflict-actions">
+            <button type="button" className="pa-charter-primary" disabled={actions.busy} onClick={() => actions.onFollow(item)}>{charterWord("conflictFollow")}</button>
+            <div>
+              <button type="button" disabled={actions.busy} onClick={() => actions.onChange(item)}>{charterWord("conflictChange")}</button>
+              <button type="button" disabled={actions.busy} onClick={() => actions.onDismiss(item)}>{charterWord("conflictDismiss")}</button>
+            </div>
+          </div>
+          : <p className="pa-charter-conflict-done" role="status">{conflictResult(item, reporter(item))}</p>}
+      </article>
+    </li>)}
+  </ol>
+}
+
+function conflictResult(item: CharterConflict, reporter: string) {
+  switch (item.state) {
+    case "handed_to_bot": return charterFormat("conflictHandedToBot", reporter)
+    case "handed_to_charter": return charterWord("conflictHandedToCharter")
+    case "fixed": return charterWord("conflictFixed")
+    case "dismissed": return charterWord("conflictArchived")
+    case "superseded": return charterWord("conflictSuperseded")
+    default: return ""
+  }
 }
 
 function ConflictIcon() {
@@ -384,12 +412,23 @@ function SectionEditor({ n, editing, heading, readers, next, busy, full, onDraft
   </div>
 }
 
+function playbookProposalChanges(doc: CharterDocument, proposal: CharterProposal) {
+  const proposed = proposal.playbook
+  if (!proposed) return []
+  const current = charterPlaybooks(doc).find(item => item.id === proposed.id)
+  const content = (item: W.ProjectAssistantCharterPlaybook) => `# ${item.title}
+
+${item.text}`
+  return changedCharterSections(current ? content(current) : "", content(proposed))
+}
+
 function ProposalCard({ proposal, author, changes, next, busy, stale, onApply, onDismiss, onRetouch }: {
   proposal: CharterProposal; author: string; changes: readonly ChangedSection[]; next: number; busy: boolean; stale: boolean
-  onApply: () => void; onDismiss: () => void; onRetouch: () => void
+  onApply: () => void; onDismiss: () => void; onRetouch?: () => void
 }) {
   return <article className="pa-charter-proposal" aria-label={charterFormat("proposalFrom", author)}>
     <p className="pa-charter-proposal-title"><strong>{charterFormat("proposalFrom", author)}</strong></p>
+    {proposal.playbook && <p className="pa-charter-proposal-why">{charterFormat("proposalPlaybook", proposal.playbook.title)}</p>}
     {proposal.summary && <p className="pa-charter-proposal-why">{proposal.summary}</p>}
     {stale && <p className="pa-charter-proposal-stale">{charterFormat("proposalStale", proposal.base_version)}</p>}
     {changes.map((change, i) => <CharterDiff key={i} change={change}/>)}
@@ -398,7 +437,7 @@ function ProposalCard({ proposal, author, changes, next, busy, stale, onApply, o
     <div className="pa-charter-actions">
       <button type="button" className="pa-charter-primary" disabled={busy} onClick={onApply}>{charterFormat("apply", next)}</button>
       <button type="button" disabled={busy} onClick={onDismiss}>{charterWord("dismiss")}</button>
-      <button type="button" disabled={busy} onClick={onRetouch}>{charterWord("retouch")}</button>
+      {onRetouch && <button type="button" disabled={busy} onClick={onRetouch}>{charterWord("retouch")}</button>}
     </div>
   </article>
 }

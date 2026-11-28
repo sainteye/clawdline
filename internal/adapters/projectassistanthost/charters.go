@@ -141,87 +141,76 @@ func (s *toolScope) bindCharterConflictTool(tools *NativeWork) {
 	}
 }
 
-// bindCharterTool lets the lead Bot propose a charter in a direct turn from
-// the person, which includes a change request sent from a charter page. The
-// role is checked again on every call; the proposal waits for the person.
+// Charter proposals are bound to the Bot's own Project. A Lead in a direct
+// user turn retains its ability to help with other Projects on this machine.
 func (s *toolScope) bindCharterTool(tools *NativeWork) {
-	h, q, turn, turnID, taskOwner, life, bound, journal := s.h, s.q, s.turn, s.turnID, s.taskOwner, s.life, s.bound, s.journal
-	if taskOwner.BotID != "" || !pa.DirectUserTurn(turn) {
+	if s.turn.Origin != pa.BotRequestOrigin && (s.taskOwner.BotID != "" || !pa.DirectUserTurn(s.turn)) {
 		return
 	}
-	lead := func(ctx context.Context) error {
-		bot, err := h.store.Bot(ctx, q.Bot.Key)
-		if err != nil {
-			return err
-		}
-		if !bot.Lead {
-			return failure(pa.ScopeDenied, "lead_role")
-		}
-		return nil
-	}
+	store, fence, turnID := s.h.store, s.q.Binding.Fence, s.turnID
 	tools.charterAvailable = func(ctx context.Context) error {
-		ctx, done, err := bound(ctx)
+		ctx, done, err := s.bound(ctx)
 		if err != nil {
 			return err
 		}
 		defer done()
-		return lead(ctx)
+		actor, err := store.CharterProposalActor(ctx, fence, turnID)
+		if err == nil && actor.Project.Kind == pa.PersonalWorkspace && !actor.Lead {
+			return failure(pa.ScopeDenied, "charter_project")
+		}
+		return err
+	}
+	submit := func(ctx context.Context, tool string, p pa.CharterProposal) (pa.CharterProposal, error) {
+		ctx, done, err := s.bound(ctx)
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		stop := context.AfterFunc(s.life.sealed, done)
+		defer func() { stop(); done() }()
+		actor, err := store.CharterProposalActor(ctx, fence, turnID)
+		if err != nil {
+			return pa.CharterProposal{}, err
+		}
+		if err := s.authorizeCharterProposal(ctx, actor, p.ProjectID); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		if err := s.journal(ctx, tool); err != nil {
+			return pa.CharterProposal{}, err
+		}
+		p.BotID, p.TurnID, p.CreatedAt = actor.Key.BotID, turnID, s.h.o.Clock()
+		return store.ProposeCharter(ctx, actor.Key.MachineID, p)
 	}
 	tools.proposeCharter = func(ctx context.Context, p app.CharterEditProposal) (pa.CharterProposal, error) {
-		ctx, done, err := bound(ctx)
-		if err != nil {
-			return pa.CharterProposal{}, err
-		}
-		stop := context.AfterFunc(life.sealed, done)
-		defer func() { stop(); done() }()
-		if err = lead(ctx); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		if err = pa.ValidateCharterProject(p.Project); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		// The Project must be one of this machine's; the text names it, it
-		// does not grant anything.
-		selection := pa.ProjectSelection{MachineID: q.Bot.Key.MachineID, ProjectID: p.Project}
-		resolution, err := h.o.Projects.Resolve(ctx, selection)
-		if err == nil {
-			err = pa.ValidateTarget(selection, resolution)
-		}
-		if err != nil {
-			return pa.CharterProposal{}, err
-		}
-		if err = journal(ctx, "proposeCharter"); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		return h.store.ProposeCharter(ctx, q.Bot.Key.MachineID, pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion,
-			Text: p.NewText, Summary: p.Summary, BotID: q.Bot.Key.BotID, TurnID: turnID, CreatedAt: h.o.Clock()})
+		return submit(ctx, "proposeCharter", pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion, Text: p.NewText, Summary: p.Summary})
 	}
 	tools.proposeWorkflow = func(ctx context.Context, p app.CharterWorkflowProposal) (pa.CharterProposal, error) {
-		ctx, done, err := bound(ctx)
-		if err != nil {
-			return pa.CharterProposal{}, err
-		}
-		stop := context.AfterFunc(life.sealed, done)
-		defer func() { stop(); done() }()
-		if err = lead(ctx); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		if err = pa.ValidateCharterProject(p.Project); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		selection := pa.ProjectSelection{MachineID: q.Bot.Key.MachineID, ProjectID: p.Project}
-		resolution, err := h.o.Projects.Resolve(ctx, selection)
-		if err == nil {
-			err = pa.ValidateTarget(selection, resolution)
-		}
-		if err != nil {
-			return pa.CharterProposal{}, err
-		}
-		if err = journal(ctx, "proposeCharterWorkflow"); err != nil {
-			return pa.CharterProposal{}, err
-		}
-		flow := p.Workflow
-		return h.store.ProposeCharter(ctx, q.Bot.Key.MachineID, pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion, Kind: pa.CharterProposalWorkflow,
-			Workflow: &flow, Summary: p.Summary, BotID: q.Bot.Key.BotID, TurnID: turnID, CreatedAt: h.o.Clock()})
+		return submit(ctx, "proposeCharterWorkflow", pa.CharterProposal{ProjectID: p.Project, BaseVersion: p.BaseVersion, Kind: pa.CharterProposalWorkflow, Workflow: &p.Workflow, Summary: p.Summary})
 	}
+	if fence.Project.Kind != pa.PersonalWorkspace {
+		s.bindPlaybookTools(tools)
+		tools.proposePlaybook = func(ctx context.Context, edit app.PlaybookEdit) (pa.CharterProposal, error) {
+			return submit(ctx, "proposePlaybookEdit", pa.CharterProposal{
+				ProjectID: fence.Project.ProjectID, BaseVersion: edit.BaseVersion, Kind: pa.CharterProposalPlaybook,
+				Playbook: &pa.CharterPlaybook{ID: edit.ID, Title: edit.Title, Text: edit.Text}, Summary: edit.Reason,
+			})
+		}
+	}
+}
+
+func (s *toolScope) authorizeCharterProposal(ctx context.Context, actor pa.Bot, project string) error {
+	if err := pa.ValidateCharterProject(project); err != nil {
+		return err
+	}
+	if actor.Project.Kind != pa.PersonalWorkspace && project == actor.Project.ProjectID {
+		return nil
+	}
+	if !actor.Lead || !pa.DirectUserTurn(s.turn) {
+		return failure(pa.ScopeDenied, "charter_project")
+	}
+	selection := pa.ProjectSelection{MachineID: actor.Key.MachineID, ProjectID: project}
+	resolution, err := s.h.o.Projects.Resolve(ctx, selection)
+	if err != nil {
+		return err
+	}
+	return pa.ValidateTarget(selection, resolution)
 }

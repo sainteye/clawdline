@@ -50,13 +50,13 @@ func TestCharterWorkflowProposalReachesEveryBotOnce(t *testing.T) {
 	_, s := turn(maker, "one")
 	finish(s)
 	_, s = turn(other, "one")
-	// An ordinary Bot cannot propose a workflow.
+	// A Project member can propose its workflow, but cannot propose elsewhere.
 	member, ok := s.q.Tools.(app.CharterWorkflowTools)
-	if !ok || member.CharterProposalAvailable(ctx) == nil {
-		t.Fatal("an ordinary Bot is not offered the workflow tool")
+	if !ok || member.CharterProposalAvailable(ctx) != nil {
+		t.Fatal("the Project Bot is offered the workflow proposal tool")
 	}
-	if _, err := member.ProposeCharterWorkflow(ctx, app.CharterWorkflowProposal{Project: maker.Project.ProjectID, BaseVersion: 1, Workflow: hostWorkflow(maker.Key.BotID)}); pa.Code(err) != pa.ScopeDenied {
-		t.Fatalf("a Bot that is not the lead is refused: %v", err)
+	if _, err := member.ProposeCharterWorkflow(ctx, app.CharterWorkflowProposal{Project: "other-project", BaseVersion: 1, Workflow: hostWorkflow(maker.Key.BotID)}); pa.Code(err) != pa.ScopeDenied {
+		t.Fatalf("a project member cannot propose across projects: %v", err)
 	}
 	finish(s)
 
@@ -99,7 +99,7 @@ func TestCharterWorkflowProposalReachesEveryBotOnce(t *testing.T) {
 	if current, _ := f.h.store.Charter(ctx, maker.Project.MachineID, maker.Project.ProjectID); current.Version != 1 || current.Workflow != nil {
 		t.Fatalf("a proposal changes nothing: %+v", current)
 	}
-	applied, err := f.h.store.ApplyCharterProposal(ctx, maker.Project.MachineID, maker.Project.ProjectID, p.ID, 1, "apply", time.Now())
+	applied, err := f.h.store.ApplyCharterProposal(ctx, maker.Project.MachineID, maker.Project.ProjectID, p.ID, 1, "apply", "", time.Now())
 	if err != nil || applied.Version != 2 || applied.Text != "Makers build; reviewers review." {
 		t.Fatalf("apply: %+v %v", applied, err)
 	}

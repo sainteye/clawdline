@@ -192,7 +192,7 @@ func CharterFixContext(f CharterFix) string {
 	case ConflictInWorkspaceFile:
 		where = "the workspace file " + f.Path
 	case ConflictInPlaybook:
-		where = "the charter playbook " + f.Path + " (only the person can edit it: tell them the replacement instead of editing a file)"
+		where = "the charter playbook " + f.Path + " (resolve this conflict on the charter page; tell the person the replacement instead of editing a file)"
 	case ConflictInMemory:
 		where = "your memory"
 		if f.MemoryEntryID != "" {

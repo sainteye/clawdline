@@ -41,6 +41,7 @@ export interface CharterFixture {
   saveElsewhere(projectID: string, text: string): void
   /** The lead's proposal, replacing `find` with `replace` in the current text. */
   propose(projectID: string, find: string, replace: string, summary: string): void
+  proposePlaybook(projectID: string, botID: string, title: string, text: string): void
   setRunning(projectID: string, botID: string, running: boolean): void
   /** While held, a change request is accepted and its proposal waits for releaseProposal, as a lead takes seconds. */
   holdProposals(held: boolean): void
@@ -144,7 +145,7 @@ function conflictRoute(machineID: string, entry: FixtureProject, method: string,
   const item = entry.conflicts.find(c => c.id === resolve.conflict_id)
   if (!item) throw refuse("pa_not_found", "charter_conflict")
   if (item.state !== "open") throw refuse("pa_stale_version", "charter_conflict")
-  if (resolve.action === "dismiss") entry.conflicts = entry.conflicts.filter(c => c !== item)
+  if (resolve.action === "dismiss") Object.assign(item, { state: "dismissed", resolved_at: at(9) })
   // The fixture leaves a playbook's text alone; the daemon saves a new version.
   else Object.assign(item, { state: resolve.action === "change_charter" ? "handed_to_charter" : item.source === "workspace_file" ? "handed_to_bot" : "fixed", resolved_at: at(9) })
   return conflictsAnswer(machineID, entry)
@@ -181,6 +182,17 @@ function append(entry: FixtureProject, text: string, author: W.ProjectAssistantC
     ...(workflow ? { workflow: structuredClone(workflow) } : {}), text_version: 0, deliveries: {} }
   Object.assign(next, deliveries(entry.versions.at(-1), next))
   entry.versions.push(next)
+}
+
+function saveApprovedProposal(entry: FixtureProject, proposal: W.ProjectAssistantCharterProposal, reviewedPlaybook: string | undefined) {
+  const latest = live(entry)!
+  if (proposal.kind === "workflow") append(entry, latest.text, "lead_proposal", proposal.summary, latest.playbooks, proposal.workflow)
+  else if (proposal.playbook) {
+    const updated = proposal.playbook
+    if (reviewedPlaybook !== updated.id) throw refuse("pa_invalid", "playbook_id")
+    const books = latest.playbooks.map(book => book.id === updated.id ? { ...updated, bot_ids: book.bot_ids } : book)
+    append(entry, latest.text, "lead_proposal", proposal.summary, books)
+  } else append(entry, proposal.text, "lead_proposal", proposal.summary)
 }
 
 function readersAnswer(machineID: string, entry: FixtureProject): W.ProjectAssistantCharterReadersResponse {
@@ -282,9 +294,8 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
         if (!proposal) throw refuse("pa_not_found", "proposal_id")
         expect(entry, body!.expected_version)
         if (proposal.base_version !== current(entry)) throw refuse("pa_stale_version", "charter_proposal_base")
+        saveApprovedProposal(entry, proposal, (request as W.ProjectAssistantCharterApplyRequest).playbook_id)
         entry.proposals = entry.proposals.filter(p => p !== proposal)
-        if (proposal.kind === "workflow") append(entry, live(entry)!.text, "lead_proposal", proposal.summary, live(entry)!.playbooks, proposal.workflow)
-        else append(entry, proposal.text, "lead_proposal", proposal.summary)
         return answer(entry)
       }
       case "POST /proposal-dismiss": {
@@ -327,6 +338,11 @@ export function createCharterFixture(machineID: string, seed: { project_id: stri
     propose(projectID, from, to, summary) {
       const entry = find(projectID), latest = entry.versions.at(-1)!, lead = leadName(entry)
       entry.proposals = [{ id: `cp-${++sequence}`, base_version: latest.version, bot_id: lead.bot_id, turn_id: `turn-${sequence}`, stale: false, summary, text: latest.text.replace(from, to), created_at: at(entry.versions.length) }]
+    },
+    proposePlaybook(projectID, botID, title, text) {
+      const entry = find(projectID), latest = live(entry)!, book = latest.playbooks.find(item => item.title === title)!
+      entry.proposals.push({ id: `cp-${++sequence}`, base_version: latest.version, kind: "playbook", bot_id: botID,
+        turn_id: `turn-${sequence}`, stale: false, summary: "更新驗收項目", text: "", playbook: { ...book, text, bot_ids: [] }, created_at: at(entry.versions.length) })
     },
     holdProposals(on) { held = on },
     releaseProposal(projectID) { const p = waiting.get(projectID); if (p) { find(projectID).proposals = [p]; waiting.delete(projectID) } },

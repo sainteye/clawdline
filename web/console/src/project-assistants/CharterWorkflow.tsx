@@ -189,8 +189,8 @@ function WorkflowProposalCard({ view, current, botOf }: { view: WorkflowProposal
  * the graph and its legend, and the free text it replaces behind a disclosure
  * until the person removes that text.
  */
-export function CharterWorkflowSection({ workflow, version, proposal, botOf, onAsk, busy, oldText }: {
-  workflow: Workflow | null; version: number; proposal?: WorkflowProposalView; botOf: (id: string) => WorkflowBot | undefined
+export function CharterWorkflowSection({ workflow, version, proposals, botOf, onAsk, busy, oldText }: {
+  workflow: Workflow | null; version: number; proposals: WorkflowProposalView[]; botOf: (id: string) => WorkflowBot | undefined
   onAsk: () => void; busy: boolean; oldText?: ReactNode
 }) {
   const layout = useMemo(() => workflow && layoutWorkflow(workflow, returnLabels(workflow, botOf)), [workflow, botOf])
@@ -202,7 +202,7 @@ export function CharterWorkflowSection({ workflow, version, proposal, botOf, onA
       </div>
       <button type="button" className="pa-pill" disabled={busy} onClick={onAsk}>{charterWord("workflowAsk")}</button>
     </header>
-    {proposal && <WorkflowProposalCard view={proposal} current={workflow} botOf={botOf}/>}
+    {proposals.map(view => <WorkflowProposalCard key={view.proposal.id} view={view} current={workflow} botOf={botOf}/>)}
     {layout && <><WorkflowCanvas layout={layout} botOf={botOf} label={charterWord("workflowListLabel")}/><Legend/></>}
     {oldText && <details className="pa-wf-old">
       <summary>{charterWord("workflowOldText")}</summary>
@@ -228,19 +228,19 @@ export function useCharterWorkflow(input: {
 }) {
   const { enabled, doc, readers, appearance } = input
   const [target, setTarget] = useState<CharterChangeTarget>("text")
-  const proposal = enabled ? input.proposals.find(item => proposalKind(item) === "workflow") : undefined
+  const proposals = enabled ? input.proposals.filter(item => proposalKind(item) === "workflow") : []
   const workflow = enabled && doc ? charterWorkflow(doc) : null
-  const shown = !!doc && (!!workflow || !!proposal)
+  const shown = !!doc && (!!workflow || proposals.length > 0)
   const at = shown ? input.headings.findIndex(isWorkflowHeading) : -1
   const botOf = (id: string): WorkflowBot => ({ name: readers.find(r => r.bot_id === id)?.name ?? "", appearance: appearance?.(id) })
-  const retouch = (item: Proposal) => { input.setRetouch(item.id); setTarget(proposalKind(item)) }
+  const retouch = (item: Proposal) => { input.setRetouch(item.id); setTarget(item.kind === "workflow" ? "workflow" : "text") }
   const cancel = () => { input.setRetouch(null); setTarget("text") }
   const section = (oldText?: ReactNode) => doc && <CharterWorkflowSection workflow={workflow} version={doc.version} busy={input.busy} oldText={oldText} botOf={botOf}
     onAsk={() => { input.setRetouch(null); setTarget("workflow"); input.focus() }}
-    proposal={proposal && { proposal, author: input.author(proposal.bot_id), next: input.next, busy: input.busy, stale: proposal.stale || proposal.base_version !== doc.version,
-      onApply: () => input.onApply(proposal), onDismiss: () => input.onDismiss(proposal), onRetouch: () => retouch(proposal) }}/>
+    proposals={proposals.map(proposal => ({ proposal, author: input.author(proposal.bot_id), next: input.next, busy: input.busy, stale: proposal.stale || proposal.base_version !== doc.version,
+      onApply: () => input.onApply(proposal), onDismiss: () => input.onDismiss(proposal), onRetouch: () => retouch(proposal) }))}/>
   return {
-    proposal, target, retouch, cancel,
+    target, retouch, cancel,
     /** Above the composer: what its next request is for, with × to go back to a plain request. */
     hint: (retouching: string | null) => (retouching || target === "workflow") && <p className="pa-charter-retouch">{charterWord(retouching ? "retouchHint" : "workflowRequestHint")}
       <button type="button" onClick={cancel} aria-label={charterWord("retouchCancel")}>×</button></p>,

@@ -80,6 +80,17 @@ type DispatchKindTools interface {
 	DispatchKinds(context.Context) []string
 }
 
+type CharterReadTools interface {
+	ReadCharter(context.Context) (CharterRead, error)
+}
+
+type CharterRead struct {
+	ProjectID string              `json:"project_id"`
+	Version   int64               `json:"version"`
+	Text      string              `json:"text"`
+	Workflow  *pa.CharterWorkflow `json:"workflow"`
+}
+
 type CharterTools interface {
 	CharterProposalAvailable(context.Context) error
 	ProposeCharterEdit(context.Context, CharterEditProposal) (pa.CharterProposal, error)
@@ -93,9 +104,7 @@ type CharterEditProposal struct {
 	Summary     string `json:"summary"`
 }
 
-// CharterWorkflowTools lets the lead Bot, under the same conditions as
-// CharterTools, propose a whole new team workflow for a Project. Only the
-// lead proposes it; the person applies it.
+// CharterWorkflowTools proposes a workflow under the same rules as CharterTools.
 type CharterWorkflowTools interface {
 	CharterTools
 	ProposeCharterWorkflow(context.Context, CharterWorkflowProposal) (pa.CharterProposal, error)
@@ -107,6 +116,26 @@ type CharterWorkflowProposal struct {
 	BaseVersion int64              `json:"base_version"`
 	Workflow    pa.CharterWorkflow `json:"workflow"`
 	Summary     string             `json:"summary"`
+}
+
+// PlaybookTools lets a Bot request approval to edit an existing Playbook.
+type PlaybookTools interface {
+	PlaybooksAvailable(context.Context) error
+	ReadPlaybooks(context.Context, string) (PlaybookRead, error)
+	ProposePlaybookEdit(context.Context, PlaybookEdit) (pa.CharterProposal, error)
+}
+
+type PlaybookRead struct {
+	Version   int64                `json:"version"`
+	Playbooks []pa.CharterPlaybook `json:"playbooks"`
+}
+
+type PlaybookEdit struct {
+	ID          string `json:"id"`
+	BaseVersion int64  `json:"base_version"`
+	Title       string `json:"title"`
+	Text        string `json:"text"`
+	Reason      string `json:"reason"`
 }
 
 // CharterConflictTools lets any Bot whose Project has a team charter report a

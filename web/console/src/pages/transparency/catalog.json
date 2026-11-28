@@ -5397,6 +5397,18 @@
         {
           "path": "internal/adapters/projectassistantacp/mcp.go",
           "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantacp/mcp_playbooks.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistanthost/charter_playbooks.go",
+          "line": 1
+        },
+        {
+          "path": "internal/adapters/projectassistantstore/charter_bot_playbooks.go",
+          "line": 1
         }
       ],
       "original": [
@@ -5802,18 +5814,19 @@
     "internal/adapters/projectassistantacp/installation_grok.go": "7a64168a0f86d4da1a96bc6ea04d6a926a01db4589624f840a4f6f748b21efa3",
     "internal/adapters/projectassistantacp/installation_isolation.go": "7501d4f47b0db00c0a2eb010708421b5fb9ec2cd6e68afbe8517d5e0a11faff7",
     "internal/adapters/projectassistantacp/login_profiles.go": "68a8f9c3054b707839c3ceb51df28df7261b7fb77e4a077f050135423bf62795",
-    "internal/adapters/projectassistantacp/mcp.go": "67bb1ca731b5f8070f1402dce4ddb18226ab0933acda9fba9c2626c0cf906114",
+    "internal/adapters/projectassistantacp/mcp.go": "149583a3b655047d391339045f288d14956f756032283b7aaffa21053915f4a3",
     "internal/adapters/projectassistantacp/mcp_devserver_publication.go": "f9a4a033dc98823e871f5e6003a3af8ffc46ae9889191a347482795ff74ccb9c",
     "internal/adapters/projectassistantacp/mcp_devservers.go": "464d22cb4d44ddc47022f01ef62d87630c060c042522dd6de7a3cd7a4809382b",
     "internal/adapters/projectassistantacp/mcp_extensions.go": "8ad8c15815e6781cc2578b4abf4b04e361800bdd1b2415d31d7c301cc5cf6cd4",
     "internal/adapters/projectassistantacp/mcp_message_work.go": "e9e14f3bf32c392deec5dd90da0761cd82ebbde981752cfe4b11370969f92ca0",
+    "internal/adapters/projectassistantacp/mcp_playbooks.go": "462f140c937db5b63e2b6ad93cb37150237c71ec0820d0f1c7868724c886095c",
     "internal/adapters/projectassistantacp/mcp_stdio.go": "bdab87c552a4a7a0fc2ea267819a7d368d5b16300960dee802b7dddc761d9c2c",
     "internal/adapters/projectassistantacp/mcp_work_receipt.go": "48c01a3b1225b0860cffd6be5fd70b2b82a7625b60dde3f390202a3f4d37b176",
     "internal/adapters/projectassistantacp/model_configuration.go": "c846597ed1d80ba642caba47aaba92d66888783487a70dd3796246283d8bbbf1",
     "internal/adapters/projectassistantacp/native_history.go": "e2d008abb4d86c00b12cf8e809ffc6c6dc8432de6481c11b0ec69a09ab5c4310",
     "internal/adapters/projectassistantacp/process.go": "932e133a7b94de9e73e4f9472b4ad4526ca318c9db8bccc73bf40b883caefcc1",
     "internal/adapters/projectassistantacp/routine_schema.go": "b2f1377c4621d557f10fc0981e0f682e0f741e0f42136e7f3bd7d8582d0f6490",
-    "internal/adapters/projectassistantacp/session_configuration.go": "e03f740194a2c323b25050215b30cc388b0c24ff98deeec461d6d7cdd53cb94e",
+    "internal/adapters/projectassistantacp/session_configuration.go": "8241963e4a3f38b306ecef012d5f0ff287c7c48c66670bd78cf0b9abaa7780b2",
     "internal/adapters/projectassistantacp/tcp.go": "7e6752c2f4ae6c7ace382853ebf0ae257bf10278a909a16ae0603c548522b30a",
     "internal/adapters/projectassistantacp/tcp_darwin.go": "a2bce0740704ba649ce41fcd7198d3e956273fb0725c52cf837eebb09fb05616",
     "internal/adapters/projectassistantacp/tcp_linux.go": "9848170c19f9cae199b6bf234ba47bfdd69020b6c46beb555aa23570a0f1990b",
@@ -5822,7 +5835,8 @@
     "internal/adapters/projectassistantacp/testdata/peer.go": "b60a0e3c34f87289ae21a91f3e80e1da26b8bf9f81e09d0ddc50d03b32332c9b",
     "internal/adapters/projectassistantacp/trace.go": "a0827e649589ac829c26e64a5c55bcc6414d4549ede930c8f52222f4df10f329",
     "internal/adapters/projectassistanthost/background_tasks.go": "6525d0f7bb38bab2aea75be6436d3221eae1b7db56dd509be22310b306679281",
-    "internal/adapters/projectassistanthost/charters.go": "8baeefe4a3f21663ba87a591631eccafd53005f987529c2cc205f060343ee9f9",
+    "internal/adapters/projectassistanthost/charter_playbooks.go": "23631dd496516bfca7af0fb0be12e4e29b04b95eaa71fd7f2e4f0d9fbaa37460",
+    "internal/adapters/projectassistanthost/charters.go": "66a26cc808d71cad383969e274050070fc7429a242cf41226a026fb894f157b5",
     "internal/adapters/projectassistanthost/devservers.go": "43a19faa631826795d39ad8f896e5a5250e696f9ecc8f570cbd393ac0cd9f1ab",
     "internal/adapters/projectassistanthost/devservers_human.go": "9e48dd5991c435e73c2d577ad5fbc6c28a287597e39172adacc1e4f0dbe24484",
     "internal/adapters/projectassistanthost/devservers_ports.go": "3c1a12ecd6dda4701ee14d53660a4004a6a831d3692e0e100cc84d77990fb394",
@@ -5831,13 +5845,14 @@
     "internal/adapters/projectassistanthost/native_context.go": "6be9e6243d6cc78563f9834d68b65baf3f3595b99e1f67b78f165e675b79bbf2",
     "internal/adapters/projectassistanthost/network.go": "29a68c55761811b7203a47de62c77283786d84ee5a5ec1e3fdd123159b08190e",
     "internal/adapters/projectassistanthost/network_assistant.go": "a0f77103768d3ff4968b662c4ecbb1a55980903e3099c01b7ca2b05493ceed62",
-    "internal/adapters/projectassistanthost/provider.go": "56dde643b11333e7f31c92fe0c7eb4183c80bfc8760819e7b0fe94e7f8d82d03",
+    "internal/adapters/projectassistanthost/provider.go": "6e6efa8a105a3c87d2c931e10c1fc144e35a5be3b9d9e57dbb18c996b0cbaa64",
     "internal/adapters/projectassistanthost/provider_message.go": "b0bee11362592c648cc1e611fcf135ddd0c4ca32755620f4c14c79f11ed666e6",
     "internal/adapters/projectassistanthost/source_rules.go": "35e5a77f6777e076896b0598556bcb2b6cdb8c56f4da40f128eedbc86955e292",
     "internal/adapters/projectassistanthost/tools.go": "8fb1b301b78d2ae54326ea5258e153e97ab6885c540c2ed0604b338c58707745",
     "internal/adapters/projectassistanthost/work_completion.go": "53f0b16b1251c50ecf1275d0ecf790ba3600028ec8363979c7acefce6523dc8c",
     "internal/adapters/projectassistantstore/artifact_titles.go": "0756e386db0567c41d9bcaa7cefd0f8a352da07269d05d977db0e2b44699299c",
     "internal/adapters/projectassistantstore/background_tasks.go": "6c09e63ecdc339f5c93957c7ebe90ac7e4cd3b346a2e3d158c3b9becb7167e9e",
+    "internal/adapters/projectassistantstore/charter_bot_playbooks.go": "501cdd60fd1d683c1dadea5e5501bb37367738c8b80142d5fc3757b17c2f8c4b",
     "internal/adapters/projectassistantstore/collaboration.go": "96895d64d1432995024f5176775c96cf66b436bce2f01421de5fd0a391dea5fa",
     "internal/adapters/projectassistantstore/decisions_withdraw.go": "396292a96ba9477e96023726a05d150960e11ae63a508cd4e56ebd21c32a90e0",
     "internal/adapters/projectassistantstore/fallback.go": "aa7f1cd40905992cce640e6ab6460e8d374785fffd95a33b7b8554f5146d80bd",
@@ -5938,9 +5953,9 @@
     "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/projectassistant/actor.go": "e443e8744125f68b7336b9a8714ddf1f022e4bac16f60f0ea11143cb9cc8741f",
-    "internal/domain/projectassistant/charter.go": "44c2083a3e8921819603768d4db1b6f7c9d6f399c0793b3e8a33b581e71c35d0",
+    "internal/domain/projectassistant/charter.go": "7c7d7b2d086834df4887eb5d1a620eeefece915fc38589b198caf52ac14a211c",
     "internal/domain/projectassistant/charter_playbooks.go": "846c866bff0e798b3946dedd2f4bf16e44af10832fd98e733129b5bb9eea64ed",
-    "internal/domain/projectassistant/charter_workflow.go": "db5a3bf1853faa3ae8b1ec5ba9a257850054236a4bfa4de966fee728f766528a",
+    "internal/domain/projectassistant/charter_workflow.go": "94e4a1153af08d9057dda8992e6b9f2706f6a2f566378cb3e5ec661d02848132",
     "internal/domain/projectassistant/fallback.go": "449dbb46ffed4853b36ac3eff990fdffd29c8386fa19c93947754bd543025533",
     "internal/domain/projectassistant/inputs.go": "9032c9e7682053935f7f8ea612e04e61af0869b79ad895b29af5b77479582633",
     "internal/domain/projectassistant/memory_notes.go": "728ee7db6202d38df7ec9d4cf2c0c7b4ef595e04d00140e9746eefbe4ac70321",
@@ -6014,7 +6029,7 @@
     "skills/workflow_profiles.go": "60e5d9cd619fc92437b463169df4ddab6023f67cce3c5e90db9e73454ced8424",
     "web/console/src/cloud/CloudSessionSheets.tsx": "8eaa99b8eae54702510cad5898cb8c82e24c2fd3e412e53c777f52c2a5cadf8b",
     "web/console/src/cloud/instabox-setup.ts": "0ce9fecf269b266e4098ddb5ce28d5547bcf2c6495a5bd12e9fa3674edd53f5e",
-    "web/console/src/cloud/project-assistants.ts": "253c56144197c64c66350817e958e9cfcb5ac2b18cf9284db76c8e2c38f5caaa",
+    "web/console/src/cloud/project-assistants.ts": "0bc9099d1cefd63ce3ac2fed0a7e3959d3f40beec5b3ee10c8101065e6ca6126",
     "web/console/src/cloud/relay-writer.ts": "c28dc4eca6842ead01330894a70a31c890076a5a8dbbac53682f9d824e334e03",
     "web/console/src/codegraph/session-guidance.ts": "88db5cc28b248e12c57cee05a637009652e23e1b3085bc42857d51b5160175fd",
     "web/console/src/legacy/voice-bridge.ts": "bff62cb48d82facb2dbb808c763ed77b51f133e150d0f99e2b902aa2de9648a9",
@@ -6085,7 +6100,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "87f448feec5f6e4c94a733c8032769e6958d5c338a803e7ce456e318db7749df",
-    "zh-Hant": "512babb00aec4d3ded706f1264e62d65655a7cca3cfa09c13e6d9c699de4ec00"
+    "en": "8bd30e4f2684ea388921dd9d1c2b2fb23ba647f9845a78db1801ead0a11327c1",
+    "zh-Hant": "76826eee5f0e2ef5099c11207598ddf939574809d73e841a5f8d497ed97edba5"
   }
 }

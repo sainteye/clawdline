@@ -321,5 +321,6 @@ type CharterProposalKind string
 
 const (
 	CharterProposalText     CharterProposalKind = "text"
+	CharterProposalPlaybook CharterProposalKind = "playbook"
 	CharterProposalWorkflow CharterProposalKind = "workflow"
 )

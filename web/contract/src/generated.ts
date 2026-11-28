@@ -5759,6 +5759,12 @@ export interface ProjectAssistantCharterApplyRequest {
   expected_version: number
   idempotency_key: string
   machine_id: string
+
+  /**
+   * Required for approval of a Playbook proposal. It must match the reviewed
+   * Playbook.
+   */
+  playbook_id?: string
   project_id: string
   proposal_id: string
 }
@@ -5902,15 +5908,17 @@ export const ProjectAssistantCharterConflictSourceValues: readonly ProjectAssist
  * What became of a report. fixed: the daemon replaced the Bot's sentence;
  * handed_to_bot: the Bot was asked to change it itself; handed_to_charter: the
  * person chose to change the charter instead. Dismissed and superseded reports are
- * not listed.
+ * included in the retained history.
  */
 export type ProjectAssistantCharterConflictState =
     "open"
   | "fixed"
   | "handed_to_bot"
   | "handed_to_charter"
+  | "dismissed"
+  | "superseded"
 
-export const ProjectAssistantCharterConflictStateValues: readonly ProjectAssistantCharterConflictState[] = ["open", "fixed", "handed_to_bot", "handed_to_charter"] as const
+export const ProjectAssistantCharterConflictStateValues: readonly ProjectAssistantCharterConflictState[] = ["open", "fixed", "handed_to_bot", "handed_to_charter", "dismissed", "superseded"] as const
 
 /**
  * A Project's conflict reports, open ones first, newest first (API 124).
@@ -6059,8 +6067,9 @@ export interface ProjectAssistantCharterPlaybookSaveRequest {
 }
 
 /**
- * A lead Bot's pending proposal: the whole replacement text. stale says the charter
- * moved past base_version, so applying it is refused.
+ * A Bot's pending proposal to change the charter text, workflow or one existing
+ * Playbook. stale says the charter moved past base_version, so applying it is
+ * refused.
  */
 export interface ProjectAssistantCharterProposal {
   base_version: number
@@ -6069,10 +6078,10 @@ export interface ProjectAssistantCharterProposal {
   id: string
 
   /**
-   * What the proposal replaces (API 128): the charter text, or the workflow (text
-   * is then empty). Absent from an older daemon, which has only text proposals.
+   * What the proposal replaces. Older daemons may omit the kind for text proposals.
    */
   kind?: string
+  playbook?: ProjectAssistantCharterPlaybook
   stale: boolean
   summary: string
   text: string

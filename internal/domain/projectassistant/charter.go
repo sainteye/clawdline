@@ -76,8 +76,8 @@ type CharterSummary struct {
 	Pending   int           `json:"pending_proposals"`
 }
 
-// CharterProposal is a lead Bot's suggested replacement: of the text (Kind
-// text, the default), or of the workflow (Kind workflow, Text empty).
+// CharterProposal is a Bot's suggested replacement of the charter text,
+// the workflow or one existing Playbook.
 // Nothing changes until the person applies it; applying it saves a new
 // version with the proposed part and the current version's other parts.
 type CharterProposal struct {
@@ -87,6 +87,7 @@ type CharterProposal struct {
 	Kind        CharterProposalKind `json:"kind"`
 	Text        string              `json:"text"`
 	Workflow    *CharterWorkflow    `json:"workflow,omitempty"`
+	Playbook    *CharterPlaybook    `json:"playbook,omitempty"`
 	Summary     string              `json:"summary"`
 	BotID       string              `json:"bot_id"`
 	TurnID      string              `json:"turn_id"`
