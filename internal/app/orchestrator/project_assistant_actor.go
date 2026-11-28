@@ -458,6 +458,9 @@ func (b *Broker) DispatchAssistantRoot(ctx context.Context, q pa.WorkRequest) (R
 	title := assistantTaskTitle(q)
 	owner := &RootBotOwner{Fence: q.Actor.Fence, TurnID: q.TurnID, Command: q.Command, RequestHash: AssistantRequestHash(q),
 		BotName: c.BotName, BotRequestID: c.BotRequestID, BoardItemID: q.BoardItemID}
+	if pa.ValidateAppearance(c.BotAppearance) == nil {
+		owner.BotAppearance = c.BotAppearance
+	}
 	req := RootAssignmentRequest{RequestID: AssistantTaskID(q.Command), Assistant: c.Assistant, Model: c.Resolved.Model,
 		ProjectDir: c.Project.Directory, Label: title, Persona: q.Persona, Assignment: assistantRootAssignment(q, title, c.BotName), BotOwner: owner}
 	a, replayed, err := b.OpenRootAssignment(ctx, req.RequestID, req)

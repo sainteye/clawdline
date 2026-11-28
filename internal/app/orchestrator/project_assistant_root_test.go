@@ -132,3 +132,32 @@ func TestBotIsToldOnceWhenItsRootReportsDelivery(t *testing.T) {
 		t.Fatalf("link = %+v", link)
 	}
 }
+
+func TestBotRootRecordsAppearanceWithoutBreakingRetryDigest(t *testing.T) {
+	b, ctx, c, q, _ := assistantBrokerFixture(t)
+	typed := 0
+	b.Type = func(context.Context, string, string) error { typed++; return nil }
+	q.Title = "Clean finished task caches"
+	q.Brief = "Remove stale build caches."
+	q.Claims = []string{}
+	q.Choice.Mode = pa.DispatchModeRoot
+	initial := pa.Appearance{Shape: pa.Hex, Color: "#75c6a5"}
+	c.BotName = "Test dispatcher"
+	c.BotAppearance = initial
+
+	first, replayed, err := b.DispatchAssistantRoot(ctx, q)
+	if err != nil || replayed {
+		t.Fatalf("first open = %+v replayed=%v err=%v", first, replayed, err)
+	}
+	if first.BotOwner == nil || first.BotOwner.BotAppearance != initial {
+		t.Fatalf("recorded appearance = %+v, want %+v", first.BotOwner, initial)
+	}
+	c.BotAppearance = pa.Appearance{Shape: pa.Wedge, Color: "#7eafff"}
+	again, replayed, err := b.DispatchAssistantRoot(ctx, q)
+	if err != nil || !replayed || again.ID != first.ID || again.BotOwner == nil || again.BotOwner.BotAppearance != initial {
+		t.Fatalf("retry after appearance change = %+v replayed=%v err=%v, want replay of %s with %+v", again, replayed, err, first.ID, initial)
+	}
+	if typed != 1 {
+		t.Fatalf("briefing typed %d times, want once", typed)
+	}
+}

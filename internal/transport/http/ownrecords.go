@@ -364,7 +364,10 @@ func ownHandoffs(handoffs []orchestrator.Handoff, byTerminal map[string]ownrecor
 func ownAssignments(assignments []orchestrator.RootAssignment, byTerminal map[string]ownrecords.Live) []ownrecords.RootAssignment {
 	out := make([]ownrecords.RootAssignment, 0, len(assignments))
 	for _, a := range assignments {
-		ra := ownrecords.RootAssignment{ID: a.ID, Label: a.Label, AgentNamed: a.AgentNamed, State: a.State}
+		ra := ownrecords.RootAssignment{ID: a.ID, Label: a.Label, AgentNamed: a.AgentNamed, State: a.State, ProjectDir: a.ProjectDir}
+		if owner := a.BotOwner; owner != nil {
+			ra.BotDispatch = &ownrecords.BotDispatch{Key: owner.Fence.Key, Name: owner.BotName, Appearance: owner.BotAppearance}
+		}
 		if a.Executor != nil && a.Executor.TerminalID != "" {
 			ra.Identity = ownOpenedIdentity(a.Executor.TerminalID, a.Assistant, a.Executor.OpenedAt, a.BriefedAt, byTerminal)
 		}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -124,6 +125,102 @@ func TestBothSessionListsShowTheBotDispatcher(t *testing.T) {
 				name, _ := dispatch["name"].(string)
 				if row[tcRead.labelKey] != sessionTitle || !present || dispatch["task_title"] != title || name != tc.wantName {
 					t.Fatalf("%s: want Session %q, task %q, Bot %q: %s", tcRead.path, sessionTitle, title, tc.wantName, rec.Body)
+				}
+				project, _ := dispatch["project"].(map[string]any)
+				projectIcon, _ := project["icon"].(map[string]any)
+				if project["key"] != target || project["name"] != projectName || projectIcon["accent"] != accent {
+					t.Fatalf("project heading = %v, want broker target %q, name %q and icon %q", project, target, projectName, accent)
+				}
+				dispatcher, _ := dispatch["dispatcher"].(map[string]any)
+				if dispatcher["machine_id"] != key.MachineID || dispatcher["bot_id"] != key.BotID {
+					t.Fatalf("dispatcher identity = %v, want %v", dispatcher, key)
+				}
+				appearance, hasAppearance := dispatch["appearance"].(map[string]any)
+				if hasAppearance != (tc.wantLook != nil) || hasAppearance &&
+					(appearance["shape"] != string(tc.wantLook.Shape) || appearance["color"] != tc.wantLook.Color) {
+					t.Fatalf("%s: Bot appearance = %v, want %+v", tcRead.path, appearance, tc.wantLook)
+				}
+			}
+		})
+	}
+}
+
+func TestBothSessionListsShowTheBotDispatcherForOpenedRoots(t *testing.T) {
+	recorded := pa.Appearance{Shape: pa.Hex, Color: "#75c6a5"}
+	current := pa.Appearance{Shape: pa.Wedge, Color: "#7eafff"}
+	pid := os.Getpid()
+	started := ownrecords.ProcessStart(pid)
+	if started.IsZero() {
+		t.Skip("process start time unavailable on this platform")
+	}
+	for _, tc := range []struct {
+		name, recordedName, currentName, wantName string
+		recordedLook                              pa.Appearance
+		wantLook                                  *pa.Appearance
+	}{
+		{"recorded at admission", "Dispatcher at admission", "Renamed dispatcher", "Dispatcher at admission", recorded, &recorded},
+		{"legacy with recorded name", "Dispatcher at admission", "Renamed dispatcher", "Dispatcher at admission", pa.Appearance{}, &current},
+		{"legacy with key only", "", "Dispatcher in roster", "Dispatcher in roster", pa.Appearance{}, &current},
+		{"no longer resolvable", "", "", "", pa.Appearance{}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			const child, title, sessionTitle = "conversation-42", "Restore drafts after reconnecting", "Raw codex title"
+			root := t.TempDir()
+			target := filepath.Join(root, "drafts")
+			item := session.Session{ID: "%42", Backend: session.BackendTmux, Assistant: session.AssistantCodex,
+				PID: pid, State: session.StateWorking, ConversationID: child, CWD: target,
+				Rungs: session.LabelRungs{Conversation: sessionTitle}}
+			s := paneServer(t, &pane{s: item})
+			s.cfg = config.Config{Dir: root}
+			s.icons = &icon.Registry{}
+			const projectName, accent = "Draft Editor", "#225588"
+			cell := accent
+			s.icons.SetMirror(func(dir string) (icon.Grid, string, bool) {
+				return icon.Grid{Accent: accent, Cells: [][]*string{{&cell}}}, projectName, dir == target
+			})
+			key := pa.BotKey{MachineID: "fixture-machine", BotID: "fixture-bot"}
+			if tc.currentName != "" {
+				db := s.store.ProjectAssistantDatabase()
+				if err := (projectassistantstore.Installer{}).Install(ctx, db); err != nil {
+					t.Fatal(err)
+				}
+				body, err := json.Marshal(struct{ Bot pa.Bot }{Bot: pa.Bot{Key: key, Name: tc.currentName, Appearance: current}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := db.ExecContext(ctx, `INSERT INTO project_assistant_bots(machine,bot,version,data) VALUES(?,?,?,?)`,
+					key.MachineID, key.BotID, 1, body); err != nil {
+					t.Fatal(err)
+				}
+			}
+			now := started
+			appearanceJSON := ""
+			if tc.recordedLook != (pa.Appearance{}) {
+				appearanceJSON = fmt.Sprintf(`,"bot_appearance":{"shape":%q,"color":%q}`, tc.recordedLook.Shape, tc.recordedLook.Color)
+			}
+			rawAssignment := fmt.Sprintf(`{"id":"e2222222-2222-4222-8222-000000000042","request_id":"req-42","assistant":"codex","project_dir":%q,"label":%q,"state":"briefed","created_at":%d,"ownership":"independent_root","executor":{"terminal_id":%q,"backend":"tmux","opened_at":%d},"briefed_at":%d,"bot_owner":{"fence":{"key":{"machine_id":%q,"bot_id":%q}},"turn_id":"turn-1","command":{"key":{"machine_id":%q,"bot_id":%q},"operation":"dispatch_work","idempotency_key":"k-1"},"request_hash":"h-1","bot_name":%q%s}}`,
+				target, title, now.Unix(), item.ID, now.Unix()-1, now.Unix()+1, key.MachineID, key.BotID, key.MachineID, key.BotID, tc.recordedName, appearanceJSON)
+			if err := s.store.CreateOpened(ctx, store.TableRootAssignments, store.Opened{
+				ID: "e2222222-2222-4222-8222-000000000042", State: orchestrator.AssignmentBriefed,
+				CreatedAt: now, UpdatedAt: now, Record: json.RawMessage(rawAssignment),
+			}, nil); err != nil {
+				t.Fatal(err)
+			}
+			for _, tcRead := range []struct{ path, labelKey string }{{"/v1/sessions", "label"}, {"/v1/sessions?parts=list", "title"}} {
+				rec := httptest.NewRecorder()
+				s.sessions(rec, httptest.NewRequest(http.MethodGet, tcRead.path, nil))
+				var payload struct {
+					Sessions []map[string]any `json:"sessions"`
+				}
+				if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || rec.Code != http.StatusOK || len(payload.Sessions) != 1 {
+					t.Fatalf("%s: %v %s", tcRead.path, err, rec.Body)
+				}
+				row := payload.Sessions[0]
+				dispatch, present := row["bot_dispatch"].(map[string]any)
+				name, _ := dispatch["name"].(string)
+				if row[tcRead.labelKey] != title || !present || dispatch["task_title"] != nil || name != tc.wantName {
+					t.Fatalf("%s: want Root %q, Bot %q without task_title: %s", tcRead.path, title, tc.wantName, rec.Body)
 				}
 				project, _ := dispatch["project"].(map[string]any)
 				projectIcon, _ := project["icon"].(map[string]any)
