@@ -510,3 +510,11 @@ type BackgroundTools interface {
 	BackgroundAvailable() bool
 	AddBackgroundWork(context.Context, string, string, string) (pa.BackgroundTask, error)
 }
+
+// ToolVisibility is optionally implemented by a Host's NativeTools to omit
+// MCP tools from tools/list that this turn's capabilities or origin cannot
+// call. Call-time Host checks remain authoritative even if a client invokes
+// a hidden tool directly.
+type ToolVisibility interface {
+	ToolVisible(name string) bool
+}

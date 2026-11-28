@@ -491,6 +491,9 @@ func (s *ownedMCPServer) request(ctx context.Context, f frame) (any, error) {
 		if _, ok := s.tools.(app.BotRequestTools); ok {
 			list = append(list, mcpBotRequestTools()...)
 		}
+		if vis, ok := s.tools.(app.ToolVisibility); ok {
+			list = filterVisibleTools(list, vis)
+		}
 		if kinds, ok := s.tools.(app.DispatchKindTools); ok {
 			list = withDispatchKinds(list, kinds.DispatchKinds(ctx))
 		}
@@ -1160,6 +1163,25 @@ func mcpBotRequestTools() []any {
 		tool("bot_request_done", "Mark the card you hold done once every checklist entry is done or not_needed. The person and the asking Bots are told once.",
 			map[string]any{"idempotency_key": text(), "card_id": cardID, "expected_version": version}, "idempotency_key", "card_id", "expected_version"),
 	}
+}
+
+// filterVisibleTools omits MCP tools that the current turn's Host marks
+// unavailable in tools/list. The returned slice is freshly allocated so shared
+// tool definitions are never mutated.
+func filterVisibleTools(list []any, vis app.ToolVisibility) []any {
+	out := make([]any, 0, len(list))
+	for _, item := range list {
+		t, ok := item.(map[string]any)
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		name, _ := t["name"].(string)
+		if name == "" || vis.ToolVisible(name) {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 // withDispatchKinds appends the person's dispatch rule kinds and hints to the

@@ -71,6 +71,7 @@ func (h *Host) tools(openCtx context.Context, q app.OpenRequest) (*workLifetime,
 	s.bindDispatchTools(&tools)
 	s.bindWorkStatusTools(&tools)
 	s.restrictBackgroundThread(&tools)
+	s.computeToolVisibility(&tools)
 	return s.life, tools, nil
 }
 
@@ -984,5 +985,70 @@ func (s *toolScope) restrictBackgroundThread(tools *NativeWork) {
 		tools.team = nil
 		tools.listBots = nil
 		tools.messageBot = nil
+	}
+}
+
+// computeToolVisibility hides MCP tools from tools/list that are unconditionally
+// unavailable or refused for this turn's capabilities and origin, saving prompt
+// schema tokens without relaxing any call-time Host enforcement.
+func (s *toolScope) computeToolVisibility(tools *NativeWork) {
+	h, q, turn, taskOwner, actor := s.h, s.q, s.turn, s.taskOwner, s.actor
+	hidden := make(map[string]bool)
+	hide := func(names ...string) {
+		for _, n := range names {
+			hidden[n] = true
+		}
+	}
+	if h.o.Browser == nil || h.o.Browser.Status == nil || h.o.Browser.Command == nil || browserScope(q.Binding, turn) != nil {
+		hide("browser_status", "browser_command")
+	}
+	if h.o.Network == nil || h.o.NetworkTransport == nil || pa.IsPeerRequest(turn.Origin) || turn.Origin == pa.BotReplyOrigin {
+		hide("network_bot")
+	}
+	if (turn.Origin != pa.UserOrigin && turn.Origin != "") || turn.Room != nil || turn.Network != nil {
+		hide("react")
+	}
+	if pa.IsPeerRequest(turn.Origin) {
+		hide("send_file", "publish_artifact")
+	}
+	if turn.Origin == pa.NetworkRequestOrigin {
+		hide("list_artifacts")
+	}
+	writeRoutineTools := []string{
+		"save_routine", "enable_routine", "delete_routine", "test_run_routine",
+		"save_progress", "read_progress", "routine_hook", "routine_webhook_status",
+		"rotate_routine_hook", "follow_up", "cancel_follow_up", "read_webhook_guide",
+	}
+	if tools.routines == nil || turn.Origin == pa.NetworkRequestOrigin {
+		hide("list_routines")
+		hide(writeRoutineTools...)
+	} else if pa.IsPeerRequest(turn.Origin) {
+		hide(writeRoutineTools...)
+	} else if q.Binding.SessionSlot != "" {
+		hide("follow_up", "cancel_follow_up")
+	}
+	if tools.listBots == nil || turn.Origin == pa.NetworkRequestOrigin {
+		hide("list_bots")
+	}
+	if tools.messageBot == nil || turn.Origin == pa.NetworkRequestOrigin {
+		hide("message_bot")
+	}
+	if tools.dispatch == nil || actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin {
+		hide("dispatch_work")
+	}
+	if actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin {
+		hide("work_status")
+	}
+	if actor.CapabilityID == "" || turn.Origin == pa.NetworkRequestOrigin || (taskOwner.BotID != "" && !pa.IsPeerRequest(turn.Origin)) {
+		hide("message_work")
+	}
+	if pa.IsPeerRequest(turn.Origin) && !tools.memoryCard {
+		hide("edit_memory")
+	}
+	if h.o.Broker == nil || h.o.Broker.Store == nil || turn.Origin == pa.NetworkRequestOrigin {
+		hide("bot_request_read", "bot_request_create", "bot_request_handoff", "bot_request_check", "bot_request_verdict", "bot_request_wait_person", "bot_request_done")
+	}
+	if len(hidden) > 0 {
+		tools.hiddenTools = hidden
 	}
 }

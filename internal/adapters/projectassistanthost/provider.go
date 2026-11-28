@@ -105,6 +105,13 @@ type NativeWork struct {
 
 	browserStatus  func(context.Context) (app.BrowserStatus, error)
 	browserCommand func(context.Context, app.BrowserCommand) (app.BrowserResult, error)
+	hiddenTools    map[string]bool
+}
+
+// ToolVisible reports whether name should be advertised in MCP tools/list for
+// this turn. Host call-time checks still enforce the same boundaries.
+func (w NativeWork) ToolVisible(name string) bool {
+	return !w.hiddenTools[name]
 }
 
 func (w NativeWork) DevServersAvailable(ctx context.Context) error {
