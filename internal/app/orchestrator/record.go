@@ -446,6 +446,8 @@ type Record struct {
 	// writes it, and it is what makes a record a callback — Kind is for
 	// display and nothing decides on it.
 	Callback *Callback `json:"callback,omitempty"`
+	// SharedGoCache records the Project cache borrowed by an editing child.
+	SharedGoCache *childGoCache `json:"shared_go_cache,omitempty"`
 
 	// LeaseScope is `shared` or `worktree`, fixed at dispatch. Empty on a
 	// record written before it existed; Scope reads those.

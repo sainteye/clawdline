@@ -108,6 +108,7 @@ func callbackEnviron(r Record) []string {
 	goCache := r.Callback.CachePath
 	if r.Callback.GoCachePath != "" {
 		goCache = r.Callback.GoCachePath
+		env = append(env, "GOMODCACHE="+filepath.Join(filepath.Dir(goCache), "go-mod"))
 	}
 	if goCache != "" {
 		env = append(env, "GOCACHE="+goCache)

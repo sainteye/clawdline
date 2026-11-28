@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/resourcefs"
@@ -199,7 +200,17 @@ func (b *Broker) callbackResourcePresence(r Record) string {
 	if held {
 		return "present"
 	}
-	return callbackGroupPresence(r.Callback.PGID)
+	pgid := r.Callback.PGID
+	presence := callbackGroupPresence(pgid)
+	// XNU will only reissue a PID after releasing that number from its
+	// process-group table. Read the new leader's identity after the lock is
+	// free so a reused numeric PGID cannot keep a completed callback alive.
+	if runtime.GOOS == "darwin" && presence != "absent" && r.State.Terminal() &&
+		r.Callback.PID == pgid && r.Callback.LeaderStart != 0 && sameGroup(pgid, pgid) &&
+		leaderStart(pgid) > r.Callback.LeaderStart {
+		return "absent"
+	}
+	return presence
 }
 
 // Seal only from source-owned publication facts. Retries after a restart never
