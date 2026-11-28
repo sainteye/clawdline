@@ -1,5 +1,6 @@
 import {useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode} from "react"
 import type * as W from "@clawdline/contract"
+import {showModalWithoutChoice} from "../modal-focus"
 import {BotAvatar} from "./BotAvatar"
 import {
   BotRequestRefused, actorName, botOf, checklistProgress, handoffHistory, lastUpdated, noteParts, progressLabel, progressOf,
@@ -66,7 +67,10 @@ export function BotRequestRow({card, bots, botDirectoryState = "ready", w, now, 
 }) {
   const progress = checklistProgress(card, w), updated = lastUpdated(card.updated_at, now, w)
   return <button type="button" className="pa-request-row" data-request-id={card.id} data-progress={progressOf(card)}
-    onClick={event => onOpen(card, event.currentTarget)}>
+    onClick={event => {
+      event.currentTarget.focus({preventScroll: true})
+      onOpen(card, event.currentTarget)
+    }}>
     <Holder card={card} bots={bots} botDirectoryState={botDirectoryState} w={w} size={28}/>
     <strong className="pa-request-title">{card.title}</strong>
     <span className="pa-request-facts">
@@ -81,7 +85,10 @@ export function BotRequestRow({card, bots, botDirectoryState = "ready", w, now, 
 export function BotRequestLine({card, w, onOpen}: {card: W.BotRequestView; w: Words; onOpen: (card: W.BotRequestView, opener: HTMLElement) => void}) {
   const progress = checklistProgress(card, w)
   return <button type="button" className="pa-request-line" data-request-id={card.id} data-progress={progressOf(card)}
-    aria-label={w.requestOpen.replace("{title}", card.title)} onClick={event => onOpen(card, event.currentTarget)}>
+    aria-label={w.requestOpen.replace("{title}", card.title)} onClick={event => {
+      event.currentTarget.focus({preventScroll: true})
+      onOpen(card, event.currentTarget)
+    }}>
     <strong className="pa-request-title">{card.title}</strong>
     <BotRequestState card={card} w={w}/>
     {progress && <span className="pa-request-progress">{progress}</span>}
@@ -157,7 +164,7 @@ export function BotRequestDetail({card: listed, bots, botDirectoryState = "ready
   useLayoutEffect(() => {
     const node = dialog.current, opener = document.activeElement
     alive.current = true
-    if (node && !node.open) node.showModal?.()
+    showModalWithoutChoice(node)
     return () => {
       alive.current = false
       node?.close?.()
