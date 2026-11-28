@@ -180,6 +180,102 @@ func TestSharedGoTrimUsesChildLifetimeWithoutAResult(t *testing.T) {
 	}
 }
 
+func TestSharedGoOwnerReadsConsumerPresenceOnce(t *testing.T) {
+	b, ctx := newTestBroker(t)
+	enableTestResources(t, b)
+	policy := taskresource.DefaultPolicy()
+	policy.CacheBytes = 1
+	b.Resources.Policy = func() taskresource.Policy { return policy }
+
+	const consumers = 4
+	project := t.TempDir()
+	var last Record
+	for i := 1; i <= consumers; i++ {
+		r := Record{Protocol: Protocol, ID: fmt.Sprintf("d0000000-0000-4000-8000-%012d", i), Title: "Fixture",
+			Assistant: "codex", ProjectDir: project, State: StateQueued, CreatedAt: b.now()}
+		r.Dir = b.Tasks.Path(r.ID)
+		if err := os.MkdirAll(r.Dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := b.save(ctx, r, HashSecret(w1Secret), "task.queued"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.attachSharedGoCache(ctx, r, true); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		last, err = b.mutate(ctx, r.ID, "task.fixture", func(r *Record) error {
+			r.State, r.FinishedAt = StateCancelled, b.now()
+			r.ChildTerminalID, r.ChildBackend, r.SpawnedAt = fmt.Sprintf("%%%d", i), "tmux", b.now()
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if last.SharedGoCache == nil {
+		t.Fatal("no shared cache was attached")
+	}
+	cache := last.SharedGoCache
+	resource, err := b.Store.TaskResource(ctx, cache.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(cache.BuildPath, "ab", fmt.Sprintf("%064x-d", 1))
+	if err := os.MkdirAll(filepath.Dir(entry), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(entry, []byte("cached"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var inventoryReads, processReads int
+	var cwds []string
+	b.Reading = func(context.Context) session.Inventory {
+		inventoryReads++
+		return session.Inventory{Sessions: []session.Session{{ID: "%other", Backend: session.BackendTmux}}, Sources: map[string]bool{"tmux": true}}
+	}
+	b.ProcessCWDs = func(context.Context) ([]string, error) {
+		processReads++
+		return cwds, nil
+	}
+	t.Run("all consumers gone", func(t *testing.T) {
+		owner, err := b.resourceOwner(ctx, resource.Owner.Kind, resource.Owner.ID)
+		if err != nil || !owner.Complete || owner.Presence != "absent" || owner.UsePresence != "absent" {
+			t.Fatalf("cache owner was not confirmed gone: %+v, %v", owner, err)
+		}
+		t.Logf("%d consumers, %d terminal inventory reads, %d process table reads", consumers, inventoryReads, processReads)
+		if inventoryReads != 1 || processReads != 1 {
+			t.Error("expected one terminal inventory read and one process table read per owner check")
+		}
+	})
+	t.Run("last consumer still has a working directory", func(t *testing.T) {
+		cwds = []string{last.Dir}
+		defer func() { cwds = nil }()
+		owner, err := b.resourceOwner(ctx, resource.Owner.Kind, resource.Owner.ID)
+		if err != nil || owner.Complete || owner.Presence != "present" || owner.UsePresence != "present" {
+			t.Fatalf("cache owner was not found in the process table: %+v, %v", owner, err)
+		}
+		if _, _, err := b.SweepTaskResources(ctx, ""); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := os.Stat(entry); err != nil {
+			t.Fatalf("cache in use was not retained: %v", err)
+		}
+	})
+	t.Run("running consumer is not absent", func(t *testing.T) {
+		if _, err := b.mutate(ctx, last.ID, "task.fixture", func(r *Record) error {
+			r.State, r.FinishedAt = StateBriefed, time.Time{}
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+		owner, err := b.resourceOwner(ctx, resource.Owner.Kind, resource.Owner.ID)
+		if err != nil || owner.Complete || owner.Presence == "absent" || owner.UsePresence == "absent" {
+			t.Fatalf("running consumer was reported absent: %+v, %v", owner, err)
+		}
+	})
+}
+
 func TestReusedCallbackGroupDoesNotKeepACacheInUseOnDarwin(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("Darwin process-group identity")

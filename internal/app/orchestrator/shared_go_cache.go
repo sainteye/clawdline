@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/projects"
@@ -112,7 +113,10 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	}
 	resource := resources[0]
 	out.Owner = resource.Owner
-	out.Presence, out.UsePresence = "absent", "absent"
+	// Each owner check, including the recheck at removal, gets fresh readings.
+	// Read lazily so callback-only caches never scan child terminals or CWDs.
+	read := sync.OnceValue(func() reading { return b.read(ctx) })
+	occupied := b.occupancySnapshot(ctx)
 	proofs := sha256.New()
 	consumers := 0
 	after := ""
@@ -146,9 +150,8 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 			if !ownedPath(b.Tasks.Dir, r.Dir, r.ID) {
 				return out, errors.New("resource_shared_use_unverified")
 			}
-			out.Presence = b.sharedGoConsumerPresence(ctx, r)
-			out.UsePresence = out.Presence
-			if out.Presence != "absent" {
+			if presence := b.sharedGoConsumerPresence(r, read, occupied); presence != "absent" {
+				out.Presence, out.UsePresence = presence, presence
 				return out, nil
 			}
 			out.CompletedAt = max(out.CompletedAt, r.FinishedAt.Unix())
@@ -168,12 +171,13 @@ func (b *Broker) sharedGoOwner(ctx context.Context, id string) (taskresources.Ow
 	if consumers == 0 {
 		return out, errors.New("resource_shared_use_missing")
 	}
+	out.Presence, out.UsePresence = "absent", "absent"
 	out.Complete, out.OutputsSaved = true, true
 	out.EvidenceDigest = hex.EncodeToString(proofs.Sum(nil))
 	return out, nil
 }
 
-func (b *Broker) sharedGoConsumerPresence(ctx context.Context, r Record) string {
+func (b *Broker) sharedGoConsumerPresence(r Record, read func() reading, occupied func(...string) (string, error)) string {
 	if r.Callback != nil {
 		return b.callbackResourcePresence(r)
 	}
@@ -181,7 +185,7 @@ func (b *Broker) sharedGoConsumerPresence(ctx context.Context, r Record) string 
 	if r.Worktree != nil {
 		paths = append(paths, r.Worktree.Path)
 	}
-	gone, why, _ := b.ownerGone(ctx, b.read(ctx), r, paths...)
+	gone, why, _ := ownerGoneWithOccupancy(read(), r, occupied, paths...)
 	if gone {
 		return "absent"
 	}
