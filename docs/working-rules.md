@@ -210,9 +210,14 @@ of it.
   saying it is owed. Measured on 2026-09-20: sixteen deliveries that had already been merged into
   master were all refused `unverified_landing / nothing_delivered`, because every brief that day
   had told the child not to commit.
-- Does not start a daemon on port 7727 or write to the person's running one. Use your own
-  `CLAWDLINE_NEXT_DIR` — an **empty** one, never a copy of `~/.config/clawdline-next`, whose task
-  records carry real session ids and whose daemon will type into somebody's live terminal.
+- Does not start a daemon on port 7727 or write to the person's running one. Use separate empty
+  directories for `CLAWDLINE_NEXT_DIR` and `HOME`, choose an unused loopback port with
+  `CLAWDLINE_NEXT_PORT`, and set `CLAWDLINE_ISOLATED=1` when running `clawdline serve`.
+  In tasks `4b498c37` and `f4d5fbfe`, an empty state directory still left the startup usage
+  scan pointed at Claude, Codex and Gemini history under the inherited home. Isolated startup
+  creates a fresh provider home under the test state directory, discards inherited provider
+  directory overrides and limits session discovery to managed terminals. Keep these settings
+  together on every test launch.
 - Does not read the person's `~/.config/clawdline` (the retired app's own directory) except where
   the code already does, and never writes it.
 - **Stops its own daemon by PID, never by pattern.** `pkill -f "clawdline serve"` matches the

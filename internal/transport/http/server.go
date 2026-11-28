@@ -362,7 +362,12 @@ func New(cfg config.Config) (*Server, error) {
 	srv.inventory.SquadRole = srv.sessionSquadRole
 	// Inventory, actions and native identity share actual backend instances.
 	srv.wireAntigravity()
+	isolated := config.Isolated()
 	srv.inventory.DiscoverExternal = func() bool {
+		if isolated {
+			// A live process can name an open rollout outside the provider home.
+			return false
+		}
 		v, err := srv.settingsFile().Read()
 		// An unreadable preference must not broaden discovery.
 		return err == nil && v.SessionAutoDiscovery()

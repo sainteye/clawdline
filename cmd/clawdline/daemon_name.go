@@ -7,6 +7,7 @@ import (
 	"runtime"
 
 	"github.com/sainteye/clawdline/internal/adapters/install"
+	"github.com/sainteye/clawdline/internal/config"
 )
 
 // namedDaemonPath also covers the first update installed by an older updater:
@@ -53,6 +54,10 @@ func namedDaemonPath(exe string, layout install.Layout) (string, error) {
 }
 
 func delegateNamedDaemon() error {
+	if config.Isolated() {
+		// Run this test binary directly, before resolving the installed service.
+		return prepareIsolatedDaemon()
+	}
 	if runtime.GOOS != "darwin" {
 		return nil
 	}

@@ -252,8 +252,9 @@ including `Fixed but not yet released (awaiting review)`, also goes before the f
 - `git add -A` in a shared tree, or stage a file it was not assigned.
 - Leave its delivery uncommitted: it **commits to its own task branch** and never pushes — the
   commit is what lets the landing be proved.
-- Start a daemon on port 7727 or write to the person's running one. Use an **empty**
-  `CLAWDLINE_NEXT_DIR` of its own, never a copy of `~/.config/clawdline-next`.
+- Start a daemon on port 7727 or write to the person's running one. Start tests with separate
+  empty directories for `CLAWDLINE_NEXT_DIR` and `HOME`, and set `CLAWDLINE_ISOLATED=1`.
+  The state directory alone left agent history visible in tasks `4b498c37` and `f4d5fbfe`.
 - Read `~/.config/clawdline` except where the code already does, or write it.
 - Stop a daemon by pattern: stop your own **by the PID** your `serve` printed.
 - Remove a private tmux socket directory while its tmux server still runs: kill that
