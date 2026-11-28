@@ -4167,6 +4167,17 @@
     "Note": true
   },
   {
+    "Name": "resources.process_table_reads",
+    "Known": true,
+    "Note": true
+  },
+  {
+    "Name": "resources.process_table_seconds",
+    "Known": true,
+    "Note": true,
+    "WindowSeconds": true
+  },
+  {
     "Name": "resources.ready_seconds",
     "Known": true,
     "Note": true,

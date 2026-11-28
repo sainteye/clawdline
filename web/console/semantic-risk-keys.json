@@ -1,14 +1,14 @@
 {
   "version": 1,
-  "englishKeys": 14988,
+  "englishKeys": 14992,
   "counts": {
-    "negation": 3768,
-    "state": 2558,
+    "negation": 3769,
+    "state": 2560,
     "permission": 882,
     "deletion": 361,
-    "uncertainty": 587
+    "uncertainty": 588
   },
-  "unionCount": 6337,
+  "unionCount": 6340,
   "categories": {
     "negation": [
       "acp.notConnected",
@@ -733,6 +733,7 @@
       "capacityRow.resources.disk_source_scan_files.full",
       "capacityRow.resources.log_seconds.what",
       "capacityRow.resources.page_rows.what",
+      "capacityRow.resources.process_table_seconds.full",
       "capacityRow.resources.scan_files.full",
       "capacityRow.resources.scratch_seconds.full",
       "capacityRow.run.claimed_items.full",
@@ -4507,6 +4508,8 @@
       "capacityRow.resources.disk_reserve_bytes.what",
       "capacityRow.resources.log_seconds.full",
       "capacityRow.resources.page_rows.full",
+      "capacityRow.resources.process_table_reads.full",
+      "capacityRow.resources.process_table_seconds.what",
       "capacityRow.resources.ready_seconds.full",
       "capacityRow.resources.scratch_seconds.full",
       "capacityRow.resources.scratch_seconds.what",
@@ -7774,6 +7777,7 @@
       "capacityRow.projects.ops_github_probe_ms.full",
       "capacityRow.release.list_bytes.full",
       "capacityRow.release.state_file_bytes.full",
+      "capacityRow.resources.process_table_seconds.full",
       "capacityRow.resources.scan_files.full",
       "capacityRow.sessions.claude_remote_request_seconds.full",
       "capacityRow.sessions.live_context_read_bytes.full",
@@ -9505,6 +9509,9 @@
     "capacityRow.resources.log_seconds.what",
     "capacityRow.resources.page_rows.full",
     "capacityRow.resources.page_rows.what",
+    "capacityRow.resources.process_table_reads.full",
+    "capacityRow.resources.process_table_seconds.full",
+    "capacityRow.resources.process_table_seconds.what",
     "capacityRow.resources.ready_seconds.full",
     "capacityRow.resources.scan_files.full",
     "capacityRow.resources.scratch_seconds.full",

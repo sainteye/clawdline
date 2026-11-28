@@ -656,6 +656,12 @@ const (
 	ResourceCleanupItemSecondsLimit    = 120
 	ResourceCleanupPlanAttemptsLimit   = 2
 	ResourceCleanupBackoffSecondsLimit = 60
+
+	ResourceProcessTableSeconds = "resources.process_table_seconds"
+	ResourceProcessTableReads   = "resources.process_table_reads"
+
+	ResourceProcessTableSecondsLimit = 10
+	ResourceProcessTableReadsLimit   = 4
 )
 
 // Entry is one row of the register.

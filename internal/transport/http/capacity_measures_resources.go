@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/gocache"
+	"github.com/sainteye/clawdline/internal/app/orchestrator"
 	"github.com/sainteye/clawdline/internal/domain/capacity"
 	"github.com/sainteye/clawdline/internal/domain/taskresource"
 )
@@ -43,6 +44,12 @@ func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading 
 		},
 		capacity.ResourceCleanupBackoffSeconds: func() capacity.Reading {
 			return capacity.Reading{Known: true, WindowSeconds: capacity.ResourceCleanupBackoffSecondsLimit, Note: "retry delay when automatic cleanup cannot read the registry or enter maintenance"}
+		},
+		capacity.ResourceProcessTableReads: func() capacity.Reading {
+			return capacity.Reading{Known: true, Used: int64(orchestrator.ActiveProcessTableReads()), Note: "occupied process-table read slots, including reads still running after their callers timed out"}
+		},
+		capacity.ResourceProcessTableSeconds: func() capacity.Reading {
+			return capacity.Reading{Known: true, WindowSeconds: capacity.ResourceProcessTableSecondsLimit, Note: "per-query wait budget, including waiting for a read slot"}
 		},
 		"resources.scan_files": func() capacity.Reading {
 			return capacity.Reading{Known: true, Note: "per-resource filesystem scan guard; incomplete scans never authorize deletion"}

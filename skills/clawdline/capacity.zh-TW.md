@@ -853,6 +853,8 @@
 | `resources.disk_source_scan_files` | 2000000 | `rows` | `refuse` | `diagnostics` | — |
 | `resources.log_seconds` | 604800 | `seconds` | `rotate` | `diagnostics, sender` | — |
 | `resources.page_rows` | 64 | `rows` | `refuse` | `diagnostics, sender` | — |
+| `resources.process_table_reads` | 4 | `rows` | `refuse` | `diagnostics` | — |
+| `resources.process_table_seconds` | 10 | `seconds` | `refuse` | `diagnostics` | — |
 | `resources.ready_seconds` | 60 | `seconds` | `expire` | `diagnostics, sender` | — |
 | `resources.scan_files` | 262144 | `rows` | `refuse` | `diagnostics, sender` | — |
 | `resources.scratch_seconds` | 86400 | `seconds` | `evict_oldest` | `diagnostics, sender` | — |

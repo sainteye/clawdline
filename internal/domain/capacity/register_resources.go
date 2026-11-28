@@ -31,5 +31,7 @@ func resourceBounds() []Entry {
 		{Name: ResourceCleanupItemSeconds, Class: Buffer, Unit: Seconds, Limit: ResourceCleanupItemSecondsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupItemSecondsLimit"}},
 		{Name: ResourceCleanupPlanAttempts, Class: Buffer, Unit: Rows, Limit: ResourceCleanupPlanAttemptsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupPlanAttemptsLimit"}},
 		{Name: ResourceCleanupBackoffSeconds, Class: Buffer, Unit: Seconds, Limit: ResourceCleanupBackoffSecondsLimit, AtLimit: Coalesce, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceCleanupBackoffSecondsLimit"}},
+		{Name: ResourceProcessTableSeconds, Class: Buffer, Unit: Seconds, Limit: ResourceProcessTableSecondsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceProcessTableSecondsLimit"}},
+		{Name: ResourceProcessTableReads, Class: Buffer, Unit: Rows, Limit: ResourceProcessTableReadsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics}, EvictedBy: Daemon, Sources: []string{"internal/domain/capacity.ResourceProcessTableReadsLimit", "internal/app/orchestrator.package:chan(capacity.ResourceProcessTableReadsLimit)"}},
 	}
 }
