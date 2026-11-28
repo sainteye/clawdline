@@ -114,3 +114,10 @@ func TestAChildBriefingCarriesThePersonsRulesAndPointsAtTheBase(t *testing.T) {
 		t.Error("a broker with no policy still writes the section")
 	}
 }
+
+func TestShippedPolicyFitsWithinPolicyLimit(t *testing.T) {
+	_, reading := ComposePolicy(string(ShippedPolicy()), "")
+	if reading.Cut || reading.BaseChars > PolicyLimit {
+		t.Fatalf("shipped dispatch-policy.md exceeds PolicyLimit (%d): %d chars (cut=%v)", PolicyLimit, reading.BaseChars, reading.Cut)
+	}
+}

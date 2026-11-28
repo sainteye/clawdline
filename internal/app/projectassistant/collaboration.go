@@ -342,8 +342,8 @@ func (r *Engine) promoteExchangeReply(ctx context.Context, key pa.BotKey) error 
 
 // PeerNoteRule is what a Bot handling another Bot's request is told about its
 // own person. Its final answer goes only to the requester, so anything the
-// person needs to know is said in the Bot's own chat with send_message.
-const PeerNoteRule = "If you cannot do part of the request, a tool is refused or blocked, the user needs to act, or you make a decision that affects the user, also tell the user briefly with send_message: it goes only to your own chat with the user, marked as written while handling this request. Send at most one or two short messages; do not repeat your whole answer there."
+// person needs to know is sent to the Bot's own chat with notify_person.
+const PeerNoteRule = "If you cannot do part of the request, a tool is refused or blocked, the user needs to act, or you make a decision that affects the user, also tell the user briefly with notify_person: it goes only to your own chat with the user, marked as written while handling this request. Do not repeat your whole answer there."
 
 // postPeerNote delivers send_message from a turn answering another Bot into
 // the recipient's own main chat, never into the hidden worker thread or the

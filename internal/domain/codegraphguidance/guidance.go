@@ -10,6 +10,7 @@ import (
 var document []byte
 var instructions struct {
 	Version string            `json:"version"`
+	Launch  string            `json:"launch"`
 	English map[string]string `json:"en"`
 	Chinese map[string]string `json:"zh-Hant"`
 }
@@ -19,7 +20,8 @@ func init() {
 		panic(err)
 	}
 }
-func Version() string { return instructions.Version }
+func Version() string    { return instructions.Version }
+func LaunchText() string { return instructions.Launch }
 func Text(language string, enabled bool) string {
 	words := instructions.English
 	if language == "zh-Hant" {

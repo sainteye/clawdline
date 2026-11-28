@@ -219,9 +219,8 @@ func newBroker(s *Server) *orchestrator.Broker {
 		Launcher: newLauncher(),
 		// Every session the broker opens in a Project — a child, a handoff,
 		// a Board item's Session — is given that Project's shared memory.
-		Memory:                  s.memoryLaunchText,
-		IntegrationInstructions: s.integrationLaunchText,
-		PrepareWorkflow:         s.prepareWorkflow,
+		Memory:          s.memoryLaunchText,
+		PrepareWorkflow: s.prepareWorkflow,
 		// The person decided that asking for a new Claude Code session in a
 		// registered project answers Claude Code's workspace-trust question
 		// for that folder (projects.TrustClaudeProject).

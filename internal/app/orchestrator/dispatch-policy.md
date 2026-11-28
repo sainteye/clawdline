@@ -96,11 +96,9 @@ run out mid-task and a context window can fill. So a long or multi-file slice go
 when the work stops matching its title. A death in hour three then costs one hour.
 
 **But only Claude can commit in that worktree.** A linked worktree's git metadata lives in the main
-repo's `.git/worktrees/<task-id>/`, outside what a Codex sandbox may write, so every commit dies on
-`index.lock: Operation not permitted` and the child reports failure holding finished work — again
-today, after 4438 passing checks. Tell a **claude** worktree child to commit milestones; tell a
-**codex** one to leave the bytes dirty for root. The briefing says "commit early and often" to both,
-so the instructions must override it.
+repo's `.git/worktrees/<task-id>/`, outside what a Codex sandbox may write, so Codex commits fail on
+`index.lock: Operation not permitted`. Tell a **claude** worktree child to commit milestones; tell a
+**codex** one to leave the bytes dirty for root when its sandbox cannot write the worktree metadata.
 
 **Never open a session for one small change.** Small items pool, and the pool empties when any of
 these is true: five items are waiting; they are together worth more than about thirty minutes; or
@@ -217,15 +215,8 @@ question.
 and pay for one run at their commit; they do not compile once per assertion, file or finding.
 Several compatible Feature slices share one exact release candidate rather than each paying for a
 full suite. Docs-only or mechanically generated candidates that cannot affect compiled/runtime
-behavior use their relevant static checks. Until a focused Swift runner ships, an implementer may
-run one full suite only when labelled `focused_runner_unavailable`; reviewers run nothing at all.
+behavior use their relevant static checks; reviewers run nothing at all.
 Root tests the exact target candidate. A red run buys one correction and then the same run again;
 if two corrections have not cleared it, stop and say so to the person waiting.
 Never repeat a green tree/question/environment tuple; a second run needs a typed
 `inconclusive_environment` receipt.
-
-**A child may add Swift assertions without asking anyone to maintain a total.** That single run
-records what it executed; the release-candidate run records its own observed Swift and Cloud counts.
-No count is copied back into `test.sh`, README files or governance docs, and no RESEAL measurement
-run exists. Completeness comes from the ordered group/runner/suite rosters and a unique runtime
-receipt, not from comparing this tree with the previous tree's assertion number.

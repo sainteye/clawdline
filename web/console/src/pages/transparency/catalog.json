@@ -2683,10 +2683,6 @@
       ],
       "sources": [
         {
-          "path": "internal/transport/http/integration_launch.go",
-          "line": 13
-        },
-        {
           "path": "internal/transport/http/integration_settings.go",
           "line": 12
         },
@@ -2843,10 +2839,6 @@
         "machine"
       ],
       "sources": [
-        {
-          "path": "internal/transport/http/integration_launch.go",
-          "line": 13
-        },
         {
           "path": "internal/transport/http/integration_settings.go",
           "line": 12
@@ -3363,10 +3355,6 @@
           "line": 1
         },
         {
-          "path": "internal/transport/http/integration_launch.go",
-          "line": 1
-        },
-        {
           "path": "internal/transport/http/integration_settings.go",
           "line": 1
         }
@@ -3405,10 +3393,6 @@
         },
         {
           "path": "internal/adapters/workflowlaunch/launch.go",
-          "line": 1
-        },
-        {
-          "path": "internal/transport/http/integration_launch.go",
           "line": 1
         },
         {
@@ -4667,10 +4651,6 @@
           "line": 1
         },
         {
-          "path": "internal/transport/http/integration_launch.go",
-          "line": 1
-        },
-        {
           "path": "internal/transport/http/integration_settings.go",
           "line": 1
         }
@@ -5785,7 +5765,7 @@
     "internal/adapters/cloud/bot_network_api.go": "dd5a9831f5ac368537f88f2ce14161217ea8c6750a71e5ef6f21009066eed6c0",
     "internal/adapters/codegraph/bridge.cjs": "9dc31ddf24a24ecb81232e4fb843fab4d7a50d1785921675d7d6fc22c4b2d37c",
     "internal/adapters/codegraph/build.go": "1ed5c59555853d702d1710cc01ac18a959ebd2dfc2643fefddbf53601abd7b9a",
-    "internal/adapters/codegraph/codegraph.go": "1f43b427f6c582c759aa2a7bd7cab17c20bbe37d5bb7408a13e0ee8a1aef9339",
+    "internal/adapters/codegraph/codegraph.go": "a2164b531d7e4439d9564b403495fb7a3217bc179711252ebb4759ae5b916861",
     "internal/adapters/codegraph/runtime-lock.json": "72d768b000f4aaef93219d781593b6973bbe57230585d459685472aa72dd9c47",
     "internal/adapters/codegraph/runtime.go": "4b57e7522312334eb5b5ac361757de4e36daae19d56b4c23b0b42330a05923b3",
     "internal/adapters/codegraph/service.go": "cfedc216ed750dcb7b46e98a038719dbf951cb496339babf26d7db2a90be4adb",
@@ -5895,7 +5875,7 @@
     "internal/app/orchestrator/child_guide.go": "563bf49d06f4b75a42be2a7ca6c49af1ea764e13c0a670dbbc019600e3737f80",
     "internal/app/orchestrator/compact.go": "0d49b7d309680ffaa370266ab94139bc7a042b6c5c81e3a805e69d554688e88a",
     "internal/app/orchestrator/detached_pairing.go": "a7fb88d602c51199d38046bf6d421f5d5c8cbe8edaa84899d80c62c0387c95f2",
-    "internal/app/orchestrator/dispatch-policy.md": "c216689c144d9a876e98747293c907c7cb3e3c4b62c56c759ec9280acaf2098b",
+    "internal/app/orchestrator/dispatch-policy.md": "76f7655bba762fe92b17f5018f42cb556a539c2bf4347ad666fc5a322f5c99e2",
     "internal/app/orchestrator/dispatch.go": "b889df205f1203e2d7d9068ae223d30f79150dfe7f6698222d1b3b82e605e9c1",
     "internal/app/orchestrator/handoff_pack.go": "5e52c5471634c056c3409ea22131535ea8d2ffec1aaf2128c1fe1951195727c4",
     "internal/app/orchestrator/handoffs.go": "6aac55ac5c6acb33dfdc3411947501978401c88cf36f563cb0d89ed904ab36aa",
@@ -5912,7 +5892,7 @@
     "internal/app/owned_context.go": "f0945c799b8db0a0ec94a23a95db7219735229c7a995927059543df1af8c8aeb",
     "internal/app/projectassistant/artifact_titles.go": "17b45f2bd68c73f5f323822ca753035dfb0b526fd126658a69089d355ab7d342",
     "internal/app/projectassistant/attempt.go": "d7eb4c6ea1b9791c057d076382971ea261043d6bcdd657c2a72bed72fde84c43",
-    "internal/app/projectassistant/collaboration.go": "a849eaab7c687041e8ff0ac616476c44e8b886bc7b9693d481496762d540464c",
+    "internal/app/projectassistant/collaboration.go": "ee6f23462d7f3a565797a23feb68d208b72957283819ff31234da932489984c7",
     "internal/app/projectassistant/configuration.go": "39df67333a7764f211f57d430aad5b54863bd1854a78ac5025f5155189d77e4b",
     "internal/app/projectassistant/decisions.go": "fb2d406ee1e99b38701e636fcd95be0aa9a5870e90100629300d527f52f0f15b",
     "internal/app/projectassistant/devservers.go": "2a19527d6f761db0671724814146be097b722bfda64706181a8dbd3b843fab91",
@@ -5949,8 +5929,8 @@
     "internal/config/config.go": "25f547d482792bb8bc1cfef1ad6b9d8355d289104bf1f0842efe5002c7f6ab6c",
     "internal/domain/agenthandoff/bot_assistant.go": "d6598c29f1384edc5575329fa40a7bf5908b1f2f851b8ad1620d487a66462ab3",
     "internal/domain/agenthandoff/bot_wire.go": "bddd27e286f534321125bb4a175cedf3df19388bb2055c2d3e9ef420b84ad862",
-    "internal/domain/codegraphguidance/guidance.go": "74bf68bbbef40bf934c4b21a520207905f4c7c04e4998e6f0694ff0ea8e3fb41",
-    "internal/domain/codegraphguidance/instructions.json": "423d3590bce72db5b9bcee7094294cd6f750e08b6f6bf4a91e382fc109b9585e",
+    "internal/domain/codegraphguidance/guidance.go": "51134ce9715502fb770248bc426ed8e819b9a1e67a3f55620a58ace6869526f4",
+    "internal/domain/codegraphguidance/instructions.json": "9085696deeffafee39e64446ba41a16fd5c4b817dcf726f9fbccfbcb75922e12",
     "internal/domain/persona/argv.go": "2b318ab0462bdafb5be21c410d8dc0d5f5c2f7d1040cf206c510b38c89211871",
     "internal/domain/projectassistant/actor.go": "e443e8744125f68b7336b9a8714ddf1f022e4bac16f60f0ea11143cb9cc8741f",
     "internal/domain/projectassistant/charter.go": "7c7d7b2d086834df4887eb5d1a620eeefece915fc38589b198caf52ac14a211c",
@@ -5988,7 +5968,6 @@
     "internal/transport/http/copilot_question.go": "80adeb36f6844305bb57ebfe638721d3b95b9e2dff4dd3a57669ded957f30714",
     "internal/transport/http/copilot_work.go": "41ee101b71e06a8901a56d1eb2095791435976d854c63954a35e3d12bb76a9c8",
     "internal/transport/http/grok_owned.go": "bd3bb5be30997e64106d22c30e9980f21af319c2cae8007dde751aeb374c2e0b",
-    "internal/transport/http/integration_launch.go": "7d9778e074a4392e86c694156827b53c060e291402d354af87a1f0e4c854e939",
     "internal/transport/http/integration_settings.go": "39cd9213de52243300696d2d75afaa658ea326e28a10b45b239caad3c1b9b7a4",
     "internal/transport/http/project_assistants_artifacts.go": "f4c03c31dd5899e69cf6ecc043792265d8cc7c5c61b0043b48ccf9d411a3baa6",
     "internal/transport/http/project_assistants_assistant_cloud.go": "fac5fc5a9774d186b6318a2616568f8229331a0f4cd8effea692fdc0df41a635",
@@ -6009,7 +5988,7 @@
     "internal/transport/http/session_naming_context.go": "73738b817bbb5addd5b241a6770194b3d04dc8d8fb966f5e129e641bff0ef8ef",
     "internal/transport/http/session_recaps.go": "6e1ced414517112d6503e2647c06bfc7a81b6a1ee4c6bbf685be6392fe46b5bf",
     "internal/transport/http/session_rotation.go": "f2bf1a2bf22ab8dfcccf89e39112d519fe8bb3f8c864e070ae7db6bf495dfa4c",
-    "internal/transport/http/start.go": "9bec818a38b512099766fbe06dbc841ec196fcb501625c009ba36d81124845f6",
+    "internal/transport/http/start.go": "ea824f18a94bf2c2439f6df238a5ece4e0d64374a9d9259adf940e542dad8d3b",
     "internal/transport/http/voice_live.go": "3aa560225c74eb0ad4438ef718794d3e7e02ad4a7376ef49e8c670cd6bdb6bb9",
     "internal/transport/http/voice_polish.go": "b8c10d3898ee1d04ed815468011fb43d57efbc1f7488143982a8bc6f02f753cd",
     "internal/transport/http/work_v2.go": "9e7620911d8630fd26d8fd190afa03086e40940a61a01ccd06ca6b293da93f26",
