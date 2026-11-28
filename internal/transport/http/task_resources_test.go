@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -122,8 +123,124 @@ func TestManagedResourceHTTPRequiresMachineAuthorityAndReviewedPlan(t *testing.T
 	}
 }
 
+func TestResourceAdmissionHTTPAllowsRepeatedWithinBudgetCleanup(t *testing.T) {
+	pane := shellPane(t.TempDir())
+	s, h, _, machine := wholeServer(t, pane, pane)
+	if err := s.broker.EnableTaskResources(); err != nil {
+		t.Fatal(err)
+	}
+	defer s.CloseTaskResources()
+	ctx := context.Background()
+	service := s.broker.Resources
+	service.FreeSpace = func() (int64, error) { return 1 << 40, nil }
+	service.Uses = func(context.Context, taskresource.Resource) string { return "absent" }
+	project, output := t.TempDir(), t.TempDir()
+	completedAt := time.Now().Add(-25 * time.Hour).Unix()
+	if err := os.WriteFile(filepath.Join(output, "result.txt"), []byte("retained result"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service.Owner = func(_ context.Context, kind, id string) (taskresources.OwnerState, error) {
+		return taskresources.OwnerState{
+			Owner:    taskresource.Owner{Kind: kind, ID: id, Project: project},
+			Complete: true, CompletedAt: completedAt,
+			Presence: "absent", UsePresence: "absent", OutputsSaved: true,
+			OutputRoot: output, EvidenceDigest: "fixture result",
+		}, nil
+	}
+	scope := taskresources.Scope{Actor: "daemon", AllProjects: true, Inspect: true, Publish: true}
+	var cached taskresource.Resource
+	var entry string
+	if err := service.UseSharedGo(ctx, scope, project, func(r taskresource.Resource, path string) error {
+		cached = r
+		prefix := filepath.Join(path, "aa")
+		if err := os.Mkdir(prefix, 0o700); err != nil {
+			return err
+		}
+		entry = filepath.Join(prefix, strings.Repeat("a", 64)+"-a")
+		return os.WriteFile(entry, []byte("rebuildable Go cache entry"), 0o600)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var sweeping atomic.Bool
+	var sweeps atomic.Int32
+	service.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
+		if sweeping.CompareAndSwap(false, true) {
+			defer sweeping.Store(false)
+			for range 3 {
+				if _, _, err := s.broker.SweepTaskResources(c, ""); err != nil {
+					return taskresource.Usage{}, err
+				}
+				sweeps.Add(1)
+			}
+		}
+		return taskresource.Usage{Known: true}, nil
+	}
+
+	post := func(path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("POST", path, strings.NewReader(body))
+		req.Host = "127.0.0.1:7757"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Clawdline-Orchestrator", machine)
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := post("/v1/orchestrator/resources/admit", "{}")
+	if rec.Code != 200 {
+		t.Fatalf("admission after %d completed sweeps: HTTP %d %s", sweeps.Load(), rec.Code, rec.Body)
+	}
+	if sweeps.Load() != 3 || !service.Usage().Known {
+		t.Fatalf("expected a single admission scan and three overlapping sweeps, got %d sweeps and %+v", sweeps.Load(), service.Usage())
+	}
+
+	// The dev installer submits the same compile lease identity until storage
+	// preparation has a durable outcome. Even another sweep before the lease
+	// poll must leave the prepared admission usable.
+	s.broker.AsyncResourceAdmission = true
+	id := uuid.NewString()
+	leaseBody := `{"resource":"heavy_compile","request_id":"` + id + `","holder":"dev-install fixture"}`
+	rec = post("/v1/orchestrator/leases", leaseBody)
+	var lease contract.LeaseReply
+	if err := json.Unmarshal(rec.Body.Bytes(), &lease); err != nil || rec.Code != 200 || lease.State != "queued" {
+		t.Fatal(rec.Code, rec.Body, err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		events, err := s.broker.Store.LatestEvents(ctx, "resource.preparation.finished", []string{id})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("dev-install lease did not finish storage preparation")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	sweeping.Store(true)
+	if _, _, err := s.broker.SweepTaskResources(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	sweeping.Store(false)
+	rec = post("/v1/orchestrator/leases", leaseBody)
+	if err := json.Unmarshal(rec.Body.Bytes(), &lease); err != nil || rec.Code != 200 || lease.State != "granted" || sweeps.Load() != 6 {
+		t.Fatalf("dev-install lease after %d overlapping sweeps: HTTP %d %s, decode %v", sweeps.Load(), rec.Code, rec.Body, err)
+	}
+	post("/v1/orchestrator/leases/release", `{"resource":"heavy_compile","request_id":"`+id+`"}`)
+
+	resource, err := s.broker.Store.TaskResource(ctx, cached.ID)
+	if err != nil || resource.Manifest == "" || resource.LastExecution != "" {
+		t.Fatal("a within-budget cache should be sealed without starting a cleanup intent", resource, err)
+	}
+	if _, err := os.Stat(entry); err != nil {
+		t.Fatal("within-budget cache data changed", err)
+	}
+}
+
 func TestResourceFailureHTTPDistinguishesLeaseAdmitCancellationAndMissingRecord(t *testing.T) {
-	for _, kind := range []string{"lease", "admit", "canceled admit", "missing"} {
+	for _, kind := range []string{"lease", "admit", "canceled admit", "churning admit", "missing"} {
 		t.Run(kind, func(t *testing.T) {
 			pane := shellPane(t.TempDir())
 			s, h, _, machine := wholeServer(t, pane, pane)
@@ -134,10 +251,22 @@ func TestResourceFailureHTTPDistinguishesLeaseAdmitCancellationAndMissingRecord(
 			const secretData = "private database query contents"
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
+			service := s.broker.Resources
+			owner := taskresource.Owner{Kind: "task", ID: uuid.NewString(), Project: t.TempDir()}
+			service.Owner = func(context.Context, string, string) (taskresources.OwnerState, error) {
+				return taskresources.OwnerState{Owner: owner}, nil
+			}
+			service.FreeSpace = func() (int64, error) { return 1 << 40, nil }
+			scans := 0
 			s.broker.Resources.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
+				scans++
 				if kind == "canceled admit" {
 					cancel()
 					return taskresource.Usage{}, c.Err()
+				}
+				if kind == "churning admit" {
+					_, err := service.Allocate(c, taskresources.Scope{Actor: "daemon", AllProjects: true, Publish: true}, owner.Kind, owner.ID, taskresource.Cache)
+					return taskresource.Usage{Known: true}, err
 				}
 				return taskresource.Usage{}, errors.New(secretData)
 			}
@@ -181,16 +310,27 @@ func TestResourceFailureHTTPDistinguishesLeaseAdmitCancellationAndMissingRecord(
 			if kind == "canceled admit" {
 				want = "resource_measurement_interrupted"
 			}
+			if kind == "churning admit" {
+				want = "resource_measurement_changed"
+			}
 			if rec.Code < 400 || response.Error.Code != want || d.Code != want || strings.Contains(rec.Body.String(), secretData) {
 				t.Fatal(rec.Code, rec.Body)
 			}
-			if kind == "missing" {
+			switch kind {
+			case "missing":
 				if d.Phase != "resource.lookup" || d.ResourceID != id || d.Cause != "not_found" {
 					t.Fatal(d)
 				}
-			} else {
+			case "churning admit":
+				if rec.Code != 503 || scans != taskresource.AdmissionMeasurementAttemptsLimit || d.Phase != "measure.revision" || d.Cause != "revision_changed" || !response.Error.Recorded || service.Usage().Known {
+					t.Fatalf("expected bounded concurrent-change failure, got HTTP %d, %d scans, %+v", rec.Code, scans, d)
+				}
+			default:
 				if d.Phase != "measure.legacy" || d.ResourceID != "" || !response.Error.Recorded {
 					t.Fatal("refusal correlation or receipt lost", d, response.Error.Recorded)
+				}
+				if scans != 1 {
+					t.Fatalf("read failure attempted %d measurements, want one", scans)
 				}
 				if kind == "canceled admit" && (d.Cause != "canceled" || d.ContextState != "canceled") {
 					t.Fatal(d)

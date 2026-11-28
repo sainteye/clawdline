@@ -14,6 +14,9 @@ import (
 
 func (s *Server) resourcesCapacityMeasures() map[string]func() capacity.Reading {
 	return map[string]func() capacity.Reading{
+		"resources.admission_measurement_attempts": func() capacity.Reading {
+			return capacity.Reading{Known: true, Note: "a managed usage revision conflict allows one new scan per admission measurement; read failures are returned directly"}
+		},
 		"resources.ready_seconds": func() capacity.Reading {
 			return capacity.Reading{Known: true, WindowSeconds: taskresource.PreparationReadySecondsLimit, Note: "readiness expires and is consumed once; policy, allocation, use and service incarnation changes require fresh preparation"}
 		},

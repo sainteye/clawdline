@@ -30,6 +30,8 @@ type Failure struct {
 	detail Diagnostic
 }
 
+var errMeasurementChanged = errors.New("accounted resources changed during measurement")
+
 func (e Failure) Error() string { return e.Code }
 func (e Failure) Unwrap() error { return e.Cause }
 func fail(code string) Failure  { return Failure{Code: code} }
@@ -77,6 +79,8 @@ func causeCode(err error) string {
 		return "not_found"
 	case errors.Is(err, store.ErrBusy):
 		return "store_busy"
+	case errors.Is(err, errMeasurementChanged):
+		return "revision_changed"
 	case err != nil:
 		return "read_failed"
 	default:

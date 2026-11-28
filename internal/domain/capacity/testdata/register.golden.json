@@ -16309,6 +16309,26 @@
   },
   {
     "Register": "daemon",
+    "Name": "resources.admission_measurement_attempts",
+    "Class": "buffer",
+    "Unit": "rows",
+    "Limit": 2,
+    "WarnAt": 0,
+    "AtLimit": "refuse",
+    "Deviation": "",
+    "Told": [
+      "diagnostics",
+      "sender"
+    ],
+    "EvictedBy": "daemon",
+    "Projects": false,
+    "QuietRecovery": false,
+    "Sources": [
+      "internal/domain/taskresource.AdmissionMeasurementAttemptsLimit"
+    ]
+  },
+  {
+    "Register": "daemon",
     "Name": "resources.artifact_seconds",
     "Class": "work",
     "Unit": "seconds",

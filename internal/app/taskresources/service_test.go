@@ -561,8 +561,72 @@ func TestMeasurementCannotOverwriteAnAllocationInvalidation(t *testing.T) {
 		}
 		return taskresource.Usage{Known: true}, nil
 	}
-	if _, err := f.s.Measure(ctx); err == nil || f.s.Usage().Known || f.s.AdmissionTicket().Instance != "" {
+	if _, err := f.s.Measure(ctx); !errors.Is(err, errMeasurementChanged) || f.s.Usage().Known || f.s.AdmissionTicket().Instance != "" {
 		t.Fatal("concurrent mutation became a verified admission proof", err)
+	}
+}
+
+func TestAdmissionRepeatsAccountingAfterRealRemoval(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	plan := f.seal(t)
+	attempts := 0
+	f.s.OtherUsage = func(c context.Context) (taskresource.Usage, error) {
+		attempts++
+		if attempts == 1 {
+			if _, err := f.s.Apply(c, f.scope, plan, uuid.NewString()); err != nil {
+				return taskresource.Usage{}, err
+			}
+		}
+		return taskresource.Usage{Known: true}, nil
+	}
+	if err := f.s.Admit(ctx); err != nil || attempts != 2 {
+		t.Fatalf("admission with a removal during the first scan: %d scans, %v", attempts, err)
+	}
+	if usage := f.s.Usage(); !usage.Known || usage.ScratchTotal != 0 || f.s.AdmissionTicket().Instance == "" {
+		t.Fatalf("expected a fresh admission proof for the post-removal total: %+v", usage)
+	}
+	preserved(t, f)
+}
+
+func TestMeasurementWaitsForRemovalReceiptAndCanBeCancelled(t *testing.T) {
+	f := setup(t, taskresource.Scratch)
+	ctx := context.Background()
+	plan := f.seal(t)
+	removed, release := make(chan struct{}), make(chan struct{})
+	f.s.Fault = func(point, _ string) error {
+		if point == "after_remove" {
+			close(removed)
+			<-release
+		}
+		return nil
+	}
+	applied := make(chan error, 1)
+	go func() {
+		_, err := f.s.Apply(ctx, f.scope, plan, uuid.NewString())
+		applied <- err
+	}()
+	var applyErr error
+	finish := sync.OnceFunc(func() { close(release); applyErr = <-applied })
+	defer finish()
+	select {
+	case <-removed:
+	case <-time.After(time.Second):
+		t.Fatal("fixture did not reach the unpublished removal")
+	}
+	wait, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	_, err := f.s.Measure(wait)
+	var failure Failure
+	if !errors.As(err, &failure) || !errors.Is(err, context.DeadlineExceeded) || failure.Diagnostic().Phase != "measure.begin" || f.s.Usage().Known {
+		t.Fatal("accounting crossed a removal with no durable outcome", err)
+	}
+	finish()
+	if applyErr != nil {
+		t.Fatal(applyErr)
+	}
+	if u, err := f.s.Measure(ctx); err != nil || !u.Known || u.ScratchTotal != 0 {
+		t.Fatal("accounting did not observe the durable removal", u, err)
 	}
 }
 

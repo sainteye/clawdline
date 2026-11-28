@@ -9,6 +9,7 @@ const MachineDiskLow = "resources.disk_low_free_bytes"
 func resourceBounds() []Entry {
 	return []Entry{
 		{Name: "resources.ready_seconds", Class: Cache, Unit: Seconds, Limit: taskresource.PreparationReadySecondsLimit, AtLimit: Expire, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.PreparationReadySecondsLimit"}},
+		{Name: "resources.admission_measurement_attempts", Class: Buffer, Unit: Rows, Limit: taskresource.AdmissionMeasurementAttemptsLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.AdmissionMeasurementAttemptsLimit"}},
 		{Name: "resources.scan_files", Class: Buffer, Unit: Rows, Limit: taskresource.FilesLimit, AtLimit: Refuse, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.FilesLimit"}},
 		{Name: "resources.scratch_seconds", Class: Work, Unit: Seconds, Limit: taskresource.ScratchRetentionSecondsLimit, AtLimit: EvictOldest, Told: []Channel{Diagnostics, Sender}, EvictedBy: Daemon, Sources: []string{"internal/domain/taskresource.ScratchRetentionSecondsLimit"}},
 		// A finished task's artifacts/ go once it has been over this long
