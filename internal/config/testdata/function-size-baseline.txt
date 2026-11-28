@@ -59,7 +59,6 @@ internal/app/projectassistant/runtime.go	Engine.work	119	31
 internal/app/projectassistant/session_handoff.go	sessionContinuationBefore	116	42
 internal/app/proposals.go	Participation.Propose	171	55
 internal/app/schedules.go	ScheduleBook.build	107	38
-internal/app/taskresources/service.go	Service.Apply	142	47
 internal/app/terminals/stream.go	Watch.run	141	43
 internal/app/usage_overview.go	UsageLedger.Overview	150	39
 internal/app/work_units.go	FoldWorkUnit	166	52

@@ -2411,6 +2411,8 @@
   "capacityRow.release.supervisor_runs.what": "負責執行一次更新的背景程序，最多能被重新啟動幾次。避免一個一直被中斷的更新無限循環下去。",
   "capacityRow.release.unpacked_bytes.full": "這個下載檔會被判定不安全而拒絕，已解開的部分全部丟掉，更新面板會顯示這次更新失敗。目前的版本照常運作，你不用做任何事。",
   "capacityRow.release.unpacked_bytes.what": "下載的 Clawdline 新版本解開後最多能佔多少硬碟空間。設上限是避免壞掉或惡意的下載檔在解開時把硬碟塞滿。",
+  "capacityRow.resources.admission_measurement_attempts.full": "兩次掃描都遇到受管儲存變動時，需重新提出建置請求。拒絕回覆會標明掃描期間發生變動。",
+  "capacityRow.resources.admission_measurement_attempts.what": "準備建置時，若第一次掃描期間受管儲存發生變動，會再掃描一次。",
   "capacityRow.resources.artifact_seconds.full": "滿 30 天後，只有在落地已結算、沒有釘選、沒有程式在讀取時才回收成果檔；讀不到結束時間就保留。摘要與結果仍保留。",
   "capacityRow.resources.artifact_seconds.what": "任務結束且落地結算後，成果保留 30 天；結果、摘要與落地紀錄不會刪除。",
   "capacityRow.resources.cache_bytes.full": "先回收符合條件的快取；若仍無法安全降至預算內，拒絕啟動新的相關建置並說明原因。",

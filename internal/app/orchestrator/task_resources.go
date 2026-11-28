@@ -333,6 +333,8 @@ func (b *Broker) AdmitHeavyResources(ctx context.Context) error {
 	}
 	message := "Managed storage could not be verified. Inspect resource diagnostics before retrying."
 	switch failure.Code {
+	case "resource_measurement_changed":
+		return refuseWith(503, failure.Code, message, extra)
 	case "disk_reserve_unavailable", "cache_total_over_budget", "scratch_over_budget":
 		message = "Storage limits prevent a new build. Finish or preserve work, then reclaim eligible temporary data and retry."
 	}

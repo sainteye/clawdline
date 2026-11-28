@@ -4098,6 +4098,11 @@
     "Note": true
   },
   {
+    "Name": "resources.admission_measurement_attempts",
+    "Known": true,
+    "Note": true
+  },
+  {
     "Name": "resources.artifact_seconds",
     "Known": true,
     "Note": true,

@@ -30,6 +30,10 @@ const (
 	DiskSourceScanFilesLimit = 2_000_000
 )
 
+// AdmissionMeasurementAttemptsLimit includes the original scan and one retry
+// when a managed change overlaps accounting.
+const AdmissionMeasurementAttemptsLimit = 2
+
 type Class string
 
 const (

@@ -118,6 +118,16 @@ func TestSharedGoUseReconcilesAnInterruptedTrimWithoutRepeatingDeletion(t *testi
 			if err := os.WriteFile(file, []byte("still reusable"), 0600); err != nil {
 				t.Fatal(err)
 			}
+			candidates := filepath.Join(path, "ab")
+			if err := os.Mkdir(candidates, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(candidates, fmt.Sprintf("%064x-d", 1)), []byte("trim candidate"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			policy := taskresource.DefaultPolicy()
+			policy.CacheBytes = 1
+			f.s.Policy = func() taskresource.Policy { return policy }
 			if _, err := f.s.Seal(ctx, f.scope, resource.ID); err != nil {
 				t.Fatal(err)
 			}
@@ -200,6 +210,43 @@ func TestSharedGoUseReconcilesAnInterruptedTrimWithoutRepeatingDeletion(t *testi
 			}
 			preserved(t, f)
 		})
+	}
+}
+
+func TestOverTargetSharedGoWithoutCandidatesPreservesAdmission(t *testing.T) {
+	f := setup(t, taskresource.Cache)
+	ctx := context.Background()
+	var resource taskresource.Resource
+	if err := f.s.UseSharedGo(ctx, f.scope, f.scope.Project, func(r taskresource.Resource, path string) error {
+		resource = r
+		return os.WriteFile(filepath.Join(path, "unrecognized-entry"), []byte("keep my data"), 0o600)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f.s.Owner = func(context.Context, string, string) (OwnerState, error) {
+		return OwnerState{Owner: resource.Owner, Complete: true, CompletedAt: f.now.Unix(), Presence: "absent", UsePresence: "absent", OutputsSaved: true, OutputRoot: f.output, EvidenceDigest: "verified-consumers"}, nil
+	}
+	policy := taskresource.DefaultPolicy()
+	policy.CacheBytes = 1
+	f.s.Policy = func() taskresource.Policy { return policy }
+	if _, err := f.s.Seal(ctx, f.scope, resource.ID); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := f.s.Plan(ctx, f.scope, []string{resource.ID})
+	if err != nil || plan.Items[0].Decision.Outcome != "eligible" {
+		t.Fatal(plan, err)
+	}
+	if err := f.s.Admit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	ticket := f.s.AdmissionTicket()
+	result, err := f.s.Apply(ctx, f.scope, plan, uuid.NewString())
+	if err != nil || result.Items[0].Reason != "shared_cache_no_trim_candidates" || !f.s.ConsumeAdmission(ticket) {
+		t.Fatal("no trim candidates should leave the ready ticket usable", result, err)
+	}
+	current, err := f.s.Store.TaskResource(ctx, resource.ID)
+	if err != nil || current.LastExecution != "" {
+		t.Fatal("no trim candidates should leave no removal intent", current, err)
 	}
 }
 

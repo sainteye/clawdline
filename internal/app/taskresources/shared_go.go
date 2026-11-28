@@ -57,6 +57,8 @@ func (s *Service) UseSharedGo(ctx context.Context, scope Scope, project string, 
 		}
 		selected = r
 	}
+	endChange := s.beginUsageChange()
+	defer endChange()
 	if selected.ID == "" {
 		selected = taskresource.Resource{ID: uuid.NewString(), Generation: uuid.NewString(), Owner: owner, Class: taskresource.Cache, CreatedAt: s.now().Unix()}
 		selected.RelativePath = selected.ID
@@ -80,9 +82,5 @@ func (s *Service) UseSharedGo(ctx context.Context, scope Scope, project string, 
 	}); err != nil {
 		return err
 	}
-	s.statsMu.Lock()
-	s.stats.Known = false
-	s.admissionRevision++
-	s.statsMu.Unlock()
 	return attach(selected, path)
 }

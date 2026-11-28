@@ -36,8 +36,9 @@ func (r *Root) GoCachePath(resource taskresource.Resource) (string, error) {
 // TrimGoCache keeps the newest recognized Go entries inside the existing
 // resource. The service fences new consumers and proves all old consumers gone
 // before calling it. It never trims a default, explicit, gate or module cache.
-func (r *Root) TrimGoCache(ctx context.Context, resource taskresource.Resource, expected string, budget int64) (Snapshot, error) {
-	if resource.Owner.Kind != "shared_go" || resource.Class != taskresource.Cache || expected == "" || budget < 0 {
+// authorize runs once, before the first candidate could be unlinked.
+func (r *Root) TrimGoCache(ctx context.Context, resource taskresource.Resource, expected string, budget int64, authorize func() (bool, error)) (Snapshot, error) {
+	if resource.Owner.Kind != "shared_go" || resource.Class != taskresource.Cache || expected == "" || budget < 0 || authorize == nil {
 		return Snapshot{}, ErrUnsafe
 	}
 	before, err := r.Snapshot(ctx, resource)
@@ -106,6 +107,13 @@ func (r *Root) TrimGoCache(ctx context.Context, resource taskresource.Resource, 
 	for _, entry := range entries {
 		if used <= budget {
 			break
+		}
+		if authorize != nil {
+			allowed, err := authorize()
+			if err != nil || !allowed {
+				return removed, err
+			}
+			authorize = nil
 		}
 		if ctx.Err() != nil {
 			return removed, ctx.Err()

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -65,7 +66,8 @@ type Service struct {
 	stats             taskresource.Usage
 	admissionInstance string
 	admissionRevision uint64
-	admitAfter        string // protected by statsMu; cleanup uses the existing resource page bound.
+	usageChange       chan struct{} // protected by statsMu; closed after a managed filesystem change
+	admitAfter        string        // protected by statsMu; cleanup uses the existing resource page bound.
 }
 
 func (s *Service) now() time.Time {
@@ -117,6 +119,8 @@ func (s *Service) Allocate(ctx context.Context, scope Scope, kind, id string, cl
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	endChange := s.beginUsageChange()
+	defer endChange()
 	identity, err := s.FS.Allocate(r.ID, r.Generation)
 	if err != nil {
 		return Allocation{}, fail("resource_allocation_failed")
@@ -125,10 +129,6 @@ func (s *Service) Allocate(ctx context.Context, scope Scope, kind, id string, cl
 	if err := s.Store.RegisterTaskResource(ctx, r); err != nil {
 		return Allocation{}, fail("resource_registration_failed")
 	}
-	s.statsMu.Lock()
-	s.stats.Known = false
-	s.admissionRevision++
-	s.statsMu.Unlock()
 	return Allocation{r, filepath.Join(s.FS.Path(), r.ID), owner.OutputRoot}, nil
 }
 
@@ -457,8 +457,10 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 				absent, err := s.FS.Absent(current)
 				if err == nil && absent {
 					row.Outcome, row.Reason = "removed", "missing_after_recorded_intent"
-					if _, err := s.mark(ctx, current, execution, scope.Actor, "removed", row.Reason); err != nil {
-						return Result{}, err
+					if current.LastOutcome != "removed" {
+						if err := s.recordRecoveredRemoval(ctx, current, execution, scope.Actor, row.Reason); err != nil {
+							return Result{}, err
+						}
 					}
 				}
 			}
@@ -477,68 +479,8 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 			out.Items = append(out.Items, row)
 			continue
 		}
-		if s.Fault != nil {
-			if err := s.Fault("before_intent", r.ID); err != nil {
-				return Result{}, err
-			}
-		}
-		if _, err := s.mark(ctx, r, execution, scope.Actor, "removing", "completed_owned_scratch"); err != nil {
-			return Result{}, err
-		}
-		if s.Fault != nil {
-			if err := s.Fault("after_intent", r.ID); err != nil {
-				return Result{}, err
-			}
-		}
-		// A fresh owner read after the intent catches readers or protection
-		// changes between planning and the actual filesystem operation.
-		check, err := s.inspectFor(ctx, scope, r.ID, execution)
-		if err != nil || check.Decision.Outcome != "eligible" || check.Snapshot.Digest != item.Snapshot.Digest || check.Manifest != item.Manifest {
-			row.Reason = "resource_changed_before_remove"
-			if _, err := s.mark(ctx, r, execution, scope.Actor, "kept", row.Reason); err != nil {
-				return Result{}, err
-			}
-			out.Items = append(out.Items, row)
-			continue
-		}
-		if r.Owner.Kind == "shared_go" {
-			target := s.policy().CacheBytes
-			u, measureErr := s.Measure(ctx)
-			if measureErr != nil {
-				row.Reason = "resource_measurement_unknown"
-			} else {
-				size := item.Snapshot.Logical
-				if item.Snapshot.AllocationKnown {
-					size = item.Snapshot.Allocated
-				}
-				if u.CacheTotal > s.policy().CacheTotal {
-					target = min(target, max(int64(0), size-(u.CacheTotal-s.policy().CacheTotal)))
-				}
-				if u.Available < s.policy().DiskReserve {
-					target = min(target, max(int64(0), size-(s.policy().DiskReserve-u.Available)))
-				}
-				removed, trimErr := s.FS.TrimGoCache(ctx, r, item.Snapshot.Digest, target)
-				row.LogicalBytes, row.AllocatedBytes, row.AllocationKnown = removed.Logical, removed.Allocated, removed.AllocationKnown
-				row.Reason = "shared_cache_within_budget"
-				if removed.Logical > 0 {
-					row.Reason = "shared_cache_trimmed"
-				}
-				if trimErr != nil {
-					row.Reason = "shared_cache_trim_failed"
-				}
-			}
-		} else if err := s.FS.Remove(ctx, r, item.Snapshot.Digest); err != nil {
-			row.Reason = "remove_failed"
-		} else {
-			row.Outcome, row.Reason = "removed", "completed_owned_scratch"
-			row.LogicalBytes, row.AllocatedBytes, row.AllocationKnown = item.Snapshot.Logical, item.Snapshot.Allocated, item.Snapshot.AllocationKnown
-		}
-		if s.Fault != nil {
-			if err := s.Fault("after_remove", r.ID); err != nil {
-				return Result{}, err
-			}
-		}
-		if _, err := s.mark(ctx, r, execution, scope.Actor, row.Outcome, row.Reason); err != nil {
+		row, err = s.applyRemovalLocked(ctx, scope, item, r, execution)
+		if err != nil {
 			return Result{}, err
 		}
 		out.Items = append(out.Items, row)
@@ -548,11 +490,143 @@ func (s *Service) Apply(ctx context.Context, scope Scope, plan Plan, execution s
 		return Result{}, fail("resource_receipt_unknown")
 	}
 	completed = true
+	return out, nil
+}
+
+func (s *Service) applyRemovalLocked(ctx context.Context, scope Scope, item Inspection, r taskresource.Resource, execution string) (Receipt, error) {
+	if r.Owner.Kind == "shared_go" {
+		return s.trimSharedGoLocked(ctx, scope, item, r, execution)
+	}
+	row := Receipt{Resource: r.ID, Outcome: "kept", Reason: "resource_changed_before_remove"}
+	if ready, err := s.prepareRemovalLocked(ctx, scope, item, r, execution); !ready || err != nil {
+		return row, err
+	}
+	endChange := s.beginUsageChange()
+	defer endChange()
+	if err := s.FS.Remove(ctx, r, item.Snapshot.Digest); err != nil {
+		row.Reason = "remove_failed"
+	} else {
+		row.Outcome, row.Reason = "removed", "completed_owned_scratch"
+		row.LogicalBytes, row.AllocatedBytes, row.AllocationKnown = item.Snapshot.Logical, item.Snapshot.Allocated, item.Snapshot.AllocationKnown
+	}
+	return row, s.finishRemovalLocked(ctx, r, execution, scope.Actor, row)
+}
+
+func (s *Service) trimSharedGoLocked(ctx context.Context, scope Scope, item Inspection, r taskresource.Resource, execution string) (Receipt, error) {
+	row := Receipt{Resource: r.ID, Outcome: "kept"}
+	// This read informs a trim while mu fences managed writers. It leaves the
+	// published measurement and admission ticket alone.
+	u, err := s.measureUsage(ctx)
+	if err != nil {
+		row.Reason = Explain(ctx, err, "cleanup.measure").Code
+		return row, nil
+	}
+	size := item.Snapshot.Logical
+	if item.Snapshot.AllocationKnown {
+		size = item.Snapshot.Allocated
+	}
+	policy := s.policy()
+	target := policy.CacheBytes
+	if u.CacheTotal > policy.CacheTotal {
+		target = min(target, max(int64(0), size-(u.CacheTotal-policy.CacheTotal)))
+	}
+	if u.Available < policy.DiskReserve {
+		target = min(target, max(int64(0), size-(policy.DiskReserve-u.Available)))
+	}
+	if size <= target {
+		row.Reason = "shared_cache_within_budget"
+		return row, nil
+	}
+
+	var endChange func()
+	defer func() {
+		if endChange != nil {
+			endChange()
+		}
+	}()
+	var intentErr error
+	row.Reason = "shared_cache_no_trim_candidates"
+	removed, trimErr := s.FS.TrimGoCache(ctx, r, item.Snapshot.Digest, target, func() (bool, error) {
+		var ready bool
+		ready, intentErr = s.prepareRemovalLocked(ctx, scope, item, r, execution)
+		if ready {
+			endChange = s.beginUsageChange()
+		} else {
+			row.Reason = "resource_changed_before_remove"
+		}
+		return ready, intentErr
+	})
+	if intentErr != nil {
+		return Receipt{}, intentErr
+	}
+	if trimErr != nil {
+		row.Reason = "shared_cache_trim_failed"
+	} else if endChange != nil {
+		row.Reason = "shared_cache_trimmed"
+	}
+	if endChange == nil {
+		return row, nil
+	}
+	row.LogicalBytes, row.AllocatedBytes, row.AllocationKnown = removed.Logical, removed.Allocated, removed.AllocationKnown
+	return row, s.finishRemovalLocked(ctx, r, execution, scope.Actor, row)
+}
+
+func (s *Service) prepareRemovalLocked(ctx context.Context, scope Scope, item Inspection, r taskresource.Resource, execution string) (bool, error) {
+	if s.Fault != nil {
+		if err := s.Fault("before_intent", r.ID); err != nil {
+			return false, err
+		}
+	}
+	if _, err := s.mark(ctx, r, execution, scope.Actor, "removing", "completed_owned_scratch"); err != nil {
+		return false, err
+	}
+	if s.Fault != nil {
+		if err := s.Fault("after_intent", r.ID); err != nil {
+			return false, err
+		}
+	}
+	// A fresh owner read after the intent catches readers or protection
+	// changes between planning and the actual filesystem operation.
+	check, err := s.inspectFor(ctx, scope, r.ID, execution)
+	if err != nil || check.Decision.Outcome != "eligible" || check.Snapshot.Digest != item.Snapshot.Digest || check.Manifest != item.Manifest {
+		_, err := s.mark(ctx, r, execution, scope.Actor, "kept", "resource_changed_before_remove")
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Service) finishRemovalLocked(ctx context.Context, r taskresource.Resource, execution, actor string, row Receipt) error {
+	if s.Fault != nil {
+		if err := s.Fault("after_remove", r.ID); err != nil {
+			return err
+		}
+	}
+	_, err := s.mark(ctx, r, execution, actor, row.Outcome, row.Reason)
+	return err
+}
+
+func (s *Service) recordRecoveredRemoval(ctx context.Context, r taskresource.Resource, execution, actor, reason string) error {
+	endChange := s.beginUsageChange()
+	defer endChange()
+	_, err := s.mark(ctx, r, execution, actor, "removed", reason)
+	return err
+}
+
+// The caller holds mu. Invalidate before touching the accounted tree and
+// release readers only when both the change and its registry update settle.
+func (s *Service) beginUsageChange() func() {
 	s.statsMu.Lock()
 	s.stats.Known = false
 	s.admissionRevision++
+	done := make(chan struct{})
+	s.usageChange = done
 	s.statsMu.Unlock()
-	return out, nil
+	return func() {
+		s.statsMu.Lock()
+		s.usageChange = nil
+		close(done)
+		s.statsMu.Unlock()
+	}
 }
 
 func (s *Service) mark(ctx context.Context, r taskresource.Resource, execution, actor, outcome, reason string) (taskresource.Resource, error) {
@@ -578,16 +652,60 @@ func digest(value any) string {
 
 // Measure is explicit/background work. Dashboard reads only the cached result.
 func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
-	if !s.ready() || s.FreeSpace == nil {
+	if !s.ready() {
 		return taskresource.Usage{}, fail("resource_service_unavailable")
 	}
-	s.statsMu.Lock()
+	if err := s.lockAdmission(ctx); err != nil {
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.begin", "")
+	}
+	defer s.unlockAdmission()
+	return s.measure(ctx)
+}
+
+func (s *Service) measure(ctx context.Context) (taskresource.Usage, error) {
+	if s.FreeSpace == nil {
+		return taskresource.Usage{}, fail("resource_service_unavailable")
+	}
+	for {
+		s.statsMu.Lock()
+		done := s.usageChange
+		if done == nil {
+			break
+		}
+		s.statsMu.Unlock()
+		select {
+		case <-done:
+		case <-ctx.Done():
+			return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", ctx.Err()).WithContext(ctx, "measure.begin", "")
+		}
+	}
+	if err := ctx.Err(); err != nil {
+		s.statsMu.Unlock()
+		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.begin", "")
+	}
 	s.stats.Known = false
 	s.admissionRevision++
 	revision := s.admissionRevision
 	s.statsMu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.begin", "")
+	u, err := s.measureUsage(ctx)
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	if revision != s.admissionRevision && (err == nil || errors.Is(err, fs.ErrNotExist) || errors.Is(err, resourcefs.ErrChanged)) {
+		if ctx.Err() != nil {
+			return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", ctx.Err()).WithContext(ctx, "measure.complete", "")
+		}
+		return taskresource.Usage{}, measurementFailure("resource_measurement_changed", errMeasurementChanged).WithContext(ctx, "measure.revision", "")
+	}
+	if err != nil {
+		return taskresource.Usage{}, err
+	}
+	s.stats = u
+	return u, nil
+}
+
+func (s *Service) measureUsage(ctx context.Context) (taskresource.Usage, error) {
+	if s.FreeSpace == nil {
+		return taskresource.Usage{}, fail("resource_service_unavailable")
 	}
 	u := taskresource.Usage{Known: true}
 	if s.OtherUsage != nil {
@@ -637,14 +755,19 @@ func (s *Service) Measure(ctx context.Context) (taskresource.Usage, error) {
 		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "measure.complete", "")
 	}
 	u.Available = free
-	s.statsMu.Lock()
-	if revision != s.admissionRevision {
-		s.statsMu.Unlock()
-		return taskresource.Usage{}, measurementFailure("resource_measurement_unknown", resourcefs.ErrChanged).WithContext(ctx, "measure.revision", "")
-	}
-	s.stats = u
-	s.statsMu.Unlock()
 	return u, nil
+}
+
+func (s *Service) measureForAdmission(ctx context.Context) (taskresource.Usage, error) {
+	var err error
+	for range taskresource.AdmissionMeasurementAttemptsLimit {
+		var u taskresource.Usage
+		u, err = s.measure(ctx)
+		if !errors.Is(err, errMeasurementChanged) {
+			return u, err
+		}
+	}
+	return taskresource.Usage{}, err
 }
 
 func (s *Service) Usage() taskresource.Usage {
@@ -699,7 +822,7 @@ func (s *Service) Admit(ctx context.Context) error {
 		return measurementFailure("resource_measurement_unknown", err).WithContext(ctx, "admission.wait", "")
 	}
 	defer s.unlockAdmission()
-	u, err := s.Measure(ctx)
+	u, err := s.measureForAdmission(ctx)
 	if err != nil {
 		return err
 	}
@@ -719,7 +842,7 @@ func (s *Service) Admit(ctx context.Context) error {
 	s.statsMu.Lock()
 	s.admitAfter = next
 	s.statsMu.Unlock()
-	u, err = s.Measure(ctx)
+	u, err = s.measureForAdmission(ctx)
 	if err != nil {
 		return err
 	}
@@ -792,14 +915,12 @@ func (s *Service) recoverResourceLocked(ctx context.Context, r taskresource.Reso
 	if err != nil {
 		return nil
 	}
-	outcome, reason := "kept", "interrupted_cleanup"
 	if absent {
-		outcome, reason = "removed", "missing_after_recorded_intent"
-	} else if err := s.FS.Verify(r); err != nil {
+		return s.recordRecoveredRemoval(ctx, r, r.LastExecution, r.LastActor, "missing_after_recorded_intent")
+	}
+	if err := s.FS.Verify(r); err != nil {
 		return nil
 	}
-	if _, err := s.mark(ctx, r, r.LastExecution, r.LastActor, outcome, reason); err != nil {
-		return err
-	}
-	return nil
+	_, err = s.mark(ctx, r, r.LastExecution, r.LastActor, "kept", "interrupted_cleanup")
+	return err
 }

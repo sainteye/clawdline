@@ -363,6 +363,17 @@ name rules or issue a deletion grant. Inspect/plan/apply still require complete
 ownership, publication, identity and absent-use evidence, including the final
 pre-unlink check. Unknown accounting still refuses admission.
 
+Shared Go cleanup reads the storage budget and finds a trim candidate before
+writing a removal intent. A cache at its target or without trim candidates
+receives a kept receipt without rewriting its resource record or invalidating
+admission. The budget read leaves the published measurement alone.
+A managed allocation, cache attachment or deletion fences
+measurement until its registry update settles. Admission repeats a scan once
+when its usage revision changes during the scan. If both scans conflict, it
+returns HTTP 503 `resource_measurement_changed` with cause `revision_changed`.
+Read failures and cancellations retain their original causes. The attempt bound
+applies to each scan requested by admission, including the post-cleanup recheck.
+
 Trusted Root check tooling can attach a running callback to its canonical Project
 Go cache with `resources use-go`. This uses the existing shared consumer fence;
 scheduling intent no longer forces ordinary checks to retain a private compiler

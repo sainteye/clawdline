@@ -47,7 +47,8 @@ func TestSharedGoTrimKeepsRecentEntriesUnknownDataAndOwnership(t *testing.T) {
 	if known {
 		budget = before.Allocated - a
 	}
-	removed, err := root.TrimGoCache(context.Background(), r, before.Digest, budget)
+	authorize := func() (bool, error) { return true, nil }
+	removed, err := root.TrimGoCache(context.Background(), r, before.Digest, budget, authorize)
 	if err != nil || removed.Logical != info.Size() {
 		t.Fatal(removed, err)
 	}
@@ -59,7 +60,7 @@ func TestSharedGoTrimKeepsRecentEntriesUnknownDataAndOwnership(t *testing.T) {
 			t.Fatal("protected or recent bytes removed", p, err)
 		}
 	}
-	if _, err := root.TrimGoCache(context.Background(), r, before.Digest, 0); !errors.Is(err, ErrChanged) {
+	if _, err := root.TrimGoCache(context.Background(), r, before.Digest, 0, authorize); !errors.Is(err, ErrChanged) {
 		t.Fatal("changed plan accepted", err)
 	}
 }
