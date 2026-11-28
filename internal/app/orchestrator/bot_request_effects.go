@@ -51,8 +51,9 @@ func init() {
 
 // botRequestCard resolves the card a dispatch names for bot: it follows
 // merged_into to the surviving card, which must be open and have bot in its
-// chain. "Not found" and "could not check" stay apart.
-func (b *Broker) botRequestCard(ctx context.Context, id, bot string) (string, error) {
+// chain. A peer thread may also use its verified main-chat owner's membership
+// in the same Project.
+func (b *Broker) botRequestCard(ctx context.Context, id, bot string, workOwner pa.Fence) (string, error) {
 	if b.Store == nil {
 		return "", assistantFailure(pa.Unsupported, "bot_request_store")
 	}
@@ -71,7 +72,8 @@ func (b *Broker) botRequestCard(ctx context.Context, id, bot string) (string, er
 		if c.State != br.StateOpen {
 			return "", assistantFailure(pa.ScopeDenied, "bot_request_closed")
 		}
-		if !c.InChain(bot) {
+		ownerInChain := workOwner.Key.BotID != "" && workOwner.Project.ProjectID == c.ProjectID && c.InChain(workOwner.Key.BotID)
+		if !c.InChain(bot) && !ownerInChain {
 			return "", assistantFailure(pa.ScopeDenied, "bot_request_chain")
 		}
 		return c.ID, nil
@@ -83,7 +85,7 @@ func (b *Broker) botRequestCard(ctx context.Context, id, bot string) (string, er
 // that must decide before dispatching: the surviving card's id, or a typed
 // refusal.
 func (b *Broker) BotRequestCardFor(ctx context.Context, id, bot string) (string, error) {
-	return b.botRequestCard(ctx, id, bot)
+	return b.botRequestCard(ctx, id, bot, pa.Fence{})
 }
 
 func runBotRequestHandoff(ctx context.Context, b *Broker, e store.Effect) effectResult {

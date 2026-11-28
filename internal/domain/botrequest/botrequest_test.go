@@ -62,7 +62,7 @@ func TestAuthorityTable(t *testing.T) {
 	}{
 		{ActEdit, map[Actor]bool{person: true, lead: true, holder: true, other: false, stranger: false}},
 		{ActHandoffChain, map[Actor]bool{person: true, lead: true, holder: true, other: false, stranger: false}},
-		{ActHandoffOutside, map[Actor]bool{person: true, lead: false, holder: false, other: false, stranger: false}},
+		{ActHandoffOutside, map[Actor]bool{person: true, lead: true, holder: true, other: false, stranger: false}},
 		{ActVerdict, map[Actor]bool{person: false, lead: false, holder: true, other: false, stranger: false}},
 		{ActMark, map[Actor]bool{person: true, lead: false, holder: true, other: false, stranger: false}},
 		{ActWait, map[Actor]bool{person: false, lead: false, holder: true, other: false, stranger: false}},
@@ -86,17 +86,24 @@ func TestAuthorityTable(t *testing.T) {
 	code(t, Authorize(c, Actor{}, ActEdit), CodeForbidden)
 }
 
-func TestHandoffStaysInTheChainForBots(t *testing.T) {
+func TestHandoffAddsTheNextBot(t *testing.T) {
 	c := newCard(t, CreateInput{Title: "f", Kind: "development"})
-	code(t, c.Handoff(Actor{Bot: "lead"}, "outsider", RoleReviewer, ""), CodeForbidden)
-	if err := c.Handoff(Actor{Person: true}, "reviewer", RoleReviewer, "review abc"); err != nil {
+	c.JoinChain("observer")
+	code(t, c.Handoff(Actor{Bot: "observer"}, "outsider", RoleReviewer, ""), CodeForbidden)
+	if c.InChain("outsider") {
+		t.Fatal("a Bot without baton authority expanded the chain")
+	}
+	if err := c.Handoff(Actor{Bot: "lead"}, "reviewer", RoleReviewer, "review abc"); err != nil {
 		t.Fatal(err)
 	}
 	if c.Baton != (Baton{Role: RoleReviewer, Bot: "reviewer"}) || !c.InChain("reviewer") {
 		t.Fatalf("baton %+v chain %v", c.Baton, c.Chain)
 	}
-	if err := c.Handoff(Actor{Bot: "reviewer"}, "lead", RoleMaker, "back to you"); err != nil {
+	if err := c.Handoff(Actor{Bot: "reviewer"}, "maker", RoleMaker, "on to the next Bot"); err != nil {
 		t.Fatal(err)
+	}
+	if c.Baton.Bot != "maker" || !c.InChain("maker") {
+		t.Fatalf("baton %+v chain %v", c.Baton, c.Chain)
 	}
 }
 
@@ -159,10 +166,6 @@ func TestNotNeededNeedsAReasonAndCheckIsIdempotent(t *testing.T) {
 func TestVerdictIsRecordedAndBlocksNothing(t *testing.T) {
 	c := newCard(t, CreateInput{Title: "f", Kind: "development"})
 	rev := Actor{Bot: "reviewer"}
-	if err := c.Handoff(Actor{Bot: "lead"}, "reviewer", RoleReviewer, ""); err == nil {
-		t.Fatal("handoff outside the chain by a Bot was accepted")
-	}
-	c.Chain = append(c.Chain, "reviewer")
 	if err := c.Handoff(Actor{Bot: "lead"}, "reviewer", RoleReviewer, ""); err != nil {
 		t.Fatal(err)
 	}
