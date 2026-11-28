@@ -4,6 +4,13 @@ The public **What Clawdline changes** page lives at `https://clawdline.com/docs/
 
 The page describes a reviewed product revision, not a person's configuration. English and Taiwan Traditional Chinese share the website's language control. Original excerpts stay in their source language. Source links point to the imported product commit; the website build refuses an outdated content snapshot.
 
+A Bot's work review can run after a new model session starts. The English
+and Taiwan Traditional Chinese work-completion explanations describe how
+the result returns to the same chat while the previous native history stays
+unloaded. The review prompt asks the Bot to report what the result establishes
+and specify any missing context. Source ownership and forget checks still
+apply, and the review carries no user authorization.
+
 The voice-work explanation now covers Session closing from the fleet list.
 The voice tool reads the full row from the selected execution's machine and
 passes on the machine's closeability reasons or a read failure. Agreement to

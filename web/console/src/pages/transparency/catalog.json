@@ -5922,7 +5922,7 @@
     "internal/app/projectassistant/session_handoff.go": "50df981864f9e020ad1b0cb6bf9c8fab5ffc860119fb035e186b9a950d5f091a",
     "internal/app/projectassistant/submit.go": "9d3a68db5c61a44604812a94097af5b6370201ede7787c327a023e8bc943254e",
     "internal/app/projectassistant/topic_memory.go": "37934ad0f673d23c8418c2068d9c943971fc0b42cae8e5533dbd9902261d34e0",
-    "internal/app/projectassistant/work_completion.go": "1e34203cf5582e6c1f15721add71fb39ad2568d92bdaa6f4a5bfbcddf76ada31",
+    "internal/app/projectassistant/work_completion.go": "9ade74000e550f03e3cd5ff8f939571117cc82f9203502f51a82e8f7ad94fd9e",
     "internal/app/squad_launch.go": "8ddc554d062b07e47faae3909226dcc0c15043e82ac62a4c1f3397dde34388d9",
     "internal/app/start.go": "46c7b221fc67eeac0a6eb0ed08f0713dca69022ffe1a2c2fce1a14cc5bbc9b13",
     "internal/app/work_v2_todos.go": "61b37558c31fa0c49cf980bf0cfc55928b9a861bb5a8f0f7a926d452cf52526a",
@@ -6079,7 +6079,7 @@
     "web/console/src/voice-work/runtime.ts": "a6430b11883766ff1f41eb0b78cea36a6600a6713b7466fce0ef6a386fa20fa7"
   },
   "copyChecks": {
-    "en": "8bd30e4f2684ea388921dd9d1c2b2fb23ba647f9845a78db1801ead0a11327c1",
-    "zh-Hant": "76826eee5f0e2ef5099c11207598ddf939574809d73e841a5f8d497ed97edba5"
+    "en": "baa5cd655ad3256088dd92a2eaf885efab8d4ff740331dd6c2642aebb09aaaec",
+    "zh-Hant": "250a60b8b48694f00f75bc5b0205a8a9a1bdfadfea22e5db0902251bf425d8e3"
   }
 }
