@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createRequire } from "node:module"
-import { fileURLToPath } from "node:url"
+import { join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { build } from "esbuild"
 import React from "react"
 import { renderToStaticMarkup } from "react-dom/server"
@@ -115,4 +116,107 @@ test("the detail lists handoffs one per line, the verdict, the linked Board item
   assert.match(html,/看板項目[^]*月報/)
   assert.match(html,/派出的分身[^]*整理數據/)
   assert.equal(detail({}).includes("還沒有交接過。"),true)
+})
+
+test("a request detail centers its close icon and returns focus to the opener", {
+  skip: !process.env.PLAYWRIGHT_MODULE && "Set PLAYWRIGHT_MODULE to run the native WebKit dialog test",
+}, async t => {
+  const {webkit} = await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href)
+  const {outputFiles} = await build({
+    stdin: {
+      contents: `
+        import {useState} from "react"
+        import {createRoot} from "react-dom/client"
+        import "../legacy/tokens.css"
+        import "../legacy/base.css"
+        import "../shell.css"
+        import "./styles.css"
+        import {BotRequestDetail, BotRequestLine} from "./BotRequestCard"
+        import {words} from "./words"
+
+        const card = ${JSON.stringify(card({checklist: entries, done: 2, total: 3}))}
+        const bots = ${JSON.stringify(bots)}
+        const w = words("zh-Hant")
+        function Fixture() {
+          const [opened, setOpened] = useState(false)
+          return <main className="project-assistants" style={{padding: 16}}>
+            <BotRequestLine card={card} w={w} onOpen={() => setOpened(true)} />
+            {opened && <BotRequestDetail card={card} bots={bots} w={w} language="zh-Hant"
+              read={async () => card} onClose={() => setOpened(false)} />}
+          </main>
+        }
+        createRoot(document.querySelector("#root")).render(<Fixture />)
+      `,
+      resolveDir: fileURLToPath(new URL(".", import.meta.url)),
+      loader: "tsx",
+    },
+    bundle: true, jsx: "automatic", outfile: "fixture.js", write: false,
+  })
+  const assets = new Map(outputFiles.map(file => [file.path.split("/").at(-1), file.text]))
+  const browser = await webkit.launch()
+  t.after(() => browser.close())
+
+  for (const [width, height, mobile] of [[390, 844, true], [1280, 800, false]]) {
+    await t.test(`${width}×${height}`, async t => {
+      const page = await browser.newPage({viewport: {width, height}, hasTouch: mobile, isMobile: mobile})
+      t.after(() => page.close())
+      await page.route("http://localhost/**", route => {
+        const asset = new URL(route.request().url()).pathname.slice(1)
+        return route.fulfill(asset ? {body: assets.get(asset), contentType: asset.endsWith(".css") ? "text/css" : "text/javascript"}
+          : {contentType: "text/html", body: '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script src="/fixture.js"></script>'})
+      })
+      await page.goto("http://localhost/")
+      const opener = page.locator(".pa-request-line")
+      const close = page.locator(".pa-request-close")
+      const activate = locator => mobile ? locator.tap() : locator.click()
+      const screenshot = async name => {
+        if (process.env.BOT_REQUEST_FOCUS_ARTIFACTS) {
+          await page.screenshot({path: join(process.env.BOT_REQUEST_FOCUS_ARTIFACTS, `${name}-${width}.png`)})
+        }
+      }
+      await activate(opener)
+      const initial = await close.evaluate(button => {
+        const style = getComputedStyle(button)
+        const bounds = button.getBoundingClientRect()
+        const icon = button.querySelector("svg").getBoundingClientRect()
+        return {
+          closeFocused: document.activeElement === button,
+          outline: style.outlineStyle,
+          color: style.outlineColor,
+          padding: style.padding,
+          width: style.width,
+          height: style.height,
+          radius: style.borderRadius,
+          dx: icon.left + icon.width / 2 - (bounds.left + bounds.width / 2),
+          dy: icon.top + icon.height / 2 - (bounds.top + bounds.height / 2),
+        }
+      })
+      t.diagnostic(JSON.stringify(initial))
+      await screenshot("opened")
+      await page.keyboard.press("Tab")
+      const tabFocus = await close.evaluate(button => ({
+        closeFocused: document.activeElement === button,
+        outline: getComputedStyle(button).outlineStyle,
+      }))
+      if (mobile && tabFocus.closeFocused) await screenshot("tab")
+      await activate(close)
+      await close.waitFor({state: "detached"})
+      const restored = await opener.evaluate(button => document.activeElement === button)
+
+      await t.test("opening leaves the close button without a focus ring", () => {
+        assert.equal(initial.closeFocused, false)
+        assert.equal(initial.outline, "none")
+      })
+      await t.test("Tab reaches the close button and shows its focus ring", () => {
+        assert.deepEqual(tabFocus, {closeFocused: true, outline: "solid"})
+      })
+      await t.test("closing returns focus to the button that opened the detail", () => {
+        assert.equal(restored, true)
+      })
+      await t.test("the close icon is within half a pixel of the button center", () => {
+        assert.ok(Math.abs(initial.dx) <= 0.5 && Math.abs(initial.dy) <= 0.5,
+          `icon offset: (${initial.dx}, ${initial.dy}) px`)
+      })
+    })
+  }
 })

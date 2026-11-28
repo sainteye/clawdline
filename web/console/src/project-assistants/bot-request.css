@@ -41,6 +41,7 @@
 .pa-request-detail-head small { color: var(--faint); font-size: 12px; }
 .pa-request-detail-head h2 { margin: 2px 0 0; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
 .pa-request-close { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--dim); cursor: pointer; }
+.pa-request-detail .pa-request-close { padding: 0; }
 .pa-request-detail-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; display: grid; gap: 16px; align-content: start; }
 .pa-request-detail-body section { display: grid; gap: 8px; min-width: 0; }
 .pa-request-detail-body h3 { margin: 0; color: var(--faint); font-size: 12px; font-weight: 600; letter-spacing: .02em; }
