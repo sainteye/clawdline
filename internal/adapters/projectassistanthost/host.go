@@ -683,21 +683,7 @@ func (h *Host) reconcileClosedRoots(ctx context.Context, st *featurestore.Store,
 			return
 		}
 		for _, id := range ids {
-			a, err := h.o.Broker.RootAssignmentByID(ctx, id)
-			if err == nil && a.BotOwner != nil {
-				closure := orchestrator.AssistantRootClosure{
-					AssignmentID: a.ID,
-					Owner:        *a.BotOwner,
-				}
-				if a.Closure != nil {
-					closure.TerminalID = a.Closure.TerminalID
-					closure.ClosedAt = time.Unix(a.Closure.ClosedAt, 0).UTC()
-					closure.Safe = a.Closure.Safe
-					closure.Forced = a.Closure.Forced
-				}
-				err = bridge.SyncRootClosure(ctx, closure)
-			}
-			if err != nil && ctx.Err() == nil {
+			if err := bridge.ReconcileRoot(ctx, id); err != nil && ctx.Err() == nil {
 				log.Printf("bots: cannot reconcile closed root %s: %s", id, pa.Code(err))
 			}
 			after = id

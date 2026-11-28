@@ -93,10 +93,29 @@ func (b *BrokerWorkBridge) Dispatch(ctx context.Context, q pa.WorkRequest) (pa.W
 		if err != nil {
 			return pa.WorkLink{}, bridgeBrokerFailure(err)
 		}
-		link := orchestrator.AssistantRootLink(a)
 		b.syncMu.Lock()
 		defer b.syncMu.Unlock()
-		return link, b.persistLink(ctx, a.BotOwner.Fence, link, "", nil)
+		// Re-read the durable Root and existing WorkLink under syncMu so a
+		// concurrent close or replay never rewinds a terminal WorkLink.
+		latest, err := b.o.Broker.RootAssignmentByID(ctx, a.ID)
+		if err != nil {
+			return pa.WorkLink{}, err
+		}
+		if latest.BotOwner == nil {
+			return pa.WorkLink{}, bridgeFailure(pa.ScopeDenied, "work_snapshot")
+		}
+		export, err := b.o.Repository.Export(ctx, latest.BotOwner.Fence.Key)
+		if err != nil {
+			return pa.WorkLink{}, err
+		}
+		for i := range export.WorkLinks {
+			prev := export.WorkLinks[i]
+			if prev.ID == latest.ID && isTerminalWorkState(prev.State) {
+				return prev, nil
+			}
+		}
+		link := orchestrator.AssistantRootLink(latest)
+		return link, b.persistExportLink(ctx, export, latest.BotOwner.Fence, link, "", nil)
 	}
 	id := orchestrator.AssistantTaskID(q.Command)
 	// A task accepted before a crash is recovered from broker facts even if
@@ -170,6 +189,10 @@ func (b *BrokerWorkBridge) SyncRootDelivery(ctx context.Context, d orchestrator.
 	return link, b.persistLink(ctx, a.BotOwner.Fence, link, result, nil)
 }
 
+func isTerminalWorkState(state pa.WorkState) bool {
+	return state == pa.WorkCompleted || state == pa.WorkLanded || state == pa.WorkFailed || state == pa.WorkUnknown
+}
+
 // SyncRootClosure settles a Bot-opened Root's WorkLink when the Root closes
 // without a delivery report (or failed to open), without posting a delivery
 // result message or waking a review turn. Already delivered links are kept.
@@ -187,19 +210,102 @@ func (b *BrokerWorkBridge) SyncRootClosure(ctx context.Context, c orchestrator.A
 	if a.Closure == nil && a.State != orchestrator.AssignmentFailed {
 		return nil
 	}
-	link := orchestrator.AssistantRootLink(a)
+	return b.syncRootTerminal(ctx, a)
+}
+
+// ReconcileRoot repairs a Bot-opened Root WorkLink stuck in an active state
+// after the Root closed, failed, or already recorded delivery. It never wakes
+// a review turn and preserves existing delivered/landed projections.
+func (b *BrokerWorkBridge) ReconcileRoot(ctx context.Context, assignmentID string) error {
+	a, err := b.o.Broker.RootAssignmentByID(ctx, assignmentID)
+	if err != nil {
+		return err
+	}
+	if a.BotOwner == nil {
+		return nil
+	}
+	if a.BotOwner.DeliveredAt == 0 && a.Closure == nil && a.State != orchestrator.AssignmentFailed {
+		return nil
+	}
+	return b.syncRootTerminal(ctx, a)
+}
+
+func (b *BrokerWorkBridge) syncRootTerminal(ctx context.Context, a orchestrator.RootAssignment) error {
 	b.syncMu.Lock()
 	defer b.syncMu.Unlock()
 	export, err := b.o.Repository.Export(ctx, a.BotOwner.Fence.Key)
 	if err != nil {
 		return err
 	}
+	var previous *pa.WorkLink
 	for i := range export.WorkLinks {
-		if export.WorkLinks[i].ID == link.ID && (export.WorkLinks[i].State == pa.WorkCompleted || export.WorkLinks[i].State == pa.WorkLanded) {
-			return nil
+		if export.WorkLinks[i].ID == a.ID {
+			previous = &export.WorkLinks[i]
+			break
 		}
 	}
-	return b.persistExportLink(ctx, export, a.BotOwner.Fence, link, "", nil)
+	if previous != nil && (previous.State == pa.WorkCompleted || previous.State == pa.WorkLanded) {
+		return nil
+	}
+	link := orchestrator.AssistantRootLink(a)
+	result := ""
+	if a.BotOwner.DeliveredAt > 0 {
+		if previous != nil {
+			link.Landing = previous.Landing
+			link.LandingNote = previous.LandingNote
+		}
+		hasResultMessage := false
+		for _, m := range export.Messages {
+			if m.ID == link.ResultMessageID {
+				hasResultMessage = true
+				break
+			}
+		}
+		if !hasResultMessage {
+			if summary, at := b.rootDeliveryReceipt(ctx, a); summary != "" {
+				result = summary
+				if !at.IsZero() {
+					link.FinishedAt = at.UTC()
+				}
+			} else {
+				link.ResultMessageID = ""
+			}
+		}
+	}
+	return b.persistExportLink(ctx, export, a.BotOwner.Fence, link, result, nil)
+}
+
+func (b *BrokerWorkBridge) rootDeliveryReceipt(ctx context.Context, a orchestrator.RootAssignment) (string, time.Time) {
+	if b.o.Broker == nil || b.o.Broker.Store == nil || a.Executor == nil || a.Executor.TerminalID == "" {
+		return "", time.Time{}
+	}
+	events, err := b.o.Broker.Store.LatestEvents(ctx, "session.delivered", []string{a.Executor.TerminalID})
+	if err != nil {
+		return "", time.Time{}
+	}
+	event, ok := events[a.Executor.TerminalID]
+	if !ok {
+		return "", time.Time{}
+	}
+	var receipt struct {
+		Conversation string `json:"conversation"`
+		Summary      string `json:"summary"`
+		At           int64  `json:"at"`
+	}
+	if json.Unmarshal(event.Payload, &receipt) != nil {
+		return "", time.Time{}
+	}
+	if receipt.At < a.Executor.OpenedAt {
+		return "", time.Time{}
+	}
+	if a.Closure != nil && a.Closure.ConversationID != "" && receipt.Conversation != "" && receipt.Conversation != a.Closure.ConversationID {
+		return "", time.Time{}
+	}
+	summary := strings.TrimSpace(receipt.Summary)
+	if summary == "" {
+		return "", time.Time{}
+	}
+	return summary, time.Unix(receipt.At, 0).UTC()
 }
 
 func (b *BrokerWorkBridge) Status(ctx context.Context, actor pa.AssistantExecutionActor, taskID string) (pa.WorkLink, error) {

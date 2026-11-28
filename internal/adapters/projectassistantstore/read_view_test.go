@@ -1288,3 +1288,38 @@ func TestReadViewSnapshotIncludesActiveWorkLinksFromOlderPages(t *testing.T) {
 		t.Fatalf("snapshot active_work_links = %v, want %v", got, want)
 	}
 }
+
+func TestReadViewSnapshotExcludesRoomWorkAndSortsByTimestamp(t *testing.T) {
+	e, _, current := viewFixture(t, 4, 0, false)
+	ownTurnID, ownFence := e.Turns[0].ID, e.Turns[0].Fence
+	roomTurnID := "room-turn"
+	roomMsg := pa.Message{ID: "room-msg", Fence: current, TurnID: roomTurnID, Seq: e.Conversation.LastMessageSeq + 1, Kind: pa.NoticeMessage, Text: "room dispatch", At: e.Bot.CreatedAt}
+	e.Conversation.LastMessageSeq = roomMsg.Seq
+	e.Messages = append(e.Messages, roomMsg)
+	roomTurn := e.Turns[0]
+	roomTurn.ID, roomTurn.MessageID, roomTurn.IdempotencyKey, roomTurn.Origin = roomTurnID, roomMsg.ID, "room-turn-key", pa.HostNoticeOrigin
+	roomTurn.Room = &pa.RoomTicket{Group: pa.BotKey{MachineID: e.Bot.Key.MachineID, BotID: "room-a"}, Member: e.Bot.Key, Epoch: 1, JoinedRevision: 1}
+	e.Turns = append(e.Turns, roomTurn)
+	roomFence := roomTurn.Fence
+	e.WorkLinks = []pa.WorkLink{
+		{ID: "room-work", TaskID: "room-work", Fence: roomFence, TurnID: roomTurnID, State: pa.WorkWaitingForPerson, StartedAt: time.Date(2026, 11, 28, 9, 0, 0, 0, time.UTC)},
+		{ID: "subsec", TaskID: "subsec", Fence: ownFence, TurnID: ownTurnID, State: pa.WorkExecuting, StartedAt: time.Date(2026, 11, 28, 10, 0, 0, 100_000_000, time.UTC)},
+		{ID: "whole-sec", TaskID: "whole-sec", Fence: ownFence, TurnID: ownTurnID, State: pa.WorkExecuting, StartedAt: time.Date(2026, 11, 28, 10, 0, 0, 0, time.UTC)},
+		{ID: "tz-earlier", TaskID: "tz-earlier", Fence: ownFence, TurnID: ownTurnID, State: pa.WorkExecuting, StartedAt: time.Date(2026, 11, 28, 17, 59, 59, 0, time.FixedZone("UTC+8", 8*3600))},
+		{ID: "undated", TaskID: "undated", Fence: ownFence, TurnID: ownTurnID, State: pa.WorkAccepted},
+	}
+	db, _, views, _ := restoreViews(t, e)
+	// Preserve a non-UTC offset string directly in SQLite to verify RFC3339 offset comparison.
+	if _, err := db.Exec(`UPDATE project_assistant_bot_facts SET data=json_set(CAST(data AS TEXT),'$.started_at','2026-11-28T17:59:59+08:00') WHERE collection='WorkLinks' AND member='tz-earlier'`); err != nil {
+		t.Fatal(err)
+	}
+	v := readView(t, views, viewQuery(e.Bot))
+	got := make([]string, len(v.Snapshot.ActiveWorkLinks))
+	for i, link := range v.Snapshot.ActiveWorkLinks {
+		got[i] = link.ID
+	}
+	want := []string{"tz-earlier", "whole-sec", "subsec", "undated"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("snapshot active_work_links = %v, want %v (room link excluded, UTC instant order)", got, want)
+	}
+}

@@ -341,17 +341,35 @@ SELECT CASE WHEN length(CAST(j AS BLOB))<=? THEN j END FROM terminal WHERE json_
 	return out, nil
 }
 
-// viewSnapshotActiveWork returns up to the strip row limit of active work links
-// across the Bot's history so the chat strip lists running work even when its
-// originating message sits on an older page.
+// viewSnapshotActiveWork returns up to the strip row limit of own-chat active
+// work links across the Bot's history so the chat strip lists running work
+// even when its originating message sits on an older page. Room turns stay out
+// because own-chat events exclude them.
 func viewSnapshotActiveWork(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery, h app.ReadViewHead, rawBytes *int) ([]pa.WorkLink, error) {
-	statement := viewAggregateSQL + `SELECT w.key,w.value FROM a,fact_work_links w
+	budget := q.ByteLimit - *rawBytes
+	if capBudget := q.ByteLimit / 8; budget > capBudget {
+		budget = capBudget
+	}
+	if budget <= 0 {
+		return nil, nil
+	}
+	statement := strings.TrimSuffix(viewAggregateSQL, " ") + withdrawnTurnsCTE + `, ranked AS MATERIALIZED (
+ SELECT w.key id,w.value j,
+  CASE WHEN json_extract(w.value,'$.state')='waiting_for_person' THEN 0 ELSE 1 END pri,
+  CASE WHEN julianday(json_extract(w.value,'$.started_at')) IS NULL THEN 1 ELSE 0 END undated,
+  julianday(json_extract(w.value,'$.started_at')) started_jd
+ FROM a,fact_work_links w
  WHERE w.type='object' AND json_extract(w.value,'$.state') IN ` + activeWorkLinkStatesSQL + `
- ORDER BY CASE WHEN json_extract(w.value,'$.state')='waiting_for_person' THEN 0 ELSE 1 END,
-  CASE WHEN coalesce(json_extract(w.value,'$.started_at'),'')='' THEN 1 ELSE 0 END,
-  json_extract(w.value,'$.started_at') ASC, w.key COLLATE BINARY ASC
- LIMIT ?`
-	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, capacity.MaximumBotDispatchedStripRows)
+  AND ` + ownChatMessageSQL("json_extract(w.value,'$.turn_id')") + `
+ ORDER BY pri,undated,started_jd ASC,w.key COLLATE BINARY ASC
+ LIMIT ?
+), budgeted AS (
+ SELECT id,j,pri,undated,started_jd,
+  sum(length(CAST(j AS BLOB))) OVER(ORDER BY pri,undated,started_jd ASC,id COLLATE BINARY ASC) spent
+ FROM ranked
+)
+SELECT id,j FROM budgeted WHERE spent<=? ORDER BY pri,undated,started_jd ASC,id COLLATE BINARY ASC`
+	rows, err := tx.QueryContext(ctx, statement, h.Key.MachineID, h.Key.BotID, capacity.MaximumBotDispatchedStripRows, budget)
 	if err != nil {
 		return nil, err
 	}
@@ -361,9 +379,6 @@ func viewSnapshotActiveWork(ctx context.Context, tx *sql.Tx, q app.ReadViewQuery
 		var id, raw string
 		if err = rows.Scan(&id, &raw); err != nil {
 			return nil, err
-		}
-		if *rawBytes+len(raw) > q.ByteLimit {
-			break
 		}
 		var link pa.WorkLink
 		if json.Unmarshal([]byte(raw), &link) != nil || link.ID != id || link.TaskID == "" || !activeWorkLink(link.State) {

@@ -1120,9 +1120,27 @@ func (b *Broker) briefAssignment(ctx context.Context, a RootAssignment) (RootAss
 }
 
 func (b *Broker) failAssignment(ctx context.Context, id, failure string) RootAssignment {
-	out, _ := b.updateAssignment(ctx, id, "root_assignment.failed", func(x *RootAssignment) {
-		x.State, x.Failure = AssignmentFailed, failure
+	var out RootAssignment
+	_, effectIDs, err := b.Store.UpdateOpenedWithEffects(ctx, store.TableRootAssignments, id, func(o store.Opened) (*store.Opened, []store.Event, []store.Effect, error) {
+		var a RootAssignment
+		if err := json.Unmarshal(o.Record, &a); err != nil {
+			return nil, nil, nil, err
+		}
+		wasFailed := a.State == AssignmentFailed
+		a.State, a.Failure = AssignmentFailed, failure
+		out = a
+		body, _ := json.Marshal(a)
+		payload, _ := json.Marshal(map[string]any{"root_assignment": id, "state": a.State})
+		var effects []store.Effect
+		if !wasFailed && a.BotOwner != nil && a.BotOwner.DeliveredAt == 0 && b.AssistantRootClosed != nil {
+			effects = append(effects, store.Effect{Kind: EffectAssistantRootClosed, Subject: id, Payload: payload})
+		}
+		return &store.Opened{ID: id, State: a.State, Record: body, CreatedAt: o.CreatedAt, UpdatedAt: b.now()},
+			[]store.Event{{Kind: "root_assignment.failed", Subject: id, Payload: payload}}, effects, nil
 	})
+	if err == nil && len(effectIDs) > 0 {
+		b.runRecorded(ctx, effectIDs)
+	}
 	return out
 }
 
@@ -1325,10 +1343,25 @@ func runAssistantRootClosed(ctx context.Context, b *Broker, e store.Effect) effe
 	if a.BotOwner.DeliveredAt != 0 {
 		return effectResult{state: store.EffectDone, outcome: "bot_already_delivered"}
 	}
-	if a.Closure == nil {
+	if a.Closure == nil && a.State != AssignmentFailed {
 		return effectResult{state: store.EffectFailed, outcome: "root_not_closed"}
 	}
-	closedAt := time.Unix(a.Closure.ClosedAt, 0).UTC()
+	closedAt := e.CreatedAt.UTC()
+	if closedAt.IsZero() {
+		closedAt = time.Unix(a.CreatedAt, 0).UTC()
+	}
+	var terminalID string
+	var safe, forced bool
+	if a.Closure != nil {
+		terminalID = a.Closure.TerminalID
+		safe = a.Closure.Safe
+		forced = a.Closure.Forced
+		if a.Closure.ClosedAt > 0 {
+			closedAt = time.Unix(a.Closure.ClosedAt, 0).UTC()
+		}
+	} else if a.Executor != nil {
+		terminalID = a.Executor.TerminalID
+	}
 	sink := b.AssistantRootClosed
 	if sink == nil {
 		if b.now().Sub(closedAt) >= pa.CompletionWakeRetryWindow {
@@ -1338,10 +1371,10 @@ func runAssistantRootClosed(ctx context.Context, b *Broker, e store.Effect) effe
 	}
 	notice := AssistantRootClosure{
 		AssignmentID: a.ID,
-		TerminalID:   a.Closure.TerminalID,
+		TerminalID:   terminalID,
 		ClosedAt:     closedAt,
-		Safe:         a.Closure.Safe,
-		Forced:       a.Closure.Forced,
+		Safe:         safe,
+		Forced:       forced,
 		Owner:        *a.BotOwner,
 		LastAttempt:  b.now().Sub(closedAt) >= pa.CompletionWakeRetryWindow,
 	}
@@ -1375,7 +1408,11 @@ func AssistantRootLink(a RootAssignment) pa.WorkLink {
 	case AssignmentFailed:
 		link.State, link.FailureReason = pa.WorkFailed, a.Failure
 	}
-	if a.State != AssignmentFailed && a.Closure != nil {
+	if a.BotOwner.DeliveredAt > 0 {
+		link.State = pa.WorkCompleted
+		link.ResultMessageID = "work-result-" + a.ID
+		link.FinishedAt = time.Unix(a.BotOwner.DeliveredAt, 0).UTC()
+	} else if a.State != AssignmentFailed && a.Closure != nil {
 		link.State = pa.WorkUnknown
 		if a.Closure.ClosedAt > 0 {
 			link.FinishedAt = time.Unix(a.Closure.ClosedAt, 0).UTC()

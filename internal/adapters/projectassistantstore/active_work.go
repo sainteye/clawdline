@@ -166,6 +166,7 @@ AND json_extract(w.value,'$.state') IN `+activeWorkLinkStatesSQL+`
 AND (
 	json_extract(r.record,'$.closure') IS NOT NULL
 	OR json_extract(r.record,'$.state')='failed'
+	OR coalesce(json_extract(r.record,'$.bot_owner.delivered_at'),0)>0
 )
 ORDER BY r.id LIMIT ?`, machine, after, pa.MaxPageRows)
 	if err != nil {

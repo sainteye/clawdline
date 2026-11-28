@@ -6,6 +6,8 @@ import { botRosterActivity, dispatchedCount, rosterMood } from "./working.ts"
 // @ts-expect-error Node executes source extensions.
 import { dispatchedRows, dispatchedCounts, dispatchedMoreLabel, dispatchedReason, dispatchedStrip, DispatchedStripRows } from "./dispatched-work.ts"
 // @ts-expect-error Node executes source extensions.
+import { eventTimeline, mergeTimeline } from "./read-views.ts"
+// @ts-expect-error Node executes source extensions.
 import { words } from "./words.ts"
 
 const w = words("zh-Hant")
@@ -135,11 +137,19 @@ test("when no rows are loaded the strip points directly to Sessions instead of s
   assert.equal(dispatchedMoreLabel(2, 3, w), "還有 3 個，到 Sessions 查看")
   assert.equal(dispatchedMoreLabel(2, 3, words("en")), "3 more in Sessions")
   assert.equal(dispatchedMoreLabel(2, 0, w), "")
-  // Snapshot active links from older pages appear in the strip and clear once a newer update arrives.
+  // Snapshot active links from older pages appear in the strip, clear on eventTimeline update,
+  // and do not resurrect when an older history page loads while another task is still running.
   const olderActive = {id:"old-run", task_id:"old-run", state:"executing", title:"Older task"} as W.ProjectAssistantWorkLink
-  const strip = dispatchedStrip([olderActive], {running:1, executing:1, needs_you:0, delivered:0})
-  assert.deepEqual(strip.rows.map(r => r.link.id), ["old-run"])
-  assert.equal(strip.more, 0)
+  const stayActive = {id:"stay-run", task_id:"stay-run", state:"executing", title:"Still running"} as W.ProjectAssistantWorkLink
+  const snapshotWork = [olderActive, stayActive]
+  const initialStrip = dispatchedStrip(snapshotWork, {running:2, executing:2, needs_you:0, delivered:0})
+  assert.deepEqual(initialStrip.rows.map(r => r.link.id), ["old-run", "stay-run"])
+  assert.equal(initialStrip.more, 0)
   const closed = {...olderActive, state:"unknown"} as W.ProjectAssistantWorkLink
-  assert.deepEqual(dispatchedStrip([olderActive, closed], {running:0, executing:0, needs_you:0, delivered:0}).rows, [])
+  const afterEvent = eventTimeline([], [{id:"ev-1", kind:"event", anchor_message_seq:10, observed_event_seq:20, event:{id:"ev-1", seq:20, kind:"work_updated", work:closed}} as unknown as W.ProjectAssistantReadViewItem])
+  const olderHistoryRow = {id:"old-run", kind:"work", anchor_message_seq:10, observed_event_seq:15, work:olderActive} as unknown as W.ProjectAssistantReadViewItem
+  const withHistory = mergeTimeline([afterEvent, [olderHistoryRow]])
+  const afterClose = dispatchedStrip([...snapshotWork, ...withHistory.flatMap(r => r.work ? [r.work] : [])], {running:1, executing:1, needs_you:0, delivered:0})
+  assert.deepEqual(afterClose.rows.map(r => r.link.id), ["stay-run"])
+  assert.equal(afterClose.more, 0)
 })

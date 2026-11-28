@@ -3,9 +3,11 @@ package projectassistanthost
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/sainteye/clawdline/internal/adapters/taskdir"
 	"github.com/sainteye/clawdline/internal/app/orchestrator"
@@ -521,5 +523,157 @@ func TestHostRepairsClosedBotRootAndSyncsLiveClosureWithoutReview(t *testing.T) 
 	}
 	if wakes, results := workTurns(t, n); wakes != 0 || results != 0 {
 		t.Fatalf("closed roots created result or review: wakes=%d, results=%d", wakes, results)
+	}
+}
+
+func TestBotRootDispatchReplayInterleavingAndDeliveredRepair(t *testing.T) {
+	n := startNative(t, nil)
+	f := n.f
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	f.o.Broker.Clock = func() time.Time { return now }
+	f.o.Broker.Type = func(context.Context, string, string) error { return nil }
+	s := fixtureReceive(t, f.p.sessions)
+	rootCtx := pa.WithDispatchChoice(ctx, pa.DispatchChoice{Mode: pa.DispatchModeRoot})
+	dispatchRoot := func(key, title string) pa.WorkLink {
+		t.Helper()
+		link, err := n.tools.Dispatch(rootCtx, key, title, "Verify review findings.", []string{})
+		if err != nil {
+			t.Fatalf("dispatch root %s: %v", key, err)
+		}
+		return link
+	}
+
+	// 1) Closed Root replayed with the same idempotency key keeps unknown instead of rewinding to executing.
+	closedLink := dispatchRoot("root-replay-closed", "Closed before replay")
+	aClosed, err := f.o.Broker.RootAssignmentByID(ctx, closedLink.TaskID)
+	if err != nil || aClosed.Executor == nil {
+		t.Fatalf("closed assignment: %+v %v", aClosed, err)
+	}
+	if err = f.o.Broker.RecordRootClosure(ctx, aClosed.ID, session.Session{
+		ID: aClosed.Executor.TerminalID, Backend: session.Backend(aClosed.Executor.Backend),
+		Assistant: session.Assistant(aClosed.Assistant), ConversationID: "conv-closed",
+	}, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	replayedClosed := dispatchRoot("root-replay-closed", "Closed before replay")
+	if replayedClosed.State != pa.WorkUnknown {
+		t.Fatalf("replayed closed root state = %s, want unknown", replayedClosed.State)
+	}
+
+	// 2) Delivered -> closed -> same-key replay preserves completed, ResultMessageID, and delivery timestamp.
+	deliveredLink := dispatchRoot("root-replay-delivered", "Delivered then closed")
+	aDel, err := f.o.Broker.RootAssignmentByID(ctx, deliveredLink.TaskID)
+	if err != nil || aDel.Executor == nil {
+		t.Fatalf("delivered assignment: %+v %v", aDel, err)
+	}
+	delRow := session.Session{
+		ID: aDel.Executor.TerminalID, Backend: session.Backend(aDel.Executor.Backend),
+		Assistant: session.Assistant(aDel.Assistant), ConversationID: "conv-del",
+		State: session.StateIdle, Evidence: session.EvidenceRegistry,
+		Observation: session.Observation{ObservedAt: now, Freshness: session.FreshnessCurrent},
+	}
+	f.o.Broker.Live = func(context.Context) []session.Session { return []session.Session{delRow} }
+	deliveredAt := now.Add(time.Minute)
+	now = deliveredAt
+	if _, err = f.o.Broker.ReportSessionDelivery(ctx, aDel.Executor.TerminalID, "Delivered cleanly."); err != nil {
+		t.Fatal(err)
+	}
+	now = deliveredAt.Add(10 * time.Minute)
+	f.o.Broker.RecoverEffects(ctx)
+	now = deliveredAt.Add(15 * time.Minute)
+	if err = f.o.Broker.RecordRootClosure(ctx, aDel.ID, delRow, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	replayedDelivered := dispatchRoot("root-replay-delivered", "Delivered then closed")
+	if replayedDelivered.State != pa.WorkCompleted || replayedDelivered.ResultMessageID != "work-result-"+aDel.ID || !replayedDelivered.FinishedAt.Equal(deliveredAt) {
+		t.Fatalf("replayed delivered root = %+v, want completed at %v", replayedDelivered, deliveredAt)
+	}
+
+	// 3) Interleaving: session report queued (pending) -> close runs first (unknown) -> delivery effect runs -> completed.
+	interLink := dispatchRoot("root-interleaved", "Close before delivery effect")
+	aInter, err := f.o.Broker.RootAssignmentByID(ctx, interLink.TaskID)
+	if err != nil || aInter.Executor == nil {
+		t.Fatalf("interleaved assignment: %+v %v", aInter, err)
+	}
+	interRow := session.Session{
+		ID: aInter.Executor.TerminalID, Backend: session.Backend(aInter.Executor.Backend),
+		Assistant: session.Assistant(aInter.Assistant), ConversationID: "conv-inter",
+		State: session.StateIdle, Evidence: session.EvidenceRegistry,
+		Observation: session.Observation{ObservedAt: now, Freshness: session.FreshnessCurrent},
+	}
+	f.o.Broker.Live = func(context.Context) []session.Session { return []session.Session{interRow} }
+	interDelAt := now.Add(time.Minute)
+	now = interDelAt
+	if _, err = f.o.Broker.ReportSessionDelivery(ctx, aInter.Executor.TerminalID, "Interleaved summary."); err != nil {
+		t.Fatal(err)
+	}
+	now = interDelAt.Add(5 * time.Second)
+	if err = f.o.Broker.RecordRootClosure(ctx, aInter.ID, interRow, "close", false); err != nil {
+		t.Fatal(err)
+	}
+	// Closure ran immediately before the pending delivery effect.
+	x, err := f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findLink := func(links []pa.WorkLink, id string) pa.WorkLink {
+		for _, wl := range links {
+			if wl.ID == id {
+				return wl
+			}
+		}
+		t.Fatalf("missing link %s", id)
+		return pa.WorkLink{}
+	}
+	if got := findLink(x.WorkLinks, interLink.ID); got.State != pa.WorkUnknown {
+		t.Fatalf("after close before delivery effect: state = %s, want unknown", got.State)
+	}
+	now = interDelAt.Add(10 * time.Minute)
+	f.o.Broker.RecoverEffects(ctx)
+	x, err = f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findLink(x.WorkLinks, interLink.ID); got.State != pa.WorkCompleted || got.ResultMessageID != "work-result-"+aInter.ID || !got.FinishedAt.Equal(interDelAt) {
+		t.Fatalf("after pending delivery effect settled: %+v, want completed at %v", got, interDelAt)
+	}
+
+	// 4) Startup reconciliation repairs a Root with DeliveredAt > 0 whose WorkLink stayed executing.
+	staleDelLink := dispatchRoot("root-stale-delivered", "Delivered but link stuck executing")
+	s.reply <- app.PromptResult{FinalText: "Done dispatching."}
+	fixtureEventually(t, func() bool {
+		turn, err := f.h.store.Turn(ctx, n.bot.Key, n.prompt.Turn.ID)
+		return err == nil && turn.State == pa.TurnSucceeded
+	})
+	aStale, err := f.o.Broker.RootAssignmentByID(ctx, staleDelLink.TaskID)
+	if err != nil || aStale.Executor == nil {
+		t.Fatalf("stale assignment: %+v %v", aStale, err)
+	}
+	if _, err = f.o.Database.Exec(`UPDATE broker_root_assignments SET record=json_set(CAST(record AS TEXT),'$.bot_owner.delivered_at',?,'$.closure',json(?)) WHERE id=?`,
+		now.Unix(), `{"terminal_id":"`+aStale.Executor.TerminalID+`","method":"close","forced":false,"safe":true,"closed_at":`+strconv.FormatInt(now.Unix(), 10)+`}`, aStale.ID); err != nil {
+		t.Fatal(err)
+	}
+	ids, err := f.h.store.ClosedRootWorkRepairs(ctx, n.bot.Key.MachineID, "")
+	if err != nil || len(ids) != 1 || ids[0] != aStale.ID {
+		t.Fatalf("ClosedRootWorkRepairs = %v %v, want [%s]", ids, err, aStale.ID)
+	}
+	f.h.reconcileSettledWork(ctx)
+	x, err = f.h.store.Export(ctx, n.bot.Key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := findLink(x.WorkLinks, staleDelLink.ID); got.State != pa.WorkCompleted || got.FinishedAt.IsZero() {
+		t.Fatalf("reconciled delivered root = %+v, want completed with finished_at", got)
+	}
+	if ids, err = f.h.store.ClosedRootWorkRepairs(ctx, n.bot.Key.MachineID, ""); err != nil || len(ids) != 0 {
+		t.Fatalf("ClosedRootWorkRepairs after repair = %v %v, want empty", ids, err)
+	}
+	page, err := f.h.store.List(ctx, pa.ListBots{MachineID: n.bot.Key.MachineID, PageSize: pa.MaxPageRows})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("Bot list: %v", err)
+	}
+	if page.Items[0].DispatchedWork != nil && page.Items[0].DispatchedWork.Running != 0 {
+		t.Fatalf("running count after all repairs = %+v, want 0", page.Items[0].DispatchedWork)
 	}
 }

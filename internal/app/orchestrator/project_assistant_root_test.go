@@ -230,4 +230,50 @@ func TestBotDeliveredRootDoesNotSendClosureAfterDelivery(t *testing.T) {
 	if len(closed) != 0 {
 		t.Fatalf("delivered Root sent closure notice: %+v", closed)
 	}
+	stored, err := b.RootAssignmentByID(ctx, a.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := AssistantRootLink(stored)
+	if link.State != pa.WorkCompleted || link.ResultMessageID != "work-result-"+a.ID || link.FinishedAt.IsZero() {
+		t.Fatalf("delivered then closed link = %+v, want completed with result id and finished_at", link)
+	}
+}
+
+func TestBotRootAwaitingDialogFailureNotifiesBotImmediately(t *testing.T) {
+	b, ctx, q, _ := assistantRootFixture(t)
+	b.Screen = func(context.Context, string) (string, bool) {
+		return screen(t, "codex-update"), true
+	}
+	var closed []AssistantRootClosure
+	b.AssistantRootClosed = func(_ context.Context, c AssistantRootClosure) error {
+		closed = append(closed, c)
+		return nil
+	}
+	a, _, err := b.DispatchAssistantRoot(ctx, q)
+	if err != nil || a.State != AssignmentAwaitingDialog || a.Executor == nil {
+		t.Fatalf("open awaiting dialog = %+v %v", a, err)
+	}
+	if link := AssistantRootLink(a); link.State != pa.WorkWaitingForPerson {
+		t.Fatalf("awaiting dialog link = %+v, want waiting_for_person", link)
+	}
+	// The terminal disappears with a complete reading -> b.Pass fails it and fires AssistantRootClosed immediately.
+	b.Reading = func(context.Context) session.Inventory {
+		return session.Inventory{
+			Sessions: []session.Session{{ID: "%1", Backend: session.BackendTmux, Assistant: session.AssistantClaude}},
+			Complete: true,
+			Sources:  map[string]bool{a.Executor.Backend: true},
+		}
+	}
+	b.Pass(ctx)
+	out, err := b.RootAssignmentByID(ctx, a.ID)
+	if err != nil || out.State != AssignmentFailed {
+		t.Fatalf("after Pass = %+v %v, want failed", out, err)
+	}
+	if len(closed) != 1 || closed[0].AssignmentID != a.ID {
+		t.Fatalf("closure notifications = %+v, want 1 for %s", closed, a.ID)
+	}
+	if link := AssistantRootLink(out); link.State != pa.WorkFailed || link.FailureReason != rootDialogClosedFailure {
+		t.Fatalf("failed dialog link = %+v, want failed with reason %q", link, rootDialogClosedFailure)
+	}
 }
