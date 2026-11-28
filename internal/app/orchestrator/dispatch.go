@@ -508,8 +508,7 @@ func (b *Broker) Dispatch(ctx context.Context, req DispatchRequest) (Dispatched,
 			return Dispatched{Record: settled, Warnings: warnings}, nil
 		}
 	}
-
-	spawned := b.spawn(ctx, record, cwd, req.Secret, opening)
+	spawned := b.spawnWithGoCache(ctx, record, cwd, req.Secret, opening)
 	if spawned.State == StateSpawnFailed {
 		settled, _ := b.Settle(ctx, record.ID, StateSpawnFailed, spawned.SpawnError, nil)
 		return Dispatched{Record: settled, Warnings: warnings}, nil
@@ -1019,6 +1018,10 @@ func shellCommandWithExecutable(l projects.Launch, r Record, taskRoot, cwd, task
 			q("XDG_CACHE_HOME", filepath.Join(root, "cache")),
 			q("npm_config_cache", filepath.Join(root, "cache", "npm")),
 			q("CARGO_TARGET_DIR", filepath.Join(root, "build")))
+	} else if r.SharedGoCache != nil {
+		build := r.SharedGoCache.BuildPath
+		set = append(set, "GOCACHE="+projects.ShellQuoted(build),
+			"GOMODCACHE="+projects.ShellQuoted(filepath.Join(filepath.Dir(build), "go-mod")))
 	}
 	set = append(set, launchEnv...)
 	if l.Assistant == projects.AssistantAntigravity {
@@ -1127,6 +1130,10 @@ func workspaceProfileArgs(r Record, taskRoot, cwd string, network bool) []string
 		// --add-dir already names it; the profile says so too rather than
 		// depend on the two spellings composing.
 		writable = append(writable, taskRoot)
+	}
+	if r.SharedGoCache != nil {
+		build := r.SharedGoCache.BuildPath
+		writable = append(writable, build, filepath.Join(filepath.Dir(build), "go-mod"))
 	}
 	entries := make([]string, 0, len(writable))
 	for _, path := range writable {

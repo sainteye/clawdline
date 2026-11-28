@@ -27,6 +27,10 @@ cat > "$scratch/bin/go" <<'MOCK'
 #!/bin/bash
 printf 'go %s\n' "$*" >> "$CALLS"
 if [ "${CHECK_CACHE_LOG:-0}" = 1 ]; then printf 'cache %s\n' "${GOCACHE:-}" >> "$CALLS"; fi
+if [ "${CHECK_CACHE_LOG:-0}" = 1 ]; then
+  printf 'modcache %s\n' "${GOMODCACHE:-}" >> "$CALLS"
+  mkdir -p "${GOMODCACHE:-$TASK_WORK/go-mod}" "${GOCACHE:-$TASK_WORK/go-cache}"
+fi
 if [ "$1" = list ]; then root=$(pwd -P); printf '{"Dir":"%s/internal/example","ImportPath":"fixture/example"}\n{"Dir":"%s/internal/caller","ImportPath":"fixture/caller","Imports":["fixture/example"]}\n' "$root" "$root"; exit 0; fi
 if [ "${FAIL_TESTS:-0}" = 1 ] && [ "$1" = test ]; then exit 7; fi
 if [ "$1 $2" = 'test -json' ]; then
@@ -124,17 +128,26 @@ case "$1 $2" in
   'resources use-go')
     printf 'attach %s\n' "$3" >> "$CALLS"
     [ "${FAIL_CACHE_ATTACH:-0}" != 1 ] || exit 1
+    mkdir -p "$TMPDIR/shared/go-build" "$TMPDIR/shared/go-mod"
     printf '%s/shared/go-build\n' "$TMPDIR";;
   *) exit 2;;
 esac
 MOCK
 chmod +x "$scratch/bin/clawdline"
 export CLAWDLINE_CALLBACK_TASK_ID=30000000-0000-4000-8000-000000000001 CHECK_CACHE_LOG=1
+export TASK_WORK="$scratch/task/work"
+mkdir -p "$TASK_WORK"
+unset GOMODCACHE
 export GOCACHE="$scratch/private" XDG_CACHE_HOME="$scratch/private"
 : > "$CALLS"
 bash tools/check.sh --quick ./internal/example > "$scratch/shared-cache.log"
 grep -Fxq "attach $CLAWDLINE_CALLBACK_TASK_ID" "$CALLS"
 grep -Fxq "cache $scratch/shared/go-build" "$CALLS"
+if [ -d "$TASK_WORK/go-cache" ] || [ -d "$TASK_WORK/go-mod" ]; then
+  echo 'a default callback check created a private Go cache in task work' >&2
+  exit 1
+fi
+grep -Fxq "modcache $scratch/shared/go-mod" "$CALLS"
 for mode in unsupported isolated custom plan refused; do
   : > "$CALLS"
   case "$mode" in

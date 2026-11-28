@@ -132,11 +132,27 @@ Go's default build cache is shared by commands of the same user. Go validates
 cache keys and periodically removes entries not used recently. `go clean
 -cache` removes all of its build entries and forces recompilation on the next
 build. The shared cache is rebuildable, but it is not a task-owned directory:
-the task reclaimer must never chmod or remove it. Ordinary task, Root
-Assignment, and Agent launch commands do not set `GOCACHE` or `GOMODCACHE`;
-they inherit the normal Go environment. The content-addressed Go build cache
-supports concurrent builds, so these launches do not need a fresh cache for
-correctness. The verification gate is different: its read-only checker has
+the task reclaimer must never chmod or remove it. Root Assignments and Agent
+launches inherit the normal Go environment. Editing Codex children with a
+verified repository write profile and full-permission Claude children reuse
+the canonical Project's managed Go build and module caches when their working
+directory is inside a Go module or workspace. The broker registers each child
+before it starts and grants only that cache's `go-build` and `go-mod` paths
+in the Codex write profile. Linked worktrees use the same Project key. Other
+provider permission modes keep their existing filesystem policy.
+
+Older editing children inherited the normal Go environment as well. A
+workspace sandbox could read downloaded modules but refuse to write the user
+cache. A manual `GOCACHE=<task>/work/go-cache` or `GOMODCACHE=<task>/work/go-mod`
+then made that task compile or download everything again. `tools/check.sh`
+only attached managed caches for commands registered as callbacks, and older
+attachments switched the build cache alone. Pure checks do not require a
+compile lease. Use the inherited managed paths for ordinary Go commands, or
+a command callback when running outside those child launch profiles. For
+isolated experiments, set both paths explicitly in owned scratch and clean
+them after the commands exit.
+
+The verification gate has a separate permission boundary. Its read-only checker has
 only three broker-owned writable scratch directories, so its launcher sets
 `GOCACHE` to the exact task `work/cache` and `GOMODCACHE` below it. Sharing
 the user's normal cache would cross that filesystem permission boundary.
@@ -158,7 +174,7 @@ existing task owner proof and reclaim decision. The broker does not invent a
 creation timestamp or registration for that older cache.
 
 Root Assignments and Agent launches do not create a separate Go cache in the
-broker's launch code. A session may manually set `GOCACHE` somewhere else,
+broker's launch code. A Session may manually set `GOCACHE` somewhere else,
 but that directory has no broker ownership receipt and is not registered or
 reclaimed by this mechanism. The register operation is intentionally internal
 to the gate dispatch; an arbitrary path, including a shared GOPATH or
@@ -366,7 +382,9 @@ pre-unlink check. Unknown accounting still refuses admission.
 Trusted Root check tooling can attach a running callback to its canonical Project
 Go cache with `resources use-go`. This uses the existing shared consumer fence;
 scheduling intent no longer forces ordinary checks to retain a private compiler
-cache. Explicit overrides and isolated verification remain private. Pure wait
+cache. When the daemon supplies a sibling module cache, `tools/check.sh` uses it
+unless the command supplied `GOMODCACHE`. Heavy callbacks get both paths at
+launch. Explicit overrides and isolated verification remain private. Pure wait
 callbacks do not attach, and no arbitrary cache path can be adopted.
 
 Settled sources notify a separate coalesced managed-resource worker. It advances
@@ -375,6 +393,17 @@ the same publication and plan/apply service as an authorized Bot. A daemon start
 also schedules a catch-up pass. Legacy worktree scans retain their own schedule
 and cannot delay this notification. Completion alone is not idle proof, and all
 retention, unknown-owner, active-consumer and retained-output rules remain intact.
+The managed 4 GiB target applies to both cache directories together. The sweep
+evicts recognized build entries oldest first, then Go module trees and archives
+if the build entries cannot cover the deficit. Unknown data stays. On macOS a
+terminal callback with a free run lock and a confirmed newer leader of the same
+numeric process group can release its old claim. The filesystem reader check
+still runs separately before reclamation.
+
+The `clawdline go-cache trim` command operates on Go's user-default cache and
+rejects explicit `GOCACHE` values. An oversized managed Project cache is the
+resource sweeper's responsibility. Its read-only `resources plan` decision
+reports which ownership or publication fact currently blocks cleanup.
 
 Admission waits can be cancelled without waiting for another inspection to
 finish; their diagnostics name `admission.wait` separately from filesystem
